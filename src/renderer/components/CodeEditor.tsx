@@ -245,11 +245,49 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
     useEffect(() => {
         const editorDOM = editorRef.current?.editor;
         if (editorDOM) {
-            const handleContextMenu = (event) => { if (onContextMenu) onContextMenu(event); };
+            const handleContextMenu = (event) => {
+                if (onContextMenu) {
+                    const view = editorRef.current?.view;
+                    let selection = '';
+                    if (view) {
+                        const { from, to } = view.state.selection.main;
+                        if (from !== to) {
+                            selection = view.state.sliceDoc(from, to);
+                        }
+                    }
+                    onContextMenu(event, selection);
+                }
+            };
             editorDOM.addEventListener('contextmenu', handleContextMenu);
             return () => editorDOM.removeEventListener('contextmenu', handleContextMenu);
         }
     }, [onContextMenu]);
+
+    // Direct keydown handler for Ctrl+Enter (or Shift+Enter) to send selection to terminal
+    useEffect(() => {
+        const editorDOM = editorRef.current?.editor;
+        if (!editorDOM || !onSendToTerminal) return;
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (((e.ctrlKey || e.metaKey) || e.shiftKey) && e.key === 'Enter') {
+                const view = editorRef.current?.view;
+                if (view) {
+                    const { from, to } = view.state.selection.main;
+                    if (from !== to) {
+                        const selection = view.state.sliceDoc(from, to);
+                        if (selection) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onSendToTerminal(selection);
+                        }
+                    }
+                }
+            }
+        };
+
+        editorDOM.addEventListener('keydown', handleKeyDown, true);
+        return () => editorDOM.removeEventListener('keydown', handleKeyDown, true);
+    }, [onSendToTerminal]);
 
     return (
         <CodeMirror
@@ -293,6 +331,7 @@ const CodeEditorPane = ({
     const [showBlame, setShowBlame] = useState(false);
     const [blameData, setBlameData] = useState<any[] | null>(null);
     const [blameLoading, setBlameLoading] = useState(false);
+    const [contextMenuSelection, setContextMenuSelection] = useState('');
 
     if (!paneData) return null;
 
@@ -308,9 +347,14 @@ const CodeEditorPane = ({
             const relativePath = filePath.startsWith(currentPath)
                 ? filePath.slice(currentPath.length + 1)
                 : filePath;
-            const blame = await (window as any).api.gitBlame(currentPath, relativePath);
-            setBlameData(blame);
-            setShowBlame(true);
+            const result = await (window as any).api.gitBlame(currentPath, relativePath);
+            if (result?.success && Array.isArray(result.blame)) {
+                setBlameData(result.blame);
+                setShowBlame(true);
+            } else {
+                console.error('Git blame failed:', result?.error);
+                setBlameData(null);
+            }
         } catch (err) {
             console.error('Failed to load git blame:', err);
             setBlameData(null);
@@ -338,10 +382,11 @@ const CodeEditorPane = ({
         }
     }, [nodeId, contentDataRef, setRootLayoutNode]);
 
-    const onEditorContextMenu = useCallback((e) => {
+    const onEditorContextMenu = useCallback((e, selection) => {
         e.preventDefault();
-        e.stopPropagation(); // Prevent pane context menu from appearing
+        e.stopPropagation();
         if (activeContentPaneId === nodeId) {
+            setContextMenuSelection(selection || '');
             setEditorContextMenuPos({ x: e.clientX, y: e.clientY });
         }
     }, [nodeId, activeContentPaneId, setEditorContextMenuPos]);
@@ -355,7 +400,7 @@ const CodeEditorPane = ({
         <div className="flex-1 flex flex-col min-h-0 theme-bg-secondary relative">
             <div className="flex-1 flex min-h-0">
                 {/* Git Blame Panel */}
-                {showBlame && blameData && (
+                {showBlame && Array.isArray(blameData) && (
                     <div className="w-64 border-r theme-border flex flex-col bg-black/20 overflow-hidden">
                         <div className="flex items-center justify-between px-2 py-1 border-b theme-border bg-black/20">
                             <span className="text-xs font-medium theme-text-muted">Git Blame</span>
@@ -409,7 +454,9 @@ const CodeEditorPane = ({
                             left: `${editorContextMenuPos.x}px`
                         }}
                     >
-                        <button onClick={handleEditorCopy} disabled={!aiEditModal.selectedText}
+                        <button
+                            onClick={() => { if (contextMenuSelection) navigator.clipboard.writeText(contextMenuSelection); setEditorContextMenuPos(null); }}
+                            disabled={!contextMenuSelection}
                             className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-sm disabled:opacity-50">
                             Copy
                         </button>
@@ -417,27 +464,23 @@ const CodeEditorPane = ({
                             className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-sm">
                             Paste
                         </button>
-                        <div className="border-t theme-border my-1"></div>
-                        <button onClick={handleAddToChat} disabled={!aiEditModal.selectedText}
-                            className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-sm disabled:opacity-50">
-                            Add to Chat
-                        </button>
-                        <div className="border-t theme-border my-1"></div>
-                        <button onClick={() => { handleAIEdit('ask'); setEditorContextMenuPos(null); }}
-                            disabled={!aiEditModal.selectedText}
-                            className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-sm disabled:opacity-50">
-                            <MessageSquare size={16} />Explain
-                        </button>
-                        <button onClick={() => { handleAIEdit('document'); setEditorContextMenuPos(null); }}
-                            disabled={!aiEditModal.selectedText}
-                            className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-sm disabled:opacity-50">
-                            <FileText size={16} />Add Comments
-                        </button>
-                        <button onClick={() => { handleAIEdit('edit'); setEditorContextMenuPos(null); }}
-                            disabled={!aiEditModal.selectedText}
-                            className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-sm disabled:opacity-50">
-                            <Edit size={16} />Refactor
-                        </button>
+                        {contextMenuSelection && (
+                            <>
+                                <div className="border-t theme-border my-1"></div>
+                                <button onClick={() => { handleAIEdit('ask', contextMenuSelection); setEditorContextMenuPos(null); }}
+                                    className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-sm">
+                                    <MessageSquare size={16} />Explain
+                                </button>
+                                <button onClick={() => { handleAIEdit('document', contextMenuSelection); setEditorContextMenuPos(null); }}
+                                    className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-sm">
+                                    <FileText size={16} />Add Comments
+                                </button>
+                                <button onClick={() => { handleAIEdit('edit', contextMenuSelection); setEditorContextMenuPos(null); }}
+                                    className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-sm">
+                                    <Edit size={16} />Refactor
+                                </button>
+                            </>
+                        )}
                         <div className="border-t theme-border my-1"></div>
                         <button
                             onClick={() => {
@@ -447,16 +490,16 @@ const CodeEditorPane = ({
                             className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left text-purple-400 text-sm">
                             <GitBranch size={16} />Git Blame
                         </button>
-                        {filePath?.endsWith('.py') && onRunScript && (
+                        {onSendToTerminal && contextMenuSelection && (
                             <>
                                 <div className="border-t theme-border my-1"></div>
                                 <button
                                     onClick={() => {
                                         setEditorContextMenuPos(null);
-                                        onRunScript(filePath);
+                                        onSendToTerminal(contextMenuSelection);
                                     }}
                                     className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left text-green-400 text-sm">
-                                    <Play size={16} />Run Python Script
+                                    <Play size={16} />Send to Terminal
                                 </button>
                             </>
                         )}
@@ -482,7 +525,7 @@ const CodeEditorPane = ({
                                 });
                             }}
                             className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left text-blue-400 text-sm">
-                            <BrainCircuit size={16} />Agentic Edit (All Files)
+                            <BrainCircuit size={16} />Agentic Edit
                         </button>
                     </div>
                 </>

@@ -136,7 +136,15 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
     const [hypothesisInput, setHypothesisInput] = useState('');
     const [expandedBlocks, setExpandedBlocks] = useState<Set<string>>(new Set());
     const [editingBlocks, setEditingBlocks] = useState<Set<string>>(new Set());
+    const [executingBlocks, setExecutingBlocks] = useState<Set<string>>(new Set());
+    const [streamingBlockId, setStreamingBlockId] = useState<string | null>(null);
+    const [streamingContent, setStreamingContent] = useState<string>('');
+    const [streamingReasoningContent, setStreamingReasoningContent] = useState<string>('');
+    const [streamingToolCalls, setStreamingToolCalls] = useState<any[]>([]);
     const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const streamingContentRef = useRef<string>('');
+    const streamingReasoningRef = useRef<string>('');
+    const streamingToolCallsRef = useRef<any[]>([]);
 
     // Load experiment file
     useEffect(() => {
@@ -314,42 +322,217 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                 });
             }
         } else if (block.block_type === 'chat') {
-            // Execute chat via backend API
-            try {
-                const response = await fetch('http://localhost:5337/api/llm/generate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        prompt: block.source,
-                        model: block.chat_config?.model || 'gpt-4',
-                        provider: block.chat_config?.provider || 'openai',
-                        npc: block.chat_config?.npc,
-                        stream: false
-                    })
-                });
+            // Execute chat via streaming API - set up listeners at call time like chat view
+            const streamId = generateId();
+            const model = block.chat_config?.model || modelsToDisplay[0]?.value || 'gpt-4';
+            const selectedModelObj = modelsToDisplay.find((m: any) => m.value === model);
+            const provider = selectedModelObj?.provider || block.chat_config?.provider || 'openai';
+            const npc = block.chat_config?.npc;
 
-                if (!response.ok) {
-                    throw new Error(await response.text());
+            setExecutingBlocks(prev => new Set(prev).add(block.id));
+            setStreamingBlockId(block.id);
+            setStreamingContent('');
+            setStreamingReasoningContent('');
+            setStreamingToolCalls([]);
+            streamingContentRef.current = '';
+            streamingReasoningRef.current = '';
+            streamingToolCallsRef.current = [];
+
+            // Helper to process a parsed event (matches utils.tsx pattern)
+            const processEvent = (parsed: any) => {
+                let content = '', reasoningContent = '', toolCalls: any[] | null = null;
+
+                if (parsed.choices?.[0]?.delta) {
+                    content = parsed.choices[0].delta.content || '';
+                    reasoningContent = parsed.choices[0].delta.reasoning_content || '';
                 }
 
-                const result = await response.json();
-                const execution: BlockExecution = {
-                    timestamp: new Date().toISOString(),
-                    duration_ms: Date.now() - startTime,
-                    config: block.chat_config || {},
-                    input_hashes: [],
-                    output_hash: '',
-                    status: 'success',
-                };
-                updateBlock(sectionId, block.id, {
-                    outputs: [{ output_type: 'chat_response', text: result.response || result.content || 'No response' }],
-                    execution_history: [...block.execution_history, execution],
-                });
-            } catch (err: any) {
-                updateBlock(sectionId, block.id, {
-                    outputs: [{ output_type: 'error', text: err.message }],
-                });
-            }
+                if (parsed.type) {
+                    const type = parsed.type;
+                    if (type === 'tool_execution_start' && Array.isArray(parsed.tool_calls)) {
+                        toolCalls = parsed.tool_calls;
+                    } else if ((type === 'tool_start' || type === 'tool_complete' || type === 'tool_result' || type === 'tool_error') && parsed.name) {
+                        toolCalls = [{
+                            id: parsed.id || '',
+                            type: 'function',
+                            function: {
+                                name: parsed.name,
+                                arguments: parsed.args ? (typeof parsed.args === 'object' ? JSON.stringify(parsed.args, null, 2) : String(parsed.args)) : ''
+                            },
+                            status: type === 'tool_error' ? 'error' : ((type === 'tool_complete' || type === 'tool_result') ? 'complete' : 'running'),
+                            result_preview: parsed.result_preview || parsed.result || parsed.error || ''
+                        }];
+                    }
+                } else if (!content && parsed.tool_calls) {
+                    toolCalls = parsed.tool_calls;
+                }
+
+                return { content, reasoningContent, toolCalls };
+            };
+
+            // Set up stream listeners
+            const cleanupData = (window as any).api?.onStreamData?.((_: any, data: any) => {
+                if (data.streamId === streamId && data.chunk) {
+                    try {
+                        const chunk = data.chunk;
+                        let content = '', reasoningContent = '', toolCalls: any[] | null = null;
+
+                        if (typeof chunk === 'string') {
+                            // Handle SSE format - may contain multiple events
+                            const events = chunk.split(/\n\n/).filter((e: string) => e.trim());
+                            for (const event of events) {
+                                const trimmedEvent = event.trim();
+                                if (!trimmedEvent) continue;
+
+                                if (trimmedEvent.startsWith('data:')) {
+                                    const dataContent = trimmedEvent.replace(/^data:\s*/, '').trim();
+                                    if (dataContent === '[DONE]') continue;
+                                    if (dataContent) {
+                                        try {
+                                            const parsed = JSON.parse(dataContent);
+                                            const result = processEvent(parsed);
+                                            content += result.content;
+                                            reasoningContent += result.reasoningContent;
+                                            if (result.toolCalls) toolCalls = result.toolCalls;
+                                        } catch {
+                                            // Plain text fallback
+                                            content += dataContent;
+                                        }
+                                    }
+                                } else {
+                                    content += trimmedEvent;
+                                }
+                            }
+                        } else if (chunk?.choices) {
+                            content = chunk.choices[0]?.delta?.content || '';
+                            reasoningContent = chunk.choices[0]?.delta?.reasoning_content || '';
+                            toolCalls = chunk.tool_calls || null;
+                        } else if (chunk?.type) {
+                            const result = processEvent(chunk);
+                            content = result.content;
+                            reasoningContent = result.reasoningContent;
+                            toolCalls = result.toolCalls;
+                        }
+
+                        // Update content
+                        if (content) {
+                            streamingContentRef.current += content;
+                            setStreamingContent(streamingContentRef.current);
+                        }
+
+                        // Update reasoning
+                        if (reasoningContent) {
+                            streamingReasoningRef.current += reasoningContent;
+                            setStreamingReasoningContent(streamingReasoningRef.current);
+                        }
+
+                        // Update tool calls
+                        if (toolCalls) {
+                            const normalizedCalls = toolCalls.map((tc: any) => ({
+                                id: tc.id || '',
+                                type: tc.type || 'function',
+                                function: {
+                                    name: tc.function?.name || tc.name || '',
+                                    arguments: tc.args
+                                        ? (typeof tc.args === 'object' ? JSON.stringify(tc.args, null, 2) : String(tc.args))
+                                        : (tc.function?.arguments || '')
+                                },
+                                status: tc.status || 'running',
+                                result_preview: tc.result_preview || ''
+                            }));
+
+                            // Merge with existing
+                            const existing = [...streamingToolCallsRef.current];
+                            normalizedCalls.forEach((tc: any) => {
+                                const idx = existing.findIndex((mtc: any) => mtc.id === tc.id || mtc.function.name === tc.function.name);
+                                if (idx >= 0) {
+                                    existing[idx] = { ...existing[idx], ...tc };
+                                } else {
+                                    existing.push(tc);
+                                }
+                            });
+                            streamingToolCallsRef.current = existing;
+                            setStreamingToolCalls([...existing]);
+                        }
+                    } catch {
+                        // Partial chunk, ignore
+                    }
+                }
+            });
+
+            const cleanupComplete = (window as any).api?.onStreamComplete?.((_: any, data: any) => {
+                if (data.streamId === streamId) {
+                    const finalContent = streamingContentRef.current;
+                    const finalReasoning = streamingReasoningRef.current;
+                    const finalToolCalls = streamingToolCallsRef.current;
+                    const execution: BlockExecution = {
+                        timestamp: new Date().toISOString(),
+                        duration_ms: Date.now() - startTime,
+                        config: { model, provider },
+                        input_hashes: [],
+                        output_hash: '',
+                        status: 'success',
+                    };
+                    updateBlock(sectionId, block.id, {
+                        outputs: [{
+                            output_type: 'chat_response',
+                            text: finalContent || 'No response',
+                            reasoningContent: finalReasoning || undefined,
+                            toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
+                        }],
+                        execution_history: [...block.execution_history, execution],
+                    });
+                    setExecutingBlocks(prev => {
+                        const next = new Set(prev);
+                        next.delete(block.id);
+                        return next;
+                    });
+                    setStreamingBlockId(null);
+                    setStreamingContent('');
+                    setStreamingReasoningContent('');
+                    setStreamingToolCalls([]);
+                    streamingContentRef.current = '';
+                    streamingReasoningRef.current = '';
+                    streamingToolCallsRef.current = [];
+                    cleanupData?.();
+                    cleanupComplete?.();
+                    cleanupError?.();
+                }
+            });
+
+            const cleanupError = (window as any).api?.onStreamError?.((_: any, data: any) => {
+                if (data.streamId === streamId) {
+                    updateBlock(sectionId, block.id, {
+                        outputs: [{ output_type: 'error', text: data.error || 'Stream error' }],
+                    });
+                    setExecutingBlocks(prev => {
+                        const next = new Set(prev);
+                        next.delete(block.id);
+                        return next;
+                    });
+                    setStreamingBlockId(null);
+                    setStreamingContent('');
+                    setStreamingReasoningContent('');
+                    setStreamingToolCalls([]);
+                    streamingContentRef.current = '';
+                    streamingReasoningRef.current = '';
+                    streamingToolCallsRef.current = [];
+                    cleanupData?.();
+                    cleanupComplete?.();
+                    cleanupError?.();
+                }
+            });
+
+            // Execute the stream
+            (window as any).api?.executeCommandStream?.({
+                streamId,
+                commandstr: block.source,
+                currentPath,
+                conversationId: `exp-${block.id}`,
+                model,
+                provider,
+                npc: npc || null,
+            });
         } else if (block.block_type === 'jinx') {
             // Execute jinx via backend API
             try {
@@ -530,40 +713,119 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
         }
     };
 
-    const renderBlockOutputs = (block: ExpBlock) => {
-        if (!block.outputs?.length) return null;
+    const renderToolCall = (tool: any, index: number) => {
+        const statusColor = tool.status === 'error' ? 'border-red-500'
+            : tool.status === 'complete' ? 'border-green-500'
+            : 'border-blue-500';
 
         return (
-            <div className="mt-2 border-t border-white/10 pt-2">
-                {block.outputs.map((output, i) => (
-                    <div key={i} className="text-sm">
-                        {output.output_type === 'error' ? (
-                            <pre className="text-red-400 bg-red-900/20 p-2 rounded overflow-x-auto">{output.text}</pre>
-                        ) : output.output_type === 'chat_response' ? (
-                            <div className="prose prose-invert prose-sm max-w-none bg-white/5 p-2 rounded">
-                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{output.text}</ReactMarkdown>
-                            </div>
-                        ) : (
-                            <pre className="text-gray-300 bg-white/5 p-2 rounded overflow-x-auto">{
-                                typeof output === 'string' ? output : JSON.stringify(output, null, 2)
-                            }</pre>
-                        )}
-                    </div>
-                ))}
+            <div key={tool.id || index} className={`my-2 px-3 py-2 bg-white/5 rounded-md border-l-2 ${statusColor}`}>
+                <div className="text-xs text-blue-400 mb-1 font-semibold flex items-center gap-2">
+                    <span>Tool: {tool.function?.name || 'unknown'}</span>
+                    {tool.status === 'running' && (
+                        <span className="text-yellow-400 animate-pulse">running...</span>
+                    )}
+                    {tool.status === 'complete' && (
+                        <span className="text-green-400">complete</span>
+                    )}
+                    {tool.status === 'error' && (
+                        <span className="text-red-400">error</span>
+                    )}
+                </div>
+                {tool.function?.arguments && (
+                    <pre className="text-xs text-gray-400 bg-black/20 p-1 rounded mt-1 overflow-x-auto max-h-24">
+                        {tool.function.arguments}
+                    </pre>
+                )}
+                {tool.result_preview && (
+                    <pre className={`text-xs ${tool.status === 'error' ? 'text-red-400' : 'text-gray-300'} bg-black/20 p-1 rounded mt-1 overflow-x-auto max-h-32`}>
+                        {tool.result_preview}
+                    </pre>
+                )}
             </div>
         );
     };
 
-    const renderBlock = (block: ExpBlock, sectionId: string, index: number) => {
+    const renderBlockOutputs = (block: ExpBlock) => {
+        const isStreaming = streamingBlockId === block.id;
+        const hasStreamContent = isStreaming && (streamingContent || streamingReasoningContent || streamingToolCalls.length > 0);
+        const hasOutputs = block.outputs?.length;
+
+        if (!hasOutputs && !hasStreamContent) return null;
+
+        return (
+            <div className="mt-2 border-t border-white/10 pt-2 space-y-2">
+                {isStreaming ? (
+                    <div className="text-sm space-y-2">
+                        {/* Streaming reasoning content */}
+                        {streamingReasoningContent && (
+                            <div className="px-3 py-2 bg-white/5 rounded-md border-l-2 border-yellow-500">
+                                <div className="text-xs text-yellow-400 mb-1 font-semibold">Thinking Process:</div>
+                                <div className="prose prose-invert prose-sm max-w-none text-gray-300">
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamingReasoningContent}</ReactMarkdown>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Streaming tool calls */}
+                        {streamingToolCalls.map((tool, i) => renderToolCall(tool, i))}
+
+                        {/* Streaming content */}
+                        {streamingContent && (
+                            <div className="prose prose-invert prose-sm max-w-none bg-white/5 p-2 rounded">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamingContent}</ReactMarkdown>
+                                <span className="inline-block w-2 h-4 bg-purple-400 animate-pulse ml-1" />
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    block.outputs?.map((output, i) => (
+                        <div key={i} className="text-sm space-y-2">
+                            {output.output_type === 'error' ? (
+                                <pre className="text-red-400 bg-red-900/20 p-2 rounded overflow-x-auto">{output.text}</pre>
+                            ) : output.output_type === 'chat_response' ? (
+                                <>
+                                    {/* Saved reasoning content */}
+                                    {output.reasoningContent && (
+                                        <div className="px-3 py-2 bg-white/5 rounded-md border-l-2 border-yellow-500">
+                                            <div className="text-xs text-yellow-400 mb-1 font-semibold">Thinking Process:</div>
+                                            <div className="prose prose-invert prose-sm max-w-none text-gray-300">
+                                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{output.reasoningContent}</ReactMarkdown>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Saved tool calls */}
+                                    {output.toolCalls?.map((tool: any, ti: number) => renderToolCall(tool, ti))}
+
+                                    {/* Main content */}
+                                    <div className="prose prose-invert prose-sm max-w-none bg-white/5 p-2 rounded">
+                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{output.text}</ReactMarkdown>
+                                    </div>
+                                </>
+                            ) : (
+                                <pre className="text-gray-300 bg-white/5 p-2 rounded overflow-x-auto">{
+                                    typeof output === 'string' ? output : JSON.stringify(output, null, 2)
+                                }</pre>
+                            )}
+                        </div>
+                    ))
+                )}
+            </div>
+        );
+    };
+
+    const renderBlock = (block: ExpBlock, sectionId: string, _index: number) => {
         const isExpanded = expandedBlocks.has(block.id);
         const isEditing = editingBlocks.has(block.id);
+        const isExecuting = executingBlocks.has(block.id);
 
         return (
             <div
                 key={block.id}
                 className={`border rounded-lg overflow-hidden transition-all ${
                     block.in_paper ? 'border-green-500/30 bg-green-900/10' : 'border-white/10 bg-white/5'
-                }`}
+                } ${isExecuting ? 'border-purple-500/50' : ''}`}
             >
                 {/* Block header */}
                 <div className="flex items-center justify-between px-3 py-2 bg-white/5">
@@ -581,7 +843,13 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                                 {block.paper_label}
                             </span>
                         )}
-                        {block.execution_history.length > 0 && (
+                        {isExecuting && (
+                            <span className="text-xs text-purple-400 flex items-center gap-1">
+                                <span className="animate-spin inline-block w-3 h-3 border border-purple-400 border-t-transparent rounded-full" />
+                                Running...
+                            </span>
+                        )}
+                        {!isExecuting && block.execution_history.length > 0 && (
                             <span className="text-xs text-gray-500 flex items-center gap-1">
                                 <Clock size={10} />
                                 {block.execution_history.length} runs
@@ -591,11 +859,16 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                     <div className="flex items-center gap-1">
                         {(block.block_type === 'code' || block.block_type === 'chat' || block.block_type === 'jinx') && (
                             <button
-                                onClick={() => executeBlock(sectionId, block)}
-                                className="p-1.5 hover:bg-green-500/20 rounded text-green-400"
-                                title="Run"
+                                onClick={() => !isExecuting && executeBlock(sectionId, block)}
+                                className={`p-1.5 rounded ${isExecuting ? 'bg-purple-500/20 text-purple-400 cursor-wait' : 'hover:bg-green-500/20 text-green-400'}`}
+                                title={isExecuting ? 'Running...' : 'Run'}
+                                disabled={isExecuting}
                             >
-                                <Play size={12} />
+                                {isExecuting ? (
+                                    <span className="animate-spin inline-block w-3 h-3 border border-purple-400 border-t-transparent rounded-full" />
+                                ) : (
+                                    <Play size={12} />
+                                )}
                             </button>
                         )}
                         <button

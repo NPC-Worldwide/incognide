@@ -4,7 +4,8 @@ import {
     Terminal, Image, Trash, Users, Plus, ArrowUp, Camera, MessageSquare,
     ListFilter, ArrowDown,X, Wrench, FileText, Code2, FileJson, Paperclip,
     Send, BarChart3,Minimize2,  Maximize2, MessageCircle, BrainCircuit, Star, Origami, ChevronDown,
-    Clock, FolderTree, Search, HardDrive, Brain, GitBranch, Activity, Tag, Sparkles, Code, BookOpen, User
+    Clock, FolderTree, Search, HardDrive, Brain, GitBranch, Activity, Tag, Sparkles, Code, BookOpen, User,
+    RefreshCw, RotateCcw, Check, KeyRound, Bot, Zap
 } from 'lucide-react';
 
 import { Icon } from 'lucide-react';
@@ -42,6 +43,9 @@ import LibraryViewer from './LibraryViewer';
 import HelpViewer from './HelpViewer';
 import FolderViewer from './FolderViewer';
 import PathSwitcher from './PathSwitcher';
+import CronDaemonPanel from './CronDaemonPanel';
+import MemoryManager from './MemoryManager';
+import SearchPane from './SearchPane';
 import { LiveProvider, LivePreview, LiveError } from 'react-live';
 // Components for tile jinx runtime rendering
 import GraphViewer from './GraphViewer';
@@ -57,7 +61,7 @@ import AutosizeTextarea from './AutosizeTextarea';
 import ForceGraph2D from 'react-force-graph-2d';
 import { Pie, Bar, Line } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, PointElement, LineElement } from 'chart.js';
-import { Modal, Tabs, Card, Button, Input, Select, createWindowApiDatabaseClient, QueryChart, ImageEditor, WidgetBuilder, WidgetGrid, Widget, DataTable } from 'npcts';
+import { Modal, Tabs, Card, Button, Input, Select, createWindowApiDatabaseClient, QueryChart, ImageEditor, WidgetBuilder, WidgetGrid, Widget, DataTable, Lightbox, ImageGrid, StarRating, RangeSlider, SortableList } from 'npcts';
 
 // Register chart.js components for jinx runtime
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, PointElement, LineElement);
@@ -120,7 +124,7 @@ import ConversationLabeling from './ConversationLabeling';
 import ContextFilesPanel from './ContextFilesPanel';
 import DataLabeler from './DataLabeler';
 import ChatInput from './ChatInput';
-import { StudioContext } from '../studioActions';
+import { StudioContext, executeStudioAction } from '../studioActions';
 
 // Stable TileJinxContent component - defined at module level to prevent state loss on parent re-renders
 const TileJinxContentExternal: React.FC<{
@@ -214,6 +218,19 @@ const TileJinxContentExternal: React.FC<{
         </div>
     );
 });
+
+// Web search providers (privacy-focused options)
+type WebSearchProvider = 'duckduckgo' | 'startpage' | 'ecosia' | 'brave' | 'wikipedia' | 'perplexity' | 'google' | 'sibiji';
+const WEB_SEARCH_PROVIDERS: Record<WebSearchProvider, { name: string; url: string }> = {
+    duckduckgo: { name: 'DDG', url: 'https://duckduckgo.com/?q=' },
+    startpage: { name: 'Startpage', url: 'https://www.startpage.com/sp/search?query=' },
+    ecosia: { name: 'Ecosia', url: 'https://www.ecosia.org/search?q=' },
+    brave: { name: 'Brave', url: 'https://search.brave.com/search?q=' },
+    wikipedia: { name: 'Wikipedia', url: 'https://en.wikipedia.org/wiki/Special:Search?search=' },
+    perplexity: { name: 'Perplexity', url: 'https://www.perplexity.ai/search?q=' },
+    google: { name: 'Google', url: 'https://www.google.com/search?q=' },
+    sibiji: { name: 'Sibiji', url: 'https://sibiji.com/search?q=' },
+};
 
 const ChatInterface = () => {
     const [gitPanelCollapsed, setGitPanelCollapsed] = useState(true);
@@ -347,6 +364,10 @@ const ChatInterface = () => {
         const saved = localStorage.getItem('npcStudioShowDateTime');
         return saved !== null ? JSON.parse(saved) : false;
     });
+    const [showCronDaemonPanel, setShowCronDaemonPanel] = useState(false);
+    const [showMemoryManager, setShowMemoryManager] = useState(false);
+    const [pendingMemoryCount, setPendingMemoryCount] = useState(0);
+    const [kgGeneration, setKgGeneration] = useState<number | null>(null);
     const [gitModalOpen, setGitModalOpen] = useState(false);
     const [gitModalTab, setGitModalTab] = useState<'status' | 'diff' | 'branches' | 'history'>('status');
     const [gitDiffContent, setGitDiffContent] = useState<{ staged: string; unstaged: string } | null>(null);
@@ -540,11 +561,23 @@ const ChatInterface = () => {
     // Sidebar section order: array of section IDs in display order
     const [sidebarSectionOrder, setSidebarSectionOrder] = useState<string[]>(() => {
         const saved = localStorage.getItem('sidebarSectionOrder');
-        return saved !== null ? JSON.parse(saved) : ['websites', 'files', 'conversations'];
+        if (saved !== null) {
+            const parsed = JSON.parse(saved);
+            // Ensure 'git' is in the order if it's missing (backwards compat)
+            if (!parsed.includes('git')) {
+                parsed.push('git');
+            }
+            return parsed;
+        }
+        return ['websites', 'files', 'conversations', 'git'];
     });
     const chatContainerRef = useRef(null);
 
     const [searchTerm, setSearchTerm] = useState('');
+    const [webSearchTerm, setWebSearchTerm] = useState('');
+    const [webSearchProvider, setWebSearchProvider] = useState<WebSearchProvider>(() => {
+        return (localStorage.getItem('web-search-provider') as WebSearchProvider) || 'duckduckgo';
+    });
     const [isSearching, setIsSearching] = useState(false);
     const [isGlobalSearch, setIsGlobalSearch] = useState(false);
     const [searchLoading, setSearchLoading] = useState(false);
@@ -638,6 +671,23 @@ const ChatInterface = () => {
     useEffect(() => {
         rootLayoutNodeRef.current = rootLayoutNode;
     }, [rootLayoutNode]);
+
+    // Listen for CLI workspace open command (incognide /path/to/folder)
+    useEffect(() => {
+        const api = window as any;
+        if (!api.api?.onCliOpenWorkspace) return;
+
+        const unsubscribe = api.api.onCliOpenWorkspace((data: { folder: string }) => {
+            if (data?.folder) {
+                console.log('[CLI] Opening workspace from CLI:', data.folder);
+                setCurrentPath(data.folder);
+            }
+        });
+
+        return () => {
+            if (unsubscribe) unsubscribe();
+        };
+    }, []);
 
     // Git functions
     const loadGitStatus = useCallback(async () => {
@@ -871,6 +921,35 @@ const ChatInterface = () => {
             return matchesStatus && matchesSearch;
         });
     }, [memories, memoryFilter, memorySearchTerm]);
+
+    // Fetch pending memory count and KG generation for status bar
+    useEffect(() => {
+        const fetchStatusBarData = async () => {
+            try {
+                // Fetch pending memory count
+                const pendingResult = await (window as any).api?.memory_pending?.({
+                    directory_path: currentPath,
+                    limit: 100
+                });
+                if (pendingResult?.memories) {
+                    setPendingMemoryCount(pendingResult.memories.length);
+                }
+
+                // Fetch KG generation
+                const kgResult = await (window as any).api?.kg_getStatus?.();
+                if (kgResult?.generation !== undefined) {
+                    setKgGeneration(kgResult.generation);
+                }
+            } catch (err) {
+                console.error('Error fetching status bar data:', err);
+            }
+        };
+
+        fetchStatusBarData();
+        // Refresh every 30 seconds
+        const interval = setInterval(fetchStatusBarData, 30000);
+        return () => clearInterval(interval);
+    }, [currentPath]);
 
     // Load theme colors from localStorage on startup
     useEffect(() => {
@@ -1345,6 +1424,18 @@ const ChatInterface = () => {
                 }
                 return;
             }
+
+            // Ctrl+Shift+R - Hard refresh browser pane, or refresh incognide for other panes
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'r' || e.key === 'R')) {
+                const activePane = contentDataRef.current[activeContentPaneId];
+                if (activePane?.contentType === 'browser' && activePane?.contentId) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    (window as any).api?.browserHardRefresh?.({ viewId: activePane.contentId });
+                    return;
+                }
+                // For non-browser panes, let the default Electron refresh happen
+            }
         };
 
         window.addEventListener('keydown', handleKeyDown);
@@ -1655,6 +1746,37 @@ const closeContentPane = useCallback((paneId, nodePath) => {
         return newRoot;
     });
 }, [activeContentPaneId, setActiveContentPaneId]);
+
+// Listen for external studio action execution (CLI/LLM control)
+// NOTE: This must be after performSplit and closeContentPane are defined
+useEffect(() => {
+    const api = window as any;
+    if (!api.api?.onExecuteStudioAction) return;
+
+    const unsubscribe = api.api.onExecuteStudioAction(async (data: { action: string, args: any }) => {
+        console.log('[EXTERNAL] Executing studio action:', data.action, data.args);
+
+        const ctx: StudioContext = {
+            rootLayoutNode,
+            contentDataRef,
+            activeContentPaneId,
+            setActiveContentPaneId,
+            setRootLayoutNode,
+            performSplit,
+            closeContentPane,
+            updateContentPane,
+            generateId,
+            findPanePath: (node: any, paneId: string, path: number[] = []) => findNodePath(node, paneId),
+        };
+
+        const result = await executeStudioAction(data.action, data.args || {}, ctx);
+        console.log('[EXTERNAL] Action result:', result);
+    });
+
+    return () => {
+        if (unsubscribe) unsubscribe();
+    };
+}, [rootLayoutNode, activeContentPaneId, performSplit, closeContentPane, updateContentPane]);
 
 // Message labeling handlers (defined before renderChatView to avoid reference errors)
 const handleLabelMessage = useCallback((message: any) => {
@@ -2102,26 +2224,59 @@ const handleBranchOptionsConfirm = useCallback(async (options: BranchOptions) =>
     setConversationBranches, setCurrentBranchId, setRootLayoutNode, setCurrentModel, currentModel,
     currentProvider, currentNPC, availableModels, availableNPCs, currentPath, setError, setIsStreaming]);
 
-// Handle running a Python script in a new terminal
+// Track terminals associated with scripts for reuse
+const scriptTerminalMapRef = useRef<Map<string, string>>(new Map());
+
+// Handle running a Python script - saves first, reuses terminal if available
 const handleRunScript = useCallback(async (scriptPath: string) => {
     if (!scriptPath) return;
 
-    // Create a new terminal pane
-    const newPaneId = `pane-${Date.now()}`;
+    // First, save the file if it has unsaved changes
+    const editorPaneId = Object.keys(contentDataRef.current).find(
+        id => contentDataRef.current[id]?.contentId === scriptPath && contentDataRef.current[id]?.contentType === 'editor'
+    );
+    if (editorPaneId) {
+        const paneData = contentDataRef.current[editorPaneId];
+        if (paneData?.fileChanged && paneData?.fileContent) {
+            await window.api?.writeFileContent?.(scriptPath, paneData.fileContent);
+            paneData.fileChanged = false;
+            setRootLayoutNode(p => ({ ...p }));
+        }
+    }
 
-    // Add terminal to content data
-    contentDataRef.current[newPaneId] = {
-        contentType: 'terminal',
-        contentId: newPaneId,
-        terminalId: newPaneId
-    };
+    // Check if we have an existing terminal for this script
+    let terminalPaneId = scriptTerminalMapRef.current.get(scriptPath);
 
-    // Add pane to layout using balanced grid
-    setRootLayoutNode((prev) => addPaneToLayout(prev, newPaneId));
+    // Verify the terminal still exists
+    if (terminalPaneId && !contentDataRef.current[terminalPaneId]) {
+        scriptTerminalMapRef.current.delete(scriptPath);
+        terminalPaneId = undefined;
+    }
 
-    setActiveContentPaneId(newPaneId);
+    // If no existing terminal, create a new one
+    if (!terminalPaneId) {
+        terminalPaneId = `pane-${Date.now()}`;
 
-    // Wait for terminal to initialize then send the run command
+        // Add terminal to content data
+        contentDataRef.current[terminalPaneId] = {
+            contentType: 'terminal',
+            contentId: terminalPaneId,
+            terminalId: terminalPaneId
+        };
+
+        // Add pane to layout using balanced grid
+        setRootLayoutNode((prev) => addPaneToLayout(prev, terminalPaneId));
+
+        // Track this terminal for this script
+        scriptTerminalMapRef.current.set(scriptPath, terminalPaneId);
+    }
+
+    setActiveContentPaneId(terminalPaneId);
+
+    // Wait for terminal to initialize (if new) then send the run command
+    const delay = contentDataRef.current[terminalPaneId]?.terminalInitialized ? 50 : 500;
+    const paneId = terminalPaneId; // Capture for closure
+
     setTimeout(async () => {
         // Get the script directory and filename
         const scriptDir = scriptPath.substring(0, scriptPath.lastIndexOf('/'));
@@ -2140,8 +2295,13 @@ const handleRunScript = useCallback(async (scriptPath: string) => {
 
         // Send the command to run the script
         const runCommand = `cd "${scriptDir}" && ${pythonCmd} "${scriptName}"\n`;
-        window.api?.writeToTerminal?.({ id: newPaneId, data: runCommand });
-    }, 500);
+        window.api?.writeToTerminal?.({ id: paneId, data: runCommand });
+
+        // Mark terminal as initialized for faster re-runs
+        if (contentDataRef.current[paneId]) {
+            contentDataRef.current[paneId].terminalInitialized = true;
+        }
+    }, delay);
 }, [currentPath, setRootLayoutNode, setActiveContentPaneId]);
 
 // Handle sending selected code to an open terminal (Ctrl+Enter)
@@ -2150,7 +2310,7 @@ const handleSendToTerminal = useCallback((text: string) => {
 
     // Find the first open terminal pane
     const terminalPaneId = Object.keys(contentDataRef.current).find(
-        id => contentDataRef.current[id]?.type === 'terminal'
+        id => contentDataRef.current[id]?.contentType === 'terminal'
     );
 
     if (!terminalPaneId) {
@@ -2158,8 +2318,16 @@ const handleSendToTerminal = useCallback((text: string) => {
         return;
     }
 
-    // Send the text to the terminal (add newline to execute)
-    window.api?.writeToTerminal?.({ id: terminalPaneId, data: text + '\n' });
+    // Get the terminal session ID (contentId), not the pane ID
+    const terminalSessionId = contentDataRef.current[terminalPaneId]?.contentId;
+    if (!terminalSessionId) {
+        console.warn('Terminal session not ready');
+        return;
+    }
+
+    // Use bracketed paste mode so multiline code is treated as a single block
+    const bracketedPaste = '\x1b[200~' + text + '\x1b[201~\n';
+    window.api?.writeToTerminal?.({ id: terminalSessionId, data: bracketedPaste });
 }, []);
 
 // Render functions for different content pane types
@@ -2492,6 +2660,110 @@ const renderBranchComparisonPane = useCallback(({ nodeId }) => {
     );
 }, []);
 
+const handleAICodeAction = useCallback(async (type: string, selectedText: string) => {
+    if (!selectedText) return;
+
+    const prompts = {
+        ask: `Explain this code:\n\n\`\`\`\n${selectedText}\n\`\`\``,
+        document: `Add comments and documentation to this code:\n\n\`\`\`\n${selectedText}\n\`\`\``,
+        edit: `Refactor and improve this code:\n\n\`\`\`\n${selectedText}\n\`\`\``
+    };
+
+    const streamId = `ai-action-${Date.now()}`;
+
+    setAiEditModal({
+        isOpen: true,
+        type,
+        selectedText,
+        selectionStart: 0,
+        selectionEnd: 0,
+        aiResponse: '',
+        aiResponseDiff: [],
+        showDiff: false,
+        isLoading: true,
+        streamId,
+        modelForEdit: null,
+        npcForEdit: null,
+        customEditPrompt: prompts[type] || ''
+    });
+
+    const prompt = prompts[type];
+
+    // Set up stream listeners
+    const cleanupData = window.api?.onStreamData?.((_, data) => {
+        if (data.streamId === streamId && data.chunk) {
+            try {
+                const chunk = data.chunk;
+                let content = '';
+                if (typeof chunk === 'string') {
+                    if (chunk.startsWith('data:')) {
+                        const dataContent = chunk.slice(5).trim();
+                        if (dataContent === '[DONE]') return;
+                        try {
+                            const parsed = JSON.parse(dataContent);
+                            content = parsed.choices?.[0]?.delta?.content || parsed.content || '';
+                        } catch {
+                            content = dataContent;
+                        }
+                    } else {
+                        content = chunk;
+                    }
+                }
+                if (content) {
+                    setAiEditModal(prev => ({
+                        ...prev,
+                        aiResponse: (prev.aiResponse || '') + content
+                    }));
+                }
+            } catch (e) {
+                // Partial chunk, ignore
+            }
+        }
+    });
+
+    const cleanupComplete = window.api?.onStreamComplete?.((_, data) => {
+        if (data.streamId === streamId) {
+            setAiEditModal(prev => ({ ...prev, isLoading: false }));
+            cleanupData?.();
+            cleanupComplete?.();
+        }
+    });
+
+    const cleanupError = window.api?.onStreamError?.((_, data) => {
+        if (data.streamId === streamId) {
+            setAiEditModal(prev => ({
+                ...prev,
+                aiResponse: prev.aiResponse || `Error: ${data.error}`,
+                isLoading: false
+            }));
+            cleanupData?.();
+            cleanupComplete?.();
+            cleanupError?.();
+        }
+    });
+
+    // Create a temporary conversation and start the stream
+    const conversation = await window.api?.createConversation?.({ directory_path: currentPath });
+    if (!conversation?.id) {
+        setAiEditModal(prev => ({
+            ...prev,
+            aiResponse: 'Error: Failed to create conversation',
+            isLoading: false
+        }));
+        return;
+    }
+
+    window.api?.executeCommandStream?.({
+        streamId,
+        commandstr: prompt,
+        currentPath,
+        conversationId: conversation.id,
+        model: currentModel,
+        provider: currentProvider,
+        executionMode: 'chat'
+    });
+}, [currentModel, currentProvider, currentPath]);
+
 const renderFileEditor = useCallback(({ nodeId }) => {
     const paneData = contentDataRef.current[nodeId];
     if (!paneData || !paneData.contentId) {
@@ -2515,7 +2787,7 @@ const renderFileEditor = useCallback(({ nodeId }) => {
             handleEditorCopy={() => {}}
             handleEditorPaste={() => {}}
             handleAddToChat={() => {}}
-            handleAIEdit={() => {}}
+            handleAIEdit={handleAICodeAction}
             startAgenticEdit={() => {}}
             onGitBlame={() => {}}
             setPromptModal={setPromptModal}
@@ -2524,7 +2796,7 @@ const renderFileEditor = useCallback(({ nodeId }) => {
             onSendToTerminal={handleSendToTerminal}
         />
     );
-}, [activeContentPaneId, editorContextMenuPos, aiEditModal, renamingPaneId, editedFileName, setRootLayoutNode, currentPath, handleRunScript, handleSendToTerminal]);
+}, [activeContentPaneId, editorContextMenuPos, aiEditModal, renamingPaneId, editedFileName, setRootLayoutNode, currentPath, handleRunScript, handleSendToTerminal, handleAICodeAction]);
 
 const renderTerminalView = useCallback(({ nodeId, shell }: { nodeId: string, shell?: string }) => {
     return (
@@ -2852,6 +3124,225 @@ const renderHelpPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return <HelpViewer />;
 }, []);
 
+// Render Git pane (embedded git panel)
+const renderGitPane = useCallback(({ nodeId }: { nodeId: string }) => {
+    return (
+        <div className="flex flex-col h-full theme-bg-primary overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b theme-border">
+                <div className="flex items-center gap-3">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-purple-400">
+                        <line x1="6" y1="3" x2="6" y2="15"></line>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <circle cx="6" cy="18" r="3"></circle>
+                        <path d="M18 9a9 9 0 0 1-9 9"></path>
+                    </svg>
+                    <h2 className="text-lg font-semibold theme-text-primary">Git</h2>
+                    {gitStatus?.branch && <span className="text-sm theme-text-muted">({gitStatus.branch})</span>}
+                </div>
+                <button onClick={() => loadGitStatus()} className="p-2 theme-hover rounded-lg" title="Refresh">
+                    <RefreshCw size={16} />
+                </button>
+            </div>
+
+            {/* Tab Bar */}
+            <div className="flex border-b theme-border px-4">
+                {(['status', 'diff', 'branches', 'history'] as const).map(tab => (
+                    <button
+                        key={tab}
+                        onClick={() => {
+                            setGitModalTab(tab);
+                            if (tab === 'diff') loadGitDiff();
+                            if (tab === 'branches') loadGitBranches();
+                            if (tab === 'history') loadGitHistory();
+                        }}
+                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                            gitModalTab === tab
+                                ? 'border-purple-500 text-purple-400'
+                                : 'border-transparent theme-text-muted hover:theme-text-primary'
+                        }`}
+                    >
+                        {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    </button>
+                ))}
+            </div>
+
+            {/* Tab Content */}
+            <div className="flex-1 overflow-auto p-4">
+                {!gitStatus ? (
+                    <div className="text-center theme-text-muted py-8">No git repository in this directory</div>
+                ) : gitModalTab === 'status' ? (
+                    /* Status Tab */
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-4 text-sm">
+                            <span className="theme-text-primary font-medium">Branch: {gitStatus.branch}</span>
+                            {gitStatus.ahead > 0 && <span className="text-green-400">↑{gitStatus.ahead} ahead</span>}
+                            {gitStatus.behind > 0 && <span className="text-yellow-400">↓{gitStatus.behind} behind</span>}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="theme-bg-secondary rounded-lg p-3">
+                                <h3 className="text-sm font-medium text-green-400 mb-2">Staged ({(gitStatus.staged || []).length})</h3>
+                                <div className="space-y-1 max-h-48 overflow-y-auto">
+                                    {(gitStatus.staged || []).length === 0 ? (
+                                        <div className="text-xs theme-text-muted">No staged files</div>
+                                    ) : (gitStatus.staged || []).map((file: any) => (
+                                        <div key={file.path} className="flex items-center justify-between text-xs group">
+                                            <button
+                                                onClick={() => loadFileDiff(file.path, true)}
+                                                className="text-green-300 truncate flex-1 text-left hover:underline"
+                                            >
+                                                {file.path}
+                                            </button>
+                                            <button onClick={() => gitUnstageFile(file.path)} className="text-red-400 hover:text-red-300 px-2 opacity-0 group-hover:opacity-100">Unstage</button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="theme-bg-secondary rounded-lg p-3">
+                                <h3 className="text-sm font-medium text-yellow-400 mb-2">Unstaged ({(gitStatus.unstaged || []).length + (gitStatus.untracked || []).length})</h3>
+                                <div className="space-y-1 max-h-48 overflow-y-auto">
+                                    {(gitStatus.unstaged || []).length + (gitStatus.untracked || []).length === 0 ? (
+                                        <div className="text-xs theme-text-muted">No changes</div>
+                                    ) : [...(gitStatus.unstaged || []), ...(gitStatus.untracked || [])].map((file: any) => (
+                                        <div key={file.path} className="flex items-center justify-between text-xs group">
+                                            <button
+                                                onClick={() => loadFileDiff(file.path, false)}
+                                                className={`truncate flex-1 text-left hover:underline ${file.isUntracked ? 'text-gray-400' : 'text-yellow-300'}`}
+                                            >
+                                                {file.path}
+                                            </button>
+                                            <button onClick={() => gitStageFile(file.path)} className="text-green-400 hover:text-green-300 px-2 opacity-0 group-hover:opacity-100">Stage</button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Commit Section */}
+                        <div className="theme-bg-secondary rounded-lg p-3">
+                            <h3 className="text-sm font-medium theme-text-primary mb-2">Commit</h3>
+                            <textarea
+                                value={gitCommitMessage}
+                                onChange={(e) => setGitCommitMessage(e.target.value)}
+                                placeholder="Commit message..."
+                                className="w-full px-3 py-2 text-sm theme-bg-primary border theme-border rounded-lg resize-none h-20"
+                            />
+                            <div className="flex gap-2 mt-2">
+                                <button
+                                    onClick={gitCommitChanges}
+                                    disabled={!gitCommitMessage.trim() || (gitStatus.staged || []).length === 0}
+                                    className="px-3 py-1.5 text-xs bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg"
+                                >
+                                    Commit
+                                </button>
+                                <button
+                                    onClick={gitPushChanges}
+                                    className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 rounded-lg"
+                                >
+                                    Push
+                                </button>
+                                <button
+                                    onClick={gitPullChanges}
+                                    className="px-3 py-1.5 text-xs bg-purple-600 hover:bg-purple-500 rounded-lg"
+                                >
+                                    Pull
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                ) : gitModalTab === 'diff' ? (
+                    /* Diff Tab */
+                    <div className="space-y-2">
+                        {gitDiffContent ? (
+                            <pre className="text-xs font-mono whitespace-pre-wrap theme-bg-secondary p-3 rounded-lg overflow-auto max-h-[60vh]">
+                                {(gitDiffContent.staged + '\n' + gitDiffContent.unstaged).split('\n').map((line, i) => (
+                                    <div key={i} className={
+                                        line.startsWith('+') && !line.startsWith('+++') ? 'text-green-400' :
+                                        line.startsWith('-') && !line.startsWith('---') ? 'text-red-400' :
+                                        line.startsWith('@@') ? 'text-blue-400' :
+                                        'theme-text-muted'
+                                    }>{line}</div>
+                                ))}
+                            </pre>
+                        ) : (
+                            <div className="text-center theme-text-muted py-8">No diff available</div>
+                        )}
+                    </div>
+                ) : gitModalTab === 'branches' ? (
+                    /* Branches Tab */
+                    <div className="space-y-4">
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                placeholder="New branch name..."
+                                value={gitNewBranchName}
+                                onChange={(e) => setGitNewBranchName(e.target.value)}
+                                className="flex-1 px-3 py-2 text-sm theme-bg-secondary border theme-border rounded-lg"
+                            />
+                            <button
+                                onClick={gitCreateBranch}
+                                disabled={!gitNewBranchName.trim()}
+                                className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 disabled:opacity-50 rounded-lg"
+                            >
+                                Create Branch
+                            </button>
+                        </div>
+                        <div className="space-y-1">
+                            {gitBranches?.all?.map((branch: string) => (
+                                <div
+                                    key={branch}
+                                    className={`flex items-center justify-between p-2 rounded text-sm ${
+                                        branch === gitBranches.current ? 'bg-purple-900/30 border border-purple-500/30' : 'hover:bg-white/5'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        {branch === gitBranches.current && (
+                                            <span className="text-purple-400">●</span>
+                                        )}
+                                        <span className={branch === gitBranches.current ? 'text-purple-400 font-medium' : 'theme-text-primary'}>
+                                            {branch}
+                                        </span>
+                                    </div>
+                                    {branch !== gitBranches.current && (
+                                        <button
+                                            onClick={() => gitCheckoutBranch(branch)}
+                                            className="text-xs text-blue-400 hover:text-blue-300"
+                                        >
+                                            Checkout
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                ) : gitModalTab === 'history' ? (
+                    /* History Tab */
+                    <div className="space-y-2">
+                        {gitCommitHistory?.map((commit: any, i: number) => (
+                            <div key={i} className="theme-bg-secondary rounded-lg p-3">
+                                <div className="flex items-start justify-between">
+                                    <div className="flex-1">
+                                        <div className="text-sm theme-text-primary font-medium">{commit.message}</div>
+                                        <div className="text-xs theme-text-muted mt-1">
+                                            {commit.author} • {commit.date}
+                                        </div>
+                                    </div>
+                                    <code className="text-xs text-purple-400">{commit.hash?.slice(0, 7)}</code>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : null}
+            </div>
+        </div>
+    );
+}, [gitStatus, gitModalTab, gitDiffContent, gitBranches, gitCommitHistory, gitCommitMessage, gitNewBranchName,
+    setGitCommitMessage, setGitNewBranchName, setGitModalTab,
+    loadGitStatus, loadGitDiff, loadGitBranches, loadGitHistory, loadFileDiff,
+    gitStageFile, gitUnstageFile, gitCommitChanges, gitPushChanges, gitPullChanges, gitCreateBranch, gitCheckoutBranch]);
+
 // Render FolderViewer pane (for pane-based folder browsing)
 const renderFolderViewerPane = useCallback(({ nodeId }: { nodeId: string }) => {
     const paneData = contentDataRef.current[nodeId];
@@ -2927,6 +3418,29 @@ const renderDiskUsagePane = useCallback(({ nodeId }: { nodeId: string }) => {
         />
     );
 }, [isDarkMode]);
+
+// Render MemoryManager pane (for pane-based viewing)
+const renderMemoryManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
+    return (
+        <MemoryManager
+            isPane={true}
+            currentPath={currentPathRef.current}
+            currentNpc={currentNPC}
+        />
+    );
+}, [currentNPC]);
+
+// Render CronDaemonPanel pane (for pane-based viewing)
+const renderCronDaemonPane = useCallback(({ nodeId }: { nodeId: string }) => {
+    return (
+        <CronDaemonPanel
+            isPane={true}
+            currentPath={currentPathRef.current}
+            npcList={availableNPCs}
+            jinxList={availableJinxs}
+        />
+    );
+}, [availableNPCs, availableJinxs]);
 
 // Markdown Preview Component (needs to be a proper component for hooks)
 const MarkdownPreviewContent: React.FC<{ filePath: string }> = ({ filePath }) => {
@@ -3012,6 +3526,7 @@ const tileJinxScope = useMemo(() => ({
     Modal, Tabs, Card, Button, Input, Select, ImageEditor,
     createWindowApiDatabaseClient, QueryChart,
     WidgetBuilder, WidgetGrid, Widget, DataTable,
+    Lightbox, ImageGrid, StarRating, RangeSlider, SortableList,
     // Chart.js components (Chart is alias for ChartJS)
     Pie, Bar, Line, ChartJS, Chart: ChartJS,
     ArcElement, Tooltip, Legend,
@@ -3026,6 +3541,9 @@ const tileJinxScope = useMemo(() => ({
     KnowledgeGraphEditor,
     CtxEditor,
     PythonEnvSettings,
+    NPCTeamMenu,
+    JinxMenu,
+    McpServerMenu,
     // All lucide icons
     ...LucideIcons,
     // Real window, console, and JS built-ins (in case icons shadow them)
@@ -3239,7 +3757,23 @@ const renderMessageContextMenu = () => (
     return null;
   }, []);
 
-  const createAndAddPaneNodeToLayout = useCallback((contentType: string, contentId: string | null) => {
+  const createAndAddPaneNodeToLayout = useCallback((contentTypeOrOptions: string | { contentType: string; contentId?: string | null; diffStatus?: string; [key: string]: any }, contentId?: string | null) => {
+  // Support both (contentType, contentId) and ({ contentType, contentId, ...extras })
+  let contentType: string;
+  let finalContentId: string | null;
+  let extraProps: Record<string, any> = {};
+
+  if (typeof contentTypeOrOptions === 'object') {
+    contentType = contentTypeOrOptions.contentType;
+    finalContentId = contentTypeOrOptions.contentId || null;
+    // Extract any extra properties (exclude id since we generate our own)
+    const { contentType: _, contentId: __, id: ___, ...rest } = contentTypeOrOptions;
+    extraProps = rest;
+  } else {
+    contentType = contentTypeOrOptions;
+    finalContentId = contentId || null;
+  }
+
   // NEVER create a pane without contentType
   if (!contentType) {
     console.error('[createAndAddPaneNodeToLayout] Cannot create pane without contentType!');
@@ -3251,7 +3785,8 @@ const renderMessageContextMenu = () => (
   // Set content BEFORE creating layout node - never create empty panes
   contentDataRef.current[newPaneId] = {
     contentType,
-    contentId
+    contentId: finalContentId,
+    ...extraProps
   };
 
   setRootLayoutNode(oldRoot => {
@@ -3556,6 +4091,30 @@ const renderMessageContextMenu = () => (
         setActiveContentPaneId(newPaneId);
     }, []);
 
+    // Create MemoryManager pane
+    const createMemoryManagerPane = useCallback(async () => {
+        const newPaneId = generateId();
+        contentDataRef.current[newPaneId] = { contentType: 'memory-manager', contentId: 'memory-manager' };
+        setRootLayoutNode(oldRoot => addPaneToLayout(oldRoot, newPaneId));
+        setActiveContentPaneId(newPaneId);
+    }, []);
+
+    // Create CronDaemon pane
+    const createCronDaemonPane = useCallback(async () => {
+        const newPaneId = generateId();
+        contentDataRef.current[newPaneId] = { contentType: 'cron-daemon', contentId: 'cron-daemon' };
+        setRootLayoutNode(oldRoot => addPaneToLayout(oldRoot, newPaneId));
+        setActiveContentPaneId(newPaneId);
+    }, []);
+
+    // Create Search pane
+    const createSearchPane = useCallback(async (initialQuery?: string) => {
+        const newPaneId = generateId();
+        contentDataRef.current[newPaneId] = { contentType: 'search', contentId: 'search', initialQuery: initialQuery || '' };
+        setRootLayoutNode(oldRoot => addPaneToLayout(oldRoot, newPaneId));
+        setActiveContentPaneId(newPaneId);
+    }, []);
+
     // Create BrowserHistoryWeb pane (browser navigation graph)
     const createBrowserGraphPane = useCallback(async () => {
         const newPaneId = generateId();
@@ -3738,6 +4297,16 @@ useEffect(() => {
     });
     return () => cleanup?.();
 }, [createNewBrowser]);
+
+// Render SearchPane (for pane-based unified search)
+const renderSearchPane = useCallback(({ nodeId, initialQuery }: { nodeId: string; initialQuery?: string }) => {
+    return (
+        <SearchPane
+            initialQuery={initialQuery || ''}
+            currentPath={currentPathRef.current}
+        />
+    );
+}, []);
 
 const renderBrowserViewer = useCallback(({ nodeId }) => {
     return (
@@ -4807,6 +5376,14 @@ ${contextPrompt}`;
         setActiveContentPaneId(newPaneId);
     }, []);
 
+    // Create Git pane
+    const createGitPane = useCallback(async () => {
+        const newPaneId = generateId();
+        contentDataRef.current[newPaneId] = { contentType: 'git', contentId: 'git' };
+        setRootLayoutNode(oldRoot => addPaneToLayout(oldRoot, newPaneId));
+        setActiveContentPaneId(newPaneId);
+    }, []);
+
     const createNewTextFile = useCallback((defaultFilename?: string) => {
         const filename = defaultFilename || localStorage.getItem('npcStudio_defaultCodeFileType') || 'untitled.py';
         const finalDefault = filename.includes('.') ? filename : `untitled.${filename}`;
@@ -4990,7 +5567,11 @@ ${contextPrompt}`;
 
     useEffect(() => {
         if (currentPath) {
+            // Save to BOTH:
+            // - localStorage: for persistence across app restarts
+            // - sessionStorage: for window-specific isolation during hot-reload
             localStorage.setItem(LAST_ACTIVE_PATH_KEY, currentPath);
+            sessionStorage.setItem(LAST_ACTIVE_PATH_KEY, currentPath);
         }
     }, [currentPath]);
 
@@ -5215,13 +5796,16 @@ ${contextPrompt}`;
             // Only determine initial path on first load (when currentPath is empty)
             if (!currentPath) {
                 let initialPathToLoad = config.baseDir;
-                const storedPath = localStorage.getItem(LAST_ACTIVE_PATH_KEY);
+                // Check sessionStorage first (for hot-reload within same window),
+                // then localStorage (for persistence across app restarts)
+                const storedPath = sessionStorage.getItem(LAST_ACTIVE_PATH_KEY) || localStorage.getItem(LAST_ACTIVE_PATH_KEY);
                 if (storedPath) {
                     const pathExistsResponse = await window.api.readDirectoryStructure(storedPath);
                     if (!pathExistsResponse?.error) {
                         initialPathToLoad = storedPath;
                     } else {
                         console.warn(`Stored path "${storedPath}" is invalid or inaccessible. Falling back to default.`);
+                        sessionStorage.removeItem(LAST_ACTIVE_PATH_KEY);
                         localStorage.removeItem(LAST_ACTIVE_PATH_KEY);
                     }
                 } else if (config.default_folder) {
@@ -6042,6 +6626,44 @@ ${contextPrompt}`;
                                 className="px-4 py-2 theme-button-success rounded"
                             >
                                 Apply All
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* AI Code Action Modal (Explain, Add Comments, Refactor) */}
+            {aiEditModal.isOpen && ['ask', 'document', 'edit'].includes(aiEditModal.type) && (
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+                    <div className="theme-bg-secondary p-6 theme-border border rounded-lg shadow-xl max-w-3xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+                        <h3 className="text-lg font-medium mb-4">
+                            {aiEditModal.type === 'ask' ? 'Explanation' : aiEditModal.type === 'document' ? 'Comments' : 'Refactored Code'}
+                        </h3>
+                        <div className="flex-1 overflow-y-auto">
+                            {aiEditModal.isLoading ? (
+                                <div className="flex items-center justify-center py-8">
+                                    <div className="animate-spin w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+                                    <span className="ml-2 theme-text-muted">Generating...</span>
+                                </div>
+                            ) : (
+                                <pre className="whitespace-pre-wrap text-sm theme-text-primary bg-black/20 p-4 rounded overflow-auto">
+                                    {aiEditModal.aiResponse || 'No response'}
+                                </pre>
+                            )}
+                        </div>
+                        <div className="flex justify-end gap-3 mt-4">
+                            <button
+                                onClick={() => {
+                                    if (aiEditModal.aiResponse) {
+                                        navigator.clipboard.writeText(aiEditModal.aiResponse);
+                                    }
+                                }}
+                                className="px-4 py-2 theme-button rounded"
+                            >
+                                Copy
+                            </button>
+                            <button onClick={() => setAiEditModal({ isOpen: false })} className="px-4 py-2 theme-button rounded">
+                                Close
                             </button>
                         </div>
                     </div>
@@ -6958,9 +7580,13 @@ const layoutComponentApi = useMemo(() => ({
     renderPhotoViewerPane,
     renderLibraryViewerPane,
     renderHelpPane,
+    renderGitPane,
     renderFolderViewerPane,
     renderProjectEnvPane,
     renderDiskUsagePane,
+    renderMemoryManagerPane,
+    renderCronDaemonPane,
+    renderSearchPane,
     renderMarkdownPreviewPane,
     renderTileJinxPane,
     renderBranchComparisonPane,
@@ -7010,9 +7636,13 @@ const layoutComponentApi = useMemo(() => ({
     renderPhotoViewerPane,
     renderLibraryViewerPane,
     renderHelpPane,
+    renderGitPane,
     renderFolderViewerPane,
     renderProjectEnvPane,
     renderDiskUsagePane,
+    renderMemoryManagerPane,
+    renderCronDaemonPane,
+    renderSearchPane,
     renderMarkdownPreviewPane,
     renderTileJinxPane,
     renderBranchComparisonPane,
@@ -7452,12 +8082,22 @@ const renderMainContent = () => {
     // Top bar component - always visible
     const topBar = (
         <div className="flex-shrink-0 h-8 px-2 flex items-center gap-3 text-[11px] theme-bg-secondary border-b theme-border">
-            {/* Path Switcher - left */}
+            {/* Settings - left of path */}
+            <button
+                onClick={() => createSettingsPane?.()}
+                className="p-1 theme-hover rounded theme-text-muted"
+                title="Settings"
+            >
+                <Settings size={14} />
+            </button>
+
+            {/* Path Switcher with Env button inside */}
             <PathSwitcher
                 currentPath={currentPath}
                 baseDir={baseDir}
                 onPathChange={switchToPath}
                 onGoUp={() => goUpDirectory(currentPath, baseDir, switchToPath, setError)}
+                onOpenEnv={() => createProjectEnvPane?.()}
             />
 
             <div className="flex-1" />
@@ -7481,7 +8121,8 @@ const renderMainContent = () => {
                     onKeyDown={(e) => {
                         if (e.key === 'Enter' && searchTerm.trim()) {
                             e.preventDefault();
-                            setSearchResultsModalOpen(true);
+                            createSearchPane(searchTerm.trim());
+                            setSearchTerm('');
                         }
                     }}
                     placeholder={isGlobalSearch ? "Global search (Ctrl+Shift+F)..." : "Search (Ctrl+F)..."}
@@ -7511,22 +8152,68 @@ const renderMainContent = () => {
                 )}
             </div>
 
+            {/* Web Search - separate input */}
+            <div className="flex items-center gap-2 max-w-xs w-full">
+                <Globe size={14} className="text-cyan-400 flex-shrink-0" />
+                <input
+                    type="text"
+                    value={webSearchTerm}
+                    onChange={(e) => setWebSearchTerm(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' && webSearchTerm.trim()) {
+                            e.preventDefault();
+                            const provider = WEB_SEARCH_PROVIDERS[webSearchProvider];
+                            const url = provider.url + encodeURIComponent(webSearchTerm.trim());
+                            createNewBrowser(url);
+                            setWebSearchTerm('');
+                        }
+                    }}
+                    placeholder={`Web (${WEB_SEARCH_PROVIDERS[webSearchProvider].name})`}
+                    className="flex-1 bg-transparent theme-text-primary text-xs focus:outline-none"
+                />
+                <select
+                    value={webSearchProvider}
+                    onChange={(e) => {
+                        setWebSearchProvider(e.target.value as WebSearchProvider);
+                        localStorage.setItem('web-search-provider', e.target.value);
+                    }}
+                    className="bg-transparent text-[10px] theme-text-muted focus:outline-none cursor-pointer"
+                >
+                    {Object.entries(WEB_SEARCH_PROVIDERS).map(([key, { name }]) => (
+                        <option key={key} value={key} className="bg-gray-800">{name}</option>
+                    ))}
+                </select>
+            </div>
+
             <div className="flex-1" />
 
-            {/* DateTime - right */}
+            {/* Right side - Disk Usage, Cron/Daemon, DateTime */}
             <div className="flex items-center gap-2">
                 <button
-                    onClick={() => setShowDateTime(!showDateTime)}
+                    onClick={() => createDiskUsagePane?.()}
                     className="p-1 theme-hover rounded theme-text-muted"
-                    title={showDateTime ? "Hide date/time" : "Show date/time"}
+                    title="Disk Usage Analyzer"
+                >
+                    <HardDrive size={14} />
+                </button>
+                <button
+                    onClick={() => createCronDaemonPane()}
+                    className="p-1 theme-hover rounded theme-text-muted"
+                    title="Cron Jobs & Daemons"
                 >
                     <Clock size={14} />
                 </button>
-                {showDateTime && (
-                    <span className="theme-text-muted tabular-nums text-[10px]">
-                        {new Date().toLocaleDateString()} {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                )}
+                <span
+                    className="theme-text-muted tabular-nums text-[10px] cursor-pointer hover:text-gray-300"
+                    onClick={() => setShowDateTime(!showDateTime)}
+                    title={showDateTime ? "Hide date/time" : "Show date/time"}
+                >
+                    {showDateTime ? (
+                        `${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                    ) : (
+                        new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    )}
+                </span>
             </div>
         </div>
     );
@@ -7589,6 +8276,7 @@ const renderMainContent = () => {
                     gitBranch={gitStatus?.branch || null}
                     gitStatus={gitStatus}
                     setGitModalOpen={setGitModalOpen}
+                    createGitPane={createGitPane}
                     directoryConversations={directoryConversations}
                     setWorkspaceModalOpen={setWorkspaceModalOpen}
                     paneItems={[]}
@@ -7598,6 +8286,12 @@ const renderMainContent = () => {
                     isPredictiveTextEnabled={isPredictiveTextEnabled}
                     setIsPredictiveTextEnabled={setIsPredictiveTextEnabled}
                     createHelpPane={createHelpPane}
+                    pendingMemoryCount={pendingMemoryCount}
+                    createMemoryManagerPane={createMemoryManagerPane}
+                    kgGeneration={kgGeneration}
+                    createGraphViewerPane={createGraphViewerPane}
+                    createNPCTeamPane={createNPCTeamPane}
+                    createJinxPane={createJinxPane}
                 />
             </main>
         );
@@ -7634,6 +8328,7 @@ const renderMainContent = () => {
                 gitBranch={gitBranch}
                 gitStatus={gitStatus}
                 setGitModalOpen={setGitModalOpen}
+                createGitPane={createGitPane}
                 directoryConversations={directoryConversations}
                 setWorkspaceModalOpen={setWorkspaceModalOpen}
                 paneItems={paneItems}
@@ -7643,6 +8338,12 @@ const renderMainContent = () => {
                 isPredictiveTextEnabled={isPredictiveTextEnabled}
                 setIsPredictiveTextEnabled={setIsPredictiveTextEnabled}
                 createHelpPane={createHelpPane}
+                pendingMemoryCount={pendingMemoryCount}
+                createMemoryManagerPane={createMemoryManagerPane}
+                kgGeneration={kgGeneration}
+                createGraphViewerPane={createGraphViewerPane}
+                createNPCTeamPane={createNPCTeamPane}
+                createJinxPane={createJinxPane}
             />
         </main>
     );
@@ -7894,6 +8595,12 @@ const renderMainContent = () => {
                                     return renderProjectEnvPane({ nodeId: zenModePaneId });
                                 case 'diskusage':
                                     return renderDiskUsagePane({ nodeId: zenModePaneId });
+                                case 'memory-manager':
+                                    return renderMemoryManagerPane({ nodeId: zenModePaneId });
+                                case 'cron-daemon':
+                                    return renderCronDaemonPane({ nodeId: zenModePaneId });
+                                case 'search':
+                                    return renderSearchPane({ nodeId: zenModePaneId, initialQuery: zenPaneData?.initialQuery });
                                 case 'markdown-preview':
                                     return renderMarkdownPreviewPane({ nodeId: zenModePaneId });
                                 case 'help':

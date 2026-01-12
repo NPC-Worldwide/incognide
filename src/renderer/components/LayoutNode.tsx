@@ -12,6 +12,7 @@ import PaneHeader from './PaneHeader';
 import PaneTabBar from './PaneTabBar';
 import { getFileIcon } from './utils';
 import ChatInput from './ChatInput';
+import DiffViewer from './DiffViewer';
 
 // Token cost calculator based on model pricing ($ per 1K tokens)
 // Source: Helicone LLM API Pricing - Updated Nov 2025
@@ -564,7 +565,7 @@ export const LayoutNode = memo(({ node, path, component }) => {
             renderPdfViewer, renderCsvViewer, renderDocxViewer, renderBrowserViewer,
             renderPptxViewer, renderLatexViewer, renderNotebookViewer, renderExpViewer, renderPicViewer, renderMindMapViewer, renderZipViewer,
             renderDataLabelerPane, renderGraphViewerPane, renderBrowserGraphPane,
-            renderDataDashPane, renderDBToolPane, renderNPCTeamPane, renderJinxPane, renderTeamManagementPane, renderSettingsPane, renderPhotoViewerPane, renderLibraryViewerPane, renderHelpPane, renderProjectEnvPane, renderDiskUsagePane, renderFolderViewerPane, renderMarkdownPreviewPane, renderTileJinxPane, renderBranchComparisonPane,
+            renderDataDashPane, renderDBToolPane, renderNPCTeamPane, renderJinxPane, renderTeamManagementPane, renderSettingsPane, renderPhotoViewerPane, renderLibraryViewerPane, renderHelpPane, renderGitPane, renderProjectEnvPane, renderDiskUsagePane, renderMemoryManagerPane, renderCronDaemonPane, renderSearchPane, renderFolderViewerPane, renderMarkdownPreviewPane, renderTileJinxPane, renderBranchComparisonPane,
             moveContentPane,
             findNodePath, rootLayoutNode, setPaneContextMenu, closeContentPane,
             // Destructure the new chat-specific props from component:
@@ -977,6 +978,9 @@ export const LayoutNode = memo(({ node, path, component }) => {
         } else if (contentType === 'help') {
             headerIcon = <HelpCircle size={14} className="text-blue-400" />;
             headerTitle = 'Help';
+        } else if (contentType === 'git') {
+            headerIcon = <GitBranch size={14} className="text-purple-400" />;
+            headerTitle = 'Git';
         } else if (contentType === 'projectenv') {
             headerIcon = <FolderCog size={14} className="text-orange-400" />;
             headerTitle = 'Project Environment';
@@ -1028,6 +1032,9 @@ export const LayoutNode = memo(({ node, path, component }) => {
         } else if (contentType === 'branches') {
             headerIcon = <GitBranch size={14} className="text-purple-400" />;
             headerTitle = 'Branch Comparison';
+        } else if (contentType === 'diff') {
+            headerIcon = <GitBranch size={14} className="text-orange-400" />;
+            headerTitle = `Diff: ${contentId?.split('/').pop() || 'File'}`;
         } else if (contentId) {
             headerIcon = getFileIcon(contentId);
             headerTitle = contentId.split('/').pop();
@@ -1216,6 +1223,12 @@ export const LayoutNode = memo(({ node, path, component }) => {
                     return renderProjectEnvPane({ nodeId: node.id });
                 case 'diskusage':
                     return renderDiskUsagePane({ nodeId: node.id });
+                case 'memory-manager':
+                    return renderMemoryManagerPane({ nodeId: node.id });
+                case 'cron-daemon':
+                    return renderCronDaemonPane({ nodeId: node.id });
+                case 'search':
+                    return renderSearchPane({ nodeId: node.id, initialQuery: paneData?.initialQuery });
                 case 'zip':
                     return renderZipViewer({ nodeId: node.id });
                 case 'folder':
@@ -1231,6 +1244,16 @@ export const LayoutNode = memo(({ node, path, component }) => {
                     return renderBranchComparisonPane({ nodeId: node.id });
                 case 'help':
                     return renderHelpPane({ nodeId: node.id });
+                case 'git':
+                    return renderGitPane({ nodeId: node.id });
+                case 'diff':
+                    return (
+                        <DiffViewer
+                            filePath={contentId || ''}
+                            diffStatus={paneData?.diffStatus}
+                            currentPath={currentPath}
+                        />
+                    );
                 default:
                     return null;
             }

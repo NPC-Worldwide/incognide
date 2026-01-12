@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Settings, Edit, X , Clock} from 'lucide-react'; // Added X for close button
 
-const CronDaemonPanel = ({ isOpen, onClose, currentPath, npcList, jinxList }) => { // Added isOpen and onClose
+const CronDaemonPanel = ({ isOpen = true, onClose, currentPath, npcList, jinxList, isPane = false }) => {
   const [cronJobs, setCronJobs] = useState([]);
   const [daemons, setDaemons] = useState([]);
   const [newJobCommand, setNewJobCommand] = useState('');
@@ -139,14 +139,19 @@ const [newJobJinx, setNewJobJinx] = useState('');
     }
   };
 
-  if (!isOpen) return null; // <--- Conditional render based on isOpen prop
+  if (!isOpen && !isPane) return null;
 
-  return (
-    <div className="cron-daemon-panel-overlay" onClick={onClose}>
-    <div className="cron-daemon-panel-container" onClick={e => e.stopPropagation()}>
-      <header className="cron-daemon-panel-header">
-        <h2>Scheduled Cron Jobs & Daemons</h2>
-        <button className="cron-daemon-close-btn" onClick={onClose} aria-label="Close">&times;</button>
+  // Content to be shared between modal and pane modes
+  const content = (
+    <>
+      <header className={`cron-daemon-panel-header ${isPane ? 'p-4 border-b border-gray-700 flex items-center justify-between' : ''}`}>
+        <h2 className="flex items-center gap-2">
+          <Clock size={20} className="text-blue-400" />
+          Scheduled Cron Jobs & Daemons
+        </h2>
+        {!isPane && onClose && (
+          <button className="cron-daemon-close-btn" onClick={onClose} aria-label="Close">&times;</button>
+        )}
       </header>
 
 
@@ -315,6 +320,23 @@ const [newJobJinx, setNewJobJinx] = useState('');
             </div>
           </section>
         </main>
+    </>
+  );
+
+  // Pane mode - render directly without modal wrapper
+  if (isPane) {
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden theme-bg-secondary">
+        {content}
+      </div>
+    );
+  }
+
+  // Modal mode - render with overlay
+  return (
+    <div className="cron-daemon-panel-overlay" onClick={onClose}>
+      <div className="cron-daemon-panel-container" onClick={e => e.stopPropagation()}>
+        {content}
       </div>
     </div>
   );

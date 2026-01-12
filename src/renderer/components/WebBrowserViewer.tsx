@@ -78,9 +78,13 @@ const WebBrowserViewer = memo(({
     const paneData = contentDataRef.current[nodeId];
     // Capture initial URL only once using a ref to prevent reload loops
     const initialUrlRef = useRef(paneData?.browserUrl || 'about:blank');
-    // Use 'default' as the shared session to persist cookies across all browser panes
-    // This ensures users stay logged into sites when opening new browser tabs
-    const viewId = 'default-browser-session';
+    // Use project-based session so each folder has its own cookies/logins
+    // This allows users to be logged into different accounts per project
+    // Hash the path to create a valid partition name
+    const projectPartition = currentPath
+        ? `project-${currentPath.replace(/[^a-zA-Z0-9]/g, '-').substring(0, 50)}`
+        : 'default-browser-session';
+    const viewId = projectPartition;
 
     // Expose getPageContent method through contentDataRef for context gathering
     useEffect(() => {
@@ -382,11 +386,11 @@ const WebBrowserViewer = memo(({
         let finalUrl = input;
 
         // Check if it's a URL or a search query
+        // Simple rule: if it has a dot and no spaces, treat it as a URL
         const isUrl = input.startsWith('http://') ||
                       input.startsWith('https://') ||
                       input.startsWith('localhost') ||
-                      input.startsWith('127.0.0.1') ||
-                      /^[\w-]+\.(com|org|net|io|co|ai|dev|app|me|edu|gov|info|biz|tv|cc|xyz|tech|online|site|store|blog|cloud|wiki|video|news|live|link|page|space|world|today|zone|network|solutions|digital|agency|studio|design|media|software|systems|services|group|team|labs|works)(\/.*)?$/i.test(input);
+                      (input.includes('.') && !input.includes(' '));
 
         if (isUrl) {
             // It's a URL - add protocol if missing
@@ -408,12 +412,27 @@ const WebBrowserViewer = memo(({
     const handleBack = useCallback(() => webviewRef.current?.goBack(), []);
     const handleForward = useCallback(() => webviewRef.current?.goForward(), []);
     const handleRefresh = useCallback(() => webviewRef.current?.reload(), []);
+    const handleHardRefresh = useCallback(() => webviewRef.current?.reloadIgnoringCache(), []);
 
-    // Backspace to go back in history (when not in a text field)
+    // Keyboard shortcuts: Backspace for back, Ctrl+Shift+R for hard refresh
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
+            // Ctrl+Shift+R = hard refresh (bypass cache)
+            if (e.ctrlKey && e.shiftKey && e.key === 'R') {
+                e.preventDefault();
+                e.stopPropagation();
+                handleHardRefresh();
+                return;
+            }
+            // Ctrl+R = normal refresh
+            if (e.ctrlKey && !e.shiftKey && e.key === 'r') {
+                e.preventDefault();
+                e.stopPropagation();
+                handleRefresh();
+                return;
+            }
+            // Backspace = go back
             if (e.key === 'Backspace') {
-                // Don't intercept if typing in an input, textarea, or contenteditable
                 const target = e.target as HTMLElement;
                 const isTextInput = target.tagName === 'INPUT' ||
                                    target.tagName === 'TEXTAREA' ||
@@ -425,9 +444,9 @@ const WebBrowserViewer = memo(({
             }
         };
 
-        document.addEventListener('keydown', handleKeyDown);
-        return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [canGoBack, handleBack]);
+        document.addEventListener('keydown', handleKeyDown, true); // Use capture to intercept before Electron
+        return () => document.removeEventListener('keydown', handleKeyDown, true);
+    }, [canGoBack, handleBack, handleRefresh, handleHardRefresh]);
     const handleHome = useCallback(() => {
         const initial = initialUrlRef.current;
         let homeUrl = initial;
@@ -658,87 +677,29 @@ const WebBrowserViewer = memo(({
                 checkForSavedPasswords(url);
             }
 
-            // Inject ad blocking CSS and scripts if enabled
+            // Inject ad blocking CSS only (non-invasive, won't break sites)
             const isAdBlockOn = localStorage.getItem('npc-browser-adblock') !== 'false';
-            const isTrackingProtOn = localStorage.getItem('npc-browser-tracking-protection') !== 'false';
 
-            if (isAdBlockOn || isTrackingProtOn) {
+            if (isAdBlockOn) {
                 try {
                     await webview.executeJavaScript(`
                         (function() {
                             if (window.__npcAdBlockInstalled) return;
                             window.__npcAdBlockInstalled = true;
 
-                            // Inject ad-blocking CSS
+                            // CSS-only ad blocking - safe, won't break site functionality
                             const style = document.createElement('style');
                             style.textContent = \`
-                                [class*="ad-"], [class*="ads-"], [class*="advert"], [id*="ad-"], [id*="ads-"],
-                                [class*="banner"], [class*="sponsor"], [class*="promoted"], [class*="promo-"],
-                                iframe[src*="ads"], iframe[src*="doubleclick"], iframe[src*="googlesyndication"],
-                                [data-ad], [data-ads], [data-advertisement], .adsbygoogle, .ad-container,
-                                [aria-label*="advertisement"], [aria-label*="sponsored"],
-                                ins.adsbygoogle, [id*="google_ads"], [class*="GoogleAd"],
-                                [class*="ad-slot"], [class*="ad-unit"], [class*="ad-wrapper"],
-                                [id*="taboola"], [id*="outbrain"], [class*="taboola"], [class*="outbrain"] {
+                                .adsbygoogle, ins.adsbygoogle, [id*="google_ads"], [class*="GoogleAd"],
+                                [id*="taboola"], [id*="outbrain"], [class*="taboola"], [class*="outbrain"],
+                                iframe[src*="doubleclick"], iframe[src*="googlesyndication"],
+                                [data-ad], [data-ads], [data-advertisement],
+                                [aria-label="advertisement"], [aria-label="sponsored"] {
                                     display: none !important;
-                                    visibility: hidden !important;
-                                    height: 0 !important;
-                                    width: 0 !important;
-                                    overflow: hidden !important;
-                                    pointer-events: none !important;
                                 }
                             \`;
                             document.head.appendChild(style);
-
-                            // Block tracking scripts
-                            const blockedDomains = [
-                                'doubleclick.net', 'googlesyndication.com', 'googleadservices.com',
-                                'google-analytics.com', 'googletagmanager.com', 'facebook.net',
-                                'analytics', 'tracker', 'tracking', 'pixel', 'beacon',
-                                'criteo', 'outbrain', 'taboola', 'adnxs', 'hotjar', 'mixpanel'
-                            ];
-
-                            // Override fetch to block tracker requests
-                            const originalFetch = window.fetch;
-                            window.fetch = function(url, options) {
-                                const urlStr = typeof url === 'string' ? url : url.url || '';
-                                if (blockedDomains.some(d => urlStr.includes(d))) {
-                                    return Promise.reject(new Error('Blocked by NPC Studio'));
-                                }
-                                return originalFetch.apply(this, arguments);
-                            };
-
-                            // Override XMLHttpRequest to block trackers
-                            const originalOpen = XMLHttpRequest.prototype.open;
-                            XMLHttpRequest.prototype.open = function(method, url) {
-                                const urlStr = typeof url === 'string' ? url : url.toString();
-                                if (blockedDomains.some(d => urlStr.includes(d))) {
-                                    this.__blocked = true;
-                                }
-                                return originalOpen.apply(this, arguments);
-                            };
-                            const originalSend = XMLHttpRequest.prototype.send;
-                            XMLHttpRequest.prototype.send = function() {
-                                if (this.__blocked) return;
-                                return originalSend.apply(this, arguments);
-                            };
-
-                            // Block navigator.sendBeacon (used for analytics)
-                            navigator.sendBeacon = () => false;
-
-                            // Disable tracking cookies
-                            try {
-                                Object.defineProperty(document, 'cookie', {
-                                    get: function() { return ''; },
-                                    set: function(val) {
-                                        // Allow session cookies, block tracking
-                                        if (blockedDomains.some(d => val.includes(d))) return;
-                                        // Allow the cookie
-                                    }
-                                });
-                            } catch (e) {}
-
-                            console.log('[NPC Studio] Ad blocking & tracking protection active');
+                            console.log('[NPC Studio] Ad blocking (CSS-only) active');
                         })();
                     `);
                 } catch (err) {
@@ -908,7 +869,14 @@ const WebBrowserViewer = memo(({
                 <div className="flex items-center gap-0.5 px-1 border-r theme-border">
                     <button onClick={handleBack} disabled={!canGoBack} className="p-1 theme-hover rounded disabled:opacity-30" title="Back"><ArrowLeft size={16} /></button>
                     <button onClick={handleForward} disabled={!canGoForward} className="p-1 theme-hover rounded disabled:opacity-30" title="Forward"><ArrowRight size={16} /></button>
-                    <button onClick={handleRefresh} className="p-1 theme-hover rounded" title="Refresh"><RotateCcw size={16} className={loading ? 'animate-spin' : ''} /></button>
+                    <button
+                        onClick={(e) => e.shiftKey ? handleHardRefresh() : handleRefresh()}
+                        onContextMenu={(e) => { e.preventDefault(); handleHardRefresh(); }}
+                        className="p-1 theme-hover rounded"
+                        title="Refresh (Ctrl+R) | Shift+Click or Right-click for Hard Refresh (Ctrl+Shift+R)"
+                    >
+                        <RotateCcw size={16} className={loading ? 'animate-spin' : ''} />
+                    </button>
                     <button onClick={handleHome} className="p-1 theme-hover rounded" title="Home"><Home size={16} /></button>
                 </div>
 
@@ -1190,6 +1158,8 @@ const WebBrowserViewer = memo(({
                     ref={webviewRef}
                     className="absolute inset-0 w-full h-full"
                     partition={`persist:${viewId}`}
+                    allowpopups="true"
+                    webpreferences="contextIsolation=no, javascript=yes, webSecurity=yes, allowRunningInsecureContent=no, spellcheck=yes, enableRemoteModule=no"
                     style={{ visibility: error ? 'hidden' : 'visible' }}
                 />
 

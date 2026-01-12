@@ -1802,12 +1802,12 @@ const handleUseForGeneration = () => {
         <div className="flex items-center justify-between"><h4 className="text-lg font-semibold">Image Details</h4><button onClick={saveMetadata} className="theme-button-primary px-3 py-1 rounded flex items-center gap-2"><Save size={14} />Save</button></div>
         {!metadata ? <p className="theme-text-muted">No metadata loaded.</p> : (
           <>
-            <Section title="General">
+            <SettingsSection title="General">
               <StarRating rating={rating} onChange={setRating} className="mb-4" />
               <Field label="Title" value={metadata?.iptc?.title || ''} onChange={v => updateMetaField('iptc.title', v)} />
               <Field label="Description" value={metadata?.iptc?.description || ''} onChange={v => updateMetaField('iptc.description', v)} multiline />
               <TagsEditor tags={customTags} setTags={setCustomTags} />
-            </Section>
+            </SettingsSection>
             
             <details className="theme-border border rounded-lg" open>
                 <summary className="p-3 cursor-pointer text-sm font-semibold">Camera Details (EXIF)</summary>
@@ -2833,7 +2833,7 @@ return (
 
 
 // --- Small UI Helpers ---
-const Section = ({ title, children }) => (
+const SettingsSection = ({ title, children }) => (
   <div className="border rounded-lg p-3 theme-border">
     <div className="text-sm font-semibold mb-2">{title}</div>
     {children}

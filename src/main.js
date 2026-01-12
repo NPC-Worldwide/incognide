@@ -622,9 +622,27 @@ app.whenReady().then(async () => {
   const folderArg = process.argv.find(arg => arg.startsWith('--folder='));
   const bookmarksArg = process.argv.find(arg => arg.startsWith('--bookmarks='));
 
+  // Support bare path argument: incognide /path/to/folder
+  // Look for arguments that look like paths (start with / or ~ or .)
+  const barePathArg = process.argv.slice(2).find(arg =>
+    !arg.startsWith('--') &&
+    !arg.startsWith('-') &&
+    (arg.startsWith('/') || arg.startsWith('~') || arg.startsWith('.'))
+  );
+
   if (folderArg) {
     cliArgs.folder = folderArg.split('=')[1].replace(/^"|"$/g, '');
-    log(`[CLI] Workspace folder: ${cliArgs.folder}`);
+    log(`[CLI] Workspace folder (--folder): ${cliArgs.folder}`);
+  } else if (barePathArg) {
+    // Expand ~ to home directory
+    cliArgs.folder = barePathArg.startsWith('~')
+      ? barePathArg.replace('~', os.homedir())
+      : barePathArg;
+    // Resolve relative paths
+    if (!path.isAbsolute(cliArgs.folder)) {
+      cliArgs.folder = path.resolve(process.cwd(), cliArgs.folder);
+    }
+    log(`[CLI] Workspace folder (bare path): ${cliArgs.folder}`);
   }
 
   if (bookmarksArg) {
@@ -1035,6 +1053,44 @@ if (!gotTheLock) {
     const windows = BrowserWindow.getAllWindows();
     if (windows.length) {
       const mainWindow = windows[0];
+
+      // Parse CLI args from second instance
+      const folderArg = commandLine.find(arg => arg.startsWith('--folder='));
+      const barePathArg = commandLine.slice(1).find(arg =>
+        !arg.startsWith('-') && (arg.startsWith('/') || arg.startsWith('~') || arg.startsWith('.'))
+      );
+      const actionArg = commandLine.find(arg => arg.startsWith('--action='));
+
+      // Send workspace change
+      let folder = null;
+      if (folderArg) {
+        folder = folderArg.split('=')[1].replace(/^"|"$/g, '');
+      } else if (barePathArg) {
+        folder = barePathArg.startsWith('~')
+          ? barePathArg.replace('~', os.homedir())
+          : barePathArg;
+        if (!path.isAbsolute(folder)) {
+          folder = path.resolve(workingDirectory, folder);
+        }
+      }
+
+      if (folder) {
+        log(`[SECOND-INSTANCE] Opening workspace: ${folder}`);
+        mainWindow.webContents.send('cli-open-workspace', { folder });
+      }
+
+      // Send action (JSON encoded)
+      if (actionArg) {
+        try {
+          const actionJson = actionArg.split('=').slice(1).join('=');
+          const actionData = JSON.parse(actionJson);
+          log(`[SECOND-INSTANCE] Executing action: ${actionData.action}`);
+          mainWindow.webContents.send('execute-studio-action', actionData);
+        } catch (err) {
+          log(`[SECOND-INSTANCE] Failed to parse action: ${err.message}`);
+        }
+      }
+
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
     }
@@ -2148,6 +2204,34 @@ ipcMain.handle('gitStash', async (event, repoPath, action = 'push', message = ''
   }
 });
 
+ipcMain.handle('gitShowFile', async (event, repoPath, filePath, ref = 'HEAD') => {
+  log(`[Git] Show file ${filePath} at ${ref} in ${repoPath}`);
+  try {
+    const git = simpleGit(repoPath);
+    const content = await git.show([`${ref}:${filePath}`]);
+    return { success: true, content };
+  } catch (err) {
+    // File might not exist at that ref (new file)
+    if (err.message.includes('does not exist') || err.message.includes('fatal:')) {
+      return { success: true, content: '' };
+    }
+    console.error(`[Git] Error showing file:`, err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('gitDiscardFile', async (event, repoPath, filePath) => {
+  log(`[Git] Discard changes to ${filePath} in ${repoPath}`);
+  try {
+    const git = simpleGit(repoPath);
+    await git.checkout(['--', filePath]);
+    return { success: true };
+  } catch (err) {
+    console.error(`[Git] Error discarding file:`, err);
+    return { success: false, error: err.message };
+  }
+});
+
 ipcMain.handle('browser-add-to-history', async (event, { url, title, folderPath }) => {
     try {
         if (!url || url === 'about:blank') return { success: true };
@@ -2187,9 +2271,26 @@ ipcMain.handle('show-browser', async (event, { url, bounds, viewId }) => {
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: true,
-      partition: `persist:${viewId}`,
+      // Use shared partition so all browser panes share cookies/sessions
+      // This is needed for Google services to work (auth persists across tabs)
+      partition: 'persist:browser-shared',
     },
   });
+
+  // Set Chrome-like user agent so Google services (Drive, Docs, etc.) work properly
+  // Extract Chrome version from Electron's user agent and use standard Chrome UA
+  const electronUA = newBrowserView.webContents.getUserAgent();
+  const chromeMatch = electronUA.match(/Chrome\/(\d+\.\d+\.\d+\.\d+)/);
+  const chromeVersion = chromeMatch ? chromeMatch[1] : '120.0.0.0';
+  let platformUA;
+  if (process.platform === 'win32') {
+    platformUA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
+  } else if (process.platform === 'darwin') {
+    platformUA = `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
+  } else {
+    platformUA = `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
+  }
+  newBrowserView.webContents.setUserAgent(platformUA);
 
   newBrowserView.setBackgroundColor('#0f172a');
   
@@ -2215,6 +2316,31 @@ ipcMain.handle('show-browser', async (event, { url, bounds, viewId }) => {
   
   
     const wc = newBrowserView.webContents;
+
+    // Handle popup windows (Google auth, contacts widget, etc.)
+    wc.setWindowOpenHandler(({ url, disposition }) => {
+      // Google auth and services - open in system browser for proper auth flow
+      if (url.includes('accounts.google.com') ||
+          url.includes('accounts.youtube.com') ||
+          url.includes('myaccount.google.com')) {
+        shell.openExternal(url);
+        return { action: 'deny' };
+      }
+
+      // Google widgets (contacts hovercard, etc.) - allow them to open
+      if (url.includes('contacts.google.com/widget') ||
+          url.includes('apis.google.com') ||
+          url.includes('plus.google.com')) {
+        // Allow these as they're needed for Google Drive functionality
+        return { action: 'allow' };
+      }
+
+      // For other URLs, send to renderer to open in new browser tab
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('browser-open-in-new-tab', { url, disposition });
+      }
+      return { action: 'deny' };
+    });
 
     // Listeners now only send events to the renderer; they do not register handlers.
     wc.on('did-navigate', (event, navigatedUrl) => {
@@ -2727,6 +2853,14 @@ ipcMain.handle('browser-forward', (event, { viewId }) => {
 ipcMain.handle('browser-refresh', (event, { viewId }) => {
   if (browserViews.has(viewId)) {
     browserViews.get(viewId).view.webContents.reload(); // Access webContents via .view
+    return { success: true };
+  }
+  return { success: false, error: 'Browser view not found' };
+});
+
+ipcMain.handle('browser-hard-refresh', (event, { viewId }) => {
+  if (browserViews.has(viewId)) {
+    browserViews.get(viewId).view.webContents.reloadIgnoringCache();
     return { success: true };
   }
   return { success: false, error: 'Browser view not found' };
@@ -4274,19 +4408,13 @@ const tileJinxDir = path.join(os.homedir(), '.npcsh', 'incognide', 'tiles');
 
 // Map tile names to their source component files
 // Each jinx file contains the FULL component source code
+// Bottom grid tiles - 2x2 grid only
+// Moved: settings/env to top bar, npc/jinx to bottom right, graph/browsergraph/disk/team elsewhere
 const tileSourceMap = {
   'db.jinx': { source: 'DBTool.tsx', label: 'DB Tool', icon: 'Database', order: 0 },
   'photo.jinx': { source: 'PhotoViewer.tsx', label: 'Photo', icon: 'Image', order: 1 },
   'library.jinx': { source: 'LibraryViewer.tsx', label: 'Library', icon: 'BookOpen', order: 2 },
   'datadash.jinx': { source: 'DataDash.tsx', label: 'Data Dash', icon: 'BarChart3', order: 3 },
-  'graph.jinx': { source: 'GraphViewer.tsx', label: 'Graph', icon: 'GitBranch', order: 4 },
-  'browsergraph.jinx': { source: 'BrowserHistoryWeb.tsx', label: 'Browser Graph', icon: 'Network', order: 5 },
-  'team.jinx': { source: 'TeamManagement.tsx', label: 'Team', icon: 'Users', order: 6 },
-  'npc.jinx': { source: 'NPCTeamMenu.tsx', label: 'NPCs', icon: 'Bot', order: 7 },
-  'jinx.jinx': { source: 'JinxMenu.tsx', label: 'Jinxs', icon: 'Zap', order: 8 },
-  'settings.jinx': { source: 'SettingsMenu.tsx', label: 'Settings', icon: 'Settings', order: 9 },
-  'env.jinx': { source: 'ProjectEnvEditor.tsx', label: 'Env', icon: 'KeyRound', order: 10 },
-  'disk.jinx': { source: 'DiskUsageAnalyzer.tsx', label: 'Disk', icon: 'HardDrive', order: 11 },
 };
 
 // Components directory path
@@ -4308,21 +4436,36 @@ const ensureTileJinxDir = async () => {
   await fsPromises.mkdir(tileJinxDir, { recursive: true });
 
   // Write default jinx files from actual component source
+  // Sync if source is newer than jinx file
   for (const [filename, meta] of Object.entries(tileSourceMap)) {
     const jinxPath = path.join(tileJinxDir, filename);
+    const sourcePath = path.join(componentsDir, meta.source);
+
     try {
-      await fsPromises.access(jinxPath);
-      // File exists, skip
-    } catch {
-      // File doesn't exist, create from source
+      // Check if source exists
+      const sourceStats = await fsPromises.stat(sourcePath);
+
+      let shouldWrite = false;
       try {
-        const sourcePath = path.join(componentsDir, meta.source);
+        const jinxStats = await fsPromises.stat(jinxPath);
+        // Jinx exists - check if source is newer
+        if (sourceStats.mtime > jinxStats.mtime) {
+          console.log(`[Tiles] Source ${meta.source} is newer than ${filename}, syncing...`);
+          shouldWrite = true;
+        }
+      } catch {
+        // Jinx doesn't exist, create it
+        shouldWrite = true;
+      }
+
+      if (shouldWrite) {
         const sourceCode = await fsPromises.readFile(sourcePath, 'utf8');
         const header = generateJinxHeader({ ...meta, filename });
         await fsPromises.writeFile(jinxPath, header + sourceCode);
-      } catch (err) {
-        console.warn(`Could not create ${filename} from ${meta.source}:`, err.message);
+        console.log(`[Tiles] Wrote ${filename} from ${meta.source}`);
       }
+    } catch (err) {
+      console.warn(`Could not sync ${filename} from ${meta.source}:`, err.message);
     }
   }
 };
@@ -4945,6 +5088,77 @@ ipcMain.handle('kg:deleteEdge', async (event, { sourceId, targetId }) => {
   return await callBackendApi(`http://127.0.0.1:5337/api/kg/edge/${encodeURIComponent(sourceId)}/${encodeURIComponent(targetId)}`, {
     method: 'DELETE',
   });
+});
+
+// KG Search handlers
+ipcMain.handle('kg:search', async (event, { q, generation, type, limit }) => {
+  const params = new URLSearchParams();
+  if (q) params.append('q', q);
+  if (generation !== null && generation !== undefined) params.append('generation', generation);
+  if (type) params.append('type', type);
+  if (limit) params.append('limit', limit);
+  return await callBackendApi(`http://127.0.0.1:5337/api/kg/search?${params.toString()}`);
+});
+
+ipcMain.handle('kg:getFacts', async (event, { generation, limit, offset }) => {
+  const params = new URLSearchParams();
+  if (generation !== null && generation !== undefined) params.append('generation', generation);
+  if (limit) params.append('limit', limit);
+  if (offset) params.append('offset', offset);
+  return await callBackendApi(`http://127.0.0.1:5337/api/kg/facts?${params.toString()}`);
+});
+
+ipcMain.handle('kg:getConcepts', async (event, { generation, limit }) => {
+  const params = new URLSearchParams();
+  if (generation !== null && generation !== undefined) params.append('generation', generation);
+  if (limit) params.append('limit', limit);
+  return await callBackendApi(`http://127.0.0.1:5337/api/kg/concepts?${params.toString()}`);
+});
+
+ipcMain.handle('kg:search:semantic', async (event, { q, generation, limit }) => {
+  const params = new URLSearchParams();
+  if (q) params.append('q', q);
+  if (generation !== null && generation !== undefined) params.append('generation', generation);
+  if (limit) params.append('limit', limit);
+  return await callBackendApi(`http://127.0.0.1:5337/api/kg/search/semantic?${params.toString()}`);
+});
+
+ipcMain.handle('kg:embed', async (event, { generation, batch_size }) => {
+  return await callBackendApi(`http://127.0.0.1:5337/api/kg/embed`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ generation, batch_size })
+  });
+});
+
+// Memory handlers
+ipcMain.handle('memory:search', async (event, { q, npc, team, directory_path, status, limit }) => {
+  const params = new URLSearchParams();
+  if (q) params.append('q', q);
+  if (npc) params.append('npc', npc);
+  if (team) params.append('team', team);
+  if (directory_path) params.append('directory_path', directory_path);
+  if (status) params.append('status', status);
+  if (limit) params.append('limit', limit);
+  return await callBackendApi(`http://127.0.0.1:5337/api/memory/search?${params.toString()}`);
+});
+
+ipcMain.handle('memory:pending', async (event, { npc, team, directory_path, limit }) => {
+  const params = new URLSearchParams();
+  if (npc) params.append('npc', npc);
+  if (team) params.append('team', team);
+  if (directory_path) params.append('directory_path', directory_path);
+  if (limit) params.append('limit', limit);
+  return await callBackendApi(`http://127.0.0.1:5337/api/memory/pending?${params.toString()}`);
+});
+
+ipcMain.handle('memory:scope', async (event, { npc, team, directory_path, status }) => {
+  const params = new URLSearchParams();
+  if (npc) params.append('npc', npc);
+  if (team) params.append('team', team);
+  if (directory_path) params.append('directory_path', directory_path);
+  if (status) params.append('status', status);
+  return await callBackendApi(`http://127.0.0.1:5337/api/memory/scope?${params.toString()}`);
 });
 
 ipcMain.handle('interruptStream', async (event, streamIdToInterrupt) => {
@@ -8178,6 +8392,13 @@ ipcMain.handle('get-directory-contents-recursive', async (_, directoryPath) => {
 
 // Disk usage analyzer handler
 ipcMain.handle('analyze-disk-usage', async (_, folderPath) => {
+    console.log('[DiskUsage Main] Received request for:', folderPath);
+
+    if (!folderPath) {
+        console.error('[DiskUsage Main] No folder path provided');
+        return null;
+    }
+
     // Skip virtual/system filesystems that can cause hangs or permission errors
     const SKIP_PATHS = ['/proc', '/sys', '/dev', '/run', '/snap', '/tmp/.X11-unix', '/var/run'];
     const shouldSkip = (p) => SKIP_PATHS.some(skip => p === skip || p.startsWith(skip + '/'));
@@ -8273,9 +8494,10 @@ ipcMain.handle('analyze-disk-usage', async (_, folderPath) => {
         };
 
         const result = await analyzePath(folderPath, 0, 3);
+        console.log('[DiskUsage Main] Analysis complete. Result:', result ? 'has data' : 'null');
         return result;
     } catch (err) {
-        console.error('Error analyzing disk usage:', err);
+        console.error('[DiskUsage Main] Error analyzing disk usage:', err);
         throw err;
     }
 });
@@ -8554,6 +8776,328 @@ ipcMain.handle('jupyter:interruptKernel', async (_, { kernelId }) => {
         if (!kernel) return { success: false, error: 'Kernel not found' };
         kernel.process.kill('SIGINT');
         return { success: true };
+    } catch (err) {
+        return { success: false, error: err.message };
+    }
+});
+
+// Get variables from kernel namespace for Variables pane
+ipcMain.handle('jupyter:getVariables', async (_, { kernelId }) => {
+    try {
+        const kernel = jupyterKernels.get(kernelId);
+        if (!kernel) {
+            return { success: false, error: 'Kernel not found', variables: [] };
+        }
+
+        const { spawn } = require('child_process');
+        const pythonPath = kernel.pythonPath || 'python3';
+
+        const pythonScript = `
+import sys, json
+try:
+    from jupyter_client import BlockingKernelClient
+    client = BlockingKernelClient(connection_file=sys.argv[1])
+    client.load_connection_file()
+    client.start_channels()
+    client.wait_for_ready(timeout=10)
+
+    # Introspection code to run in kernel
+    introspect_code = '''
+import json
+def _incognide_get_variables():
+    ip = get_ipython()
+    ns = ip.user_ns
+    variables = []
+    skip_types = (type, type(json), type(lambda: None))
+    # Skip IPython internals, system vars, and common imports
+    skip_names = {
+        'In', 'Out', 'get_ipython', 'exit', 'quit',
+        '_', '__', '___', '_i', '_ii', '_iii', '_oh', '_dh', '_sh',
+        'original_ps1', 'is_wsl', 'sys', 'os', 'np', 'pd', 'plt',
+        'numpy', 'pandas', 'matplotlib', 'scipy', 'sklearn',
+        'json', 're', 'math', 'random', 'datetime', 'time',
+        'collections', 'itertools', 'functools', 'pathlib',
+        'warnings', 'logging', 'typing', 'copy', 'io', 'csv',
+        'pickle', 'gzip', 'zipfile', 'tempfile', 'shutil',
+        'subprocess', 'threading', 'multiprocessing',
+        'requests', 'urllib', 'http', 'socket',
+        'IPython', 'ipykernel', 'traitlets',
+        'display', 'HTML', 'Image', 'Markdown',
+    }
+    # Also skip anything that looks like an internal/config var
+    skip_prefixes = ('_', 'original_', 'is_', 'has_', 'PYTHON', 'LC_', 'XDG_')
+
+    for name, val in ns.items():
+        if name.startswith(skip_prefixes) or name in skip_names:
+            continue
+        if isinstance(val, skip_types):
+            continue
+        # Skip modules
+        if type(val).__name__ == 'module':
+            continue
+
+        var_info = {'name': name, 'type': type(val).__name__}
+
+        # Get size/shape info
+        try:
+            if hasattr(val, 'shape'):
+                var_info['shape'] = str(val.shape)
+                if hasattr(val, 'dtype'):
+                    var_info['dtype'] = str(val.dtype)
+            elif hasattr(val, '__len__'):
+                var_info['length'] = int(len(val))
+        except:
+            pass
+
+        # DataFrame specific info
+        try:
+            if type(val).__name__ == 'DataFrame':
+                var_info['columns'] = list(val.columns)[:20]
+                var_info['dtypes'] = {str(k): str(v) for k, v in val.dtypes.items()}
+                var_info['memory'] = int(val.memory_usage(deep=True).sum())
+                var_info['is_dataframe'] = True
+        except:
+            pass
+
+        # Series info
+        try:
+            if type(val).__name__ == 'Series':
+                var_info['dtype'] = str(val.dtype)
+                var_info['is_series'] = True
+        except:
+            pass
+
+        # Get short repr
+        try:
+            r = repr(val)
+            var_info['repr'] = r[:100] + '...' if len(r) > 100 else r
+        except:
+            var_info['repr'] = '<unable to repr>'
+
+        variables.append(var_info)
+
+    return variables
+
+print("__VARS__" + json.dumps(_incognide_get_variables()))
+del _incognide_get_variables
+'''
+
+    client.execute(introspect_code)
+    result_json = None
+    all_msgs = []
+    while True:
+        try:
+            msg = client.get_iopub_msg(timeout=10)
+            t, c = msg['msg_type'], msg['content']
+            all_msgs.append({'type': t, 'content': str(c)[:200]})
+            if t == 'stream' and '__VARS__' in c.get('text', ''):
+                text = c.get('text', '')
+                idx = text.find('__VARS__')
+                result_json = text[idx + 8:].strip()
+                break
+            elif t == 'error':
+                # Capture error from introspection
+                import sys
+                sys.stderr.write(f"Introspection error: {c.get('ename')}: {c.get('evalue')}\\n")
+            elif t == 'status' and c.get('execution_state') == 'idle':
+                break
+        except Exception as loop_err:
+            import sys
+            sys.stderr.write(f"Loop error: {loop_err}\\n")
+            break
+
+    client.stop_channels()
+
+    if result_json:
+        variables = json.loads(result_json)
+        print(json.dumps({'success': True, 'variables': variables}))
+    else:
+        # Debug: include the messages we received
+        print(json.dumps({'success': True, 'variables': [], 'debug_msgs': all_msgs[:10]}))
+except Exception as e:
+    print(json.dumps({'success': False, 'error': str(e), 'variables': []}))
+`;
+
+        return new Promise((resolve) => {
+            const proc = spawn(pythonPath, ['-c', pythonScript, kernel.connectionFile], {
+                env: { ...process.env },
+                cwd: kernel.workspacePath || process.cwd(),
+                timeout: 15000
+            });
+
+            let stdout = '';
+            let stderr = '';
+            proc.stdout.on('data', (data) => { stdout += data.toString(); });
+            proc.stderr.on('data', (data) => { stderr += data.toString(); });
+
+            proc.on('close', (code) => {
+                console.log('[getVariables] Process closed with code:', code);
+                console.log('[getVariables] stdout:', stdout.slice(0, 500));
+                console.log('[getVariables] stderr:', stderr.slice(0, 500));
+                if (stdout) {
+                    try {
+                        const lines = stdout.trim().split('\n');
+                        const result = JSON.parse(lines[lines.length - 1]);
+                        resolve({
+                            success: result.success,
+                            variables: result.variables || [],
+                            error: result.error,
+                            debug_msgs: result.debug_msgs,
+                            stderr: stderr || undefined
+                        });
+                    } catch (e) {
+                        resolve({ success: false, error: 'Parse error: ' + e.message + ' stdout: ' + stdout.slice(0, 500), variables: [], stderr });
+                    }
+                } else {
+                    resolve({ success: false, error: 'No output from python process', variables: [], stderr });
+                }
+            });
+
+            proc.on('error', (err) => {
+                resolve({ success: false, error: err.message, variables: [], stderr });
+            });
+        });
+    } catch (err) {
+        return { success: false, error: err.message, variables: [] };
+    }
+});
+
+// Get dataframe data for Data Explorer
+ipcMain.handle('jupyter:getDataFrame', async (_, { kernelId, varName, offset = 0, limit = 100 }) => {
+    try {
+        const kernel = jupyterKernels.get(kernelId);
+        if (!kernel) {
+            return { success: false, error: 'Kernel not found' };
+        }
+
+        const { spawn } = require('child_process');
+        const pythonPath = kernel.pythonPath || 'python3';
+
+        const pythonScript = `
+import sys, json
+try:
+    from jupyter_client import BlockingKernelClient
+    client = BlockingKernelClient(connection_file=sys.argv[1])
+    client.load_connection_file()
+    client.start_channels()
+    client.wait_for_ready(timeout=10)
+
+    var_name = sys.argv[2]
+    offset = int(sys.argv[3])
+    limit = int(sys.argv[4])
+
+    fetch_code = f'''
+import json
+import pandas as pd
+import numpy as np
+
+def _incognide_get_df_data():
+    df = get_ipython().user_ns["{var_name}"]
+    total_rows = len(df)
+    total_cols = len(df.columns)
+
+    # Get slice of data
+    df_slice = df.iloc[{offset}:{offset}+{limit}]
+
+    # Convert to records, handling various types
+    def safe_val(v):
+        if pd.isna(v):
+            return None
+        if isinstance(v, (np.integer, np.floating)):
+            return float(v) if np.isfinite(v) else None
+        if isinstance(v, np.ndarray):
+            return v.tolist()
+        return str(v) if not isinstance(v, (int, float, bool, str, type(None))) else v
+
+    rows = []
+    for idx, row in df_slice.iterrows():
+        rows.append({{"__index__": safe_val(idx), **{{col: safe_val(row[col]) for col in df.columns}}}})
+
+    # Column info with stats
+    columns = []
+    for col in df.columns:
+        col_info = {{"name": str(col), "dtype": str(df[col].dtype)}}
+        try:
+            col_info["null_count"] = int(df[col].isna().sum())
+            col_info["unique_count"] = int(df[col].nunique())
+            if df[col].dtype in ['int64', 'float64', 'int32', 'float32']:
+                col_info["min"] = safe_val(df[col].min())
+                col_info["max"] = safe_val(df[col].max())
+                col_info["mean"] = safe_val(df[col].mean())
+                col_info["std"] = safe_val(df[col].std())
+        except:
+            pass
+        columns.append(col_info)
+
+    return {{"rows": rows, "columns": columns, "total_rows": total_rows, "total_cols": total_cols, "offset": {offset}}}
+
+print("__DFDATA__" + json.dumps(_incognide_get_df_data()))
+del _incognide_get_df_data
+'''
+
+    client.execute(fetch_code)
+    result_json = None
+    while True:
+        try:
+            msg = client.get_iopub_msg(timeout=15)
+            t, c = msg['msg_type'], msg['content']
+            if t == 'stream' and '__DFDATA__' in c.get('text', ''):
+                text = c.get('text', '')
+                idx = text.find('__DFDATA__')
+                result_json = text[idx + 10:].strip()
+                break
+            elif t == 'error':
+                print(json.dumps({'success': False, 'error': c.get('evalue', 'Unknown error')}))
+                sys.exit(0)
+            elif t == 'status' and c.get('execution_state') == 'idle':
+                break
+        except:
+            break
+
+    client.stop_channels()
+
+    if result_json:
+        data = json.loads(result_json)
+        print(json.dumps({'success': True, **data}))
+    else:
+        print(json.dumps({'success': False, 'error': 'No data returned'}))
+except Exception as e:
+    print(json.dumps({'success': False, 'error': str(e)}))
+`;
+
+        return new Promise((resolve) => {
+            const proc = spawn(pythonPath, ['-c', pythonScript, kernel.connectionFile, varName, String(offset), String(limit)], {
+                env: { ...process.env },
+                cwd: kernel.workspacePath || process.cwd(),
+                timeout: 30000
+            });
+
+            let stdout = '';
+            let stderr = '';
+            proc.stdout.on('data', (data) => { stdout += data.toString(); });
+            proc.stderr.on('data', (data) => { stderr += data.toString(); });
+
+            proc.on('close', (code) => {
+                console.log('[getDataFrame] Process closed with code:', code);
+                console.log('[getDataFrame] stdout:', stdout.slice(0, 500));
+                console.log('[getDataFrame] stderr:', stderr.slice(0, 500));
+                if (stdout) {
+                    try {
+                        const lines = stdout.trim().split('\n');
+                        const result = JSON.parse(lines[lines.length - 1]);
+                        resolve(result);
+                    } catch (e) {
+                        resolve({ success: false, error: 'Parse error: ' + e.message + ' stdout: ' + stdout.slice(0, 300), stderr });
+                    }
+                } else {
+                    resolve({ success: false, error: 'No output', stderr });
+                }
+            });
+
+            proc.on('error', (err) => {
+                resolve({ success: false, error: err.message, stderr });
+            });
+        });
     } catch (err) {
         return { success: false, error: err.message };
     }

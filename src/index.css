@@ -1209,6 +1209,128 @@ body.light-mode .hover\:bg-gray-800:hover,
 body.light-mode .hover\:bg-gray-700:hover {
     background-color: #fce7f3 !important;
 }
+
+/* ============================================
+   SIDEBAR LIGHT MODE FIXES - Full contrast fixes
+   ============================================ */
+
+/* Gray text that's too light in light mode */
+body.light-mode .text-gray-600 { color: #64748b !important; }
+body.light-mode .text-gray-700 { color: #475569 !important; }
+body.light-mode .text-gray-800 { color: #334155 !important; }
+
+/* White/black transparency backgrounds - need solid colors in light mode */
+body.light-mode .bg-white\/5 { background-color: rgba(0, 0, 0, 0.03) !important; }
+body.light-mode .bg-white\/10 { background-color: rgba(0, 0, 0, 0.05) !important; }
+body.light-mode .bg-white\/20 { background-color: rgba(0, 0, 0, 0.08) !important; }
+body.light-mode .bg-black\/20 { background-color: rgba(0, 0, 0, 0.05) !important; }
+body.light-mode .bg-black\/30 { background-color: rgba(0, 0, 0, 0.08) !important; }
+body.light-mode .bg-black\/40 { background-color: rgba(0, 0, 0, 0.1) !important; }
+body.light-mode .bg-black\/50 { background-color: rgba(0, 0, 0, 0.12) !important; }
+
+/* Hover states with white/black transparency */
+body.light-mode .hover\:bg-white\/5:hover { background-color: rgba(236, 72, 153, 0.08) !important; }
+body.light-mode .hover\:bg-white\/10:hover { background-color: rgba(236, 72, 153, 0.12) !important; }
+body.light-mode .hover\:bg-white\/20:hover { background-color: rgba(236, 72, 153, 0.15) !important; }
+
+/* Border colors with white transparency */
+body.light-mode .border-white\/10 { border-color: rgba(0, 0, 0, 0.1) !important; }
+body.light-mode .border-white\/20 { border-color: rgba(0, 0, 0, 0.15) !important; }
+body.light-mode .border-gray-700\/50 { border-color: rgba(0, 0, 0, 0.1) !important; }
+
+/* Placeholder text */
+body.light-mode .placeholder-gray-600::placeholder { color: #94a3b8 !important; }
+
+/* Status colors - ensure good contrast in light mode */
+body.light-mode .text-yellow-300 { color: #ca8a04 !important; }
+body.light-mode .text-yellow-400 { color: #d97706 !important; }
+body.light-mode .text-green-300 { color: #15803d !important; }
+body.light-mode .text-green-400 { color: #16a34a !important; }
+body.light-mode .text-red-300 { color: #dc2626 !important; }
+body.light-mode .text-red-400 { color: #ef4444 !important; }
+body.light-mode .text-blue-300 { color: #2563eb !important; }
+body.light-mode .text-blue-400 { color: #3b82f6 !important; }
+body.light-mode .text-purple-300 { color: #9333ea !important; }
+body.light-mode .text-purple-400 { color: #a855f7 !important; }
+body.light-mode .text-cyan-400 { color: #0891b2 !important; }
+body.light-mode .text-orange-300 { color: #ea580c !important; }
+
+/* Background status colors - adjust for light mode visibility */
+body.light-mode .bg-yellow-500\/20 { background-color: rgba(234, 179, 8, 0.15) !important; }
+body.light-mode .bg-green-500\/20 { background-color: rgba(34, 197, 94, 0.15) !important; }
+body.light-mode .bg-red-500\/20 { background-color: rgba(239, 68, 68, 0.15) !important; }
+body.light-mode .bg-purple-500\/20 { background-color: rgba(168, 85, 247, 0.15) !important; }
+body.light-mode .bg-blue-500\/20 { background-color: rgba(59, 130, 246, 0.15) !important; }
+body.light-mode .bg-orange-500\/20 { background-color: rgba(249, 115, 22, 0.15) !important; }
+body.light-mode .bg-cyan-500\/20 { background-color: rgba(6, 182, 212, 0.15) !important; }
+
+/* Git diff viewer colors for light mode */
+body.light-mode .bg-red-900\/10 { background-color: rgba(239, 68, 68, 0.08) !important; }
+body.light-mode .bg-red-900\/20 { background-color: rgba(239, 68, 68, 0.12) !important; }
+body.light-mode .bg-red-900\/30 { background-color: rgba(239, 68, 68, 0.15) !important; }
+body.light-mode .bg-red-900\/40 { background-color: rgba(239, 68, 68, 0.2) !important; }
+body.light-mode .bg-green-900\/10 { background-color: rgba(34, 197, 94, 0.08) !important; }
+body.light-mode .bg-green-900\/20 { background-color: rgba(34, 197, 94, 0.12) !important; }
+body.light-mode .bg-green-900\/30 { background-color: rgba(34, 197, 94, 0.15) !important; }
+body.light-mode .bg-green-900\/40 { background-color: rgba(34, 197, 94, 0.2) !important; }
+body.light-mode .bg-yellow-900\/10 { background-color: rgba(234, 179, 8, 0.08) !important; }
+body.light-mode .bg-yellow-900\/20 { background-color: rgba(234, 179, 8, 0.12) !important; }
+body.light-mode .bg-yellow-900\/30 { background-color: rgba(234, 179, 8, 0.15) !important; }
+body.light-mode .bg-yellow-900\/40 { background-color: rgba(234, 179, 8, 0.2) !important; }
+body.light-mode .bg-blue-900\/10 { background-color: rgba(59, 130, 246, 0.08) !important; }
+body.light-mode .bg-blue-900\/20 { background-color: rgba(59, 130, 246, 0.12) !important; }
+body.light-mode .bg-blue-900\/30 { background-color: rgba(59, 130, 246, 0.15) !important; }
+body.light-mode .bg-purple-900\/10 { background-color: rgba(168, 85, 247, 0.08) !important; }
+body.light-mode .bg-purple-600\/80 { background-color: rgba(147, 51, 234, 0.9) !important; }
+body.light-mode .bg-orange-900\/20 { background-color: rgba(249, 115, 22, 0.12) !important; }
+body.light-mode .bg-amber-900\/20 { background-color: rgba(245, 158, 11, 0.12) !important; }
+body.light-mode .bg-orange-500\/30 { background-color: rgba(249, 115, 22, 0.2) !important; }
+
+/* Gradient backgrounds for git viewer header */
+body.light-mode .from-orange-900\/20 { --tw-gradient-from: rgba(249, 115, 22, 0.1) !important; }
+body.light-mode .to-amber-900\/20 { --tw-gradient-to: rgba(245, 158, 11, 0.1) !important; }
+
+/* Sidebar section hover states */
+body.light-mode .hover\:text-purple-400:hover { color: #9333ea !important; }
+body.light-mode .hover\:text-yellow-400:hover { color: #d97706 !important; }
+body.light-mode .hover\:text-green-400:hover { color: #16a34a !important; }
+body.light-mode .hover\:text-cyan-400:hover { color: #0891b2 !important; }
+body.light-mode .hover\:text-gray-300:hover { color: #475569 !important; }
+body.light-mode .hover\:text-gray-200:hover { color: #334155 !important; }
+
+/* Make icons more visible in light mode */
+body.light-mode svg.text-gray-500 { color: #64748b !important; }
+body.light-mode svg.text-gray-400 { color: #94a3b8 !important; }
+
+/* Inputs in sidebar settings */
+body.light-mode input.bg-black\/30,
+body.light-mode select.bg-black\/30,
+body.light-mode textarea.bg-black\/30 {
+    background-color: var(--theme-input-bg) !important;
+    border-color: var(--theme-input-border) !important;
+    color: var(--theme-text) !important;
+}
+
+body.light-mode input.bg-white\/5,
+body.light-mode .bg-white\/5 input {
+    background-color: var(--theme-input-bg) !important;
+    border-color: var(--theme-input-border) !important;
+    color: var(--theme-text) !important;
+}
+
+/* Sidebar file tree improvements */
+body.light-mode .text-gray-200 { color: #1e293b !important; }
+body.light-mode .text-gray-300 { color: #334155 !important; }
+
+/* Selected file/conversation states */
+body.light-mode .file-selected,
+body.light-mode [class*="bg-blue-500/20"] {
+    background-color: rgba(236, 72, 153, 0.15) !important;
+}
+
+/* Ensure grip handles are visible */
+body.light-mode .text-gray-500.cursor-grab { color: #94a3b8 !important; }
+body.light-mode svg[class*="GripVertical"] { color: #94a3b8 !important; }
 /* Force scrollbars to be visible */
 .overflow-auto {
     scrollbar-width: thin;

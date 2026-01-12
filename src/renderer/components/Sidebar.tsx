@@ -99,26 +99,39 @@ const Sidebar = (props: any) => {
 
     // Drag state for section reordering
     const [draggedSection, setDraggedSection] = useState<string | null>(null);
+    const [dropTargetSection, setDropTargetSection] = useState<string | null>(null);
 
     // Section drag handlers
     const handleSectionDragStart = (sectionId: string) => (e: React.DragEvent) => {
         setDraggedSection(sectionId);
         e.dataTransfer.setData('text/plain', sectionId);
         e.dataTransfer.effectAllowed = 'move';
+        // Set drag image
+        if (e.currentTarget.parentElement) {
+            e.dataTransfer.setDragImage(e.currentTarget.parentElement, 0, 0);
+        }
     };
 
-    const handleSectionDragOver = (e: React.DragEvent) => {
+    const handleSectionDragOver = (targetSectionId: string) => (e: React.DragEvent) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
+        if (draggedSection && draggedSection !== targetSectionId) {
+            setDropTargetSection(targetSectionId);
+        }
+    };
+
+    const handleSectionDragLeave = () => {
+        setDropTargetSection(null);
     };
 
     const handleSectionDrop = (targetSectionId: string) => (e: React.DragEvent) => {
         e.preventDefault();
         const draggedId = e.dataTransfer.getData('text/plain');
         setDraggedSection(null);
+        setDropTargetSection(null);
         if (draggedId === targetSectionId || !setSidebarSectionOrder) return;
 
-        const currentOrder = sidebarSectionOrder || ['websites', 'files', 'conversations'];
+        const currentOrder = sidebarSectionOrder || ['websites', 'files', 'conversations', 'git'];
         const newOrder = [...currentOrder];
         const draggedIndex = newOrder.indexOf(draggedId);
         const targetIndex = newOrder.indexOf(targetSectionId);
@@ -130,10 +143,39 @@ const Sidebar = (props: any) => {
 
     const handleSectionDragEnd = () => {
         setDraggedSection(null);
+        setDropTargetSection(null);
     };
 
     const [showFileTypeFilter, setShowFileTypeFilter] = useState(false);
     const [websiteSearch, setWebsiteSearch] = useState('');
+
+    // Section settings panels
+    const [showFilesSettings, setShowFilesSettings] = useState(false);
+    const [showWebsitesSettings, setShowWebsitesSettings] = useState(false);
+    const [showConversationsSettings, setShowConversationsSettings] = useState(false);
+
+    // Files settings
+    const [filesSettings, setFilesSettings] = useState(() => {
+        const saved = localStorage.getItem('npcStudio_filesSettings');
+        return saved ? JSON.parse(saved) : {
+            showHidden: false,
+            allowedExtensions: '',  // comma-separated, empty = all
+            excludedExtensions: '.pyc,.pyo,.git,.DS_Store,__pycache__',
+            excludedFolders: 'node_modules,.git,__pycache__,.venv,venv',
+            maxDepth: 10
+        };
+    });
+
+    // Websites settings
+    const [websitesSettings, setWebsitesSettings] = useState(() => {
+        const saved = localStorage.getItem('npcStudio_websitesSettings');
+        return saved ? JSON.parse(saved) : {
+            groupByDomain: true,
+            maxHistory: 100,
+            excludedDomains: '',  // comma-separated
+            timeRangeDays: 30  // 0 = all time
+        };
+    });
 
     // Conversation filters
     const [showConvoFilters, setShowConvoFilters] = useState(false);
@@ -142,10 +184,32 @@ const Sidebar = (props: any) => {
     const [convoDateFrom, setConvoDateFrom] = useState<string>(() => localStorage.getItem('npcStudio_convoDateFrom') || '');
     const [convoDateTo, setConvoDateTo] = useState<string>(() => localStorage.getItem('npcStudio_convoDateTo') || '');
 
+    // Conversations settings
+    const [conversationsSettings, setConversationsSettings] = useState(() => {
+        const saved = localStorage.getItem('npcStudio_conversationsSettings');
+        return saved ? JSON.parse(saved) : {
+            sortBy: 'date',  // date, title, npc, model
+            sortOrder: 'desc',
+            showEmpty: true,
+            maxDisplay: 100
+        };
+    });
+
     // Persist file type filter to localStorage
     useEffect(() => {
         localStorage.setItem('npcStudio_fileTypeFilter', fileTypeFilter);
     }, [fileTypeFilter]);
+
+    // Persist section settings
+    useEffect(() => {
+        localStorage.setItem('npcStudio_filesSettings', JSON.stringify(filesSettings));
+    }, [filesSettings]);
+    useEffect(() => {
+        localStorage.setItem('npcStudio_websitesSettings', JSON.stringify(websitesSettings));
+    }, [websitesSettings]);
+    useEffect(() => {
+        localStorage.setItem('npcStudio_conversationsSettings', JSON.stringify(conversationsSettings));
+    }, [conversationsSettings]);
 
     // Persist conversation filters to localStorage
     useEffect(() => {
@@ -164,6 +228,28 @@ const Sidebar = (props: any) => {
     useEffect(() => {
         localStorage.setItem('npcStudio_bottomGridCollapsed', String(bottomGridCollapsed));
     }, [bottomGridCollapsed]);
+
+    // Load git status for current path
+    const loadGitStatus = useCallback(async () => {
+        if (!currentPath) return;
+        setGitLoading(true);
+        setGitError(null);
+        try {
+            const response = await (window as any).api.gitStatus(currentPath);
+            setGitStatus(response);
+        } catch (err: any) {
+            setGitError(err.message || 'Failed to get git status');
+            setGitStatus(null);
+        } finally {
+            setGitLoading(false);
+        }
+    }, [currentPath, setGitLoading, setGitError, setGitStatus]);
+
+    useEffect(() => {
+        if (currentPath) {
+            loadGitStatus();
+        }
+    }, [currentPath, loadGitStatus]);
 
     // Memory and Knowledge Graph sections
     const [memoriesCollapsed, setMemoriesCollapsed] = useState(true);
@@ -425,20 +511,13 @@ const Sidebar = (props: any) => {
     const [showLivePreview, setShowLivePreview] = useState(false);
     const [livePreviewCode, setLivePreviewCode] = useState('');
 
-    // Fallback config (used until jinxes load)
+    // Fallback config (used until jinxes load) - 2x2 grid
+    // Moved: settings/env to top bar, npc/jinx to bottom right
     const [bottomGridConfig, setBottomGridConfig] = useState([
         { id: 'db', label: 'DB Tool', icon: 'Database', enabled: true, order: 0 },
         { id: 'photo', label: 'Photo', icon: 'Image', enabled: true, order: 1 },
         { id: 'library', label: 'Library', icon: 'BookOpen', enabled: true, order: 2 },
         { id: 'datadash', label: 'Data Dash', icon: 'BarChart3', enabled: true, order: 3 },
-        { id: 'graph', label: 'Graph', icon: 'GitBranch', enabled: true, order: 4 },
-        { id: 'browsergraph', label: 'Browser Graph', icon: 'Network', enabled: true, order: 5 },
-        { id: 'team', label: 'Team', icon: 'Users', enabled: true, order: 6 },
-        { id: 'npc', label: 'NPCs', icon: 'Bot', enabled: true, order: 7 },
-        { id: 'jinx', label: 'Jinxs', icon: 'Zap', enabled: true, order: 8 },
-        { id: 'settings', label: 'Settings', icon: 'Settings', enabled: true, order: 9 },
-        { id: 'env', label: 'Env', icon: 'KeyRound', enabled: true, order: 10 },
-        { id: 'disk', label: 'Disk', icon: 'HardDrive', enabled: true, order: 11 },
     ]);
     const [draggedBottomTileId, setDraggedBottomTileId] = useState<string | null>(null);
     const [draggedTileId, setDraggedTileId] = useState<string | null>(null);
@@ -1521,8 +1600,9 @@ const renderWebsiteList = () => {
 
     const header = (
         <div
-            className="mx-1 mt-3"
-            onDragOver={handleSectionDragOver}
+            className={`mx-1 mt-3 transition-all duration-150 ${draggedSection === 'websites' ? 'opacity-50' : ''} ${dropTargetSection === 'websites' ? 'ring-2 ring-purple-500 rounded-lg' : ''}`}
+            onDragOver={handleSectionDragOver('websites')}
+            onDragLeave={handleSectionDragLeave}
             onDrop={handleSectionDrop('websites')}
         >
             <div className="group/header flex items-center bg-gradient-to-r from-purple-900/20 to-indigo-900/20 rounded-t-lg border-b border-purple-500/20">
@@ -1544,11 +1624,25 @@ const renderWebsiteList = () => {
                     </div>
                     <div className="flex items-center gap-0.5">
                         <button
+                            onClick={(e) => { e.stopPropagation(); setShowWebsitesSettings(!showWebsitesSettings); }}
+                            className={`p-1 hover:bg-white/10 rounded transition-all ${showWebsitesSettings ? 'text-purple-400' : 'text-gray-400 hover:text-purple-400'}`}
+                            title="Settings"
+                        >
+                            <Settings size={12} />
+                        </button>
+                        <button
                             onClick={(e) => { e.stopPropagation(); loadWebsiteHistory(); }}
                             className="p-1 hover:bg-white/10 rounded transition-all text-gray-400 hover:text-purple-400"
                             title="Refresh"
                         >
                             <RefreshCw size={12} />
+                        </button>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); createBrowserGraphPane?.(); }}
+                            className="p-1 hover:bg-white/10 rounded transition-all text-gray-400 hover:text-cyan-400"
+                            title="Browser History Graph"
+                        >
+                            <Network size={12} />
                         </button>
                         <button
                             onClick={(e) => { e.stopPropagation(); setWebsitesCollapsed(!websitesCollapsed); }}
@@ -1560,6 +1654,50 @@ const renderWebsiteList = () => {
                     </div>
                 </div>
             </div>
+            {/* Websites Settings Panel */}
+            {showWebsitesSettings && (
+                <div className="mx-1 p-2 bg-purple-900/20 border border-purple-500/30 rounded text-[10px] space-y-2">
+                    <div className="flex items-center justify-between">
+                        <label className="text-gray-300">Group by domain</label>
+                        <input
+                            type="checkbox"
+                            checked={websitesSettings.groupByDomain}
+                            onChange={(e) => setWebsitesSettings(s => ({ ...s, groupByDomain: e.target.checked }))}
+                            className="rounded"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-gray-400 block mb-1">Time range (days, 0=all)</label>
+                        <input
+                            type="number"
+                            value={websitesSettings.timeRangeDays}
+                            onChange={(e) => setWebsitesSettings(s => ({ ...s, timeRangeDays: parseInt(e.target.value) || 0 }))}
+                            className="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-gray-200"
+                            min="0"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-gray-400 block mb-1">Max history items</label>
+                        <input
+                            type="number"
+                            value={websitesSettings.maxHistory}
+                            onChange={(e) => setWebsitesSettings(s => ({ ...s, maxHistory: parseInt(e.target.value) || 100 }))}
+                            className="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-gray-200"
+                            min="10"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-gray-400 block mb-1">Excluded domains (comma-sep)</label>
+                        <input
+                            type="text"
+                            value={websitesSettings.excludedDomains}
+                            onChange={(e) => setWebsitesSettings(s => ({ ...s, excludedDomains: e.target.value }))}
+                            placeholder="facebook.com,twitter.com"
+                            className="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-gray-200 placeholder-gray-600"
+                        />
+                    </div>
+                </div>
+            )}
             {!websitesCollapsed && allWebsites.length > 0 && (
                 <div className="px-1 py-1 bg-black/20 border-b border-white/5">
                     <div className="relative">
@@ -1587,11 +1725,11 @@ const renderWebsiteList = () => {
     }
 
     return (
-        <div>
+        <div className="flex flex-col h-full">
             {header}
 
             {!websitesCollapsed && (
-                <div className="mx-1 bg-black/10 rounded-b-lg max-h-[240px] overflow-y-auto">
+                <div className="mx-1 bg-black/10 rounded-b-lg flex-1 min-h-0 overflow-y-auto">
                     {/* Currently Open Browsers */}
                     {openBrowsers.length > 0 && (
                         <div className="border-b border-white/5">
@@ -1792,25 +1930,6 @@ const renderWebsiteList = () => {
         </div>
     );
 };
-
-
-const loadGitStatus = useCallback(async () => {
-    setGitLoading(true);
-    setGitError(null);
-    try {
-    const response = await window.api.gitStatus(currentPath);
-    setGitStatus(response); // { staged: [], unstaged: [], untracked: [], branch: "", ahead: 0, behind: 0 }
-    } catch (err) {
-    setGitError(err.message || 'Failed to get git status');
-    } finally {
-    setGitLoading(false);
-    }
-}, [currentPath]);
-useEffect(() => {
-    if (currentPath) {
-        loadGitStatus();
-    }
-    }, [currentPath, loadGitStatus]);
 
     // Load memories for the current path
     const loadMemories = useCallback(async () => {
@@ -2588,8 +2707,9 @@ const renderFolderList = (structure) => {
 
     const header = (
         <div
-            className="mx-1 mt-3"
-            onDragOver={handleSectionDragOver}
+            className={`mx-1 mt-3 transition-all duration-150 ${draggedSection === 'files' ? 'opacity-50' : ''} ${dropTargetSection === 'files' ? 'ring-2 ring-yellow-500 rounded-lg' : ''}`}
+            onDragOver={handleSectionDragOver('files')}
+            onDragLeave={handleSectionDragLeave}
             onDrop={handleSectionDrop('files')}
         >
             <div className="group/header flex items-center bg-gradient-to-r from-yellow-900/20 to-orange-900/20 rounded-t-lg border-b border-yellow-500/20">
@@ -2615,6 +2735,13 @@ const renderFolderList = (structure) => {
                         )}
                     </div>
                     <div className="flex items-center gap-0.5">
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setShowFilesSettings(!showFilesSettings); }}
+                            className={`p-1 hover:bg-white/10 rounded transition-all ${showFilesSettings ? 'text-yellow-400' : 'text-gray-400 hover:text-yellow-400'}`}
+                            title="Settings"
+                        >
+                            <Settings size={12} />
+                        </button>
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -2646,6 +2773,61 @@ const renderFolderList = (structure) => {
                     </div>
                 </div>
             </div>
+            {/* Files Settings Panel */}
+            {showFilesSettings && (
+                <div className="mx-1 p-2 bg-yellow-900/20 border border-yellow-500/30 rounded text-[10px] space-y-2">
+                    <div className="flex items-center justify-between">
+                        <label className="text-gray-300">Show hidden files</label>
+                        <input
+                            type="checkbox"
+                            checked={filesSettings.showHidden}
+                            onChange={(e) => setFilesSettings(s => ({ ...s, showHidden: e.target.checked }))}
+                            className="rounded"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-gray-400 block mb-1">Allowed extensions (empty=all)</label>
+                        <input
+                            type="text"
+                            value={filesSettings.allowedExtensions}
+                            onChange={(e) => setFilesSettings(s => ({ ...s, allowedExtensions: e.target.value }))}
+                            placeholder=".py,.js,.tsx,.md"
+                            className="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-gray-200 placeholder-gray-600"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-gray-400 block mb-1">Excluded extensions</label>
+                        <input
+                            type="text"
+                            value={filesSettings.excludedExtensions}
+                            onChange={(e) => setFilesSettings(s => ({ ...s, excludedExtensions: e.target.value }))}
+                            placeholder=".pyc,.git"
+                            className="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-gray-200 placeholder-gray-600"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-gray-400 block mb-1">Excluded folders</label>
+                        <input
+                            type="text"
+                            value={filesSettings.excludedFolders}
+                            onChange={(e) => setFilesSettings(s => ({ ...s, excludedFolders: e.target.value }))}
+                            placeholder="node_modules,.git"
+                            className="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-gray-200 placeholder-gray-600"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-gray-400 block mb-1">Max folder depth</label>
+                        <input
+                            type="number"
+                            value={filesSettings.maxDepth}
+                            onChange={(e) => setFilesSettings(s => ({ ...s, maxDepth: parseInt(e.target.value) || 10 }))}
+                            className="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-gray-200"
+                            min="1"
+                            max="50"
+                        />
+                    </div>
+                </div>
+            )}
             {!filesCollapsed && (
                 <div className="bg-black/20 border-b border-white/5">
                     {/* Search input */}
@@ -2906,15 +3088,17 @@ const renderFolderList = (structure) => {
     };
 
     return (
-        <div>
+        <div className="flex flex-col h-full">
             {header}
-            <div className="mx-1 bg-black/10 rounded-b-lg max-h-[320px] overflow-y-auto">
-                {fileSearch.trim() && Object.keys(filteredStructure).length === 0 ? (
-                    <div className="px-3 py-3 text-[11px] text-gray-500 text-center">No files match "{fileSearch}"</div>
-                ) : (
-                    <div className="py-1">{renderFolderContents(fileSearch.trim() ? filteredStructure : structure)}</div>
-                )}
-            </div>
+            {!filesCollapsed && (
+                <div className="mx-1 bg-black/10 rounded-b-lg flex-1 min-h-0 overflow-y-auto">
+                    {fileSearch.trim() && Object.keys(filteredStructure).length === 0 ? (
+                        <div className="px-3 py-3 text-[11px] text-gray-500 text-center">No files match "{fileSearch}"</div>
+                    ) : (
+                        <div className="py-1">{renderFolderContents(fileSearch.trim() ? filteredStructure : structure)}</div>
+                    )}
+                </div>
+            )}
         </div>
     );
 };
@@ -2983,8 +3167,9 @@ const renderFolderList = (structure) => {
 
         const header = (
             <div
-                className="mx-1 mt-3"
-                onDragOver={handleSectionDragOver}
+                className={`mx-1 mt-3 transition-all duration-150 ${draggedSection === 'conversations' ? 'opacity-50' : ''} ${dropTargetSection === 'conversations' ? 'ring-2 ring-green-500 rounded-lg' : ''}`}
+                onDragOver={handleSectionDragOver('conversations')}
+                onDragLeave={handleSectionDragLeave}
                 onDrop={handleSectionDrop('conversations')}
             >
                 <div className="group/header flex items-center bg-gradient-to-r from-green-900/20 to-emerald-900/20 rounded-t-lg border-b border-green-500/20">
@@ -3010,6 +3195,13 @@ const renderFolderList = (structure) => {
                             )}
                         </div>
                         <div className="flex items-center gap-0.5">
+                            <button
+                                onClick={(e) => { e.stopPropagation(); setShowConversationsSettings(!showConversationsSettings); }}
+                                className={`p-1 hover:bg-white/10 rounded transition-all ${showConversationsSettings ? 'text-green-400' : 'text-gray-400 hover:text-green-400'}`}
+                                title="Settings"
+                            >
+                                <Settings size={12} />
+                            </button>
                             <button
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -3044,6 +3236,54 @@ const renderFolderList = (structure) => {
                         </div>
                     </div>
                 </div>
+                {/* Conversations Settings Panel */}
+                {showConversationsSettings && (
+                    <div className="mx-1 p-2 bg-green-900/20 border border-green-500/30 rounded text-[10px] space-y-2">
+                        <div>
+                            <label className="text-gray-400 block mb-1">Sort by</label>
+                            <select
+                                value={conversationsSettings.sortBy}
+                                onChange={(e) => setConversationsSettings(s => ({ ...s, sortBy: e.target.value }))}
+                                className="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-gray-200"
+                            >
+                                <option value="date">Date</option>
+                                <option value="title">Title</option>
+                                <option value="npc">NPC</option>
+                                <option value="model">Model</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="text-gray-400 block mb-1">Sort order</label>
+                            <select
+                                value={conversationsSettings.sortOrder}
+                                onChange={(e) => setConversationsSettings(s => ({ ...s, sortOrder: e.target.value }))}
+                                className="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-gray-200"
+                            >
+                                <option value="desc">Newest first</option>
+                                <option value="asc">Oldest first</option>
+                            </select>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <label className="text-gray-300">Show empty conversations</label>
+                            <input
+                                type="checkbox"
+                                checked={conversationsSettings.showEmpty}
+                                onChange={(e) => setConversationsSettings(s => ({ ...s, showEmpty: e.target.checked }))}
+                                className="rounded"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-gray-400 block mb-1">Max display count</label>
+                            <input
+                                type="number"
+                                value={conversationsSettings.maxDisplay}
+                                onChange={(e) => setConversationsSettings(s => ({ ...s, maxDisplay: parseInt(e.target.value) || 100 }))}
+                                className="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-gray-200"
+                                min="10"
+                            />
+                        </div>
+                    </div>
+                )}
                 {!conversationsCollapsed && (
                     <div className="bg-black/20 border-b border-white/5">
                         {/* Search input */}
@@ -3208,13 +3448,14 @@ const renderFolderList = (structure) => {
         }
 
         return (
-            <div>
+            <div className="flex flex-col h-full">
                 {header}
-                <div className="mx-1 bg-black/10 rounded-b-lg max-h-[280px] overflow-y-auto">
-                    {filteredConversations.length === 0 ? (
-                        <div className="px-3 py-3 text-[11px] text-gray-500 text-center">No matches for "{convoSearch}"</div>
-                    ) : (
-                        filteredConversations.map((conv, index) => {
+                {!conversationsCollapsed && (
+                    <div className="mx-1 bg-black/10 rounded-b-lg flex-1 min-h-0 overflow-y-auto">
+                        {filteredConversations.length === 0 ? (
+                            <div className="px-3 py-3 text-[11px] text-gray-500 text-center">No matches for "{convoSearch}"</div>
+                        ) : (
+                            filteredConversations.map((conv, index) => {
                             const isSelected = selectedConvos?.has(conv.id);
                             const isActive = conv.id === activeConversationId && !currentFile;
                             return (
@@ -3262,13 +3503,210 @@ const renderFolderList = (structure) => {
                             );
                         })
                     )}
-                
-                
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    // Git section - only shows when git is detected
+    const renderGitSection = () => {
+        // Show loading state while checking for git
+        if (!gitStatus) {
+            return (
+                <div className="mx-1 mt-3">
+                    <div className="flex items-center bg-gradient-to-r from-orange-900/20 to-amber-900/20 rounded-lg px-2 py-1.5">
+                        <GitBranch size={12} className="text-orange-400 mr-1.5" />
+                        <span className="text-[11px] text-orange-300 font-medium">Git</span>
+                        <span className="text-[10px] text-gray-500 ml-1.5">(checking...)</span>
+                    </div>
                 </div>
-    
-    
-    
-    
+            );
+        }
+
+        // If gitStatus is an error or not a git repo, don't show the section
+        if (gitStatus.success === false) return null;
+
+        const staged = Array.isArray(gitStatus.staged) ? gitStatus.staged : [];
+        const unstaged = Array.isArray(gitStatus.unstaged) ? gitStatus.unstaged : [];
+        const untracked = Array.isArray(gitStatus.untracked) ? gitStatus.untracked : [];
+        const totalChanges = staged.length + unstaged.length + untracked.length;
+
+        const openDiffViewer = (filePath: string, status: string) => {
+            // Open a diff pane for this file
+            const paneId = generateId();
+            const fullPath = filePath.startsWith('/') ? filePath : `${currentPath}/${filePath}`;
+            const newPane = {
+                id: paneId,
+                contentType: 'diff',
+                contentId: fullPath,
+                diffStatus: status
+            };
+
+            // Add pane to layout
+            if (createAndAddPaneNodeToLayout) {
+                createAndAddPaneNodeToLayout(newPane);
+            }
+        };
+
+        const header = (
+            <div
+                className={`mx-1 mt-3 transition-all duration-150 ${draggedSection === 'git' ? 'opacity-50' : ''} ${dropTargetSection === 'git' ? 'ring-2 ring-orange-500 rounded-lg' : ''}`}
+                onDragOver={handleSectionDragOver('git')}
+                onDragLeave={handleSectionDragLeave}
+                onDrop={handleSectionDrop('git')}
+            >
+                <div className="group/header flex items-center bg-gradient-to-r from-orange-900/20 to-amber-900/20 rounded-t-lg border-b border-orange-500/20">
+                    {/* Drag handle - appears on hover */}
+                    <div
+                        draggable
+                        onDragStart={handleSectionDragStart('git')}
+                        onDragEnd={handleSectionDragEnd}
+                        className="w-0 group-hover/header:w-5 flex-shrink-0 flex items-center justify-center cursor-grab active:cursor-grabbing transition-all duration-150 opacity-0 group-hover/header:opacity-100 self-stretch"
+                        title="Drag to reorder"
+                    >
+                        <GripVertical size={10} className="text-gray-500" />
+                    </div>
+                    <div className="flex-1 flex items-center justify-between px-2 py-1.5">
+                        <div className="flex items-center gap-1.5">
+                            <GitBranch size={12} className="text-orange-400" />
+                            <span className="text-[11px] text-orange-300 font-medium">Git</span>
+                            <span className="text-[10px] text-gray-500">({gitStatus.branch})</span>
+                            {totalChanges > 0 && (
+                                <span className="text-[9px] bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded-full">
+                                    {totalChanges} change{totalChanges !== 1 ? 's' : ''}
+                                </span>
+                            )}
+                            {gitStatus.ahead > 0 && <span className="text-[9px] text-green-400">↑{gitStatus.ahead}</span>}
+                            {gitStatus.behind > 0 && <span className="text-[9px] text-yellow-400">↓{gitStatus.behind}</span>}
+                        </div>
+                        <div className="flex items-center gap-0.5">
+                            <button
+                                onClick={(e) => { e.stopPropagation(); loadGitStatus(); }}
+                                className="p-1 hover:bg-white/10 rounded"
+                                title="Refresh git status"
+                            >
+                                <RotateCcw size={10} className="text-gray-400" />
+                            </button>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); setGitPanelCollapsed(!gitPanelCollapsed); }}
+                                className="p-1 hover:bg-white/10 rounded"
+                            >
+                                <ChevronRight size={12} className={`text-gray-400 transition-transform ${!gitPanelCollapsed ? 'rotate-90' : ''}`} />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+
+        return (
+            <div className="flex flex-col">
+                {header}
+                {!gitPanelCollapsed && (
+                    <div className="mx-1 theme-bg-secondary rounded-b-lg overflow-hidden">
+                        <div className="overflow-auto max-h-[300px] p-2 space-y-2">
+                            {/* Staged files */}
+                            {staged.length > 0 && (
+                                <div>
+                                    <div className="text-[10px] font-medium text-green-400 mb-1 flex items-center gap-1">
+                                        <Check size={10} /> Staged ({staged.length})
+                                    </div>
+                                    {staged.map(file => (
+                                        <button
+                                            key={file.path}
+                                            onClick={() => openDiffViewer(file.path, file.status)}
+                                            className="flex items-center justify-between w-full px-2 py-1 text-[10px] hover:bg-green-500/10 rounded group"
+                                        >
+                                            <span className="text-green-300 truncate flex-1 text-left">{file.path}</span>
+                                            <span className="text-green-500 text-[9px] opacity-60">{file.status}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Unstaged files */}
+                            {unstaged.length > 0 && (
+                                <div>
+                                    <div className="text-[10px] font-medium text-yellow-400 mb-1 flex items-center gap-1">
+                                        <Edit size={10} /> Modified ({unstaged.length})
+                                    </div>
+                                    {unstaged.map(file => (
+                                        <button
+                                            key={file.path}
+                                            onClick={() => openDiffViewer(file.path, file.status)}
+                                            className="flex items-center justify-between w-full px-2 py-1 text-[10px] hover:bg-yellow-500/10 rounded group"
+                                        >
+                                            <span className="text-yellow-300 truncate flex-1 text-left">{file.path}</span>
+                                            <span className="text-yellow-500 text-[9px] opacity-60">{file.status}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Untracked files */}
+                            {untracked.length > 0 && (
+                                <div>
+                                    <div className="text-[10px] font-medium text-gray-400 mb-1 flex items-center gap-1">
+                                        <Plus size={10} /> Untracked ({untracked.length})
+                                    </div>
+                                    {untracked.map(file => (
+                                        <button
+                                            key={file.path}
+                                            onClick={() => handleFileClick(`${currentPath}/${file.path}`)}
+                                            className="flex items-center justify-between w-full px-2 py-1 text-[10px] hover:bg-white/5 rounded group"
+                                        >
+                                            <span className="text-gray-400 truncate flex-1 text-left">{file.path}</span>
+                                            <span className="text-gray-500 text-[9px] opacity-60">new</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
+                            {totalChanges === 0 && (
+                                <div className="text-[10px] text-gray-500 text-center py-2">
+                                    No changes
+                                </div>
+                            )}
+
+                            {/* Quick actions */}
+                            <div className="pt-2 border-t border-gray-700/50 flex gap-1">
+                                <input
+                                    type="text"
+                                    value={gitCommitMessage}
+                                    onChange={e => setGitCommitMessage(e.target.value)}
+                                    placeholder="Commit message..."
+                                    className="flex-1 px-2 py-1 text-[10px] rounded theme-bg-primary theme-border border"
+                                />
+                                <button
+                                    disabled={gitLoading || !gitCommitMessage.trim() || staged.length === 0}
+                                    onClick={gitCommitChanges}
+                                    className="px-2 py-1 text-[10px] bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded"
+                                    title="Commit staged changes"
+                                >
+                                    Commit
+                                </button>
+                            </div>
+                            <div className="flex gap-1">
+                                <button
+                                    disabled={gitLoading}
+                                    onClick={gitPullChanges}
+                                    className="flex-1 px-2 py-1 text-[10px] theme-hover rounded border theme-border"
+                                >
+                                    Pull
+                                </button>
+                                <button
+                                    disabled={gitLoading}
+                                    onClick={gitPushChanges}
+                                    className="flex-1 px-2 py-1 text-[10px] theme-hover rounded border theme-border"
+                                >
+                                    Push
+                                </button>
+                            </div>
+                            {gitError && <div className="text-[9px] text-red-400">{gitError}</div>}
+                        </div>
+                    </div>
+                )}
             </div>
         );
     };
@@ -3753,21 +4191,85 @@ return (
             ) : isSearching ? (
                 renderSearchResults()
             ) : (
-                <>
-                    {/* Render sections in user-defined order */}
-                    {(sidebarSectionOrder || ['websites', 'files', 'conversations']).map((sectionId: string) => {
-                        switch (sectionId) {
-                            case 'websites':
-                                return <div key={sectionId}>{renderWebsiteList()}</div>;
-                            case 'files':
-                                return <div key={sectionId}>{renderFolderList(folderStructure)}</div>;
-                            case 'conversations':
-                                return <div key={sectionId}>{renderConversationList(directoryConversations)}</div>;
-                            default:
-                                return null;
+                <div
+                    className="flex flex-col h-full"
+                    onDragOver={(e) => {
+                        if (!draggedSection) return;
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        // Find which section we're over based on Y position
+                        const container = e.currentTarget;
+                        const sections = container.querySelectorAll('[data-section-id]');
+                        const y = e.clientY;
+                        let targetSection: string | null = null;
+                        sections.forEach((section) => {
+                            const rect = section.getBoundingClientRect();
+                            if (y >= rect.top && y <= rect.bottom) {
+                                targetSection = section.getAttribute('data-section-id');
+                            }
+                        });
+                        // If we're below all sections, target the last one
+                        if (!targetSection && sections.length > 0) {
+                            const lastRect = sections[sections.length - 1].getBoundingClientRect();
+                            if (y > lastRect.bottom) {
+                                targetSection = sections[sections.length - 1].getAttribute('data-section-id');
+                            } else if (y < sections[0].getBoundingClientRect().top) {
+                                targetSection = sections[0].getAttribute('data-section-id');
+                            }
                         }
+                        if (targetSection && targetSection !== draggedSection) {
+                            setDropTargetSection(targetSection);
+                        }
+                    }}
+                    onDragLeave={(e) => {
+                        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                            setDropTargetSection(null);
+                        }
+                    }}
+                    onDrop={(e) => {
+                        e.preventDefault();
+                        if (!draggedSection || !dropTargetSection || draggedSection === dropTargetSection || !setSidebarSectionOrder) {
+                            setDraggedSection(null);
+                            setDropTargetSection(null);
+                            return;
+                        }
+                        const currentOrder = sidebarSectionOrder || ['websites', 'files', 'conversations', 'git'];
+                        const newOrder = [...currentOrder];
+                        const draggedIndex = newOrder.indexOf(draggedSection);
+                        const targetIndex = newOrder.indexOf(dropTargetSection);
+                        newOrder.splice(draggedIndex, 1);
+                        newOrder.splice(targetIndex, 0, draggedSection);
+                        setSidebarSectionOrder(newOrder);
+                        setDraggedSection(null);
+                        setDropTargetSection(null);
+                    }}
+                >
+                    {/* Render sections in user-defined order */}
+                    {(sidebarSectionOrder || ['websites', 'files', 'conversations', 'git']).map((sectionId: string) => {
+                        const sectionColors: Record<string, string> = {
+                            websites: 'ring-purple-500',
+                            files: 'ring-yellow-500',
+                            conversations: 'ring-green-500',
+                            git: 'ring-orange-500'
+                        };
+                        const isCollapsed = (sectionId === 'websites' && websitesCollapsed) ||
+                                           (sectionId === 'files' && filesCollapsed) ||
+                                           (sectionId === 'conversations' && conversationsCollapsed) ||
+                                           (sectionId === 'git' && gitPanelCollapsed);
+                        return (
+                            <div
+                                key={sectionId}
+                                data-section-id={sectionId}
+                                className={`transition-all duration-150 ${isCollapsed ? 'flex-shrink-0' : 'flex-1 min-h-0'} ${draggedSection === sectionId ? 'opacity-50 scale-95' : ''} ${dropTargetSection === sectionId && draggedSection !== sectionId ? `ring-2 ${sectionColors[sectionId]} rounded-lg bg-white/5` : ''}`}
+                            >
+                                {sectionId === 'websites' && renderWebsiteList()}
+                                {sectionId === 'files' && renderFolderList(folderStructure)}
+                                {sectionId === 'conversations' && renderConversationList(directoryConversations)}
+                                {sectionId === 'git' && renderGitSection()}
+                            </div>
+                        );
                     })}
-                </>
+                </div>
             )}
             {contextMenuPos && renderContextMenu()}
             {sidebarItemContextMenuPos && renderSidebarItemContextMenu()}
@@ -4110,7 +4612,7 @@ return (
             {!sidebarCollapsed && bottomGridEditMode && (
                 <div className="mb-2 p-2 bg-gray-800/50 rounded-lg border border-gray-700">
                     <div className="text-[10px] text-gray-400 mb-2">Drag to reorder • Click to edit</div>
-                    <div className="grid grid-cols-3 gap-1">
+                    <div className="grid grid-cols-2 gap-1">
                         {(tileJinxesLoaded ? tileJinxes : bottomGridConfig.map(t => ({ ...t, filename: `${t.id}.jinx`, jinx_name: `tile.${t.id}`, action: t.id, rawContent: '' }))).map((tile, idx) => (
                             <div
                                 key={tile.filename || tile.id}
@@ -4242,9 +4744,9 @@ export default function CustomTile({ onClose, theme }: { onClose?: () => void; t
                 </div>
             )}
 
-            {/* 4x3 Grid - uses jinx tiles when loaded */}
+            {/* 2x2 Grid - uses jinx tiles when loaded */}
             {!sidebarCollapsed && !bottomGridEditMode && (
-                <div className="grid grid-cols-3 divide-x divide-y divide-theme-border border theme-border rounded-lg overflow-hidden mb-2">
+                <div className="grid grid-cols-2 divide-x divide-y divide-theme-border border theme-border rounded-lg overflow-hidden mb-2">
                     {(() => {
                         // Fallback actions for when jinxes haven't loaded yet
                         const fallbackActions: Record<string, () => void> = {

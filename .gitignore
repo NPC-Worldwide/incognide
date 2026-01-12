@@ -175,3 +175,12 @@ pyinstaller*
 node_modules
 
 out/
+*.png
+*.pdf
+*.aux
+*.xlsx
+*.docx
+*.pptx
+*.ipynb 
+*.bak
+

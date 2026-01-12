@@ -41,17 +41,7 @@ const GraphViewer: React.FC<GraphViewerProps> = ({ isOpen = true, onClose, isPan
                         <GitBranch size={16} />
                         Knowledge Graph
                     </button>
-                    <button
-                        onClick={() => setActiveTab('browser')}
-                        className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
-                            activeTab === 'browser'
-                                ? 'border-blue-500 text-blue-400'
-                                : 'border-transparent text-gray-400 hover:text-white'
-                        }`}
-                    >
-                        <Globe size={16} />
-                        Browser History
-                    </button>
+
                 </div>
                 {!isPane && onClose && (
                     <button onClick={onClose} className="p-3 hover:bg-gray-700 transition-colors">

@@ -1,6 +1,6 @@
 {
   "name": "incognide",
-  "version": "0.0.32",
+  "version": "0.0.33",
   "description": "Explore the unknown, build the future, own your data.",
   "author": "Chris Agostino <info@npcworldwi.de>",
   "main": "src/main.js",
@@ -174,7 +174,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "cross-env": "^10.1.0",
-    "electron": "^25.9.8",
+    "electron": "^35.7.5",
     "electron-builder": "^24.13.3",
     "electron-icon-builder": "^2.0.1",
     "electron-rebuild": "^3.2.9",

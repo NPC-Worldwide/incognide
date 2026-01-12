@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ChevronRight, ChevronDown, HardDrive, Folder, File } from 'lucide-react';
+import { ChevronRight, ChevronDown, HardDrive, Folder, File, ArrowLeft, X } from 'lucide-react';
 import { Pie } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -13,34 +13,80 @@ ChartJS.register(ArcElement, Tooltip, Legend);
 
 interface DiskUsageAnalyzerProps {
   path?: string;
+  currentPath?: string;
   isDarkMode?: boolean;
   isPane?: boolean; // When true, renders as pane content (fills container)
 }
 
-const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, isDarkMode = false, isPane = false }) => {
+const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath, isDarkMode = false, isPane = false }) => {
   const [folderTree, setFolderTree] = useState(null);
   const [expandedFolders, setExpandedFolders] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedPath, setSelectedPath] = useState(null);
+  const [drillPath, setDrillPath] = useState<string | null>(null); // For drilling into subfolders
+  const [previewItem, setPreviewItem] = useState<any>(null); // For popup preview on single click
+
+  // Use home directory as fallback if no path provided
+  const [homePath, setHomePath] = useState<string | null>(null);
 
   useEffect(() => {
-    if (path) {
-      analyzeFolder(path);
-    } else {
-      setLoading(false);
+    // Get home directory from electron - with fallback
+    const getHome = async () => {
+      try {
+        if (window.api?.getHomeDir) {
+          const dir = await window.api.getHomeDir();
+          if (dir) {
+            setHomePath(dir);
+          } else {
+            const isWindows = navigator.platform.startsWith('Win');
+            setHomePath(isWindows ? 'C:\\Users' : '/Users');
+          }
+        } else {
+          const fallback = navigator.platform.startsWith('Win') ? 'C:\\Users' : '/Users';
+          setHomePath(fallback);
+        }
+      } catch (e) {
+        setHomePath('/Users');
+      }
+    };
+    getHome();
+  }, []);
+
+  // Priority: drillPath > path prop > currentPath prop > homePath > /Users fallback
+  const basePath = (path && path.trim()) ? path : ((currentPath && currentPath.trim()) ? currentPath : (homePath || '/Users'));
+  const effectivePath = drillPath || basePath;
+
+  useEffect(() => {
+    if (effectivePath) {
+      analyzeFolder(effectivePath);
     }
-  }, [path]);
+  }, [effectivePath]);
 
   const analyzeFolder = async (folderPath) => {
     try {
       setLoading(true);
       setError(null);
+
+      if (!folderPath) {
+        setError('No folder path provided');
+        return;
+      }
+
+      if (!window.api?.analyzeDiskUsage) {
+        setError('Disk usage API not available');
+        return;
+      }
+
       const result = await window.api.analyzeDiskUsage(folderPath);
-      setFolderTree(result);
+
+      if (!result) {
+        setError(`Could not analyze folder: ${folderPath}`);
+      } else {
+        setFolderTree(result);
+      }
     } catch (err) {
       setError(`Failed to analyze folder: ${err.message}`);
-      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -88,6 +134,14 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, isDarkMode 
   ];
 
   // Prepare pie chart data from top-level children
+  // Store sorted children for click handling
+  const topItemsRef = useMemo(() => {
+    if (!folderTree || !folderTree.children || folderTree.children.length === 0) {
+      return [];
+    }
+    return [...folderTree.children].sort((a, b) => b.size - a.size).slice(0, 8);
+  }, [folderTree]);
+
   const pieChartData = useMemo(() => {
     if (!folderTree || !folderTree.children || folderTree.children.length === 0) {
       return null;
@@ -120,9 +174,34 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, isDarkMode 
     };
   }, [folderTree, isDarkMode]);
 
+  // Handle pie slice click - single click shows preview, double click drills down
+  const lastClickRef = React.useRef<{ time: number; index: number }>({ time: 0, index: -1 });
+
+  const handlePieClick = (event: any, elements: any[]) => {
+    if (elements.length > 0) {
+      const index = elements[0].index;
+      const item = topItemsRef[index];
+      if (!item) return;
+
+      const now = Date.now();
+      const isDoubleClick = lastClickRef.current.index === index && (now - lastClickRef.current.time) < 300;
+      lastClickRef.current = { time: now, index };
+
+      if (isDoubleClick && item.type === 'folder') {
+        // Double click - drill down
+        setPreviewItem(null);
+        setDrillPath(item.path);
+      } else {
+        // Single click - show preview popup
+        setPreviewItem(item);
+      }
+    }
+  };
+
   const pieChartOptions = useMemo(() => ({
     responsive: true,
     maintainAspectRatio: false,
+    onClick: handlePieClick,
     plugins: {
       legend: {
         display: true,
@@ -140,12 +219,12 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, isDarkMode 
             const value = context.raw as number;
             const total = (context.dataset.data as number[]).reduce((a, b) => a + b, 0);
             const percentage = Math.round((value / total) * 100);
-            return `${context.label}: ${formatBytes(value)} (${percentage}%)`;
+            return `${context.label}: ${formatBytes(value)} (${percentage}%) - Click to drill down`;
           }
         }
       }
     }
-  }), [isDarkMode]);
+  }), [isDarkMode, handlePieClick]);
 
   const FolderItem = ({ item, level = 0, parentSize = 0 }) => {
     const isExpanded = expandedFolders[item.path];
@@ -327,11 +406,22 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, isDarkMode 
         }`}
       >
         <div className="flex items-center gap-3">
+          {drillPath && (
+            <button
+              onClick={() => setDrillPath(null)}
+              className={`p-2 rounded hover:bg-opacity-20 ${
+                isDarkMode ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-200 text-gray-600'
+              }`}
+              title="Go back"
+            >
+              <ArrowLeft size={20} />
+            </button>
+          )}
           <HardDrive
             size={24}
             className={isDarkMode ? 'text-blue-400' : 'text-blue-500'}
           />
-          <div>
+          <div className="flex-1 min-w-0">
             <h3
               className={`font-semibold ${
                 isDarkMode ? 'text-gray-100' : 'text-gray-900'
@@ -340,11 +430,12 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, isDarkMode 
               Disk Usage Analyzer
             </h3>
             <p
-              className={`text-xs mt-1 ${
+              className={`text-xs mt-1 truncate ${
                 isDarkMode ? 'text-gray-400' : 'text-gray-600'
               }`}
+              title={effectivePath}
             >
-              {path}
+              {effectivePath}
             </p>
           </div>
         </div>
@@ -417,17 +508,109 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, isDarkMode 
 
         {/* Pie Chart */}
         {pieChartData && (
-          <div className="mt-4">
+          <div className="mt-4 relative">
             <div
               className={`text-xs font-semibold mb-2 ${
                 isDarkMode ? 'text-gray-400' : 'text-gray-600'
               }`}
             >
-              Disk Usage Distribution
+              Disk Usage Distribution (click slice for preview, double-click to drill down)
             </div>
             <div style={{ height: '180px' }}>
               <Pie data={pieChartData} options={pieChartOptions} />
             </div>
+
+            {/* Preview Popup */}
+            {previewItem && (
+              <div
+                className={`absolute z-50 p-3 rounded-lg shadow-xl border ${
+                  isDarkMode
+                    ? 'bg-gray-800 border-gray-600'
+                    : 'bg-white border-gray-300'
+                }`}
+                style={{
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  minWidth: '220px',
+                  maxWidth: '280px'
+                }}
+              >
+                {/* Close button */}
+                <button
+                  onClick={() => setPreviewItem(null)}
+                  className={`absolute top-2 right-2 p-1 rounded hover:bg-opacity-20 ${
+                    isDarkMode ? 'text-gray-400 hover:bg-gray-600' : 'text-gray-500 hover:bg-gray-200'
+                  }`}
+                >
+                  <X size={14} />
+                </button>
+
+                {/* Item info */}
+                <div className="flex items-center gap-2 mb-2 pr-6">
+                  {previewItem.type === 'folder' ? (
+                    <Folder size={18} className="text-yellow-500 flex-shrink-0" />
+                  ) : (
+                    <File size={18} className="text-gray-500 flex-shrink-0" />
+                  )}
+                  <span
+                    className={`font-semibold text-sm truncate ${
+                      isDarkMode ? 'text-gray-100' : 'text-gray-900'
+                    }`}
+                    title={previewItem.name}
+                  >
+                    {previewItem.name}
+                  </span>
+                </div>
+
+                {/* Size info */}
+                <div className={`text-xs mb-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  <span className="font-medium">{formatBytes(previewItem.size)}</span>
+                  <span className="mx-1">•</span>
+                  <span>{getPercentage(previewItem.size, folderTree?.size)}% of total</span>
+                </div>
+
+                {/* Children preview for folders */}
+                {previewItem.type === 'folder' && previewItem.children && previewItem.children.length > 0 && (
+                  <div className={`text-xs border-t pt-2 mt-2 ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                    <div className={`font-medium mb-1 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Top items:
+                    </div>
+                    {[...previewItem.children]
+                      .sort((a, b) => b.size - a.size)
+                      .slice(0, 4)
+                      .map((child, i) => (
+                        <div key={i} className={`flex justify-between py-0.5 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                          <span className="truncate flex-1 mr-2">{child.name}</span>
+                          <span className="flex-shrink-0">{formatBytes(child.size)}</span>
+                        </div>
+                      ))}
+                    {previewItem.children.length > 4 && (
+                      <div className={`text-xs italic mt-1 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                        +{previewItem.children.length - 4} more items
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Drill down button for folders */}
+                {previewItem.type === 'folder' && (
+                  <button
+                    onClick={() => {
+                      setPreviewItem(null);
+                      setDrillPath(previewItem.path);
+                    }}
+                    className={`mt-2 w-full py-1.5 px-3 text-xs font-medium rounded ${
+                      isDarkMode
+                        ? 'bg-blue-600 hover:bg-blue-500 text-white'
+                        : 'bg-blue-500 hover:bg-blue-600 text-white'
+                    }`}
+                  >
+                    Drill Down
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

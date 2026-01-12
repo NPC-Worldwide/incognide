@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { GitBranch, Brain, Zap, Loader, Edit, Plus, Link, X, Trash2, Repeat } from 'lucide-react';
+import { GitBranch, Brain, Zap, Loader, Edit, Plus, Link, X, Trash2, Repeat, Search, ChevronDown, ChevronUp } from 'lucide-react';
 import ForceGraph2D from 'react-force-graph-2d';
 
 interface KnowledgeGraphEditorProps {
@@ -24,6 +24,13 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
     const [newEdgeSource, setNewEdgeSource] = useState('');
     const [newEdgeTarget, setNewEdgeTarget] = useState('');
     const graphRef = useRef<any>(null);
+
+    // Search state
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState<{ facts: any[], concepts: any[] }>({ facts: [], concepts: [] });
+    const [isSearching, setIsSearching] = useState(false);
+    const [highlightedNodes, setHighlightedNodes] = useState<Set<string>>(new Set());
+    const [showSearchResults, setShowSearchResults] = useState(false);
 
     const fetchKgData = useCallback(async (generation?: number) => {
         setKgLoading(true);
@@ -66,6 +73,49 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         fetchKgData();
     }, [fetchKgData]);
 
+    // Search function
+    const handleSearch = useCallback(async () => {
+        if (!searchQuery.trim()) {
+            setSearchResults({ facts: [], concepts: [] });
+            setHighlightedNodes(new Set());
+            setShowSearchResults(false);
+            return;
+        }
+
+        setIsSearching(true);
+        try {
+            const result = await (window as any).api?.kg_search?.({
+                q: searchQuery,
+                generation: currentKgGeneration,
+                type: 'both',
+                limit: 50
+            });
+
+            if (result && !result.error) {
+                setSearchResults({ facts: result.facts || [], concepts: result.concepts || [] });
+
+                // Build set of matching node IDs for highlighting
+                const matches = new Set<string>();
+                (result.facts || []).forEach((f: any) => matches.add(f.statement));
+                (result.concepts || []).forEach((c: any) => matches.add(c.name));
+                setHighlightedNodes(matches);
+                setShowSearchResults(true);
+            }
+        } catch (err: any) {
+            console.error('Search error:', err);
+        } finally {
+            setIsSearching(false);
+        }
+    }, [searchQuery, currentKgGeneration]);
+
+    // Clear search
+    const clearSearch = useCallback(() => {
+        setSearchQuery('');
+        setSearchResults({ facts: [], concepts: [] });
+        setHighlightedNodes(new Set());
+        setShowSearchResults(false);
+    }, []);
+
     // Escape key handler
     useEffect(() => {
         if (!isModal) return;
@@ -102,13 +152,21 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
     }, [kgData, kgViewMode, kgNodeFilter, networkStats, cooccurrenceData]);
 
     const getNodeColor = useCallback((node: any) => {
+        // Highlight search matches
+        if (highlightedNodes.size > 0 && highlightedNodes.has(node.id)) {
+            return '#22c55e'; // Green for matches
+        }
         if (kgViewMode === 'cooccurrence') {
             const community = node.community || 0;
             const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#84cc16'];
             return colors[community % colors.length];
         }
+        // Dim non-matching nodes when search is active
+        if (highlightedNodes.size > 0) {
+            return node.type === 'concept' ? 'rgba(168, 85, 247, 0.3)' : 'rgba(59, 130, 246, 0.3)';
+        }
         return node.type === 'concept' ? '#a855f7' : '#3b82f6';
-    }, [kgViewMode]);
+    }, [kgViewMode, highlightedNodes]);
 
     const getNodeSize = useCallback((node: any) => {
         if (networkStats?.node_degrees?.[node.id]) {
@@ -223,6 +281,77 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                     <button onClick={() => handleKgProcessTrigger('sleep')} disabled={kgLoading} className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded flex items-center gap-2 disabled:opacity-50"><Zap size={14} /> Sleep</button>
                     <button onClick={() => handleKgProcessTrigger('dream')} disabled={kgLoading} className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded flex items-center gap-2 disabled:opacity-50"><Brain size={14} /> Dream</button>
                 </div>
+            </div>
+
+            {/* Search Bar */}
+            <div className="mb-4">
+                <div className="flex gap-2">
+                    <div className="flex-1 relative">
+                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                            placeholder="Search facts and concepts..."
+                            className="w-full pl-10 pr-10 py-2 text-sm bg-gray-800 text-white border border-gray-600 rounded focus:border-green-500 focus:outline-none"
+                        />
+                        {searchQuery && (
+                            <button onClick={clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
+                                <X size={16} />
+                            </button>
+                        )}
+                    </div>
+                    <button
+                        onClick={handleSearch}
+                        disabled={isSearching || !searchQuery.trim()}
+                        className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded text-sm flex items-center gap-2 disabled:opacity-50"
+                    >
+                        {isSearching ? <Loader size={14} className="animate-spin" /> : <Search size={14} />}
+                        Search
+                    </button>
+                </div>
+
+                {/* Search Results */}
+                {showSearchResults && (searchResults.facts.length > 0 || searchResults.concepts.length > 0) && (
+                    <div className="mt-2 bg-gray-800 border border-gray-700 rounded-lg max-h-48 overflow-y-auto">
+                        <button
+                            onClick={() => setShowSearchResults(!showSearchResults)}
+                            className="w-full px-3 py-2 flex items-center justify-between text-sm text-gray-300 hover:bg-gray-700"
+                        >
+                            <span>Results: {searchResults.facts.length} facts, {searchResults.concepts.length} concepts</span>
+                            {showSearchResults ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </button>
+                        <div className="px-3 pb-2 space-y-1">
+                            {searchResults.concepts.map((c, i) => (
+                                <div
+                                    key={`c-${i}`}
+                                    className="text-xs p-2 bg-purple-900/30 rounded cursor-pointer hover:bg-purple-900/50"
+                                    onClick={() => {
+                                        setSelectedKgNode({ id: c.name, type: 'concept' });
+                                        graphRef.current?.centerAt?.(0, 0, 500);
+                                    }}
+                                >
+                                    <span className="text-purple-400 font-medium">[Concept]</span> {c.name}
+                                    {c.description && <p className="text-gray-400 mt-1 truncate">{c.description}</p>}
+                                </div>
+                            ))}
+                            {searchResults.facts.map((f, i) => (
+                                <div
+                                    key={`f-${i}`}
+                                    className="text-xs p-2 bg-blue-900/30 rounded cursor-pointer hover:bg-blue-900/50"
+                                    onClick={() => {
+                                        setSelectedKgNode({ id: f.statement, type: 'fact' });
+                                        graphRef.current?.centerAt?.(0, 0, 500);
+                                    }}
+                                >
+                                    <span className="text-blue-400 font-medium">[Fact]</span> {f.statement}
+                                    {f.source_text && <p className="text-gray-500 mt-1 truncate italic">Source: {f.source_text}</p>}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">

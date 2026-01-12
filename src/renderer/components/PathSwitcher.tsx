@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
     Folder, FolderOpen, ChevronRight, Clock,
-    HardDrive, FolderPlus, X, ChevronDown, ArrowUp
+    HardDrive, FolderPlus, X, ChevronDown, ArrowUp, KeyRound
 } from 'lucide-react';
 
 // Helper to split paths on both / and \ (Windows compatibility)
@@ -25,6 +25,7 @@ interface PathSwitcherProps {
     baseDir: string;
     onPathChange: (path: string) => void;
     onGoUp: () => void;
+    onOpenEnv?: () => void;
 }
 
 const RECENT_PATHS_KEY = 'incognide-recent-paths';
@@ -34,7 +35,8 @@ export const PathSwitcher: React.FC<PathSwitcherProps> = ({
     currentPath,
     baseDir,
     onPathChange,
-    onGoUp
+    onGoUp,
+    onOpenEnv
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
@@ -196,6 +198,17 @@ export const PathSwitcher: React.FC<PathSwitcherProps> = ({
                         </>
                     )}
                 </div>
+
+                {/* Env settings button */}
+                {onOpenEnv && (
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onOpenEnv(); }}
+                        className="p-1 rounded hover:bg-amber-500/20 transition-colors flex-shrink-0"
+                        title="Environment Settings"
+                    >
+                        <KeyRound size={12} className="text-amber-400" />
+                    </button>
+                )}
 
                 {/* Dropdown indicator */}
                 <ChevronDown

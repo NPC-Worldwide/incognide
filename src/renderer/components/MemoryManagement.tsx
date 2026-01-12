@@ -3,7 +3,6 @@ import { Brain, Loader, CheckCircle, XCircle, Edit, Trash2, RefreshCw, Search } 
 
 interface Memory {
     id: number;
-    memory_id: string;
     initial_memory: string;
     final_memory: string;
     status: string;
@@ -29,7 +28,7 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
         try {
             console.log('[MemoryManagement] Loading memories...');
             const apiResult = await (window as any).api?.executeSQL?.({
-                query: `SELECT id, memory_id, initial_memory, final_memory, status, npc, timestamp FROM memory_lifecycle ORDER BY timestamp DESC LIMIT 500`
+                query: `SELECT id, initial_memory, final_memory, status, npc, timestamp FROM memory_lifecycle ORDER BY timestamp DESC LIMIT 500`
             });
             console.log('[MemoryManagement] Raw SQL result:', apiResult);
 

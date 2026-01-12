@@ -60,6 +60,8 @@ readDocxContent: (filePath) =>
     gitLog: (repoPath, options) => ipcRenderer.invoke('gitLog', repoPath, options),
     gitShowCommit: (repoPath, commitHash) => ipcRenderer.invoke('gitShowCommit', repoPath, commitHash),
     gitStash: (repoPath, action, message) => ipcRenderer.invoke('gitStash', repoPath, action, message),
+    gitShowFile: (repoPath, filePath, ref) => ipcRenderer.invoke('gitShowFile', repoPath, filePath, ref),
+    gitDiscardFile: (repoPath, filePath) => ipcRenderer.invoke('gitDiscardFile', repoPath, filePath),
 
     readFile: (filePath) => ipcRenderer.invoke('read-file-buffer', filePath),
    
@@ -78,6 +80,7 @@ readDocxContent: (filePath) =>
     browserBack: (args) => ipcRenderer.invoke('browser-back', args),
     browserForward: (args) => ipcRenderer.invoke('browser-forward', args),
     browserRefresh: (args) => ipcRenderer.invoke('browser-refresh', args),
+    browserHardRefresh: (args) => ipcRenderer.invoke('browser-hard-refresh', args),
     browserGetSelectedText: (args) => ipcRenderer.invoke('browser-get-selected-text', args),
     browserAddToHistory: (args) => ipcRenderer.invoke('browser:addToHistory', args),
     browserGetHistory: (args) => ipcRenderer.invoke('browser:getHistory', args),
@@ -100,6 +103,19 @@ readDocxContent: (filePath) =>
     browserGetInstalledBrowsers: () => ipcRenderer.invoke('browser:getInstalledBrowsers'),
     browserImportExtensionsFrom: (args) => ipcRenderer.invoke('browser:importExtensionsFrom', args),
 
+    // CLI workspace opening - for launching incognide with a folder path
+    onCliOpenWorkspace: (callback) => {
+        const handler = (_, data) => callback(data);
+        ipcRenderer.on('cli-open-workspace', handler);
+        return () => ipcRenderer.removeListener('cli-open-workspace', handler);
+    },
+
+    // External studio action execution - for CLI/LLM control
+    onExecuteStudioAction: (callback) => {
+        const handler = (_, data) => callback(data);
+        ipcRenderer.on('execute-studio-action', handler);
+        return () => ipcRenderer.removeListener('execute-studio-action', handler);
+    },
 
     onBrowserLoaded: (callback) => {
         const handler = (_, data) => callback(data);
@@ -243,6 +259,16 @@ readDocxContent: (filePath) =>
     kg_deleteNode: (args) => ipcRenderer.invoke('kg:deleteNode', args),
     kg_addEdge: (args) => ipcRenderer.invoke('kg:addEdge', args),
     kg_deleteEdge: (args) => ipcRenderer.invoke('kg:deleteEdge', args),
+    kg_search: (args) => ipcRenderer.invoke('kg:search', args),
+    kg_search_semantic: (args) => ipcRenderer.invoke('kg:search:semantic', args),
+    kg_embed: (args) => ipcRenderer.invoke('kg:embed', args),
+    kg_getFacts: (args) => ipcRenderer.invoke('kg:getFacts', args),
+    kg_getConcepts: (args) => ipcRenderer.invoke('kg:getConcepts', args),
+
+    // Memory APIs
+    memory_search: (args) => ipcRenderer.invoke('memory:search', args),
+    memory_pending: (args) => ipcRenderer.invoke('memory:pending', args),
+    memory_scope: (args) => ipcRenderer.invoke('memory:scope', args),
 
     resizeTerminal: (data) => ipcRenderer.invoke('resizeTerminal', data),
 
@@ -524,6 +550,8 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
     jupyterInterruptKernel: (args) => ipcRenderer.invoke('jupyter:interruptKernel', args),
     jupyterStopKernel: (args) => ipcRenderer.invoke('jupyter:stopKernel', args),
     jupyterGetRunningKernels: () => ipcRenderer.invoke('jupyter:getRunningKernels'),
+    jupyterGetVariables: (args) => ipcRenderer.invoke('jupyter:getVariables', args),
+    jupyterGetDataFrame: (args) => ipcRenderer.invoke('jupyter:getDataFrame', args),
     jupyterCheckInstalled: (args) => ipcRenderer.invoke('jupyter:checkInstalled', args),
     jupyterInstall: (args) => ipcRenderer.invoke('jupyter:install', args),
     jupyterRegisterKernel: (args) => ipcRenderer.invoke('jupyter:registerKernel', args),
