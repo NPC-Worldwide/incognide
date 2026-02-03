@@ -668,9 +668,9 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
             return;
         }
 
-        // Check for large text paste (>500 chars)
         const text = clipboardData.getData('text/plain');
-        if (text && text.length > 500) {
+        const lineCount = text ? text.split('\n').length : 0;
+        if (text && lineCount >= 500) {
             e.preventDefault();
             const timestamp = Date.now();
             const fileName = `pasted-text-${timestamp}.txt`;
@@ -682,7 +682,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                     encoding: 'utf8'
                 });
 
-                // Store both path and base64 data - data serves as fallback if path becomes invalid
                 const base64Data = btoa(unescape(encodeURIComponent(text)));
 
                 setUploadedFiles((prev: any[]) => [...prev, {
@@ -690,19 +689,16 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                     name: fileName,
                     type: 'text/plain',
                     path: result?.path || null,
-                    data: base64Data, // Always include data as fallback
+                    data: base64Data,
                     size: text.length,
                     preview: null
                 }]);
             } catch (err) {
                 console.error('Failed to save pasted text:', err);
-                // Fallback: just paste inline if temp save fails
                 setInput(input + text);
             }
             return;
         }
-
-        // For small text, let default paste behavior happen
     };
 
     const handleAttachFileClick = async () => {

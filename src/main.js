@@ -689,17 +689,17 @@ app.whenReady().then(async () => {
     (arg.startsWith('/') || arg.startsWith('~') || arg.startsWith('.'))
   );
 
+  const originalCwd = process.env.PWD || process.env.INIT_CWD || process.cwd();
+
   if (folderArg) {
     cliArgs.folder = folderArg.split('=')[1].replace(/^"|"$/g, '');
     log(`[CLI] Workspace folder (--folder): ${cliArgs.folder}`);
   } else if (barePathArg) {
-    // Expand ~ to home directory
     cliArgs.folder = barePathArg.startsWith('~')
       ? barePathArg.replace('~', os.homedir())
       : barePathArg;
-    // Resolve relative paths
     if (!path.isAbsolute(cliArgs.folder)) {
-      cliArgs.folder = path.resolve(process.cwd(), cliArgs.folder);
+      cliArgs.folder = path.resolve(originalCwd, cliArgs.folder);
     }
     log(`[CLI] Workspace folder (bare path): ${cliArgs.folder}`);
   }
