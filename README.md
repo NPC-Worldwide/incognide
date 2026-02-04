@@ -277,6 +277,37 @@ Fine-tune language models using curated subsets of your AI interactions and memo
 
 ![Manage mcp servers](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/mcp_server.png)
 
+### Browser Automation
+
+Agents can control browser panes directly - clicking elements, typing into inputs, extracting page content, and taking screenshots.
+
+**Agent Browser Control** - Agents can open browser panes and interact with web pages:
+
+![Agent Browser Pane](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/incognide_agent_browser_pane.png)
+
+**Click & Type** - Agents click elements by text or CSS selector and fill in forms:
+
+![Agent Browsing and Clicking](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/incognide_browsing_clicking.png)
+
+Available browser actions for agents:
+- `browser_click` - Click elements by selector or text content
+- `browser_type` - Type into input fields with optional form submission
+- `get_browser_content` - Extract page text content for context
+- `browser_screenshot` - Capture page screenshots
+- `browser_eval` - Execute JavaScript in page context
+
+### Terminal & File Control
+
+Agents can also interact with terminal panes and files directly within Incognide.
+
+**Terminal Commands** - Agents can run commands in terminal panes:
+
+![Agent Terminal](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/agent_terminal.png)
+
+**File Operations** - Agents can open, read, and edit files in editor panes:
+
+![Agent File Pane](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/agent_file_pane.png)
+
 ### Agent Management
 
 **NPC Editor** - Create and customize AI personas with specific directives, models, and capabilities:
@@ -343,9 +374,21 @@ Simple photo editing with cropping, filters, and adjustments:
 
 ## Settings & Customization
 
-The Settings panel provides comprehensive configuration across multiple tabs: Global Settings, Theme, Keyboard Shortcuts, Model Management, Voice/TTS, Custom Providers, Passwords, and Python Environment.
+The Settings panel provides comprehensive configuration across multiple tabs: Global Settings, Theme, Keyboard Shortcuts, Model Management, Voice/TTS, Custom Providers, Passwords, Python Environment, and Account.
 
 ![Global Settings](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/settings1.png)
+
+### Cloud Sync & Account
+
+**Sign In** - Create an account to sync your conversations, settings, and workspace state across devices.
+
+**End-to-End Encryption** - All synced data is encrypted with your passphrase before leaving your device. Your passphrase never leaves your machine.
+
+**Multi-Device** - Work on your desktop, pick up on your laptop. Your conversations, memories, and workspace layout stay in sync.
+
+### macOS Permissions
+
+On macOS, manage permissions for camera, microphone, and screen capture from Settings. Required for voice input and screenshot features.
 
 ### Theme
 
