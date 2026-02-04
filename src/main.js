@@ -1472,7 +1472,7 @@ function createWindow(cliArgs = {}) {
         submenu: [
           {
             label: 'New Chat',
-            accelerator: 'CmdOrCtrl+Shift+C',
+            // Note: No accelerator here - handled in renderer to allow terminal Ctrl+Shift+C for copy
             click: () => mainWindow.webContents.send('menu-new-chat')
           },
           {
