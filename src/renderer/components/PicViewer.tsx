@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, memo } from 'react';
 import { ZoomIn, ZoomOut, RotateCw, Download, Maximize2, RefreshCw } from 'lucide-react';
 
 interface PicViewerProps {
@@ -233,4 +233,9 @@ const PicViewer: React.FC<PicViewerProps> = ({ nodeId, contentDataRef }) => {
     );
 };
 
-export default PicViewer;
+// Custom comparison to prevent reload on pane resize
+const arePropsEqual = (prevProps: any, nextProps: any) => {
+    return prevProps.nodeId === nextProps.nodeId;
+};
+
+export default memo(PicViewer, arePropsEqual);

@@ -2522,4 +2522,9 @@ except Exception as e:
     );
 };
 
-export default memo(NotebookViewer);
+// Custom comparison to prevent reload on pane resize
+const arePropsEqual = (prevProps: any, nextProps: any) => {
+    return prevProps.nodeId === nextProps.nodeId;
+};
+
+export default memo(NotebookViewer, arePropsEqual);

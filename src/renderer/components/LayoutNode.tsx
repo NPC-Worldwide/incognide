@@ -687,6 +687,98 @@ export const LayoutNode = memo(({ node, path, component }) => {
                 return;
             }
 
+            // Handle tab drag from another pane's tab bar
+            if (component.draggedItem.type === 'tab') {
+                const { sourceNodeId, tabIndex, contentType: tabContentType, contentId: tabContentId, browserUrl, fileContent, fileChanged } = component.draggedItem;
+                const targetPaneData = contentDataRef.current[node.id];
+                const sourcePaneData = contentDataRef.current[sourceNodeId];
+
+                // Don't drop on the same pane's center (that's reorder, handled by PaneTabBar)
+                if (sourceNodeId === node.id && side === 'center') {
+                    component.setDraggedItem(null);
+                    component.setDropTarget(null);
+                    return;
+                }
+
+                if (side === 'center' && targetPaneData) {
+                    // Add as tab to target pane
+                    if (!targetPaneData.tabs || targetPaneData.tabs.length === 0) {
+                        const targetTitle = targetPaneData.contentType === 'browser'
+                            ? (targetPaneData.browserUrl || 'Browser')
+                            : (targetPaneData.contentId?.split('/').pop() || targetPaneData.contentType);
+                        targetPaneData.tabs = [{
+                            id: `tab_${Date.now()}_0`,
+                            contentType: targetPaneData.contentType,
+                            contentId: targetPaneData.contentId,
+                            browserUrl: targetPaneData.browserUrl,
+                            fileContent: targetPaneData.fileContent,
+                            fileChanged: targetPaneData.fileChanged,
+                            title: targetTitle
+                        }];
+                        targetPaneData.activeTabIndex = 0;
+                    }
+
+                    // Add the dragged tab
+                    const newTabTitle = tabContentType === 'browser'
+                        ? (browserUrl || tabContentId || 'Browser')
+                        : (tabContentId?.split('/').pop() || tabContentType);
+                    targetPaneData.tabs.push({
+                        id: `tab_${Date.now()}_${targetPaneData.tabs.length}`,
+                        contentType: tabContentType,
+                        contentId: tabContentId,
+                        browserUrl,
+                        fileContent,
+                        fileChanged,
+                        title: newTabTitle
+                    });
+                    targetPaneData.activeTabIndex = targetPaneData.tabs.length - 1;
+                    targetPaneData.contentType = tabContentType;
+                    targetPaneData.contentId = tabContentId;
+                    if (tabContentType === 'browser' && browserUrl) {
+                        targetPaneData.browserUrl = browserUrl;
+                    }
+                } else {
+                    // Create new pane with the tab's content
+                    // Track existing pane IDs before split to find the new one
+                    const existingPaneIds = new Set(Object.keys(contentDataRef.current));
+                    performSplit(path, side, tabContentType, tabContentId);
+
+                    // Find the newly created pane and set browserUrl directly
+                    if (tabContentType === 'browser' && browserUrl) {
+                        const newPaneId = Object.keys(contentDataRef.current).find(id => !existingPaneIds.has(id));
+                        if (newPaneId && contentDataRef.current[newPaneId]) {
+                            contentDataRef.current[newPaneId].browserUrl = browserUrl;
+                        }
+                    }
+                }
+
+                // Remove the tab from source pane
+                if (sourcePaneData?.tabs && sourcePaneData.tabs.length > 0) {
+                    sourcePaneData.tabs.splice(tabIndex, 1);
+                    if (sourcePaneData.tabs.length === 0) {
+                        // Close the pane if no tabs left
+                        const sourcePath = component.draggedItem.sourcePath || findNodePath(rootLayoutNode, sourceNodeId);
+                        if (sourcePath) closeContentPane(sourceNodeId, sourcePath);
+                    } else {
+                        // Adjust active index
+                        if (sourcePaneData.activeTabIndex >= sourcePaneData.tabs.length) {
+                            sourcePaneData.activeTabIndex = sourcePaneData.tabs.length - 1;
+                        }
+                        const newActiveTab = sourcePaneData.tabs[sourcePaneData.activeTabIndex];
+                        sourcePaneData.contentType = newActiveTab.contentType;
+                        sourcePaneData.contentId = newActiveTab.contentId;
+                        if (newActiveTab.contentType === 'browser') {
+                            sourcePaneData.browserUrl = newActiveTab.browserUrl;
+                        }
+                    }
+                }
+
+                setRootLayoutNode?.(prev => ({ ...prev }));
+                component.setDraggedItem(null);
+                component.setDropTarget(null);
+                return;
+            }
+
             let contentType;
             if (draggedItem.type === 'conversation') {
                 contentType = 'chat';
@@ -1358,17 +1450,21 @@ export const LayoutNode = memo(({ node, path, component }) => {
                         onTabClose={handleTabClose}
                         onTabReorder={handleTabReorder}
                         nodeId={node.id}
-                        // Only browser panes need zen/close on tab bar (others have PaneHeader)
                         onToggleZen={contentType === 'browser' && toggleZenMode ? () => toggleZenMode(node.id) : undefined}
                         isZenMode={contentType === 'browser' ? zenModePaneId === node.id : undefined}
                         onClosePane={contentType === 'browser' ? () => closeContentPane(node.id, path) : undefined}
                         onTabAdd={contentType === 'browser' && component.handleNewBrowserTab ? () => component.handleNewBrowserTab('', node.id) : undefined}
+                        setDraggedItem={setDraggedItem}
+                        findNodePath={findNodePath}
+                        rootLayoutNode={rootLayoutNode}
+                        contentDataRef={contentDataRef}
+                        nodePath={path}
                     />
                 )}
 
                 {/* Header - PaneHeader includes expand and close buttons */}
-                {/* Skip PaneHeader for browser - it has its own integrated toolbar */}
-                {contentType !== 'browser' && (
+                {/* Skip PaneHeader for browser, docx, pptx, csv - they have their own integrated toolbars */}
+                {contentType !== 'browser' && contentType !== 'docx' && contentType !== 'pptx' && contentType !== 'csv' && (
                     <PaneHeader
                         nodeId={node.id}
                         icon={headerIcon}

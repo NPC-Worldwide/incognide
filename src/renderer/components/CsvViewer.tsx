@@ -40,9 +40,18 @@ import {
     PieChart,
     LineChart,
     TrendingUp,
-    Activity
+    Activity,
+    Sun,
+    Moon
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+
+// Global cache for spreadsheet data - keyed by filePath
+const csvDataCache = new Map<string, {
+    headers: any[];
+    data: any[][];
+    workbook?: any;
+}>();
 
 // Cell style interface
 interface CellStyle {
@@ -126,6 +135,17 @@ const CsvViewer = ({
     const [freezeRow, setFreezeRow] = useState(false);
     const [freezeCol, setFreezeCol] = useState(false);
 
+    // Document theme mode (independent of app theme)
+    const [docLightMode, setDocLightMode] = useState(() => {
+        const saved = localStorage.getItem('csvViewer_lightMode');
+        return saved !== null ? JSON.parse(saved) : true; // Default to light mode
+    });
+
+    // Save doc theme preference
+    useEffect(() => {
+        localStorage.setItem('csvViewer_lightMode', JSON.stringify(docLightMode));
+    }, [docLightMode]);
+
     // Chart state
     const [showChartModal, setShowChartModal] = useState(false);
     const [chartType, setChartType] = useState<'bar' | 'line' | 'pie' | 'area'>('bar');
@@ -133,10 +153,18 @@ const CsvViewer = ({
     const [chartYColumns, setChartYColumns] = useState<number[]>([1]);
     const chartCanvasRef = useRef<HTMLCanvasElement>(null);
 
-    // Get style for a cell
-    const getCellStyle = useCallback((row: number, col: number): CellStyle => {
-        return cellStyles[`${row},${col}`] || {};
-    }, [cellStyles]);
+    // XLSX-specific cell styles and data validation
+    const [xlsxCellStyles, setXlsxCellStyles] = useState<{ [key: string]: any }>({});
+    const [dataValidations, setDataValidations] = useState<{ [key: string]: { type: string; values?: string[] } }>({});
+
+    // Get style for a cell (merges XLSX-extracted styles with user-applied styles)
+    const getCellStyle = useCallback((row: number, col: number): CellStyle & { isBoolean?: boolean; boolValue?: boolean } => {
+        const key = `${row},${col}`;
+        const xlsxStyle = xlsxCellStyles[key] || {};
+        const userStyle = cellStyles[key] || {};
+        // User styles override XLSX styles
+        return { ...xlsxStyle, ...userStyle };
+    }, [cellStyles, xlsxCellStyles]);
 
     // Apply style to selected cells
     const applyStyleToSelection = useCallback((styleUpdate: Partial<CellStyle>) => {
@@ -523,8 +551,8 @@ const CsvViewer = ({
 
     const loadSheetData = useCallback((wb, sheetName) => {
         const sheet = wb.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' }); // Ensure defval for consistent data
-        
+        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
         if (jsonData.length > 0) {
             setHeaders(jsonData[0] || ['Column 1']);
             setData(jsonData.slice(1) || [[]]);
@@ -532,21 +560,108 @@ const CsvViewer = ({
             setHeaders(['Column 1']);
             setData([['']]);
         }
+
+        // Extract cell styles from XLSX
+        const extractedStyles: { [key: string]: any } = {};
+        const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+
+        for (let row = range.s.r; row <= range.e.r; row++) {
+            for (let col = range.s.c; col <= range.e.c; col++) {
+                const cellAddr = XLSX.utils.encode_cell({ r: row, c: col });
+                const cell = sheet[cellAddr];
+                if (cell && cell.s) {
+                    // Extract style information
+                    const style: any = {};
+                    if (cell.s.font) {
+                        if (cell.s.font.bold) style.bold = true;
+                        if (cell.s.font.italic) style.italic = true;
+                        if (cell.s.font.underline) style.underline = true;
+                        if (cell.s.font.strike) style.strikethrough = true;
+                        if (cell.s.font.color?.rgb) style.textColor = '#' + cell.s.font.color.rgb;
+                        if (cell.s.font.name) style.fontFamily = cell.s.font.name;
+                        if (cell.s.font.sz) style.fontSize = cell.s.font.sz;
+                    }
+                    if (cell.s.fill?.fgColor?.rgb) {
+                        style.bgColor = '#' + cell.s.fill.fgColor.rgb;
+                    }
+                    if (cell.s.alignment?.horizontal) {
+                        style.align = cell.s.alignment.horizontal;
+                    }
+                    // Map row index (excluding header)
+                    const dataRow = row - 1;
+                    if (dataRow >= 0 && Object.keys(style).length > 0) {
+                        extractedStyles[`${dataRow},${col}`] = style;
+                    }
+                }
+                // Handle boolean values (checkboxes)
+                if (cell && cell.t === 'b') {
+                    // Mark as boolean for checkbox rendering
+                    const dataRow = row - 1;
+                    if (dataRow >= 0) {
+                        if (!extractedStyles[`${dataRow},${col}`]) extractedStyles[`${dataRow},${col}`] = {};
+                        extractedStyles[`${dataRow},${col}`].isBoolean = true;
+                        extractedStyles[`${dataRow},${col}`].boolValue = cell.v;
+                    }
+                }
+            }
+        }
+
+        // Extract data validation (dropdowns)
+        const validations: { [key: string]: { type: string; values?: string[] } } = {};
+        if (sheet['!dataValidation']) {
+            for (const dv of sheet['!dataValidation']) {
+                if (dv.type === 'list' && dv.sqref) {
+                    const ranges = dv.sqref.split(' ');
+                    for (const rangeStr of ranges) {
+                        try {
+                            const dvRange = XLSX.utils.decode_range(rangeStr);
+                            const values = dv.formula1 ? dv.formula1.split(',').map((v: string) => v.trim().replace(/^"|"$/g, '')) : [];
+                            for (let r = dvRange.s.r; r <= dvRange.e.r; r++) {
+                                for (let c = dvRange.s.c; c <= dvRange.e.c; c++) {
+                                    const dataRow = r - 1;
+                                    if (dataRow >= 0) {
+                                        validations[`${dataRow},${c}`] = { type: 'list', values };
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            // Skip invalid ranges
+                        }
+                    }
+                }
+            }
+        }
+
+        setXlsxCellStyles(prev => ({ ...prev, ...extractedStyles }));
+        setDataValidations(validations);
     }, []);
 
     const loadSpreadsheet = useCallback(async () => {
         if (!filePath) return;
+
+        // Check global cache first
+        const cached = csvDataCache.get(filePath);
+        if (cached) {
+            setHeaders(cached.headers || ['Column 1']);
+            setData(cached.data || [[]]);
+            if (cached.workbook) {
+                setWorkbook(cached.workbook);
+                setSheetNames(cached.workbook.SheetNames);
+            }
+            setHasChanges(false);
+            setError(null);
+            return;
+        }
+
         try {
             if (isXlsx) {
                 const buffer = await window.api.readFileBuffer(filePath);
                 let wb;
-                // Handle empty/new xlsx files
                 if (!buffer || buffer.length === 0) {
-                    // Create a new blank workbook
                     wb = XLSX.utils.book_new();
                     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['']]), 'Sheet1');
                 } else {
-                    wb = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+                    wb = XLSX.read(new Uint8Array(buffer), { type: 'array', cellStyles: true, cellDates: true });
                 }
                 setWorkbook(wb);
                 setSheetNames(wb.SheetNames);
@@ -556,17 +671,23 @@ const CsvViewer = ({
                     setActiveSheet(sheetToLoad);
                     loadSheetData(wb, sheetToLoad);
                 }
+                // Cache globally
+                csvDataCache.set(filePath, { headers: [], data: [], workbook: wb });
             } else {
                 const response = await window.api.readCsvContent(filePath);
                 if (response.error) throw new Error(response.error);
-                
+
                 setHeaders(response.headers || ['Column 1']);
                 setData(response.rows || [[]]);
+                // Cache globally
+                csvDataCache.set(filePath, {
+                    headers: response.headers || ['Column 1'],
+                    data: response.rows || [[]]
+                });
             }
             setHasChanges(false);
             setError(null);
 
-            // Initialize history
             setTimeout(() => {
                 setHistory([{ data: JSON.parse(JSON.stringify(data)), headers: [...headers] }]);
                 setHistoryIndex(0);
@@ -1352,6 +1473,15 @@ const CsvViewer = ({
                     <span className="hidden sm:inline">Chart</span>
                 </button>
 
+                {/* Document light/dark mode toggle */}
+                <button
+                    onClick={() => setDocLightMode(!docLightMode)}
+                    className="p-1.5 rounded theme-hover flex items-center gap-1 text-[10px] theme-text-muted"
+                    title={docLightMode ? "Switch to dark mode" : "Switch to light mode"}
+                >
+                    {docLightMode ? <Moon size={12} /> : <Sun size={12} />}
+                </button>
+
                 {/* Export dropdown */}
                 <div className="relative group">
                     <button className="p-1.5 rounded theme-hover flex items-center gap-1 text-[10px] theme-text-muted">
@@ -1717,6 +1847,8 @@ const CsvViewer = ({
                                     const isSelected = isCellSelected(rowIndex, colIndex);
                                     const cellValue = row[colIndex] ?? '';
                                     const style = getCellStyle(rowIndex, colIndex);
+                                    const cellKey = `${rowIndex},${colIndex}`;
+                                    const validation = dataValidations[cellKey];
                                     const displayValue = typeof cellValue === 'string' && cellValue.startsWith('=')
                                         ? evaluateFormula(cellValue, data)
                                         : formatCellValue(cellValue, style);
@@ -1731,7 +1863,7 @@ const CsvViewer = ({
                                             style.underline ? 'underline' : '',
                                             style.strikethrough ? 'line-through' : ''
                                         ].filter(Boolean).join(' ') || 'none',
-                                        color: style.textColor || 'inherit',
+                                        color: style.textColor || (docLightMode ? '#111827' : '#e5e7eb'),
                                         backgroundColor: style.bgColor || 'transparent',
                                         textAlign: style.align || 'left',
                                         borderTop: style.borderTop ? '1px solid #555' : undefined,
@@ -1740,18 +1872,49 @@ const CsvViewer = ({
                                         borderRight: style.borderRight ? '1px solid #555' : undefined,
                                     };
 
+                                    // Check if this is a boolean cell (checkbox)
+                                    const isBoolean = style.isBoolean || (typeof cellValue === 'boolean') || cellValue === 'TRUE' || cellValue === 'FALSE' || cellValue === true || cellValue === false;
+                                    const boolValue = cellValue === true || cellValue === 'TRUE' || cellValue === 1 || cellValue === '1';
+
                                     return (
                                         <td
                                             key={colIndex}
                                             className={`border theme-border p-0
                                             ${isSelected ? 'ring-2 ring-blue-500' : ''}
                                             ${isEditing ? 'ring-2 ring-green-500' : ''}
-                                            hover:bg-gray-700/50 cursor-cell`}
-                                            style={style.bgColor ? { backgroundColor: style.bgColor } : undefined}
+                                            ${docLightMode ? 'hover:bg-gray-100' : 'hover:bg-gray-700'} cursor-cell`}
+                                            style={{ backgroundColor: style.bgColor || (docLightMode ? 'white' : '#1f2937') }}
                                             onClick={(e) => handleCellClick(rowIndex, colIndex, e)}
-                                            onDoubleClick={() => handleCellDoubleClick(rowIndex, colIndex)}
+                                            onDoubleClick={() => !isBoolean && !validation && handleCellDoubleClick(rowIndex, colIndex)}
                                         >
-                                            {isEditing ? (
+                                            {/* Boolean values render as checkboxes */}
+                                            {isBoolean && !isEditing ? (
+                                                <div className="p-2 min-h-[32px] flex items-center justify-center">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={boolValue}
+                                                        onChange={(e) => {
+                                                            updateCell(rowIndex, colIndex, e.target.checked);
+                                                        }}
+                                                        className="w-4 h-4 cursor-pointer accent-blue-500"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    />
+                                                </div>
+                                            ) : validation?.type === 'list' && validation.values && validation.values.length > 0 ? (
+                                                /* Data validation dropdown */
+                                                <select
+                                                    value={String(cellValue)}
+                                                    onChange={(e) => updateCell(rowIndex, colIndex, e.target.value)}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className={`w-full h-full p-2 bg-transparent outline-none cursor-pointer ${docLightMode ? 'text-gray-900' : 'text-gray-100'}`}
+                                                    style={cellInlineStyle}
+                                                >
+                                                    <option value="">{cellValue || '-- Select --'}</option>
+                                                    {validation.values.map((v, i) => (
+                                                        <option key={i} value={v}>{v}</option>
+                                                    ))}
+                                                </select>
+                                            ) : isEditing ? (
                                                 <input
                                                     type="text"
                                                     value={cellValue}
@@ -1762,11 +1925,11 @@ const CsvViewer = ({
                                                             setEditingCell(null);
                                                         }
                                                     }}
-                                                    className="w-full h-full p-2 bg-transparent outline-none"
+                                                    className={`w-full h-full p-2 bg-transparent outline-none ${docLightMode ? 'text-gray-900' : 'text-gray-100'}`}
                                                     autoFocus
                                                 />
                                             ) : (
-                                                <div className="p-2 min-h-[32px]" style={cellInlineStyle}>{displayValue}</div>
+                                                <div className={`p-2 min-h-[32px] ${docLightMode ? 'text-gray-900' : 'text-gray-100'}`} style={cellInlineStyle}>{displayValue}</div>
                                             )}
                                         </td>
                                     );
@@ -1975,4 +2138,9 @@ const CsvViewer = ({
     );
 };
 
-export default memo(CsvViewer);
+// Custom comparison to prevent reload on pane resize
+const arePropsEqual = (prevProps: any, nextProps: any) => {
+    return prevProps.nodeId === nextProps.nodeId;
+};
+
+export default memo(CsvViewer, arePropsEqual);

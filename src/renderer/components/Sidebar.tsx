@@ -2737,6 +2737,25 @@ const renderWebsiteList = () => {
                             <Folder size={16} />
                             <span>Open as Workspace</span>
                         </button>
+                        <button
+                            onClick={async () => {
+                                const newFolderName = prompt('New folder name:');
+                                if (newFolderName && newFolderName.trim()) {
+                                    const newPath = `${path}/${newFolderName.trim()}`;
+                                    try {
+                                        await (window as any).api?.createDirectory?.(newPath);
+                                        refreshFolderStructure?.();
+                                    } catch (err) {
+                                        console.error('Failed to create folder:', err);
+                                    }
+                                }
+                                setSidebarItemContextMenuPos(null);
+                            }}
+                            className="flex items-center gap-2 px-4 py-3 theme-hover w-full text-left theme-text-primary"
+                        >
+                            <FolderPlus size={16} />
+                            <span>New Folder Here</span>
+                        </button>
                         <div className="border-t theme-border my-1"></div>
                     </>
                 )}
@@ -3187,9 +3206,22 @@ const renderFolderList = (structure) => {
         }
 
         items = items.filter(Boolean).sort((a, b) => {
-            if (a.type === 'directory' && b.type !== 'directory') return -1;
-            if (a.type !== 'directory' && b.type === 'directory') return 1;
-            return (a.name || '').localeCompare(b.name || '');
+            // Extract name from path if name property doesn't exist
+            const aName = a.name || a.path?.split('/').pop() || '';
+            const bName = b.name || b.path?.split('/').pop() || '';
+            const aHidden = aName.startsWith('.');
+            const bHidden = bName.startsWith('.');
+            const aIsDir = a.type === 'directory';
+            const bIsDir = b.type === 'directory';
+
+            // Hidden items always last
+            if (aHidden !== bHidden) return aHidden ? 1 : -1;
+
+            // Folders before files
+            if (aIsDir !== bIsDir) return aIsDir ? -1 : 1;
+
+            // Alphabetical within same type
+            return aName.localeCompare(bName);
         });
 
         return items.map(content => {
@@ -3202,10 +3234,41 @@ const renderFolderList = (structure) => {
             if (isFolder) {
                 const isInaccessible = content.inaccessible === true;
                 return (
-                    <div key={fullPath} className="pl-4">
+                    <div
+                        key={fullPath}
+                        className="pl-4 border-l border-gray-700/30 ml-2"
+                        onDragOver={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            e.dataTransfer.dropEffect = 'move';
+                            (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(59, 130, 246, 0.2)';
+                        }}
+                        onDragLeave={(e) => {
+                            (e.currentTarget as HTMLElement).style.backgroundColor = '';
+                        }}
+                        onDrop={async (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            (e.currentTarget as HTMLElement).style.backgroundColor = '';
+                            try {
+                                const data = JSON.parse(e.dataTransfer.getData('application/json') || '{}');
+                                if (data.type === 'file' || data.type === 'folder') {
+                                    const sourcePath = data.id;
+                                    const fileName = sourcePath.split('/').pop();
+                                    const destPath = `${fullPath}/${fileName}`;
+                                    if (sourcePath !== destPath && !destPath.startsWith(sourcePath + '/')) {
+                                        await (window as any).api?.renameFile?.(sourcePath, destPath);
+                                        refreshFolderStructure?.();
+                                    }
+                                }
+                            } catch (err) {
+                                console.error('Failed to move item:', err);
+                            }
+                        }}
+                    >
                         <button
                             draggable={!isInaccessible}
-                            onDragStart={(e) => { if (isInaccessible) { e.preventDefault(); return; } e.dataTransfer.effectAllowed = 'copyMove'; handleGlobalDragStart(e, { type: 'folder', id: fullPath }); }}
+                            onDragStart={(e) => { if (isInaccessible) { e.preventDefault(); return; } e.dataTransfer.effectAllowed = 'copyMove'; e.dataTransfer.setData('application/json', JSON.stringify({ type: 'folder', id: fullPath })); handleGlobalDragStart(e, { type: 'folder', id: fullPath }); }}
                             onDragEnd={handleGlobalDragEnd}
                             onClick={(e) => {
                                 if (isInaccessible) return; // Don't allow expanding inaccessible folders
@@ -3271,7 +3334,7 @@ const renderFolderList = (structure) => {
                     <button
                         key={fullPath}
                         draggable="true"
-                        onDragStart={(e) => { e.dataTransfer.effectAllowed = 'copyMove'; handleGlobalDragStart(e, { type: 'file', id: fullPath }); }}
+                        onDragStart={(e) => { e.dataTransfer.effectAllowed = 'copyMove'; e.dataTransfer.setData('application/json', JSON.stringify({ type: 'file', id: fullPath })); handleGlobalDragStart(e, { type: 'file', id: fullPath }); }}
                         onDragEnd={handleGlobalDragEnd}
                         onClick={(e) => {
                             if (e.ctrlKey || e.metaKey) {

@@ -339,6 +339,66 @@ const DEFAULT_CONFIG = {
   npc: defaultModelConfig.npc,
 };
 
+// Device ID and configuration for multi-device sync
+const DEVICE_CONFIG_PATH = path.join(os.homedir(), '.npcsh', 'incognide', 'device.json');
+
+function getOrCreateDeviceId() {
+  try {
+    // Ensure directory exists
+    const dir = path.dirname(DEVICE_CONFIG_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    // Try to read existing device config
+    if (fs.existsSync(DEVICE_CONFIG_PATH)) {
+      const config = JSON.parse(fs.readFileSync(DEVICE_CONFIG_PATH, 'utf-8'));
+      if (config.deviceId) {
+        log(`[DEVICE] Using existing device ID: ${config.deviceId}`);
+        return config;
+      }
+    }
+
+    // Generate new device ID and config
+    const newConfig = {
+      deviceId: crypto.randomUUID(),
+      deviceName: os.hostname() || 'My Device',
+      deviceType: process.platform,
+      createdAt: new Date().toISOString()
+    };
+
+    fs.writeFileSync(DEVICE_CONFIG_PATH, JSON.stringify(newConfig, null, 2));
+    log(`[DEVICE] Created new device ID: ${newConfig.deviceId}`);
+    return newConfig;
+  } catch (err) {
+    log(`[DEVICE] Error getting/creating device ID: ${err.message}`);
+    return {
+      deviceId: crypto.randomUUID(),
+      deviceName: os.hostname() || 'My Device',
+      deviceType: process.platform,
+      createdAt: new Date().toISOString(),
+      isTemporary: true
+    };
+  }
+}
+
+function updateDeviceConfig(updates) {
+  try {
+    const currentConfig = getOrCreateDeviceId();
+    const newConfig = { ...currentConfig, ...updates, updatedAt: new Date().toISOString() };
+    fs.writeFileSync(DEVICE_CONFIG_PATH, JSON.stringify(newConfig, null, 2));
+    log(`[DEVICE] Updated device config:`, updates);
+    return newConfig;
+  } catch (err) {
+    log(`[DEVICE] Error updating device config: ${err.message}`);
+    return null;
+  }
+}
+
+// Initialize device config on startup
+const deviceConfig = getOrCreateDeviceId();
+log(`[DEVICE] Initialized with device ID: ${deviceConfig.deviceId}, name: ${deviceConfig.deviceName}`);
+
 function generateId() {
   return crypto.randomUUID();
 }
@@ -407,6 +467,15 @@ async function ensureBaseDir() {
 
 // Track sessions we've set up download handlers for
 const sessionsWithDownloadHandler = new WeakSet();
+
+// Terminal shortcut relay handlers (Ctrl+N and Ctrl+T from terminal)
+ipcMain.on('trigger-new-text-file', (event) => {
+  event.sender.send('menu-new-text-file');
+});
+
+ipcMain.on('trigger-browser-new-tab', (event) => {
+  event.sender.send('browser-new-tab');
+});
 
 // Track workspace path per window (webContents ID -> path)
 const workspacePathByWindow = new Map();
@@ -483,6 +552,45 @@ app.on('web-contents-created', (event, contents) => {
       }
     }
   });
+
+  // Handle permissions for webviews (camera, microphone, screen sharing, etc.)
+  if (contents.getType() === 'webview') {
+    contents.session.setPermissionRequestHandler((webContents, permission, callback, details) => {
+      const allowedPermissions = [
+        'media',           // camera, microphone
+        'mediaKeySystem',  // encrypted media
+        'geolocation',
+        'notifications',
+        'clipboard-read',
+        'clipboard-write',
+        'display-capture', // screen sharing
+        'video-capture',   // video capture
+        'audio-capture',   // audio capture
+      ];
+      if (allowedPermissions.includes(permission)) {
+        log(`[Permissions] Granting ${permission} for webview`);
+        callback(true);
+      } else {
+        log(`[Permissions] Denying ${permission} for webview`);
+        callback(false);
+      }
+    });
+
+    contents.session.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
+      const allowedPermissions = [
+        'media',
+        'mediaKeySystem',
+        'geolocation',
+        'notifications',
+        'clipboard-read',
+        'clipboard-write',
+        'display-capture',
+        'video-capture',
+        'audio-capture',
+      ];
+      return allowedPermissions.includes(permission);
+    });
+  }
 
   // Handle new window requests from webviews (ctrl+click, middle-click, target="_blank")
   // Send to renderer to open in new tab instead of new window
@@ -1120,7 +1228,8 @@ if (!gotTheLock) {
   app.on('second-instance', (event, commandLine, workingDirectory) => {
     const windows = BrowserWindow.getAllWindows();
     if (windows.length) {
-      const mainWindow = windows[0];
+      // Use focused window if available, otherwise fall back to first window
+      const mainWindow = BrowserWindow.getFocusedWindow() || windows[0];
 
       // Parse CLI args from second instance
       const folderArg = commandLine.find(arg => arg.startsWith('--folder='));
@@ -1547,10 +1656,10 @@ function createWindow(cliArgs = {}) {
           ...details.responseHeaders,
           'Content-Security-Policy': [
         "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://js.stripe.com; " +
-        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://js.stripe.com; " +
-        "style-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://js.stripe.com; " +
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://js.stripe.com https://fonts.googleapis.com; " +
+        "style-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://js.stripe.com https://fonts.googleapis.com; " +
         "img-src 'self' data: file: media: blob: http: https:; " +
-        "font-src 'self' data: https://cdn.jsdelivr.net; " +
+        "font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com; " +
         `connect-src 'self' file: media: http://localhost:${FRONTEND_PORT} http://127.0.0.1:${BACKEND_PORT} ${BACKEND_URL} blob: ws: wss: https://* http://*; ` +
         "frame-src 'self' file: data: blob: media: chrome-extension: https://js.stripe.com https://m.stripe.network https://checkout.stripe.com; " +
         "object-src 'self' file: data: blob: media: chrome-extension:; " +
@@ -1591,10 +1700,16 @@ function createWindow(cliArgs = {}) {
       }
     });
 
-    // Send CLI arguments to renderer when ready
+    // Store CLI args for retrieval by renderer (in case it misses the initial message)
+    const cliWorkspaceArgs = { folder, bookmarks, openUrl };
+
+    // Send CLI arguments to renderer when ready (with delay to ensure React is mounted)
     mainWindow.webContents.on('did-finish-load', async () => {
       if (folder || (bookmarks && bookmarks.length > 0) || openUrl) {
         log(`[CLI] Sending workspace args to renderer: folder=${folder}, bookmarks=${bookmarks?.length || 0}, openUrl=${openUrl}`);
+
+        // Small delay to ensure React components are mounted and listeners are registered
+        await new Promise(resolve => setTimeout(resolve, 100));
 
         // If folder is specified, set it as the current working directory for the workspace
         if (folder) {
@@ -2577,6 +2692,56 @@ ipcMain.handle('gitDiscardFile', async (event, repoPath, filePath) => {
     return { success: true };
   } catch (err) {
     console.error(`[Git] Error discarding file:`, err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('gitAcceptOurs', async (event, repoPath, filePath) => {
+  log(`[Git] Accept ours for ${filePath} in ${repoPath}`);
+  try {
+    const git = simpleGit(repoPath);
+    await git.checkout(['--ours', filePath]);
+    await git.add(filePath);
+    return { success: true };
+  } catch (err) {
+    console.error(`[Git] Error accepting ours:`, err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('gitAcceptTheirs', async (event, repoPath, filePath) => {
+  log(`[Git] Accept theirs for ${filePath} in ${repoPath}`);
+  try {
+    const git = simpleGit(repoPath);
+    await git.checkout(['--theirs', filePath]);
+    await git.add(filePath);
+    return { success: true };
+  } catch (err) {
+    console.error(`[Git] Error accepting theirs:`, err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('gitMarkResolved', async (event, repoPath, filePath) => {
+  log(`[Git] Mark resolved ${filePath} in ${repoPath}`);
+  try {
+    const git = simpleGit(repoPath);
+    await git.add(filePath);
+    return { success: true };
+  } catch (err) {
+    console.error(`[Git] Error marking resolved:`, err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('gitAbortMerge', async (event, repoPath) => {
+  log(`[Git] Abort merge in ${repoPath}`);
+  try {
+    const git = simpleGit(repoPath);
+    await git.merge(['--abort']);
+    return { success: true };
+  } catch (err) {
+    console.error(`[Git] Error aborting merge:`, err);
     return { success: false, error: err.message };
   }
 });
@@ -7368,31 +7533,316 @@ ipcMain.handle('read-csv-content', async (_, filePath) => {
 });
 
 ipcMain.handle('read-docx-content', async (_, filePath) => {
+  console.log('[DOCX Main] read-docx-content called for:', filePath);
   try {
     const mammoth = require('mammoth');
+    const JSZip = require('jszip');
+    console.log('[DOCX Main] mammoth loaded');
     const buffer = await fsPromises.readFile(filePath);
+    console.log('[DOCX Main] buffer read, length:', buffer?.length);
     // Handle empty/new docx files
     if (!buffer || buffer.length === 0) {
+      console.log('[DOCX Main] Empty file, returning blank');
       return { content: '', error: null, isNew: true };
+    }
+
+    // Extract font information from DOCX
+    let defaultFont = 'Calibri';
+    let headingFont = 'Calibri';
+    const fonts = new Set();
+
+    // Load the zip once, outside the try block so it's accessible for preprocessing
+    const zip = await JSZip.loadAsync(buffer);
+
+    try {
+
+      // Check styles.xml for default fonts
+      const stylesFile = zip.file('word/styles.xml');
+      if (stylesFile) {
+        const stylesXml = await stylesFile.async('string');
+
+        // Extract default font from docDefaults
+        const defaultFontMatch = stylesXml.match(/<w:rFonts[^>]*w:ascii="([^"]+)"/);
+        if (defaultFontMatch) {
+          defaultFont = defaultFontMatch[1];
+          fonts.add(defaultFont);
+        }
+
+        // Look for theme fonts
+        const majorFontMatch = stylesXml.match(/w:majorFont[^>]*w:ascii="([^"]+)"/);
+        const minorFontMatch = stylesXml.match(/w:minorFont[^>]*w:ascii="([^"]+)"/);
+        if (majorFontMatch) {
+          headingFont = majorFontMatch[1];
+          fonts.add(headingFont);
+        }
+        if (minorFontMatch) {
+          defaultFont = minorFontMatch[1];
+          fonts.add(defaultFont);
+        }
+      }
+
+      // Also check theme for fonts
+      const themeFile = zip.file('word/theme/theme1.xml');
+      if (themeFile) {
+        const themeXml = await themeFile.async('string');
+
+        // Extract major (heading) and minor (body) fonts from theme
+        const majorMatch = themeXml.match(/<a:majorFont>[\s\S]*?<a:latin typeface="([^"]+)"[\s\S]*?<\/a:majorFont>/);
+        const minorMatch = themeXml.match(/<a:minorFont>[\s\S]*?<a:latin typeface="([^"]+)"[\s\S]*?<\/a:minorFont>/);
+
+        if (majorMatch) {
+          headingFont = majorMatch[1];
+          fonts.add(headingFont);
+        }
+        if (minorMatch) {
+          defaultFont = minorMatch[1];
+          fonts.add(defaultFont);
+        }
+      }
+
+      // Also scan document.xml for inline fonts (most commonly used font wins)
+      const documentFile = zip.file('word/document.xml');
+      if (documentFile) {
+        const documentXml = await documentFile.async('string');
+
+        // Find all rFonts declarations and count occurrences
+        const fontCounts = {};
+        const fontMatches = documentXml.matchAll(/<w:rFonts[^>]*w:ascii="([^"]+)"/g);
+        for (const match of fontMatches) {
+          const fontName = match[1];
+          // Skip system/default fonts
+          if (fontName && fontName !== 'Arial' && fontName !== 'Calibri' && fontName !== 'Times New Roman') {
+            fontCounts[fontName] = (fontCounts[fontName] || 0) + 1;
+            fonts.add(fontName);
+          }
+        }
+
+        // Find the most used custom font and set it as default
+        let maxCount = 0;
+        for (const [fontName, count] of Object.entries(fontCounts)) {
+          if (count > maxCount) {
+            maxCount = count;
+            defaultFont = fontName;
+          }
+        }
+      }
+
+      console.log('[DOCX Main] Extracted fonts - default:', defaultFont, 'heading:', headingFont, 'all:', Array.from(fonts));
+    } catch (fontErr) {
+      console.log('[DOCX Main] Font extraction failed, using defaults:', fontErr.message);
+    }
+
+    // Extract page dimensions from sectPr
+    let pageWidth = 8.5;  // Default letter size in inches
+    let pageHeight = 11;
+    let marginTop = 1;
+    let marginBottom = 1;
+    let marginLeft = 1;
+    let marginRight = 1;
+    let lineSpacing = 1.15;  // Default Word line spacing
+    let paragraphSpacingBefore = 0;
+    let paragraphSpacingAfter = 8;  // Default 8pt after
+
+    // Pre-process the DOCX to preserve empty paragraphs and page breaks
+    let processedBuffer = buffer;
+    try {
+      const documentFile = zip.file('word/document.xml');
+      if (documentFile) {
+        let documentXml = await documentFile.async('string');
+        let changesMade = false;
+
+        // Count paragraphs before changes
+        const totalParagraphs = (documentXml.match(/<w:p[ >]/g) || []).length;
+        console.log('[DOCX Main] Total paragraphs in document:', totalParagraphs);
+
+        // Extract page size from sectPr (section properties)
+        // Values are in twips (1/20 of a point, 1440 twips = 1 inch)
+        const pgSzMatch = documentXml.match(/<w:pgSz[^>]*w:w="(\d+)"[^>]*w:h="(\d+)"/);
+        if (pgSzMatch) {
+          pageWidth = parseInt(pgSzMatch[1]) / 1440;
+          pageHeight = parseInt(pgSzMatch[2]) / 1440;
+          console.log('[DOCX Main] Page size:', pageWidth, 'x', pageHeight, 'inches');
+        }
+        // Also try reverse order (w:h before w:w)
+        const pgSzMatch2 = documentXml.match(/<w:pgSz[^>]*w:h="(\d+)"[^>]*w:w="(\d+)"/);
+        if (pgSzMatch2) {
+          pageHeight = parseInt(pgSzMatch2[1]) / 1440;
+          pageWidth = parseInt(pgSzMatch2[2]) / 1440;
+          console.log('[DOCX Main] Page size (alt):', pageWidth, 'x', pageHeight, 'inches');
+        }
+
+        // Extract margins from pgMar
+        const pgMarMatch = documentXml.match(/<w:pgMar[^>]*>/);
+        if (pgMarMatch) {
+          const marStr = pgMarMatch[0];
+          const topMatch = marStr.match(/w:top="(\d+)"/);
+          const bottomMatch = marStr.match(/w:bottom="(\d+)"/);
+          const leftMatch = marStr.match(/w:left="(\d+)"/);
+          const rightMatch = marStr.match(/w:right="(\d+)"/);
+          if (topMatch) marginTop = parseInt(topMatch[1]) / 1440;
+          if (bottomMatch) marginBottom = parseInt(bottomMatch[1]) / 1440;
+          if (leftMatch) marginLeft = parseInt(leftMatch[1]) / 1440;
+          if (rightMatch) marginRight = parseInt(rightMatch[1]) / 1440;
+          console.log('[DOCX Main] Margins:', marginTop, marginBottom, marginLeft, marginRight);
+        }
+
+        // Extract line spacing from the most common spacing element
+        // w:line value with lineRule="auto" means: value/240 = line spacing multiplier
+        // e.g., 240 = single (1.0), 276 = 1.15, 360 = 1.5, 480 = double (2.0)
+        const spacingMatches = documentXml.match(/<w:spacing[^>]*w:line="(\d+)"[^>]*w:lineRule="auto"[^>]*>/g) || [];
+        if (spacingMatches.length > 0) {
+          // Count occurrences to find the most common
+          const lineCounts = {};
+          for (const match of spacingMatches) {
+            const lineMatch = match.match(/w:line="(\d+)"/);
+            if (lineMatch) {
+              const lineVal = parseInt(lineMatch[1]);
+              lineCounts[lineVal] = (lineCounts[lineVal] || 0) + 1;
+            }
+          }
+          // Find most common
+          let maxCount = 0;
+          let mostCommonLine = 240;
+          for (const [val, count] of Object.entries(lineCounts)) {
+            if (count > maxCount) {
+              maxCount = count;
+              mostCommonLine = parseInt(val);
+            }
+          }
+          lineSpacing = mostCommonLine / 240;
+          console.log('[DOCX Main] Line spacing:', lineSpacing, '(raw value:', mostCommonLine, ')');
+        }
+
+        // Also extract paragraph spacing (before/after) from most common
+        const beforeMatches = documentXml.match(/w:before="(\d+)"/g) || [];
+        const afterMatches = documentXml.match(/w:after="(\d+)"/g) || [];
+        if (beforeMatches.length > 0) {
+          const beforeCounts = {};
+          for (const match of beforeMatches) {
+            const val = parseInt(match.match(/(\d+)/)[1]);
+            if (val > 0) beforeCounts[val] = (beforeCounts[val] || 0) + 1;
+          }
+          let maxCount = 0;
+          for (const [val, count] of Object.entries(beforeCounts)) {
+            if (count > maxCount) {
+              maxCount = count;
+              paragraphSpacingBefore = parseInt(val) / 20; // Convert twips to points
+            }
+          }
+        }
+        if (afterMatches.length > 0) {
+          const afterCounts = {};
+          for (const match of afterMatches) {
+            const val = parseInt(match.match(/(\d+)/)[1]);
+            if (val > 0) afterCounts[val] = (afterCounts[val] || 0) + 1;
+          }
+          let maxCount = 0;
+          for (const [val, count] of Object.entries(afterCounts)) {
+            if (count > maxCount) {
+              maxCount = count;
+              paragraphSpacingAfter = parseInt(val) / 20; // Convert twips to points
+            }
+          }
+        }
+        console.log('[DOCX Main] Paragraph spacing - before:', paragraphSpacingBefore, 'pt, after:', paragraphSpacingAfter, 'pt');
+
+        // Step 0: Handle page breaks - convert <w:br w:type="page"/> to marker
+        const pageBreakPattern = /<w:br[^>]*w:type="page"[^>]*\/?>/g;
+        const pageBreakCount = (documentXml.match(pageBreakPattern) || []).length;
+        if (pageBreakCount > 0) {
+          documentXml = documentXml.replace(pageBreakPattern, '<w:t xml:space="preserve">⁂PAGEBREAK⁂</w:t>');
+          console.log('[DOCX Main] Marked', pageBreakCount, 'page breaks for preservation');
+          changesMade = true;
+        }
+
+        // Step 1: Find empty runs (w:r with no w:t) and add a special marker
+        // Pattern: <w:r ...><w:rPr>...</w:rPr></w:r> (run with properties but no text)
+        const emptyRunPattern = /(<w:r[^>]*>(?:<w:rPr>[\s\S]*?<\/w:rPr>)?)\s*(<\/w:r>)/g;
+        const emptyRunCount = (documentXml.match(emptyRunPattern) || []).length;
+        if (emptyRunCount > 0) {
+          documentXml = documentXml.replace(emptyRunPattern, '$1<w:t xml:space="preserve">⁂EMPTYRUN⁂</w:t>$2');
+          console.log('[DOCX Main] Marked', emptyRunCount, 'empty runs for preservation');
+          changesMade = true;
+        }
+
+        // Step 2: Find empty paragraphs (w:p with no w:r containing w:t)
+        // These are paragraphs that only have paragraph properties or are completely empty
+        // Match: <w:p>...</w:pPr></w:p> or <w:p></w:p> (no runs at all)
+        // We add a run with marker text to preserve them
+        // Allow whitespace between elements
+        const emptyParagraphNoRunPattern = /(<w:p(?:[^>]*)>(?:\s*<w:pPr>[\s\S]*?<\/w:pPr>)?)\s*(<\/w:p>)/g;
+        const emptyParaCount = (documentXml.match(emptyParagraphNoRunPattern) || []).length;
+        if (emptyParaCount > 0) {
+          documentXml = documentXml.replace(emptyParagraphNoRunPattern, '$1<w:r><w:t xml:space="preserve">⁂EMPTYRUN⁂</w:t></w:r>$2');
+          console.log('[DOCX Main] Marked', emptyParaCount, 'empty paragraphs (no runs) for preservation');
+          changesMade = true;
+        }
+
+        // Step 3: Find paragraphs that only have bookmarks but no text
+        // Pattern: <w:p>...<w:bookmarkStart.../><w:bookmarkEnd/>...</w:p> (only bookmarks, no text runs)
+        // We need to add visible content to these as well
+        // Allow whitespace between elements
+        const bookmarkOnlyPattern = /(<w:p(?:[^>]*)>(?:\s*<w:pPr>[\s\S]*?<\/w:pPr>)?(?:\s*<w:bookmarkStart[^>]*\/>|\s*<w:bookmarkEnd[^>]*\/>)+)\s*(<\/w:p>)/g;
+        const bookmarkOnlyCount = (documentXml.match(bookmarkOnlyPattern) || []).length;
+        if (bookmarkOnlyCount > 0) {
+          documentXml = documentXml.replace(bookmarkOnlyPattern, '$1<w:r><w:t xml:space="preserve">⁂EMPTYRUN⁂</w:t></w:r>$2');
+          console.log('[DOCX Main] Marked', bookmarkOnlyCount, 'bookmark-only paragraphs for preservation');
+          changesMade = true;
+        }
+
+        if (changesMade) {
+          // Update the zip with modified document.xml
+          zip.file('word/document.xml', documentXml);
+
+          // Generate new buffer
+          processedBuffer = await zip.generateAsync({ type: 'nodebuffer' });
+          console.log('[DOCX Main] Regenerated buffer with preserved empty content');
+        }
+      }
+    } catch (preprocessErr) {
+      console.log('[DOCX Main] Pre-processing failed, using original:', preprocessErr.message);
     }
 
     // Convert to HTML with style mapping for better preservation
     const options = {
-      buffer,
+      buffer: processedBuffer,
+      // Don't ignore empty paragraphs - preserve line breaks
+      ignoreEmptyParagraphs: false,
       styleMap: [
+        // Standard Word heading styles
         "p[style-name='Heading 1'] => h1:fresh",
         "p[style-name='Heading 2'] => h2:fresh",
         "p[style-name='Heading 3'] => h3:fresh",
         "p[style-name='Heading 4'] => h4:fresh",
         "p[style-name='Heading 5'] => h5:fresh",
         "p[style-name='Heading 6'] => h6:fresh",
+        // Alternative heading style names (Google Docs, LibreOffice, etc.)
+        "p[style-name='heading 1'] => h1:fresh",
+        "p[style-name='heading 2'] => h2:fresh",
+        "p[style-name='heading 3'] => h3:fresh",
+        "p[style-name='heading 4'] => h4:fresh",
+        "p[style-name='heading 5'] => h5:fresh",
+        "p[style-name='heading 6'] => h6:fresh",
+        // Title and subtitle
         "p[style-name='Title'] => h1.title:fresh",
+        "p[style-name='title'] => h1.title:fresh",
         "p[style-name='Subtitle'] => h2.subtitle:fresh",
+        "p[style-name='subtitle'] => h2.subtitle:fresh",
+        // Text formatting
         "r[style-name='Strong'] => strong",
         "r[style-name='Emphasis'] => em",
+        // Quotes
         "p[style-name='Quote'] => blockquote:fresh",
         "p[style-name='Block Quote'] => blockquote:fresh",
+        "p[style-name='quote'] => blockquote:fresh",
+        // Lists
         "p[style-name='List Paragraph'] => li:fresh",
+        "p[style-name='List Number'] => li:fresh",
+        "p[style-name='List Bullet'] => li:fresh",
+        // Normal paragraph (ensure it's wrapped)
+        "p[style-name='Normal'] => p:fresh",
+        "p[style-name='normal'] => p:fresh",
+        "p[style-name='Body Text'] => p:fresh",
       ],
       convertImage: mammoth.images.imgElement(function(image) {
         return image.read("base64").then(function(imageBuffer) {
@@ -7403,11 +7853,74 @@ ipcMain.handle('read-docx-content', async (_, filePath) => {
       })
     };
 
+    console.log('[DOCX Main] Calling mammoth.convertToHtml...');
     const result = await mammoth.convertToHtml(options);
+    console.log('[DOCX Main] Mammoth conversion done, HTML length:', result.value?.length);
 
-    return { content: result.value, messages: result.messages, error: null };
+    // Post-process HTML to ensure empty paragraphs render properly
+    let html = result.value || '';
+
+    // Convert page break markers to visible page break elements
+    const pageBreakMarkerCount = (html.match(/⁂PAGEBREAK⁂/g) || []).length;
+    html = html.replace(/⁂PAGEBREAK⁂/g, '</p><div class="docx-page-break"></div><p>');
+    console.log('[DOCX Main] Converted', pageBreakMarkerCount, 'page break markers');
+
+    // Convert our empty run markers to non-breaking space
+    // The marker ⁂EMPTYRUN⁂ was inserted during pre-processing
+    const markerCount = (html.match(/⁂EMPTYRUN⁂/g) || []).length;
+    html = html.replace(/⁂EMPTYRUN⁂/g, '&nbsp;');
+    console.log('[DOCX Main] Converted', markerCount, 'empty run markers to &nbsp;');
+
+    // Replace empty paragraphs with paragraphs containing a <br> so they render
+    // Handle variations: <p></p>, <p> </p>, <p class="..."></p>, etc.
+    html = html.replace(/<p([^>]*)>\s*<\/p>/g, '<p$1><br></p>');
+
+    // Also handle empty headings
+    html = html.replace(/<(h[1-6])([^>]*)>\s*<\/\1>/g, '<$1$2><br></$1>');
+
+    // Handle paragraphs/headings that only contain anchor tags (no visible text)
+    // These are bookmarks in Word that create no visual space
+    // Pattern: <p><a id="..."></a></p> or <h1><a id="..."></a></h1>
+    html = html.replace(/<p([^>]*)>(\s*<a[^>]*><\/a>\s*)<\/p>/g, '<p$1>$2<br></p>');
+    html = html.replace(/<(h[1-6])([^>]*)>(\s*<a[^>]*><\/a>\s*)<\/\1>/g, '<$1$2>$3<br></$1>');
+
+    // Handle multiple consecutive anchors with no text
+    html = html.replace(/<p([^>]*)>((?:\s*<a[^>]*><\/a>\s*)+)<\/p>/g, '<p$1>$2<br></p>');
+    html = html.replace(/<(h[1-6])([^>]*)>((?:\s*<a[^>]*><\/a>\s*)+)<\/\1>/g, '<$1$2>$3<br></$1>');
+
+    // Handle empty list items
+    html = html.replace(/<li([^>]*)>\s*<\/li>/g, '<li$1><br></li>');
+
+    // Ensure there's at least one paragraph if content is empty
+    if (!html.trim()) {
+      html = '<p><br></p>';
+    }
+
+    return {
+      content: html,
+      messages: result.messages,
+      error: null,
+      fonts: {
+        default: defaultFont,
+        heading: headingFont,
+        all: Array.from(fonts)
+      },
+      pageSize: {
+        width: pageWidth,
+        height: pageHeight,
+        marginTop,
+        marginBottom,
+        marginLeft,
+        marginRight
+      },
+      spacing: {
+        lineHeight: lineSpacing,
+        paragraphBefore: paragraphSpacingBefore,
+        paragraphAfter: paragraphSpacingAfter
+      }
+    };
   } catch (err) {
-    console.error('Error reading DOCX:', err);
+    console.error('[DOCX Main] Error reading DOCX:', err);
     return { content: null, error: err.message };
   }
 });
@@ -7843,7 +8356,33 @@ ipcMain.handle('read-file-buffer', async (event, filePath) => {
   }
 });
 
+ipcMain.handle('show-item-in-folder', async (_event, filePath) => {
+  try {
+    shell.showItemInFolder(filePath);
+    return { success: true };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
 
+ipcMain.handle('close-window', async () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.close();
+  }
+});
+
+ipcMain.handle('getDeviceInfo', async () => {
+  return getOrCreateDeviceId();
+});
+
+ipcMain.handle('setDeviceName', async (_event, name) => {
+  return updateDeviceConfig({ deviceName: name });
+});
+
+ipcMain.handle('getDeviceId', async () => {
+  const config = getOrCreateDeviceId();
+  return config.deviceId;
+});
 
 ipcMain.handle('getAvailableImageModels', async (event, currentPath) => {
   log('[Main Process] getAvailableImageModels called for path:', currentPath);

@@ -5,7 +5,7 @@ import {
     Superscript, Highlighter, Indent, Outdent, FileText, Printer, ChevronDown,
     ZoomIn, ZoomOut, Underline, AlignJustify, Quote, Code, Replace, PaintBucket,
     Palette, LayoutTemplate, Columns, FileDown, Eye, EyeOff, Maximize2, Grid,
-    MoreHorizontal, Scissors, Clipboard, ClipboardPaste, RotateCcw
+    MoreHorizontal, Scissors, Clipboard, ClipboardPaste, RotateCcw, Sun, Moon
 } from 'lucide-react';
 
 // Font options - comprehensive list
@@ -54,6 +54,33 @@ const TEXT_COLORS = [
     '#e6b8af', '#f4cccc', '#fce5cd', '#fff2cc', '#d9ead3', '#d0e0e3', '#c9daf8', '#cfe2f3', '#d9d2e9', '#ead1dc',
 ];
 
+// Track loaded fonts
+const loadedFonts = new Set<string>();
+
+// Load a Google Font dynamically
+function loadGoogleFont(fontName: string): void {
+    if (!fontName || loadedFonts.has(fontName)) return;
+    loadedFonts.add(fontName);
+
+    // System fonts don't need loading
+    const systemFonts = ['Arial', 'Helvetica', 'Times New Roman', 'Georgia', 'Verdana', 'Courier New', 'Calibri', 'Cambria', 'Comic Sans MS', 'Impact', 'Trebuchet MS'];
+    if (systemFonts.includes(fontName)) return;
+
+    console.log('[DOCX] Loading font:', fontName);
+
+    // Try to load from Google Fonts by injecting a style tag (works around some CSP issues)
+    const style = document.createElement('style');
+    style.textContent = `@import url('https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontName)}:wght@300;400;500;600;700&display=swap');`;
+    document.head.appendChild(style);
+}
+
+// Global cache for loaded DOCX content - keyed by filePath
+const docxContentCache = new Map<string, {
+    html: string;
+    fonts?: any;
+    pageSize?: any;
+}>();
+
 // Document templates
 const TEMPLATES = [
     { name: 'Blank', content: '<p><br></p>' },
@@ -71,6 +98,9 @@ const DocxViewer = ({
     setPaneContextMenu,
     closeContentPane
 }) => {
+    const paneData = contentDataRef.current[nodeId];
+    const filePath = paneData?.contentId;
+
     const [htmlContent, setHtmlContent] = useState('');
     const [error, setError] = useState(null);
     const [hasChanges, setHasChanges] = useState(false);
@@ -80,9 +110,40 @@ const DocxViewer = ({
     const editorRef = useRef<HTMLDivElement>(null);
     const isUndoRedoRef = useRef(false);
     const [isLoaded, setIsLoaded] = useState(false);
+    const lastFilePathRef = useRef<string | null>(null);
 
-    const paneData = contentDataRef.current[nodeId];
-    const filePath = paneData?.contentId;
+    // Synchronously check cache when filePath changes to avoid loading flash on tab switch
+    if (filePath && filePath !== lastFilePathRef.current) {
+        const cached = docxContentCache.get(filePath);
+        if (cached) {
+            // Update state synchronously during render for cached content
+            if (!isLoaded || htmlContent !== cached.html) {
+                setHtmlContent(cached.html);
+                setHistory([cached.html]);
+                setHistoryIndex(0);
+                setIsLoaded(true);
+                setError(null);
+            }
+        } else if (isLoaded) {
+            // Reset loading state for uncached files
+            setIsLoaded(false);
+        }
+        lastFilePathRef.current = filePath;
+    }
+
+    // Independent document light/dark mode
+    const [docLightMode, setDocLightMode] = useState(() => {
+        const saved = localStorage.getItem('docxViewer_lightMode');
+        return saved !== null ? JSON.parse(saved) : true;
+    });
+
+    // Persist docLightMode changes
+    useEffect(() => {
+        localStorage.setItem('docxViewer_lightMode', JSON.stringify(docLightMode));
+    }, [docLightMode]);
+
+    // Debug logging
+    // console.log('[DOCX] nodeId:', nodeId, 'paneData:', paneData, 'filePath:', filePath);
 
     // UI State
     const [zoom, setZoom] = useState(100);
@@ -101,6 +162,24 @@ const DocxViewer = ({
     // Current formatting state
     const [currentFont, setCurrentFont] = useState('Calibri');
     const [currentFontSize, setCurrentFontSize] = useState('12');
+
+    // Document fonts from DOCX
+    const [docFonts, setDocFonts] = useState<{ default: string; heading: string; all: string[] } | null>(null);
+    // Page dimensions from DOCX (in inches)
+    const [pageSize, setPageSize] = useState<{
+        width: number;
+        height: number;
+        marginTop: number;
+        marginBottom: number;
+        marginLeft: number;
+        marginRight: number;
+    }>({ width: 8.5, height: 11, marginTop: 1, marginBottom: 1, marginLeft: 1, marginRight: 1 });
+    // Spacing from DOCX
+    const [docSpacing, setDocSpacing] = useState<{
+        lineHeight: number;
+        paragraphBefore: number;
+        paragraphAfter: number;
+    }>({ lineHeight: 1.15, paragraphBefore: 0, paragraphAfter: 8 });
     const [tablePickerSize, setTablePickerSize] = useState({ rows: 3, cols: 3 });
 
     // Find and replace
@@ -122,9 +201,31 @@ const DocxViewer = ({
     useEffect(() => {
         const loadDocx = async () => {
             if (!filePath) return;
+
+            // Check global cache first
+            const cached = docxContentCache.get(filePath);
+            if (cached) {
+                setHtmlContent(cached.html);
+                setHistory([cached.html]);
+                setHistoryIndex(0);
+                if (editorRef.current) editorRef.current.innerHTML = cached.html;
+                setIsLoaded(true);
+                if (cached.fonts) setDocFonts(cached.fonts);
+                if (cached.pageSize) setPageSize(cached.pageSize);
+                return;
+            }
+
             try {
+                // console.log('[DOCX] Reading file buffer...');
                 // Read as buffer first to check if it's a real DOCX
-                const buffer = await window.api.readFileBuffer(filePath);
+                const rawBuffer = await window.api.readFileBuffer(filePath);
+                // console.log('[DOCX] Got rawBuffer:', rawBuffer?.length || 'null', typeof rawBuffer);
+                // Convert to Uint8Array if needed (IPC may return different types)
+                const buffer = rawBuffer instanceof Uint8Array ? rawBuffer :
+                               rawBuffer?.data ? new Uint8Array(rawBuffer.data) :
+                               rawBuffer?.type === 'Buffer' ? new Uint8Array(rawBuffer.data) :
+                               new Uint8Array(rawBuffer || []);
+                // console.log('[DOCX] Converted buffer length:', buffer?.length, 'first bytes:', buffer?.[0], buffer?.[1]);
 
                 if (!buffer || buffer.length === 0) {
                     // Empty file - start with blank
@@ -139,18 +240,57 @@ const DocxViewer = ({
 
                 // Check if it's a ZIP (DOCX files are ZIP archives starting with PK)
                 const isZip = buffer[0] === 0x50 && buffer[1] === 0x4B;
+                // console.log('[DOCX] isZip:', isZip);
 
                 if (isZip) {
                     // It's a real DOCX file - use mammoth
+                    console.log('[DOCX] Calling readDocxContent...');
                     const response = await window.api.readDocxContent(filePath);
+                    console.log('[DOCX] readDocxContent response length:', response.content?.length);
                     if (response.error) {
                         throw new Error(response.error);
                     }
                     const html = response.content || '<p><br></p>';
+
+                    // Debug: count empty paragraphs
+                    const nbspCount = (html.match(/<p>&nbsp;<\/p>/g) || []).length;
+                    const emptyPCount = (html.match(/<p>\s*<\/p>/g) || []).length;
+                    console.log('[DOCX] Empty paragraphs with &nbsp;:', nbspCount, 'Empty <p>:', emptyPCount);
+                    console.log('[DOCX] First 500 chars:', html.substring(0, 500));
+
                     setHtmlContent(html);
                     setHistory([html]);
                     setHistoryIndex(0);
                     if (editorRef.current) editorRef.current.innerHTML = html;
+
+                    // Handle document fonts
+                    if (response.fonts) {
+                        console.log('[DOCX] Document fonts:', response.fonts);
+                        setDocFonts(response.fonts);
+                        setCurrentFont(response.fonts.default || 'Calibri');
+
+                        // Load all fonts from the document
+                        for (const font of response.fonts.all || []) {
+                            loadGoogleFont(font);
+                        }
+                    }
+
+                    // Handle page size
+                    if (response.pageSize) {
+                        console.log('[DOCX] Page size:', response.pageSize);
+                        setPageSize(response.pageSize);
+                    }
+
+                    // Handle spacing
+                    if (response.spacing) {
+                        setDocSpacing(response.spacing);
+                    }
+                    // Cache globally by filePath
+                    docxContentCache.set(filePath, {
+                        html,
+                        fonts: response.fonts,
+                        pageSize: response.pageSize
+                    });
                 } else {
                     // It's a text/HTML file saved by our editor
                     const textContent = await window.api.readFileContent(filePath);
@@ -159,6 +299,8 @@ const DocxViewer = ({
                     setHistory([content]);
                     setHistoryIndex(0);
                     if (editorRef.current) editorRef.current.innerHTML = content;
+                    // Cache globally
+                    docxContentCache.set(filePath, { html: content });
                 }
 
                 setIsLoaded(true);
@@ -166,9 +308,18 @@ const DocxViewer = ({
                 console.error('[DOCX] Load error:', err);
                 setError(err.message);
             }
+            // console.log('[DOCX] loadDocx finished');
         };
         loadDocx();
     }, [filePath]);
+
+    // Set content to editor after it's rendered
+    useEffect(() => {
+        if (isLoaded && editorRef.current && htmlContent) {
+            // console.log('[DOCX] Setting innerHTML after render, length:', htmlContent.length);
+            editorRef.current.innerHTML = htmlContent;
+        }
+    }, [isLoaded, htmlContent]);
 
     // History management
     const addToHistory = useCallback((newContent: string) => {
@@ -311,12 +462,15 @@ const DocxViewer = ({
             <head>
                 <title>${filePath?.split('/').pop() || 'Document'}</title>
                 <style>
-                    @page { margin: 1in; }
+                    @page {
+                        size: ${pageSize.width}in ${pageSize.height}in;
+                        margin: ${pageSize.marginTop}in ${pageSize.marginRight}in ${pageSize.marginBottom}in ${pageSize.marginLeft}in;
+                    }
                     body {
                         font-family: ${currentFont}, sans-serif;
                         line-height: 1.6;
                         color: #000;
-                        max-width: 8.5in;
+                        max-width: ${pageSize.width}in;
                         margin: 0 auto;
                     }
                     h1 { font-size: 24pt; margin: 0.5em 0; }
@@ -326,6 +480,7 @@ const DocxViewer = ({
                     table { border-collapse: collapse; width: 100%; }
                     td, th { border: 1px solid #000; padding: 8px; }
                     img { max-width: 100%; }
+                    .docx-page-break { page-break-after: always; break-after: page; height: 0; margin: 0; padding: 0; border: none; }
                 </style>
             </head>
             <body>${content}</body>
@@ -333,7 +488,7 @@ const DocxViewer = ({
         `);
         printWindow.document.close();
         setTimeout(() => printWindow.print(), 250);
-    }, [filePath, currentFont]);
+    }, [filePath, currentFont, pageSize]);
 
     // Export functions
     const exportAsHtml = useCallback(async () => {
@@ -495,6 +650,13 @@ ${htmlContent}
                     <button onClick={() => setShowFindReplace(!showFindReplace)} className={`p-1.5 rounded ${showFindReplace ? 'bg-blue-600/30' : 'theme-hover'}`} title="Find & Replace">
                         <Search size={14} />
                     </button>
+                    <button
+                        onClick={() => setDocLightMode(!docLightMode)}
+                        className="p-1.5 theme-hover rounded"
+                        title={docLightMode ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+                    >
+                        {docLightMode ? <Moon size={14} /> : <Sun size={14} />}
+                    </button>
                     <div className="relative dropdown-container">
                         <button onClick={(e) => { e.stopPropagation(); setShowMoreTools(!showMoreTools); }} className="p-1.5 theme-hover rounded" title="More">
                             <MoreHorizontal size={14} />
@@ -517,7 +679,9 @@ ${htmlContent}
                             </div>
                         )}
                     </div>
-                    {/* Close button removed - PaneHeader already handles closing */}
+                    <button onClick={() => closeContentPane(nodeId)} className="p-1.5 theme-hover rounded" title="Close">
+                        <X size={14} />
+                    </button>
                 </div>
             </div>
 
@@ -769,8 +933,8 @@ ${htmlContent}
                 {/* Ruler */}
                 {showRuler && viewMode === 'page' && (
                     <div className="sticky top-0 z-10 bg-gray-100 dark:bg-gray-800 border-b border-gray-300 dark:border-gray-700 h-6 flex items-end justify-center">
-                        <div className="w-[8.5in] flex items-end px-[1in]" style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'center bottom' }}>
-                            {Array.from({ length: 65 }).map((_, i) => {
+                        <div style={{ width: `${pageSize.width}in`, paddingLeft: `${pageSize.marginLeft}in`, paddingRight: `${pageSize.marginRight}in`, transform: `scale(${zoom / 100})`, transformOrigin: 'center bottom' }} className="flex items-end">
+                            {Array.from({ length: Math.ceil(pageSize.width * 8) + 1 }).map((_, i) => {
                                 const isInch = i % 8 === 0;
                                 const isHalf = i % 4 === 0;
                                 return (
@@ -787,14 +951,17 @@ ${htmlContent}
                 {/* Editor */}
                 <div className={`${viewMode === 'page' ? 'py-8' : 'p-4'}`} style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top center' }}>
                     <style>{`
-                        .docx-editor { font-family: ${currentFont}, sans-serif; }
-                        .docx-editor h1 { font-size: 2em; font-weight: bold; margin: 0.67em 0; color: inherit; }
-                        .docx-editor h2 { font-size: 1.5em; font-weight: bold; margin: 0.83em 0; color: inherit; }
-                        .docx-editor h3 { font-size: 1.17em; font-weight: bold; margin: 1em 0; color: inherit; }
-                        .docx-editor h4 { font-size: 1em; font-weight: bold; margin: 1.33em 0; color: inherit; }
-                        .docx-editor p { margin: 0.5em 0; }
-                        .docx-editor ul, .docx-editor ol { padding-left: 2em; margin: 0.5em 0; }
-                        .docx-editor li { margin: 0.25em 0; }
+                        .docx-editor { font-family: "${docFonts?.default || currentFont}", ${currentFont}, Arial, sans-serif; }
+                        .docx-editor h1, .docx-editor h2, .docx-editor h3, .docx-editor h4, .docx-editor h5, .docx-editor h6 {
+                            font-family: "${docFonts?.heading || docFonts?.default || currentFont}", ${currentFont}, Arial, sans-serif;
+                        }
+                        .docx-editor h1 { font-size: 2em; font-weight: bold; margin: 0.67em 0; color: inherit; min-height: 1.2em; line-height: ${docSpacing.lineHeight}; }
+                        .docx-editor h2 { font-size: 1.5em; font-weight: bold; margin: 0.83em 0; color: inherit; min-height: 1.2em; line-height: ${docSpacing.lineHeight}; }
+                        .docx-editor h3 { font-size: 1.17em; font-weight: bold; margin: 1em 0; color: inherit; min-height: 1.2em; line-height: ${docSpacing.lineHeight}; }
+                        .docx-editor h4 { font-size: 1em; font-weight: bold; margin: 1.33em 0; color: inherit; min-height: 1.2em; line-height: ${docSpacing.lineHeight}; }
+                        .docx-editor p { margin: 0; padding-top: ${docSpacing.paragraphBefore}pt; padding-bottom: ${docSpacing.paragraphAfter}pt; min-height: 1.2em; line-height: ${docSpacing.lineHeight}; }
+                        .docx-editor ul, .docx-editor ol { padding-left: 2em; margin: 0.5em 0; line-height: ${docSpacing.lineHeight}; }
+                        .docx-editor li { margin: 0.25em 0; line-height: ${docSpacing.lineHeight}; }
                         .docx-editor table { border-collapse: collapse; width: 100%; margin: 1em 0; }
                         .docx-editor td, .docx-editor th { border: 1px solid #ccc; padding: 8px; vertical-align: top; }
                         .docx-editor th { background: #f5f5f5; font-weight: bold; }
@@ -808,6 +975,31 @@ ${htmlContent}
                         .docx-editor em, .docx-editor i { font-style: italic; }
                         .docx-editor u { text-decoration: underline; }
                         .docx-editor s, .docx-editor strike { text-decoration: line-through; }
+                        /* Page break styling */
+                        .docx-editor .docx-page-break {
+                            page-break-after: always;
+                            break-after: page;
+                            height: 0;
+                            margin: 0;
+                            padding: 0;
+                            border: none;
+                            border-top: 2px dashed #999;
+                            margin: 2em 0;
+                            position: relative;
+                        }
+                        .docx-editor .docx-page-break::after {
+                            content: 'Page Break';
+                            position: absolute;
+                            top: -0.6em;
+                            left: 50%;
+                            transform: translateX(-50%);
+                            background: ${docLightMode ? '#fff' : '#1a1a2e'};
+                            padding: 0 0.5em;
+                            font-size: 10px;
+                            color: #999;
+                            text-transform: uppercase;
+                            letter-spacing: 0.1em;
+                        }
                     `}</style>
                     <div
                         ref={editorRef}
@@ -815,15 +1007,19 @@ ${htmlContent}
                         suppressContentEditableWarning
                         onInput={handleInput}
                         onKeyDown={handleKeyDown}
-                        className={`docx-editor outline-none ${viewMode === 'page' ? 'bg-white shadow-xl mx-auto' : ''}`}
+                        className={`docx-editor outline-none ${viewMode === 'page' ? 'shadow-xl mx-auto' : ''}`}
                         style={{
-                            maxWidth: viewMode === 'page' ? '8.5in' : '100%',
-                            minHeight: viewMode === 'page' ? '11in' : '400px',
-                            padding: viewMode === 'page' ? '1in' : '16px',
-                            lineHeight: '1.6',
+                            width: viewMode === 'page' ? `${pageSize.width}in` : '100%',
+                            minHeight: viewMode === 'page' ? `${pageSize.height}in` : '400px',
+                            paddingTop: viewMode === 'page' ? `${pageSize.marginTop}in` : '16px',
+                            paddingBottom: viewMode === 'page' ? `${pageSize.marginBottom}in` : '16px',
+                            paddingLeft: viewMode === 'page' ? `${pageSize.marginLeft}in` : '16px',
+                            paddingRight: viewMode === 'page' ? `${pageSize.marginRight}in` : '16px',
+                            lineHeight: docSpacing.lineHeight,
                             fontSize: '12pt',
-                            color: '#000',
-                            backgroundColor: viewMode === 'page' ? '#fff' : 'transparent',
+                            color: docLightMode ? '#000' : '#e5e5e5',
+                            backgroundColor: viewMode === 'page' ? (docLightMode ? '#fff' : '#1a1a2e') : 'transparent',
+                            boxSizing: 'border-box',
                         }}
                     />
                 </div>
@@ -846,4 +1042,10 @@ ${htmlContent}
     );
 };
 
-export default memo(DocxViewer);
+// Custom comparison to prevent re-renders when layout changes but pane identity is the same
+const arePropsEqual = (prevProps: any, nextProps: any) => {
+    // Only re-render if the pane identity changes (nodeId) or content changes
+    return prevProps.nodeId === nextProps.nodeId;
+};
+
+export default memo(DocxViewer, arePropsEqual);
