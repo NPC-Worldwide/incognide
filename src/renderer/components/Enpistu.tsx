@@ -299,7 +299,11 @@ const ChatInterface = () => {
         const model = saved ? JSON.parse(saved) : null;
         return model ? [model] : [];
     });
-    const [selectedNPCs, setSelectedNPCs] = useState<string[]>([]);
+    const [selectedNPCs, setSelectedNPCs] = useState<string[]>(() => {
+        const saved = localStorage.getItem('npcStudioCurrentNPC');
+        const npc = saved ? JSON.parse(saved) : null;
+        return npc ? [npc] : [];
+    });
     // Broadcast mode toggle - when OFF, selecting replaces; when ON, selecting adds
     const [broadcastMode, setBroadcastMode] = useState(false);
     const [input, setInput] = useState('');
@@ -932,6 +936,19 @@ const ChatInterface = () => {
         }
 
         // Edit menu handlers
+        if (api.api?.onMenuFind) {
+            cleanups.push(api.api.onMenuFind(() => {
+                // Dispatch custom event for find - browser panes will listen for this
+                const activePaneId = activeContentPaneIdRef.current;
+                const paneData = contentDataRef.current[activePaneId];
+                if (paneData?.contentType === 'browser') {
+                    // Dispatch event with the pane ID so only the correct browser opens find
+                    window.dispatchEvent(new CustomEvent('incognide-open-find-bar', {
+                        detail: { paneId: activePaneId }
+                    }));
+                }
+            }));
+        }
         if (api.api?.onMenuGlobalSearch) {
             cleanups.push(api.api.onMenuGlobalSearch(() => {
                 // Open search pane
@@ -1350,6 +1367,32 @@ const ChatInterface = () => {
         }
     }, [currentNPC]);
 
+    // Sync selectedModels with currentModel when currentModel changes (e.g., from other UI actions)
+    useEffect(() => {
+        if (currentModel && !broadcastMode) {
+            setSelectedModels(prev => {
+                // Only update if not already matching (avoid infinite loops)
+                if (prev.length !== 1 || prev[0] !== currentModel) {
+                    return [currentModel];
+                }
+                return prev;
+            });
+        }
+    }, [currentModel, broadcastMode]);
+
+    // Sync selectedNPCs with currentNPC when currentNPC changes
+    useEffect(() => {
+        if (currentNPC && !broadcastMode) {
+            setSelectedNPCs(prev => {
+                // Only update if not already matching (avoid infinite loops)
+                if (prev.length !== 1 || prev[0] !== currentNPC) {
+                    return [currentNPC];
+                }
+                return prev;
+            });
+        }
+    }, [currentNPC, broadcastMode]);
+
     // Save execution mode preference
     useEffect(() => {
         localStorage.setItem('npcStudioExecutionMode', JSON.stringify(executionMode));
@@ -1677,6 +1720,8 @@ const ChatInterface = () => {
     const createNewBrowserRef = useRef<(() => void) | null>(null);
     const handleCreateNewFolderRef = useRef<(() => void) | null>(null);
     const closeContentPaneRef = useRef<((paneId: string, nodePath: string[]) => void) | null>(null);
+    const performSplitRef = useRef<((targetNodePath: number[], side: string, newContentType: string, newContentId: string) => void) | null>(null);
+    const updateContentPaneRef = useRef<((paneId: string, contentType: string, contentId: string, skipMessageLoad?: boolean) => void) | null>(null);
     const createSettingsPaneRef = useRef<(() => void) | null>(null);
     const createSearchPaneRef = useRef<((query?: string) => void) | null>(null);
     const createHelpPaneRef = useRef<(() => void) | null>(null);
@@ -1724,7 +1769,10 @@ const ChatInterface = () => {
 
             // Ctrl+F - Local search in chat
             if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-                const activePane = contentDataRef.current[activeContentPaneId];
+                const activePane = contentDataRef.current[activeContentPaneId];                // Let browser panes handle Ctrl+F natively
+                if (activePane?.contentType === 'browser') {
+                    return;
+                }
                 if ((activePane as any)?.contentType === 'chat') {
                     e.preventDefault();
                     e.stopPropagation();
@@ -2142,6 +2190,19 @@ const closeContentPane = useCallback((paneId, nodePath) => {
     });
 }, [activeContentPaneId, setActiveContentPaneId]);
 
+// Keep refs updated for MCP polling useEffect
+useEffect(() => {
+    performSplitRef.current = performSplit;
+}, [performSplit]);
+
+useEffect(() => {
+    closeContentPaneRef.current = closeContentPane;
+}, [closeContentPane]);
+
+useEffect(() => {
+    updateContentPaneRef.current = updateContentPane;
+}, [updateContentPane]);
+
 // Listen for external studio action execution (CLI/LLM control)
 // NOTE: This must be after performSplit and closeContentPane are defined
 useEffect(() => {
@@ -2172,6 +2233,80 @@ useEffect(() => {
         if (unsubscribe) unsubscribe();
     };
 }, [rootLayoutNode, activeContentPaneId, performSplit, closeContentPane, updateContentPane]);
+
+// SSE connection for MCP studio actions from the backend
+useEffect(() => {
+    let eventSource: EventSource | null = null;
+    let reconnectTimeout: NodeJS.Timeout | null = null;
+
+    const executeAction = async (actionId: string, actionData: any) => {
+        // Wait for refs to be initialized
+        if (!performSplitRef.current || !closeContentPaneRef.current || !updateContentPaneRef.current) {
+            console.log('[MCP] Refs not ready yet, skipping action:', actionId);
+            return;
+        }
+
+        console.log('[MCP] Executing action:', actionId, actionData.action);
+
+        const ctx: StudioContext = {
+            rootLayoutNode: rootLayoutNodeRef.current,
+            contentDataRef,
+            activeContentPaneId: activeContentPaneIdRef.current,
+            setActiveContentPaneId,
+            setRootLayoutNode,
+            performSplit: performSplitRef.current,
+            closeContentPane: closeContentPaneRef.current,
+            updateContentPane: updateContentPaneRef.current,
+            generateId,
+            findPanePath: (node: any, paneId: string) => findNodePath(node, paneId),
+        };
+
+        try {
+            const result = await executeStudioAction(actionData.action, actionData.args || {}, ctx);
+            await fetch(`${BACKEND_URL}/api/studio/action_complete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ actionId, result })
+            });
+            console.log('[MCP] Action complete:', actionId, result.success);
+        } catch (err) {
+            console.error('[MCP] Action failed:', actionId, err);
+            await fetch(`${BACKEND_URL}/api/studio/action_complete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ actionId, result: { success: false, error: String(err) } })
+            });
+        }
+    };
+
+    const connect = () => {
+        eventSource = new EventSource(`${BACKEND_URL}/api/studio/actions_stream`);
+
+        eventSource.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.id && data.action && data.status === 'pending') {
+                    executeAction(data.id, data);
+                }
+            } catch (err) {
+                // Ignore parse errors
+            }
+        };
+
+        eventSource.onerror = () => {
+            eventSource?.close();
+            // Reconnect after 2 seconds
+            reconnectTimeout = setTimeout(connect, 2000);
+        };
+    };
+
+    connect();
+
+    return () => {
+        eventSource?.close();
+        if (reconnectTimeout) clearTimeout(reconnectTimeout);
+    };
+}, []);
 
 // Message labeling handlers (defined before renderChatView to avoid reference errors)
 const handleLabelMessage = useCallback((message: any) => {
@@ -3297,7 +3432,7 @@ const renderDocxViewer = useCallback(({ nodeId }) => {
             closeContentPane={closeContentPane}
         />
     );
-}, [rootLayoutNode, closeContentPane]);
+}, [closeContentPane]);
 
 const renderPptxViewer = useCallback(({ nodeId }) => {
     return (
@@ -6706,6 +6841,9 @@ ${contextPrompt}`;
             setCurrentModel(modelToSet);
             setCurrentProvider(providerToSet);
             setCurrentNPC(npcToSet);
+            // Sync selectedModels/selectedNPCs with currentModel/currentNPC
+            setSelectedModels(modelToSet ? [modelToSet] : []);
+            setSelectedNPCs(npcToSet ? [npcToSet] : []);
 
             if (!workspaceRestored) {
                 if (targetConvoId && currentConversations.find(c => c.id === targetConvoId)) {

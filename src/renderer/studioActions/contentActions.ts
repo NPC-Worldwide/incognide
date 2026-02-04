@@ -165,16 +165,34 @@ async function run_terminal(
     return { success: false, error: `Pane is not a terminal: ${data.contentType}` };
   }
 
-  // Terminal command execution would need to be implemented
-  // This would typically send the command via IPC to the terminal process
-  // For now, return a placeholder
+  // Get the terminal ID from the pane's contentId
+  const terminalId = data.contentId;
 
-  return {
-    success: true,
-    paneId,
-    command,
-    message: 'Command sent to terminal'
-  };
+  if (!terminalId) {
+    return { success: false, error: 'Terminal ID not found for pane' };
+  }
+
+  try {
+    // Send the command to the terminal via IPC
+    // Append newline to execute the command
+    await (window as any).api?.writeToTerminal?.({
+      id: terminalId,
+      data: command + '\n'
+    });
+
+    return {
+      success: true,
+      paneId,
+      terminalId,
+      command,
+      message: 'Command sent to terminal'
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to send command to terminal'
+    };
+  }
 }
 
 // Register all content actions

@@ -75,7 +75,6 @@ async function open_pane(
   }
 
   const contentId = path || url || ctx.generateId();
-  const newPaneId = ctx.generateId();
 
   // Get path to active pane
   const activePath = ctx.findPanePath(ctx.rootLayoutNode, ctx.activeContentPaneId) || [];
@@ -83,9 +82,25 @@ async function open_pane(
   // Perform split to create new pane
   ctx.performSplit(activePath, position, type, contentId);
 
+  // Find the actual pane ID by looking for the pane with matching contentId
+  // performSplit sets the active pane to the new pane, but we need to wait
+  // a tick for React state to update. Use contentDataRef to find it.
+  let actualPaneId: string | null = null;
+
+  // Give React a moment to update state, then look for the new pane
+  await new Promise(resolve => setTimeout(resolve, 50));
+
+  // Find pane by contentId in contentDataRef
+  for (const [paneId, data] of Object.entries(ctx.contentDataRef.current)) {
+    if (data.contentId === contentId && data.contentType === type) {
+      actualPaneId = paneId;
+      break;
+    }
+  }
+
   return {
     success: true,
-    paneId: newPaneId,
+    paneId: actualPaneId || 'unknown',
     type,
     contentId
   };

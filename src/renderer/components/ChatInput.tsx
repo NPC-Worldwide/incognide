@@ -1543,14 +1543,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                 onClick={() => setShowMcpServersDropdown((p: boolean) => !p)}
                             >
                                 <span className="truncate">
-                                    {(() => {
-                                        const srv = availableMcpServers.find((s: any) => s.serverPath === mcpServerPath);
-                                        if (srv) {
-                                            const origin = srv.origin === 'global' ? '🌐' : '📁';
-                                            return `${origin} ${srv.serverPath}`;
-                                        }
-                                        return 'Select MCP server & tools';
-                                    })()}
+                                    {`MCP Servers (${availableMcpServers.length})`}
                                 </span>
                                 <ChevronDown size={12} />
                             </button>
@@ -1568,13 +1561,14 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                         <div className="px-2 py-1 text-xs theme-text-muted">No MCP servers in ctx</div>
                                     )}
                                     {/* Group by origin */}
-                                    {['global', 'project'].map(origin => {
+                                    {[...new Set(availableMcpServers.map((s: any) => s.origin))].map(origin => {
                                         const serversForOrigin = availableMcpServers.filter((s: any) => s.origin === origin);
                                         if (serversForOrigin.length === 0) return null;
+                                        const originLabel = origin?.startsWith('auto:') ? `🔄 ${origin.slice(5)}` : origin === 'global' ? '🌐 Global' : origin === 'project' ? '📁 Project' : origin;
                                         return (
                                             <div key={origin}>
                                                 <div className="px-2 py-1 text-[10px] uppercase theme-text-muted border-b theme-border">
-                                                    {origin === 'global' ? '🌐 Global' : '📁 Project'}
+                                                    {originLabel}
                                                 </div>
                                                 {serversForOrigin.map((srv: any) => (
                                                     <div key={srv.serverPath} className="border-b theme-border last:border-b-0">
@@ -1600,7 +1594,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                                                 });
                                                             }}
                                                         >
-                                                            <span className="truncate">{srv.serverPath}</span>
+                                                            <span className="truncate">{srv.serverPath.split('/').pop()?.replace(/\.py$/, '') || srv.serverPath}</span>
                                                         </div>
                                                         {srv.serverPath === mcpServerPath && (
                                                             <div className="px-3 py-1 space-y-1">

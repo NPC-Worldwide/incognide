@@ -46,6 +46,12 @@ const WebBrowserViewer = memo(({
     const [allPasswords, setAllPasswords] = useState<any[]>([]);
     const [showPasswordValue, setShowPasswordValue] = useState<string | null>(null);
 
+    // Find in page state
+    const [findText, setFindText] = useState('');
+    const [showFindBar, setShowFindBar] = useState(false);
+    const [findResults, setFindResults] = useState<{ activeMatchOrdinal: number; matches: number } | null>(null);
+    const findInputRef = useRef<HTMLInputElement>(null);
+
     // Site permissions state
     const [sitePermissions, setSitePermissions] = useState<Record<string, string[]>>(() => {
         try {
@@ -101,9 +107,10 @@ const WebBrowserViewer = memo(({
         : 'default-browser-session';
     const viewId = projectPartition;
 
-    // Expose getPageContent method through contentDataRef for context gathering
+    // Expose browser automation methods through contentDataRef
     useEffect(() => {
         if (contentDataRef.current[nodeId]) {
+            // Get page content as text
             contentDataRef.current[nodeId].getPageContent = async () => {
                 const webview = webviewRef.current;
                 if (!webview) return { success: false, content: '', url: '', title: '' };
@@ -128,6 +135,179 @@ const WebBrowserViewer = memo(({
                 } catch (err) {
                     console.error('[WebBrowser] Failed to get page content:', err);
                     return { success: false, content: '', url: currentUrl, title: title };
+                }
+            };
+
+            // Click on element by selector or text content
+            contentDataRef.current[nodeId].browserClick = async (selector: string, options?: { text?: string; index?: number }) => {
+                const webview = webviewRef.current;
+                if (!webview) return { success: false, error: 'Webview not available' };
+
+                try {
+                    const result = await webview.executeJavaScript(`
+                        (function() {
+                            const selector = ${JSON.stringify(selector)};
+                            const text = ${JSON.stringify(options?.text || null)};
+                            const index = ${JSON.stringify(options?.index ?? 0)};
+
+                            let elements = [];
+
+                            // Try CSS selector first
+                            if (selector) {
+                                try {
+                                    elements = Array.from(document.querySelectorAll(selector));
+                                } catch (e) {
+                                    // Invalid selector, try text search
+                                }
+                            }
+
+                            // If text is provided, filter by text content
+                            if (text) {
+                                const textLower = text.toLowerCase();
+                                if (elements.length === 0) {
+                                    // Search all clickable elements by text
+                                    const clickables = document.querySelectorAll('a, button, [role="button"], input[type="submit"], input[type="button"], [onclick]');
+                                    elements = Array.from(clickables).filter(el =>
+                                        el.textContent?.toLowerCase().includes(textLower) ||
+                                        el.getAttribute('aria-label')?.toLowerCase().includes(textLower) ||
+                                        el.getAttribute('title')?.toLowerCase().includes(textLower)
+                                    );
+                                } else {
+                                    elements = elements.filter(el =>
+                                        el.textContent?.toLowerCase().includes(textLower)
+                                    );
+                                }
+                            }
+
+                            if (elements.length === 0) {
+                                return { success: false, error: 'Element not found: ' + (selector || text) };
+                            }
+
+                            const element = elements[Math.min(index, elements.length - 1)];
+                            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            element.click();
+
+                            return {
+                                success: true,
+                                clicked: element.tagName + (element.id ? '#' + element.id : ''),
+                                text: element.textContent?.substring(0, 100).trim()
+                            };
+                        })();
+                    `);
+                    return result;
+                } catch (err) {
+                    console.error('[WebBrowser] Click failed:', err);
+                    return { success: false, error: err.message };
+                }
+            };
+
+            // Type text into an input element
+            contentDataRef.current[nodeId].browserType = async (selector: string, text: string, options?: { clear?: boolean; submit?: boolean }) => {
+                const webview = webviewRef.current;
+                if (!webview) return { success: false, error: 'Webview not available' };
+
+                try {
+                    const result = await webview.executeJavaScript(`
+                        (function() {
+                            const selector = ${JSON.stringify(selector)};
+                            const text = ${JSON.stringify(text)};
+                            const clear = ${JSON.stringify(options?.clear ?? true)};
+                            const submit = ${JSON.stringify(options?.submit ?? false)};
+
+                            let element = null;
+
+                            // Try CSS selector
+                            try {
+                                element = document.querySelector(selector);
+                            } catch (e) {}
+
+                            // Fallback: find by placeholder, name, or aria-label
+                            if (!element) {
+                                const inputs = document.querySelectorAll('input, textarea, [contenteditable="true"]');
+                                const selectorLower = selector.toLowerCase();
+                                element = Array.from(inputs).find(el =>
+                                    el.placeholder?.toLowerCase().includes(selectorLower) ||
+                                    el.name?.toLowerCase().includes(selectorLower) ||
+                                    el.getAttribute('aria-label')?.toLowerCase().includes(selectorLower) ||
+                                    el.id?.toLowerCase().includes(selectorLower)
+                                );
+                            }
+
+                            if (!element) {
+                                return { success: false, error: 'Input element not found: ' + selector };
+                            }
+
+                            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            element.focus();
+
+                            if (clear) {
+                                element.value = '';
+                                element.dispatchEvent(new Event('input', { bubbles: true }));
+                            }
+
+                            // Set value and trigger events
+                            if (element.isContentEditable) {
+                                element.textContent = text;
+                            } else {
+                                element.value = text;
+                            }
+                            element.dispatchEvent(new Event('input', { bubbles: true }));
+                            element.dispatchEvent(new Event('change', { bubbles: true }));
+
+                            if (submit) {
+                                const form = element.closest('form');
+                                if (form) {
+                                    form.submit();
+                                } else {
+                                    element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+                                }
+                            }
+
+                            return {
+                                success: true,
+                                element: element.tagName + (element.id ? '#' + element.id : ''),
+                                typed: text.length + ' characters'
+                            };
+                        })();
+                    `);
+                    return result;
+                } catch (err) {
+                    console.error('[WebBrowser] Type failed:', err);
+                    return { success: false, error: err.message };
+                }
+            };
+
+            // Get screenshot of the page
+            contentDataRef.current[nodeId].browserScreenshot = async () => {
+                const webview = webviewRef.current;
+                if (!webview) return { success: false, error: 'Webview not available' };
+
+                try {
+                    const image = await webview.capturePage();
+                    const dataUrl = image.toDataURL();
+                    return {
+                        success: true,
+                        screenshot: dataUrl,
+                        url: webview.getURL(),
+                        title: webview.getTitle()
+                    };
+                } catch (err) {
+                    console.error('[WebBrowser] Screenshot failed:', err);
+                    return { success: false, error: err.message };
+                }
+            };
+
+            // Execute arbitrary JavaScript (for advanced automation)
+            contentDataRef.current[nodeId].browserEval = async (code: string) => {
+                const webview = webviewRef.current;
+                if (!webview) return { success: false, error: 'Webview not available' };
+
+                try {
+                    const result = await webview.executeJavaScript(code);
+                    return { success: true, result };
+                } catch (err) {
+                    console.error('[WebBrowser] Eval failed:', err);
+                    return { success: false, error: err.message };
                 }
             };
         }
@@ -447,9 +627,61 @@ const WebBrowserViewer = memo(({
     const handleBack = useCallback(() => webviewRef.current?.goBack(), []);
     const handleForward = useCallback(() => webviewRef.current?.goForward(), []);
     const handleRefresh = useCallback(() => webviewRef.current?.reload(), []);
+    // Handle find in page
+    const handleFindInPage = useCallback((text: string, forward: boolean = true) => {
+        const webview = webviewRef.current;
+        if (!webview || !text) return;
+        
+        webview.findInPage(text, { forward, findNext: true });
+    }, []);
+
+    const handleStopFindInPage = useCallback(() => {
+        const webview = webviewRef.current;
+        if (!webview) return;
+        
+        webview.stopFindInPage('clearSelection');
+        setShowFindBar(false);
+        setFindText('');
+        setFindResults(null);
+    }, []);
+
+    // Listen for find results from webview
+    useEffect(() => {
+        const webview = webviewRef.current;
+        if (!webview) return;
+
+        const handleFoundInPage = (e: any) => {
+            if (e.result) {
+                setFindResults({
+                    activeMatchOrdinal: e.result.activeMatchOrdinal,
+                    matches: e.result.matches
+                });
+            }
+        };
+
+        webview.addEventListener('found-in-page', handleFoundInPage);
+        return () => webview.removeEventListener('found-in-page', handleFoundInPage);
+    }, []);
+
+    // Listen for menu-triggered find (Ctrl+F from menu accelerator)
+    useEffect(() => {
+        const handleOpenFindBar = (e: CustomEvent) => {
+            if (e.detail?.paneId === nodeId) {
+                setShowFindBar(true);
+                setTimeout(() => {
+                    findInputRef.current?.focus();
+                    findInputRef.current?.select();
+                }, 50);
+            }
+        };
+
+        window.addEventListener('incognide-open-find-bar', handleOpenFindBar as EventListener);
+        return () => window.removeEventListener('incognide-open-find-bar', handleOpenFindBar as EventListener);
+    }, [nodeId]);
+
     const handleHardRefresh = useCallback(() => webviewRef.current?.reloadIgnoringCache(), []);
 
-    // Keyboard shortcuts: Backspace for back (only when this pane is focused)
+    // Keyboard shortcuts: Backspace for back, Ctrl/Cmd+F for find (only when this pane is focused)
     // Note: Ctrl+R, Ctrl+T, Ctrl+N are handled globally in Enpistu.tsx and main.js
     useEffect(() => {
         const containerRef = document.querySelector(`[data-pane-id="${nodeId}"]`);
@@ -462,6 +694,42 @@ const WebBrowserViewer = memo(({
                                       target.closest(`[data-pane-id="${nodeId}"]`) !== null;
 
             if (!isWithinThisPane) return;
+
+            // Ctrl+F / Cmd+F - open find bar
+            if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+                e.preventDefault();
+                e.stopPropagation();
+                setShowFindBar(true);
+                // Focus the find input after a short delay to ensure it's rendered
+                setTimeout(() => {
+                    findInputRef.current?.focus();
+                    findInputRef.current?.select();
+                }, 50);
+                return;
+            }
+
+            // Escape - close find bar
+            if (e.key === 'Escape' && showFindBar) {
+                e.preventDefault();
+                handleStopFindInPage();
+                return;
+            }
+
+            // Ctrl+G / Cmd+G - find next (when find bar is open and has text)
+            if ((e.ctrlKey || e.metaKey) && e.key === 'g' && !e.shiftKey && findText) {
+                e.preventDefault();
+                e.stopPropagation();
+                handleFindInPage(findText, true);
+                return;
+            }
+
+            // Ctrl+Shift+G / Cmd+Shift+G - find previous
+            if ((e.ctrlKey || e.metaKey) && e.key === 'g' && e.shiftKey && findText) {
+                e.preventDefault();
+                e.stopPropagation();
+                handleFindInPage(findText, false);
+                return;
+            }
 
             // Backspace = go back (only if not in a text input)
             if (e.key === 'Backspace') {
@@ -477,7 +745,7 @@ const WebBrowserViewer = memo(({
 
         document.addEventListener('keydown', handleKeyDown, true);
         return () => document.removeEventListener('keydown', handleKeyDown, true);
-    }, [canGoBack, handleBack, nodeId]);
+    }, [canGoBack, handleBack, nodeId, showFindBar, findText, handleFindInPage, handleStopFindInPage]);
     const handleHome = useCallback(() => {
         const initial = initialUrlRef.current;
         let homeUrl = initial;
@@ -1445,6 +1713,65 @@ const WebBrowserViewer = memo(({
 
                 {/* Overlay to block webview interaction during layout resize/drag */}
                 <div className="webview-resize-overlay absolute inset-0 z-10" />
+
+                {/* Find Bar */}
+                {showFindBar && (
+                    <div className="absolute top-0 right-0 z-50 m-2 flex items-center gap-2 theme-bg-secondary border theme-border rounded-lg shadow-lg px-3 py-2">
+                        <input
+                            ref={findInputRef}
+                            type="text"
+                            value={findText}
+                            onChange={(e) => {
+                                setFindText(e.target.value);
+                                if (e.target.value) {
+                                    handleFindInPage(e.target.value, true);
+                                }
+                            }}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleFindInPage(findText, !e.shiftKey);
+                                } else if (e.key === 'Escape') {
+                                    e.preventDefault();
+                                    handleStopFindInPage();
+                                }
+                            }}
+                            placeholder="Find in page..."
+                            className="w-48 px-2 py-1 text-sm theme-bg-primary theme-text-primary border theme-border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            autoFocus
+                        />
+                        {findResults && (
+                            <span className="text-xs theme-text-muted whitespace-nowrap">
+                                {findResults.matches > 0
+                                    ? `${findResults.activeMatchOrdinal}/${findResults.matches}`
+                                    : 'No matches'}
+                            </span>
+                        )}
+                        <button
+                            onClick={() => handleFindInPage(findText, false)}
+                            disabled={!findText}
+                            className="p-1 theme-hover rounded disabled:opacity-50"
+                            title="Previous (Shift+Enter)"
+                        >
+                            <ArrowLeft size={14} />
+                        </button>
+                        <button
+                            onClick={() => handleFindInPage(findText, true)}
+                            disabled={!findText}
+                            className="p-1 theme-hover rounded disabled:opacity-50"
+                            title="Next (Enter)"
+                        >
+                            <ArrowRight size={14} />
+                        </button>
+                        <button
+                            onClick={handleStopFindInPage}
+                            className="p-1 theme-hover rounded"
+                            title="Close (Esc)"
+                        >
+                            <X size={14} />
+                        </button>
+                    </div>
+                )}
 
                 {/* Password Save Prompt */}
                 {showPasswordPrompt && pendingCredentials && (

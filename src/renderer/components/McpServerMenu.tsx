@@ -112,7 +112,13 @@ const McpServerMenu = ({ isOpen, onClose, currentPath }) => {
                                             <div className="flex items-center gap-2">
                                                 <Server className="text-blue-400" size={16} />
                                                 <div className="text-left">
-                                                    <div className="text-sm theme-text-primary font-medium">{server.serverPath}</div>
+                                                    <div className="text-sm theme-text-primary font-medium">{server.serverPath.split('/').pop()}</div>
+                                                    <div className="text-xs theme-text-muted truncate max-w-[180px]" title={server.serverPath}>{server.serverPath}</div>
+                                                    {server.origin && (
+                                                        <div className={`text-xs mt-0.5 ${server.origin.startsWith('auto:') ? 'text-green-400' : 'text-blue-400'}`}>
+                                                            {server.origin.startsWith('auto:') ? `Auto (${server.origin.slice(5)})` : server.origin}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                             {renderStatus(server)}

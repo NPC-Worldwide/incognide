@@ -5419,6 +5419,38 @@ async function fetchCtxMcpServers(currentPath) {
       servers.set(serverPath, { serverPath, origin });
     }
   };
+
+  // Auto-discover MCP servers from known team directories
+  const npcshDir = path.join(os.homedir(), '.npcsh');
+  const knownTeamDirs = [
+    { dir: path.join(npcshDir, 'npc_team'), name: 'npcsh' },
+    { dir: path.join(npcshDir, 'incognide', 'npc_team'), name: 'incognide' }
+  ];
+
+  for (const { dir, name } of knownTeamDirs) {
+    try {
+      if (fs.existsSync(dir)) {
+        // Look for *_mcp_server.py or mcp_server.py
+        const files = fs.readdirSync(dir);
+        for (const file of files) {
+          if (file.endsWith('_mcp_server.py') || file === 'mcp_server.py') {
+            const serverPath = path.join(dir, file);
+            addServer(serverPath, `auto:${name}`);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`Failed to scan ${dir} for MCP servers:`, e.message);
+    }
+  }
+
+  // Also check ~/.npcsh/mcp_server.py directly
+  const globalMcpServer = path.join(npcshDir, 'mcp_server.py');
+  if (fs.existsSync(globalMcpServer)) {
+    addServer(globalMcpServer, 'auto:global');
+  }
+
+  // Load from context files (these can override auto-discovered ones)
   try {
     const globalRes = await fetch(`${BACKEND_URL}/api/context/global`);
     const globalJson = await globalRes.json();
