@@ -1800,8 +1800,27 @@ const ChatInterface = () => {
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'c' || e.key === 'C')) {
                 // Check if focus is inside a terminal - if so, let the terminal handle the copy
                 const activeElement = document.activeElement;
-                const isInTerminal = activeElement?.closest('.xterm') || activeElement?.closest('[data-terminal]');
-                if (isInTerminal) {
+                const eventTarget = e.target as Element;
+
+                // Multiple ways to detect if we're in a terminal:
+                // 1. activeElement is inside .xterm or [data-terminal]
+                // 2. activeElement is xterm's helper textarea
+                // 3. event target is inside terminal area
+                // 4. active pane is a terminal
+                const isInXterm = activeElement?.closest('.xterm') || eventTarget?.closest('.xterm');
+                const isInTerminalAttr = activeElement?.closest('[data-terminal]') || eventTarget?.closest('[data-terminal]');
+                const isXtermTextarea = activeElement?.classList?.contains('xterm-helper-textarea');
+
+                // Also check if the active pane is a terminal (backup check for virtual pane IDs)
+                const activePane = contentDataRef.current[activeContentPaneId];
+                const activePaneIsTerminal = activePane?.contentType === 'terminal';
+
+                // Check all tabs in the active pane to see if any is a terminal that's visible
+                const activePaneTabs = activePane?.tabs || [];
+                const activeTabIndex = activePane?.activeTabIndex ?? 0;
+                const activeTabIsTerminal = activePaneTabs[activeTabIndex]?.contentType === 'terminal';
+
+                if (isInXterm || isInTerminalAttr || isXtermTextarea || activePaneIsTerminal || activeTabIsTerminal) {
                     // Don't prevent default - let the terminal's copy handler work
                     return;
                 }

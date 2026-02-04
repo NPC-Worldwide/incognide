@@ -72,6 +72,33 @@ readDocxContent: (filePath) =>
     gitStash: (repoPath, action, message) => ipcRenderer.invoke('gitStash', repoPath, action, message),
     gitShowFile: (repoPath, filePath, ref) => ipcRenderer.invoke('gitShowFile', repoPath, filePath, ref),
     gitDiscardFile: (repoPath, filePath) => ipcRenderer.invoke('gitDiscardFile', repoPath, filePath),
+    gitAcceptOurs: (repoPath, filePath) => ipcRenderer.invoke('gitAcceptOurs', repoPath, filePath),
+    gitAcceptTheirs: (repoPath, filePath) => ipcRenderer.invoke('gitAcceptTheirs', repoPath, filePath),
+    gitMarkResolved: (repoPath, filePath) => ipcRenderer.invoke('gitMarkResolved', repoPath, filePath),
+    gitAbortMerge: (repoPath) => ipcRenderer.invoke('gitAbortMerge', repoPath),
+
+    // Terminal shortcut relay methods
+    triggerNewTextFile: () => ipcRenderer.send('trigger-new-text-file'),
+    triggerBrowserNewTab: () => ipcRenderer.send('trigger-browser-new-tab'),
+
+    // Window management
+    closeWindow: () => ipcRenderer.invoke('close-window'),
+    showItemInFolder: (path) => ipcRenderer.invoke('show-item-in-folder', path),
+
+    // Device ID and info for multi-device sync
+    getDeviceInfo: () => ipcRenderer.invoke('getDeviceInfo'),
+    setDeviceName: (name) => ipcRenderer.invoke('setDeviceName', name),
+    getDeviceId: () => ipcRenderer.invoke('getDeviceId'),
+
+    // Menu callbacks
+    onMenuNewTextFile: (callback) => {
+        ipcRenderer.on('menu-new-text-file', callback);
+        return () => ipcRenderer.removeListener('menu-new-text-file', callback);
+    },
+    onMenuReopenTab: (callback) => {
+        ipcRenderer.on('menu-reopen-tab', callback);
+        return () => ipcRenderer.removeListener('menu-reopen-tab', callback);
+    },
 
     readFile: (filePath) => ipcRenderer.invoke('read-file-buffer', filePath),
    

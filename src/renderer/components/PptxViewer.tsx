@@ -8,7 +8,7 @@ import {
   LayoutGrid, Grid, Maximize2, MousePointer, Move, RotateCcw, Layers,
   FileDown, Printer, MoreHorizontal, Triangle, Pentagon, Star, Minus,
   ArrowRight, Hexagon, Heart, Diamond, PaintBucket, Sparkles, Layout,
-  Undo, Redo, List, ListOrdered, Highlighter
+  Undo, Redo, List, ListOrdered, Highlighter, Sun, Moon
 } from 'lucide-react';
 
 // Constants
@@ -89,41 +89,114 @@ function escapeHtml(text: string) {
   return text.replace(/[&<>"']/g, (m) => escapeMap[m] || m);
 }
 
+// Theme data including colors and fonts
+interface ThemeData {
+  colors: Record<string, string>;
+  majorFont: string;
+  minorFont: string;
+}
+
+// Set to track loaded fonts to avoid duplicates
+const loadedFonts = new Set<string>();
+
+// Track fonts that would be loaded - actual loading could be added later
+// For now, we just apply the font-family and let the browser use fallbacks
+function loadGoogleFont(fontName: string): void {
+  if (loadedFonts.has(fontName)) return;
+  loadedFonts.add(fontName);
+
+  // Common fonts that are web-safe and don't need loading
+  const systemFonts = ['Arial', 'Helvetica', 'Times New Roman', 'Georgia', 'Verdana', 'Courier New', 'Comic Sans MS', 'Impact', 'Trebuchet MS'];
+  if (systemFonts.includes(fontName)) return;
+
+  // Log for debugging - in the future this could load from a local font cache or bundled fonts
+  console.debug('[PPTX] Font requested:', fontName);
+}
+
 // Theme color extraction - handles both PowerPoint and Google Slides
-async function extractThemeColors(zip: JSZip): Promise<Record<string, string>> {
-  const themeFile = zip.file('ppt/theme/theme1.xml');
-  if (!themeFile) return {};
+async function extractThemeData(zip: JSZip, themePath: string = 'ppt/theme/theme1.xml'): Promise<ThemeData> {
+  const themeFile = zip.file(themePath);
+  if (!themeFile) return { colors: {}, majorFont: 'Arial', minorFont: 'Arial' };
 
   try {
     const xml = await themeFile.async('string');
     const doc = new DOMParser().parseFromString(xml, 'application/xml');
+
+    // Extract colors
     const colorScheme = qNS(doc, NS.a, 'clrScheme');
-    if (!colorScheme) return {};
-
     const colors: Record<string, string> = {};
-    const names = ['dk1', 'lt1', 'dk2', 'lt2', 'accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6', 'hlink', 'folHlink'];
 
-    for (const name of names) {
-      const elem = colorScheme.getElementsByTagNameNS(NS.a, name)[0];
-      if (elem) {
-        const srgb = qNS(elem, NS.a, 'srgbClr');
-        const sys = qNS(elem, NS.a, 'sysClr');
-        if (srgb) colors[name] = `#${srgb.getAttribute('val')}`;
-        else if (sys) colors[name] = sys.getAttribute('lastClr') ? `#${sys.getAttribute('lastClr')}` : '#000000';
+    if (colorScheme) {
+      const names = ['dk1', 'lt1', 'dk2', 'lt2', 'accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6', 'hlink', 'folHlink'];
+
+      for (const name of names) {
+        const elem = colorScheme.getElementsByTagNameNS(NS.a, name)[0];
+        if (elem) {
+          const srgb = qNS(elem, NS.a, 'srgbClr');
+          const sys = qNS(elem, NS.a, 'sysClr');
+          if (srgb) colors[name] = `#${srgb.getAttribute('val')}`;
+          else if (sys) colors[name] = sys.getAttribute('lastClr') ? `#${sys.getAttribute('lastClr')}` : '#000000';
+        }
+      }
+
+      // Google Slides uses tx1/tx2/bg1/bg2 which map to dk1/lt1/dk2/lt2
+      colors['tx1'] = colors['dk1'] || '#000000';
+      colors['tx2'] = colors['dk2'] || '#000000';
+      colors['bg1'] = colors['lt1'] || '#ffffff';
+      colors['bg2'] = colors['lt2'] || '#ffffff';
+    }
+
+    // Extract fonts from fontScheme
+    let majorFont = 'Arial';
+    let minorFont = 'Arial';
+
+    const fontScheme = qNS(doc, NS.a, 'fontScheme');
+    if (fontScheme) {
+      const majorFontEl = qNS(fontScheme, NS.a, 'majorFont');
+      const minorFontEl = qNS(fontScheme, NS.a, 'minorFont');
+
+      if (majorFontEl) {
+        const latin = qNS(majorFontEl, NS.a, 'latin');
+        if (latin) {
+          majorFont = latin.getAttribute('typeface') || 'Arial';
+        }
+      }
+      if (minorFontEl) {
+        const latin = qNS(minorFontEl, NS.a, 'latin');
+        if (latin) {
+          minorFont = latin.getAttribute('typeface') || 'Arial';
+        }
       }
     }
 
-    // Google Slides uses tx1/tx2/bg1/bg2 which map to dk1/lt1/dk2/lt2
-    colors['tx1'] = colors['dk1'] || '#000000';
-    colors['tx2'] = colors['dk2'] || '#000000';
-    colors['bg1'] = colors['lt1'] || '#ffffff';
-    colors['bg2'] = colors['lt2'] || '#ffffff';
+    // Load the fonts
+    loadGoogleFont(majorFont);
+    loadGoogleFont(minorFont);
 
-    return colors;
+    return { colors, majorFont, minorFont };
   } catch (e) {
     console.error('[PPTX] Theme extraction error:', e);
-    return {};
+    return { colors: {}, majorFont: 'Arial', minorFont: 'Arial' };
   }
+}
+
+// Legacy function for compatibility - extracts only colors
+async function extractThemeColors(zip: JSZip, themePath: string = 'ppt/theme/theme1.xml'): Promise<Record<string, string>> {
+  const data = await extractThemeData(zip, themePath);
+  return data.colors;
+}
+
+// Extract all themes from zip and return a map of theme path -> ThemeData
+async function extractAllThemes(zip: JSZip): Promise<Record<string, ThemeData>> {
+  const themes: Record<string, ThemeData> = {};
+  const themeFiles = Object.keys(zip.files).filter(f => /^ppt\/theme\/theme\d+\.xml$/.test(f));
+
+  for (const themePath of themeFiles) {
+    const themeData = await extractThemeData(zip, themePath);
+    themes[themePath] = themeData;
+  }
+
+  return themes;
 }
 
 // Parse color from solidFill element with luminance modifiers
@@ -190,7 +263,12 @@ function parseColor(fillEl: Element | null, themeColors: Record<string, string>)
 }
 
 // Build style string from run properties
-function buildStyleFromRPr(rPr: Element | null, defaultRPr: Element | null, themeColors: Record<string, string>): string[] {
+function buildStyleFromRPr(
+  rPr: Element | null,
+  defaultRPr: Element | null,
+  themeColors: Record<string, string>,
+  themeFonts?: { majorFont: string; minorFont: string }
+): string[] {
   const styles: string[] = [];
 
   // Get properties from run, falling back to default if not specified
@@ -221,21 +299,20 @@ function buildStyleFromRPr(rPr: Element | null, defaultRPr: Element | null, them
   const defaultCs = defaultRPr ? qNS(defaultRPr, NS.a, 'cs') : null;
   const cs = runCs || defaultCs;
 
-  const typeface = latin?.getAttribute('typeface') || ea?.getAttribute('typeface') || cs?.getAttribute('typeface');
-  if (typeface && typeface !== '+mn-lt' && typeface !== '+mj-lt') {
-    // Map common Google Slides font names
-    const fontMap: Record<string, string> = {
-      'Arial': 'Arial, sans-serif',
-      'Roboto': 'Roboto, Arial, sans-serif',
-      'Open Sans': '"Open Sans", Arial, sans-serif',
-      'Lato': 'Lato, Arial, sans-serif',
-      'Montserrat': 'Montserrat, Arial, sans-serif',
-      'Oswald': 'Oswald, Arial, sans-serif',
-      'Playfair Display': '"Playfair Display", Georgia, serif',
-      'Times New Roman': '"Times New Roman", Times, serif',
-      'Georgia': 'Georgia, serif',
-    };
-    styles.push(`font-family: ${fontMap[typeface] || `"${typeface}", sans-serif`}`);
+  let typeface = latin?.getAttribute('typeface') || ea?.getAttribute('typeface') || cs?.getAttribute('typeface');
+
+  // Resolve theme font references
+  if (typeface === '+mj-lt' && themeFonts) {
+    typeface = themeFonts.majorFont;
+  } else if (typeface === '+mn-lt' && themeFonts) {
+    typeface = themeFonts.minorFont;
+  }
+
+  if (typeface) {
+    // Load the font if needed
+    loadGoogleFont(typeface);
+    // Use the font with a fallback
+    styles.push(`font-family: "${typeface}", Arial, sans-serif`);
   }
 
   // Bold - check for explicit value
@@ -284,7 +361,7 @@ function buildStyleFromRPr(rPr: Element | null, defaultRPr: Element | null, them
 }
 
 // Parse entire paragraph including runs, fields, and breaks
-function parseParagraph(p: Element, themeColors: Record<string, string>, defaultRPr?: Element | null): string {
+function parseParagraph(p: Element, themeColors: Record<string, string>, defaultRPr?: Element | null, themeFonts?: { majorFont: string; minorFont: string }): string {
   const parts: string[] = [];
 
   // Get all text runs using namespace query (more reliable than childNodes iteration)
@@ -315,7 +392,7 @@ function parseParagraph(p: Element, themeColors: Record<string, string>, default
       if (!text) continue;
 
       const rPr = qNS(el, NS.a, 'rPr');
-      const styles = buildStyleFromRPr(rPr, defaultRPr, themeColors);
+      const styles = buildStyleFromRPr(rPr, defaultRPr, themeColors, themeFonts);
 
       const html = escapeHtml(text).replace(/\n/g, '<br/>');
       if (styles.length > 0) {
@@ -333,7 +410,7 @@ function parseParagraph(p: Element, themeColors: Record<string, string>, default
     const directText = p.textContent?.trim();
     if (directText) {
       // Apply default styles if available
-      const styles = buildStyleFromRPr(null, defaultRPr, themeColors);
+      const styles = buildStyleFromRPr(null, defaultRPr, themeColors, themeFonts);
       const html = escapeHtml(directText).replace(/\n/g, '<br/>');
       if (styles.length > 0) {
         parts.push(`<span style="${styles.join('; ')}">${html}</span>`);
@@ -392,6 +469,7 @@ interface Shape {
   paras?: ParaData[];
   imgDataUrl?: string;
   fillColor?: string;
+  noFill?: boolean;  // Explicitly has no fill
   borderColor?: string;
   borderWidth?: number;
   shapeType?: string;
@@ -426,6 +504,17 @@ const PptxViewer = ({
   const [hasChanges, setHasChanges] = useState(false);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+
+  // Independent document light/dark mode
+  const [docLightMode, setDocLightMode] = useState(() => {
+    const saved = localStorage.getItem('pptxViewer_lightMode');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+
+  // Persist docLightMode changes
+  useEffect(() => {
+    localStorage.setItem('pptxViewer_lightMode', JSON.stringify(docLightMode));
+  }, [docLightMode]);
 
   const paneData = contentDataRef.current[nodeId];
   const filePath = paneData?.contentId;
@@ -480,8 +569,12 @@ const PptxViewer = ({
         const z = await JSZip.loadAsync(buffer);
         if (cancelled) return;
 
-        // Extract theme colors
-        const colors = await extractThemeColors(z);
+        // Extract all themes (now returns ThemeData with colors and fonts)
+        const allThemes = await extractAllThemes(z);
+
+        // Default to theme1 for general use, but we'll use per-master themes for backgrounds
+        const defaultTheme = allThemes['ppt/theme/theme1.xml'] || { colors: {}, majorFont: 'Arial', minorFont: 'Arial' };
+        const colors = defaultTheme.colors;
         setThemeColors(colors);
 
         const presFile = z.file('ppt/presentation.xml');
@@ -519,6 +612,131 @@ const PptxViewer = ({
           }
         }
 
+        // Load slide masters and their backgrounds
+        const slideMasterBackgrounds: Record<string, string> = {};
+        const slideLayoutBackgrounds: Record<string, string> = {};
+        const slideLayoutToMaster: Record<string, string> = {};
+        const slideMasterThemes: Record<string, Record<string, string>> = {};
+        const slideMasterFonts: Record<string, { majorFont: string; minorFont: string }> = {};
+
+        // Parse slide masters and find which theme each uses
+        const masterFiles = Object.keys(z.files).filter(f => /^ppt\/slideMasters\/slideMaster\d+\.xml$/.test(f));
+        for (const masterPath of masterFiles) {
+          const masterFile = z.file(masterPath);
+          if (!masterFile) continue;
+          const masterXml = await masterFile.async('string');
+          const masterDoc = new DOMParser().parseFromString(masterXml, 'application/xml');
+
+          // Find which theme this master uses
+          const masterRelsPath = `ppt/slideMasters/_rels/${masterPath.split('/').pop()}.rels`;
+          const masterRelsFile = z.file(masterRelsPath);
+          let masterThemeColors = colors; // Default to theme1
+          let masterThemeFonts = defaultTheme;
+          if (masterRelsFile) {
+            const masterRelsXml = await masterRelsFile.async('string');
+            const masterRelsDoc = new DOMParser().parseFromString(masterRelsXml, 'application/xml');
+            const masterRels = qaNS(masterRelsDoc, NS.pkgRels, 'Relationship') as Element[];
+            for (const rel of masterRels) {
+              const type = rel.getAttribute('Type') || '';
+              if (type.includes('theme')) {
+                const target = rel.getAttribute('Target') || '';
+                const themePath = `ppt/${target.replace(/^\.\.\//, '')}`;
+                if (allThemes[themePath]) {
+                  masterThemeFonts = allThemes[themePath];
+                  masterThemeColors = allThemes[themePath].colors;
+                  slideMasterThemes[masterPath] = masterThemeColors;
+                  slideMasterFonts[masterPath] = { majorFont: masterThemeFonts.majorFont, minorFont: masterThemeFonts.minorFont };
+                }
+                break;
+              }
+            }
+          }
+
+          // Extract master background using the correct theme colors
+          const masterCsld = qNS(masterDoc, NS.p, 'cSld');
+          const masterBg = masterCsld ? qNS(masterCsld, NS.p, 'bg') : null;
+          if (masterBg) {
+            const bgPr = qNS(masterBg, NS.p, 'bgPr');
+            if (bgPr) {
+              const solidFill = qNS(bgPr, NS.a, 'solidFill');
+              if (solidFill) {
+                const bgColor = parseColor(solidFill, masterThemeColors);
+                if (bgColor) slideMasterBackgrounds[masterPath] = bgColor;
+              }
+            }
+            const bgRef = qNS(masterBg, NS.p, 'bgRef');
+            if (bgRef) {
+              const refColor = parseColor(bgRef, masterThemeColors);
+              if (refColor) slideMasterBackgrounds[masterPath] = refColor;
+            }
+          }
+        }
+
+        // Update main theme colors to use the first slide master's theme (most common case)
+        const firstMasterTheme = Object.values(slideMasterThemes)[0];
+        if (firstMasterTheme) {
+          setThemeColors(firstMasterTheme);
+        }
+
+        // Parse slide layouts and link to masters
+        const layoutFiles = Object.keys(z.files).filter(f => /^ppt\/slideLayouts\/slideLayout\d+\.xml$/.test(f));
+        for (const layoutPath of layoutFiles) {
+          const layoutFile = z.file(layoutPath);
+          if (!layoutFile) continue;
+          const layoutXml = await layoutFile.async('string');
+          const layoutDoc = new DOMParser().parseFromString(layoutXml, 'application/xml');
+
+          // Get layout's relationship to master first (so we know which theme to use)
+          const layoutRelsPath = `ppt/slideLayouts/_rels/${layoutPath.split('/').pop()}.rels`;
+          const layoutRelsFile = z.file(layoutRelsPath);
+          let layoutThemeColors = colors; // Default
+          if (layoutRelsFile) {
+            const layoutRelsXml = await layoutRelsFile.async('string');
+            const layoutRelsDoc = new DOMParser().parseFromString(layoutRelsXml, 'application/xml');
+            const layoutRels = qaNS(layoutRelsDoc, NS.pkgRels, 'Relationship') as Element[];
+            for (const rel of layoutRels) {
+              const type = rel.getAttribute('Type') || '';
+              if (type.includes('slideMaster')) {
+                const target = rel.getAttribute('Target') || '';
+                const masterName = `ppt/${target.replace(/^\.\.\//, '')}`;
+                slideLayoutToMaster[layoutPath] = masterName;
+                // Use the master's theme colors
+                if (slideMasterThemes[masterName]) {
+                  layoutThemeColors = slideMasterThemes[masterName];
+                }
+                break;
+              }
+            }
+          }
+
+          // Extract layout background using the correct theme colors
+          const layoutCsld = qNS(layoutDoc, NS.p, 'cSld');
+          const layoutBg = layoutCsld ? qNS(layoutCsld, NS.p, 'bg') : null;
+          if (layoutBg) {
+            const bgPr = qNS(layoutBg, NS.p, 'bgPr');
+            if (bgPr) {
+              const solidFill = qNS(bgPr, NS.a, 'solidFill');
+              if (solidFill) {
+                // Check for direct srgbClr first
+                const srgb = qNS(solidFill, NS.a, 'srgbClr');
+                if (srgb) {
+                  const val = srgb.getAttribute('val');
+                  if (val) slideLayoutBackgrounds[layoutPath] = `#${val}`;
+                } else {
+                  const bgColor = parseColor(solidFill, layoutThemeColors);
+                  if (bgColor) slideLayoutBackgrounds[layoutPath] = bgColor;
+                }
+              }
+            }
+            // Also check bgRef
+            const bgRef = qNS(layoutBg, NS.p, 'bgRef');
+            if (bgRef && !slideLayoutBackgrounds[layoutPath]) {
+              const refColor = parseColor(bgRef, layoutThemeColors);
+              if (refColor) slideLayoutBackgrounds[layoutPath] = refColor;
+            }
+          }
+        }
+
         // Load slides
         const loadedSlides: Slide[] = [];
         for (const s of order) {
@@ -534,6 +752,21 @@ const PptxViewer = ({
           const relsFile = z.file(relsPath);
           const relsXml = relsFile ? await relsFile.async('string') : '<Relationships/>';
           const relsDoc = new DOMParser().parseFromString(relsXml, 'application/xml');
+
+          // Determine which theme colors to use for this slide
+          const slideRelsForLayout = qaNS(relsDoc, NS.pkgRels, 'Relationship') as Element[];
+          let slideLayoutPath = '';
+          for (const rel of slideRelsForLayout) {
+            const type = rel.getAttribute('Type') || '';
+            if (type.includes('slideLayout')) {
+              const target = rel.getAttribute('Target') || '';
+              slideLayoutPath = `ppt/${target.replace(/^\.\.\//, '')}`;
+              break;
+            }
+          }
+          const slideMasterPath = slideLayoutToMaster[slideLayoutPath] || '';
+          const slideThemeColors = slideMasterThemes[slideMasterPath] || colors;
+          const slideThemeFonts = slideMasterFonts[slideMasterPath] || { majorFont: defaultTheme.majorFont, minorFont: defaultTheme.minorFont };
 
           const shapes: Shape[] = [];
 
@@ -568,7 +801,7 @@ const PptxViewer = ({
               const defaultProps = defRPr || endParaRPr;
 
               // Use parseParagraph for full support of runs, fields, and breaks
-              const html = parseParagraph(p, colors, defaultProps);
+              const html = parseParagraph(p, slideThemeColors, defaultProps, slideThemeFonts);
 
               const align = pPr?.getAttribute('algn') || 'l';
               const level = Number(pPr?.getAttribute('lvl')) || 0;
@@ -606,26 +839,32 @@ const PptxViewer = ({
             let fillColor: string | undefined;
             let borderColor: string | undefined;
             let borderWidth: number | undefined;
+            let noFill = false;
 
             if (spPr) {
-              const solidFill = qNS(spPr, NS.a, 'solidFill');
-              if (solidFill) {
-                const color = parseColor(solidFill, colors);
-                if (color) fillColor = color;
+              // Check for explicit noFill
+              if (qNS(spPr, NS.a, 'noFill')) {
+                noFill = true;
+              } else {
+                const solidFill = qNS(spPr, NS.a, 'solidFill');
+                if (solidFill) {
+                  const color = parseColor(solidFill, slideThemeColors);
+                  if (color) fillColor = color;
+                }
               }
 
               const ln = qNS(spPr, NS.a, 'ln');
               if (ln) {
                 const lnFill = qNS(ln, NS.a, 'solidFill');
                 if (lnFill) {
-                  borderColor = parseColor(lnFill, colors) || undefined;
+                  borderColor = parseColor(lnFill, slideThemeColors) || undefined;
                 }
                 const w = ln.getAttribute('w');
                 if (w) borderWidth = parseInt(w) / 12700; // EMUs to points
               }
             }
 
-            shapes.push({ type: 'text', xfrm: xfrmData, paras, spNode: sp, fillColor, borderColor, borderWidth });
+            shapes.push({ type: 'text', xfrm: xfrmData, paras, spNode: sp, fillColor, noFill, borderColor, borderWidth });
           }
 
           // Parse images
@@ -674,8 +913,134 @@ const PptxViewer = ({
             }
           }
 
-          // Extract slide background
+          // Parse connector shapes (lines/arrows)
+          const cxnSpNodes = qaNS(doc, NS.p, 'cxnSp') as Element[];
+          for (const cxnSp of cxnSpNodes) {
+            try {
+              const spPr = qNS(cxnSp, NS.p, 'spPr');
+              const xfrm = spPr ? qNS(spPr, NS.a, 'xfrm') : null;
+              const off = xfrm ? qNS(xfrm, NS.a, 'off') : null;
+              const ext = xfrm ? qNS(xfrm, NS.a, 'ext') : null;
+
+              let lineColor: string | undefined;
+              let lineWidth = 1;
+
+              if (spPr) {
+                const ln = qNS(spPr, NS.a, 'ln');
+                if (ln) {
+                  // Check for noFill on line
+                  if (!qNS(ln, NS.a, 'noFill')) {
+                    const lnFill = qNS(ln, NS.a, 'solidFill');
+                    if (lnFill) {
+                      lineColor = parseColor(lnFill, slideThemeColors) || undefined;
+                    }
+                  }
+                  const w = ln.getAttribute('w');
+                  if (w) lineWidth = parseInt(w) / 12700;
+                }
+              }
+
+              // Only add connector if it has a visible line
+              if (lineColor) {
+                shapes.push({
+                  type: 'shape',
+                  shapeType: 'line',
+                  fillColor: lineColor,
+                  borderWidth: lineWidth,
+                  xfrm: {
+                    x: Number(off?.getAttribute('x')) || 0,
+                    y: Number(off?.getAttribute('y')) || 0,
+                    cx: Number(ext?.getAttribute('cx')) || 1000000,
+                    cy: Number(ext?.getAttribute('cy')) || 10000,
+                  },
+                });
+              }
+            } catch (e) {
+              console.error('[PPTX] Connector parse error:', e);
+            }
+          }
+
+          // Parse shapes without text (geometric shapes)
+          const allSpNodes = qaNS(doc, NS.p, 'sp') as Element[];
+          for (const sp of allSpNodes) {
+            const txBody = qNS(sp, NS.p, 'txBody');
+            // Skip shapes that have text (already parsed above)
+            if (txBody) continue;
+
+            try {
+              const spPr = qNS(sp, NS.p, 'spPr');
+              const xfrm = spPr ? qNS(spPr, NS.a, 'xfrm') : null;
+              const off = xfrm ? qNS(xfrm, NS.a, 'off') : null;
+              const ext = xfrm ? qNS(xfrm, NS.a, 'ext') : null;
+
+              if (!off || !ext) continue;
+
+              let fillColor: string | undefined;
+              let borderColor: string | undefined;
+              let borderWidth: number | undefined;
+              let shapeType = 'rect';
+              let hasNoFill = false;
+
+              if (spPr) {
+                // Check for explicit noFill
+                if (qNS(spPr, NS.a, 'noFill')) {
+                  hasNoFill = true;
+                } else {
+                  const solidFill = qNS(spPr, NS.a, 'solidFill');
+                  if (solidFill) {
+                    fillColor = parseColor(solidFill, slideThemeColors) || undefined;
+                  }
+                }
+
+                const ln = qNS(spPr, NS.a, 'ln');
+                if (ln) {
+                  // Check for noFill on line too
+                  if (!qNS(ln, NS.a, 'noFill')) {
+                    const lnFill = qNS(ln, NS.a, 'solidFill');
+                    if (lnFill) {
+                      borderColor = parseColor(lnFill, slideThemeColors) || undefined;
+                    }
+                  }
+                  const w = ln.getAttribute('w');
+                  if (w) borderWidth = parseInt(w) / 12700;
+                }
+
+                // Get preset geometry
+                const prstGeom = qNS(spPr, NS.a, 'prstGeom');
+                if (prstGeom) {
+                  const prst = prstGeom.getAttribute('prst');
+                  if (prst === 'ellipse') shapeType = 'ellipse';
+                  else if (prst === 'roundRect') shapeType = 'roundRect';
+                  else if (prst === 'triangle') shapeType = 'triangle';
+                }
+              }
+
+              // Only add if it has some visual properties and doesn't have noFill
+              if ((fillColor || borderColor) && !hasNoFill) {
+                shapes.push({
+                  type: 'shape',
+                  shapeType,
+                  fillColor,
+                  borderColor,
+                  borderWidth,
+                  xfrm: {
+                    x: Number(off.getAttribute('x')) || 0,
+                    y: Number(off.getAttribute('y')) || 0,
+                    cx: Number(ext.getAttribute('cx')) || 1000000,
+                    cy: Number(ext.getAttribute('cy')) || 1000000,
+                  },
+                });
+              }
+            } catch (e) {
+              console.error('[PPTX] Shape parse error:', e);
+            }
+          }
+
+          // Extract slide background - check slide, then layout, then master
           let background = '#ffffff';
+          let foundBackground = false;
+
+          // First check the slide's own background
           const cSld = qNS(doc, NS.p, 'cSld');
           const bgElement = cSld ? qNS(cSld, NS.p, 'bg') : null;
           if (bgElement) {
@@ -685,8 +1050,11 @@ const PptxViewer = ({
               const gradFill = qNS(bgPr, NS.a, 'gradFill');
 
               if (solidFill) {
-                const bgColor = parseColor(solidFill, colors);
-                if (bgColor) background = bgColor;
+                const bgColor = parseColor(solidFill, slideThemeColors);
+                if (bgColor) {
+                  background = bgColor;
+                  foundBackground = true;
+                }
               } else if (gradFill) {
                 // Extract gradient colors
                 const gsLst = qNS(gradFill, NS.a, 'gsLst');
@@ -694,11 +1062,12 @@ const PptxViewer = ({
                   const gsNodes = qaNS(gsLst, NS.a, 'gs') as Element[];
                   const gradientColors: string[] = [];
                   for (const gs of gsNodes) {
-                    const gradColor = parseColor(gs, colors);
+                    const gradColor = parseColor(gs, slideThemeColors);
                     if (gradColor) gradientColors.push(gradColor);
                   }
                   if (gradientColors.length >= 2) {
                     background = `linear-gradient(135deg, ${gradientColors.join(', ')})`;
+                    foundBackground = true;
                   }
                 }
               }
@@ -706,8 +1075,48 @@ const PptxViewer = ({
             // Check for bgRef (references theme background)
             const bgRef = qNS(bgElement, NS.p, 'bgRef');
             if (bgRef) {
-              const refColor = parseColor(bgRef, colors);
-              if (refColor) background = refColor;
+              const refColor = parseColor(bgRef, slideThemeColors);
+              if (refColor) {
+                background = refColor;
+                foundBackground = true;
+              }
+            }
+          }
+
+          // If no background found on slide, check layout and master
+          if (!foundBackground) {
+            // Get slide's relationship to layout
+            const slideRels = qaNS(relsDoc, NS.pkgRels, 'Relationship') as Element[];
+            let layoutPath = '';
+            for (const rel of slideRels) {
+              const type = rel.getAttribute('Type') || '';
+              if (type.includes('slideLayout')) {
+                const target = rel.getAttribute('Target') || '';
+                layoutPath = `ppt/${target.replace(/^\.\.\//, '')}`;
+                break;
+              }
+            }
+
+            // Check layout background
+            if (layoutPath && slideLayoutBackgrounds[layoutPath]) {
+              background = slideLayoutBackgrounds[layoutPath];
+              foundBackground = true;
+            }
+
+            // If still no background, check master
+            if (!foundBackground && layoutPath) {
+              const masterPath = slideLayoutToMaster[layoutPath];
+              if (masterPath && slideMasterBackgrounds[masterPath]) {
+                background = slideMasterBackgrounds[masterPath];
+              }
+            }
+
+            // If still nothing, check any master (fallback)
+            if (!foundBackground) {
+              const masterPaths = Object.keys(slideMasterBackgrounds);
+              if (masterPaths.length > 0) {
+                background = slideMasterBackgrounds[masterPaths[0]];
+              }
             }
           }
 
@@ -997,8 +1406,27 @@ const PptxViewer = ({
     return () => document.removeEventListener('click', handler);
   }, []);
 
+  // Helper to compute color brightness (0-255)
+  const getColorBrightness = useCallback((color: string): number => {
+    if (!color) return 255;
+    const hex = color.replace('#', '').replace(/^linear-gradient.*$/, 'ffffff');
+    if (hex.length < 6) return 255;
+    const r = parseInt(hex.substr(0, 2), 16);
+    const g = parseInt(hex.substr(2, 2), 16);
+    const b = parseInt(hex.substr(4, 2), 16);
+    // Perceived brightness formula
+    return (r * 299 + g * 587 + b * 114) / 1000;
+  }, []);
+
   // Render slide content
   const renderSlideContent = useCallback((slide: Slide, scale: number = 1, editable: boolean = true) => {
+    // Determine default text color based on slide background brightness
+    const bgBrightness = getColorBrightness(slide.background || '#ffffff');
+    const useLight = bgBrightness < 128; // Dark background = use light text
+    const defaultTextColor = useLight
+      ? (themeColors['lt1'] || '#ffffff')
+      : (themeColors['dk1'] || themeColors['dk2'] || '#000000');
+
     return slide.shapes.map((shape, si) => {
       const style: React.CSSProperties = {
         position: 'absolute',
@@ -1016,7 +1444,8 @@ const PptxViewer = ({
           padding: 4 * scale,
           boxSizing: 'border-box' as const,
         };
-        if (shape.fillColor) {
+        // Only apply background if there's a fill color and noFill is not set
+        if (shape.fillColor && !shape.noFill) {
           textBoxStyle.backgroundColor = shape.fillColor;
         }
         if (shape.borderColor || shape.borderWidth) {
@@ -1026,13 +1455,12 @@ const PptxViewer = ({
         return (
           <div key={si} style={textBoxStyle}>
             {shape.paras?.map((p, pi) => {
-              // Build paragraph styles
               const paraStyle: React.CSSProperties = {
                 textAlign: p.align === 'ctr' ? 'center' : p.align === 'r' ? 'right' : p.align === 'just' ? 'justify' : 'left',
                 paddingLeft: p.level * 20 * scale,
                 outline: 'none',
                 minHeight: '1em',
-                color: '#000000', // Default text color (can be overridden by inline styles)
+                color: defaultTextColor, // Use computed default based on background
                 fontSize: `${18 * scale}px`, // Default font size
                 fontFamily: 'Arial, sans-serif', // Default font
               };
@@ -1077,8 +1505,11 @@ const PptxViewer = ({
         const shapeStyle: React.CSSProperties = {
           width: '100%',
           height: '100%',
-          backgroundColor: shape.fillColor || '#4285f4',
         };
+        // Only apply fill color if one is specified - don't use a default
+        if (shape.fillColor) {
+          shapeStyle.backgroundColor = shape.fillColor;
+        }
 
         // Apply shape-specific styling
         if (shape.shapeType === 'ellipse') {
@@ -1094,7 +1525,9 @@ const PptxViewer = ({
           shapeStyle.backgroundColor = 'transparent';
           shapeStyle.borderLeft = `${emuToPx(shape.xfrm.cx) * scale / 2}px solid transparent`;
           shapeStyle.borderRight = `${emuToPx(shape.xfrm.cx) * scale / 2}px solid transparent`;
-          shapeStyle.borderBottom = `${emuToPx(shape.xfrm.cy) * scale}px solid ${shape.fillColor || '#4285f4'}`;
+          if (shape.fillColor) {
+            shapeStyle.borderBottom = `${emuToPx(shape.xfrm.cy) * scale}px solid ${shape.fillColor}`;
+          }
         } else if (shape.shapeType === 'star') {
           shapeStyle.clipPath = 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)';
         } else if (shape.shapeType === 'hexagon') {
@@ -1111,7 +1544,7 @@ const PptxViewer = ({
 
       return null;
     });
-  }, [emuToPx, updateParaHTML]);
+  }, [emuToPx, updateParaHTML, themeColors]);
 
   // Error state
   if (err) {
@@ -1406,6 +1839,17 @@ const PptxViewer = ({
 
         <div className="w-px h-5 bg-gray-600 mx-1" />
 
+        {/* Document light/dark mode toggle */}
+        <button
+          onClick={() => setDocLightMode(!docLightMode)}
+          className="p-1.5 theme-hover rounded"
+          title={docLightMode ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+        >
+          {docLightMode ? <Moon size={14} /> : <Sun size={14} />}
+        </button>
+
+        <div className="w-px h-5 bg-gray-600 mx-1" />
+
         {/* Zoom */}
         <button onClick={() => setZoom(z => Math.max(50, z - 10))} className="p-1.5 theme-hover rounded"><ZoomOut size={14} /></button>
         <span className="text-[10px] text-gray-400 w-10 text-center">{zoom}%</span>
@@ -1494,4 +1938,9 @@ const PptxViewer = ({
   );
 };
 
-export default memo(PptxViewer);
+// Custom comparison to prevent reload on pane resize
+const arePropsEqual = (prevProps: any, nextProps: any) => {
+    return prevProps.nodeId === nextProps.nodeId;
+};
+
+export default memo(PptxViewer, arePropsEqual);

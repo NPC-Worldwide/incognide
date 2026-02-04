@@ -385,7 +385,17 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             const resizeObserver = new ResizeObserver(() => {
                 if (resizeTimeout) clearTimeout(resizeTimeout);
                 resizeTimeout = setTimeout(() => {
+                    // Capture scroll position before resize
+                    const scrollOffset = term.buffer.active?.viewportY ?? 0;
+                    const wasAtBottom = term.buffer.active?.viewportY === term.buffer.active?.baseY;
+
                     fitAddon.fit();
+
+                    // Restore scroll position after resize (unless was at bottom, stay at bottom)
+                    if (!wasAtBottom && scrollOffset !== term.buffer.active?.viewportY) {
+                        term.scrollToLine(scrollOffset);
+                    }
+
                     if (isSessionReady.current) {
                         window.api.resizeTerminal?.({
                             id: terminalId,
@@ -1272,4 +1282,9 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
     );
 };
 
-export default memo(TerminalView);
+// Custom comparison to prevent reload on pane resize
+const arePropsEqual = (prevProps: any, nextProps: any) => {
+    return prevProps.nodeId === nextProps.nodeId;
+};
+
+export default memo(TerminalView, arePropsEqual);

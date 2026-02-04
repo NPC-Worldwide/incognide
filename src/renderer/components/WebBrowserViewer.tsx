@@ -1,6 +1,12 @@
 import React, { useEffect, useRef, useState, memo, useCallback } from 'react';
 import { ArrowLeft, ArrowRight, RotateCcw, Globe, Home, X, Plus, Settings, Trash2, Lock, GripVertical, Puzzle, Download, FolderOpen, Key, Eye, EyeOff, Shield, Check, Maximize2, Minimize2 } from 'lucide-react';
 
+// Global cache to persist browser state across tab switches (prevents reload on switch back)
+const browserStateCache = new Map<string, {
+    initialized: boolean;
+    lastUrl: string;
+}>();
+
 const WebBrowserViewer = memo(({
     nodeId,
     contentDataRef,
@@ -1202,8 +1208,15 @@ const WebBrowserViewer = memo(({
                         })();
                     `);
                     if (creds && creds.username && creds.password) {
-                        setPendingCredentials(creds);
-                        setShowPasswordPrompt(true);
+                        // Check if this exact credential is already saved
+                        const existingResult = await (window as any).api?.passwordGetForSite?.(creds.site);
+                        const isDuplicate = existingResult?.credentials?.some(
+                            (saved: any) => saved.username === creds.username && saved.password === creds.password
+                        );
+                        if (!isDuplicate) {
+                            setPendingCredentials(creds);
+                            setShowPasswordPrompt(true);
+                        }
                     }
                 }
             } catch { /* ignore errors */ }
@@ -1828,6 +1841,6 @@ const WebBrowserViewer = memo(({
             </div>
         </div>
     );
-});
+}, (prevProps, nextProps) => prevProps.nodeId === nextProps.nodeId);
 
 export default WebBrowserViewer;

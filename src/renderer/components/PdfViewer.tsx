@@ -20,6 +20,9 @@ const HIGHLIGHT_COLORS = {
     purple: { bg: 'rgba(180, 100, 255, 0.3)', border: 'rgba(150, 50, 255, 0.5)' },
 };
 
+// Global cache for PDF buffers - keyed by filePath
+const pdfBufferCache = new Map<string, ArrayBuffer>();
+
 interface Highlight {
     id: number;
     position: { rects: Array<{ left: number; top: number; width: number; height: number; pageIndex?: number }> };
@@ -491,6 +494,28 @@ const PdfViewer = ({
     const paneData = contentDataRef.current[nodeId];
     const filePath = paneData?.contentId;
     const [refreshTrigger, setRefreshTrigger] = useState(0);
+    const lastFilePathRef = useRef<string | null>(null);
+    const blobUrlRef = useRef<string | null>(null);
+
+    // Synchronously check cache when filePath changes to avoid loading flash on tab switch
+    if (filePath && filePath !== lastFilePathRef.current) {
+        const cachedBuffer = pdfBufferCache.get(filePath);
+        if (cachedBuffer && !pdfData) {
+            // Revoke old blob URL if exists
+            if (blobUrlRef.current) {
+                URL.revokeObjectURL(blobUrlRef.current);
+            }
+            // Create blob URL synchronously for cached content
+            const newBlobUrl = URL.createObjectURL(new Blob([cachedBuffer], { type: 'application/pdf' }));
+            blobUrlRef.current = newBlobUrl;
+            setPdfData(newBlobUrl);
+            setError(null);
+        } else if (!cachedBuffer && pdfData) {
+            // Reset for uncached files
+            setPdfData(null);
+        }
+        lastFilePathRef.current = filePath;
+    }
 
     // Listen for refresh events for this specific PDF
     useEffect(() => {
@@ -584,10 +609,7 @@ const PdfViewer = ({
     useEffect(() => {
         let currentBlobUrl = null;
 
-        console.log('[PdfViewer] useEffect triggered, nodeId:', nodeId, 'paneData:', paneData, 'filePath:', filePath);
-
         if (!filePath) {
-            console.log('[PdfViewer] No filePath, clearing pdfData');
             setPdfData(null);
             setError(null);
             return;
@@ -596,15 +618,22 @@ const PdfViewer = ({
         const loadFile = async () => {
             setError(null);
             try {
-                console.log('[PdfViewer] Loading file:', filePath);
+                // Check global cache first
+                const cachedBuffer = pdfBufferCache.get(filePath);
+                if (cachedBuffer) {
+                    currentBlobUrl = URL.createObjectURL(new Blob([cachedBuffer], { type: 'application/pdf' }));
+                    setPdfData(currentBlobUrl);
+                    return;
+                }
+
                 const buffer = await (window as any).api.readFile(filePath);
-                console.log('[PdfViewer] Buffer received, byteLength:', buffer?.byteLength);
                 if (!buffer || buffer.byteLength === 0) {
                     setError('Empty file');
                     return;
                 }
+                // Cache globally
+                pdfBufferCache.set(filePath, buffer);
                 currentBlobUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/pdf' }));
-                console.log('[PdfViewer] Created blob URL:', currentBlobUrl);
                 setPdfData(currentBlobUrl);
             } catch (err) {
                 console.error('[PdfViewer] Error loading PDF:', err);
@@ -617,7 +646,7 @@ const PdfViewer = ({
         return () => {
             if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
         };
-    }, [filePath, refreshTrigger]);
+    }, [filePath, refreshTrigger, nodeId]);
 
     useEffect(() => {
         loadHighlights();
@@ -971,4 +1000,9 @@ const PdfViewer = ({
     );
 };
 
-export default memo(PdfViewer);
+// Custom comparison to prevent reload on pane resize
+const arePropsEqual = (prevProps: any, nextProps: any) => {
+    return prevProps.nodeId === nextProps.nodeId;
+};
+
+export default memo(PdfViewer, arePropsEqual);

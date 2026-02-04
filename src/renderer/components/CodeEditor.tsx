@@ -559,7 +559,12 @@ const CodeEditorPane = ({
     );
 };
 
-export default CodeEditorPane;
+// Custom comparison to prevent reload on pane resize
+const arePropsEqual = (prevProps: any, nextProps: any) => {
+    return prevProps.nodeId === nextProps.nodeId;
+};
+
+export default memo(CodeEditorPane, arePropsEqual);
 
 
 
