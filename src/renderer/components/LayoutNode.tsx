@@ -1307,6 +1307,56 @@ export const LayoutNode = memo(({ node, path, component }) => {
             }
         }, [chatMessages.length, lastMessageContent, lastMessageReasoning, autoScrollEnabled, contentType]);
 
+        // For multi-tab panes, ensure each tab has its own virtual pane entry for persistent rendering
+        // This allows browsers/terminals to stay mounted when switching tabs
+        if (tabs.length > 1) {
+            tabs.forEach((tab, index) => {
+                const virtualId = `${node.id}_tab_${index}`;
+                // Create or update virtual pane data for this tab
+                if (!contentDataRef.current[virtualId] || contentDataRef.current[virtualId].contentId !== tab.contentId) {
+                    contentDataRef.current[virtualId] = {
+                        contentType: tab.contentType,
+                        contentId: tab.contentId,
+                        browserUrl: tab.browserUrl,
+                        browserTitle: tab.browserTitle,
+                        fileContent: tab.fileContent,
+                        fileChanged: tab.fileChanged,
+                    };
+                }
+            });
+        }
+
+        // Render content for a specific tab (used for multi-tab persistent rendering)
+        const renderTabContent = (tab: any, tabIndex: number) => {
+            const virtualId = `${node.id}_tab_${tabIndex}`;
+            const tabContentType = tab.contentType;
+
+            switch (tabContentType) {
+                case 'browser':
+                    return renderBrowserViewer({
+                        nodeId: virtualId,
+                        hasTabBar: showTabBar,
+                        onToggleZen: toggleZenMode ? () => toggleZenMode(node.id) : undefined,
+                        isZenMode: zenModePaneId === node.id
+                    });
+                case 'terminal':
+                    return renderTerminalView({ nodeId: virtualId });
+                case 'pdf':
+                    return renderPdfViewer({ nodeId: virtualId });
+                case 'csv':
+                    return renderCsvViewer({ nodeId: virtualId });
+                case 'docx':
+                    return renderDocxViewer({ nodeId: virtualId });
+                case 'pptx':
+                    return renderPptxViewer({ nodeId: virtualId });
+                case 'editor':
+                    return renderFileEditor({ nodeId: virtualId });
+                default:
+                    // For other types, fall back to single rendering
+                    return null;
+            }
+        };
+
         const renderPaneContent = () => {
             switch (contentType) {
                 case 'chat':
@@ -1520,7 +1570,22 @@ export const LayoutNode = memo(({ node, path, component }) => {
                         <div className={`absolute left-0 bottom-0 right-0 h-1/4 z-10 ${isTargeted && dropTarget.side === 'bottom' ? 'bg-blue-500/30' : ''}`} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropTarget({ nodePath: path, side: 'bottom' }); }} onDrop={(e) => onDrop(e, 'bottom')} />
                     </>
                 )}
-                {renderPaneContent()} {/* Render the actual content below the header */}
+                {/* Render content - for multi-tab panes with browsers/terminals, render ALL tabs to keep them mounted */}
+                {tabs.length > 1 && tabs.some(t => ['browser', 'terminal'].includes(t.contentType)) ? (
+                    // Multi-tab with stateful content: render all tabs, hide inactive ones
+                    tabs.map((tab, index) => (
+                        <div
+                            key={`${node.id}_tab_${index}`}
+                            className="flex-1 flex flex-col min-h-0"
+                            style={{ display: index === activeTabIndex ? 'flex' : 'none' }}
+                        >
+                            {renderTabContent(tab, index) || renderPaneContent()}
+                        </div>
+                    ))
+                ) : (
+                    // Single tab or no stateful content: render normally
+                    renderPaneContent()
+                )}
             </div>
         );
     }
