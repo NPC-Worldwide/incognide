@@ -601,7 +601,7 @@ const PdfViewer = ({
     const createPdfContextMenuHandler = useCallback((selectedPdfTextFn, setPdfContextMenuPosFn) => {
         return (e) => {
             e.preventDefault();
-            e.stopPropagation();
+            e.stopImmediatePropagation();
             setPdfContextMenuPosFn({ x: e.clientX, y: e.clientY });
         };
     }, []);
@@ -833,7 +833,7 @@ const PdfViewer = ({
         return () => {
             document.removeEventListener('mouseup', handleMouseUp);
             document.removeEventListener('mousedown', handleMouseDown);
-            document.removeEventListener('contextmenu', contextMenuListener);
+            document.removeEventListener('contextmenu', contextMenuListener, true);
         };
     }, [handleActualTextSelect, handleActualContextMenu]);
 
@@ -856,6 +856,11 @@ const PdfViewer = ({
                 ref={viewerWrapperRef}
                 className="flex-1 relative overflow-hidden pdf-viewer-container"
                 style={{ ['--scale-factor' as any]: currentScale || 1 }}
+                onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setPdfContextMenuPos({ x: e.clientX, y: e.clientY });
+                }}
             >
                 {/* Toggle annotations panel button */}
                 <button

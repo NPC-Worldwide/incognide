@@ -979,8 +979,13 @@ export const LayoutNode = memo(({ node, path, component }) => {
                     }
                     // Restore state from new active tab
                     const newActiveTab = newTabs[paneData.activeTabIndex];
+                    if (newActiveTab) {
+                        paneData.contentType = newActiveTab.contentType;
+                        paneData.contentId = newActiveTab.contentId;
+                    }
                     if (newActiveTab?.contentType === 'browser' && newActiveTab.browserUrl) {
                         paneData.browserUrl = newActiveTab.browserUrl;
+                        paneData.browserTitle = newActiveTab.browserTitle || 'Browser';
                     }
                     // Restore file content for editor tabs
                     if (newActiveTab?.contentType === 'editor') {

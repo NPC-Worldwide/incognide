@@ -125,7 +125,7 @@ import { usePredictiveText } from './PredictiveText';
 import { CommandPalette } from './CommandPalette';
 import { MessageLabelStorage, MessageLabel, ConversationLabel, ConversationLabelStorage, ContextFile, ContextFileStorage } from './MessageLabeling';
 import ConversationLabeling from './ConversationLabeling';
-import ContextFilesPanel from './ContextFilesPanel';
+// ContextFilesPanel is used via ChatInput
 import DataLabeler from './DataLabeler';
 import ChatInput from './ChatInput';
 import { StudioContext, executeStudioAction } from '../studioActions';
@@ -466,7 +466,28 @@ const ChatInterface = () => {
     const [contextFiles, setContextFiles] = useState<ContextFile[]>(() => ContextFileStorage.getAll());
     const [contextFilesCollapsed, setContextFilesCollapsed] = useState(true);
 
+    // Pane context auto-include settings
+    const [autoIncludeContext, setAutoIncludeContext] = useState<boolean>(() => {
+        const stored = localStorage.getItem('autoIncludeContext');
+        return stored !== null ? stored === 'true' : true;
+    });
+    const [contextPaneOverrides, setContextPaneOverrides] = useState<Record<string, boolean>>({});
 
+    // Persist autoIncludeContext to localStorage
+    useEffect(() => {
+        localStorage.setItem('autoIncludeContext', String(autoIncludeContext));
+    }, [autoIncludeContext]);
+
+    // Compute excluded pane IDs based on default + overrides
+    const getExcludedPaneIds = useCallback(() => {
+        const excluded = new Set<string>();
+        Object.keys(contentDataRef.current).forEach(paneId => {
+            const override = contextPaneOverrides[paneId];
+            const isIncluded = override !== undefined ? override : autoIncludeContext;
+            if (!isIncluded) excluded.add(paneId);
+        });
+        return excluded;
+    }, [autoIncludeContext, contextPaneOverrides]);
 
     const [localSearch, setLocalSearch] = useState({
         isActive: false,
@@ -2130,6 +2151,11 @@ const closeContentPane = useCallback((paneId, nodePath) => {
         });
     }
 
+    // Defensive: if nodePath wasn't provided, compute it
+    if (!nodePath) {
+        nodePath = findNodePath(rootLayoutNodeRef.current, paneId) || [];
+    }
+
     setRootLayoutNode(oldRoot => {
         if (!oldRoot) return oldRoot;
 
@@ -2946,7 +2972,7 @@ const renderChatView = useCallback(({ nodeId }) => {
 
     // Get selected branch IDs for this pane - use ref to avoid stale closure
     const currentSelectedBranches = selectedBranchesRef.current;
-    console.log('[DEBUG] selectedBranches ref:', Object.keys(currentSelectedBranches), 'nodeId:', nodeId, 'has entry:', !!currentSelectedBranches[nodeId], 'size:', currentSelectedBranches[nodeId]?.size);
+    // debug log removed - was spamming console
     const selectedBranchIds = new Set(currentSelectedBranches[nodeId]?.keys() || []);
 
     // Handler for copying all broadcast responses
@@ -4416,58 +4442,7 @@ useEffect(() => {
 
 
 
-const renderMessageContextMenu = () => (
-    messageContextMenuPos && (
-        <>
-            {/* Backdrop to catch outside clicks */}
-            <div
-                className="fixed inset-0 z-40"
-                onClick={() => setMessageContextMenuPos(null)}
-            />
-            <div
-                className="fixed theme-bg-secondary theme-border border rounded shadow-lg py-1 z-50"
-                style={{ top: messageContextMenuPos.y, left: messageContextMenuPos.x }}
-                onMouseLeave={() => setMessageContextMenuPos(null)}
-            >
-                {/* Show copy option if there's selected text */}
-                {messageContextMenuPos.selectedText && (
-                    <>
-                        <button
-                            onClick={() => {
-                                navigator.clipboard.writeText(messageContextMenuPos.selectedText);
-                                setMessageContextMenuPos(null);
-                            }}
-                            className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-xs"
-                        >
-                            <Edit size={14} />
-                            <span>Copy Selected Text</span>
-                        </button>
-                        <div className="border-t theme-border my-1"></div>
-                    </>
-                )}
-                
-                <button
-                    onClick={() => handleApplyPromptToMessages('summarize')}
-                    className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-xs"
-                >
-                    <MessageSquare size={14} />
-                    <span>Summarize in New Convo ({selectedMessages.size})</span>
-                </button>
-
-
-                {/* Delete option */}
-                <div className="border-t theme-border my-1"></div>
-                <button
-                    onClick={handleDeleteSelectedMessages}
-                    className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left text-red-400 text-xs"
-                >
-                    <Trash size={14} />
-                    <span>Delete Messages ({selectedMessages.size})</span>
-                </button>
-            </div>
-        </>
-    )
-);
+const renderMessageContextMenu = () => null;
 
 
   // Helper to find an empty pane that can be reused (kept for backwards compat but should not be used)
@@ -5565,7 +5540,8 @@ const moveContentPane = useCallback((draggedId, draggedPath, targetPath, dropSid
             finalPromptForUserMessage = jinxCommandParts.join(' ');
 
         } else {
-            const contexts = gatherWorkspaceContext(contentDataRef, contextFiles);
+            const excludedPanes = getExcludedPaneIds();
+            const contexts = gatherWorkspaceContext(contentDataRef, contextFiles, excludedPanes);
             const newHash = hashContext(contexts);
             const contextChanged = newHash !== contextHash;
 
@@ -5827,6 +5803,7 @@ ${contextPrompt}`;
 
     const handleMessageContextMenu = (e: React.MouseEvent, message: any) => {
         e.preventDefault();
+        e.stopPropagation();
         const selection = window.getSelection();
         const selectedText = selection?.toString() || '';
 
@@ -5892,9 +5869,8 @@ ${contextPrompt}`;
         }
     };
 
-    const handleDeleteSelectedMessages = async () => {
-        const selectedIds = Array.from(selectedMessages);
-        if (selectedIds.length === 0) return;
+    const handleDeleteMessagesByIds = async (idsToDelete: string[]) => {
+        if (idsToDelete.length === 0) return;
 
         const activePaneData = contentDataRef.current[activeContentPaneId];
         if (!activePaneData || !activePaneData.chatMessages) {
@@ -5906,20 +5882,18 @@ ${contextPrompt}`;
         if (!conversationId) return;
 
         try {
-            const messageIdsToDelete = activePaneData.chatMessages.allMessages
-                .filter((m: any) => selectedIds.includes(m.id || m.timestamp))
-                .map((m: any) => m.message_id || m.id)
-                .filter(Boolean);
+            const messagesToDelete = activePaneData.chatMessages.allMessages
+                .filter((m: any) => idsToDelete.includes(m.id || m.timestamp));
 
-            if (messageIdsToDelete.length > 0) {
-                await window.api.deleteMessages({
-                    conversationId,
-                    messageIds: messageIdsToDelete
-                });
+            for (const msg of messagesToDelete) {
+                const msgId = msg.message_id || msg.id;
+                if (msgId) {
+                    await (window as any).api.deleteMessage({ conversationId, messageId: msgId });
+                }
             }
 
             activePaneData.chatMessages.allMessages = activePaneData.chatMessages.allMessages.filter(
-                (m: any) => !selectedIds.includes(m.id || m.timestamp)
+                (m: any) => !idsToDelete.includes(m.id || m.timestamp)
             );
             activePaneData.chatMessages.messages = activePaneData.chatMessages.allMessages.slice(-(activePaneData.chatMessages.displayedMessageCount || 20));
             activePaneData.chatStats = getConversationStats(activePaneData.chatMessages.allMessages);
@@ -5932,6 +5906,11 @@ ${contextPrompt}`;
             console.error('Error deleting messages:', err);
             setError(err.message);
         }
+    };
+
+    const handleDeleteSelectedMessages = async () => {
+        const selectedIds = Array.from(selectedMessages);
+        await handleDeleteMessagesByIds(selectedIds);
     };
 
     const handleResendWithSettings = async (messageToResend: any, selectedModel: string, selectedNPC: string) => {
@@ -7069,7 +7048,6 @@ ${contextPrompt}`;
                 <div
                     className="fixed theme-bg-secondary theme-border border rounded shadow-lg py-1 z-50"
                     style={{ top: messageContextMenuPos.y, left: messageContextMenuPos.x }}
-                    onMouseLeave={() => setMessageContextMenuPos(null)}
                 >
                     {/* Show copy option if there's selected text */}
                     {messageContextMenuPos.selectedText && (
@@ -7088,15 +7066,52 @@ ${contextPrompt}`;
                         </>
                     )}
 
-                    {/* Delete option */}
+                    {/* Select this message */}
+                    <button
+                        onClick={() => {
+                            if (messageContextMenuPos.messageId) {
+                                setSelectedMessages(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(messageContextMenuPos.messageId)) {
+                                        next.delete(messageContextMenuPos.messageId);
+                                    } else {
+                                        next.add(messageContextMenuPos.messageId);
+                                    }
+                                    return next;
+                                });
+                            }
+                            setMessageContextMenuPos(null);
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-xs"
+                    >
+                        <Edit size={14} />
+                        <span>{selectedMessages.has(messageContextMenuPos.messageId) ? 'Deselect Message' : 'Select Message'}</span>
+                    </button>
+
+                    {/* Delete this specific message */}
                     <div className="border-t theme-border my-1"></div>
                     <button
-                        onClick={handleDeleteSelectedMessages}
+                        onClick={() => {
+                            if (messageContextMenuPos.messageId) {
+                                handleDeleteMessagesByIds([messageContextMenuPos.messageId]);
+                            }
+                        }}
                         className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left text-red-400 text-xs"
                     >
                         <Trash size={14} />
-                        <span>Delete Messages ({selectedMessages.size})</span>
+                        <span>Delete This Message</span>
                     </button>
+
+                    {/* Delete all selected messages (if multiple selected) */}
+                    {selectedMessages.size > 1 && (
+                        <button
+                            onClick={handleDeleteSelectedMessages}
+                            className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left text-red-400 text-xs"
+                        >
+                            <Trash size={14} />
+                            <span>Delete Selected ({selectedMessages.size})</span>
+                        </button>
+                    )}
                 </div>
             </>
         )}
@@ -8280,6 +8295,10 @@ const getChatInputProps = useCallback((paneId: string) => ({
     isStreaming, handleInputSubmit, handleInterruptStream,
     uploadedFiles, setUploadedFiles, contextFiles, setContextFiles,
     contextFilesCollapsed, setContextFilesCollapsed, currentPath,
+    // Pane context auto-include
+    autoIncludeContext, setAutoIncludeContext,
+    contextPaneOverrides, setContextPaneOverrides,
+    contentDataRef,
     // Per-pane execution mode
     executionMode: getPaneExecutionMode(paneId),
     setExecutionMode: (mode: string) => setPaneExecutionMode(paneId, mode),
@@ -8479,6 +8498,7 @@ const getChatInputProps = useCallback((paneId: string) => ({
     input, inputHeight, isInputMinimized, isInputExpanded, isResizingInput,
     isStreaming, handleInputSubmit, handleInterruptStream,
     uploadedFiles, contextFiles, contextFilesCollapsed, currentPath,
+    autoIncludeContext, contextPaneOverrides, contentDataRef,
     getPaneExecutionMode, setPaneExecutionMode, getPaneSelectedJinx, setPaneSelectedJinx,
     getPaneShowJinxDropdown, setPaneShowJinxDropdown,
     jinxInputValues, jinxsToDisplay,
@@ -8923,11 +8943,8 @@ const renderPaneContextMenu = () => {
     );
 };
 
-// Render PDF context menu
-const renderPdfContextMenu = () => {
-    if (!pdfContextMenuPos) return null;
-    return <div>PDF Context Menu</div>;
-};
+// PDF context menu is rendered inside PdfViewer component directly
+const renderPdfContextMenu = () => null;
 
 // Render browser context menu
 const renderBrowserContextMenu = () => {

@@ -679,7 +679,7 @@ ${htmlContent}
                             </div>
                         )}
                     </div>
-                    <button onClick={() => closeContentPane(nodeId)} className="p-1.5 theme-hover rounded" title="Close">
+                    <button onClick={() => closeContentPane(nodeId, findNodePath(rootLayoutNode, nodeId))} className="p-1.5 theme-hover rounded" title="Close">
                         <X size={14} />
                     </button>
                 </div>

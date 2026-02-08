@@ -511,7 +511,7 @@ const MindMapViewer = ({
                     {nodes.length} nodes, {links.length} links
                     {hasChanges && <span className="text-yellow-500 ml-2">*</span>}
                 </span>
-                <button onClick={() => closeContentPane?.(nodeId)} className="p-1.5 rounded hover:bg-gray-700 text-gray-400 hover:text-white transition-colors">
+                <button onClick={() => closeContentPane?.(nodeId, findNodePath?.(rootLayoutNode, nodeId) || [])} className="p-1.5 rounded hover:bg-gray-700 text-gray-400 hover:text-white transition-colors">
                     <X size={18} />
                 </button>
             </div>

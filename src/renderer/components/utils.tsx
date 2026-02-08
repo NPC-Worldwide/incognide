@@ -264,11 +264,13 @@ export const hashContext = (contexts: any[]) => {
     return btoa(contentString);
 };
 
-export const gatherWorkspaceContext = (contentDataRef: React.MutableRefObject<any>, contextFiles?: any[]) => {
+export const gatherWorkspaceContext = (contentDataRef: React.MutableRefObject<any>, contextFiles?: any[], excludedPaneIds?: Set<string>) => {
     const contexts: any[] = [];
 
     // Add open pane contexts
     Object.entries(contentDataRef.current).forEach(([paneId, paneData]: [string, any]) => {
+        // Skip panes that are excluded from context
+        if (excludedPaneIds && excludedPaneIds.has(paneId)) return;
         if (paneData.contentType === 'editor' && paneData.fileContent) {
             contexts.push({
                 type: 'file',

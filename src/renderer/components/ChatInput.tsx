@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { BACKEND_URL } from '../config';
 import {
-    Send, Paperclip, Maximize2, ChevronDown, Star, ListFilter, FolderTree, Minimize2, Mic, MicOff, Volume2, GitBranch, SlidersHorizontal, Save, Trash2, Zap, X, Brain, Database
+    Send, Paperclip, Maximize2, ChevronDown, Star, ListFilter, FolderTree, Minimize2, Mic, MicOff, Volume2, GitBranch, SlidersHorizontal, Save, Trash2, Zap, X,
+    FileCode, Globe, FileText, Terminal as TerminalIcon, Eye, EyeOff, ToggleLeft, ToggleRight
 } from 'lucide-react';
+import MemoryIcon from './MemoryIcon';
 import ContextFilesPanel from './ContextFilesPanel';
 
 // Blue-white-red color interpolation based on relative value position
@@ -53,6 +55,12 @@ interface ChatInputProps {
     contextFilesCollapsed: boolean;
     setContextFilesCollapsed: (val: boolean) => void;
     currentPath: string;
+    // Pane context auto-include
+    autoIncludeContext: boolean;
+    setAutoIncludeContext: (val: boolean) => void;
+    contextPaneOverrides: Record<string, boolean>;
+    setContextPaneOverrides: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+    contentDataRef: React.MutableRefObject<any>;
     // Execution mode
     executionMode: string;
     setExecutionMode: (val: string) => void;
@@ -125,6 +133,8 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         isStreaming, handleInputSubmit, handleInterruptStream,
         uploadedFiles, setUploadedFiles, contextFiles, setContextFiles,
         contextFilesCollapsed, setContextFilesCollapsed, currentPath,
+        autoIncludeContext, setAutoIncludeContext,
+        contextPaneOverrides, setContextPaneOverrides, contentDataRef,
         executionMode, setExecutionMode, selectedJinx, setSelectedJinx,
         jinxInputValues, setJinxInputValues, jinxsToDisplay,
         showJinxDropdown, setShowJinxDropdown,
@@ -200,7 +210,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     const npcsDropdownRef = useRef<HTMLDivElement>(null);
 
     // Jinx auto-detection when typing /jinxname
-    const [detectedJinx, setDetectedJinx] = useState<any>(null);
+    const [detectedJinxes, setDetectedJinxes] = useState<any[]>([]);
     const [showJinxSuggestion, setShowJinxSuggestion] = useState(false);
     const firstJinxInputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
@@ -208,7 +218,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     useEffect(() => {
         const isCurrentlyJinxMode = executionMode !== 'chat' && executionMode !== 'tool_agent' && selectedJinx;
         if (!input || isCurrentlyJinxMode) {
-            setDetectedJinx(null);
+            setDetectedJinxes([]);
             setShowJinxSuggestion(false);
             return;
         }
@@ -217,20 +227,20 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         const match = input.match(/^\/(\S+)/);
         if (match) {
             const jinxName = match[1].toLowerCase();
-            // Find a matching jinx
-            const foundJinx = jinxsToDisplay.find((j: any) =>
+            // Find ALL matching jinxs
+            const matches = jinxsToDisplay.filter((j: any) =>
                 j.name.toLowerCase() === jinxName ||
                 j.name.toLowerCase().startsWith(jinxName)
             );
-            if (foundJinx && foundJinx.name !== executionMode) {
-                setDetectedJinx(foundJinx);
+            if (matches.length > 0) {
+                setDetectedJinxes(matches);
                 setShowJinxSuggestion(true);
             } else {
-                setDetectedJinx(null);
+                setDetectedJinxes([]);
                 setShowJinxSuggestion(false);
             }
         } else {
-            setDetectedJinx(null);
+            setDetectedJinxes([]);
             setShowJinxSuggestion(false);
         }
     }, [input, jinxsToDisplay, executionMode, selectedJinx]);
@@ -726,6 +736,80 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         }
     };
 
+    // Context pane chips - inline display of open panes with toggle
+    const openPanes = useMemo(() => {
+        if (!contentDataRef?.current) return [];
+        const panes: Array<{ id: string; type: string; label: string }> = [];
+        Object.entries(contentDataRef.current).forEach(([paneId, paneData]: [string, any]) => {
+            if (!paneData.contentType || paneData.contentType === 'chat') return;
+            if (!['editor', 'browser', 'pdf', 'terminal'].includes(paneData.contentType)) return;
+            let label = '';
+            if (paneData.contentType === 'editor' && paneData.contentId) label = paneData.contentId.split('/').pop() || paneData.contentId;
+            else if (paneData.contentType === 'browser' && paneData.browserUrl) { try { label = new URL(paneData.browserUrl).hostname; } catch { label = paneData.browserUrl.slice(0, 20); } }
+            else if (paneData.contentType === 'pdf' && paneData.contentId) label = paneData.contentId.split('/').pop() || 'PDF';
+            else if (paneData.contentType === 'terminal') label = `Term${paneData.shellType ? ` (${paneData.shellType})` : ''}`;
+            else label = paneData.contentType;
+            if (label) panes.push({ id: paneId, type: paneData.contentType, label });
+        });
+        return panes;
+    }, [contentDataRef?.current]);
+
+    const isPaneIncluded = (paneId: string) => {
+        if (contextPaneOverrides && contextPaneOverrides[paneId] !== undefined) return contextPaneOverrides[paneId];
+        return autoIncludeContext !== undefined ? autoIncludeContext : true;
+    };
+
+    const togglePaneCtx = (paneId: string) => {
+        if (!setContextPaneOverrides) return;
+        setContextPaneOverrides(prev => ({ ...prev, [paneId]: !isPaneIncluded(paneId) }));
+    };
+
+    const paneIcon = (type: string) => {
+        switch (type) {
+            case 'editor': return <FileCode size={10} className="flex-shrink-0" />;
+            case 'browser': return <Globe size={10} className="flex-shrink-0" />;
+            case 'pdf': return <FileText size={10} className="flex-shrink-0" />;
+            case 'terminal': return <TerminalIcon size={10} className="flex-shrink-0" />;
+            default: return null;
+        }
+    };
+
+    const renderContextPaneChips = () => {
+        if (openPanes.length === 0) return null;
+        return (
+            <div className="flex items-center gap-1 px-2 py-1 overflow-x-auto">
+                <button
+                    onClick={() => setAutoIncludeContext?.(!autoIncludeContext)}
+                    className={`flex-shrink-0 flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] transition-colors ${
+                        autoIncludeContext ? 'text-green-400 hover:text-green-300' : 'text-gray-500 hover:text-gray-300'
+                    }`}
+                    title={autoIncludeContext ? 'Auto-include ON' : 'Auto-include OFF'}
+                >
+                    {autoIncludeContext ? <ToggleRight size={12} /> : <ToggleLeft size={12} />}
+                </button>
+                {openPanes.map(pane => {
+                    const included = isPaneIncluded(pane.id);
+                    return (
+                        <button
+                            key={pane.id}
+                            onClick={() => togglePaneCtx(pane.id)}
+                            className={`flex-shrink-0 flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded-full text-[10px] transition-all border ${
+                                included
+                                    ? 'bg-teal-500/15 text-teal-300 border-teal-500/30 hover:bg-teal-500/25'
+                                    : 'bg-white/3 text-gray-500 border-white/5 hover:bg-white/5 line-through'
+                            }`}
+                            title={`${pane.label} - ${included ? 'included in context' : 'excluded from context'}`}
+                        >
+                            {paneIcon(pane.type)}
+                            <span className="max-w-[80px] truncate">{pane.label}</span>
+                            {included ? <Eye size={9} className="flex-shrink-0 opacity-60" /> : <EyeOff size={9} className="flex-shrink-0 opacity-40" />}
+                        </button>
+                    );
+                })}
+            </div>
+        );
+    };
+
     const renderAttachmentThumbnails = () => {
         if (uploadedFiles.length === 0) return null;
         return (
@@ -853,7 +937,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
             />
 
             <div
-                className="relative theme-bg-primary theme-border border rounded-lg group h-full flex flex-col m-2 overflow-visible z-40"
+                className="relative theme-bg-primary theme-border border rounded-lg group h-full flex flex-col m-2 overflow-visible z-[9999]"
                 onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsHovering(true); }}
                 onDragEnter={(e) => { e.stopPropagation(); setIsHovering(true); }}
                 onDragLeave={(e) => { e.stopPropagation(); setIsHovering(false); }}
@@ -866,7 +950,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                 )}
 
                 {/* Input area - moved above selectors */}
-                <div className="flex-1 overflow-hidden flex flex-col">
+                <div className="flex-1 overflow-visible flex flex-col">
                     <ContextFilesPanel
                         isCollapsed={contextFilesCollapsed}
                         onToggleCollapse={() => setContextFilesCollapsed(!contextFilesCollapsed)}
@@ -941,13 +1025,14 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                         onChange={(e) => setInput(e.target.value)}
                                         onKeyDown={(e) => {
                                             // Handle Enter to load suggested jinx
-                                            if (showJinxSuggestion && detectedJinx && e.key === 'Enter' && !e.shiftKey) {
+                                            if (showJinxSuggestion && detectedJinxes.length > 0 && e.key === 'Enter' && !e.shiftKey) {
                                                 e.preventDefault();
-                                                setExecutionMode(detectedJinx.name);
-                                                setSelectedJinx(detectedJinx);
+                                                const jinx = detectedJinxes[0];
+                                                setExecutionMode(jinx.name);
+                                                setSelectedJinx(jinx);
                                                 setInput('');
                                                 setShowJinxSuggestion(false);
-                                                setDetectedJinx(null);
+                                                setDetectedJinxes([]);
                                                 return;
                                             }
                                             if (!isStreaming && e.key === 'Enter' && !e.shiftKey) {
@@ -964,7 +1049,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                             // Escape to dismiss suggestion
                                             if (e.key === 'Escape' && showJinxSuggestion) {
                                                 setShowJinxSuggestion(false);
-                                                setDetectedJinx(null);
+                                                setDetectedJinxes([]);
                                             }
                                         }}
                                         onPaste={handlePaste}
@@ -972,36 +1057,36 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                         className="w-full h-full theme-input text-sm rounded-lg pl-3 pr-16 py-2 focus:outline-none border-0 resize-none"
                                     />
                                     {/* Jinx suggestion popup */}
-                                    {showJinxSuggestion && detectedJinx && (
-                                        <div className="absolute bottom-full left-0 right-0 mb-1 bg-gradient-to-r from-purple-900/95 to-pink-900/95 backdrop-blur-xl border border-purple-500/30 rounded-lg shadow-2xl overflow-hidden z-[100]">
-                                            <button
-                                                onClick={() => {
-                                                    setExecutionMode(detectedJinx.name);
-                                                    setSelectedJinx(detectedJinx);
-                                                    setInput('');
-                                                    setShowJinxSuggestion(false);
-                                                    setDetectedJinx(null);
-                                                }}
-                                                className="w-full px-3 py-2 flex items-center gap-3 hover:bg-white/10 transition-colors"
-                                            >
-                                                <div className="w-8 h-8 rounded-lg bg-purple-500/30 flex items-center justify-center flex-shrink-0">
-                                                    <Zap size={16} className="text-purple-300" />
-                                                </div>
-                                                <div className="flex-1 text-left">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-sm font-medium text-purple-100">{detectedJinx.name}</span>
-                                                        {detectedJinx.group && (
-                                                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/30 text-purple-300">{detectedJinx.group}</span>
-                                                        )}
+                                    {showJinxSuggestion && detectedJinxes.length > 0 && (
+                                        <div className="absolute bottom-full left-0 right-0 mb-1 bg-gradient-to-r from-purple-900/95 to-pink-900/95 backdrop-blur-xl border border-purple-500/30 rounded-lg shadow-2xl overflow-hidden z-[100] max-h-48 overflow-y-auto">
+                                            {detectedJinxes.map((jinx: any) => (
+                                                <button
+                                                    key={jinx.name}
+                                                    onClick={() => {
+                                                        setExecutionMode(jinx.name);
+                                                        setSelectedJinx(jinx);
+                                                        setInput('');
+                                                        setShowJinxSuggestion(false);
+                                                        setDetectedJinxes([]);
+                                                    }}
+                                                    className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-white/10 transition-colors border-b border-purple-500/10 last:border-b-0"
+                                                >
+                                                    <div className="w-6 h-6 rounded bg-purple-500/30 flex items-center justify-center flex-shrink-0">
+                                                        <Zap size={12} className="text-purple-300" />
                                                     </div>
-                                                    <div className="text-[10px] text-purple-300/70">
-                                                        {detectedJinx.inputs?.length || 0} input{(detectedJinx.inputs?.length || 0) !== 1 ? 's' : ''} • Press Enter to load
+                                                    <div className="flex-1 text-left min-w-0">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="text-xs font-medium text-purple-100 truncate">{jinx.name}</span>
+                                                            {jinx.group && (
+                                                                <span className="text-[8px] px-1 py-0.5 rounded bg-purple-500/30 text-purple-300 flex-shrink-0">{jinx.group}</span>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-[9px] text-purple-300/60 truncate">
+                                                            {jinx.inputs?.length || 0} input{(jinx.inputs?.length || 0) !== 1 ? 's' : ''}
+                                                        </div>
                                                     </div>
-                                                </div>
-                                                <div className="text-[10px] text-purple-400 bg-purple-500/20 px-2 py-1 rounded">
-                                                    ↵ Enter
-                                                </div>
-                                            </button>
+                                                </button>
+                                            ))}
                                         </div>
                                     )}
                                 </div>
@@ -1015,7 +1100,37 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                     <Maximize2 size={12} />
                                 </button>
                             </div>
-                            <div className="absolute bottom-1 right-1 flex gap-1">
+                            <div className="absolute bottom-1 right-1 flex items-center gap-1">
+                                {/* Auto-include toggle */}
+                                {openPanes.length > 0 && (
+                                    <button
+                                        onClick={() => setAutoIncludeContext?.(!autoIncludeContext)}
+                                        className={`flex-shrink-0 p-0.5 rounded transition-colors ${autoIncludeContext ? 'text-green-400 hover:text-green-300' : 'text-gray-600 hover:text-gray-400'}`}
+                                        title={autoIncludeContext ? 'Auto-include ON' : 'Auto-include OFF'}
+                                    >
+                                        {autoIncludeContext ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
+                                    </button>
+                                )}
+                                {/* Pane context chips */}
+                                {openPanes.map(pane => {
+                                    const included = isPaneIncluded(pane.id);
+                                    return (
+                                        <button
+                                            key={pane.id}
+                                            onClick={() => togglePaneCtx(pane.id)}
+                                            className={`flex-shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] transition-all border ${
+                                                included
+                                                    ? 'bg-teal-500/15 text-teal-300 border-teal-500/30 hover:bg-teal-500/25'
+                                                    : 'bg-white/3 text-gray-600 border-white/5 hover:bg-white/5 line-through'
+                                            }`}
+                                            title={`${pane.label} - click to ${included ? 'exclude' : 'include'}`}
+                                        >
+                                            {paneIcon(pane.type)}
+                                            <span className="max-w-[60px] truncate">{pane.label}</span>
+                                        </button>
+                                    );
+                                })}
+                                {/* Mic */}
                                 <button
                                     onClick={toggleRecording}
                                     disabled={isStreaming}
@@ -1024,6 +1139,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                 >
                                     {isRecording ? <MicOff size={16} /> : <Mic size={16} />}
                                 </button>
+                                {/* Attach */}
                                 <button onClick={handleAttachFileClick} disabled={isStreaming} className={`p-1 theme-text-muted hover:theme-text-primary rounded theme-hover opacity-50 group-hover:opacity-100 ${isStreaming ? 'opacity-30' : ''}`} title="Attach file">
                                     <Paperclip size={16} />
                                 </button>
@@ -1506,27 +1622,36 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                     <div className="flex items-center gap-0.5 pl-1 border-l border-white/10 ml-1">
                         <button
                             onClick={() => setUseKgSearch(!useKgSearch)}
-                            className={`h-9 px-2 rounded-lg text-[10px] font-medium flex items-center gap-1 transition-all ${
+                            className={`h-9 w-9 rounded-lg flex items-center justify-center transition-all ${
                                 useKgSearch
-                                    ? 'bg-gradient-to-br from-green-500/30 to-emerald-600/30 text-green-300 border border-green-500/40'
+                                    ? 'bg-gradient-to-br from-green-500/30 to-emerald-600/30 text-emerald-300 border border-green-500/40'
                                     : 'bg-white/5 text-gray-500 border border-white/10 hover:text-gray-300 hover:bg-white/10'
                             }`}
-                            title={useKgSearch ? "KG Search enabled - facts will augment your prompt" : "Enable Knowledge Graph search"}
+                            title={useKgSearch ? "KG Search enabled" : "Enable Knowledge Graph search"}
                         >
-                            <Brain size={12} />
-                            <span className="hidden sm:inline">KG</span>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="6" cy="8" r="2.5" />
+                                <circle cx="18" cy="6" r="2" />
+                                <circle cx="12" cy="14" r="3" />
+                                <circle cx="5" cy="18" r="2" />
+                                <circle cx="19" cy="17" r="2.5" />
+                                <line x1="8" y1="9" x2="10" y2="12" />
+                                <line x1="16" y1="7" x2="14" y2="12" />
+                                <line x1="7" y1="17" x2="9.5" y2="15.5" />
+                                <line x1="14.5" y1="15.5" x2="17" y2="16" />
+                                <line x1="7" y1="10" x2="5" y2="16" />
+                            </svg>
                         </button>
                         <button
                             onClick={() => setUseMemorySearch(!useMemorySearch)}
-                            className={`h-9 px-2 rounded-lg text-[10px] font-medium flex items-center gap-1 transition-all ${
+                            className={`h-9 w-9 rounded-lg flex items-center justify-center transition-all ${
                                 useMemorySearch
-                                    ? 'bg-gradient-to-br from-purple-500/30 to-violet-600/30 text-purple-300 border border-purple-500/40'
+                                    ? 'bg-gradient-to-br from-amber-500/30 to-orange-600/30 text-amber-300 border border-amber-500/40'
                                     : 'bg-white/5 text-gray-500 border border-white/10 hover:text-gray-300 hover:bg-white/10'
                             }`}
-                            title={useMemorySearch ? "Memory Search enabled - past memories will augment your prompt" : "Enable Memory search"}
+                            title={useMemorySearch ? "Memory Search enabled" : "Enable Memory search"}
                         >
-                            <Database size={12} />
-                            <span className="hidden sm:inline">Mem</span>
+                            <MemoryIcon size={14} />
                         </button>
                     </div>
                 </div>
