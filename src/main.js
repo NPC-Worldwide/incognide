@@ -614,15 +614,71 @@ app.on('web-contents-created', (event, contents) => {
   // Send to renderer to open in new tab instead of new window
   if (contents.getType() === 'webview') {
     contents.setWindowOpenHandler(({ url, disposition }) => {
-      // Send the URL to renderer to open in a new tab
+      // For about:blank popups (e.g. Google Drive opening Colab), allow the popup
+      // so the opener script can navigate it. We'll capture the real URL in did-create-window.
+      if (!url || url === 'about:blank') {
+        log(`[WebView] Allowing about:blank popup (disposition: ${disposition}) - will capture navigation`);
+        return { action: 'allow' };
+      }
+
+      // For real URLs, deny the popup and open in our tab system
+      log(`[WebView] Intercepting window.open: ${url} (disposition: ${disposition})`);
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('browser-open-in-new-tab', {
           url,
           disposition // 'background-tab', 'foreground-tab', 'new-window', etc.
         });
       }
-      // Deny the new window - renderer will handle opening in tab
       return { action: 'deny' };
+    });
+
+    // Capture navigation from allowed about:blank popups
+    contents.on('did-create-window', (newWindow) => {
+      const checkAndRedirect = (realUrl) => {
+        if (realUrl && realUrl !== 'about:blank') {
+          log(`[WebView] Popup navigated to: ${realUrl} - redirecting to app tab`);
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('browser-open-in-new-tab', {
+              url: realUrl,
+              disposition: 'new-window'
+            });
+          }
+          try { newWindow.close(); } catch (e) {}
+        }
+      };
+
+      // Check if the popup already has a real URL
+      try {
+        const currentUrl = newWindow.webContents.getURL();
+        if (currentUrl && currentUrl !== 'about:blank') {
+          checkAndRedirect(currentUrl);
+          return;
+        }
+      } catch (e) {}
+
+      // Listen for the popup to navigate to a real URL
+      newWindow.webContents.on('did-navigate', (event, url) => {
+        checkAndRedirect(url);
+      });
+      newWindow.webContents.on('will-navigate', (event, url) => {
+        if (url && url !== 'about:blank') {
+          event.preventDefault();
+          checkAndRedirect(url);
+        }
+      });
+
+      // Fallback: if popup doesn't navigate within 5s, close it
+      setTimeout(() => {
+        try {
+          if (!newWindow.isDestroyed()) {
+            const url = newWindow.webContents.getURL();
+            if (!url || url === 'about:blank') {
+              log('[WebView] Closing stale about:blank popup after timeout');
+              newWindow.close();
+            }
+          }
+        } catch (e) {}
+      }, 5000);
     });
   }
 

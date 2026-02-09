@@ -3777,7 +3777,7 @@ const handleNewBrowserTab = useCallback((url: string, paneId?: string) => {
 // Listen for ctrl+click / middle-click on browser links from main process
 useEffect(() => {
     const cleanup = (window as any).api?.onBrowserOpenInNewTab?.(({ url }: { url: string }) => {
-        if (url) {
+        if (url && url !== 'about:blank') {
             createNewBrowser(url);
         }
     });
