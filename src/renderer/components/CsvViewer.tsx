@@ -1,3 +1,4 @@
+import { getFileName } from './utils';
 import React, { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
 import {
     Save,
@@ -40,9 +41,19 @@ import {
     PieChart,
     LineChart,
     TrendingUp,
-    Activity
+    Activity,
+    Sun,
+    Moon
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+
+// Global cache for spreadsheet data - keyed by filePath
+const csvDataCache = new Map<string, {
+    headers: any[];
+    data: any[][];
+    workbook?: any;
+    hasChanges?: boolean;
+}>();
 
 // Cell style interface
 interface CellStyle {
@@ -78,7 +89,28 @@ const PRESET_COLORS = [
     '#d0e0e3', '#cfe2f3', '#d9d2e9', '#ead1dc'
 ];
 
-const CsvViewer = ({ 
+// Convert 0-based column index to Excel-style letters: 0=A, 1=B, ..., 25=Z, 26=AA, 27=AB, etc.
+function colToLetters(idx: number): string {
+    let s = '';
+    let n = idx + 1;
+    while (n > 0) {
+        n--;
+        s = String.fromCharCode(65 + (n % 26)) + s;
+        n = Math.floor(n / 26);
+    }
+    return s;
+}
+
+// Convert Excel-style column letters to 0-based index: A=0, B=1, ..., Z=25, AA=26, AB=27, etc.
+function lettersToCol(letters: string): number {
+    let idx = 0;
+    for (let i = 0; i < letters.length; i++) {
+        idx = idx * 26 + (letters.charCodeAt(i) - 64);
+    }
+    return idx - 1;
+}
+
+const CsvViewer = ({
     nodeId, 
     contentDataRef,
     currentPath, // Passed from Enpistu
@@ -126,6 +158,27 @@ const CsvViewer = ({
     const [freezeRow, setFreezeRow] = useState(false);
     const [freezeCol, setFreezeCol] = useState(false);
 
+    // Document theme mode (independent of app theme)
+    const [docLightMode, setDocLightMode] = useState(() => {
+        const saved = localStorage.getItem('csvViewer_lightMode');
+        return saved !== null ? JSON.parse(saved) : true; // Default to light mode
+    });
+
+    // Save doc theme preference
+    useEffect(() => {
+        localStorage.setItem('csvViewer_lightMode', JSON.stringify(docLightMode));
+    }, [docLightMode]);
+
+    // Sync edited data to global cache so edits survive component remount (pane resize/split)
+    useEffect(() => {
+        const pData = contentDataRef.current[nodeId];
+        const fp = pData?.contentId;
+        if (fp && hasChanges && headers.length > 0) {
+            const existing = csvDataCache.get(fp);
+            csvDataCache.set(fp, { ...existing, headers, data, hasChanges: true });
+        }
+    }, [headers, data, hasChanges, nodeId]);
+
     // Chart state
     const [showChartModal, setShowChartModal] = useState(false);
     const [chartType, setChartType] = useState<'bar' | 'line' | 'pie' | 'area'>('bar');
@@ -133,10 +186,25 @@ const CsvViewer = ({
     const [chartYColumns, setChartYColumns] = useState<number[]>([1]);
     const chartCanvasRef = useRef<HTMLCanvasElement>(null);
 
-    // Get style for a cell
-    const getCellStyle = useCallback((row: number, col: number): CellStyle => {
-        return cellStyles[`${row},${col}`] || {};
-    }, [cellStyles]);
+    // Default grid size for new spreadsheets
+    const [defaultRows] = useState(() => parseInt(localStorage.getItem('xlsx_defaultRows') || '10', 10));
+    const [defaultCols] = useState(() => parseInt(localStorage.getItem('xlsx_defaultCols') || '10', 10));
+
+    // Context menu for spreadsheet
+    const [csvContextMenu, setCsvContextMenu] = useState<{ x: number; y: number; rowIndex?: number; colIndex?: number } | null>(null);
+
+    // XLSX-specific cell styles and data validation
+    const [xlsxCellStyles, setXlsxCellStyles] = useState<{ [key: string]: any }>({});
+    const [dataValidations, setDataValidations] = useState<{ [key: string]: { type: string; values?: string[] } }>({});
+
+    // Get style for a cell (merges XLSX-extracted styles with user-applied styles)
+    const getCellStyle = useCallback((row: number, col: number): CellStyle & { isBoolean?: boolean; boolValue?: boolean } => {
+        const key = `${row},${col}`;
+        const xlsxStyle = xlsxCellStyles[key] || {};
+        const userStyle = cellStyles[key] || {};
+        // User styles override XLSX styles
+        return { ...xlsxStyle, ...userStyle };
+    }, [cellStyles, xlsxCellStyles]);
 
     // Apply style to selected cells
     const applyStyleToSelection = useCallback((styleUpdate: Partial<CellStyle>) => {
@@ -523,30 +591,135 @@ const CsvViewer = ({
 
     const loadSheetData = useCallback((wb, sheetName) => {
         const sheet = wb.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' }); // Ensure defval for consistent data
-        
-        if (jsonData.length > 0) {
+        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+        if (jsonData.length > 0 && jsonData[0]?.some?.(v => v !== '')) {
             setHeaders(jsonData[0] || ['Column 1']);
-            setData(jsonData.slice(1) || [[]]);
+            setData(jsonData.slice(1).length > 0 ? jsonData.slice(1) : [new Array(jsonData[0].length).fill('')]);
         } else {
-            setHeaders(['Column 1']);
-            setData([['']]);
+            // Empty sheet - use default grid size
+            const cols = defaultCols;
+            const rows = defaultRows;
+            setHeaders(Array.from({ length: cols }, (_, i) => colToLetters(i)));
+            setData(Array.from({ length: rows }, () => new Array(cols).fill('')));
         }
+
+        // Extract cell styles from XLSX
+        const extractedStyles: { [key: string]: any } = {};
+        const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+
+        for (let row = range.s.r; row <= range.e.r; row++) {
+            for (let col = range.s.c; col <= range.e.c; col++) {
+                const cellAddr = XLSX.utils.encode_cell({ r: row, c: col });
+                const cell = sheet[cellAddr];
+                if (cell && cell.s) {
+                    // Extract style information
+                    const style: any = {};
+                    if (cell.s.font) {
+                        if (cell.s.font.bold) style.bold = true;
+                        if (cell.s.font.italic) style.italic = true;
+                        if (cell.s.font.underline) style.underline = true;
+                        if (cell.s.font.strike) style.strikethrough = true;
+                        if (cell.s.font.color?.rgb) style.textColor = '#' + cell.s.font.color.rgb;
+                        if (cell.s.font.name) style.fontFamily = cell.s.font.name;
+                        if (cell.s.font.sz) style.fontSize = cell.s.font.sz;
+                    }
+                    if (cell.s.fill?.fgColor?.rgb) {
+                        style.bgColor = '#' + cell.s.fill.fgColor.rgb;
+                    }
+                    if (cell.s.alignment?.horizontal) {
+                        style.align = cell.s.alignment.horizontal;
+                    }
+                    // Map row index (excluding header)
+                    const dataRow = row - 1;
+                    if (dataRow >= 0 && Object.keys(style).length > 0) {
+                        extractedStyles[`${dataRow},${col}`] = style;
+                    }
+                }
+                // Handle boolean values (checkboxes)
+                if (cell && cell.t === 'b') {
+                    // Mark as boolean for checkbox rendering
+                    const dataRow = row - 1;
+                    if (dataRow >= 0) {
+                        if (!extractedStyles[`${dataRow},${col}`]) extractedStyles[`${dataRow},${col}`] = {};
+                        extractedStyles[`${dataRow},${col}`].isBoolean = true;
+                        extractedStyles[`${dataRow},${col}`].boolValue = cell.v;
+                    }
+                }
+            }
+        }
+
+        // Extract data validation (dropdowns)
+        const validations: { [key: string]: { type: string; values?: string[] } } = {};
+        if (sheet['!dataValidation']) {
+            for (const dv of sheet['!dataValidation']) {
+                if (dv.type === 'list' && dv.sqref) {
+                    const ranges = dv.sqref.split(' ');
+                    for (const rangeStr of ranges) {
+                        try {
+                            const dvRange = XLSX.utils.decode_range(rangeStr);
+                            const values = dv.formula1 ? dv.formula1.split(',').map((v: string) => v.trim().replace(/^"|"$/g, '')) : [];
+                            for (let r = dvRange.s.r; r <= dvRange.e.r; r++) {
+                                for (let c = dvRange.s.c; c <= dvRange.e.c; c++) {
+                                    const dataRow = r - 1;
+                                    if (dataRow >= 0) {
+                                        validations[`${dataRow},${c}`] = { type: 'list', values };
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            // Skip invalid ranges
+                        }
+                    }
+                }
+            }
+        }
+
+        setXlsxCellStyles(prev => ({ ...prev, ...extractedStyles }));
+        setDataValidations(validations);
     }, []);
 
     const loadSpreadsheet = useCallback(async () => {
         if (!filePath) return;
+
+        // Check global cache first
+        const cached = csvDataCache.get(filePath);
+        if (cached) {
+            if (cached.workbook) {
+                setWorkbook(cached.workbook);
+                setSheetNames(cached.workbook.SheetNames);
+                // Reload sheet data from workbook if headers/data not cached
+                if (cached.headers && cached.data) {
+                    setHeaders(cached.headers);
+                    setData(cached.data);
+                } else {
+                    const sheetToLoad = activeSheet || cached.workbook.SheetNames[0];
+                    setActiveSheet(sheetToLoad);
+                    loadSheetData(cached.workbook, sheetToLoad);
+                }
+            } else {
+                setHeaders(cached.headers || ['Column 1']);
+                setData(cached.data || [[]]);
+            }
+            // Restore unsaved changes flag from cache (survives remount from resize/split)
+            setHasChanges(cached.hasChanges || false);
+            setError(null);
+            return;
+        }
+
         try {
             if (isXlsx) {
                 const buffer = await window.api.readFileBuffer(filePath);
                 let wb;
-                // Handle empty/new xlsx files
                 if (!buffer || buffer.length === 0) {
-                    // Create a new blank workbook
                     wb = XLSX.utils.book_new();
-                    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['']]), 'Sheet1');
+                    const cols = defaultCols;
+                    const rows = defaultRows;
+                    const defaultHeaders = Array.from({ length: cols }, (_, i) => colToLetters(i));
+                    const defaultData = [defaultHeaders, ...Array.from({ length: rows }, () => new Array(cols).fill(''))];
+                    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(defaultData), 'Sheet1');
                 } else {
-                    wb = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+                    wb = XLSX.read(new Uint8Array(buffer), { type: 'array', cellStyles: true, cellDates: true });
                 }
                 setWorkbook(wb);
                 setSheetNames(wb.SheetNames);
@@ -556,17 +729,23 @@ const CsvViewer = ({
                     setActiveSheet(sheetToLoad);
                     loadSheetData(wb, sheetToLoad);
                 }
+                // Cache workbook only - headers/data come from loadSheetData
+                csvDataCache.set(filePath, { headers: null, data: null, workbook: wb });
             } else {
                 const response = await window.api.readCsvContent(filePath);
                 if (response.error) throw new Error(response.error);
-                
+
                 setHeaders(response.headers || ['Column 1']);
                 setData(response.rows || [[]]);
+                // Cache globally
+                csvDataCache.set(filePath, {
+                    headers: response.headers || ['Column 1'],
+                    data: response.rows || [[]]
+                });
             }
             setHasChanges(false);
             setError(null);
 
-            // Initialize history
             setTimeout(() => {
                 setHistory([{ data: JSON.parse(JSON.stringify(data)), headers: [...headers] }]);
                 setHistoryIndex(0);
@@ -878,6 +1057,9 @@ const CsvViewer = ({
         setEditingCell({ row: rowIndex, col: colIndex });
     };
 
+    const colLettersToIndex = lettersToCol;
+    const indexToColLetters = colToLetters;
+
     const evaluateFormula = useCallback((formula, sheetData) => {
         if (!formula || typeof formula !== 'string' || !formula.startsWith('=')) {
             return formula;
@@ -885,108 +1067,102 @@ const CsvViewer = ({
 
         try {
             const expr = formula.substring(1).toUpperCase();
-            
-            // Generic cell reference resolver
+
+            // Generic cell reference resolver (supports multi-letter columns: A1, AA1, AZ99, etc.)
             const resolveCellRef = (ref) => {
-                const colMatch = ref.match(/[A-Z]+/);
-                const rowMatch = ref.match(/\d+/);
-                if (!colMatch || !rowMatch) return NaN;
-                const col = colMatch[0].charCodeAt(0) - 65;
-                const row = parseInt(rowMatch[0]) - 1;
+                const m = ref.match(/^([A-Z]+)(\d+)$/);
+                if (!m) return NaN;
+                const col = colLettersToIndex(m[1]);
+                const row = parseInt(m[2]) - 1;
                 return parseFloat(sheetData[row]?.[col]) || 0;
             };
 
-            // SUM(A1:B3)
-            const sumMatch = expr.match(/^SUM\(([A-Z]+)(\d+):([A-Z]+)(\d+)\)$/);
-            if (sumMatch) {
-                const startCol = sumMatch[1].charCodeAt(0) - 65;
-                const startRow = parseInt(sumMatch[2]) - 1;
-                const endCol = sumMatch[3].charCodeAt(0) - 65;
-                const endRow = parseInt(sumMatch[4]) - 1;
-                let sum = 0;
-                for (let r = startRow; r <= endRow; r++) {
-                    for (let c = startCol; c <= endCol; c++) {
-                        sum += parseFloat(sheetData[r]?.[c]) || 0;
+            // Parse a range like A1:B3 or AA1:AZ99
+            const parseRange = (match) => {
+                if (!match) return null;
+                return {
+                    startCol: colLettersToIndex(match[1]),
+                    startRow: parseInt(match[2]) - 1,
+                    endCol: colLettersToIndex(match[3]),
+                    endRow: parseInt(match[4]) - 1,
+                };
+            };
+
+            const rangeRegex = /^(\w+)\(([A-Z]+)(\d+):([A-Z]+)(\d+)\)$/;
+            const funcMatch = expr.match(rangeRegex);
+
+            if (funcMatch) {
+                const funcName = funcMatch[1];
+                const range = {
+                    startCol: colLettersToIndex(funcMatch[2]),
+                    startRow: parseInt(funcMatch[3]) - 1,
+                    endCol: colLettersToIndex(funcMatch[4]),
+                    endRow: parseInt(funcMatch[5]) - 1,
+                };
+
+                // Collect all numeric values in range
+                const nums: number[] = [];
+                let nonEmpty = 0;
+                for (let r = range.startRow; r <= range.endRow; r++) {
+                    for (let c = range.startCol; c <= range.endCol; c++) {
+                        const raw = sheetData[r]?.[c];
+                        if (raw !== '' && raw != null) nonEmpty++;
+                        const val = parseFloat(raw);
+                        if (!isNaN(val)) nums.push(val);
                     }
                 }
-                return sum;
+
+                switch (funcName) {
+                    case 'SUM':
+                        return nums.reduce((a, b) => a + b, 0);
+                    case 'AVERAGE':
+                        return nums.length > 0 ? +(nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(6) : 0;
+                    case 'COUNT':
+                        return nonEmpty;
+                    case 'COUNTA':
+                        return nonEmpty;
+                    case 'MAX':
+                        return nums.length > 0 ? Math.max(...nums) : 0;
+                    case 'MIN':
+                        return nums.length > 0 ? Math.min(...nums) : 0;
+                    default:
+                        break;
+                }
             }
 
-            // AVERAGE(A1:B3)
-            const avgMatch = expr.match(/^AVERAGE\(([A-Z]+)(\d+):([A-Z]+)(\d+)\)$/);
-            if (avgMatch) {
-                const startCol = avgMatch[1].charCodeAt(0) - 65;
-                const startRow = parseInt(avgMatch[2]) - 1;
-                const endCol = avgMatch[3].charCodeAt(0) - 65;
-                const endRow = parseInt(avgMatch[4]) - 1;
-                let sum = 0;
-                let count = 0;
-                for (let r = startRow; r <= endRow; r++) {
-                    for (let c = startCol; c <= endCol; c++) {
-                        const val = parseFloat(sheetData[r]?.[c]);
-                        if (!isNaN(val)) {
-                            sum += val;
-                            count++;
+            // SUM/AVERAGE/etc with comma-separated args: =SUM(A1,B2,C3)
+            const commaFuncMatch = expr.match(/^(SUM|AVERAGE|COUNT|MAX|MIN)\(([^)]+)\)$/);
+            if (commaFuncMatch && commaFuncMatch[2].includes(',')) {
+                const funcName = commaFuncMatch[1];
+                const args = commaFuncMatch[2].split(',').map(s => s.trim());
+                const nums: number[] = [];
+                for (const arg of args) {
+                    // Check if it's a range (A1:B3) or single ref (A1) or literal number
+                    const rangeM = arg.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+                    if (rangeM) {
+                        const sc = colLettersToIndex(rangeM[1]), sr = parseInt(rangeM[2]) - 1;
+                        const ec = colLettersToIndex(rangeM[3]), er = parseInt(rangeM[4]) - 1;
+                        for (let r = sr; r <= er; r++) {
+                            for (let c = sc; c <= ec; c++) {
+                                const val = parseFloat(sheetData[r]?.[c]);
+                                if (!isNaN(val)) nums.push(val);
+                            }
                         }
+                    } else {
+                        const val = resolveCellRef(arg);
+                        if (!isNaN(val)) nums.push(val);
                     }
                 }
-                return count > 0 ? (sum / count).toFixed(2) : 0;
-            }
-
-            // COUNT(A1:B3)
-            const countMatch = expr.match(/^COUNT\(([A-Z]+)(\d+):([A-Z]+)(\d+)\)$/);
-            if (countMatch) {
-                const startCol = countMatch[1].charCodeAt(0) - 65;
-                const startRow = parseInt(countMatch[2]) - 1;
-                const endCol = countMatch[3].charCodeAt(0) - 65;
-                const endRow = parseInt(countMatch[4]) - 1;
-                let count = 0;
-                for (let r = startRow; r <= endRow; r++) {
-                    for (let c = startCol; c <= endCol; c++) {
-                        if (sheetData[r]?.[c] !== '' && sheetData[r]?.[c] != null) {
-                            count++;
-                        }
-                    }
+                switch (funcName) {
+                    case 'SUM': return nums.reduce((a, b) => a + b, 0);
+                    case 'AVERAGE': return nums.length > 0 ? +(nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(6) : 0;
+                    case 'COUNT': return nums.length;
+                    case 'MAX': return nums.length > 0 ? Math.max(...nums) : 0;
+                    case 'MIN': return nums.length > 0 ? Math.min(...nums) : 0;
                 }
-                return count;
             }
 
-            // MAX(A1:B3)
-            const maxMatch = expr.match(/^MAX\(([A-Z]+)(\d+):([A-Z]+)(\d+)\)$/);
-            if (maxMatch) {
-                const startCol = maxMatch[1].charCodeAt(0) - 65;
-                const startRow = parseInt(maxMatch[2]) - 1;
-                const endCol = maxMatch[3].charCodeAt(0) - 65;
-                const endRow = parseInt(maxMatch[4]) - 1;
-                let max = -Infinity;
-                for (let r = startRow; r <= endRow; r++) {
-                    for (let c = startCol; c <= endCol; c++) {
-                        const val = parseFloat(sheetData[r]?.[c]);
-                        if (!isNaN(val) && val > max) max = val;
-                    }
-                }
-                return max === -Infinity ? 0 : max;
-            }
-
-            // MIN(A1:B3)
-            const minMatch = expr.match(/^MIN\(([A-Z]+)(\d+):([A-Z]+)(\d+)\)$/);
-            if (minMatch) {
-                const startCol = minMatch[1].charCodeAt(0) - 65;
-                const startRow = parseInt(minMatch[2]) - 1;
-                const endCol = minMatch[3].charCodeAt(0) - 65;
-                const endRow = parseInt(minMatch[4]) - 1;
-                let min = Infinity;
-                for (let r = startRow; r <= endRow; r++) {
-                    for (let c = startCol; c <= endCol; c++) {
-                        const val = parseFloat(sheetData[r]?.[c]);
-                        if (!isNaN(val) && val < min) min = val;
-                    }
-                }
-                return min === Infinity ? 0 : min;
-            }
-
-            // Simple math: e.g., =A1+B1, =A1*2, etc. (more robust parsing needed for complex expressions)
-            // This is a very basic parser and needs improvement for production use.
+            // Simple math: e.g., =A1+B1, =A1*2, =AA1+AB1, etc.
             const mathematicalExpression = expr.replace(/([A-Z]+\d+)/g, (match) => {
                 const value = resolveCellRef(match);
                 return isNaN(value) ? `"${match}"` : value.toString();
@@ -994,7 +1170,7 @@ const CsvViewer = ({
 
             try {
                 // eslint-disable-next-line no-eval
-                const result = eval(mathematicalExpression); // Use with caution, eval can be dangerous
+                const result = eval(mathematicalExpression);
                 return isNaN(result) ? '#VALUE!' : result;
             } catch (evalError) {
                 console.warn("Formula evaluation error:", evalError);
@@ -1197,19 +1373,13 @@ const CsvViewer = ({
                 onContextMenu={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    setPaneContextMenu({
-                        isOpen: true,
-                        x: e.clientX,
-                        y: e.clientY,
-                        nodeId,
-                        nodePath: findNodePath(rootLayoutNode, nodeId)
-                    });
+                    setCsvContextMenu({ x: e.clientX, y: e.clientY });
                 }}
                 className="p-2 border-b theme-border text-xs theme-text-muted flex-shrink-0 theme-bg-secondary cursor-move"
             >
                 <div className="flex justify-between items-center">
                     <span className="truncate font-semibold">
-                        {filePath ? filePath.split('/').pop() : 'Untitled'}{hasChanges ? ' *' : ''}
+                        {filePath ? getFileName(filePath) : 'Untitled'}{hasChanges ? ' *' : ''}
                     </span>
                     <div className="flex items-center gap-1">
                         <button
@@ -1219,13 +1389,6 @@ const CsvViewer = ({
                             title="Save (Ctrl+S)"
                         >
                             <Save size={14} />
-                        </button>
-                        <button
-                            onClick={() => addRow()}
-                            className="p-1 theme-hover rounded"
-                            title="Add row"
-                        >
-                            <Plus size={14} />
                         </button>
                         <button
                             onClick={(e) => {
@@ -1350,6 +1513,15 @@ const CsvViewer = ({
                 >
                     <BarChart2 size={12} />
                     <span className="hidden sm:inline">Chart</span>
+                </button>
+
+                {/* Document light/dark mode toggle */}
+                <button
+                    onClick={() => setDocLightMode(!docLightMode)}
+                    className="p-1.5 rounded theme-hover flex items-center gap-1 text-[10px] theme-text-muted"
+                    title={docLightMode ? "Switch to dark mode" : "Switch to light mode"}
+                >
+                    {docLightMode ? <Moon size={12} /> : <Sun size={12} />}
                 </button>
 
                 {/* Export dropdown */}
@@ -1595,7 +1767,7 @@ const CsvViewer = ({
                             {headers.map((header, colIndex) => (
                                 <th
                                     key={colIndex}
-                                    className="border theme-border p-0 min-w-[100px] group relative bg-gray-700"
+                                    className={`border theme-border p-0 min-w-[100px] group relative ${selectedCell?.col === colIndex ? 'bg-teal-900/40' : 'bg-gray-700'}`}
                                     style={{ width: columnWidths[colIndex] ? `${columnWidths[colIndex]}px` : 'auto' }}
                                 >
                                     <div className="flex items-center">
@@ -1684,9 +1856,9 @@ const CsvViewer = ({
                             const rowIndex = getOriginalRowIndex(displayRowIndex);
                             return (
                             <tr key={`row-${rowIndex}-${displayRowIndex}`} className="group">
-                                <td className={`border theme-border p-1 bg-gray-700 ${freezeCol ? 'sticky left-0 z-[5]' : ''}`}>
+                                <td className={`border theme-border p-1 ${selectedCell?.row === rowIndex ? 'bg-teal-900/40' : 'bg-gray-700'} ${freezeCol ? 'sticky left-0 z-[5]' : ''}`}>
                                     <div className="flex items-center justify-between gap-1">
-                                        <span className="text-xs text-gray-400">{rowIndex + 1}</span>
+                                        <span className={`text-xs ${selectedCell?.row === rowIndex ? 'text-teal-300 font-medium' : 'text-gray-400'}`}>{rowIndex + 1}</span>
                                         <div className="flex flex-col opacity-0 group-hover:opacity-100">
                                             <button
                                                 onClick={() => moveRow(rowIndex, -1)}
@@ -1717,6 +1889,8 @@ const CsvViewer = ({
                                     const isSelected = isCellSelected(rowIndex, colIndex);
                                     const cellValue = row[colIndex] ?? '';
                                     const style = getCellStyle(rowIndex, colIndex);
+                                    const cellKey = `${rowIndex},${colIndex}`;
+                                    const validation = dataValidations[cellKey];
                                     const displayValue = typeof cellValue === 'string' && cellValue.startsWith('=')
                                         ? evaluateFormula(cellValue, data)
                                         : formatCellValue(cellValue, style);
@@ -1731,7 +1905,7 @@ const CsvViewer = ({
                                             style.underline ? 'underline' : '',
                                             style.strikethrough ? 'line-through' : ''
                                         ].filter(Boolean).join(' ') || 'none',
-                                        color: style.textColor || 'inherit',
+                                        color: style.textColor || (docLightMode ? '#111827' : '#e5e7eb'),
                                         backgroundColor: style.bgColor || 'transparent',
                                         textAlign: style.align || 'left',
                                         borderTop: style.borderTop ? '1px solid #555' : undefined,
@@ -1740,18 +1914,55 @@ const CsvViewer = ({
                                         borderRight: style.borderRight ? '1px solid #555' : undefined,
                                     };
 
+                                    // Check if this is a boolean cell (checkbox)
+                                    const isBoolean = style.isBoolean || (typeof cellValue === 'boolean') || cellValue === 'TRUE' || cellValue === 'FALSE' || cellValue === true || cellValue === false;
+                                    const boolValue = cellValue === true || cellValue === 'TRUE' || cellValue === 1 || cellValue === '1';
+
                                     return (
                                         <td
                                             key={colIndex}
                                             className={`border theme-border p-0
-                                            ${isSelected ? 'ring-2 ring-blue-500' : ''}
-                                            ${isEditing ? 'ring-2 ring-green-500' : ''}
-                                            hover:bg-gray-700/50 cursor-cell`}
-                                            style={style.bgColor ? { backgroundColor: style.bgColor } : undefined}
+                                            ${isSelected && !isEditing ? 'ring-2 ring-teal-400 shadow-[inset_0_0_0_1px_rgba(45,212,191,0.3)]' : ''}
+                                            ${isEditing ? 'ring-2 ring-teal-300 shadow-[inset_0_0_0_1px_rgba(45,212,191,0.5)]' : ''}
+                                            ${docLightMode ? 'hover:bg-teal-50' : 'hover:bg-teal-900/20'} cursor-cell`}
+                                            style={{ backgroundColor: isSelected && !isEditing ? (docLightMode ? '#ccfbf1' : 'rgba(20, 184, 166, 0.15)') : isEditing ? (docLightMode ? '#f0fdfa' : 'rgba(20, 184, 166, 0.1)') : style.bgColor || (docLightMode ? 'white' : '#1f2937') }}
                                             onClick={(e) => handleCellClick(rowIndex, colIndex, e)}
-                                            onDoubleClick={() => handleCellDoubleClick(rowIndex, colIndex)}
+                                            onDoubleClick={() => !isBoolean && !validation && handleCellDoubleClick(rowIndex, colIndex)}
+                                            onContextMenu={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                setSelectedCell({ row: rowIndex, col: colIndex });
+                                                setCsvContextMenu({ x: e.clientX, y: e.clientY, rowIndex, colIndex });
+                                            }}
                                         >
-                                            {isEditing ? (
+                                            {/* Boolean values render as checkboxes */}
+                                            {isBoolean && !isEditing ? (
+                                                <div className="p-2 min-h-[32px] flex items-center justify-center">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={boolValue}
+                                                        onChange={(e) => {
+                                                            updateCell(rowIndex, colIndex, e.target.checked);
+                                                        }}
+                                                        className="w-4 h-4 cursor-pointer accent-blue-500"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    />
+                                                </div>
+                                            ) : validation?.type === 'list' && validation.values && validation.values.length > 0 ? (
+                                                /* Data validation dropdown */
+                                                <select
+                                                    value={String(cellValue)}
+                                                    onChange={(e) => updateCell(rowIndex, colIndex, e.target.value)}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className={`w-full h-full p-2 bg-transparent outline-none cursor-pointer ${docLightMode ? 'text-gray-900' : 'text-gray-100'}`}
+                                                    style={cellInlineStyle}
+                                                >
+                                                    <option value="">{cellValue || '-- Select --'}</option>
+                                                    {validation.values.map((v, i) => (
+                                                        <option key={i} value={v}>{v}</option>
+                                                    ))}
+                                                </select>
+                                            ) : isEditing ? (
                                                 <input
                                                     type="text"
                                                     value={cellValue}
@@ -1762,24 +1973,15 @@ const CsvViewer = ({
                                                             setEditingCell(null);
                                                         }
                                                     }}
-                                                    className="w-full h-full p-2 bg-transparent outline-none"
+                                                    className={`w-full h-full p-2 bg-transparent outline-none ${docLightMode ? 'text-gray-900' : 'text-gray-100'}`}
                                                     autoFocus
                                                 />
                                             ) : (
-                                                <div className="p-2 min-h-[32px]" style={cellInlineStyle}>{displayValue}</div>
+                                                <div className={`p-2 min-h-[32px] ${docLightMode ? 'text-gray-900' : 'text-gray-100'}`} style={cellInlineStyle}>{displayValue}</div>
                                             )}
                                         </td>
                                     );
                                 })}
-                                <td className="border theme-border p-1">
-                                    <button
-                                        onClick={() => addRow(rowIndex + 1)}
-                                        className="w-full h-full flex items-center justify-center theme-hover opacity-0 group-hover:opacity-100"
-                                        title="Insert row below"
-                                    >
-                                        <Plus size={12} />
-                                    </button>
-                                </td>
                             </tr>
                         );
                         })}
@@ -1817,14 +2019,39 @@ const CsvViewer = ({
                     {selectedCell && (
                         <>
                             <span>
-                                Cell: {String.fromCharCode(65 + selectedCell.col)}{selectedCell.row + 1}
+                                Cell: {indexToColLetters(selectedCell.col)}{selectedCell.row + 1}
                             </span>
-                            {selectedRange && (
-                                <span>
-                                    Range: {selectedRange.endRow - selectedRange.startRow + 1}
-                                    ×{selectedRange.endCol - selectedRange.startCol + 1}
-                                </span>
-                            )}
+                            {selectedRange && (() => {
+                                const { startRow, endRow, startCol, endCol } = selectedRange;
+                                const rows = endRow - startRow + 1;
+                                const cols = endCol - startCol + 1;
+                                const nums: number[] = [];
+                                for (let r = startRow; r <= endRow; r++) {
+                                    for (let c = startCol; c <= endCol; c++) {
+                                        const val = parseFloat(data[r]?.[c]);
+                                        if (!isNaN(val)) nums.push(val);
+                                    }
+                                }
+                                const sum = nums.reduce((a, b) => a + b, 0);
+                                const avg = nums.length > 0 ? sum / nums.length : 0;
+                                const fmtNum = (n: number) => Number.isInteger(n) ? n.toString() : n.toFixed(2);
+                                return (
+                                    <>
+                                        <span className="text-gray-500">
+                                            {indexToColLetters(startCol)}{startRow + 1}:{indexToColLetters(endCol)}{endRow + 1} ({rows}×{cols})
+                                        </span>
+                                        {nums.length > 0 && (
+                                            <>
+                                                <span className="text-teal-400">Sum: {fmtNum(sum)}</span>
+                                                <span className="text-blue-400">Avg: {fmtNum(avg)}</span>
+                                                <span className="text-gray-400">Count: {nums.length}</span>
+                                                <span className="text-pink-400">Min: {fmtNum(Math.min(...nums))}</span>
+                                                <span className="text-amber-400">Max: {fmtNum(Math.max(...nums))}</span>
+                                            </>
+                                        )}
+                                    </>
+                                );
+                            })()}
                         </>
                     )}
                 </div>
@@ -1971,8 +2198,98 @@ const CsvViewer = ({
                     </div>
                 </div>
             )}
+
+            {/* Spreadsheet Context Menu */}
+            {csvContextMenu && (
+                <>
+                    <div className="fixed inset-0 z-40" onClick={() => setCsvContextMenu(null)} />
+                    <div
+                        className="fixed theme-bg-secondary theme-border border rounded shadow-lg py-1 z-50 text-sm min-w-[180px]"
+                        style={{ top: csvContextMenu.y, left: csvContextMenu.x }}
+                    >
+                        {csvContextMenu.rowIndex != null && (
+                            <>
+                                <button onClick={() => { addRow(csvContextMenu.rowIndex! + 1); setCsvContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                                    <Plus size={12} /> Insert Row Below
+                                </button>
+                                <button onClick={() => { addRow(csvContextMenu.rowIndex!); setCsvContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                                    <Plus size={12} /> Insert Row Above
+                                </button>
+                                <button onClick={() => { deleteRow(csvContextMenu.rowIndex!); setCsvContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs text-red-400">
+                                    <Trash2 size={12} /> Delete Row
+                                </button>
+                                <div className="border-t theme-border my-1" />
+                            </>
+                        )}
+                        {csvContextMenu.colIndex != null && (
+                            <>
+                                <button onClick={() => { addColumn(); setCsvContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                                    <Columns size={12} /> Add Column
+                                </button>
+                                <button onClick={() => { deleteColumn(csvContextMenu.colIndex!); setCsvContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs text-red-400">
+                                    <Trash2 size={12} /> Delete Column
+                                </button>
+                                <div className="border-t theme-border my-1" />
+                                <button onClick={() => { toggleSort(csvContextMenu.colIndex!); setCsvContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                                    <SortAsc size={12} /> Sort Column
+                                </button>
+                                <div className="border-t theme-border my-1" />
+                            </>
+                        )}
+                        <button onClick={() => { document.execCommand('copy'); setCsvContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                            <Copy size={12} /> Copy
+                        </button>
+                        <button onClick={() => { document.execCommand('cut'); setCsvContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                            <Scissors size={12} /> Cut
+                        </button>
+                        {selectedCell && clipboard && (
+                            <button onClick={() => { /* paste handled by keyboard */ setCsvContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                                <Plus size={12} /> Paste
+                            </button>
+                        )}
+                        <div className="border-t theme-border my-1" />
+                        <button onClick={() => { saveSpreadsheet(); setCsvContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                            <Save size={12} /> Save
+                        </button>
+                        <button onClick={() => { setShowChartModal(true); setCsvContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                            <BarChart2 size={12} /> Create Chart
+                        </button>
+                        <div className="border-t theme-border my-1" />
+                        <div className="px-4 py-1.5 text-[10px] text-gray-500">
+                            Default grid: {defaultRows}×{defaultCols}
+                        </div>
+                        <div className="px-4 py-1 flex items-center gap-2">
+                            <input
+                                type="number"
+                                min="1"
+                                max="100"
+                                defaultValue={defaultRows}
+                                className="w-12 px-1 py-0.5 text-[10px] bg-gray-700 border border-gray-600 rounded text-center"
+                                placeholder="Rows"
+                                onBlur={(e) => { localStorage.setItem('xlsx_defaultRows', e.target.value); }}
+                            />
+                            <span className="text-[10px] text-gray-500">×</span>
+                            <input
+                                type="number"
+                                min="1"
+                                max="100"
+                                defaultValue={defaultCols}
+                                className="w-12 px-1 py-0.5 text-[10px] bg-gray-700 border border-gray-600 rounded text-center"
+                                placeholder="Cols"
+                                onBlur={(e) => { localStorage.setItem('xlsx_defaultCols', e.target.value); }}
+                            />
+                            <span className="text-[10px] text-gray-400">default</span>
+                        </div>
+                    </div>
+                </>
+            )}
         </div>
     );
 };
 
-export default memo(CsvViewer);
+// Custom comparison to prevent reload on pane resize
+const arePropsEqual = (prevProps: any, nextProps: any) => {
+    return prevProps.nodeId === nextProps.nodeId;
+};
+
+export default memo(CsvViewer, arePropsEqual);

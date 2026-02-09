@@ -1,3 +1,4 @@
+import { getFileName } from './utils';
 import React, { useEffect, useState, useCallback, useRef, memo } from 'react';
 import { Archive, FolderArchive, FileIcon, Download, FolderOpen, X, RefreshCw, ChevronRight, ChevronDown, Folder } from 'lucide-react';
 
@@ -43,7 +44,7 @@ const ZipViewer = ({
     // Build tree structure from flat entries
     const buildTree = useCallback((flatEntries: ZipEntry[]): TreeNode => {
         const root: TreeNode = {
-            name: filePath?.split('/').pop() || 'archive.zip',
+            name: getFileName(filePath) || 'archive.zip',
             path: '',
             isDirectory: true,
             size: 0,
@@ -266,7 +267,7 @@ const ZipViewer = ({
                     <div className="flex items-center gap-2 truncate">
                         <Archive size={14} className="text-orange-500" />
                         <span className="font-semibold truncate">
-                            {filePath ? filePath.split('/').pop() : 'Archive'}
+                            {filePath ? getFileName(filePath) : 'Archive'}
                         </span>
                     </div>
                     <div className="flex items-center gap-1">
@@ -375,4 +376,9 @@ const ZipViewer = ({
     );
 };
 
-export default memo(ZipViewer);
+// Custom comparison to prevent reload on pane resize
+const arePropsEqual = (prevProps: any, nextProps: any) => {
+    return prevProps.nodeId === nextProps.nodeId;
+};
+
+export default memo(ZipViewer, arePropsEqual);

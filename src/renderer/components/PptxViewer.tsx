@@ -1,4 +1,5 @@
 // PptxViewer - Enhanced PowerPoint-like Editor
+import { getFileName } from './utils';
 import React, { useEffect, useRef, useState, useCallback, memo, useMemo } from 'react';
 import JSZip from 'jszip';
 import {
@@ -8,41 +9,72 @@ import {
   LayoutGrid, Grid, Maximize2, MousePointer, Move, RotateCcw, Layers,
   FileDown, Printer, MoreHorizontal, Triangle, Pentagon, Star, Minus,
   ArrowRight, Hexagon, Heart, Diamond, PaintBucket, Sparkles, Layout,
-  Undo, Redo, List, ListOrdered, Highlighter
+  Undo, Redo, List, ListOrdered, Highlighter, Sun, Moon, Scissors
 } from 'lucide-react';
 
 // Constants
 const FONTS = [
   'Arial', 'Calibri', 'Times New Roman', 'Georgia', 'Verdana',
   'Tahoma', 'Trebuchet MS', 'Impact', 'Helvetica', 'Century Gothic',
-  'Roboto', 'Open Sans', 'Montserrat', 'Lato', 'Poppins'
+  'Roboto', 'Open Sans', 'Montserrat', 'Lato', 'Poppins',
+  'Inter', 'Source Sans Pro', 'Playfair Display', 'Merriweather', 'Raleway',
+  'Nunito', 'Work Sans', 'DM Sans', 'Fira Sans', 'IBM Plex Sans',
+  'Garamond', 'Palatino', 'Book Antiqua', 'Cambria', 'Consolas',
 ];
 
 const FONT_SIZES = ['8', '10', '12', '14', '16', '18', '20', '24', '28', '32', '36', '44', '54', '72', '96'];
 
 const THEME_COLORS = [
+  // Row 1: B/W + Office blues/reds
   '#000000', '#ffffff', '#1f497d', '#4f81bd', '#c0504d', '#9bbb59',
-  '#8064a2', '#4bacc6', '#f79646', '#ffff00', '#ff0000', '#00ff00',
+  // Row 2: Office purples/teals + warm
+  '#8064a2', '#4bacc6', '#f79646', '#e2725b', '#44546a', '#d9d9d9',
+  // Row 3: Modern UI palette
   '#2c3e50', '#e74c3c', '#3498db', '#2ecc71', '#9b59b6', '#f39c12',
+  // Row 4: Vibrant accents
   '#1abc9c', '#e91e63', '#00bcd4', '#ff5722', '#795548', '#607d8b',
+  // Row 5: Soft/muted tones
+  '#5b7f95', '#8e6c88', '#7eb09b', '#c4956a', '#a3a380', '#b8b8d1',
+  // Row 6: Deep/rich tones
+  '#1a237e', '#880e4f', '#004d40', '#bf360c', '#33691e', '#4a148c',
 ];
 
 const BACKGROUND_COLORS = [
-  '#ffffff', '#f8f9fa', '#e9ecef', '#dee2e6', '#ced4da',
-  '#1a1a2e', '#16213e', '#0f3460', '#533483', '#e94560',
-  '#2d3436', '#636e72', '#b2bec3', '#dfe6e9', '#00cec9',
-  '#fdcb6e', '#e17055', '#d63031', '#74b9ff', '#a29bfe',
+  // Light neutrals
+  '#ffffff', '#f8f9fa', '#f0f0f0', '#e8e8e8', '#d9d9d9',
+  // Warm lights
+  '#fff8e7', '#fef3e2', '#fde8d0', '#f5e6cc', '#f0e0d0',
+  // Cool lights
+  '#e8f4fd', '#e3f2fd', '#e0f0f4', '#e8eaf6', '#ede7f6',
+  // Dark blues
+  '#1a1a2e', '#16213e', '#0f3460', '#1e3a5f', '#0d2137',
+  // Dark warm/rich
+  '#2d1b2e', '#3c1642', '#1b2631', '#1a1a2a', '#2c2c34',
+  // Accent backgrounds
+  '#004e92', '#7b2d8e', '#1b5e20', '#b71c1c', '#e65100',
 ];
 
 const GRADIENT_PRESETS = [
+  // Professional
+  { name: 'Midnight', colors: ['#0f2027', '#203a43'] },
+  { name: 'Corporate', colors: ['#141e30', '#243b55'] },
+  { name: 'Slate', colors: ['#2c3e50', '#4ca1af'] },
+  { name: 'Navy', colors: ['#0f0c29', '#302b63'] },
+  // Warm
   { name: 'Sunset', colors: ['#ff7e5f', '#feb47b'] },
-  { name: 'Ocean', colors: ['#2193b0', '#6dd5ed'] },
-  { name: 'Purple', colors: ['#667eea', '#764ba2'] },
-  { name: 'Green', colors: ['#11998e', '#38ef7d'] },
-  { name: 'Dark', colors: ['#232526', '#414345'] },
   { name: 'Fire', colors: ['#f12711', '#f5af19'] },
+  { name: 'Peach', colors: ['#ffecd2', '#fcb69f'] },
+  { name: 'Rose', colors: ['#ffdde1', '#ee9ca7'] },
+  // Cool
+  { name: 'Ocean', colors: ['#2193b0', '#6dd5ed'] },
+  { name: 'Sky', colors: ['#4facfe', '#00f2fe'] },
+  { name: 'Frost', colors: ['#e0eafc', '#cfdef3'] },
+  { name: 'Teal', colors: ['#11998e', '#38ef7d'] },
+  // Vibrant
+  { name: 'Purple', colors: ['#667eea', '#764ba2'] },
   { name: 'Pink', colors: ['#ff6a88', '#ff99ac'] },
-  { name: 'Blue', colors: ['#4facfe', '#00f2fe'] },
+  { name: 'Neon', colors: ['#00d2ff', '#928dab'] },
+  { name: 'Aurora', colors: ['#7f53ac', '#647dee'] },
 ];
 
 const SHAPE_PRESETS = [
@@ -57,10 +89,74 @@ const SHAPE_PRESETS = [
   { type: 'line', icon: Minus, name: 'Line' },
 ];
 
-const SLIDE_LAYOUTS = [
-  { name: 'Title Slide', shapes: [{ type: 'text', x: 10, y: 35, w: 80, h: 20, text: 'Title', size: 44 }, { type: 'text', x: 10, y: 55, w: 80, h: 10, text: 'Subtitle', size: 24 }] },
-  { name: 'Title + Content', shapes: [{ type: 'text', x: 5, y: 5, w: 90, h: 15, text: 'Title', size: 36 }, { type: 'text', x: 5, y: 25, w: 90, h: 65, text: 'Content', size: 18 }] },
-  { name: 'Two Columns', shapes: [{ type: 'text', x: 5, y: 5, w: 90, h: 15, text: 'Title', size: 36 }, { type: 'text', x: 5, y: 25, w: 42, h: 65, text: 'Left', size: 18 }, { type: 'text', x: 52, y: 25, w: 42, h: 65, text: 'Right', size: 18 }] },
+const SLIDE_LAYOUTS: { name: string; shapes: { type: string; x: number; y: number; w: number; h: number; text: string; size: number; align?: string; bold?: boolean }[] }[] = [
+  // --- Core layouts ---
+  { name: 'Title Slide', shapes: [
+    { type: 'text', x: 8, y: 30, w: 84, h: 22, text: 'Presentation Title', size: 44, align: 'ctr', bold: true },
+    { type: 'text', x: 15, y: 54, w: 70, h: 10, text: 'Subtitle or author name', size: 22, align: 'ctr' },
+  ]},
+  { name: 'Section Header', shapes: [
+    { type: 'text', x: 8, y: 38, w: 84, h: 18, text: 'Section Title', size: 40, align: 'l', bold: true },
+    { type: 'text', x: 8, y: 58, w: 60, h: 8, text: 'Section description', size: 18, align: 'l' },
+  ]},
+  { name: 'Title + Content', shapes: [
+    { type: 'text', x: 5, y: 4, w: 90, h: 12, text: 'Slide Title', size: 32, align: 'l', bold: true },
+    { type: 'text', x: 5, y: 20, w: 90, h: 72, text: 'Content goes here', size: 18, align: 'l' },
+  ]},
+  { name: 'Title Only', shapes: [
+    { type: 'text', x: 5, y: 4, w: 90, h: 12, text: 'Slide Title', size: 32, align: 'l', bold: true },
+  ]},
+  // --- Multi-column layouts ---
+  { name: 'Two Columns', shapes: [
+    { type: 'text', x: 5, y: 4, w: 90, h: 12, text: 'Slide Title', size: 32, align: 'l', bold: true },
+    { type: 'text', x: 5, y: 20, w: 43, h: 72, text: 'Left column', size: 16, align: 'l' },
+    { type: 'text', x: 52, y: 20, w: 43, h: 72, text: 'Right column', size: 16, align: 'l' },
+  ]},
+  { name: 'Three Columns', shapes: [
+    { type: 'text', x: 5, y: 4, w: 90, h: 12, text: 'Slide Title', size: 32, align: 'l', bold: true },
+    { type: 'text', x: 3, y: 20, w: 30, h: 72, text: 'Column 1', size: 15, align: 'l' },
+    { type: 'text', x: 35, y: 20, w: 30, h: 72, text: 'Column 2', size: 15, align: 'l' },
+    { type: 'text', x: 67, y: 20, w: 30, h: 72, text: 'Column 3', size: 15, align: 'l' },
+  ]},
+  { name: 'Comparison', shapes: [
+    { type: 'text', x: 5, y: 4, w: 90, h: 12, text: 'Comparison Title', size: 32, align: 'l', bold: true },
+    { type: 'text', x: 5, y: 20, w: 43, h: 10, text: 'Option A', size: 20, align: 'ctr', bold: true },
+    { type: 'text', x: 52, y: 20, w: 43, h: 10, text: 'Option B', size: 20, align: 'ctr', bold: true },
+    { type: 'text', x: 5, y: 32, w: 43, h: 60, text: 'Details for option A', size: 15, align: 'l' },
+    { type: 'text', x: 52, y: 32, w: 43, h: 60, text: 'Details for option B', size: 15, align: 'l' },
+  ]},
+  // --- Special purpose ---
+  { name: 'Big Number', shapes: [
+    { type: 'text', x: 10, y: 15, w: 80, h: 40, text: '42%', size: 96, align: 'ctr', bold: true },
+    { type: 'text', x: 10, y: 58, w: 80, h: 15, text: 'Key metric description', size: 22, align: 'ctr' },
+    { type: 'text', x: 15, y: 75, w: 70, h: 10, text: 'Additional context or source', size: 14, align: 'ctr' },
+  ]},
+  { name: 'Quote', shapes: [
+    { type: 'text', x: 10, y: 25, w: 80, h: 35, text: '\u201CThe best way to predict the future is to invent it.\u201D', size: 28, align: 'ctr' },
+    { type: 'text', x: 20, y: 65, w: 60, h: 10, text: '\u2014 Alan Kay', size: 18, align: 'ctr' },
+  ]},
+  { name: 'Caption Left', shapes: [
+    { type: 'text', x: 3, y: 4, w: 35, h: 12, text: 'Caption Title', size: 24, align: 'l', bold: true },
+    { type: 'text', x: 3, y: 18, w: 35, h: 74, text: 'Description text for the content area on the right.', size: 14, align: 'l' },
+    { type: 'text', x: 42, y: 4, w: 55, h: 88, text: 'Main content area', size: 18, align: 'ctr' },
+  ]},
+  { name: 'Top + Bottom', shapes: [
+    { type: 'text', x: 5, y: 4, w: 90, h: 12, text: 'Slide Title', size: 32, align: 'l', bold: true },
+    { type: 'text', x: 5, y: 20, w: 90, h: 34, text: 'Top content area', size: 16, align: 'l' },
+    { type: 'text', x: 5, y: 58, w: 90, h: 34, text: 'Bottom content area', size: 16, align: 'l' },
+  ]},
+  { name: 'Agenda', shapes: [
+    { type: 'text', x: 8, y: 8, w: 84, h: 14, text: 'Agenda', size: 36, align: 'l', bold: true },
+    { type: 'text', x: 8, y: 28, w: 84, h: 8, text: '01  Introduction', size: 20, align: 'l' },
+    { type: 'text', x: 8, y: 40, w: 84, h: 8, text: '02  Key Findings', size: 20, align: 'l' },
+    { type: 'text', x: 8, y: 52, w: 84, h: 8, text: '03  Discussion', size: 20, align: 'l' },
+    { type: 'text', x: 8, y: 64, w: 84, h: 8, text: '04  Next Steps', size: 20, align: 'l' },
+  ]},
+  { name: 'Thank You', shapes: [
+    { type: 'text', x: 10, y: 30, w: 80, h: 25, text: 'Thank You', size: 54, align: 'ctr', bold: true },
+    { type: 'text', x: 15, y: 58, w: 70, h: 10, text: 'Questions?', size: 24, align: 'ctr' },
+    { type: 'text', x: 20, y: 72, w: 60, h: 8, text: 'email@example.com', size: 16, align: 'ctr' },
+  ]},
   { name: 'Blank', shapes: [] },
 ];
 
@@ -89,41 +185,114 @@ function escapeHtml(text: string) {
   return text.replace(/[&<>"']/g, (m) => escapeMap[m] || m);
 }
 
+// Theme data including colors and fonts
+interface ThemeData {
+  colors: Record<string, string>;
+  majorFont: string;
+  minorFont: string;
+}
+
+// Set to track loaded fonts to avoid duplicates
+const loadedFonts = new Set<string>();
+
+// Track fonts that would be loaded - actual loading could be added later
+// For now, we just apply the font-family and let the browser use fallbacks
+function loadGoogleFont(fontName: string): void {
+  if (loadedFonts.has(fontName)) return;
+  loadedFonts.add(fontName);
+
+  // Common fonts that are web-safe and don't need loading
+  const systemFonts = ['Arial', 'Helvetica', 'Times New Roman', 'Georgia', 'Verdana', 'Courier New', 'Comic Sans MS', 'Impact', 'Trebuchet MS'];
+  if (systemFonts.includes(fontName)) return;
+
+  // Log for debugging - in the future this could load from a local font cache or bundled fonts
+  console.debug('[PPTX] Font requested:', fontName);
+}
+
 // Theme color extraction - handles both PowerPoint and Google Slides
-async function extractThemeColors(zip: JSZip): Promise<Record<string, string>> {
-  const themeFile = zip.file('ppt/theme/theme1.xml');
-  if (!themeFile) return {};
+async function extractThemeData(zip: JSZip, themePath: string = 'ppt/theme/theme1.xml'): Promise<ThemeData> {
+  const themeFile = zip.file(themePath);
+  if (!themeFile) return { colors: {}, majorFont: 'Arial', minorFont: 'Arial' };
 
   try {
     const xml = await themeFile.async('string');
     const doc = new DOMParser().parseFromString(xml, 'application/xml');
+
+    // Extract colors
     const colorScheme = qNS(doc, NS.a, 'clrScheme');
-    if (!colorScheme) return {};
-
     const colors: Record<string, string> = {};
-    const names = ['dk1', 'lt1', 'dk2', 'lt2', 'accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6', 'hlink', 'folHlink'];
 
-    for (const name of names) {
-      const elem = colorScheme.getElementsByTagNameNS(NS.a, name)[0];
-      if (elem) {
-        const srgb = qNS(elem, NS.a, 'srgbClr');
-        const sys = qNS(elem, NS.a, 'sysClr');
-        if (srgb) colors[name] = `#${srgb.getAttribute('val')}`;
-        else if (sys) colors[name] = sys.getAttribute('lastClr') ? `#${sys.getAttribute('lastClr')}` : '#000000';
+    if (colorScheme) {
+      const names = ['dk1', 'lt1', 'dk2', 'lt2', 'accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6', 'hlink', 'folHlink'];
+
+      for (const name of names) {
+        const elem = colorScheme.getElementsByTagNameNS(NS.a, name)[0];
+        if (elem) {
+          const srgb = qNS(elem, NS.a, 'srgbClr');
+          const sys = qNS(elem, NS.a, 'sysClr');
+          if (srgb) colors[name] = `#${srgb.getAttribute('val')}`;
+          else if (sys) colors[name] = sys.getAttribute('lastClr') ? `#${sys.getAttribute('lastClr')}` : '#000000';
+        }
+      }
+
+      // Google Slides uses tx1/tx2/bg1/bg2 which map to dk1/lt1/dk2/lt2
+      colors['tx1'] = colors['dk1'] || '#000000';
+      colors['tx2'] = colors['dk2'] || '#000000';
+      colors['bg1'] = colors['lt1'] || '#ffffff';
+      colors['bg2'] = colors['lt2'] || '#ffffff';
+    }
+
+    // Extract fonts from fontScheme
+    let majorFont = 'Arial';
+    let minorFont = 'Arial';
+
+    const fontScheme = qNS(doc, NS.a, 'fontScheme');
+    if (fontScheme) {
+      const majorFontEl = qNS(fontScheme, NS.a, 'majorFont');
+      const minorFontEl = qNS(fontScheme, NS.a, 'minorFont');
+
+      if (majorFontEl) {
+        const latin = qNS(majorFontEl, NS.a, 'latin');
+        if (latin) {
+          majorFont = latin.getAttribute('typeface') || 'Arial';
+        }
+      }
+      if (minorFontEl) {
+        const latin = qNS(minorFontEl, NS.a, 'latin');
+        if (latin) {
+          minorFont = latin.getAttribute('typeface') || 'Arial';
+        }
       }
     }
 
-    // Google Slides uses tx1/tx2/bg1/bg2 which map to dk1/lt1/dk2/lt2
-    colors['tx1'] = colors['dk1'] || '#000000';
-    colors['tx2'] = colors['dk2'] || '#000000';
-    colors['bg1'] = colors['lt1'] || '#ffffff';
-    colors['bg2'] = colors['lt2'] || '#ffffff';
+    // Load the fonts
+    loadGoogleFont(majorFont);
+    loadGoogleFont(minorFont);
 
-    return colors;
+    return { colors, majorFont, minorFont };
   } catch (e) {
     console.error('[PPTX] Theme extraction error:', e);
-    return {};
+    return { colors: {}, majorFont: 'Arial', minorFont: 'Arial' };
   }
+}
+
+// Legacy function for compatibility - extracts only colors
+async function extractThemeColors(zip: JSZip, themePath: string = 'ppt/theme/theme1.xml'): Promise<Record<string, string>> {
+  const data = await extractThemeData(zip, themePath);
+  return data.colors;
+}
+
+// Extract all themes from zip and return a map of theme path -> ThemeData
+async function extractAllThemes(zip: JSZip): Promise<Record<string, ThemeData>> {
+  const themes: Record<string, ThemeData> = {};
+  const themeFiles = Object.keys(zip.files).filter(f => /^ppt\/theme\/theme\d+\.xml$/.test(f));
+
+  for (const themePath of themeFiles) {
+    const themeData = await extractThemeData(zip, themePath);
+    themes[themePath] = themeData;
+  }
+
+  return themes;
 }
 
 // Parse color from solidFill element with luminance modifiers
@@ -190,7 +359,12 @@ function parseColor(fillEl: Element | null, themeColors: Record<string, string>)
 }
 
 // Build style string from run properties
-function buildStyleFromRPr(rPr: Element | null, defaultRPr: Element | null, themeColors: Record<string, string>): string[] {
+function buildStyleFromRPr(
+  rPr: Element | null,
+  defaultRPr: Element | null,
+  themeColors: Record<string, string>,
+  themeFonts?: { majorFont: string; minorFont: string }
+): string[] {
   const styles: string[] = [];
 
   // Get properties from run, falling back to default if not specified
@@ -221,21 +395,20 @@ function buildStyleFromRPr(rPr: Element | null, defaultRPr: Element | null, them
   const defaultCs = defaultRPr ? qNS(defaultRPr, NS.a, 'cs') : null;
   const cs = runCs || defaultCs;
 
-  const typeface = latin?.getAttribute('typeface') || ea?.getAttribute('typeface') || cs?.getAttribute('typeface');
-  if (typeface && typeface !== '+mn-lt' && typeface !== '+mj-lt') {
-    // Map common Google Slides font names
-    const fontMap: Record<string, string> = {
-      'Arial': 'Arial, sans-serif',
-      'Roboto': 'Roboto, Arial, sans-serif',
-      'Open Sans': '"Open Sans", Arial, sans-serif',
-      'Lato': 'Lato, Arial, sans-serif',
-      'Montserrat': 'Montserrat, Arial, sans-serif',
-      'Oswald': 'Oswald, Arial, sans-serif',
-      'Playfair Display': '"Playfair Display", Georgia, serif',
-      'Times New Roman': '"Times New Roman", Times, serif',
-      'Georgia': 'Georgia, serif',
-    };
-    styles.push(`font-family: ${fontMap[typeface] || `"${typeface}", sans-serif`}`);
+  let typeface = latin?.getAttribute('typeface') || ea?.getAttribute('typeface') || cs?.getAttribute('typeface');
+
+  // Resolve theme font references
+  if (typeface === '+mj-lt' && themeFonts) {
+    typeface = themeFonts.majorFont;
+  } else if (typeface === '+mn-lt' && themeFonts) {
+    typeface = themeFonts.minorFont;
+  }
+
+  if (typeface) {
+    // Load the font if needed
+    loadGoogleFont(typeface);
+    // Use the font with a fallback
+    styles.push(`font-family: "${typeface}", Arial, sans-serif`);
   }
 
   // Bold - check for explicit value
@@ -284,7 +457,7 @@ function buildStyleFromRPr(rPr: Element | null, defaultRPr: Element | null, them
 }
 
 // Parse entire paragraph including runs, fields, and breaks
-function parseParagraph(p: Element, themeColors: Record<string, string>, defaultRPr?: Element | null): string {
+function parseParagraph(p: Element, themeColors: Record<string, string>, defaultRPr?: Element | null, themeFonts?: { majorFont: string; minorFont: string }): string {
   const parts: string[] = [];
 
   // Get all text runs using namespace query (more reliable than childNodes iteration)
@@ -315,7 +488,7 @@ function parseParagraph(p: Element, themeColors: Record<string, string>, default
       if (!text) continue;
 
       const rPr = qNS(el, NS.a, 'rPr');
-      const styles = buildStyleFromRPr(rPr, defaultRPr, themeColors);
+      const styles = buildStyleFromRPr(rPr, defaultRPr, themeColors, themeFonts);
 
       const html = escapeHtml(text).replace(/\n/g, '<br/>');
       if (styles.length > 0) {
@@ -333,7 +506,7 @@ function parseParagraph(p: Element, themeColors: Record<string, string>, default
     const directText = p.textContent?.trim();
     if (directText) {
       // Apply default styles if available
-      const styles = buildStyleFromRPr(null, defaultRPr, themeColors);
+      const styles = buildStyleFromRPr(null, defaultRPr, themeColors, themeFonts);
       const html = escapeHtml(directText).replace(/\n/g, '<br/>');
       if (styles.length > 0) {
         parts.push(`<span style="${styles.join('; ')}">${html}</span>`);
@@ -392,6 +565,7 @@ interface Shape {
   paras?: ParaData[];
   imgDataUrl?: string;
   fillColor?: string;
+  noFill?: boolean;  // Explicitly has no fill
   borderColor?: string;
   borderWidth?: number;
   shapeType?: string;
@@ -406,6 +580,21 @@ interface Slide {
   shapes: Shape[];
   background?: string;
 }
+
+// Global cache for parsed PPTX data - survives component remount (resize/split)
+const pptxStateCache = new Map<string, {
+  zip: JSZip;
+  presDoc: Document;
+  presRelsDoc: Document;
+  slides: Slide[];
+  slideOrder: any[];
+  themeColors: Record<string, string>;
+  slideWidth: number;
+  slideHeight: number;
+  pxPerEmu: number;
+  idx: number;
+  hasChanges: boolean;
+}>();
 
 const PptxViewer = ({
   nodeId,
@@ -427,6 +616,29 @@ const PptxViewer = ({
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
+  // Independent document light/dark mode
+  const [docLightMode, setDocLightMode] = useState(() => {
+    const saved = localStorage.getItem('pptxViewer_lightMode');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+
+  // Persist docLightMode changes
+  useEffect(() => {
+    localStorage.setItem('pptxViewer_lightMode', JSON.stringify(docLightMode));
+  }, [docLightMode]);
+
+  // Sync state to global cache so edits survive component remount (pane resize/split)
+  useEffect(() => {
+    const pData = contentDataRef.current[nodeId];
+    const fp = pData?.contentId;
+    if (fp && zip && slides.length > 0) {
+      pptxStateCache.set(fp, {
+        zip, presDoc, presRelsDoc, slides, slideOrder, themeColors,
+        slideWidth, slideHeight, pxPerEmu, idx, hasChanges
+      });
+    }
+  }, [slides, hasChanges, idx, nodeId]);
+
   const paneData = contentDataRef.current[nodeId];
   const filePath = paneData?.contentId;
 
@@ -441,6 +653,8 @@ const PptxViewer = ({
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showShapePicker, setShowShapePicker] = useState(false);
   const [showBgPicker, setShowBgPicker] = useState(false);
+  const [pptxContextMenu, setPptxContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [slideNavContextMenu, setSlideNavContextMenu] = useState<{ x: number; y: number; slideIdx: number } | null>(null);
   const [showLayoutPicker, setShowLayoutPicker] = useState(false);
   const [currentFont, setCurrentFont] = useState('Arial');
   const [currentFontSize, setCurrentFontSize] = useState('24');
@@ -464,6 +678,25 @@ const PptxViewer = ({
 
     const load = async () => {
       if (!filePath) return;
+
+      // Check cache first - restores state after remount (resize/split)
+      const cached = pptxStateCache.get(filePath);
+      if (cached) {
+        setZip(cached.zip);
+        setPresDoc(cached.presDoc);
+        setPresRelsDoc(cached.presRelsDoc);
+        setSlides(cached.slides);
+        setSlideOrder(cached.slideOrder);
+        setThemeColors(cached.themeColors);
+        setSlideWidth(cached.slideWidth);
+        setSlideHeight(cached.slideHeight);
+        setPxPerEmu(cached.pxPerEmu);
+        setIdx(cached.idx);
+        setHasChanges(cached.hasChanges);
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       setErr(null);
 
@@ -480,8 +713,12 @@ const PptxViewer = ({
         const z = await JSZip.loadAsync(buffer);
         if (cancelled) return;
 
-        // Extract theme colors
-        const colors = await extractThemeColors(z);
+        // Extract all themes (now returns ThemeData with colors and fonts)
+        const allThemes = await extractAllThemes(z);
+
+        // Default to theme1 for general use, but we'll use per-master themes for backgrounds
+        const defaultTheme = allThemes['ppt/theme/theme1.xml'] || { colors: {}, majorFont: 'Arial', minorFont: 'Arial' };
+        const colors = defaultTheme.colors;
         setThemeColors(colors);
 
         const presFile = z.file('ppt/presentation.xml');
@@ -519,6 +756,131 @@ const PptxViewer = ({
           }
         }
 
+        // Load slide masters and their backgrounds
+        const slideMasterBackgrounds: Record<string, string> = {};
+        const slideLayoutBackgrounds: Record<string, string> = {};
+        const slideLayoutToMaster: Record<string, string> = {};
+        const slideMasterThemes: Record<string, Record<string, string>> = {};
+        const slideMasterFonts: Record<string, { majorFont: string; minorFont: string }> = {};
+
+        // Parse slide masters and find which theme each uses
+        const masterFiles = Object.keys(z.files).filter(f => /^ppt\/slideMasters\/slideMaster\d+\.xml$/.test(f));
+        for (const masterPath of masterFiles) {
+          const masterFile = z.file(masterPath);
+          if (!masterFile) continue;
+          const masterXml = await masterFile.async('string');
+          const masterDoc = new DOMParser().parseFromString(masterXml, 'application/xml');
+
+          // Find which theme this master uses
+          const masterRelsPath = `ppt/slideMasters/_rels/${masterPath.split('/').pop()}.rels`;
+          const masterRelsFile = z.file(masterRelsPath);
+          let masterThemeColors = colors; // Default to theme1
+          let masterThemeFonts = defaultTheme;
+          if (masterRelsFile) {
+            const masterRelsXml = await masterRelsFile.async('string');
+            const masterRelsDoc = new DOMParser().parseFromString(masterRelsXml, 'application/xml');
+            const masterRels = qaNS(masterRelsDoc, NS.pkgRels, 'Relationship') as Element[];
+            for (const rel of masterRels) {
+              const type = rel.getAttribute('Type') || '';
+              if (type.includes('theme')) {
+                const target = rel.getAttribute('Target') || '';
+                const themePath = `ppt/${target.replace(/^\.\.\//, '')}`;
+                if (allThemes[themePath]) {
+                  masterThemeFonts = allThemes[themePath];
+                  masterThemeColors = allThemes[themePath].colors;
+                  slideMasterThemes[masterPath] = masterThemeColors;
+                  slideMasterFonts[masterPath] = { majorFont: masterThemeFonts.majorFont, minorFont: masterThemeFonts.minorFont };
+                }
+                break;
+              }
+            }
+          }
+
+          // Extract master background using the correct theme colors
+          const masterCsld = qNS(masterDoc, NS.p, 'cSld');
+          const masterBg = masterCsld ? qNS(masterCsld, NS.p, 'bg') : null;
+          if (masterBg) {
+            const bgPr = qNS(masterBg, NS.p, 'bgPr');
+            if (bgPr) {
+              const solidFill = qNS(bgPr, NS.a, 'solidFill');
+              if (solidFill) {
+                const bgColor = parseColor(solidFill, masterThemeColors);
+                if (bgColor) slideMasterBackgrounds[masterPath] = bgColor;
+              }
+            }
+            const bgRef = qNS(masterBg, NS.p, 'bgRef');
+            if (bgRef) {
+              const refColor = parseColor(bgRef, masterThemeColors);
+              if (refColor) slideMasterBackgrounds[masterPath] = refColor;
+            }
+          }
+        }
+
+        // Update main theme colors to use the first slide master's theme (most common case)
+        const firstMasterTheme = Object.values(slideMasterThemes)[0];
+        if (firstMasterTheme) {
+          setThemeColors(firstMasterTheme);
+        }
+
+        // Parse slide layouts and link to masters
+        const layoutFiles = Object.keys(z.files).filter(f => /^ppt\/slideLayouts\/slideLayout\d+\.xml$/.test(f));
+        for (const layoutPath of layoutFiles) {
+          const layoutFile = z.file(layoutPath);
+          if (!layoutFile) continue;
+          const layoutXml = await layoutFile.async('string');
+          const layoutDoc = new DOMParser().parseFromString(layoutXml, 'application/xml');
+
+          // Get layout's relationship to master first (so we know which theme to use)
+          const layoutRelsPath = `ppt/slideLayouts/_rels/${layoutPath.split('/').pop()}.rels`;
+          const layoutRelsFile = z.file(layoutRelsPath);
+          let layoutThemeColors = colors; // Default
+          if (layoutRelsFile) {
+            const layoutRelsXml = await layoutRelsFile.async('string');
+            const layoutRelsDoc = new DOMParser().parseFromString(layoutRelsXml, 'application/xml');
+            const layoutRels = qaNS(layoutRelsDoc, NS.pkgRels, 'Relationship') as Element[];
+            for (const rel of layoutRels) {
+              const type = rel.getAttribute('Type') || '';
+              if (type.includes('slideMaster')) {
+                const target = rel.getAttribute('Target') || '';
+                const masterName = `ppt/${target.replace(/^\.\.\//, '')}`;
+                slideLayoutToMaster[layoutPath] = masterName;
+                // Use the master's theme colors
+                if (slideMasterThemes[masterName]) {
+                  layoutThemeColors = slideMasterThemes[masterName];
+                }
+                break;
+              }
+            }
+          }
+
+          // Extract layout background using the correct theme colors
+          const layoutCsld = qNS(layoutDoc, NS.p, 'cSld');
+          const layoutBg = layoutCsld ? qNS(layoutCsld, NS.p, 'bg') : null;
+          if (layoutBg) {
+            const bgPr = qNS(layoutBg, NS.p, 'bgPr');
+            if (bgPr) {
+              const solidFill = qNS(bgPr, NS.a, 'solidFill');
+              if (solidFill) {
+                // Check for direct srgbClr first
+                const srgb = qNS(solidFill, NS.a, 'srgbClr');
+                if (srgb) {
+                  const val = srgb.getAttribute('val');
+                  if (val) slideLayoutBackgrounds[layoutPath] = `#${val}`;
+                } else {
+                  const bgColor = parseColor(solidFill, layoutThemeColors);
+                  if (bgColor) slideLayoutBackgrounds[layoutPath] = bgColor;
+                }
+              }
+            }
+            // Also check bgRef
+            const bgRef = qNS(layoutBg, NS.p, 'bgRef');
+            if (bgRef && !slideLayoutBackgrounds[layoutPath]) {
+              const refColor = parseColor(bgRef, layoutThemeColors);
+              if (refColor) slideLayoutBackgrounds[layoutPath] = refColor;
+            }
+          }
+        }
+
         // Load slides
         const loadedSlides: Slide[] = [];
         for (const s of order) {
@@ -534,6 +896,21 @@ const PptxViewer = ({
           const relsFile = z.file(relsPath);
           const relsXml = relsFile ? await relsFile.async('string') : '<Relationships/>';
           const relsDoc = new DOMParser().parseFromString(relsXml, 'application/xml');
+
+          // Determine which theme colors to use for this slide
+          const slideRelsForLayout = qaNS(relsDoc, NS.pkgRels, 'Relationship') as Element[];
+          let slideLayoutPath = '';
+          for (const rel of slideRelsForLayout) {
+            const type = rel.getAttribute('Type') || '';
+            if (type.includes('slideLayout')) {
+              const target = rel.getAttribute('Target') || '';
+              slideLayoutPath = `ppt/${target.replace(/^\.\.\//, '')}`;
+              break;
+            }
+          }
+          const slideMasterPath = slideLayoutToMaster[slideLayoutPath] || '';
+          const slideThemeColors = slideMasterThemes[slideMasterPath] || colors;
+          const slideThemeFonts = slideMasterFonts[slideMasterPath] || { majorFont: defaultTheme.majorFont, minorFont: defaultTheme.minorFont };
 
           const shapes: Shape[] = [];
 
@@ -568,7 +945,7 @@ const PptxViewer = ({
               const defaultProps = defRPr || endParaRPr;
 
               // Use parseParagraph for full support of runs, fields, and breaks
-              const html = parseParagraph(p, colors, defaultProps);
+              const html = parseParagraph(p, slideThemeColors, defaultProps, slideThemeFonts);
 
               const align = pPr?.getAttribute('algn') || 'l';
               const level = Number(pPr?.getAttribute('lvl')) || 0;
@@ -606,26 +983,32 @@ const PptxViewer = ({
             let fillColor: string | undefined;
             let borderColor: string | undefined;
             let borderWidth: number | undefined;
+            let noFill = false;
 
             if (spPr) {
-              const solidFill = qNS(spPr, NS.a, 'solidFill');
-              if (solidFill) {
-                const color = parseColor(solidFill, colors);
-                if (color) fillColor = color;
+              // Check for explicit noFill
+              if (qNS(spPr, NS.a, 'noFill')) {
+                noFill = true;
+              } else {
+                const solidFill = qNS(spPr, NS.a, 'solidFill');
+                if (solidFill) {
+                  const color = parseColor(solidFill, slideThemeColors);
+                  if (color) fillColor = color;
+                }
               }
 
               const ln = qNS(spPr, NS.a, 'ln');
               if (ln) {
                 const lnFill = qNS(ln, NS.a, 'solidFill');
                 if (lnFill) {
-                  borderColor = parseColor(lnFill, colors) || undefined;
+                  borderColor = parseColor(lnFill, slideThemeColors) || undefined;
                 }
                 const w = ln.getAttribute('w');
                 if (w) borderWidth = parseInt(w) / 12700; // EMUs to points
               }
             }
 
-            shapes.push({ type: 'text', xfrm: xfrmData, paras, spNode: sp, fillColor, borderColor, borderWidth });
+            shapes.push({ type: 'text', xfrm: xfrmData, paras, spNode: sp, fillColor, noFill, borderColor, borderWidth });
           }
 
           // Parse images
@@ -674,8 +1057,134 @@ const PptxViewer = ({
             }
           }
 
-          // Extract slide background
+          // Parse connector shapes (lines/arrows)
+          const cxnSpNodes = qaNS(doc, NS.p, 'cxnSp') as Element[];
+          for (const cxnSp of cxnSpNodes) {
+            try {
+              const spPr = qNS(cxnSp, NS.p, 'spPr');
+              const xfrm = spPr ? qNS(spPr, NS.a, 'xfrm') : null;
+              const off = xfrm ? qNS(xfrm, NS.a, 'off') : null;
+              const ext = xfrm ? qNS(xfrm, NS.a, 'ext') : null;
+
+              let lineColor: string | undefined;
+              let lineWidth = 1;
+
+              if (spPr) {
+                const ln = qNS(spPr, NS.a, 'ln');
+                if (ln) {
+                  // Check for noFill on line
+                  if (!qNS(ln, NS.a, 'noFill')) {
+                    const lnFill = qNS(ln, NS.a, 'solidFill');
+                    if (lnFill) {
+                      lineColor = parseColor(lnFill, slideThemeColors) || undefined;
+                    }
+                  }
+                  const w = ln.getAttribute('w');
+                  if (w) lineWidth = parseInt(w) / 12700;
+                }
+              }
+
+              // Only add connector if it has a visible line
+              if (lineColor) {
+                shapes.push({
+                  type: 'shape',
+                  shapeType: 'line',
+                  fillColor: lineColor,
+                  borderWidth: lineWidth,
+                  xfrm: {
+                    x: Number(off?.getAttribute('x')) || 0,
+                    y: Number(off?.getAttribute('y')) || 0,
+                    cx: Number(ext?.getAttribute('cx')) || 1000000,
+                    cy: Number(ext?.getAttribute('cy')) || 10000,
+                  },
+                });
+              }
+            } catch (e) {
+              console.error('[PPTX] Connector parse error:', e);
+            }
+          }
+
+          // Parse shapes without text (geometric shapes)
+          const allSpNodes = qaNS(doc, NS.p, 'sp') as Element[];
+          for (const sp of allSpNodes) {
+            const txBody = qNS(sp, NS.p, 'txBody');
+            // Skip shapes that have text (already parsed above)
+            if (txBody) continue;
+
+            try {
+              const spPr = qNS(sp, NS.p, 'spPr');
+              const xfrm = spPr ? qNS(spPr, NS.a, 'xfrm') : null;
+              const off = xfrm ? qNS(xfrm, NS.a, 'off') : null;
+              const ext = xfrm ? qNS(xfrm, NS.a, 'ext') : null;
+
+              if (!off || !ext) continue;
+
+              let fillColor: string | undefined;
+              let borderColor: string | undefined;
+              let borderWidth: number | undefined;
+              let shapeType = 'rect';
+              let hasNoFill = false;
+
+              if (spPr) {
+                // Check for explicit noFill
+                if (qNS(spPr, NS.a, 'noFill')) {
+                  hasNoFill = true;
+                } else {
+                  const solidFill = qNS(spPr, NS.a, 'solidFill');
+                  if (solidFill) {
+                    fillColor = parseColor(solidFill, slideThemeColors) || undefined;
+                  }
+                }
+
+                const ln = qNS(spPr, NS.a, 'ln');
+                if (ln) {
+                  // Check for noFill on line too
+                  if (!qNS(ln, NS.a, 'noFill')) {
+                    const lnFill = qNS(ln, NS.a, 'solidFill');
+                    if (lnFill) {
+                      borderColor = parseColor(lnFill, slideThemeColors) || undefined;
+                    }
+                  }
+                  const w = ln.getAttribute('w');
+                  if (w) borderWidth = parseInt(w) / 12700;
+                }
+
+                // Get preset geometry
+                const prstGeom = qNS(spPr, NS.a, 'prstGeom');
+                if (prstGeom) {
+                  const prst = prstGeom.getAttribute('prst');
+                  if (prst === 'ellipse') shapeType = 'ellipse';
+                  else if (prst === 'roundRect') shapeType = 'roundRect';
+                  else if (prst === 'triangle') shapeType = 'triangle';
+                }
+              }
+
+              // Only add if it has some visual properties and doesn't have noFill
+              if ((fillColor || borderColor) && !hasNoFill) {
+                shapes.push({
+                  type: 'shape',
+                  shapeType,
+                  fillColor,
+                  borderColor,
+                  borderWidth,
+                  xfrm: {
+                    x: Number(off.getAttribute('x')) || 0,
+                    y: Number(off.getAttribute('y')) || 0,
+                    cx: Number(ext.getAttribute('cx')) || 1000000,
+                    cy: Number(ext.getAttribute('cy')) || 1000000,
+                  },
+                });
+              }
+            } catch (e) {
+              console.error('[PPTX] Shape parse error:', e);
+            }
+          }
+
+          // Extract slide background - check slide, then layout, then master
           let background = '#ffffff';
+          let foundBackground = false;
+
+          // First check the slide's own background
           const cSld = qNS(doc, NS.p, 'cSld');
           const bgElement = cSld ? qNS(cSld, NS.p, 'bg') : null;
           if (bgElement) {
@@ -685,8 +1194,11 @@ const PptxViewer = ({
               const gradFill = qNS(bgPr, NS.a, 'gradFill');
 
               if (solidFill) {
-                const bgColor = parseColor(solidFill, colors);
-                if (bgColor) background = bgColor;
+                const bgColor = parseColor(solidFill, slideThemeColors);
+                if (bgColor) {
+                  background = bgColor;
+                  foundBackground = true;
+                }
               } else if (gradFill) {
                 // Extract gradient colors
                 const gsLst = qNS(gradFill, NS.a, 'gsLst');
@@ -694,11 +1206,12 @@ const PptxViewer = ({
                   const gsNodes = qaNS(gsLst, NS.a, 'gs') as Element[];
                   const gradientColors: string[] = [];
                   for (const gs of gsNodes) {
-                    const gradColor = parseColor(gs, colors);
+                    const gradColor = parseColor(gs, slideThemeColors);
                     if (gradColor) gradientColors.push(gradColor);
                   }
                   if (gradientColors.length >= 2) {
                     background = `linear-gradient(135deg, ${gradientColors.join(', ')})`;
+                    foundBackground = true;
                   }
                 }
               }
@@ -706,8 +1219,48 @@ const PptxViewer = ({
             // Check for bgRef (references theme background)
             const bgRef = qNS(bgElement, NS.p, 'bgRef');
             if (bgRef) {
-              const refColor = parseColor(bgRef, colors);
-              if (refColor) background = refColor;
+              const refColor = parseColor(bgRef, slideThemeColors);
+              if (refColor) {
+                background = refColor;
+                foundBackground = true;
+              }
+            }
+          }
+
+          // If no background found on slide, check layout and master
+          if (!foundBackground) {
+            // Get slide's relationship to layout
+            const slideRels = qaNS(relsDoc, NS.pkgRels, 'Relationship') as Element[];
+            let layoutPath = '';
+            for (const rel of slideRels) {
+              const type = rel.getAttribute('Type') || '';
+              if (type.includes('slideLayout')) {
+                const target = rel.getAttribute('Target') || '';
+                layoutPath = `ppt/${target.replace(/^\.\.\//, '')}`;
+                break;
+              }
+            }
+
+            // Check layout background
+            if (layoutPath && slideLayoutBackgrounds[layoutPath]) {
+              background = slideLayoutBackgrounds[layoutPath];
+              foundBackground = true;
+            }
+
+            // If still no background, check master
+            if (!foundBackground && layoutPath) {
+              const masterPath = slideLayoutToMaster[layoutPath];
+              if (masterPath && slideMasterBackgrounds[masterPath]) {
+                background = slideMasterBackgrounds[masterPath];
+              }
+            }
+
+            // If still nothing, check any master (fallback)
+            if (!foundBackground) {
+              const masterPaths = Object.keys(slideMasterBackgrounds);
+              if (masterPaths.length > 0) {
+                background = slideMasterBackgrounds[masterPaths[0]];
+              }
             }
           }
 
@@ -853,18 +1406,33 @@ const PptxViewer = ({
   }, [idx]);
 
   // Apply slide layout
+  const layoutToShapes = useCallback((layout: typeof SLIDE_LAYOUTS[0]): Shape[] => {
+    return layout.shapes.map((s: any) => {
+      const sizeHundredths = (s.size || 18) * 100; // convert pt to hundredths for inline style
+      const boldTag = s.bold ? 'font-weight: bold' : '';
+      const styleStr = [
+        `font-size: ${s.size || 18}pt`,
+        boldTag,
+      ].filter(Boolean).join('; ');
+      const html = styleStr
+        ? `<span style="${styleStr}">${escapeHtml(s.text)}</span>`
+        : escapeHtml(s.text);
+      return {
+        type: 'text' as const,
+        paras: [{ html, align: s.align || 'ctr', level: 0, bullet: false }],
+        xfrm: {
+          x: (s.x / 100) * 9144000,
+          y: (s.y / 100) * 6858000,
+          cx: (s.w / 100) * 9144000,
+          cy: (s.h / 100) * 6858000,
+        },
+        spNode: null,
+      };
+    });
+  }, []);
+
   const applyLayout = useCallback((layout: typeof SLIDE_LAYOUTS[0]) => {
-    const newShapes: Shape[] = layout.shapes.map((s: any) => ({
-      type: 'text' as const,
-      paras: [{ html: s.text, align: 'ctr', level: 0, bullet: false }],
-      xfrm: {
-        x: (s.x / 100) * 9144000,
-        y: (s.y / 100) * 6858000,
-        cx: (s.w / 100) * 9144000,
-        cy: (s.h / 100) * 6858000,
-      },
-      spNode: null,
-    }));
+    const newShapes = layoutToShapes(layout);
     setSlides(prev => {
       const next = [...prev];
       next[idx] = { ...next[idx], shapes: newShapes };
@@ -872,28 +1440,25 @@ const PptxViewer = ({
     });
     setHasChanges(true);
     setShowLayoutPicker(false);
-  }, [idx]);
+  }, [idx, layoutToShapes]);
 
-  // Add slide
+  // Add slide - creates a new blank slide with Title Slide layout after current position
   const addSlide = useCallback(() => {
-    if (!slides.length || !zip || !presDoc || !presRelsDoc) return;
+    if (!slides.length) return;
 
     const base = slides[idx];
-    const nextNum = 1 + Math.max(0, ...Object.keys(zip.files)
-      .filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n))
-      .map(n => Number(n.match(/slide(\d+)\.xml$/)?.[1]) || 0));
-
     const newSlide: Slide = {
-      name: `ppt/slides/slide${nextNum}.xml`,
+      name: `slide_new_${Date.now()}`,
       doc: base.doc?.cloneNode(true) as Document || null,
       relsDoc: base.relsDoc?.cloneNode(true) as Document || null,
-      shapes: [],
+      shapes: layoutToShapes(SLIDE_LAYOUTS[0]),
+      background: base.background,
     };
 
-    setSlides(prev => [...prev, newSlide]);
-    setIdx(slides.length);
+    setSlides(prev => [...prev.slice(0, idx + 1), newSlide, ...prev.slice(idx + 1)]);
+    setIdx(idx + 1);
     setHasChanges(true);
-  }, [slides, idx, zip, presDoc, presRelsDoc]);
+  }, [slides, idx, layoutToShapes]);
 
   // Delete slide
   const deleteSlide = useCallback(() => {
@@ -997,8 +1562,27 @@ const PptxViewer = ({
     return () => document.removeEventListener('click', handler);
   }, []);
 
+  // Helper to compute color brightness (0-255)
+  const getColorBrightness = useCallback((color: string): number => {
+    if (!color) return 255;
+    const hex = color.replace('#', '').replace(/^linear-gradient.*$/, 'ffffff');
+    if (hex.length < 6) return 255;
+    const r = parseInt(hex.substr(0, 2), 16);
+    const g = parseInt(hex.substr(2, 2), 16);
+    const b = parseInt(hex.substr(4, 2), 16);
+    // Perceived brightness formula
+    return (r * 299 + g * 587 + b * 114) / 1000;
+  }, []);
+
   // Render slide content
   const renderSlideContent = useCallback((slide: Slide, scale: number = 1, editable: boolean = true) => {
+    // Determine default text color based on slide background brightness
+    const bgBrightness = getColorBrightness(slide.background || '#ffffff');
+    const useLight = bgBrightness < 128; // Dark background = use light text
+    const defaultTextColor = useLight
+      ? (themeColors['lt1'] || '#ffffff')
+      : (themeColors['dk1'] || themeColors['dk2'] || '#000000');
+
     return slide.shapes.map((shape, si) => {
       const style: React.CSSProperties = {
         position: 'absolute',
@@ -1016,7 +1600,8 @@ const PptxViewer = ({
           padding: 4 * scale,
           boxSizing: 'border-box' as const,
         };
-        if (shape.fillColor) {
+        // Only apply background if there's a fill color and noFill is not set
+        if (shape.fillColor && !shape.noFill) {
           textBoxStyle.backgroundColor = shape.fillColor;
         }
         if (shape.borderColor || shape.borderWidth) {
@@ -1026,13 +1611,12 @@ const PptxViewer = ({
         return (
           <div key={si} style={textBoxStyle}>
             {shape.paras?.map((p, pi) => {
-              // Build paragraph styles
               const paraStyle: React.CSSProperties = {
                 textAlign: p.align === 'ctr' ? 'center' : p.align === 'r' ? 'right' : p.align === 'just' ? 'justify' : 'left',
                 paddingLeft: p.level * 20 * scale,
                 outline: 'none',
                 minHeight: '1em',
-                color: '#000000', // Default text color (can be overridden by inline styles)
+                color: defaultTextColor, // Use computed default based on background
                 fontSize: `${18 * scale}px`, // Default font size
                 fontFamily: 'Arial, sans-serif', // Default font
               };
@@ -1077,8 +1661,11 @@ const PptxViewer = ({
         const shapeStyle: React.CSSProperties = {
           width: '100%',
           height: '100%',
-          backgroundColor: shape.fillColor || '#4285f4',
         };
+        // Only apply fill color if one is specified - don't use a default
+        if (shape.fillColor) {
+          shapeStyle.backgroundColor = shape.fillColor;
+        }
 
         // Apply shape-specific styling
         if (shape.shapeType === 'ellipse') {
@@ -1094,7 +1681,9 @@ const PptxViewer = ({
           shapeStyle.backgroundColor = 'transparent';
           shapeStyle.borderLeft = `${emuToPx(shape.xfrm.cx) * scale / 2}px solid transparent`;
           shapeStyle.borderRight = `${emuToPx(shape.xfrm.cx) * scale / 2}px solid transparent`;
-          shapeStyle.borderBottom = `${emuToPx(shape.xfrm.cy) * scale}px solid ${shape.fillColor || '#4285f4'}`;
+          if (shape.fillColor) {
+            shapeStyle.borderBottom = `${emuToPx(shape.xfrm.cy) * scale}px solid ${shape.fillColor}`;
+          }
         } else if (shape.shapeType === 'star') {
           shapeStyle.clipPath = 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)';
         } else if (shape.shapeType === 'hexagon') {
@@ -1111,7 +1700,7 @@ const PptxViewer = ({
 
       return null;
     });
-  }, [emuToPx, updateParaHTML]);
+  }, [emuToPx, updateParaHTML, themeColors]);
 
   // Error state
   if (err) {
@@ -1181,7 +1770,14 @@ const PptxViewer = ({
 
   // Main editor
   return (
-    <div className="h-full flex flex-col theme-bg-secondary overflow-hidden">
+    <div
+      className="h-full flex flex-col theme-bg-secondary overflow-hidden"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setPptxContextMenu({ x: e.clientX, y: e.clientY });
+      }}
+    >
       {/* Header */}
       <div
         draggable
@@ -1194,12 +1790,12 @@ const PptxViewer = ({
         onDragEnd={() => setDraggedItem?.(null)}
         onContextMenu={(e) => {
           e.preventDefault();
-          setPaneContextMenu?.({ isOpen: true, x: e.clientX, y: e.clientY, nodeId, nodePath: findNodePath?.(rootLayoutNode, nodeId) || [] });
+          setPptxContextMenu({ x: e.clientX, y: e.clientY });
         }}
         className="px-3 py-2 border-b theme-border theme-bg-secondary cursor-move flex items-center justify-between"
       >
         <span className="text-sm font-medium truncate">
-          {filePath?.split('/').pop() || 'Presentation'}{hasChanges ? ' *' : ''}
+          {getFileName(filePath) || 'Presentation'}{hasChanges ? ' *' : ''}
         </span>
         <div className="flex items-center gap-1">
           <button onClick={addSlide} className="p-1.5 theme-hover rounded" title="Add slide"><Plus size={14} /></button>
@@ -1345,14 +1941,14 @@ const PptxViewer = ({
             <PaintBucket size={14} />
           </button>
           {showBgPicker && (
-            <div className="absolute top-full left-0 mt-1 bg-gray-800 border border-gray-700 rounded shadow-xl z-50 p-2 min-w-[200px]">
+            <div className="absolute top-full left-0 mt-1 bg-gray-800 border border-gray-700 rounded shadow-xl z-50 p-2 min-w-[220px] max-h-[350px] overflow-y-auto">
               <div className="text-[10px] text-gray-400 mb-1">Solid Colors</div>
-              <div className="grid grid-cols-5 gap-1 mb-2">
+              <div className="grid grid-cols-6 gap-1 mb-2 pb-2 border-b border-gray-700">
                 {BACKGROUND_COLORS.map(c => (
                   <button
                     key={c}
                     onClick={() => setSlideBackground(c)}
-                    className="w-7 h-7 rounded border border-gray-600 hover:scale-110"
+                    className="w-6 h-6 rounded border border-gray-600 hover:scale-110 transition-transform"
                     style={{ backgroundColor: c }}
                   />
                 ))}
@@ -1363,7 +1959,7 @@ const PptxViewer = ({
                   <button
                     key={g.name}
                     onClick={() => setSlideGradient(g.colors)}
-                    className="w-10 h-6 rounded border border-gray-600 hover:scale-110"
+                    className="h-6 rounded border border-gray-600 hover:scale-105 transition-transform"
                     style={{ background: `linear-gradient(135deg, ${g.colors[0]}, ${g.colors[1]})` }}
                     title={g.name}
                   />
@@ -1383,16 +1979,40 @@ const PptxViewer = ({
             <Layout size={14} />
           </button>
           {showLayoutPicker && (
-            <div className="absolute top-full left-0 mt-1 bg-gray-800 border border-gray-700 rounded shadow-xl z-50 py-1 min-w-[130px]">
-              {SLIDE_LAYOUTS.map(layout => (
-                <button
-                  key={layout.name}
-                  onClick={() => applyLayout(layout)}
-                  className="w-full px-3 py-1.5 text-left text-xs hover:bg-gray-700"
-                >
-                  {layout.name}
-                </button>
-              ))}
+            <div className="absolute top-full left-0 mt-1 bg-gray-800 border border-gray-700 rounded shadow-xl z-50 p-2 min-w-[320px] max-h-[400px] overflow-y-auto">
+              <div className="text-[10px] text-gray-400 mb-1.5 px-1">Slide Layouts</div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {SLIDE_LAYOUTS.map(layout => (
+                  <button
+                    key={layout.name}
+                    onClick={() => applyLayout(layout)}
+                    className="group flex flex-col items-center gap-1 p-1.5 rounded hover:bg-gray-700 transition-colors"
+                    title={layout.name}
+                  >
+                    {/* Mini layout preview */}
+                    <div className="w-[88px] h-[50px] bg-gray-900 border border-gray-600 rounded-sm relative overflow-hidden group-hover:border-blue-500">
+                      {layout.shapes.map((s, si) => (
+                        <div
+                          key={si}
+                          className="absolute bg-gray-600/40 border border-gray-500/30 rounded-[1px]"
+                          style={{
+                            left: `${s.x}%`,
+                            top: `${s.y}%`,
+                            width: `${s.w}%`,
+                            height: `${s.h}%`,
+                          }}
+                        >
+                          <div className="w-full h-[2px] bg-gray-400/40 mt-[2px] mx-auto" style={{ width: '60%' }} />
+                        </div>
+                      ))}
+                      {layout.shapes.length === 0 && (
+                        <div className="absolute inset-0 flex items-center justify-center text-[7px] text-gray-500">Blank</div>
+                      )}
+                    </div>
+                    <span className="text-[9px] text-gray-400 group-hover:text-gray-200 truncate w-full text-center">{layout.name}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -1406,6 +2026,17 @@ const PptxViewer = ({
 
         <div className="w-px h-5 bg-gray-600 mx-1" />
 
+        {/* Document light/dark mode toggle */}
+        <button
+          onClick={() => setDocLightMode(!docLightMode)}
+          className="p-1.5 theme-hover rounded"
+          title={docLightMode ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+        >
+          {docLightMode ? <Moon size={14} /> : <Sun size={14} />}
+        </button>
+
+        <div className="w-px h-5 bg-gray-600 mx-1" />
+
         {/* Zoom */}
         <button onClick={() => setZoom(z => Math.max(50, z - 10))} className="p-1.5 theme-hover rounded"><ZoomOut size={14} /></button>
         <span className="text-[10px] text-gray-400 w-10 text-center">{zoom}%</span>
@@ -1415,11 +2046,23 @@ const PptxViewer = ({
       {/* Main content */}
       <div className="flex-1 flex min-h-0">
         {/* Slide panel */}
-        <div className="w-48 border-r theme-border overflow-y-auto theme-bg-tertiary p-2 space-y-2">
+        <div
+          className="w-48 border-r theme-border overflow-y-auto theme-bg-tertiary p-2 space-y-2"
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+        >
           {slides.map((slide, i) => (
             <button
               key={slide.name + i}
               onClick={() => setIdx(i)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIdx(i);
+                setSlideNavContextMenu({ x: e.clientX, y: e.clientY, slideIdx: i });
+              }}
               className={`w-full relative rounded overflow-hidden border-2 transition-colors ${
                 i === idx ? 'border-blue-500' : 'border-transparent hover:border-gray-600'
               }`}
@@ -1469,6 +2112,11 @@ const PptxViewer = ({
                 position: 'relative',
                 background: activeSlide.background || '#ffffff',
               }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setPptxContextMenu({ x: e.clientX, y: e.clientY });
+              }}
             >
               {renderSlideContent(activeSlide, 1, true)}
             </div>
@@ -1485,6 +2133,104 @@ const PptxViewer = ({
         </div>
       </div>
 
+      {/* Context Menu */}
+      {pptxContextMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setPptxContextMenu(null)} />
+          <div
+            className="fixed theme-bg-secondary theme-border border rounded shadow-lg py-1 z-50 text-sm min-w-[160px]"
+            style={{ top: pptxContextMenu.y, left: pptxContextMenu.x }}
+          >
+            <button onClick={() => { document.execCommand('cut'); setPptxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+              <Scissors size={12} /> Cut
+            </button>
+            <button onClick={() => { document.execCommand('copy'); setPptxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+              <Copy size={12} /> Copy
+            </button>
+            <button onClick={() => { document.execCommand('paste'); setPptxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+              <Plus size={12} /> Paste
+            </button>
+            <div className="border-t theme-border my-1" />
+            <button onClick={() => { document.execCommand('bold'); setPptxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+              <Bold size={12} /> Bold
+            </button>
+            <button onClick={() => { document.execCommand('italic'); setPptxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+              <Italic size={12} /> Italic
+            </button>
+            <button onClick={() => { document.execCommand('underline'); setPptxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+              <Underline size={12} /> Underline
+            </button>
+            <div className="border-t theme-border my-1" />
+            <button onClick={() => { save(); setPptxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+              <Save size={12} /> Save
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Slide Navigator Context Menu */}
+      {slideNavContextMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setSlideNavContextMenu(null)} />
+          <div
+            className="fixed theme-bg-secondary theme-border border rounded shadow-lg py-1 z-50 text-sm min-w-[160px]"
+            style={{ top: slideNavContextMenu.y, left: slideNavContextMenu.x }}
+          >
+            <button onClick={() => { addSlide(); setSlideNavContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+              <Plus size={12} /> Add Slide
+            </button>
+            <button onClick={() => { duplicateSlide(); setSlideNavContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+              <Copy size={12} /> Duplicate Slide
+            </button>
+            <div className="border-t theme-border my-1" />
+            <button
+              onClick={() => {
+                if (slideNavContextMenu.slideIdx > 0) {
+                  setSlides(prev => {
+                    const next = [...prev];
+                    [next[slideNavContextMenu.slideIdx - 1], next[slideNavContextMenu.slideIdx]] = [next[slideNavContextMenu.slideIdx], next[slideNavContextMenu.slideIdx - 1]];
+                    return next;
+                  });
+                  setIdx(slideNavContextMenu.slideIdx - 1);
+                  setHasChanges(true);
+                }
+                setSlideNavContextMenu(null);
+              }}
+              className={`flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs ${slideNavContextMenu.slideIdx === 0 ? 'opacity-30' : ''}`}
+              disabled={slideNavContextMenu.slideIdx === 0}
+            >
+              <ChevronLeft size={12} /> Move Up
+            </button>
+            <button
+              onClick={() => {
+                if (slideNavContextMenu.slideIdx < slides.length - 1) {
+                  setSlides(prev => {
+                    const next = [...prev];
+                    [next[slideNavContextMenu.slideIdx], next[slideNavContextMenu.slideIdx + 1]] = [next[slideNavContextMenu.slideIdx + 1], next[slideNavContextMenu.slideIdx]];
+                    return next;
+                  });
+                  setIdx(slideNavContextMenu.slideIdx + 1);
+                  setHasChanges(true);
+                }
+                setSlideNavContextMenu(null);
+              }}
+              className={`flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs ${slideNavContextMenu.slideIdx >= slides.length - 1 ? 'opacity-30' : ''}`}
+              disabled={slideNavContextMenu.slideIdx >= slides.length - 1}
+            >
+              <ChevronRight size={12} /> Move Down
+            </button>
+            <div className="border-t theme-border my-1" />
+            <button
+              onClick={() => { deleteSlide(); setSlideNavContextMenu(null); }}
+              disabled={slides.length <= 1}
+              className={`flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs text-pink-400 ${slides.length <= 1 ? 'opacity-30' : ''}`}
+            >
+              <Trash2 size={12} /> Delete Slide
+            </button>
+          </div>
+        </>
+      )}
+
       {/* Status bar */}
       <div className="px-3 py-1 border-t theme-border theme-bg-tertiary text-[10px] text-gray-500 flex items-center justify-between">
         <span>Slide {idx + 1} of {slides.length}</span>
@@ -1494,4 +2240,9 @@ const PptxViewer = ({
   );
 };
 
-export default memo(PptxViewer);
+// Custom comparison to prevent reload on pane resize
+const arePropsEqual = (prevProps: any, nextProps: any) => {
+    return prevProps.nodeId === nextProps.nodeId;
+};
+
+export default memo(PptxViewer, arePropsEqual);

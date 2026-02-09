@@ -1,3 +1,4 @@
+import { getFileName } from './utils';
 import React, { useEffect, useState, useCallback, useMemo, memo, useRef } from 'react';
 import { BACKEND_URL } from '../config';
 import { Save, Play, Plus, Trash2, ChevronDown, ChevronRight, X, Loader, Code2, FileText, Edit3, Circle, Zap, Square, Power, MessageSquare, Bot, BookOpen, Paperclip, Eye, EyeOff, Archive, Sparkles, RefreshCw, Table, Variable, ChevronLeft, SortAsc, SortDesc, Filter, Hash, Type, Database, ArrowUp, ArrowDown, PanelRightClose, PanelRight, Palette, Settings, Download, FileCode, FileType, PlayCircle, SkipBack, SkipForward } from 'lucide-react';
@@ -187,8 +188,11 @@ const NotebookViewer = ({
     // Get workspace path from file path
     const workspacePath = filePath ? filePath.substring(0, filePath.lastIndexOf('/')) : null;
 
-    // CodeMirror extensions for Python
-    const pythonExtensions = useMemo(() => [
+    // Ref for executeCell so CodeMirror keybindings always call the latest version
+    const executeCellRef = useRef<(index: number) => void>(() => {});
+
+    // Base Python extensions (shared, no cell-specific keybindings)
+    const basePythonExtensions = useMemo(() => [
         python(),
         syntaxHighlighting(highlightStyle),
         editorTheme,
@@ -201,6 +205,21 @@ const NotebookViewer = ({
         keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),
         EditorView.lineWrapping,
     ], []);
+
+    // Per-cell Python extensions with Ctrl+Enter / Shift+Enter keybindings
+    const getCellExtensions = useCallback((cellIndex: number) => [
+        ...basePythonExtensions,
+        keymap.of([
+            {
+                key: 'Ctrl-Enter',
+                run: () => { executeCellRef.current(cellIndex); return true; },
+            },
+            {
+                key: 'Shift-Enter',
+                run: () => { executeCellRef.current(cellIndex); return true; },
+            },
+        ]),
+    ], [basePythonExtensions]);
 
     // CodeMirror extensions for Markdown
     const markdownExtensions = useMemo(() => [
@@ -375,6 +394,7 @@ const NotebookViewer = ({
         const unsubscribe = (window as any).api.onJupyterKernelStopped?.((data: any) => {
             if (data.kernelId === kernelId) {
                 setKernelId(null);
+                kernelIdRef.current = null;
                 setKernelStatus('disconnected');
             }
         });
@@ -572,6 +592,12 @@ const NotebookViewer = ({
                 return { ...prev, cells: newCells };
             });
             setHasChanges(true);
+            // If kernel was not found, mark as disconnected so user can restart
+            if (!result.success && result.error?.includes('Kernel not found')) {
+                setKernelStatus('disconnected');
+                setKernelId(null);
+                kernelIdRef.current = null;
+            }
         } catch (e: any) {
             setNotebook(prev => {
                 if (!prev) return prev;
@@ -581,7 +607,10 @@ const NotebookViewer = ({
             });
         } finally {
             setIsExecuting(null);
-            setKernelStatus('connected');
+            // Only set connected if kernel is still alive
+            if (kernelStatus !== 'disconnected') {
+                setKernelStatus('connected');
+            }
         }
     };
 
@@ -614,6 +643,9 @@ const NotebookViewer = ({
         if (!kid) return;
         await executeCellDirect(index, kid);
     }, [kernelStatus, startKernel]);
+
+    // Keep executeCell ref in sync for CodeMirror keybindings
+    useEffect(() => { executeCellRef.current = executeCell; }, [executeCell]);
 
     // Run all cells in strict sequential order
     const runAllCells = useCallback(async () => {
@@ -800,7 +832,7 @@ print("Matplotlib configured for scientific publishing")
                 .join('\n\n');
 
             const pyPath = filePath.replace(/\.(ipynb|incognb)$/, '.py');
-            await (window as any).api.writeFile(pyPath, `#!/usr/bin/env python3\n# Exported from ${filePath.split('/').pop()}\n\n${pyCode}`);
+            await (window as any).api.writeFile(pyPath, `#!/usr/bin/env python3\n# Exported from ${getFileName(filePath)}\n\n${pyCode}`);
             alert(`Exported to ${pyPath}`);
         } catch (e: any) {
             alert('Export failed: ' + e.message);
@@ -819,7 +851,7 @@ print("Matplotlib configured for scientific publishing")
 <html>
 <head>
     <meta charset="utf-8">
-    <title>${filePath.split('/').pop()}</title>
+    <title>${getFileName(filePath)}</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background: #1e1e2e; color: #cdd6f4; }
         .cell { margin: 20px 0; border: 1px solid #45475a; border-radius: 8px; overflow: hidden; }
@@ -836,7 +868,7 @@ print("Matplotlib configured for scientific publishing")
     </style>
 </head>
 <body>
-    <h1>${filePath.split('/').pop()}</h1>
+    <h1>${getFileName(filePath)}</h1>
 ${notebook.cells.map((cell, i) => {
     const source = Array.isArray(cell.source) ? cell.source.join('') : cell.source;
     const outputs = cell.outputs || [];
@@ -1385,7 +1417,7 @@ except Exception as e:
                 >
                     <div className="flex justify-between items-center">
                     <span className="truncate font-semibold text-orange-400">
-                        {filePath ? filePath.split('/').pop() : 'Untitled.ipynb'}{hasChanges ? ' *' : ''}
+                        {filePath ? getFileName(filePath) : 'Untitled.ipynb'}{hasChanges ? ' *' : ''}
                     </span>
                     <div className="flex items-center gap-2">
                         {/* Kernel controls */}
@@ -1591,6 +1623,23 @@ except Exception as e:
                         </div>
                         </div>
                     </div>
+
+                    {/* Jupyter install banner - shown prominently when not installed */}
+                    {jupyterInstalled === false && (
+                        <div className="mx-4 mt-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg flex items-center gap-3">
+                            <Zap size={16} className="text-yellow-400 flex-shrink-0" />
+                            <div className="flex-1 text-xs text-yellow-300">
+                                Jupyter is not installed. Install it to run code cells.
+                            </div>
+                            <button
+                                onClick={installJupyter}
+                                disabled={isInstalling}
+                                className="px-3 py-1.5 text-xs bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 border border-yellow-500/40 rounded-md disabled:opacity-50"
+                            >
+                                {isInstalling ? 'Installing...' : 'Install Jupyter'}
+                            </button>
+                        </div>
+                    )}
 
                     {/* Cells */}
                     <div className="flex-1 overflow-auto p-4 space-y-4">
@@ -1802,26 +1851,11 @@ except Exception as e:
                                 <div className="bg-gray-900">
                                     {/* Code cell */}
                                     {cellType === 'code' && (
-                                        <div
-                                            onKeyDown={(e) => {
-                                                if (e.ctrlKey && e.key === 'Enter') {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
-                                                    executeCell(index);
-                                                }
-                                            }}
-                                            onKeyDownCapture={(e) => {
-                                                if (e.ctrlKey && e.key === 'Enter') {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
-                                                }
-                                            }}
-                                            onFocus={() => setFocusedCellIndex(index)}
-                                        >
+                                        <div onFocus={() => setFocusedCellIndex(index)}>
                                             <CodeMirror
                                                 value={source}
                                                 onChange={(value) => updateCellSource(index, value)}
-                                                extensions={pythonExtensions}
+                                                extensions={getCellExtensions(index)}
                                                 basicSetup={false}
                                                 className="text-sm"
                                             />
@@ -2522,4 +2556,9 @@ except Exception as e:
     );
 };
 
-export default memo(NotebookViewer);
+// Custom comparison to prevent reload on pane resize
+const arePropsEqual = (prevProps: any, nextProps: any) => {
+    return prevProps.nodeId === nextProps.nodeId;
+};
+
+export default memo(NotebookViewer, arePropsEqual);

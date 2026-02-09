@@ -69,6 +69,17 @@ export const normalizePath = (path: string | null | undefined) => {
     return normalizedPath;
 };
 
+export const getFileName = (filePath: string | null | undefined): string => {
+    if (!filePath) return '';
+    return filePath.replace(/\\/g, '/').split('/').pop() || '';
+};
+
+export const getParentPath = (filePath: string | null | undefined): string => {
+    if (!filePath) return '';
+    const normalized = filePath.replace(/\\/g, '/');
+    return normalized.split('/').slice(0, -1).join('/') || '/';
+};
+
 export const generateId = () => Math.random().toString(36).substr(2, 9);
 
 // Strip source prefixes like "project:" or "global:" from NPC names
@@ -264,11 +275,13 @@ export const hashContext = (contexts: any[]) => {
     return btoa(contentString);
 };
 
-export const gatherWorkspaceContext = (contentDataRef: React.MutableRefObject<any>, contextFiles?: any[]) => {
+export const gatherWorkspaceContext = (contentDataRef: React.MutableRefObject<any>, contextFiles?: any[], excludedPaneIds?: Set<string>) => {
     const contexts: any[] = [];
 
     // Add open pane contexts
     Object.entries(contentDataRef.current).forEach(([paneId, paneData]: [string, any]) => {
+        // Skip panes that are excluded from context
+        if (excludedPaneIds && excludedPaneIds.has(paneId)) return;
         if (paneData.contentType === 'editor' && paneData.fileContent) {
             contexts.push({
                 type: 'file',
@@ -1105,7 +1118,7 @@ export const handleRenameFile = async (
     setRootLayoutNode: (fn: (prev: any) => any) => void,
     setError: (error: string) => void
 ) => {
-    if (!editedFileName.trim() || editedFileName === oldPath.split('/').pop()) {
+    if (!editedFileName.trim() || editedFileName === getFileName(oldPath)) {
         setRenamingPaneId(null);
         return;
     }

@@ -1,7 +1,7 @@
 import React, { memo, useState, useRef } from 'react';
 import { BACKEND_URL } from '../config';
 import MarkdownRenderer from './MarkdownRenderer';
-import { Paperclip, Tag, Star, ChevronDown, ChevronUp, Volume2, VolumeX, Loader, RotateCcw, History, Cpu, Bot, Zap, Send, GitBranch, Columns, ChevronLeft, ChevronRight, SlidersHorizontal } from 'lucide-react';
+import { Paperclip, Tag, Star, ChevronDown, ChevronUp, Volume2, VolumeX, Loader, RotateCcw, History, Cpu, Bot, Zap, Send, GitBranch, Columns, ChevronLeft, ChevronRight, SlidersHorizontal, Square, CheckSquare, Trash2 } from 'lucide-react';
 
 const highlightSearchTerm = (content: string, searchTerm: string): string => {
     if (!searchTerm || !content) return content;
@@ -176,17 +176,6 @@ export const ChatMessage = memo(({
             onClick={() => messageSelectionMode && toggleMessageSelection(messageId)}
             onContextMenu={(e) => handleMessageContextMenu(e, messageId)}
         >
-            {messageSelectionMode && (
-                <div className="absolute top-2 right-2 z-10">
-                    <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleMessageSelection(messageId)}
-                        className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
-                        onClick={(e) => e.stopPropagation()}
-                    />
-                </div>
-            )}
             
             {/* Branch button */}
             {message.role === 'user' && !messageSelectionMode && onCreateBranch && (
@@ -210,7 +199,7 @@ export const ChatMessage = memo(({
             )}
             
             {message.role === 'user' && !messageSelectionMode && onResendMessage && (
-                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                     <button
                         onClick={(e) => {
                             e.stopPropagation();
@@ -229,7 +218,7 @@ export const ChatMessage = memo(({
 
             {/* Label button - shown for all messages */}
             {!messageSelectionMode && onLabelMessage && (
-                <div className={`absolute ${message.role === 'user' ? 'top-2 right-8' : 'top-2 right-2'} opacity-0 group-hover:opacity-100 transition-opacity z-10 flex items-center gap-1`}>
+                <div className={`absolute ${message.role === 'user' ? 'bottom-2 right-8' : 'bottom-2 right-2'} opacity-0 group-hover:opacity-100 transition-opacity z-10 flex items-center gap-1`}>
                     {messageLabel && (
                         <span className="flex items-center gap-0.5 text-[10px] text-yellow-400" title={`Labeled: ${messageLabel.categories?.join(', ') || 'No categories'}`}>
                             {messageLabel.qualityScore && (
@@ -258,7 +247,7 @@ export const ChatMessage = memo(({
 
             {/* TTS button - shown for assistant messages */}
             {message.role === 'assistant' && !messageSelectionMode && !showStreamingIndicators && message.content && (
-                <div className="absolute top-2 right-8 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                <div className="absolute bottom-2 right-8 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                     <button
                         onClick={(e) => {
                             e.stopPropagation();
@@ -295,13 +284,17 @@ export const ChatMessage = memo(({
                         </span>
                     )}
                 </div>
-                <div className="flex items-center gap-2">
-                    {message.role !== 'user' && message.model && (
-                        <span className="truncate" title={message.model}>{message.model}</span>
-                    )}
-                    <span>
-                        {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
+                <div className="flex items-center gap-1">
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            toggleMessageSelection?.(messageId);
+                        }}
+                        className={`p-0.5 rounded transition-colors ${isSelected ? 'text-blue-400 hover:text-blue-300' : 'text-gray-500 hover:text-gray-300'}`}
+                        title={isSelected ? "Deselect message" : "Select message"}
+                    >
+                        {isSelected ? <CheckSquare size={14} /> : <Square size={14} />}
+                    </button>
                 </div>
             </div>
 

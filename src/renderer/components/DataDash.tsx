@@ -1,3 +1,4 @@
+import { getFileName } from './utils';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { BACKEND_URL } from '../config';
 import {
@@ -2516,7 +2517,7 @@ const handleAcceptGeneratedSql = () => {
         if (currentPath) {
             try {
                 const projectDb = `${currentPath}/.npcsh/project.db`;
-                databases.push({ name: `Project DB (${currentPath.split('/').pop()})`, path: projectDb, type: 'project' });
+                databases.push({ name: `Project DB (${getFileName(currentPath)})`, path: projectDb, type: 'project' });
             } catch (e) {
                 // Ignore if project db doesn't exist
             }

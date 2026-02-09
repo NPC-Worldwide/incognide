@@ -1,3 +1,4 @@
+import { getFileName } from './utils';
 import React, { useCallback, useRef, useState } from 'react';
 import {
     X, Plus, MessageSquare, Terminal, Globe, FileText, Image, Book, File, GripVertical, Folder,
@@ -12,6 +13,8 @@ interface Tab {
     title?: string;
     browserTitle?: string;
     browserUrl?: string;
+    fileContent?: string;
+    fileChanged?: boolean;
 }
 
 interface PaneTabBarProps {
@@ -27,6 +30,12 @@ interface PaneTabBarProps {
     onToggleZen?: () => void;
     isZenMode?: boolean;
     onClosePane?: () => void;
+    // For dragging tabs out to form new panes
+    setDraggedItem?: (item: any) => void;
+    findNodePath?: (node: any, id: string) => number[] | null;
+    rootLayoutNode?: any;
+    contentDataRef?: any;
+    nodePath?: number[];
 }
 
 const getTabIcon = (contentType: string) => {
@@ -140,25 +149,25 @@ const getTabTitle = (tab: Tab): string => {
         case 'mindmap':
             return 'Mind Map';
         case 'markdown-preview':
-            return `Preview: ${tab.contentId?.split('/').pop() || 'Markdown'}`;
+            return `Preview: ${getFileName(tab.contentId) || 'Markdown'}`;
         case 'pdf':
-            return tab.contentId?.split('/').pop() || 'PDF';
+            return getFileName(tab.contentId) || 'PDF';
         case 'csv':
-            return tab.contentId?.split('/').pop() || 'CSV';
+            return getFileName(tab.contentId) || 'CSV';
         case 'latex':
-            return tab.contentId?.split('/').pop() || 'LaTeX';
+            return getFileName(tab.contentId) || 'LaTeX';
         case 'docx':
-            return tab.contentId?.split('/').pop() || 'Document';
+            return getFileName(tab.contentId) || 'Document';
         case 'pptx':
-            return tab.contentId?.split('/').pop() || 'Presentation';
+            return getFileName(tab.contentId) || 'Presentation';
         case 'zip':
-            return tab.contentId?.split('/').pop() || 'Archive';
+            return getFileName(tab.contentId) || 'Archive';
         case 'image':
-            return tab.contentId?.split('/').pop() || 'Image';
+            return getFileName(tab.contentId) || 'Image';
         case 'folder':
-            return tab.contentId?.split('/').pop() || 'Folder';
+            return getFileName(tab.contentId) || 'Folder';
         default:
-            return tab.contentId?.split('/').pop() || 'Tab';
+            return getFileName(tab.contentId) || 'Tab';
     }
 };
 
@@ -172,7 +181,12 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
     nodeId,
     onToggleZen,
     isZenMode,
-    onClosePane
+    onClosePane,
+    setDraggedItem,
+    findNodePath,
+    rootLayoutNode,
+    contentDataRef,
+    nodePath
 }) => {
     const [draggedTabIndex, setDraggedTabIndex] = useState<number | null>(null);
     const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -183,12 +197,43 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', `tab:${nodeId}:${index}`);
         setDraggedTabIndex(index);
-    }, [nodeId]);
+
+        // Set draggedItem for external drops (to other panes)
+        // Use setTimeout to allow drag event to fully initialize before state update
+        if (setDraggedItem && tabs[index]) {
+            const tab = tabs[index];
+            // For browser tabs, get browserUrl from pane data as it's always up-to-date
+            // The tab object might not have the latest URL if no navigation event occurred
+            const paneData = contentDataRef?.current?.[nodeId];
+            const isActiveTab = index === (paneData?.activeTabIndex ?? 0);
+            const browserUrl = tab.contentType === 'browser' && isActiveTab
+                ? (paneData?.browserUrl || tab.browserUrl)
+                : tab.browserUrl;
+            setTimeout(() => {
+                setDraggedItem({
+                    type: 'tab',
+                    id: tab.id,
+                    tabIndex: index,
+                    sourceNodeId: nodeId,
+                    sourcePath: nodePath,
+                    contentType: tab.contentType,
+                    contentId: tab.contentId,
+                    browserUrl: browserUrl,
+                    fileContent: tab.fileContent,
+                    fileChanged: tab.fileChanged
+                });
+            }, 0);
+        }
+    }, [nodeId, tabs, setDraggedItem, nodePath]);
 
     const handleDragEnd = useCallback(() => {
         setDraggedTabIndex(null);
         setDragOverIndex(null);
-    }, []);
+        // Clear the global draggedItem
+        if (setDraggedItem) {
+            setDraggedItem(null);
+        }
+    }, [setDraggedItem]);
 
     const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
         e.preventDefault();

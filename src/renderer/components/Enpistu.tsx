@@ -12,6 +12,15 @@ import {
 
 import { Icon } from 'lucide-react';
 import { avocado } from '@lucide/lab';
+import { useGitOperations } from '../hooks/useGitOperations';
+import { useSidebarResize } from '../hooks/useSidebarResize';
+import { useSearch } from '../hooks/useSearch';
+import { useModelSelection } from '../hooks/useModelSelection';
+import { useMemoryAndLabeling } from '../hooks/useMemoryAndLabeling';
+import { useWorkspace } from '../hooks/useWorkspace';
+import { useLayoutManager, getConversationStats } from '../hooks/useLayoutManager';
+import GitPane from './GitPane';
+import GitModal from './GitModal';
 import Sidebar from './Sidebar';
 import StatusBar from './StatusBar';
 import CsvViewer from './CsvViewer';
@@ -78,7 +87,7 @@ import {
     deserializeWorkspace,
     createDefaultWorkspace
 } from './workspaces';
-import {
+import { getFileName,
     generateId,
     normalizePath,
     getFileIcon,
@@ -99,7 +108,6 @@ import {
     loadDefaultPath,
     fetchModels,
     loadConversations,
-    loadDirectoryStructure as loadDirectoryStructureUtil,
     goUpDirectory,
     usePaneAwareStreamListeners,
     useTrackLastActiveChatPane,
@@ -113,7 +121,7 @@ import {
 import { BranchingUI, createBranchPoint } from './BranchingUI';
 import BranchOptionsModal, { BranchOptions } from './BranchOptionsModal';
 import BranchVisualizer from './BranchVisualizer';
-import { syncLayoutWithContentData, addPaneToLayout, collectPaneIds } from './LayoutNode';
+import { addPaneToLayout } from './LayoutNode';
 // Note: Sidebar.tsx, ChatViewer.tsx are code fragments, not proper modules yet
 import PaneHeader from './PaneHeader';
 import { LayoutNode } from './LayoutNode';
@@ -123,9 +131,9 @@ import BroadcastResponseRow from './BroadcastResponseRow';
 import { PredictiveTextOverlay } from './PredictiveTextOverlay';
 import { usePredictiveText } from './PredictiveText';
 import { CommandPalette } from './CommandPalette';
-import { MessageLabelStorage, MessageLabel, ConversationLabel, ConversationLabelStorage, ContextFile, ContextFileStorage } from './MessageLabeling';
+import { MessageLabel, ConversationLabel, ContextFile, ContextFileStorage } from './MessageLabeling';
 import ConversationLabeling from './ConversationLabeling';
-import ContextFilesPanel from './ContextFilesPanel';
+// ContextFilesPanel is used via ChatInput
 import DataLabeler from './DataLabeler';
 import ChatInput from './ChatInput';
 import { StudioContext, executeStudioAction } from '../studioActions';
@@ -258,6 +266,17 @@ const ChatInterface = () => {
     // Activity tracking for RNN predictions
     const { trackActivity } = useActivityTracker();
 
+    // Layout manager from useLayoutManager hook
+    const {
+        rootLayoutNode, setRootLayoutNode, activeContentPaneId, setActiveContentPaneId,
+        contentDataRef, rootLayoutNodeRef, closedTabsRef,
+        zenModePaneId, setZenModePaneId, renamingPaneId, setRenamingPaneId,
+        editedFileName, setEditedFileName, paneContextMenu, setPaneContextMenu,
+        performSplitRef, closeContentPaneRef, updateContentPaneRef,
+        updateContentPane, performSplit, closeContentPane,
+        findEmptyPaneId, createAndAddPaneNodeToLayout, moveContentPane,
+    } = useLayoutManager({ trackActivity });
+
     const [isEditingPath, setIsEditingPath] = useState(false);
     const [editedPath, setEditedPath] = useState('');
     const [isHovering, setIsHovering] = useState(false);
@@ -277,35 +296,31 @@ const ChatInterface = () => {
     const [selectedFiles, setSelectedFiles] = useState(new Set());
     const [lastClickedFileIndex, setLastClickedFileIndex] = useState(null);
     const [fileContextMenuPos, setFileContextMenuPos] = useState(null);
-    const [currentPath, setCurrentPath] = useState('');
-    const [folderStructure, setFolderStructure] = useState({});
-    const [activeConversationId, setActiveConversationId] = useState(null);
+    // Workspace state from useWorkspace hook
+    const {
+        currentPath, setCurrentPath, folderStructure, setFolderStructure,
+        baseDir, setBaseDir, expandedFolders, setExpandedFolders,
+        directoryConversations, setDirectoryConversations,
+        activeConversationId, setActiveConversationId,
+        currentFile, setCurrentFile, workspaces, setWorkspaces,
+        isLoadingWorkspace, setIsLoadingWorkspace, windowId,
+        WORKSPACES_STORAGE_KEY, ACTIVE_WINDOWS_KEY, WINDOW_WORKSPACES_KEY, MAX_WORKSPACES,
+        loadConversationsWithoutAutoSelect, loadDirectoryStructureWithoutConversationLoad,
+        loadDirectoryStructure,
+    } = useWorkspace();
 
-    const [currentModel, setCurrentModel] = useState(() => {
-        const saved = localStorage.getItem('npcStudioCurrentModel');
-        return saved ? JSON.parse(saved) : null;
-    });
-    const [currentProvider, setCurrentProvider] = useState(() => {
-        const saved = localStorage.getItem('npcStudioCurrentProvider');
-        return saved ? JSON.parse(saved) : null;
-    });
-    const [currentNPC, setCurrentNPC] = useState(() => {
-        const saved = localStorage.getItem('npcStudioCurrentNPC');
-        return saved ? JSON.parse(saved) : null;
-    });
-    // Multi-select for broadcast - initialize with current model/npc if available
-    const [selectedModels, setSelectedModels] = useState<string[]>(() => {
-        const saved = localStorage.getItem('npcStudioCurrentModel');
-        const model = saved ? JSON.parse(saved) : null;
-        return model ? [model] : [];
-    });
-    const [selectedNPCs, setSelectedNPCs] = useState<string[]>(() => {
-        const saved = localStorage.getItem('npcStudioCurrentNPC');
-        const npc = saved ? JSON.parse(saved) : null;
-        return npc ? [npc] : [];
-    });
-    // Broadcast mode toggle - when OFF, selecting replaces; when ON, selecting adds
-    const [broadcastMode, setBroadcastMode] = useState(false);
+    // Model/provider/NPC selection from useModelSelection hook
+    const {
+        currentModel, setCurrentModel, currentProvider, setCurrentProvider,
+        currentNPC, setCurrentNPC, selectedModels, setSelectedModels,
+        selectedNPCs, setSelectedNPCs, broadcastMode, setBroadcastMode,
+        availableModels, setAvailableModels, modelsLoading, setModelsLoading,
+        modelsError, setModelsError, ollamaToolModels, setOllamaToolModels,
+        availableNPCs, setAvailableNPCs, npcsLoading, setNpcsLoading,
+        npcsError, setNpcsError, executionMode, setExecutionMode,
+        favoriteModels, setFavoriteModels, showAllModels, setShowAllModels,
+        toggleFavoriteModel, modelsToDisplay,
+    } = useModelSelection();
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -317,18 +332,12 @@ const ChatInterface = () => {
     const [uploadedFiles, setUploadedFiles] = useState([]);
     const [imagePreview, setImagePreview] = useState(null);
     const activeConversationRef = useRef(null);
-    const [availableModels, setAvailableModels] = useState([]);
-    const [modelsLoading, setModelsLoading] = useState(false);
-    const [modelsError, setModelsError] = useState(null);
-    const [ollamaToolModels, setOllamaToolModels] = useState(new Set());
-    const [currentFile, setCurrentFile] = useState(null);
     const [fileContent, setFileContent] = useState('');
     const [isEditing, setIsEditing] = useState(false);
     const [fileChanged, setFileChanged] = useState(false);
     const [isDarkMode, setIsDarkMode] = useState(true);
     const [isMacroInputOpen, setIsMacroInputOpen] = useState(false);
     const [macroText, setMacroText] = useState('');
-    const [baseDir, setBaseDir] = useState('');
     const [promptModal, setPromptModal] = useState<{ isOpen: boolean; title: string; message: string; defaultValue: string; onConfirm: ((value: string) => void) | null }>({ isOpen: false, title: '', message: '', defaultValue: '', onConfirm: null });
     const [promptModalValue, setPromptModalValue] = useState('');
     const [initModal, setInitModal] = useState<{ isOpen: boolean; loading: boolean; npcs: any[]; jinxs: any[]; tab: 'npcs' | 'jinxs'; initializing: boolean }>({
@@ -338,31 +347,30 @@ const ChatInterface = () => {
     const fileInputRef = useRef(null);
     const listenersAttached = useRef(false);
     const initialLoadComplete = useRef(false);
-    const [directoryConversations, setDirectoryConversations] = useState([]);
     const [isStreaming, setIsStreaming] = useState(false);
     const streamIdRef = useRef(null);
     const [dashboardMenuOpen, setDashboardMenuOpen] = useState(false);
-    const [analysisContext, setAnalysisContext] = useState(null); 
-    const [renamingPaneId, setRenamingPaneId] = useState(null);
-    const [editedFileName, setEditedFileName] = useState('');
+    const [analysisContext, setAnalysisContext] = useState(null);
     const [sidebarItemContextMenuPos, setSidebarItemContextMenuPos] = useState(null);
 
     const [pdfContextMenuPos, setPdfContextMenuPos] = useState(null);
     const [selectedPdfText, setSelectedPdfText] = useState(null);
     const [pdfHighlights, setPdfHighlights] = useState([]);
     const [browserUrlDialogOpen, setBrowserUrlDialogOpen] = useState(false);
-    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    // sidebarCollapsed now from useSidebarResize hook
     
-    const [pendingMemories, setPendingMemories] = useState([]);
-    const [memoryApprovalModal, setMemoryApprovalModal] = useState({
-        isOpen: false,
-        memories: []
-    });    
-    const [gitStatus, setGitStatus] = useState(null);
-    const [gitCommitMessage, setGitCommitMessage] = useState('');
-    const [gitLoading, setGitLoading] = useState(false);
-    const [gitError, setGitError] = useState(null);
-    const [noUpstreamPrompt, setNoUpstreamPrompt] = useState<{ branch: string; command: string } | null>(null);
+    // Memory and labeling from useMemoryAndLabeling hook
+    const {
+        pendingMemories, setPendingMemories, memoryApprovalModal, setMemoryApprovalModal,
+        memories, setMemories, memoryLoading, memoryFilter, setMemoryFilter,
+        memorySearchTerm, setMemorySearchTerm, pendingMemoryCount, setPendingMemoryCount,
+        kgGeneration, setKgGeneration, loadMemories, filteredMemories,
+        labelingModal, setLabelingModal, messageLabels, setMessageLabels,
+        conversationLabelingModal, setConversationLabelingModal,
+        conversationLabels, setConversationLabels,
+        handleLabelMessage, handleSaveLabel, handleCloseLabelingModal,
+        handleLabelConversation, handleSaveConversationLabel, handleCloseConversationLabelingModal,
+    } = useMemoryAndLabeling({ currentPath });
 
     const [websiteHistory, setWebsiteHistory] = useState([]);
     const [commonSites, setCommonSites] = useState([]);
@@ -371,7 +379,6 @@ const ChatInterface = () => {
         const saved = localStorage.getItem('sidebarWebsitesCollapsed');
         return saved !== null ? JSON.parse(saved) : false;
     });
-    const [paneContextMenu, setPaneContextMenu] = useState(null);
     const [isInputMinimized, setIsInputMinimized] = useState(false);
     const [showDateTime, setShowDateTime] = useState(() => {
         const saved = localStorage.getItem('npcStudioShowDateTime');
@@ -380,58 +387,37 @@ const ChatInterface = () => {
     const [currentTime, setCurrentTime] = useState(new Date());
     const [showCronDaemonPanel, setShowCronDaemonPanel] = useState(false);
     const [showMemoryManager, setShowMemoryManager] = useState(false);
-    const [pendingMemoryCount, setPendingMemoryCount] = useState(0);
-    const [kgGeneration, setKgGeneration] = useState<number | null>(null);
     const [gitModalOpen, setGitModalOpen] = useState(false);
-    const [gitModalTab, setGitModalTab] = useState<'status' | 'diff' | 'branches' | 'history'>('status');
-    const [gitDiffContent, setGitDiffContent] = useState<{ staged: string; unstaged: string } | null>(null);
-    const [gitBranches, setGitBranches] = useState<{ current: string; branches: string[]; local: any } | null>(null);
-    const [gitCommitHistory, setGitCommitHistory] = useState<any[]>([]);
-    const [gitSelectedFile, setGitSelectedFile] = useState<string | null>(null);
-    const [gitNewBranchName, setGitNewBranchName] = useState('');
-    const [gitSelectedCommit, setGitSelectedCommit] = useState<any | null>(null);
-    const [gitFileDiff, setGitFileDiff] = useState<string | null>(null);
+
+    // Git operations hook
+    const {
+        gitStatus, setGitStatus, gitCommitMessage, setGitCommitMessage,
+        gitLoading, setGitLoading, gitError, setGitError,
+        noUpstreamPrompt, setNoUpstreamPrompt,
+        gitModalTab, setGitModalTab, gitDiffContent, gitBranches,
+        gitCommitHistory, gitSelectedFile, setGitSelectedFile,
+        gitNewBranchName, setGitNewBranchName, gitSelectedCommit,
+        gitFileDiff, setGitFileDiff,
+        loadGitStatus, gitStageFile, gitUnstageFile, gitCommitChanges,
+        gitPullChanges, gitPushChanges, gitPushWithUpstream, gitEnableAutoSetupRemote,
+        loadGitDiff, loadGitBranches, loadGitHistory,
+        gitCreateBranch, gitCheckoutBranch, gitDeleteBranch,
+        loadCommitDetails, loadFileDiff,
+    } = useGitOperations({ currentPath });
+
     const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
-    const [searchResultsModalOpen, setSearchResultsModalOpen] = useState(false);
     const [graphViewerOpen, setGraphViewerOpen] = useState(false);
     const [dataLabelerOpen, setDataLabelerOpen] = useState(false);
-    // Memory modal state
-    const [memories, setMemories] = useState<any[]>([]);
-    const [memoryLoading, setMemoryLoading] = useState(false);
-    const [memoryFilter, setMemoryFilter] = useState('all');
-    const [memorySearchTerm, setMemorySearchTerm] = useState('');
-    const [sidebarWidth, setSidebarWidth] = useState(220); // Compact but usable width
-    const [inputHeight, setInputHeight] = useState(200); // Default height in pixels
-    const [isResizingSidebar, setIsResizingSidebar] = useState(false);
-    const [isResizingInput, setIsResizingInput] = useState(false);
-    // Bar heights - resizable and persisted
-    const [topBarHeight, setTopBarHeight] = useState<number>(() => {
-        const saved = localStorage.getItem('npcStudio_topBarHeight');
-        return saved ? parseInt(saved) : 48;
-    });
-    const [bottomBarHeight, setBottomBarHeight] = useState<number>(() => {
-        const saved = localStorage.getItem('npcStudio_bottomBarHeight');
-        return saved ? parseInt(saved) : 48;
-    });
-    const [isResizingTopBar, setIsResizingTopBar] = useState(false);
-    const [isResizingBottomBar, setIsResizingBottomBar] = useState(false);
-    const [topBarCollapsed, setTopBarCollapsed] = useState<boolean>(() => {
-        const saved = localStorage.getItem('npcStudio_topBarCollapsed');
-        return saved === 'true';
-    });
-    const WINDOW_WORKSPACES_KEY = 'npcStudioWindowWorkspaces';
-
-    // Message labeling state
-    const [labelingModal, setLabelingModal] = useState<{ isOpen: boolean; message: any | null }>({ isOpen: false, message: null });
-    const [messageLabels, setMessageLabels] = useState<{ [key: string]: MessageLabel }>(() => {
-        // Load existing labels from storage on mount
-        const allLabels = MessageLabelStorage.getAll();
-        const labelsMap: { [key: string]: MessageLabel } = {};
-        allLabels.forEach(label => {
-            labelsMap[label.messageId] = label;
-        });
-        return labelsMap;
-    });
+    // Sidebar/resize state from useSidebarResize hook
+    const {
+        sidebarWidth, setSidebarWidth, inputHeight, setInputHeight,
+        isResizingSidebar, setIsResizingSidebar, isResizingInput, setIsResizingInput,
+        sidebarCollapsed, setSidebarCollapsed,
+        topBarHeight, setTopBarHeight, bottomBarHeight, setBottomBarHeight,
+        isResizingTopBar, setIsResizingTopBar, isResizingBottomBar, setIsResizingBottomBar,
+        topBarCollapsed, setTopBarCollapsed,
+        handleSidebarResize, handleInputResize,
+    } = useSidebarResize();
 
     // Branch/run navigation state - tracks which run is active for each cellId
     const [activeRuns, setActiveRuns] = useState<{ [cellId: string]: number }>({});
@@ -451,52 +437,37 @@ const ChatInterface = () => {
         console.log('[STATE] selectedBranches updated:', Object.keys(selectedBranches).map(k => `${k}: ${selectedBranches[k]?.size || 0} items`));
     }, [selectedBranches]);
 
-    // Conversation labeling state
-    const [conversationLabelingModal, setConversationLabelingModal] = useState<{ isOpen: boolean; conversation: any | null }>({ isOpen: false, conversation: null });
-    const [conversationLabels, setConversationLabels] = useState<{ [key: string]: ConversationLabel }>(() => {
-        const allLabels = ConversationLabelStorage.getAll();
-        const labelsMap: { [key: string]: ConversationLabel } = {};
-        allLabels.forEach(label => {
-            labelsMap[label.conversationId] = label;
-        });
-        return labelsMap;
-    });
-
     // Context files state
     const [contextFiles, setContextFiles] = useState<ContextFile[]>(() => ContextFileStorage.getAll());
     const [contextFilesCollapsed, setContextFilesCollapsed] = useState(true);
 
-
-
-    const [localSearch, setLocalSearch] = useState({
-        isActive: false,
-        term: '',
-        paneId: null,
-        results: [],
-        currentIndex: -1
+    // Pane context auto-include settings
+    const [autoIncludeContext, setAutoIncludeContext] = useState<boolean>(() => {
+        const stored = localStorage.getItem('autoIncludeContext');
+        return stored !== null ? stored === 'true' : true;
     });
-    const [windowId] = useState(() => {
-        let id = sessionStorage.getItem('npcStudioWindowId');        
-        if (!id) {
-            id = `window_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            sessionStorage.setItem('npcStudioWindowId', id);
-        }
-        console.log('[WINDOW_ID] Using window ID:', id);
-        return id;
-    });
+    const [contextPaneOverrides, setContextPaneOverrides] = useState<Record<string, boolean>>({});
+
+    // Persist autoIncludeContext to localStorage
+    useEffect(() => {
+        localStorage.setItem('autoIncludeContext', String(autoIncludeContext));
+    }, [autoIncludeContext]);
+
+    // Compute excluded pane IDs based on default + overrides
+    const getExcludedPaneIds = useCallback(() => {
+        const excluded = new Set<string>();
+        Object.keys(contentDataRef.current).forEach(paneId => {
+            const override = contextPaneOverrides[paneId];
+            const isIncluded = override !== undefined ? override : autoIncludeContext;
+            if (!isIncluded) excluded.add(paneId);
+        });
+        return excluded;
+    }, [autoIncludeContext, contextPaneOverrides]);
 
 
 
 
-    const [workspaces, setWorkspaces] = useState(new Map());
-    const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(false);
 
-
-    const WORKSPACES_STORAGE_KEY = 'npcStudioWorkspaces_v2'; // Per-path workspaces
-    const ACTIVE_WINDOWS_KEY = 'npcStudioActiveWindows';
-
-    const MAX_WORKSPACES = 50; // Limit stored workspaces
-    
     const [renamingPath, setRenamingPath] = useState(null);
     const [editedSidebarItemName, setEditedSidebarItemName] = useState('');
     
@@ -517,19 +488,6 @@ const ChatInterface = () => {
         customEditPrompt: ''
     });    
  
-    const [availableNPCs, setAvailableNPCs] = useState([]);
-    const [npcsLoading, setNpcsLoading] = useState(false);
-    const [npcsError, setNpcsError] = useState(null);
-
-    // Sync currentNPC to selectedNPCs
-    useEffect(() => {
-        if (currentNPC && availableNPCs.length > 0) {
-            setSelectedNPCs(prev => {
-                if (prev.includes(currentNPC)) return prev;
-                return [...prev, currentNPC];
-            });
-        }
-    }, [currentNPC, availableNPCs]);
 
     // Sync workspace path to main process for downloads
     useEffect(() => {
@@ -632,8 +590,6 @@ const ChatInterface = () => {
         viewId: null,
     });
     
-    const [expandedFolders, setExpandedFolders] = useState(new Set());
-
     const [browserContextMenuPos, setBrowserContextMenuPos] = useState(null);
 
 
@@ -667,37 +623,21 @@ const ChatInterface = () => {
     });
     const chatContainerRef = useRef(null);
 
-    const [searchTerm, setSearchTerm] = useState('');
-    const [webSearchTerm, setWebSearchTerm] = useState('');
-    const [webSearchProvider, setWebSearchProvider] = useState<WebSearchProvider>(() => {
-        return (localStorage.getItem('web-search-provider') as WebSearchProvider) || 'duckduckgo';
-    });
-    const [isSearching, setIsSearching] = useState(false);
-    const [isGlobalSearch, setIsGlobalSearch] = useState(false);
-    const [searchLoading, setSearchLoading] = useState(false);
-    const [deepSearchResults, setDeepSearchResults] = useState([]);
-    const [messageSearchResults, setMessageSearchResults] = useState([]);
-    const [activeSearchResult, setActiveSearchResult] = useState(null);
+    // Search state from useSearch hook
+    const {
+        searchTerm, setSearchTerm, webSearchTerm, setWebSearchTerm,
+        webSearchProvider, setWebSearchProvider, isSearching, setIsSearching,
+        isGlobalSearch, setIsGlobalSearch, searchLoading, setSearchLoading,
+        deepSearchResults, setDeepSearchResults, messageSearchResults, setMessageSearchResults,
+        activeSearchResult, setActiveSearchResult, searchResultsModalOpen, setSearchResultsModalOpen,
+        localSearch, setLocalSearch,
+    } = useSearch();
     const searchInputRef = useRef(null);
    
-    const [rootLayoutNode, setRootLayoutNode] = useState(null);
-   
-    const [activeContentPaneId, setActiveContentPaneId] = useState(null);
-
-    
     const LAST_ACTIVE_PATH_KEY = 'npcStudioLastPath';
     const LAST_ACTIVE_CONVO_ID_KEY = 'npcStudioLastConvoId';
 
     const [isInputExpanded, setIsInputExpanded] = useState(false);
-    const [executionMode, setExecutionMode] = useState(() => {
-        const saved = localStorage.getItem('npcStudioExecutionMode');
-        return saved ? JSON.parse(saved) : 'chat';
-    });
-    const [favoriteModels, setFavoriteModels] = useState<Set<string>>(() => {
-        const saved = localStorage.getItem('npcStudioFavoriteModels');
-        return saved ? new Set(JSON.parse(saved)) : new Set();
-    });
-    const [showAllModels, setShowAllModels] = useState(true); // Change default to true
 
 
     const [availableJinxs, setAvailableJinxs] = useState([]); // [{name, description, path, origin, group}]
@@ -718,17 +658,12 @@ const ChatInterface = () => {
     const [draggedItem, setDraggedItem] = useState(null);
     const [dropTarget, setDropTarget] = useState(null);
    
-    const contentDataRef = useRef({});
     const currentPathRef = useRef(currentPath);
     currentPathRef.current = currentPath;
     const activeContentPaneIdRef = useRef(activeContentPaneId);
     activeContentPaneIdRef.current = activeContentPaneId;
     const [editorContextMenuPos, setEditorContextMenuPos] = useState(null);
-    const rootLayoutNodeRef = useRef(rootLayoutNode);
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
-
-    // Zen mode state - when set to a paneId, that pane renders full-screen
-    const [zenModePaneId, setZenModePaneId] = useState<string | null>(null);
 
     // Global keyboard shortcuts (must be after activeContentPaneId and contentDataRef are defined)
     useEffect(() => {
@@ -786,24 +721,7 @@ const ChatInterface = () => {
         return () => document.removeEventListener('keydown', handleGlobalKeyDown, true);
     }, [activeContentPaneId]);
 
-    // Resize handlers for sidebar and input area
-    const handleSidebarResize = useCallback((e) => {
-        if (!isResizingSidebar) return;
-        const newWidth = e.clientX;
-        // Constrain between 150px and 500px
-        if (newWidth >= 150 && newWidth <= 500) {
-            setSidebarWidth(newWidth);
-        }
-    }, [isResizingSidebar]);
-
-    const handleInputResize = useCallback((e) => {
-        if (!isResizingInput) return;
-        const newHeight = window.innerHeight - e.clientY;
-        // Constrain between 100px and 600px
-        if (newHeight >= 100 && newHeight <= 600) {
-            setInputHeight(newHeight);
-        }
-    }, [isResizingInput]);
+    // handleSidebarResize and handleInputResize now come from useSidebarResize hook
 
     // Website history loader hook
     const loadWebsiteHistory = useLoadWebsiteHistory(currentPath, setWebsiteHistory, setCommonSites);
@@ -819,10 +737,6 @@ const ChatInterface = () => {
         predictionTargetElement,
         setPredictionTargetElement,
     });
-
-    useEffect(() => {
-        rootLayoutNodeRef.current = rootLayoutNode;
-    }, [rootLayoutNode]);
 
     // Listen for CLI workspace open command (incognide /path/to/folder)
     useEffect(() => {
@@ -949,6 +863,25 @@ const ChatInterface = () => {
                 }
             }));
         }
+        if (api.api?.onMenuNewTextFile) {
+            cleanups.push(api.api.onMenuNewTextFile(() => createUntitledTextFileRef.current?.()));
+        }
+        if (api.api?.onMenuReopenTab) {
+            cleanups.push(api.api.onMenuReopenTab(() => {
+                const closedTab = closedTabsRef.current.pop();
+                if (closedTab) {
+                    const newPaneId = generateId();
+                    contentDataRef.current[newPaneId] = {
+                        contentType: closedTab.contentType,
+                        contentId: closedTab.contentId,
+                        browserUrl: closedTab.browserUrl,
+                        browserTitle: closedTab.browserTitle
+                    };
+                    setRootLayoutNode(oldRoot => addPaneToLayout(oldRoot, newPaneId));
+                    setActiveContentPaneId(newPaneId);
+                }
+            }));
+        }
         if (api.api?.onMenuGlobalSearch) {
             cleanups.push(api.api.onMenuGlobalSearch(() => {
                 // Open search pane
@@ -988,245 +921,7 @@ const ChatInterface = () => {
         };
     }, []);
 
-    // Git functions
-    const loadGitStatus = useCallback(async () => {
-        if (!currentPath) return;
-        try {
-            const status = await (window as any).api.gitStatus(currentPath);
-            setGitStatus(status);
-        } catch (err) {
-            console.error('Failed to load git status:', err);
-            setGitStatus(null);
-        }
-    }, [currentPath]);
-
-    const gitStageFile = async (file: string) => {
-        setGitLoading(true);
-        setGitError(null);
-        try {
-            await (window as any).api.gitStageFile(currentPath, file);
-            await loadGitStatus();
-        } catch (err: any) {
-            setGitError(err.message || 'Failed to stage file');
-        } finally {
-            setGitLoading(false);
-        }
-    };
-
-    const gitUnstageFile = async (file: string) => {
-        setGitLoading(true);
-        setGitError(null);
-        try {
-            await (window as any).api.gitUnstageFile(currentPath, file);
-            await loadGitStatus();
-        } catch (err: any) {
-            setGitError(err.message || 'Failed to unstage file');
-        } finally {
-            setGitLoading(false);
-        }
-    };
-
-    const gitCommitChanges = async () => {
-        if (!gitCommitMessage.trim()) return;
-        setGitLoading(true);
-        setGitError(null);
-        try {
-            await (window as any).api.gitCommit(currentPath, gitCommitMessage.trim());
-            setGitCommitMessage('');
-            await loadGitStatus();
-        } catch (err: any) {
-            setGitError(err.message || 'Failed to commit');
-        } finally {
-            setGitLoading(false);
-        }
-    };
-
-    const gitPullChanges = async () => {
-        setGitLoading(true);
-        setGitError(null);
-        try {
-            await (window as any).api.gitPull(currentPath);
-            await loadGitStatus();
-        } catch (err: any) {
-            setGitError(err.message || 'Failed to pull');
-        } finally {
-            setGitLoading(false);
-        }
-    };
-
-    const gitPushChanges = async () => {
-        setGitLoading(true);
-        setGitError(null);
-        setNoUpstreamPrompt(null);
-        try {
-            const result = await (window as any).api.gitPush(currentPath);
-            if (!result.success) {
-                if (result.noUpstream) {
-                    setNoUpstreamPrompt({ branch: result.currentBranch, command: result.suggestedCommand });
-                } else {
-                    setGitError(result.error || 'Failed to push');
-                }
-            } else {
-                await loadGitStatus();
-            }
-        } catch (err: any) {
-            setGitError(err.message || 'Failed to push');
-        } finally {
-            setGitLoading(false);
-        }
-    };
-
-    const gitPushWithUpstream = async () => {
-        if (!noUpstreamPrompt) return;
-        setGitLoading(true);
-        setGitError(null);
-        try {
-            const result = await (window as any).api.gitPushSetUpstream(currentPath, noUpstreamPrompt.branch);
-            if (result.success) {
-                setNoUpstreamPrompt(null);
-                await loadGitStatus();
-            } else {
-                setGitError(result.error || 'Failed to push');
-            }
-        } catch (err: any) {
-            setGitError(err.message || 'Failed to push');
-        } finally {
-            setGitLoading(false);
-        }
-    };
-
-    const gitEnableAutoSetupRemote = async () => {
-        try {
-            await (window as any).api.gitSetAutoSetupRemote();
-            await gitPushWithUpstream();
-        } catch (err: any) {
-            setGitError(err.message || 'Failed to set config');
-        }
-    };
-
-    // Load git diff for all changes
-    const loadGitDiff = useCallback(async () => {
-        if (!currentPath) return;
-        try {
-            const diff = await (window as any).api.gitDiffAll(currentPath);
-            setGitDiffContent(diff);
-        } catch (err) {
-            console.error('Failed to load git diff:', err);
-            setGitDiffContent(null);
-        }
-    }, [currentPath]);
-
-    // Load git branches
-    const loadGitBranches = useCallback(async () => {
-        if (!currentPath) return;
-        try {
-            const branches = await (window as any).api.gitBranches(currentPath);
-            setGitBranches(branches);
-        } catch (err) {
-            console.error('Failed to load git branches:', err);
-            setGitBranches(null);
-        }
-    }, [currentPath]);
-
-    // Load git commit history
-    const loadGitHistory = useCallback(async () => {
-        if (!currentPath) return;
-        try {
-            const result = await (window as any).api.gitLog(currentPath, { maxCount: 50 });
-            if (result?.success && result.commits) {
-                setGitCommitHistory(result.commits);
-            } else {
-                setGitCommitHistory([]);
-            }
-        } catch (err) {
-            console.error('Failed to load git history:', err);
-            setGitCommitHistory([]);
-        }
-    }, [currentPath]);
-
-    // Create a new branch
-    const gitCreateBranch = async () => {
-        if (!gitNewBranchName.trim()) return;
-        setGitLoading(true);
-        setGitError(null);
-        try {
-            await (window as any).api.gitCreateBranch(currentPath, gitNewBranchName.trim());
-            setGitNewBranchName('');
-            await loadGitBranches();
-            await loadGitStatus();
-        } catch (err: any) {
-            setGitError(err.message || 'Failed to create branch');
-        } finally {
-            setGitLoading(false);
-        }
-    };
-
-    // Switch to a branch
-    const gitCheckoutBranch = async (branchName: string) => {
-        setGitLoading(true);
-        setGitError(null);
-        try {
-            await (window as any).api.gitCheckout(currentPath, branchName);
-            await loadGitBranches();
-            await loadGitStatus();
-        } catch (err: any) {
-            setGitError(err.message || 'Failed to checkout branch');
-        } finally {
-            setGitLoading(false);
-        }
-    };
-
-    // Delete a branch
-    const gitDeleteBranch = async (branchName: string, force: boolean = false) => {
-        setGitLoading(true);
-        setGitError(null);
-        try {
-            await (window as any).api.gitDeleteBranch(currentPath, branchName, force);
-            await loadGitBranches();
-        } catch (err: any) {
-            setGitError(err.message || 'Failed to delete branch');
-        } finally {
-            setGitLoading(false);
-        }
-    };
-
-    // View a specific commit
-    const loadCommitDetails = async (commitHash: string) => {
-        try {
-            const result = await (window as any).api.gitShowCommit(currentPath, commitHash);
-            // Find the commit in history to get metadata
-            const commitMeta = gitCommitHistory.find((c: any) => c.hash === commitHash);
-            if (result?.success) {
-                setGitSelectedCommit({
-                    hash: commitHash,
-                    author_name: commitMeta?.author_name || 'Unknown',
-                    author_email: commitMeta?.author_email || '',
-                    date: commitMeta?.date || new Date().toISOString(),
-                    message: commitMeta?.message || '',
-                    details: result.details,
-                    diff: result.diff
-                });
-            }
-        } catch (err) {
-            console.error('Failed to load commit details:', err);
-        }
-    };
-
-    // Load file diff
-    const loadFileDiff = async (filePath: string, staged: boolean = false) => {
-        try {
-            const diff = await (window as any).api.gitDiff(currentPath, filePath, staged);
-            setGitSelectedFile(filePath);
-            setGitFileDiff(diff);
-            return diff;
-        } catch (err) {
-            console.error('Failed to load file diff:', err);
-            setGitFileDiff(null);
-            return null;
-        }
-    };
-
-    // Open a file diff in a new pane
+    // Open a file diff in a new pane (kept here as it depends on createAndAddPaneNodeToLayout)
     const openFileDiffPane = (filePath: string, status: string) => {
         const fullPath = filePath.startsWith('/') ? filePath : `${currentPath}/${filePath}`;
         createAndAddPaneNodeToLayout({
@@ -1235,67 +930,6 @@ const ChatInterface = () => {
             diffStatus: status
         });
     };
-
-    // Load memories for memory modal
-    const loadMemories = useCallback(async () => {
-        setMemoryLoading(true);
-        try {
-            const response = await (window as any).api.executeSQL({
-                query: `SELECT id, message_id, conversation_id, npc, team, directory_path,
-                       initial_memory, final_memory, status, timestamp, model, provider
-                       FROM memory_lifecycle ORDER BY timestamp DESC LIMIT 500`
-            });
-            if (response.error) throw new Error(response.error);
-            setMemories(response.result || []);
-        } catch (err) {
-            console.error('Error loading memories:', err);
-            setMemories([]);
-        } finally {
-            setMemoryLoading(false);
-        }
-    }, []);
-
-    // Note: Memory loading is now handled by MemoryManagement component itself
-
-    // Filtered memories
-    const filteredMemories = useMemo(() => {
-        return memories.filter(memory => {
-            const matchesStatus = memoryFilter === 'all' || memory.status === memoryFilter;
-            const matchesSearch = !memorySearchTerm ||
-                memory.initial_memory?.toLowerCase().includes(memorySearchTerm.toLowerCase()) ||
-                memory.final_memory?.toLowerCase().includes(memorySearchTerm.toLowerCase());
-            return matchesStatus && matchesSearch;
-        });
-    }, [memories, memoryFilter, memorySearchTerm]);
-
-    // Fetch pending memory count and KG generation for status bar
-    useEffect(() => {
-        const fetchStatusBarData = async () => {
-            try {
-                // Fetch pending memory count
-                const pendingResult = await (window as any).api?.memory_pending?.({
-                    directory_path: currentPath,
-                    limit: 100
-                });
-                if (pendingResult?.memories) {
-                    setPendingMemoryCount(pendingResult.memories.length);
-                }
-
-                // Fetch KG generation
-                const kgResult = await (window as any).api?.kg_getStatus?.();
-                if (kgResult?.generation !== undefined) {
-                    setKgGeneration(kgResult.generation);
-                }
-            } catch (err) {
-                console.error('Error fetching status bar data:', err);
-            }
-        };
-
-        fetchStatusBarData();
-        // Refresh every 30 seconds
-        const interval = setInterval(fetchStatusBarData, 30000);
-        return () => clearInterval(interval);
-    }, [currentPath]);
 
     // Load theme colors from localStorage on startup
     useEffect(() => {
@@ -1348,56 +982,6 @@ const ChatInterface = () => {
         return () => clearInterval(clockInterval);
     }, []);
 
-    // Save model/provider/NPC preferences
-    useEffect(() => {
-        if (currentModel !== null) {
-            localStorage.setItem('npcStudioCurrentModel', JSON.stringify(currentModel));
-        }
-    }, [currentModel]);
-
-    useEffect(() => {
-        if (currentProvider !== null) {
-            localStorage.setItem('npcStudioCurrentProvider', JSON.stringify(currentProvider));
-        }
-    }, [currentProvider]);
-
-    useEffect(() => {
-        if (currentNPC !== null) {
-            localStorage.setItem('npcStudioCurrentNPC', JSON.stringify(currentNPC));
-        }
-    }, [currentNPC]);
-
-    // Sync selectedModels with currentModel when currentModel changes (e.g., from other UI actions)
-    useEffect(() => {
-        if (currentModel && !broadcastMode) {
-            setSelectedModels(prev => {
-                // Only update if not already matching (avoid infinite loops)
-                if (prev.length !== 1 || prev[0] !== currentModel) {
-                    return [currentModel];
-                }
-                return prev;
-            });
-        }
-    }, [currentModel, broadcastMode]);
-
-    // Sync selectedNPCs with currentNPC when currentNPC changes
-    useEffect(() => {
-        if (currentNPC && !broadcastMode) {
-            setSelectedNPCs(prev => {
-                // Only update if not already matching (avoid infinite loops)
-                if (prev.length !== 1 || prev[0] !== currentNPC) {
-                    return [currentNPC];
-                }
-                return prev;
-            });
-        }
-    }, [currentNPC, broadcastMode]);
-
-    // Save execution mode preference
-    useEffect(() => {
-        localStorage.setItem('npcStudioExecutionMode', JSON.stringify(executionMode));
-    }, [executionMode]);
-
     // Save sidebar collapsed states
     useEffect(() => {
         localStorage.setItem('sidebarFilesCollapsed', JSON.stringify(filesCollapsed));
@@ -1440,80 +1024,7 @@ const ChatInterface = () => {
         };
     }, [currentPath, rootLayoutNode, activeContentPaneId]);
 
-    useEffect(() => {
-        const handleMouseUp = () => {
-            setIsResizingSidebar(false);
-            setIsResizingInput(false);
-        };
-
-        if (isResizingSidebar || isResizingInput) {
-            document.addEventListener('mousemove', isResizingSidebar ? handleSidebarResize : handleInputResize);
-            document.addEventListener('mouseup', handleMouseUp);
-
-            return () => {
-                document.removeEventListener('mousemove', isResizingSidebar ? handleSidebarResize : handleInputResize);
-                document.removeEventListener('mouseup', handleMouseUp);
-            };
-        }
-    }, [isResizingSidebar, isResizingInput, handleSidebarResize, handleInputResize]);
-
-    // Bar height resize handlers
-    useEffect(() => {
-        const handleTopBarResize = (e: MouseEvent) => {
-            const newHeight = Math.max(32, Math.min(80, e.clientY));
-            setTopBarHeight(newHeight);
-            localStorage.setItem('npcStudio_topBarHeight', String(newHeight));
-        };
-        const handleBottomBarResize = (e: MouseEvent) => {
-            const newHeight = Math.max(32, Math.min(80, window.innerHeight - e.clientY));
-            setBottomBarHeight(newHeight);
-            localStorage.setItem('npcStudio_bottomBarHeight', String(newHeight));
-        };
-        const handleMouseUp = () => {
-            setIsResizingTopBar(false);
-            setIsResizingBottomBar(false);
-        };
-        if (isResizingTopBar) {
-            document.addEventListener('mousemove', handleTopBarResize);
-            document.addEventListener('mouseup', handleMouseUp);
-            return () => {
-                document.removeEventListener('mousemove', handleTopBarResize);
-                document.removeEventListener('mouseup', handleMouseUp);
-            };
-        }
-        if (isResizingBottomBar) {
-            document.addEventListener('mousemove', handleBottomBarResize);
-            document.addEventListener('mouseup', handleMouseUp);
-            return () => {
-                document.removeEventListener('mousemove', handleBottomBarResize);
-                document.removeEventListener('mouseup', handleMouseUp);
-            };
-        }
-    }, [isResizingTopBar, isResizingBottomBar]);
-
-    // Helper function for conversation stats
-    const getConversationStats = (messages: any[]) => {
-        if (!messages || messages.length === 0) {
-            return { messageCount: 0, tokenCount: 0, models: new Set(), agents: new Set(), providers: new Set() };
-        }
-
-        const stats = messages.reduce((acc, msg) => {
-            if (msg.content) {
-                acc.tokenCount += Math.ceil(msg.content.length / 4);
-            }
-            if (msg.reasoningContent) {
-                acc.tokenCount += Math.ceil(msg.reasoningContent.length / 4);
-            }
-            if (msg.role !== 'user') {
-                if (msg.model) acc.models.add(msg.model);
-                if (msg.npc) acc.agents.add(msg.npc);
-                if (msg.provider) acc.providers.add(msg.provider);
-            }
-            return acc;
-        }, { messageCount: messages.length, tokenCount: 0, models: new Set(), agents: new Set(), providers: new Set() });
-
-        return stats;
-    };
+    // Resize useEffects now handled by useSidebarResize hook
 
     // Path switching hook
     const switchToPath = useSwitchToPath(
@@ -1530,34 +1041,6 @@ const ChatInterface = () => {
         setCurrentPath
     );
 
-    const toggleFavoriteModel = (modelValue: string) => {
-        if (!modelValue) return;
-        setFavoriteModels(prev => {
-            const newFavorites = new Set(prev);
-            if (newFavorites.has(modelValue)) {
-                newFavorites.delete(modelValue);
-            } else {
-                newFavorites.add(modelValue);
-            }
-            localStorage.setItem('npcStudioFavoriteModels', JSON.stringify(Array.from(newFavorites)));
-            return newFavorites;
-        });
-    };
-
-    const modelsToDisplay = useMemo(() => {
-        // If no favorites are set, always show all models
-        if (favoriteModels.size === 0) {
-            return availableModels;
-        }
-
-        // If showing all or no favorites exist, show all
-        if (showAllModels) {
-            return availableModels;
-        }
-
-        // Filter to favorites
-        return availableModels.filter((m: any) => favoriteModels.has(m.value));
-    }, [availableModels, favoriteModels, showAllModels]);
 
     const jinxsToDisplay = useMemo(() => {
         if (favoriteJinxs.size === 0 || showAllJinxs) return availableJinxs;
@@ -1719,12 +1202,10 @@ const ChatInterface = () => {
     const createNewConversationRef = useRef<(() => void) | null>(null);
     const createNewBrowserRef = useRef<(() => void) | null>(null);
     const handleCreateNewFolderRef = useRef<(() => void) | null>(null);
-    const closeContentPaneRef = useRef<((paneId: string, nodePath: string[]) => void) | null>(null);
-    const performSplitRef = useRef<((targetNodePath: number[], side: string, newContentType: string, newContentId: string) => void) | null>(null);
-    const updateContentPaneRef = useRef<((paneId: string, contentType: string, contentId: string, skipMessageLoad?: boolean) => void) | null>(null);
     const createSettingsPaneRef = useRef<(() => void) | null>(null);
     const createSearchPaneRef = useRef<((query?: string) => void) | null>(null);
     const createHelpPaneRef = useRef<(() => void) | null>(null);
+    const createUntitledTextFileRef = useRef<(() => void) | null>(null);
 
     useEffect(() => {
         const handleKeyDown = async (e: KeyboardEvent) => {
@@ -1735,13 +1216,10 @@ const ChatInterface = () => {
                 return;
             }
 
-            // Ctrl+Shift+F - Global search
+            // Ctrl+Shift+F - Global search (open SearchPane)
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'f' || e.key === 'F')) {
                 e.preventDefault();
-                setIsGlobalSearch(true);
-                setIsSearching(true);
-                setLocalSearch({ isActive: false, term: '', paneId: null, results: [], currentIndex: -1 });
-                searchInputRef.current?.focus();
+                createSearchPaneRef.current?.('');
                 return;
             }
 
@@ -1800,8 +1278,27 @@ const ChatInterface = () => {
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'c' || e.key === 'C')) {
                 // Check if focus is inside a terminal - if so, let the terminal handle the copy
                 const activeElement = document.activeElement;
-                const isInTerminal = activeElement?.closest('.xterm') || activeElement?.closest('[data-terminal]');
-                if (isInTerminal) {
+                const eventTarget = e.target as Element;
+
+                // Multiple ways to detect if we're in a terminal:
+                // 1. activeElement is inside .xterm or [data-terminal]
+                // 2. activeElement is xterm's helper textarea
+                // 3. event target is inside terminal area
+                // 4. active pane is a terminal
+                const isInXterm = activeElement?.closest('.xterm') || eventTarget?.closest('.xterm');
+                const isInTerminalAttr = activeElement?.closest('[data-terminal]') || eventTarget?.closest('[data-terminal]');
+                const isXtermTextarea = activeElement?.classList?.contains('xterm-helper-textarea');
+
+                // Also check if the active pane is a terminal (backup check for virtual pane IDs)
+                const activePane = contentDataRef.current[activeContentPaneId];
+                const activePaneIsTerminal = activePane?.contentType === 'terminal';
+
+                // Check all tabs in the active pane to see if any is a terminal that's visible
+                const activePaneTabs = activePane?.tabs || [];
+                const activeTabIndex = activePane?.activeTabIndex ?? 0;
+                const activeTabIsTerminal = activePaneTabs[activeTabIndex]?.contentType === 'terminal';
+
+                if (isInXterm || isInTerminalAttr || isXtermTextarea || activePaneIsTerminal || activeTabIsTerminal) {
                     // Don't prevent default - let the terminal's copy handler work
                     return;
                 }
@@ -1828,10 +1325,10 @@ const ChatInterface = () => {
                 return;
             }
 
-            // Ctrl+N - New Folder
+            // Ctrl+N - New untitled text file
             if ((e.ctrlKey || e.metaKey) && (e.key === 'n' || e.key === 'N') && !e.shiftKey) {
                 e.preventDefault();
-                handleCreateNewFolderRef.current?.();
+                createUntitledTextFile();
                 return;
             }
 
@@ -1939,269 +1436,6 @@ const validateWorkspaceData = (workspaceData) => {
 
 const [pdfSelectionIndicator, setPdfSelectionIndicator] = useState(null);
 
-// Update content pane with new content type and ID
-const updateContentPane = useCallback(async (paneId, newContentType, newContentId, skipMessageLoad = false) => {
-    if (!contentDataRef.current[paneId]) {
-        contentDataRef.current[paneId] = {};
-    }
-    const paneData = contentDataRef.current[paneId];
-
-    // Track activity for RNN predictions
-    trackActivity('pane_open', {
-        paneType: newContentType,
-        filePath: newContentType === 'editor' ? newContentId : undefined,
-        url: newContentType === 'browser' ? newContentId : undefined,
-        fileType: newContentType === 'editor' ? newContentId?.split('.').pop() : undefined,
-    });
-
-    paneData.contentType = newContentType;
-    paneData.contentId = newContentId;
-
-    if (newContentType === 'editor') {
-        try {
-            const response = await window.api.readFileContent(newContentId);
-            paneData.fileContent = response.error ? `Error: ${response.error}` : response.content;
-            paneData.fileChanged = false;
-        } catch (err) {
-            paneData.fileContent = `Error loading file: ${err.message}`;
-        }
-    } else if (newContentType === 'browser') {
-        paneData.chatMessages = null;
-        paneData.fileContent = null;
-        paneData.browserUrl = newContentId;
-    } else if (newContentType === 'chat') {
-        if (!paneData.chatMessages) {
-            paneData.chatMessages = { messages: [], allMessages: [], displayedMessageCount: 20 };
-        }
-        // Initialize per-pane execution mode if not set - use globally persisted mode
-        if (paneData.executionMode === undefined) {
-            const savedMode = localStorage.getItem('npcStudioExecutionMode');
-            paneData.executionMode = savedMode ? JSON.parse(savedMode) : 'chat';
-            paneData.selectedJinx = null;
-            paneData.showJinxDropdown = false;
-        }
-        if (skipMessageLoad) {
-            paneData.chatMessages.messages = [];
-            paneData.chatMessages.allMessages = [];
-            paneData.chatStats = getConversationStats([]);
-        } else {
-            try {
-                const msgs = await window.api.getConversationMessages(newContentId);
-                const assistantMsgs = msgs?.filter((m: any) => m.role === 'assistant') || [];
-                console.log('[LOAD_MSGS] Total:', msgs?.length, 'Assistant msgs:', assistantMsgs.length,
-                    'With parentMessageId:', assistantMsgs.filter((m: any) => m.parentMessageId).length);
-                // Log all assistant messages to trace grouping
-                if (assistantMsgs.length > 0) {
-                    console.log('[LOAD_MSGS] Assistant message details:', assistantMsgs.map((m: any) => ({
-                        id: String(m.message_id || '').slice(0, 8),
-                        parent: String(m.parentMessageId || 'NONE').slice(0, 8),
-                        npc: m.npc
-                    })));
-                }
-                const formatted = (msgs && Array.isArray(msgs))
-                    ? msgs.map((m) => {
-                        const msg = { ...m, id: m.message_id || m.id || generateId() };
-                        // Reconstruct contentParts for assistant messages with tool calls
-                        if (msg.role === 'assistant' && msg.toolCalls && Array.isArray(msg.toolCalls)) {
-                            const contentParts: any[] = [];
-                            // Add text content first
-                            if (msg.content) {
-                                contentParts.push({ type: 'text', content: msg.content });
-                            }
-                            // Add tool calls
-                            msg.toolCalls.forEach((tc: any) => {
-                                contentParts.push({
-                                    type: 'tool_call',
-                                    call: {
-                                        id: tc.id,
-                                        function_name: tc.function_name,
-                                        arguments: tc.arguments,
-                                        status: 'complete'
-                                    }
-                                });
-                            });
-                            msg.contentParts = contentParts;
-                        }
-                        return msg;
-                    })
-                    : [];
-                paneData.chatMessages.allMessages = formatted;
-                paneData.chatMessages.messages = formatted.slice(-paneData.chatMessages.displayedMessageCount);
-                paneData.chatStats = getConversationStats(formatted);
-            } catch (err) {
-                paneData.chatMessages.messages = [];
-                paneData.chatMessages.allMessages = [];
-                paneData.chatStats = getConversationStats([]);
-            }
-        }
-    } else if (newContentType === 'terminal' || newContentType === 'pdf') {
-        paneData.chatMessages = null;
-        paneData.fileContent = null;
-    }
-
-    // Force re-render without calling syncLayoutWithContentData to avoid race condition
-    // The existing useEffect will handle any necessary sync
-    setRootLayoutNode(prev => ({ ...prev }));
-}, [trackActivity]);
-
-// Perform split on a pane - creates a new pane and splits the layout
-const performSplit = useCallback((targetNodePath, side, newContentType, newContentId) => {
-    // Generate the new pane ID first so we can use it outside the state updater
-    const newPaneId = generateId();
-
-    // Set content data synchronously BEFORE layout updates to avoid race condition
-    // This ensures the content is available when LayoutNode first renders
-    contentDataRef.current[newPaneId] = {
-        contentType: newContentType,
-        contentId: newContentId
-    };
-
-    setRootLayoutNode(oldRoot => {
-        if (!oldRoot) return oldRoot;
-
-        const newRoot = JSON.parse(JSON.stringify(oldRoot));
-        let targetNode = newRoot;
-
-        for (let i = 0; i < targetNodePath.length; i++) {
-            targetNode = targetNode.children[targetNodePath[i]];
-        }
-
-        const newPaneNode = { id: newPaneId, type: 'content' };
-
-        const isHorizontalSplit = side === 'left' || side === 'right';
-        const newSplitNode = {
-            id: generateId(),
-            type: 'split',
-            direction: isHorizontalSplit ? 'horizontal' : 'vertical',
-            children: side === 'left' || side === 'top' ? [newPaneNode, targetNode] : [targetNode, newPaneNode],
-            sizes: [50, 50]
-        };
-
-        if (targetNodePath.length === 0) {
-            return newSplitNode;
-        }
-
-        let parentNode = newRoot;
-        for (let i = 0; i < targetNodePath.length - 1; i++) {
-            parentNode = parentNode.children[targetNodePath[i]];
-        }
-        parentNode.children[targetNodePath[targetNodePath.length - 1]] = newSplitNode;
-
-        return newRoot;
-    });
-
-    // Set active pane and do any additional async setup AFTER layout state update
-    setActiveContentPaneId(newPaneId);
-
-    // Call updateContentPane for content types that need additional async setup
-    // (e.g., loading file content for editors, initializing chat messages)
-    // Skip for simple viewers like PDF that just need contentId
-    if (newContentType === 'editor' || newContentType === 'chat') {
-        updateContentPane(newPaneId, newContentType, newContentId);
-    }
-}, [updateContentPane]);
-
-const closeContentPane = useCallback((paneId, nodePath) => {
-    // Track pane close activity
-    const paneData = contentDataRef.current[paneId];
-    if (paneData) {
-        trackActivity('pane_close', {
-            paneType: paneData.contentType,
-            filePath: paneData.contentId,
-        });
-    }
-
-    setRootLayoutNode(oldRoot => {
-        if (!oldRoot) return oldRoot;
-
-        // If this is the root node and it's a content pane, allow closing it (returns null)
-        if (oldRoot.type === 'content' && oldRoot.id === paneId) {
-            console.log('[CLOSE_PANE] Closing the last pane');
-            delete contentDataRef.current[paneId];
-            return null;
-        }
-
-        const newRoot = JSON.parse(JSON.stringify(oldRoot));
-
-        // If path is empty, this is the root node - allow closing
-        if (nodePath.length === 0) {
-            console.log('[CLOSE_PANE] Closing root pane');
-            delete contentDataRef.current[paneId];
-            return null;
-        }
-
-        // Navigate to parent of the node we want to remove
-        let parentNode = newRoot;
-        for (let i = 0; i < nodePath.length - 1; i++) {
-            parentNode = parentNode.children[nodePath[i]];
-        }
-
-        const indexToRemove = nodePath[nodePath.length - 1];
-
-        // If parent is a split node with 2 children, replace parent with the sibling
-        if (parentNode.type === 'split' && parentNode.children.length === 2) {
-            const siblingIndex = indexToRemove === 0 ? 1 : 0;
-            const sibling = parentNode.children[siblingIndex];
-
-            // Replace parent with sibling
-            if (nodePath.length === 1) {
-                // Parent is root, replace root with sibling
-                delete contentDataRef.current[paneId];
-                return sibling;
-            } else {
-                // Navigate to grandparent and replace parent with sibling
-                let grandParentNode = newRoot;
-                for (let i = 0; i < nodePath.length - 2; i++) {
-                    grandParentNode = grandParentNode.children[nodePath[i]];
-                }
-                grandParentNode.children[nodePath[nodePath.length - 2]] = sibling;
-            }
-        } else if (parentNode.type === 'split' && parentNode.children.length > 2) {
-            // Remove the child and redistribute sizes
-            parentNode.children.splice(indexToRemove, 1);
-            const equalSize = 100 / parentNode.children.length;
-            parentNode.sizes = parentNode.children.map(() => equalSize);
-        }
-
-        // Clean up contentDataRef
-        delete contentDataRef.current[paneId];
-
-        // If we closed the active pane, switch to a different pane
-        if (activeContentPaneId === paneId) {
-            // Find first content pane in the tree
-            const findFirstContentPane = (node) => {
-                if (!node) return null;
-                if (node.type === 'content') return node.id;
-                if (node.type === 'split') {
-                    for (const child of node.children) {
-                        const found = findFirstContentPane(child);
-                        if (found) return found;
-                    }
-                }
-                return null;
-            };
-            const firstPaneId = findFirstContentPane(newRoot);
-            if (firstPaneId) {
-                setActiveContentPaneId(firstPaneId);
-            }
-        }
-
-        return newRoot;
-    });
-}, [activeContentPaneId, setActiveContentPaneId]);
-
-// Keep refs updated for MCP polling useEffect
-useEffect(() => {
-    performSplitRef.current = performSplit;
-}, [performSplit]);
-
-useEffect(() => {
-    closeContentPaneRef.current = closeContentPane;
-}, [closeContentPane]);
-
-useEffect(() => {
-    updateContentPaneRef.current = updateContentPane;
-}, [updateContentPane]);
 
 // Listen for external studio action execution (CLI/LLM control)
 // NOTE: This must be after performSplit and closeContentPane are defined
@@ -2306,51 +1540,6 @@ useEffect(() => {
         eventSource?.close();
         if (reconnectTimeout) clearTimeout(reconnectTimeout);
     };
-}, []);
-
-// Message labeling handlers (defined before renderChatView to avoid reference errors)
-const handleLabelMessage = useCallback((message: any) => {
-    setLabelingModal({
-        isOpen: true,
-        message: message
-    });
-}, []);
-
-const handleSaveLabel = useCallback((label: MessageLabel) => {
-    MessageLabelStorage.save(label);
-    setMessageLabels(prev => ({
-        ...prev,
-        [label.messageId]: label
-    }));
-    setLabelingModal({ isOpen: false, message: null });
-}, []);
-
-const handleCloseLabelingModal = useCallback(() => {
-    setLabelingModal({ isOpen: false, message: null });
-}, []);
-
-// Conversation labeling handlers
-const handleLabelConversation = useCallback((conversationId: string, messages: any[]) => {
-    setConversationLabelingModal({
-        isOpen: true,
-        conversation: {
-            id: conversationId,
-            messages: messages
-        }
-    });
-}, []);
-
-const handleSaveConversationLabel = useCallback((label: ConversationLabel) => {
-    ConversationLabelStorage.save(label);
-    setConversationLabels(prev => ({
-        ...prev,
-        [label.conversationId]: label
-    }));
-    setConversationLabelingModal({ isOpen: false, conversation: null });
-}, []);
-
-const handleCloseConversationLabelingModal = useCallback(() => {
-    setConversationLabelingModal({ isOpen: false, conversation: null });
 }, []);
 
 // Handle resend message - opens resend modal
@@ -2820,7 +2009,7 @@ const handleRunScript = useCallback(async (scriptPath: string) => {
     setTimeout(async () => {
         // Get the script directory and filename
         const scriptDir = scriptPath.substring(0, scriptPath.lastIndexOf('/'));
-        const scriptName = scriptPath.split('/').pop();
+        const scriptName = getFileName(scriptPath);
 
         // Get configured Python environment or use system default
         let pythonCmd = 'python3';
@@ -2927,7 +2116,7 @@ const renderChatView = useCallback(({ nodeId }) => {
 
     // Get selected branch IDs for this pane - use ref to avoid stale closure
     const currentSelectedBranches = selectedBranchesRef.current;
-    console.log('[DEBUG] selectedBranches ref:', Object.keys(currentSelectedBranches), 'nodeId:', nodeId, 'has entry:', !!currentSelectedBranches[nodeId], 'size:', currentSelectedBranches[nodeId]?.size);
+    // debug log removed - was spamming console
     const selectedBranchIds = new Set(currentSelectedBranches[nodeId]?.keys() || []);
 
     // Handler for copying all broadcast responses
@@ -3304,9 +2493,46 @@ const handleAICodeAction = useCallback(async (type: string, selectedText: string
     });
 }, [currentModel, currentProvider, currentPath]);
 
+// Chat pane action handlers
+const handleCopyChat = useCallback(() => {
+    const paneData = contentDataRef.current[activeContentPaneId];
+    if (!paneData || paneData.contentType !== 'chat') return;
+
+    const messages = paneData.chatMessages?.messages || [];
+    if (messageSelectionMode && selectedMessages.size > 0) {
+        const selectedMsgs = messages.filter(m => selectedMessages.has(m.id));
+        const text = selectedMsgs.map(m => `${m.role === 'user' ? 'User' : (m.npc || m.model || 'Assistant')}: ${m.content}`).join('\n\n');
+        navigator.clipboard.writeText(text);
+    } else {
+        const text = messages.map(m => `${m.role === 'user' ? 'User' : (m.npc || m.model || 'Assistant')}: ${m.content}`).join('\n\n');
+        navigator.clipboard.writeText(text);
+    }
+}, [activeContentPaneId, messageSelectionMode, selectedMessages]);
+
+const handleSaveChat = useCallback(async () => {
+    const paneData = contentDataRef.current[activeContentPaneId];
+    if (!paneData || paneData.contentType !== 'chat') return;
+
+    const messages = paneData.chatMessages?.messages || [];
+    const conversationId = paneData.contentId;
+    const text = messages.map(m => `${m.role === 'user' ? 'User' : (m.npc || m.model || 'Assistant')}: ${m.content}`).join('\n\n');
+
+    const filename = `conversation_${conversationId?.slice(0, 8) || 'export'}_${Date.now()}.md`;
+    const filepath = `${currentPath}/${filename}`;
+
+    try {
+        await window.api.writeFileContent(filepath, `# Conversation Export\n\n${text}`);
+        if (handleFileClickRef.current) {
+            handleFileClickRef.current(filepath);
+        }
+    } catch (err) {
+        setError(err.message);
+    }
+}, [activeContentPaneId, currentPath]);
+
 const renderFileEditor = useCallback(({ nodeId }) => {
     const paneData = contentDataRef.current[nodeId];
-    if (!paneData || !paneData.contentId) {
+    if (!paneData || (!paneData.contentId && !paneData.isUntitled)) {
         return <div className="flex-1 flex items-center justify-center theme-text-muted">No file selected</div>;
     }
 
@@ -3393,8 +2619,6 @@ const renderPdfViewer = useCallback(({ nodeId }) => {
             contentDataRef={contentDataRef}
             currentPath={currentPath}
             activeContentPaneId={activeContentPaneId}
-            pdfContextMenuPos={pdfContextMenuPos}
-            setPdfContextMenuPos={setPdfContextMenuPos}
             handleCopyPdfText={handleCopyPdfText}
             handleHighlightPdfSelection={handleHighlightPdfSelection}
             handleApplyPromptToPdfText={handleApplyPromptToPdfText}
@@ -3403,7 +2627,7 @@ const renderPdfViewer = useCallback(({ nodeId }) => {
             pdfHighlightsTrigger={pdfHighlightsTrigger}
         />
     );
-}, [currentPath, activeContentPaneId, pdfContextMenuPos, pdfHighlights, pdfHighlightsTrigger, handleCopyPdfText, handleHighlightPdfSelection, handleApplyPromptToPdfText]);
+}, [currentPath, activeContentPaneId, pdfHighlights, pdfHighlightsTrigger, handleCopyPdfText, handleHighlightPdfSelection, handleApplyPromptToPdfText]);
 
 const renderCsvViewer = useCallback(({ nodeId }) => {
     return (
@@ -3586,7 +2810,7 @@ const handleStartConversationFromViewer = useCallback(async (images?: Array<{ pa
 
     const attachmentsToAdd = images.map(img => ({
         id: generateId(),
-        name: img.path.split('/').pop() || 'image',
+        name: getFileName(img.path) || 'image',
         type: getMimeType(img.path),
         path: img.path,
         size: 0,
@@ -3677,327 +2901,47 @@ const renderHelpPane = useCallback(({ nodeId }: { nodeId: string }) => {
 // Render Git pane (embedded git panel)
 const renderGitPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return (
-        <div className="flex flex-col h-full theme-bg-primary overflow-hidden">
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b theme-border">
-                <div className="flex items-center gap-3">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-purple-400">
-                        <line x1="6" y1="3" x2="6" y2="15"></line>
-                        <circle cx="18" cy="6" r="3"></circle>
-                        <circle cx="6" cy="18" r="3"></circle>
-                        <path d="M18 9a9 9 0 0 1-9 9"></path>
-                    </svg>
-                    <h2 className="text-lg font-semibold theme-text-primary">Git</h2>
-                    {gitStatus?.branch && <span className="text-sm theme-text-muted">({gitStatus.branch})</span>}
-                </div>
-                <button onClick={() => loadGitStatus()} className="p-2 theme-hover rounded-lg" title="Refresh">
-                    <RefreshCw size={16} />
-                </button>
-            </div>
-
-            {/* Tab Bar */}
-            <div className="flex border-b theme-border px-4">
-                {(['status', 'diff', 'branches', 'history'] as const).map(tab => (
-                    <button
-                        key={tab}
-                        onClick={() => {
-                            setGitModalTab(tab);
-                            if (tab === 'diff') loadGitDiff();
-                            if (tab === 'branches') loadGitBranches();
-                            if (tab === 'history') loadGitHistory();
-                        }}
-                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                            gitModalTab === tab
-                                ? 'border-purple-500 text-purple-400'
-                                : 'border-transparent theme-text-muted hover:theme-text-primary'
-                        }`}
-                    >
-                        {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                    </button>
-                ))}
-            </div>
-
-            {/* Tab Content */}
-            <div className="flex-1 overflow-auto p-4">
-                {!gitStatus ? (
-                    <div className="text-center theme-text-muted py-8">No git repository in this directory</div>
-                ) : gitModalTab === 'status' ? (
-                    /* Status Tab */
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-4 text-sm">
-                            <span className="theme-text-primary font-medium">Branch: {gitStatus.branch}</span>
-                            {gitStatus.ahead > 0 && <span className="text-green-400">↑{gitStatus.ahead} ahead</span>}
-                            {gitStatus.behind > 0 && <span className="text-yellow-400">↓{gitStatus.behind} behind</span>}
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="theme-bg-secondary rounded-lg p-3">
-                                <h3 className="text-sm font-medium text-yellow-400 mb-2">Unstaged ({(gitStatus.unstaged || []).length + (gitStatus.untracked || []).length})</h3>
-                                <div className="space-y-1 max-h-48 overflow-y-auto">
-                                    {(gitStatus.unstaged || []).length + (gitStatus.untracked || []).length === 0 ? (
-                                        <div className="text-xs theme-text-muted">No changes</div>
-                                    ) : [...(gitStatus.unstaged || []), ...(gitStatus.untracked || [])].map((file: any) => (
-                                        <div key={file.path} className="flex items-center justify-between text-xs group">
-                                            <button
-                                                onClick={() => openFileDiffPane(file.path, file.status || 'modified')}
-                                                className={`truncate flex-1 text-left hover:underline ${file.isUntracked ? 'text-gray-400' : 'text-yellow-300'}`}
-                                                title="Click to view diff"
-                                            >
-                                                {file.path}
-                                            </button>
-                                            <button onClick={() => gitStageFile(file.path)} className="text-green-400 hover:text-green-300 px-2 opacity-0 group-hover:opacity-100">Stage</button>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="theme-bg-secondary rounded-lg p-3">
-                                <h3 className="text-sm font-medium text-green-400 mb-2">Staged ({(gitStatus.staged || []).length})</h3>
-                                <div className="space-y-1 max-h-48 overflow-y-auto">
-                                    {(gitStatus.staged || []).length === 0 ? (
-                                        <div className="text-xs theme-text-muted">No staged files</div>
-                                    ) : (gitStatus.staged || []).map((file: any) => (
-                                        <div key={file.path} className="flex items-center justify-between text-xs group">
-                                            <button
-                                                onClick={() => openFileDiffPane(file.path, file.status || 'staged')}
-                                                className="text-green-300 truncate flex-1 text-left hover:underline"
-                                                title="Click to view diff"
-                                            >
-                                                {file.path}
-                                            </button>
-                                            <button onClick={() => gitUnstageFile(file.path)} className="text-red-400 hover:text-red-300 px-2 opacity-0 group-hover:opacity-100">Unstage</button>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Commit Section */}
-                        <div className="theme-bg-secondary rounded-lg p-3">
-                            <h3 className="text-sm font-medium theme-text-primary mb-2">Commit</h3>
-                            <textarea
-                                value={gitCommitMessage}
-                                onChange={(e) => setGitCommitMessage(e.target.value)}
-                                placeholder="Commit message..."
-                                className="w-full px-3 py-2 text-sm theme-bg-primary border theme-border rounded-lg resize-none h-20"
-                            />
-                            <div className="flex gap-2 mt-2">
-                                <button
-                                    onClick={gitCommitChanges}
-                                    disabled={!gitCommitMessage.trim() || (gitStatus.staged || []).length === 0}
-                                    className="px-3 py-1.5 text-xs bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg"
-                                >
-                                    Commit
-                                </button>
-                                <button
-                                    onClick={gitPushChanges}
-                                    className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 rounded-lg"
-                                >
-                                    Push
-                                </button>
-                                <button
-                                    onClick={gitPullChanges}
-                                    className="px-3 py-1.5 text-xs bg-purple-600 hover:bg-purple-500 rounded-lg"
-                                >
-                                    Pull
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                ) : gitModalTab === 'diff' ? (
-                    /* Diff Tab */
-                    <div className="space-y-2">
-                        {gitDiffContent ? (
-                            <pre className="text-xs font-mono whitespace-pre-wrap theme-bg-secondary p-3 rounded-lg overflow-auto max-h-[60vh]">
-                                {(gitDiffContent.staged + '\n' + gitDiffContent.unstaged).split('\n').map((line, i) => (
-                                    <div key={i} className={
-                                        line.startsWith('+') && !line.startsWith('+++') ? 'text-green-400' :
-                                        line.startsWith('-') && !line.startsWith('---') ? 'text-red-400' :
-                                        line.startsWith('@@') ? 'text-blue-400' :
-                                        'theme-text-muted'
-                                    }>{line}</div>
-                                ))}
-                            </pre>
-                        ) : (
-                            <div className="text-center theme-text-muted py-8">No diff available</div>
-                        )}
-                    </div>
-                ) : gitModalTab === 'branches' ? (
-                    /* Branches Tab */
-                    <div className="space-y-4">
-                        <div className="flex gap-2">
-                            <input
-                                type="text"
-                                placeholder="New branch name..."
-                                value={gitNewBranchName}
-                                onChange={(e) => setGitNewBranchName(e.target.value)}
-                                className="flex-1 px-3 py-2 text-sm theme-bg-secondary border theme-border rounded-lg"
-                            />
-                            <button
-                                onClick={gitCreateBranch}
-                                disabled={!gitNewBranchName.trim()}
-                                className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 disabled:opacity-50 rounded-lg"
-                            >
-                                Create
-                            </button>
-                        </div>
-
-                        {/* Local Branches */}
-                        <div>
-                            <div className="text-xs font-medium theme-text-muted mb-2 flex items-center gap-2">
-                                <span>Local Branches</span>
-                                <span className="text-purple-400">({gitBranches?.all?.filter((b: string) => !b.startsWith('remotes/')).length || 0})</span>
-                            </div>
-                            <div className="space-y-1">
-                                {gitBranches?.all?.filter((branch: string) => !branch.startsWith('remotes/')).map((branch: string) => (
-                                    <div
-                                        key={branch}
-                                        className={`flex items-center justify-between p-2 rounded text-sm group ${
-                                            branch === gitBranches.current ? 'bg-purple-900/30 border border-purple-500/30' : 'hover:bg-white/5'
-                                        }`}
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            {branch === gitBranches.current && <span className="text-purple-400">●</span>}
-                                            <span className={branch === gitBranches.current ? 'text-purple-400 font-medium' : 'theme-text-primary'}>
-                                                {branch}
-                                            </span>
-                                        </div>
-                                        {branch !== gitBranches.current && (
-                                            <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button
-                                                    onClick={() => gitCheckoutBranch(branch)}
-                                                    className="text-xs text-blue-400 hover:text-blue-300 px-2 py-0.5 rounded hover:bg-blue-900/30"
-                                                >
-                                                    Checkout
-                                                </button>
-                                                <button
-                                                    onClick={() => gitDeleteBranch(branch)}
-                                                    className="text-xs text-red-400 hover:text-red-300 px-2 py-0.5 rounded hover:bg-red-900/30"
-                                                >
-                                                    Delete
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Remote Branches */}
-                        {gitBranches?.all?.some((b: string) => b.startsWith('remotes/')) && (
-                            <div>
-                                <div className="text-xs font-medium theme-text-muted mb-2 flex items-center gap-2">
-                                    <span>Remote Branches</span>
-                                    <span className="text-orange-400">({gitBranches?.all?.filter((b: string) => b.startsWith('remotes/')).length || 0})</span>
-                                </div>
-                                <div className="space-y-1 max-h-48 overflow-y-auto">
-                                    {gitBranches?.all?.filter((branch: string) => branch.startsWith('remotes/')).map((branch: string) => (
-                                        <div
-                                            key={branch}
-                                            className="flex items-center justify-between p-2 rounded text-sm group hover:bg-white/5"
-                                        >
-                                            <span className="theme-text-muted text-xs">{branch.replace('remotes/', '')}</span>
-                                            <button
-                                                onClick={() => gitCheckoutBranch(branch.replace('remotes/origin/', ''))}
-                                                className="text-xs text-blue-400 hover:text-blue-300 opacity-0 group-hover:opacity-100"
-                                            >
-                                                Checkout
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                        {gitError && <div className="text-red-500 text-xs mt-2">{gitError}</div>}
-                        {noUpstreamPrompt && (
-                            <div className="mt-2 p-2 bg-amber-900/30 border border-amber-600/50 rounded text-xs">
-                                <div className="text-amber-400 mb-2">Branch has no upstream. Push to origin/{noUpstreamPrompt.branch}?</div>
-                                <div className="flex gap-2">
-                                    <button onClick={gitPushWithUpstream} disabled={gitLoading} className="px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-white text-[10px]">Push</button>
-                                    <button onClick={gitEnableAutoSetupRemote} disabled={gitLoading} className="px-2 py-1 bg-green-600 hover:bg-green-500 rounded text-white text-[10px]" title="Sets git config push.autoSetupRemote true">Always Auto-Push</button>
-                                    <button onClick={() => setNoUpstreamPrompt(null)} className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-white text-[10px]">Cancel</button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                ) : gitModalTab === 'history' ? (
-                    /* History Tab */
-                    <div className="flex gap-4 h-full min-h-[400px]">
-                        {/* Commit List */}
-                        <div className="w-1/2 theme-bg-secondary rounded-lg p-3 flex flex-col">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-xs font-medium theme-text-muted">Commits</span>
-                                <button onClick={loadGitHistory} className="text-xs theme-text-muted hover:theme-text-primary">
-                                    <RefreshCw size={12} />
-                                </button>
-                            </div>
-                            <div className="flex-1 overflow-y-auto space-y-1">
-                                {gitCommitHistory?.length > 0 ? gitCommitHistory.map((commit: any) => (
-                                    <button
-                                        key={commit.hash}
-                                        onClick={() => loadCommitDetails(commit.hash)}
-                                        className={`w-full text-left p-2 rounded text-xs hover:bg-white/5 transition-colors ${
-                                            gitSelectedCommit?.hash === commit.hash ? 'bg-purple-900/30 border border-purple-500/30' : ''
-                                        }`}
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-purple-400 font-mono">{commit.hash?.slice(0, 7)}</span>
-                                            <span className="theme-text-muted">{new Date(commit.date).toLocaleDateString()}</span>
-                                        </div>
-                                        <div className="theme-text-primary truncate mt-1">{commit.message}</div>
-                                        <div className="theme-text-muted mt-0.5">{commit.author_name || commit.author}</div>
-                                    </button>
-                                )) : (
-                                    <div className="text-center theme-text-muted py-4">No commits</div>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Commit Details */}
-                        <div className="w-1/2 theme-bg-secondary rounded-lg p-3 flex flex-col">
-                            <span className="text-xs font-medium theme-text-muted mb-2">Details</span>
-                            {gitSelectedCommit ? (
-                                <div className="flex-1 overflow-y-auto">
-                                    <div className="space-y-1 text-xs mb-3 pb-3 border-b theme-border">
-                                        <div className="font-mono text-purple-400">{gitSelectedCommit.hash}</div>
-                                        <div className="theme-text-primary">{gitSelectedCommit.author_name} &lt;{gitSelectedCommit.author_email}&gt;</div>
-                                        <div className="theme-text-muted">{new Date(gitSelectedCommit.date).toLocaleString()}</div>
-                                        <div className="theme-text-primary mt-2 whitespace-pre-wrap">{gitSelectedCommit.message}</div>
-                                    </div>
-                                    {gitSelectedCommit.diff && (
-                                        <pre className="text-xs font-mono overflow-auto p-2 bg-black/30 rounded whitespace-pre-wrap">
-                                            {gitSelectedCommit.diff.split('\n').map((line: string, i: number) => (
-                                                <div
-                                                    key={i}
-                                                    className={
-                                                        line.startsWith('+') && !line.startsWith('+++') ? 'text-green-400 bg-green-900/20' :
-                                                        line.startsWith('-') && !line.startsWith('---') ? 'text-red-400 bg-red-900/20' :
-                                                        line.startsWith('@@') ? 'text-cyan-400' :
-                                                        line.startsWith('diff ') ? 'text-purple-400 font-bold mt-2' :
-                                                        'theme-text-muted'
-                                                    }
-                                                >
-                                                    {line}
-                                                </div>
-                                            ))}
-                                        </pre>
-                                    )}
-                                </div>
-                            ) : (
-                                <div className="flex-1 flex items-center justify-center theme-text-muted text-sm">
-                                    Select a commit to view details
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                ) : null}
-            </div>
-        </div>
+        <GitPane
+            nodeId={nodeId}
+            gitStatus={gitStatus}
+            gitModalTab={gitModalTab}
+            gitDiffContent={gitDiffContent}
+            gitBranches={gitBranches}
+            gitCommitHistory={gitCommitHistory}
+            gitCommitMessage={gitCommitMessage}
+            gitNewBranchName={gitNewBranchName}
+            gitSelectedCommit={gitSelectedCommit}
+            gitError={gitError}
+            gitLoading={gitLoading}
+            noUpstreamPrompt={noUpstreamPrompt}
+            setGitCommitMessage={setGitCommitMessage}
+            setGitNewBranchName={setGitNewBranchName}
+            setGitModalTab={setGitModalTab}
+            setNoUpstreamPrompt={setNoUpstreamPrompt}
+            loadGitStatus={loadGitStatus}
+            loadGitDiff={loadGitDiff}
+            loadGitBranches={loadGitBranches}
+            loadGitHistory={loadGitHistory}
+            loadCommitDetails={loadCommitDetails}
+            gitStageFile={gitStageFile}
+            gitUnstageFile={gitUnstageFile}
+            gitCommitChanges={gitCommitChanges}
+            gitPushChanges={gitPushChanges}
+            gitPullChanges={gitPullChanges}
+            gitCreateBranch={gitCreateBranch}
+            gitCheckoutBranch={gitCheckoutBranch}
+            gitDeleteBranch={gitDeleteBranch}
+            gitPushWithUpstream={gitPushWithUpstream}
+            gitEnableAutoSetupRemote={gitEnableAutoSetupRemote}
+            openFileDiffPane={openFileDiffPane}
+        />
     );
 }, [gitStatus, gitModalTab, gitDiffContent, gitBranches, gitCommitHistory, gitCommitMessage, gitNewBranchName, gitSelectedCommit, gitError,
-    setGitCommitMessage, setGitNewBranchName, setGitModalTab,
-    loadGitStatus, loadGitDiff, loadGitBranches, loadGitHistory, loadFileDiff, loadCommitDetails,
-    gitStageFile, gitUnstageFile, gitCommitChanges, gitPushChanges, gitPullChanges, gitCreateBranch, gitCheckoutBranch, gitDeleteBranch, openFileDiffPane]);
+    gitLoading, noUpstreamPrompt,
+    loadGitStatus, loadGitDiff, loadGitBranches, loadGitHistory, loadCommitDetails,
+    gitStageFile, gitUnstageFile, gitCommitChanges, gitPushChanges, gitPullChanges, gitCreateBranch, gitCheckoutBranch, gitDeleteBranch,
+    gitPushWithUpstream, gitEnableAutoSetupRemote, openFileDiffPane]);
+
 
 // Render FolderViewer pane (for pane-based folder browsing)
 const renderFolderViewerPane = useCallback(({ nodeId }: { nodeId: string }) => {
@@ -4021,7 +2965,7 @@ const renderFolderViewerPane = useCallback(({ nodeId }: { nodeId: string }) => {
                     id: `tab_${Date.now()}_0`,
                     contentType: 'folder',
                     contentId: folderPath,
-                    title: folderPath.split('/').pop() || 'Folder'
+                    title: getFileName(folderPath) || 'Folder'
                 }];
                 paneData.activeTabIndex = 0;
             }
@@ -4029,7 +2973,7 @@ const renderFolderViewerPane = useCallback(({ nodeId }: { nodeId: string }) => {
                 id: `tab_${Date.now()}_${paneData.tabs.length}`,
                 contentType,
                 contentId: filePath,
-                title: filePath.split('/').pop() || 'File'
+                title: getFileName(filePath) || 'File'
             };
             paneData.tabs.push(newTab);
             paneData.activeTabIndex = paneData.tabs.length - 1;
@@ -4169,7 +3113,7 @@ const renderHtmlPreviewPane = useCallback(({ nodeId }: { nodeId: string }) => {
         <div className="flex-1 flex flex-col min-h-0">
             <div className="px-3 py-1.5 theme-bg-tertiary border-b theme-border flex items-center gap-2">
                 <Globe size={14} className="text-orange-400" />
-                <span className="text-xs theme-text-primary truncate">{filePath.split('/').pop()}</span>
+                <span className="text-xs theme-text-primary truncate">{getFileName(filePath)}</span>
                 <button
                     onClick={() => {
                         // Reload the iframe
@@ -4187,7 +3131,7 @@ const renderHtmlPreviewPane = useCallback(({ nodeId }: { nodeId: string }) => {
                 src={fileUrl}
                 className="flex-1 w-full bg-white"
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-                title={`HTML Preview: ${filePath.split('/').pop()}`}
+                title={`HTML Preview: ${getFileName(filePath)}`}
             />
         </div>
     );
@@ -4397,223 +3341,9 @@ useEffect(() => {
 
 
 
-const renderMessageContextMenu = () => (
-    messageContextMenuPos && (
-        <>
-            {/* Backdrop to catch outside clicks */}
-            <div
-                className="fixed inset-0 z-40"
-                onClick={() => setMessageContextMenuPos(null)}
-            />
-            <div
-                className="fixed theme-bg-secondary theme-border border rounded shadow-lg py-1 z-50"
-                style={{ top: messageContextMenuPos.y, left: messageContextMenuPos.x }}
-                onMouseLeave={() => setMessageContextMenuPos(null)}
-            >
-                {/* Show copy option if there's selected text */}
-                {messageContextMenuPos.selectedText && (
-                    <>
-                        <button
-                            onClick={() => {
-                                navigator.clipboard.writeText(messageContextMenuPos.selectedText);
-                                setMessageContextMenuPos(null);
-                            }}
-                            className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-xs"
-                        >
-                            <Edit size={14} />
-                            <span>Copy Selected Text</span>
-                        </button>
-                        <div className="border-t theme-border my-1"></div>
-                    </>
-                )}
-                
-                <button
-                    onClick={() => handleApplyPromptToMessages('summarize')}
-                    className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-xs"
-                >
-                    <MessageSquare size={14} />
-                    <span>Summarize in New Convo ({selectedMessages.size})</span>
-                </button>
+const renderMessageContextMenu = () => null;
 
 
-                {/* Delete option */}
-                <div className="border-t theme-border my-1"></div>
-                <button
-                    onClick={handleDeleteSelectedMessages}
-                    className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left text-red-400 text-xs"
-                >
-                    <Trash size={14} />
-                    <span>Delete Messages ({selectedMessages.size})</span>
-                </button>
-            </div>
-        </>
-    )
-);
-
-
-  // Helper to find an empty pane that can be reused (kept for backwards compat but should not be used)
-  const findEmptyPaneId = useCallback(() => {
-    // DISABLED - we should never have empty panes
-    return null;
-  }, []);
-
-  const createAndAddPaneNodeToLayout = useCallback((contentTypeOrOptions: string | { contentType: string; contentId?: string | null; diffStatus?: string; [key: string]: any }, contentId?: string | null) => {
-  // Support both (contentType, contentId) and ({ contentType, contentId, ...extras })
-  let contentType: string;
-  let finalContentId: string | null;
-  let extraProps: Record<string, any> = {};
-
-  if (typeof contentTypeOrOptions === 'object') {
-    contentType = contentTypeOrOptions.contentType;
-    finalContentId = contentTypeOrOptions.contentId || null;
-    // Extract any extra properties (exclude id since we generate our own)
-    const { contentType: _, contentId: __, id: ___, ...rest } = contentTypeOrOptions;
-    extraProps = rest;
-  } else {
-    contentType = contentTypeOrOptions;
-    finalContentId = contentId || null;
-  }
-
-  // NEVER create a pane without contentType
-  if (!contentType) {
-    console.error('[createAndAddPaneNodeToLayout] Cannot create pane without contentType!');
-    return null;
-  }
-
-  const newPaneId = generateId();
-
-  // Set content BEFORE creating layout node - never create empty panes
-  contentDataRef.current[newPaneId] = {
-    contentType,
-    contentId: finalContentId,
-    ...extraProps
-  };
-
-  setRootLayoutNode(oldRoot => {
-    if (!oldRoot) {
-      return { id: newPaneId, type: 'content' };
-    }
-
-    // Collect all existing pane IDs from the layout
-    const collectPaneIds = (node: any): string[] => {
-      if (!node) return [];
-      if (node.type === 'content') return [node.id];
-      if (node.type === 'split') {
-        return node.children.flatMap((child: any) => collectPaneIds(child));
-      }
-      return [];
-    };
-
-    const existingPaneIds = collectPaneIds(oldRoot);
-    const allPaneIds = [...existingPaneIds, newPaneId];
-    const totalPanes = allPaneIds.length;
-
-    // Calculate balanced grid dimensions (rows and cols differ by at most 1)
-    const cols = Math.ceil(Math.sqrt(totalPanes));
-    const rows = Math.ceil(totalPanes / cols);
-
-    // Build a balanced grid layout
-    // Structure: vertical split of rows, each row is horizontal split of columns
-    const buildGridLayout = (paneIds: string[], numRows: number, numCols: number): any => {
-      if (paneIds.length === 0) return null;
-      if (paneIds.length === 1) {
-        return { id: paneIds[0], type: 'content' };
-      }
-
-      // Create rows
-      const rowNodes: any[] = [];
-      let paneIndex = 0;
-
-      for (let r = 0; r < numRows && paneIndex < paneIds.length; r++) {
-        // Calculate how many panes in this row (distribute evenly)
-        const panesInThisRow = Math.min(numCols, paneIds.length - paneIndex);
-        const rowPaneIds = paneIds.slice(paneIndex, paneIndex + panesInThisRow);
-        paneIndex += panesInThisRow;
-
-        if (rowPaneIds.length === 1) {
-          // Single pane in row - just the content node
-          rowNodes.push({ id: rowPaneIds[0], type: 'content' });
-        } else {
-          // Multiple panes in row - horizontal split
-          rowNodes.push({
-            id: generateId(),
-            type: 'split',
-            direction: 'horizontal',
-            children: rowPaneIds.map(id => ({ id, type: 'content' })),
-            sizes: new Array(rowPaneIds.length).fill(100 / rowPaneIds.length)
-          });
-        }
-      }
-
-      if (rowNodes.length === 1) {
-        return rowNodes[0];
-      }
-
-      // Multiple rows - vertical split
-      return {
-        id: generateId(),
-        type: 'split',
-        direction: 'vertical',
-        children: rowNodes,
-        sizes: new Array(rowNodes.length).fill(100 / rowNodes.length)
-      };
-    };
-
-    return buildGridLayout(allPaneIds, rows, cols);
-  });
-
-  setActiveContentPaneId(newPaneId);
-  return newPaneId;
-}, []);
-  
-  
-   
-
-
-
-    useEffect(() => {
-        // This effect ensures contentDataRef.current is always in sync with rootLayoutNode.
-        // It runs whenever rootLayoutNode changes.
-        if (rootLayoutNode) {
-            // Create a temporary object to hold the synchronized content data.
-            const synchronizedContentData = { ...contentDataRef.current };
-
-            // Call the sync function. It will modify synchronizedContentData in place.
-            const originalContentDataKeys = Object.keys(contentDataRef.current);
-
-            const updatedLayoutNode = syncLayoutWithContentData(rootLayoutNode, synchronizedContentData);
-
-            const newContentDataKeys = Object.keys(synchronizedContentData);
-
-            // Check if contentDataRef.current actually changed (added/removed keys)
-            if (originalContentDataKeys.length !== newContentDataKeys.length ||
-                !originalContentDataKeys.every(key => synchronizedContentData.hasOwnProperty(key)) ||
-                !newContentDataKeys.every(key => contentDataRef.current.hasOwnProperty(key))
-            ) {
-                console.log('[EFFECT] Updating contentDataRef.current and forcing re-render after sync.');
-                contentDataRef.current = synchronizedContentData;
-                // Force a re-render since contentDataRef.current (a ref) was updated.
-                setRootLayoutNode(prev => ({ ...prev }));
-            }
-
-            // Only update layout if the NUMBER of panes actually changed
-            // (Don't overwrite based on reference inequality alone - that causes issues)
-            const originalPaneCount = collectPaneIds(rootLayoutNode).length;
-            const updatedPaneCount = collectPaneIds(updatedLayoutNode).length;
-            if (updatedPaneCount !== originalPaneCount) {
-                console.log('[EFFECT] Layout pane count changed, updating layout:', originalPaneCount, '->', updatedPaneCount);
-                setRootLayoutNode(updatedLayoutNode);
-            }
-
-        } else {
-            // If rootLayoutNode is null, ensure contentDataRef is also empty.
-            if (Object.keys(contentDataRef.current).length > 0) {
-                console.log('[EFFECT] rootLayoutNode is null, clearing contentDataRef.current.');
-                contentDataRef.current = {};
-                setRootLayoutNode(prev => ({ ...prev })); // Force re-render
-            }
-        }
-    }, [rootLayoutNode, syncLayoutWithContentData]);
 
 
     const handleCreateNewFolder = () => {
@@ -5142,164 +3872,12 @@ const handleBrowserDialogNavigate = (url) => {
         createNewBrowser(url);
         setBrowserUrlDialogOpen(false);
     };
-const moveContentPane = useCallback((draggedId, draggedPath, targetPath, dropSide) => {
-    setRootLayoutNode(oldRoot => {
-        if (!oldRoot) return oldRoot;
-
-        // --- Step 1: Deep copy the layout to avoid mutation issues ---
-        let newRoot = JSON.parse(JSON.stringify(oldRoot));
-
-        // --- Step 2: Find the node being dragged ---
-        const draggedNode = findNodeByPath(newRoot, draggedPath);
-        if (!draggedNode) {
-            console.error("Could not find dragged node in layout copy.");
-            return oldRoot; // Abort
-        }
-
-        // --- Step 3: Remove the dragged node from its original position ---
-        const removeNode = (root, path) => {
-            if (path.length === 1) { // The node to remove is a direct child of the root
-                root.children.splice(path[0], 1);
-                root.sizes.splice(path[0], 1);
-                return root;
-            }
-
-            const parent = findNodeByPath(root, path.slice(0, -1));
-            const childIndex = path[path.length - 1];
-            if (parent && parent.children) {
-                parent.children.splice(childIndex, 1);
-                parent.sizes.splice(childIndex, 1);
-            }
-            return root;
-        };
-        
-        newRoot = removeNode(newRoot, draggedPath);
-
-        // --- Step 4: Clean up any split nodes that now have only one child ---
-        const cleanup = (node) => {
-            if (!node) return null;
-            if (node.type === 'split') {
-                if (node.children.length === 1) {
-                    return cleanup(node.children[0]);
-                }
-                node.children = node.children.map(cleanup).filter(Boolean);
-                if (node.children.length === 0) return null;
-                const equalSize = 100 / node.children.length;
-                node.sizes = new Array(node.children.length).fill(equalSize);
-            }
-            return node;
-        };
-
-        newRoot = cleanup(newRoot);
-        if (!newRoot) return draggedNode; // If everything was removed, the dragged node becomes the new root
-
-        // --- Step 5: Recalculate the target path in the now-modified tree ---
-        // This is the critical fix to prevent the crash
-        const newTargetPath = findNodePath(newRoot, findNodeByPath(oldRoot, targetPath)?.id);
-        if (!newTargetPath) {
-            console.error("Could not find target node path after removal. Aborting drop.");
-            return oldRoot;
-        }
-
-        // --- Step 6: Insert the dragged node at the new target position ---
-        const insertNode = (root, path, nodeToInsert, side) => {
-            const targetNode = findNodeByPath(root, path);
-            if (!targetNode) return root;
-
-            const isHorizontal = side === 'left' || side === 'right';
-            const newSplit = {
-                id: generateId(),
-                type: 'split',
-                direction: isHorizontal ? 'horizontal' : 'vertical',
-                children: [],
-                sizes: [50, 50],
-            };
-
-            if (side === 'left' || side === 'top') {
-                newSplit.children = [nodeToInsert, targetNode];
-            } else {
-                newSplit.children = [targetNode, nodeToInsert];
-            }
-            
-            if (path.length === 0) { // Target was the root
-                return newSplit;
-            }
-
-            const parent = findNodeByPath(root, path.slice(0, -1));
-            const childIndex = path[path.length - 1];
-            if (parent && parent.children) {
-                parent.children[childIndex] = newSplit;
-            }
-            return root;
-        };
-
-        newRoot = insertNode(newRoot, newTargetPath, draggedNode, dropSide);
-
-        // --- Step 7: Final state update ---
-        setActiveContentPaneId(draggedId);
-        return newRoot;
-    });
-}, [findNodeByPath, findNodePath]);
 
 
 
 
 
 
-
-    // Directory and conversation loading functions
-    const loadConversationsWithoutAutoSelect = async (dirPath: string) => {
-        try {
-            const normalizedPath = normalizePath(dirPath);
-            if (!normalizedPath) return;
-            const response = await window.api.getConversations(normalizedPath);
-            const formattedConversations = response?.conversations?.map((conv: any) => ({
-                id: conv.id,
-                title: conv.preview?.split('\n')[0]?.substring(0, 30) || 'New Conversation',
-                preview: conv.preview || 'No content',
-                timestamp: conv.timestamp || Date.now(),
-                last_message_timestamp: conv.last_message_timestamp || conv.timestamp || Date.now()
-            })) || [];
-            setDirectoryConversations(formattedConversations);
-            console.log('[loadConversationsWithoutAutoSelect] Loaded conversations without selecting');
-        } catch (err: any) {
-            console.error('Error loading conversations:', err);
-            setError(err.message);
-            setDirectoryConversations([]);
-        }
-    };
-
-    const loadDirectoryStructureWithoutConversationLoad = async (dirPath: string) => {
-        try {
-            if (!dirPath) {
-                console.error('No directory path provided');
-                return {};
-            }
-            const structureResult = await window.api.readDirectoryStructure(dirPath);
-            if (structureResult && !structureResult.error) {
-                setFolderStructure(structureResult);
-            } else {
-                console.error('Error loading structure:', structureResult?.error);
-                setFolderStructure({ error: structureResult?.error || 'Failed' });
-            }
-            await loadConversationsWithoutAutoSelect(dirPath);
-            return structureResult;
-        } catch (err: any) {
-            console.error('Error loading structure:', err);
-            setError(err.message);
-            setFolderStructure({ error: err.message });
-            return { error: err.message };
-        }
-    };
-
-    const loadDirectoryStructure = async (dirPath: string) => {
-        await loadDirectoryStructureUtil(
-            dirPath,
-            setFolderStructure,
-            loadConversationsWithoutAutoSelect,
-            setError
-        );
-    };
 
     // Create a new Jupyter notebook (.ipynb)
     const createNewJupyterNotebook = useCallback(async () => {
@@ -5375,7 +3953,7 @@ const moveContentPane = useCallback((draggedId, draggedPath, targetPath, dropSid
                     // Add to context files
                     const response = await window.api?.readFileContent?.(data.path);
                     const content = response?.content || '';
-                    const name = data.path.split('/').pop() || data.path;
+                    const name = getFileName(data.path) || data.path;
 
                     const newFile = {
                         id: crypto.randomUUID(),
@@ -5402,7 +3980,7 @@ const moveContentPane = useCallback((draggedId, draggedPath, targetPath, dropSid
         if (textData && textData.startsWith('/') && !e.dataTransfer.files.length) {
             const response = await window.api?.readFileContent?.(textData);
             const content = response?.content || '';
-            const name = textData.split('/').pop() || textData;
+            const name = getFileName(textData) || textData;
 
             const newFile = {
                 id: crypto.randomUUID(),
@@ -5546,7 +4124,8 @@ const moveContentPane = useCallback((draggedId, draggedPath, targetPath, dropSid
             finalPromptForUserMessage = jinxCommandParts.join(' ');
 
         } else {
-            const contexts = gatherWorkspaceContext(contentDataRef, contextFiles);
+            const excludedPanes = getExcludedPaneIds();
+            const contexts = gatherWorkspaceContext(contentDataRef, contextFiles, excludedPanes);
             const newHash = hashContext(contexts);
             const contextChanged = newHash !== contextHash;
 
@@ -5808,6 +4387,7 @@ ${contextPrompt}`;
 
     const handleMessageContextMenu = (e: React.MouseEvent, message: any) => {
         e.preventDefault();
+        e.stopPropagation();
         const selection = window.getSelection();
         const selectedText = selection?.toString() || '';
 
@@ -5873,9 +4453,8 @@ ${contextPrompt}`;
         }
     };
 
-    const handleDeleteSelectedMessages = async () => {
-        const selectedIds = Array.from(selectedMessages);
-        if (selectedIds.length === 0) return;
+    const handleDeleteMessagesByIds = async (idsToDelete: string[]) => {
+        if (idsToDelete.length === 0) return;
 
         const activePaneData = contentDataRef.current[activeContentPaneId];
         if (!activePaneData || !activePaneData.chatMessages) {
@@ -5887,20 +4466,18 @@ ${contextPrompt}`;
         if (!conversationId) return;
 
         try {
-            const messageIdsToDelete = activePaneData.chatMessages.allMessages
-                .filter((m: any) => selectedIds.includes(m.id || m.timestamp))
-                .map((m: any) => m.message_id || m.id)
-                .filter(Boolean);
+            const messagesToDelete = activePaneData.chatMessages.allMessages
+                .filter((m: any) => idsToDelete.includes(m.id || m.timestamp));
 
-            if (messageIdsToDelete.length > 0) {
-                await window.api.deleteMessages({
-                    conversationId,
-                    messageIds: messageIdsToDelete
-                });
+            for (const msg of messagesToDelete) {
+                const msgId = msg.message_id || msg.id;
+                if (msgId) {
+                    await (window as any).api.deleteMessage({ conversationId, messageId: msgId });
+                }
             }
 
             activePaneData.chatMessages.allMessages = activePaneData.chatMessages.allMessages.filter(
-                (m: any) => !selectedIds.includes(m.id || m.timestamp)
+                (m: any) => !idsToDelete.includes(m.id || m.timestamp)
             );
             activePaneData.chatMessages.messages = activePaneData.chatMessages.allMessages.slice(-(activePaneData.chatMessages.displayedMessageCount || 20));
             activePaneData.chatStats = getConversationStats(activePaneData.chatMessages.allMessages);
@@ -5913,6 +4490,11 @@ ${contextPrompt}`;
             console.error('Error deleting messages:', err);
             setError(err.message);
         }
+    };
+
+    const handleDeleteSelectedMessages = async () => {
+        const selectedIds = Array.from(selectedMessages);
+        await handleDeleteMessagesByIds(selectedIds);
     };
 
     const handleResendWithSettings = async (messageToResend: any, selectedModel: string, selectedNPC: string) => {
@@ -6214,16 +4796,28 @@ ${contextPrompt}`;
 
     // Keep menu handler refs updated
     useEffect(() => {
-        closeContentPaneRef.current = closeContentPane;
         createSettingsPaneRef.current = createSettingsPane;
         createSearchPaneRef.current = createSearchPane;
         createHelpPaneRef.current = createHelpPane;
-    }, [closeContentPane, createSettingsPane, createSearchPane, createHelpPane]);
+    }, [createSettingsPane, createSearchPane, createHelpPane]);
 
     // Create Git pane
     const createGitPane = useCallback(async () => {
         const newPaneId = generateId();
         contentDataRef.current[newPaneId] = { contentType: 'git', contentId: 'git' };
+        setRootLayoutNode(oldRoot => addPaneToLayout(oldRoot, newPaneId));
+        setActiveContentPaneId(newPaneId);
+    }, []);
+
+    // Create untitled text file directly without modal
+    const createUntitledTextFile = useCallback(() => {
+        const newPaneId = generateId();
+        contentDataRef.current[newPaneId] = {
+            contentType: 'editor',
+            contentId: '',
+            fileContent: '',
+            isUntitled: true
+        };
         setRootLayoutNode(oldRoot => addPaneToLayout(oldRoot, newPaneId));
         setActiveContentPaneId(newPaneId);
     }, []);
@@ -6254,6 +4848,11 @@ ${contextPrompt}`;
             }
         });
     }, [currentPath, loadDirectoryStructure, normalizePath, setError, setPromptModal, setPromptModalValue]);
+
+    // Keep ref updated for keyboard/menu handlers
+    useEffect(() => {
+        createUntitledTextFileRef.current = createUntitledTextFile;
+    }, [createUntitledTextFile]);
 
     // Listen for custom event to create file with specific name
     useEffect(() => {
@@ -6335,7 +4934,7 @@ ${contextPrompt}`;
             const rawUnifiedDiffText = match[3].trim();
 
             const context = contexts.find((c: any) =>
-                c.path.includes(filePath) || filePath.includes(c.path.split('/').pop())
+                c.path.includes(filePath) || filePath.includes(getFileName(c.path))
             );
 
             if (context) {
@@ -6450,7 +5049,7 @@ ${contextPrompt}`;
             });
 
             // Create the attachment from the screenshot path
-            const fileName = screenshotPath.split('/').pop() || 'screenshot.png';
+            const fileName = getFileName(screenshotPath) || 'screenshot.png';
             const attachment = {
                 id: generateId(),
                 name: fileName,
@@ -6944,41 +5543,7 @@ ${contextPrompt}`;
 
 
 
-                            
-                            
-
-    // Update the existing useEffect for resize to include body class management
-    useEffect(() => {
-        const handleMouseUp = () => {
-            setIsResizingSidebar(false);
-            setIsResizingInput(false);
-            document.body.classList.remove('resizing-sidebar', 'resizing-input');
-        };
-
-        if (isResizingSidebar) {
-            document.body.classList.add('resizing-sidebar');
-            document.addEventListener('mousemove', handleSidebarResize);
-            document.addEventListener('mouseup', handleMouseUp);
-            
-            return () => {
-                document.body.classList.remove('resizing-sidebar');
-                document.removeEventListener('mousemove', handleSidebarResize);
-                document.removeEventListener('mouseup', handleMouseUp);
-            };
-        }
-        
-        if (isResizingInput) {
-            document.body.classList.add('resizing-input');
-            document.addEventListener('mousemove', handleInputResize);
-            document.addEventListener('mouseup', handleMouseUp);
-            
-            return () => {
-                document.body.classList.remove('resizing-input');
-                document.removeEventListener('mousemove', handleInputResize);
-                document.removeEventListener('mouseup', handleMouseUp);
-            };
-        }
-    }, [isResizingSidebar, isResizingInput, handleSidebarResize, handleInputResize]);
+    // Resize body class management now handled by useSidebarResize hook
 
 
 
@@ -7050,7 +5615,6 @@ ${contextPrompt}`;
                 <div
                     className="fixed theme-bg-secondary theme-border border rounded shadow-lg py-1 z-50"
                     style={{ top: messageContextMenuPos.y, left: messageContextMenuPos.x }}
-                    onMouseLeave={() => setMessageContextMenuPos(null)}
                 >
                     {/* Show copy option if there's selected text */}
                     {messageContextMenuPos.selectedText && (
@@ -7069,15 +5633,52 @@ ${contextPrompt}`;
                         </>
                     )}
 
-                    {/* Delete option */}
+                    {/* Select this message */}
+                    <button
+                        onClick={() => {
+                            if (messageContextMenuPos.messageId) {
+                                setSelectedMessages(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(messageContextMenuPos.messageId)) {
+                                        next.delete(messageContextMenuPos.messageId);
+                                    } else {
+                                        next.add(messageContextMenuPos.messageId);
+                                    }
+                                    return next;
+                                });
+                            }
+                            setMessageContextMenuPos(null);
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-xs"
+                    >
+                        <Edit size={14} />
+                        <span>{selectedMessages.has(messageContextMenuPos.messageId) ? 'Deselect Message' : 'Select Message'}</span>
+                    </button>
+
+                    {/* Delete this specific message */}
                     <div className="border-t theme-border my-1"></div>
                     <button
-                        onClick={handleDeleteSelectedMessages}
+                        onClick={() => {
+                            if (messageContextMenuPos.messageId) {
+                                handleDeleteMessagesByIds([messageContextMenuPos.messageId]);
+                            }
+                        }}
                         className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left text-red-400 text-xs"
                     >
                         <Trash size={14} />
-                        <span>Delete Messages ({selectedMessages.size})</span>
+                        <span>Delete This Message</span>
                     </button>
+
+                    {/* Delete all selected messages (if multiple selected) */}
+                    {selectedMessages.size > 1 && (
+                        <button
+                            onClick={handleDeleteSelectedMessages}
+                            className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left text-red-400 text-xs"
+                        >
+                            <Trash size={14} />
+                            <span>Delete Selected ({selectedMessages.size})</span>
+                        </button>
+                    )}
                 </div>
             </>
         )}
@@ -7417,7 +6018,7 @@ ${contextPrompt}`;
                                     <div key={idx} className="border theme-border rounded p-4">
                                         <div className="flex justify-between items-start mb-2">
                                             <div>
-                                                <h4 className="font-semibold">{change.filePath.split('/').pop()}</h4>
+                                                <h4 className="font-semibold">{getFileName(change.filePath)}</h4>
                                                 <p className="text-xs theme-text-muted mt-1">{change.reasoning}</p>
                                             </div>
                                             <div className="flex gap-2">
@@ -7699,378 +6300,46 @@ ${contextPrompt}`;
                 jinxList={availableJinxs.map(jinx => ({ jinx_name: jinx.name, description: jinx.description }))}
             />
 
-            {/* Git Modal - Enhanced with tabs */}
+            {/* Git Modal */}
             {gitModalOpen && (
-                <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setGitModalOpen(false)}>
-                    <div className="w-full max-w-5xl max-h-[85vh] theme-bg-primary rounded-lg border theme-border flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-                        {/* Header */}
-                        <div className="flex items-center justify-between p-4 border-b theme-border">
-                            <div className="flex items-center gap-3">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-purple-400">
-                                    <line x1="6" y1="3" x2="6" y2="15"></line>
-                                    <circle cx="18" cy="6" r="3"></circle>
-                                    <circle cx="6" cy="18" r="3"></circle>
-                                    <path d="M18 9a9 9 0 0 1-9 9"></path>
-                                </svg>
-                                <h2 className="text-lg font-semibold theme-text-primary">Git</h2>
-                                {gitStatus?.branch && <span className="text-sm theme-text-muted">({gitStatus.branch})</span>}
-                            </div>
-                            <button onClick={() => setGitModalOpen(false)} className="p-2 theme-hover rounded-lg">
-                                <X size={20} />
-                            </button>
-                        </div>
-
-                        {/* Tab Bar */}
-                        <div className="flex border-b theme-border px-4">
-                            {(['status', 'diff', 'branches', 'history'] as const).map(tab => (
-                                <button
-                                    key={tab}
-                                    onClick={() => {
-                                        setGitModalTab(tab);
-                                        if (tab === 'diff') loadGitDiff();
-                                        if (tab === 'branches') loadGitBranches();
-                                        if (tab === 'history') loadGitHistory();
-                                    }}
-                                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                                        gitModalTab === tab
-                                            ? 'border-purple-500 text-purple-400'
-                                            : 'border-transparent theme-text-muted hover:theme-text-primary'
-                                    }`}
-                                >
-                                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                                </button>
-                            ))}
-                        </div>
-
-                        {/* Tab Content */}
-                        <div className="flex-1 overflow-auto p-4">
-                            {!gitStatus ? (
-                                <div className="text-center theme-text-muted py-8">No git repository in this directory</div>
-                            ) : gitModalTab === 'status' ? (
-                                /* Status Tab */
-                                <div className="space-y-4">
-                                    <div className="flex items-center gap-4 text-sm">
-                                        <span className="theme-text-primary font-medium">Branch: {gitStatus.branch}</span>
-                                        {gitStatus.ahead > 0 && <span className="text-green-400">↑{gitStatus.ahead} ahead</span>}
-                                        {gitStatus.behind > 0 && <span className="text-yellow-400">↓{gitStatus.behind} behind</span>}
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="theme-bg-secondary rounded-lg p-3">
-                                            <h3 className="text-sm font-medium text-green-400 mb-2">Staged ({(gitStatus.staged || []).length})</h3>
-                                            <div className="space-y-1 max-h-48 overflow-y-auto">
-                                                {(gitStatus.staged || []).length === 0 ? (
-                                                    <div className="text-xs theme-text-muted">No staged files</div>
-                                                ) : (gitStatus.staged || []).map((file: any) => (
-                                                    <div key={file.path} className="flex items-center justify-between text-xs group">
-                                                        <button
-                                                            onClick={() => loadFileDiff(file.path, true)}
-                                                            className="text-green-300 truncate flex-1 text-left hover:underline"
-                                                        >
-                                                            {file.path}
-                                                        </button>
-                                                        <button onClick={() => gitUnstageFile(file.path)} className="text-red-400 hover:text-red-300 px-2 opacity-0 group-hover:opacity-100">Unstage</button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        <div className="theme-bg-secondary rounded-lg p-3">
-                                            <h3 className="text-sm font-medium text-yellow-400 mb-2">Unstaged ({(gitStatus.unstaged || []).length + (gitStatus.untracked || []).length})</h3>
-                                            <div className="space-y-1 max-h-48 overflow-y-auto">
-                                                {(gitStatus.unstaged || []).length + (gitStatus.untracked || []).length === 0 ? (
-                                                    <div className="text-xs theme-text-muted">No changes</div>
-                                                ) : [...(gitStatus.unstaged || []), ...(gitStatus.untracked || [])].map((file: any) => (
-                                                    <div key={file.path} className="flex items-center justify-between text-xs group">
-                                                        <button
-                                                            onClick={() => loadFileDiff(file.path, false)}
-                                                            className={`truncate flex-1 text-left hover:underline ${file.isUntracked ? 'text-gray-400' : 'text-yellow-300'}`}
-                                                        >
-                                                            {file.path}
-                                                        </button>
-                                                        <button onClick={() => gitStageFile(file.path)} className="text-green-400 hover:text-green-300 px-2 opacity-0 group-hover:opacity-100">Stage</button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* File Diff Preview */}
-                                    {gitSelectedFile && gitFileDiff && (
-                                        <div className="theme-bg-secondary rounded-lg p-3">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <h3 className="text-sm font-medium theme-text-primary">{gitSelectedFile}</h3>
-                                                <button onClick={() => { setGitSelectedFile(null); setGitFileDiff(null); }} className="text-xs theme-text-muted hover:theme-text-primary">Close</button>
-                                            </div>
-                                            <pre className="text-xs font-mono overflow-auto max-h-60 p-2 bg-black/30 rounded">
-                                                {gitFileDiff.split('\n').map((line, i) => (
-                                                    <div
-                                                        key={i}
-                                                        className={
-                                                            line.startsWith('+') && !line.startsWith('+++') ? 'text-green-400 bg-green-900/20' :
-                                                            line.startsWith('-') && !line.startsWith('---') ? 'text-red-400 bg-red-900/20' :
-                                                            line.startsWith('@@') ? 'text-cyan-400' :
-                                                            'theme-text-muted'
-                                                        }
-                                                    >
-                                                        {line}
-                                                    </div>
-                                                ))}
-                                            </pre>
-                                        </div>
-                                    )}
-
-                                    <div className="space-y-2">
-                                        <input
-                                            type="text"
-                                            className="w-full theme-input text-sm rounded px-3 py-2"
-                                            placeholder="Commit message..."
-                                            value={gitCommitMessage}
-                                            onChange={e => setGitCommitMessage(e.target.value)}
-                                        />
-                                        <div className="flex gap-2">
-                                            <button
-                                                disabled={gitLoading || !gitCommitMessage.trim()}
-                                                onClick={gitCommitChanges}
-                                                className="theme-button-primary px-4 py-2 rounded text-sm flex-1 disabled:opacity-50"
-                                            >
-                                                Commit
-                                            </button>
-                                            <button disabled={gitLoading} onClick={gitPullChanges} className="theme-button px-4 py-2 rounded text-sm flex-1">
-                                                Pull
-                                            </button>
-                                            <button disabled={gitLoading} onClick={gitPushChanges} className="theme-button px-4 py-2 rounded text-sm flex-1">
-                                                Push
-                                            </button>
-                                            <button disabled={gitLoading} onClick={loadGitStatus} className="theme-button px-4 py-2 rounded text-sm">
-                                                Refresh
-                                            </button>
-                                        </div>
-                                        {gitError && <div className="text-red-500 text-xs">{gitError}</div>}
-                                        {noUpstreamPrompt && (
-                                            <div className="mt-2 p-2 bg-amber-900/30 border border-amber-600/50 rounded text-xs">
-                                                <div className="text-amber-400 mb-2">Branch has no upstream. Push to origin/{noUpstreamPrompt.branch}?</div>
-                                                <div className="flex gap-2">
-                                                    <button onClick={gitPushWithUpstream} disabled={gitLoading} className="px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-white text-[10px]">Push</button>
-                                                    <button onClick={gitEnableAutoSetupRemote} disabled={gitLoading} className="px-2 py-1 bg-green-600 hover:bg-green-500 rounded text-white text-[10px]" title="Sets git config push.autoSetupRemote true">Always Auto-Push</button>
-                                                    <button onClick={() => setNoUpstreamPrompt(null)} className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-white text-[10px]">Cancel</button>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            ) : gitModalTab === 'diff' ? (
-                                /* Diff Tab */
-                                <div className="space-y-4">
-                                    <div className="flex gap-2 mb-4">
-                                        <button onClick={loadGitDiff} className="theme-button px-3 py-1 rounded text-sm">Refresh Diff</button>
-                                    </div>
-                                    {gitDiffContent ? (
-                                        <div className="space-y-4">
-                                            {gitDiffContent.staged && (
-                                                <div className="theme-bg-secondary rounded-lg p-3">
-                                                    <h3 className="text-sm font-medium text-green-400 mb-2">Staged Changes</h3>
-                                                    <pre className="text-xs font-mono overflow-auto max-h-64 p-2 bg-black/30 rounded whitespace-pre-wrap">
-                                                        {gitDiffContent.staged.split('\n').map((line, i) => (
-                                                            <div
-                                                                key={i}
-                                                                className={
-                                                                    line.startsWith('+') && !line.startsWith('+++') ? 'text-green-400 bg-green-900/20' :
-                                                                    line.startsWith('-') && !line.startsWith('---') ? 'text-red-400 bg-red-900/20' :
-                                                                    line.startsWith('@@') ? 'text-cyan-400' :
-                                                                    line.startsWith('diff ') ? 'text-purple-400 font-bold mt-2' :
-                                                                    'theme-text-muted'
-                                                                }
-                                                            >
-                                                                {line}
-                                                            </div>
-                                                        ))}
-                                                    </pre>
-                                                </div>
-                                            )}
-                                            {gitDiffContent.unstaged && (
-                                                <div className="theme-bg-secondary rounded-lg p-3">
-                                                    <h3 className="text-sm font-medium text-yellow-400 mb-2">Unstaged Changes</h3>
-                                                    <pre className="text-xs font-mono overflow-auto max-h-64 p-2 bg-black/30 rounded whitespace-pre-wrap">
-                                                        {gitDiffContent.unstaged.split('\n').map((line, i) => (
-                                                            <div
-                                                                key={i}
-                                                                className={
-                                                                    line.startsWith('+') && !line.startsWith('+++') ? 'text-green-400 bg-green-900/20' :
-                                                                    line.startsWith('-') && !line.startsWith('---') ? 'text-red-400 bg-red-900/20' :
-                                                                    line.startsWith('@@') ? 'text-cyan-400' :
-                                                                    line.startsWith('diff ') ? 'text-purple-400 font-bold mt-2' :
-                                                                    'theme-text-muted'
-                                                                }
-                                                            >
-                                                                {line}
-                                                            </div>
-                                                        ))}
-                                                    </pre>
-                                                </div>
-                                            )}
-                                            {!gitDiffContent.staged && !gitDiffContent.unstaged && (
-                                                <div className="text-center theme-text-muted py-8">No changes to display</div>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <div className="text-center theme-text-muted py-8">Loading diff...</div>
-                                    )}
-                                </div>
-                            ) : gitModalTab === 'branches' ? (
-                                /* Branches Tab */
-                                <div className="space-y-4">
-                                    {/* Create New Branch */}
-                                    <div className="theme-bg-secondary rounded-lg p-3">
-                                        <h3 className="text-sm font-medium theme-text-primary mb-2">Create New Branch</h3>
-                                        <div className="flex gap-2">
-                                            <input
-                                                type="text"
-                                                className="flex-1 theme-input text-sm rounded px-3 py-2"
-                                                placeholder="Branch name..."
-                                                value={gitNewBranchName}
-                                                onChange={e => setGitNewBranchName(e.target.value)}
-                                            />
-                                            <button
-                                                disabled={gitLoading || !gitNewBranchName.trim()}
-                                                onClick={gitCreateBranch}
-                                                className="theme-button-primary px-4 py-2 rounded text-sm disabled:opacity-50"
-                                            >
-                                                Create
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* Branch List */}
-                                    <div className="theme-bg-secondary rounded-lg p-3">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <h3 className="text-sm font-medium theme-text-primary">Branches</h3>
-                                            <button onClick={loadGitBranches} className="text-xs theme-text-muted hover:theme-text-primary">Refresh</button>
-                                        </div>
-                                        {gitBranches?.branches ? (
-                                            <div className="space-y-1 max-h-80 overflow-y-auto">
-                                                {gitBranches.branches.map((branch: string) => (
-                                                    <div
-                                                        key={branch}
-                                                        className={`flex items-center justify-between p-2 rounded text-sm ${
-                                                            branch === gitBranches.current ? 'bg-purple-900/30 border border-purple-500/30' : 'hover:bg-white/5'
-                                                        }`}
-                                                    >
-                                                        <div className="flex items-center gap-2">
-                                                            {branch === gitBranches.current && (
-                                                                <span className="text-purple-400">●</span>
-                                                            )}
-                                                            <span className={branch === gitBranches.current ? 'text-purple-400 font-medium' : 'theme-text-primary'}>
-                                                                {branch}
-                                                            </span>
-                                                        </div>
-                                                        {branch !== gitBranches.current && (
-                                                            <div className="flex gap-2">
-                                                                <button
-                                                                    onClick={() => gitCheckoutBranch(branch)}
-                                                                    disabled={gitLoading}
-                                                                    className="text-xs text-blue-400 hover:text-blue-300"
-                                                                >
-                                                                    Checkout
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => gitDeleteBranch(branch)}
-                                                                    disabled={gitLoading}
-                                                                    className="text-xs text-red-400 hover:text-red-300"
-                                                                >
-                                                                    Delete
-                                                                </button>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <div className="text-center theme-text-muted py-4">Loading branches...</div>
-                                        )}
-                                    </div>
-                                    {gitError && <div className="text-red-500 text-xs">{gitError}</div>}
-                                    {noUpstreamPrompt && (
-                                        <div className="mt-2 p-2 bg-amber-900/30 border border-amber-600/50 rounded text-xs">
-                                            <div className="text-amber-400 mb-2">Branch has no upstream. Push to origin/{noUpstreamPrompt.branch}?</div>
-                                            <div className="flex gap-2">
-                                                <button onClick={gitPushWithUpstream} disabled={gitLoading} className="px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-white text-[10px]">Push</button>
-                                                <button onClick={gitEnableAutoSetupRemote} disabled={gitLoading} className="px-2 py-1 bg-green-600 hover:bg-green-500 rounded text-white text-[10px]" title="Sets git config push.autoSetupRemote true">Always Auto-Push</button>
-                                                <button onClick={() => setNoUpstreamPrompt(null)} className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-white text-[10px]">Cancel</button>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            ) : gitModalTab === 'history' ? (
-                                /* History Tab */
-                                <div className="flex gap-4 h-full">
-                                    {/* Commit List */}
-                                    <div className="w-1/2 theme-bg-secondary rounded-lg p-3 flex flex-col">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <h3 className="text-sm font-medium theme-text-primary">Commit History</h3>
-                                            <button onClick={loadGitHistory} className="text-xs theme-text-muted hover:theme-text-primary">Refresh</button>
-                                        </div>
-                                        <div className="flex-1 overflow-y-auto space-y-1">
-                                            {gitCommitHistory.length > 0 ? gitCommitHistory.map((commit: any) => (
-                                                <button
-                                                    key={commit.hash}
-                                                    onClick={() => loadCommitDetails(commit.hash)}
-                                                    className={`w-full text-left p-2 rounded text-xs hover:bg-white/5 ${
-                                                        gitSelectedCommit?.hash === commit.hash ? 'bg-purple-900/30 border border-purple-500/30' : ''
-                                                    }`}
-                                                >
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-purple-400 font-mono">{commit.hash.slice(0, 7)}</span>
-                                                        <span className="theme-text-muted">{new Date(commit.date).toLocaleDateString()}</span>
-                                                    </div>
-                                                    <div className="theme-text-primary truncate mt-1">{commit.message}</div>
-                                                    <div className="theme-text-muted text-xs mt-1">{commit.author_name}</div>
-                                                </button>
-                                            )) : (
-                                                <div className="text-center theme-text-muted py-4">Loading history...</div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Commit Details */}
-                                    <div className="w-1/2 theme-bg-secondary rounded-lg p-3 flex flex-col">
-                                        <h3 className="text-sm font-medium theme-text-primary mb-2">Commit Details</h3>
-                                        {gitSelectedCommit ? (
-                                            <div className="flex-1 overflow-y-auto">
-                                                <div className="space-y-2 text-xs mb-4">
-                                                    <div><span className="theme-text-muted">Hash:</span> <span className="font-mono text-purple-400">{gitSelectedCommit.hash}</span></div>
-                                                    <div><span className="theme-text-muted">Author:</span> <span className="theme-text-primary">{gitSelectedCommit.author_name} &lt;{gitSelectedCommit.author_email}&gt;</span></div>
-                                                    <div><span className="theme-text-muted">Date:</span> <span className="theme-text-primary">{new Date(gitSelectedCommit.date).toLocaleString()}</span></div>
-                                                    <div className="theme-text-primary whitespace-pre-wrap">{gitSelectedCommit.message}</div>
-                                                </div>
-                                                {gitSelectedCommit.diff && (
-                                                    <pre className="text-xs font-mono overflow-auto max-h-64 p-2 bg-black/30 rounded whitespace-pre-wrap">
-                                                        {gitSelectedCommit.diff.split('\n').map((line: string, i: number) => (
-                                                            <div
-                                                                key={i}
-                                                                className={
-                                                                    line.startsWith('+') && !line.startsWith('+++') ? 'text-green-400 bg-green-900/20' :
-                                                                    line.startsWith('-') && !line.startsWith('---') ? 'text-red-400 bg-red-900/20' :
-                                                                    line.startsWith('@@') ? 'text-cyan-400' :
-                                                                    line.startsWith('diff ') ? 'text-purple-400 font-bold mt-2' :
-                                                                    'theme-text-muted'
-                                                                }
-                                                            >
-                                                                {line}
-                                                            </div>
-                                                        ))}
-                                                    </pre>
-                                                )}
-                                            </div>
-                                        ) : (
-                                            <div className="text-center theme-text-muted py-8">Select a commit to view details</div>
-                                        )}
-                                    </div>
-                                </div>
-                            ) : null}
-                        </div>
-                    </div>
-                </div>
+                <GitModal
+                    onClose={() => setGitModalOpen(false)}
+                    gitStatus={gitStatus}
+                    gitModalTab={gitModalTab}
+                    gitDiffContent={gitDiffContent}
+                    gitBranches={gitBranches}
+                    gitCommitHistory={gitCommitHistory}
+                    gitCommitMessage={gitCommitMessage}
+                    gitNewBranchName={gitNewBranchName}
+                    gitSelectedCommit={gitSelectedCommit}
+                    gitSelectedFile={gitSelectedFile}
+                    gitFileDiff={gitFileDiff}
+                    gitError={gitError}
+                    gitLoading={gitLoading}
+                    noUpstreamPrompt={noUpstreamPrompt}
+                    setGitCommitMessage={setGitCommitMessage}
+                    setGitNewBranchName={setGitNewBranchName}
+                    setGitModalTab={setGitModalTab}
+                    setNoUpstreamPrompt={setNoUpstreamPrompt}
+                    setGitSelectedFile={setGitSelectedFile}
+                    setGitFileDiff={setGitFileDiff}
+                    loadGitStatus={loadGitStatus}
+                    loadGitDiff={loadGitDiff}
+                    loadGitBranches={loadGitBranches}
+                    loadGitHistory={loadGitHistory}
+                    loadFileDiff={loadFileDiff}
+                    loadCommitDetails={loadCommitDetails}
+                    gitStageFile={gitStageFile}
+                    gitUnstageFile={gitUnstageFile}
+                    gitCommitChanges={gitCommitChanges}
+                    gitPushChanges={gitPushChanges}
+                    gitPullChanges={gitPullChanges}
+                    gitCreateBranch={gitCreateBranch}
+                    gitCheckoutBranch={gitCheckoutBranch}
+                    gitDeleteBranch={gitDeleteBranch}
+                    gitPushWithUpstream={gitPushWithUpstream}
+                    gitEnableAutoSetupRemote={gitEnableAutoSetupRemote}
+                />
             )}
 
             {/* Workspace Modal */}
@@ -8261,6 +6530,10 @@ const getChatInputProps = useCallback((paneId: string) => ({
     isStreaming, handleInputSubmit, handleInterruptStream,
     uploadedFiles, setUploadedFiles, contextFiles, setContextFiles,
     contextFilesCollapsed, setContextFilesCollapsed, currentPath,
+    // Pane context auto-include
+    autoIncludeContext, setAutoIncludeContext,
+    contextPaneOverrides, setContextPaneOverrides,
+    contentDataRef,
     // Per-pane execution mode
     executionMode: getPaneExecutionMode(paneId),
     setExecutionMode: (mode: string) => setPaneExecutionMode(paneId, mode),
@@ -8460,6 +6733,7 @@ const getChatInputProps = useCallback((paneId: string) => ({
     input, inputHeight, isInputMinimized, isInputExpanded, isResizingInput,
     isStreaming, handleInputSubmit, handleInterruptStream,
     uploadedFiles, contextFiles, contextFilesCollapsed, currentPath,
+    autoIncludeContext, contextPaneOverrides, contentDataRef,
     getPaneExecutionMode, setPaneExecutionMode, getPaneSelectedJinx, setPaneSelectedJinx,
     getPaneShowJinxDropdown, setPaneShowJinxDropdown,
     jinxInputValues, jinxsToDisplay,
@@ -8470,6 +6744,60 @@ const getChatInputProps = useCallback((paneId: string) => ({
     broadcastMode, setBroadcastMode,
     availableMcpServers, mcpServerPath, selectedMcpTools, availableMcpTools,
     mcpToolsLoading, mcpToolsError, showMcpServersDropdown, activeConversationId, findNodePath, performSplit,
+]);
+
+// Pane renderer registry - maps contentType to render function
+const paneRenderers = useMemo(() => ({
+    chat: renderChatView,
+    editor: renderFileEditor,
+    terminal: renderTerminalView,
+    pdf: renderPdfViewer,
+    csv: renderCsvViewer,
+    docx: renderDocxViewer,
+    browser: renderBrowserViewer,
+    pptx: renderPptxViewer,
+    latex: renderLatexViewer,
+    notebook: renderNotebookViewer,
+    exp: renderExpViewer,
+    image: renderPicViewer,
+    mindmap: renderMindMapViewer,
+    zip: renderZipViewer,
+    'data-labeler': renderDataLabelerPane,
+    'graph-viewer': renderGraphViewerPane,
+    browsergraph: renderBrowserGraphPane,
+    datadash: renderDataDashPane,
+    dbtool: renderDBToolPane,
+    npcteam: renderNPCTeamPane,
+    jinx: renderJinxPane,
+    teammanagement: renderTeamManagementPane,
+    settings: renderSettingsPane,
+    photoviewer: renderPhotoViewerPane,
+    scherzo: renderScherzoPane,
+    library: renderLibraryViewerPane,
+    help: renderHelpPane,
+    git: renderGitPane,
+    folder: renderFolderViewerPane,
+    projectenv: renderProjectEnvPane,
+    diskusage: renderDiskUsagePane,
+    'memory-manager': renderMemoryManagerPane,
+    'cron-daemon': renderCronDaemonPane,
+    search: renderSearchPane,
+    'markdown-preview': renderMarkdownPreviewPane,
+    'html-preview': renderHtmlPreviewPane,
+    tilejinx: renderTileJinxPane,
+    python: renderTerminalView,
+    branches: renderBranchComparisonPane,
+}), [
+    renderChatView, renderFileEditor, renderTerminalView, renderPdfViewer,
+    renderCsvViewer, renderDocxViewer, renderBrowserViewer, renderPptxViewer,
+    renderLatexViewer, renderNotebookViewer, renderExpViewer, renderPicViewer,
+    renderMindMapViewer, renderZipViewer, renderDataLabelerPane, renderGraphViewerPane,
+    renderBrowserGraphPane, renderDataDashPane, renderDBToolPane, renderNPCTeamPane,
+    renderJinxPane, renderTeamManagementPane, renderSettingsPane, renderPhotoViewerPane,
+    renderScherzoPane, renderLibraryViewerPane, renderHelpPane, renderGitPane,
+    renderFolderViewerPane, renderProjectEnvPane, renderDiskUsagePane, renderMemoryManagerPane,
+    renderCronDaemonPane, renderSearchPane, renderMarkdownPreviewPane, renderHtmlPreviewPane,
+    renderTileJinxPane, renderBranchComparisonPane,
 ]);
 
 const layoutComponentApi = useMemo(() => ({
@@ -8483,50 +6811,12 @@ const layoutComponentApi = useMemo(() => ({
     closeContentPane,
     moveContentPane,
     createAndAddPaneNodeToLayout,
-    renderChatView,
-    renderFileEditor,
-    renderTerminalView,
-    renderPdfViewer,
-    renderCsvViewer,
-    renderDocxViewer,
-    renderBrowserViewer,
-    renderPptxViewer,
-    renderLatexViewer,
-    renderNotebookViewer,
-    renderExpViewer,
-    renderPicViewer,
-    renderMindMapViewer,
-    renderZipViewer,
-    renderDataLabelerPane,
-    renderGraphViewerPane,
-    renderBrowserGraphPane,
-    renderDataDashPane,
-    renderDBToolPane,
-    renderNPCTeamPane,
-    renderJinxPane,
-    renderTeamManagementPane,
-    renderSettingsPane,
-    renderPhotoViewerPane,
-    renderScherzoPane,
-    renderLibraryViewerPane,
-    renderHelpPane,
-    renderGitPane,
-    renderFolderViewerPane,
-    renderProjectEnvPane,
-    renderDiskUsagePane,
-    renderMemoryManagerPane,
-    renderCronDaemonPane,
-    renderSearchPane,
-    renderMarkdownPreviewPane,
-    renderHtmlPreviewPane,
-    renderTileJinxPane,
-    renderBranchComparisonPane,
+    paneRenderers,
     setPaneContextMenu,
     // Chat-specific props:
     autoScrollEnabled, setAutoScrollEnabled,
     messageSelectionMode, toggleMessageSelectionMode, selectedMessages,
     conversationBranches, showBranchingUI, setShowBranchingUI,
-    // ChatInput props function for rendering input in chat panes (takes paneId)
     getChatInputProps,
     // Zen mode props
     zenModePaneId,
@@ -8553,39 +6843,7 @@ const layoutComponentApi = useMemo(() => ({
     findNodeByPath, findNodePath, activeContentPaneId,
     draggedItem, dropTarget, updateContentPane, performSplit, closeContentPane,
     moveContentPane, createAndAddPaneNodeToLayout,
-    renderChatView, renderFileEditor, renderTerminalView, renderPdfViewer,
-    renderCsvViewer, renderDocxViewer, renderBrowserViewer,
-    renderPptxViewer,
-    renderLatexViewer,
-    renderNotebookViewer,
-    renderExpViewer,
-    renderPicViewer,
-    renderMindMapViewer,
-    renderZipViewer,
-    renderDataLabelerPane,
-    renderGraphViewerPane,
-    renderBrowserGraphPane,
-    renderDataDashPane,
-    renderDBToolPane,
-    renderNPCTeamPane,
-    renderJinxPane,
-    renderTeamManagementPane,
-    renderSettingsPane,
-    renderPhotoViewerPane,
-    renderScherzoPane,
-    renderLibraryViewerPane,
-    renderHelpPane,
-    renderGitPane,
-    renderFolderViewerPane,
-    renderProjectEnvPane,
-    renderDiskUsagePane,
-    renderMemoryManagerPane,
-    renderCronDaemonPane,
-    renderSearchPane,
-    renderMarkdownPreviewPane,
-    renderHtmlPreviewPane,
-    renderTileJinxPane,
-    renderBranchComparisonPane,
+    paneRenderers,
     setActiveContentPaneId, setDraggedItem, setDropTarget,
     setPaneContextMenu,
     autoScrollEnabled, setAutoScrollEnabled,
@@ -8822,7 +7080,7 @@ const renderPaneContextMenu = () => {
     };
 
     const handleNewTextFile = () => {
-        createNewTextFile();
+        createUntitledTextFile();
         setPaneContextMenu(null);
     };
 
@@ -8904,11 +7162,8 @@ const renderPaneContextMenu = () => {
     );
 };
 
-// Render PDF context menu
-const renderPdfContextMenu = () => {
-    if (!pdfContextMenuPos) return null;
-    return <div>PDF Context Menu</div>;
-};
+// PDF context menu is rendered inside PdfViewer component directly
+const renderPdfContextMenu = () => null;
 
 // Render browser context menu
 const renderBrowserContextMenu = () => {
@@ -9574,7 +7829,7 @@ const renderMainContent = () => {
         title: data?.contentType === 'chat'
             ? `Chat ${data?.contentId?.slice(-6) || ''}`
             : data?.contentType === 'editor'
-                ? data?.contentId?.split('/').pop() || 'File'
+                ? getFileName(data?.contentId) || 'File'
                 : data?.contentType || 'Pane',
         isActive: paneId === activeContentPaneId
     }));
@@ -9758,6 +8013,7 @@ const renderMainContent = () => {
         switchToPath={switchToPath}
         handleCreateNewFolder={handleCreateNewFolder}
         createNewTextFile={createNewTextFile}
+        createUntitledTextFile={createUntitledTextFile}
         createNewTerminal={createNewTerminal}
         createNewNotebook={createNewJupyterNotebook}
         createNewExperiment={createNewExperiment}
@@ -9800,7 +8056,7 @@ const renderMainContent = () => {
                         <div className="flex items-center gap-2">
                             <span className="font-semibold">Zen Mode</span>
                             <span className="text-gray-500">-</span>
-                            <span>{contentDataRef.current[zenModePaneId]?.contentId?.split('/').pop() || 'Focused View'}</span>
+                            <span>{getFileName(contentDataRef.current[zenModePaneId]?.contentId) || 'Focused View'}</span>
                         </div>
                         <button
                             onClick={() => setZenModePaneId(null)}

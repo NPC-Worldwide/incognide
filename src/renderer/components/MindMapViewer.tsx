@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { Save, Download, Plus, Trash2, X, Edit, Link, Unlink, Palette, Eye, Edit2, ArrowRight, ArrowLeft, GitBranch, Map, Network, Workflow } from 'lucide-react';
 import ForceGraph2D from 'react-force-graph-2d';
 
@@ -511,7 +511,7 @@ const MindMapViewer = ({
                     {nodes.length} nodes, {links.length} links
                     {hasChanges && <span className="text-yellow-500 ml-2">*</span>}
                 </span>
-                <button onClick={() => closeContentPane?.(nodeId)} className="p-1.5 rounded hover:bg-gray-700 text-gray-400 hover:text-white transition-colors">
+                <button onClick={() => closeContentPane?.(nodeId, findNodePath?.(rootLayoutNode, nodeId) || [])} className="p-1.5 rounded hover:bg-gray-700 text-gray-400 hover:text-white transition-colors">
                     <X size={18} />
                 </button>
             </div>
@@ -955,4 +955,9 @@ const MindMapViewer = ({
     );
 };
 
-export default MindMapViewer;
+// Custom comparison to prevent reload on pane resize
+const arePropsEqual = (prevProps: any, nextProps: any) => {
+    return prevProps.nodeId === nextProps.nodeId;
+};
+
+export default memo(MindMapViewer, arePropsEqual);
