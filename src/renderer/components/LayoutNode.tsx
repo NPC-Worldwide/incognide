@@ -568,11 +568,7 @@ export const LayoutNode = memo(({ node, path, component }) => {
         const { activeContentPaneId, setActiveContentPaneId, draggedItem,
             setDraggedItem, dropTarget, setDropTarget, contentDataRef,
             updateContentPane, performSplit, setRootLayoutNode,
-            renderChatView, renderFileEditor, renderTerminalView,
-            renderPdfViewer, renderCsvViewer, renderDocxViewer, renderBrowserViewer,
-            renderPptxViewer, renderLatexViewer, renderNotebookViewer, renderExpViewer, renderPicViewer, renderMindMapViewer, renderZipViewer,
-            renderDataLabelerPane, renderGraphViewerPane, renderBrowserGraphPane,
-            renderDataDashPane, renderDBToolPane, renderNPCTeamPane, renderJinxPane, renderTeamManagementPane, renderSettingsPane, renderPhotoViewerPane, renderScherzoPane, renderLibraryViewerPane, renderHelpPane, renderGitPane, renderProjectEnvPane, renderDiskUsagePane, renderMemoryManagerPane, renderCronDaemonPane, renderSearchPane, renderFolderViewerPane, renderMarkdownPreviewPane, renderHtmlPreviewPane, renderTileJinxPane, renderBranchComparisonPane,
+            paneRenderers,
             moveContentPane,
             findNodePath, rootLayoutNode, setPaneContextMenu, closeContentPane,
             // Destructure the new chat-specific props from component:
@@ -1336,142 +1332,66 @@ export const LayoutNode = memo(({ node, path, component }) => {
             const virtualId = `${node.id}_tab_${tabIndex}`;
             const tabContentType = tab.contentType;
 
-            switch (tabContentType) {
-                case 'browser':
-                    return renderBrowserViewer({
-                        nodeId: virtualId,
-                        hasTabBar: showTabBar,
-                        onToggleZen: toggleZenMode ? () => toggleZenMode(node.id) : undefined,
-                        isZenMode: zenModePaneId === node.id
-                    });
-                case 'terminal':
-                    return renderTerminalView({ nodeId: virtualId });
-                case 'pdf':
-                    return renderPdfViewer({ nodeId: virtualId });
-                case 'csv':
-                    return renderCsvViewer({ nodeId: virtualId });
-                case 'docx':
-                    return renderDocxViewer({ nodeId: virtualId });
-                case 'pptx':
-                    return renderPptxViewer({ nodeId: virtualId });
-                case 'editor':
-                    return renderFileEditor({ nodeId: virtualId });
-                default:
-                    // For other types, fall back to single rendering
-                    return null;
+            // Special case: browser needs extra props
+            if (tabContentType === 'browser') {
+                return paneRenderers.browser?.({
+                    nodeId: virtualId,
+                    hasTabBar: showTabBar,
+                    onToggleZen: toggleZenMode ? () => toggleZenMode(node.id) : undefined,
+                    isZenMode: zenModePaneId === node.id
+                });
             }
+
+            // Use registry for all other tab types
+            const renderer = paneRenderers[tabContentType];
+            return renderer ? renderer({ nodeId: virtualId }) : null;
         };
 
         const renderPaneContent = () => {
-            switch (contentType) {
-                case 'chat':
-                    return (
-                        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                            <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto">
-                                {renderChatView({ nodeId: node.id })}
-                            </div>
-                            {chatInputProps && (
-                                <ChatInput
-                                    {...chatInputProps}
-                                    paneId={node.id}
-                                    onFocus={() => setActiveContentPaneId(node.id)}
-                                />
-                            )}
+            // Special cases that need extra handling
+            if (contentType === 'chat') {
+                return (
+                    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                        <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto">
+                            {paneRenderers.chat?.({ nodeId: node.id })}
                         </div>
-                    );
-                case 'editor':
-                    return renderFileEditor({ nodeId: node.id });
-                case 'terminal':
-                    return renderTerminalView({ nodeId: node.id });
-                case 'pdf':
-                    return renderPdfViewer({ nodeId: node.id });
-                case 'csv':
-                    return renderCsvViewer({ nodeId: node.id });
-                case 'docx':
-                    return renderDocxViewer({ nodeId: node.id });
-                case 'browser':
-                    return renderBrowserViewer({
-                        nodeId: node.id,
-                        hasTabBar: showTabBar,
-                        onToggleZen: toggleZenMode ? () => toggleZenMode(node.id) : undefined,
-                        isZenMode: zenModePaneId === node.id
-                    });
-                case 'pptx':
-                    return renderPptxViewer({ nodeId: node.id });
-                case 'latex':
-                    return renderLatexViewer({ nodeId: node.id });
-                case 'notebook':
-                    return renderNotebookViewer({ nodeId: node.id });
-                case 'exp':
-                    return renderExpViewer({ nodeId: node.id });
-                case 'image':
-                    return renderPicViewer({ nodeId: node.id });
-                case 'mindmap':
-                    return renderMindMapViewer({ nodeId: node.id });
-                case 'data-labeler':
-                    return renderDataLabelerPane({ nodeId: node.id });
-                case 'graph-viewer':
-                    return renderGraphViewerPane({ nodeId: node.id });
-                case 'browsergraph':
-                    return renderBrowserGraphPane({ nodeId: node.id });
-                case 'datadash':
-                    return renderDataDashPane({ nodeId: node.id });
-                case 'dbtool':
-                    return renderDBToolPane({ nodeId: node.id });
-                case 'npcteam':
-                    return renderNPCTeamPane({ nodeId: node.id });
-                case 'jinx':
-                    return renderJinxPane({ nodeId: node.id });
-                case 'teammanagement':
-                    return renderTeamManagementPane({ nodeId: node.id });
-                case 'settings':
-                    return renderSettingsPane({ nodeId: node.id });
-                case 'photoviewer':
-                    return renderPhotoViewerPane({ nodeId: node.id });
-                case 'scherzo':
-                    return renderScherzoPane({ nodeId: node.id });
-                case 'library':
-                    return renderLibraryViewerPane({ nodeId: node.id });
-                case 'projectenv':
-                    return renderProjectEnvPane({ nodeId: node.id });
-                case 'diskusage':
-                    return renderDiskUsagePane({ nodeId: node.id });
-                case 'memory-manager':
-                    return renderMemoryManagerPane({ nodeId: node.id });
-                case 'cron-daemon':
-                    return renderCronDaemonPane({ nodeId: node.id });
-                case 'search':
-                    return renderSearchPane({ nodeId: node.id, initialQuery: paneData?.initialQuery });
-                case 'zip':
-                    return renderZipViewer({ nodeId: node.id });
-                case 'folder':
-                    return renderFolderViewerPane({ nodeId: node.id });
-                case 'markdown-preview':
-                    return renderMarkdownPreviewPane({ nodeId: node.id });
-                case 'html-preview':
-                    return renderHtmlPreviewPane({ nodeId: node.id });
-                case 'tilejinx':
-                    return renderTileJinxPane({ nodeId: node.id });
-                case 'python':
-                    // Python REPL - uses terminal with python3 shell
-                    return renderTerminalView({ nodeId: node.id, shell: 'python3' });
-                case 'branches':
-                    return renderBranchComparisonPane({ nodeId: node.id });
-                case 'help':
-                    return renderHelpPane({ nodeId: node.id });
-                case 'git':
-                    return renderGitPane({ nodeId: node.id });
-                case 'diff':
-                    return (
-                        <DiffViewer
-                            filePath={contentId || ''}
-                            diffStatus={paneData?.diffStatus}
-                            currentPath={currentPath}
-                        />
-                    );
-                default:
-                    return null;
+                        {chatInputProps && (
+                            <ChatInput
+                                {...chatInputProps}
+                                paneId={node.id}
+                                onFocus={() => setActiveContentPaneId(node.id)}
+                            />
+                        )}
+                    </div>
+                );
             }
+            if (contentType === 'browser') {
+                return paneRenderers.browser?.({
+                    nodeId: node.id,
+                    hasTabBar: showTabBar,
+                    onToggleZen: toggleZenMode ? () => toggleZenMode(node.id) : undefined,
+                    isZenMode: zenModePaneId === node.id
+                });
+            }
+            if (contentType === 'search') {
+                return paneRenderers.search?.({ nodeId: node.id, initialQuery: paneData?.initialQuery });
+            }
+            if (contentType === 'python') {
+                return paneRenderers.terminal?.({ nodeId: node.id, shell: 'python3' });
+            }
+            if (contentType === 'diff') {
+                return (
+                    <DiffViewer
+                        filePath={contentId || ''}
+                        diffStatus={paneData?.diffStatus}
+                        currentPath={currentPath}
+                    />
+                );
+            }
+
+            // Registry lookup for all standard pane types
+            const renderer = paneRenderers[contentType];
+            return renderer ? renderer({ nodeId: node.id }) : null;
         };
 
         return (

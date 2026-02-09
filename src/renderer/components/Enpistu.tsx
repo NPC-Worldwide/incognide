@@ -12,6 +12,10 @@ import {
 
 import { Icon } from 'lucide-react';
 import { avocado } from '@lucide/lab';
+import { useGitOperations } from '../hooks/useGitOperations';
+import { useSidebarResize } from '../hooks/useSidebarResize';
+import GitPane from './GitPane';
+import GitModal from './GitModal';
 import Sidebar from './Sidebar';
 import StatusBar from './StatusBar';
 import CsvViewer from './CsvViewer';
@@ -351,19 +355,13 @@ const ChatInterface = () => {
     const [selectedPdfText, setSelectedPdfText] = useState(null);
     const [pdfHighlights, setPdfHighlights] = useState([]);
     const [browserUrlDialogOpen, setBrowserUrlDialogOpen] = useState(false);
-    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    // sidebarCollapsed now from useSidebarResize hook
     
     const [pendingMemories, setPendingMemories] = useState([]);
     const [memoryApprovalModal, setMemoryApprovalModal] = useState({
         isOpen: false,
         memories: []
     });    
-    const [gitStatus, setGitStatus] = useState(null);
-    const [gitCommitMessage, setGitCommitMessage] = useState('');
-    const [gitLoading, setGitLoading] = useState(false);
-    const [gitError, setGitError] = useState(null);
-    const [noUpstreamPrompt, setNoUpstreamPrompt] = useState<{ branch: string; command: string } | null>(null);
-
     const [websiteHistory, setWebsiteHistory] = useState([]);
     const [commonSites, setCommonSites] = useState([]);
     const [openBrowsers, setOpenBrowsers] = useState([]);
@@ -383,14 +381,23 @@ const ChatInterface = () => {
     const [pendingMemoryCount, setPendingMemoryCount] = useState(0);
     const [kgGeneration, setKgGeneration] = useState<number | null>(null);
     const [gitModalOpen, setGitModalOpen] = useState(false);
-    const [gitModalTab, setGitModalTab] = useState<'status' | 'diff' | 'branches' | 'history'>('status');
-    const [gitDiffContent, setGitDiffContent] = useState<{ staged: string; unstaged: string } | null>(null);
-    const [gitBranches, setGitBranches] = useState<{ current: string; branches: string[]; local: any } | null>(null);
-    const [gitCommitHistory, setGitCommitHistory] = useState<any[]>([]);
-    const [gitSelectedFile, setGitSelectedFile] = useState<string | null>(null);
-    const [gitNewBranchName, setGitNewBranchName] = useState('');
-    const [gitSelectedCommit, setGitSelectedCommit] = useState<any | null>(null);
-    const [gitFileDiff, setGitFileDiff] = useState<string | null>(null);
+
+    // Git operations hook
+    const {
+        gitStatus, setGitStatus, gitCommitMessage, setGitCommitMessage,
+        gitLoading, setGitLoading, gitError, setGitError,
+        noUpstreamPrompt, setNoUpstreamPrompt,
+        gitModalTab, setGitModalTab, gitDiffContent, gitBranches,
+        gitCommitHistory, gitSelectedFile, setGitSelectedFile,
+        gitNewBranchName, setGitNewBranchName, gitSelectedCommit,
+        gitFileDiff, setGitFileDiff,
+        loadGitStatus, gitStageFile, gitUnstageFile, gitCommitChanges,
+        gitPullChanges, gitPushChanges, gitPushWithUpstream, gitEnableAutoSetupRemote,
+        loadGitDiff, loadGitBranches, loadGitHistory,
+        gitCreateBranch, gitCheckoutBranch, gitDeleteBranch,
+        loadCommitDetails, loadFileDiff,
+    } = useGitOperations({ currentPath });
+
     const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
     const [searchResultsModalOpen, setSearchResultsModalOpen] = useState(false);
     const [graphViewerOpen, setGraphViewerOpen] = useState(false);
@@ -400,25 +407,16 @@ const ChatInterface = () => {
     const [memoryLoading, setMemoryLoading] = useState(false);
     const [memoryFilter, setMemoryFilter] = useState('all');
     const [memorySearchTerm, setMemorySearchTerm] = useState('');
-    const [sidebarWidth, setSidebarWidth] = useState(220); // Compact but usable width
-    const [inputHeight, setInputHeight] = useState(200); // Default height in pixels
-    const [isResizingSidebar, setIsResizingSidebar] = useState(false);
-    const [isResizingInput, setIsResizingInput] = useState(false);
-    // Bar heights - resizable and persisted
-    const [topBarHeight, setTopBarHeight] = useState<number>(() => {
-        const saved = localStorage.getItem('npcStudio_topBarHeight');
-        return saved ? parseInt(saved) : 48;
-    });
-    const [bottomBarHeight, setBottomBarHeight] = useState<number>(() => {
-        const saved = localStorage.getItem('npcStudio_bottomBarHeight');
-        return saved ? parseInt(saved) : 48;
-    });
-    const [isResizingTopBar, setIsResizingTopBar] = useState(false);
-    const [isResizingBottomBar, setIsResizingBottomBar] = useState(false);
-    const [topBarCollapsed, setTopBarCollapsed] = useState<boolean>(() => {
-        const saved = localStorage.getItem('npcStudio_topBarCollapsed');
-        return saved === 'true';
-    });
+    // Sidebar/resize state from useSidebarResize hook
+    const {
+        sidebarWidth, setSidebarWidth, inputHeight, setInputHeight,
+        isResizingSidebar, setIsResizingSidebar, isResizingInput, setIsResizingInput,
+        sidebarCollapsed, setSidebarCollapsed,
+        topBarHeight, setTopBarHeight, bottomBarHeight, setBottomBarHeight,
+        isResizingTopBar, setIsResizingTopBar, isResizingBottomBar, setIsResizingBottomBar,
+        topBarCollapsed, setTopBarCollapsed,
+        handleSidebarResize, handleInputResize,
+    } = useSidebarResize();
     const WINDOW_WORKSPACES_KEY = 'npcStudioWindowWorkspaces';
 
     // Message labeling state
@@ -807,24 +805,7 @@ const ChatInterface = () => {
         return () => document.removeEventListener('keydown', handleGlobalKeyDown, true);
     }, [activeContentPaneId]);
 
-    // Resize handlers for sidebar and input area
-    const handleSidebarResize = useCallback((e) => {
-        if (!isResizingSidebar) return;
-        const newWidth = e.clientX;
-        // Constrain between 150px and 500px
-        if (newWidth >= 150 && newWidth <= 500) {
-            setSidebarWidth(newWidth);
-        }
-    }, [isResizingSidebar]);
-
-    const handleInputResize = useCallback((e) => {
-        if (!isResizingInput) return;
-        const newHeight = window.innerHeight - e.clientY;
-        // Constrain between 100px and 600px
-        if (newHeight >= 100 && newHeight <= 600) {
-            setInputHeight(newHeight);
-        }
-    }, [isResizingInput]);
+    // handleSidebarResize and handleInputResize now come from useSidebarResize hook
 
     // Website history loader hook
     const loadWebsiteHistory = useLoadWebsiteHistory(currentPath, setWebsiteHistory, setCommonSites);
@@ -1028,245 +1009,7 @@ const ChatInterface = () => {
         };
     }, []);
 
-    // Git functions
-    const loadGitStatus = useCallback(async () => {
-        if (!currentPath) return;
-        try {
-            const status = await (window as any).api.gitStatus(currentPath);
-            setGitStatus(status);
-        } catch (err) {
-            console.error('Failed to load git status:', err);
-            setGitStatus(null);
-        }
-    }, [currentPath]);
-
-    const gitStageFile = async (file: string) => {
-        setGitLoading(true);
-        setGitError(null);
-        try {
-            await (window as any).api.gitStageFile(currentPath, file);
-            await loadGitStatus();
-        } catch (err: any) {
-            setGitError(err.message || 'Failed to stage file');
-        } finally {
-            setGitLoading(false);
-        }
-    };
-
-    const gitUnstageFile = async (file: string) => {
-        setGitLoading(true);
-        setGitError(null);
-        try {
-            await (window as any).api.gitUnstageFile(currentPath, file);
-            await loadGitStatus();
-        } catch (err: any) {
-            setGitError(err.message || 'Failed to unstage file');
-        } finally {
-            setGitLoading(false);
-        }
-    };
-
-    const gitCommitChanges = async () => {
-        if (!gitCommitMessage.trim()) return;
-        setGitLoading(true);
-        setGitError(null);
-        try {
-            await (window as any).api.gitCommit(currentPath, gitCommitMessage.trim());
-            setGitCommitMessage('');
-            await loadGitStatus();
-        } catch (err: any) {
-            setGitError(err.message || 'Failed to commit');
-        } finally {
-            setGitLoading(false);
-        }
-    };
-
-    const gitPullChanges = async () => {
-        setGitLoading(true);
-        setGitError(null);
-        try {
-            await (window as any).api.gitPull(currentPath);
-            await loadGitStatus();
-        } catch (err: any) {
-            setGitError(err.message || 'Failed to pull');
-        } finally {
-            setGitLoading(false);
-        }
-    };
-
-    const gitPushChanges = async () => {
-        setGitLoading(true);
-        setGitError(null);
-        setNoUpstreamPrompt(null);
-        try {
-            const result = await (window as any).api.gitPush(currentPath);
-            if (!result.success) {
-                if (result.noUpstream) {
-                    setNoUpstreamPrompt({ branch: result.currentBranch, command: result.suggestedCommand });
-                } else {
-                    setGitError(result.error || 'Failed to push');
-                }
-            } else {
-                await loadGitStatus();
-            }
-        } catch (err: any) {
-            setGitError(err.message || 'Failed to push');
-        } finally {
-            setGitLoading(false);
-        }
-    };
-
-    const gitPushWithUpstream = async () => {
-        if (!noUpstreamPrompt) return;
-        setGitLoading(true);
-        setGitError(null);
-        try {
-            const result = await (window as any).api.gitPushSetUpstream(currentPath, noUpstreamPrompt.branch);
-            if (result.success) {
-                setNoUpstreamPrompt(null);
-                await loadGitStatus();
-            } else {
-                setGitError(result.error || 'Failed to push');
-            }
-        } catch (err: any) {
-            setGitError(err.message || 'Failed to push');
-        } finally {
-            setGitLoading(false);
-        }
-    };
-
-    const gitEnableAutoSetupRemote = async () => {
-        try {
-            await (window as any).api.gitSetAutoSetupRemote();
-            await gitPushWithUpstream();
-        } catch (err: any) {
-            setGitError(err.message || 'Failed to set config');
-        }
-    };
-
-    // Load git diff for all changes
-    const loadGitDiff = useCallback(async () => {
-        if (!currentPath) return;
-        try {
-            const diff = await (window as any).api.gitDiffAll(currentPath);
-            setGitDiffContent(diff);
-        } catch (err) {
-            console.error('Failed to load git diff:', err);
-            setGitDiffContent(null);
-        }
-    }, [currentPath]);
-
-    // Load git branches
-    const loadGitBranches = useCallback(async () => {
-        if (!currentPath) return;
-        try {
-            const branches = await (window as any).api.gitBranches(currentPath);
-            setGitBranches(branches);
-        } catch (err) {
-            console.error('Failed to load git branches:', err);
-            setGitBranches(null);
-        }
-    }, [currentPath]);
-
-    // Load git commit history
-    const loadGitHistory = useCallback(async () => {
-        if (!currentPath) return;
-        try {
-            const result = await (window as any).api.gitLog(currentPath, { maxCount: 50 });
-            if (result?.success && result.commits) {
-                setGitCommitHistory(result.commits);
-            } else {
-                setGitCommitHistory([]);
-            }
-        } catch (err) {
-            console.error('Failed to load git history:', err);
-            setGitCommitHistory([]);
-        }
-    }, [currentPath]);
-
-    // Create a new branch
-    const gitCreateBranch = async () => {
-        if (!gitNewBranchName.trim()) return;
-        setGitLoading(true);
-        setGitError(null);
-        try {
-            await (window as any).api.gitCreateBranch(currentPath, gitNewBranchName.trim());
-            setGitNewBranchName('');
-            await loadGitBranches();
-            await loadGitStatus();
-        } catch (err: any) {
-            setGitError(err.message || 'Failed to create branch');
-        } finally {
-            setGitLoading(false);
-        }
-    };
-
-    // Switch to a branch
-    const gitCheckoutBranch = async (branchName: string) => {
-        setGitLoading(true);
-        setGitError(null);
-        try {
-            await (window as any).api.gitCheckout(currentPath, branchName);
-            await loadGitBranches();
-            await loadGitStatus();
-        } catch (err: any) {
-            setGitError(err.message || 'Failed to checkout branch');
-        } finally {
-            setGitLoading(false);
-        }
-    };
-
-    // Delete a branch
-    const gitDeleteBranch = async (branchName: string, force: boolean = false) => {
-        setGitLoading(true);
-        setGitError(null);
-        try {
-            await (window as any).api.gitDeleteBranch(currentPath, branchName, force);
-            await loadGitBranches();
-        } catch (err: any) {
-            setGitError(err.message || 'Failed to delete branch');
-        } finally {
-            setGitLoading(false);
-        }
-    };
-
-    // View a specific commit
-    const loadCommitDetails = async (commitHash: string) => {
-        try {
-            const result = await (window as any).api.gitShowCommit(currentPath, commitHash);
-            // Find the commit in history to get metadata
-            const commitMeta = gitCommitHistory.find((c: any) => c.hash === commitHash);
-            if (result?.success) {
-                setGitSelectedCommit({
-                    hash: commitHash,
-                    author_name: commitMeta?.author_name || 'Unknown',
-                    author_email: commitMeta?.author_email || '',
-                    date: commitMeta?.date || new Date().toISOString(),
-                    message: commitMeta?.message || '',
-                    details: result.details,
-                    diff: result.diff
-                });
-            }
-        } catch (err) {
-            console.error('Failed to load commit details:', err);
-        }
-    };
-
-    // Load file diff
-    const loadFileDiff = async (filePath: string, staged: boolean = false) => {
-        try {
-            const diff = await (window as any).api.gitDiff(currentPath, filePath, staged);
-            setGitSelectedFile(filePath);
-            setGitFileDiff(diff);
-            return diff;
-        } catch (err) {
-            console.error('Failed to load file diff:', err);
-            setGitFileDiff(null);
-            return null;
-        }
-    };
-
-    // Open a file diff in a new pane
+    // Open a file diff in a new pane (kept here as it depends on createAndAddPaneNodeToLayout)
     const openFileDiffPane = (filePath: string, status: string) => {
         const fullPath = filePath.startsWith('/') ? filePath : `${currentPath}/${filePath}`;
         createAndAddPaneNodeToLayout({
@@ -1480,56 +1223,7 @@ const ChatInterface = () => {
         };
     }, [currentPath, rootLayoutNode, activeContentPaneId]);
 
-    useEffect(() => {
-        const handleMouseUp = () => {
-            setIsResizingSidebar(false);
-            setIsResizingInput(false);
-        };
-
-        if (isResizingSidebar || isResizingInput) {
-            document.addEventListener('mousemove', isResizingSidebar ? handleSidebarResize : handleInputResize);
-            document.addEventListener('mouseup', handleMouseUp);
-
-            return () => {
-                document.removeEventListener('mousemove', isResizingSidebar ? handleSidebarResize : handleInputResize);
-                document.removeEventListener('mouseup', handleMouseUp);
-            };
-        }
-    }, [isResizingSidebar, isResizingInput, handleSidebarResize, handleInputResize]);
-
-    // Bar height resize handlers
-    useEffect(() => {
-        const handleTopBarResize = (e: MouseEvent) => {
-            const newHeight = Math.max(32, Math.min(80, e.clientY));
-            setTopBarHeight(newHeight);
-            localStorage.setItem('npcStudio_topBarHeight', String(newHeight));
-        };
-        const handleBottomBarResize = (e: MouseEvent) => {
-            const newHeight = Math.max(32, Math.min(80, window.innerHeight - e.clientY));
-            setBottomBarHeight(newHeight);
-            localStorage.setItem('npcStudio_bottomBarHeight', String(newHeight));
-        };
-        const handleMouseUp = () => {
-            setIsResizingTopBar(false);
-            setIsResizingBottomBar(false);
-        };
-        if (isResizingTopBar) {
-            document.addEventListener('mousemove', handleTopBarResize);
-            document.addEventListener('mouseup', handleMouseUp);
-            return () => {
-                document.removeEventListener('mousemove', handleTopBarResize);
-                document.removeEventListener('mouseup', handleMouseUp);
-            };
-        }
-        if (isResizingBottomBar) {
-            document.addEventListener('mousemove', handleBottomBarResize);
-            document.addEventListener('mouseup', handleMouseUp);
-            return () => {
-                document.removeEventListener('mousemove', handleBottomBarResize);
-                document.removeEventListener('mouseup', handleMouseUp);
-            };
-        }
-    }, [isResizingTopBar, isResizingBottomBar]);
+    // Resize useEffects now handled by useSidebarResize hook
 
     // Helper function for conversation stats
     const getConversationStats = (messages: any[]) => {
@@ -3784,327 +3478,47 @@ const renderHelpPane = useCallback(({ nodeId }: { nodeId: string }) => {
 // Render Git pane (embedded git panel)
 const renderGitPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return (
-        <div className="flex flex-col h-full theme-bg-primary overflow-hidden">
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b theme-border">
-                <div className="flex items-center gap-3">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-purple-400">
-                        <line x1="6" y1="3" x2="6" y2="15"></line>
-                        <circle cx="18" cy="6" r="3"></circle>
-                        <circle cx="6" cy="18" r="3"></circle>
-                        <path d="M18 9a9 9 0 0 1-9 9"></path>
-                    </svg>
-                    <h2 className="text-lg font-semibold theme-text-primary">Git</h2>
-                    {gitStatus?.branch && <span className="text-sm theme-text-muted">({gitStatus.branch})</span>}
-                </div>
-                <button onClick={() => loadGitStatus()} className="p-2 theme-hover rounded-lg" title="Refresh">
-                    <RefreshCw size={16} />
-                </button>
-            </div>
-
-            {/* Tab Bar */}
-            <div className="flex border-b theme-border px-4">
-                {(['status', 'diff', 'branches', 'history'] as const).map(tab => (
-                    <button
-                        key={tab}
-                        onClick={() => {
-                            setGitModalTab(tab);
-                            if (tab === 'diff') loadGitDiff();
-                            if (tab === 'branches') loadGitBranches();
-                            if (tab === 'history') loadGitHistory();
-                        }}
-                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                            gitModalTab === tab
-                                ? 'border-purple-500 text-purple-400'
-                                : 'border-transparent theme-text-muted hover:theme-text-primary'
-                        }`}
-                    >
-                        {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                    </button>
-                ))}
-            </div>
-
-            {/* Tab Content */}
-            <div className="flex-1 overflow-auto p-4">
-                {!gitStatus ? (
-                    <div className="text-center theme-text-muted py-8">No git repository in this directory</div>
-                ) : gitModalTab === 'status' ? (
-                    /* Status Tab */
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-4 text-sm">
-                            <span className="theme-text-primary font-medium">Branch: {gitStatus.branch}</span>
-                            {gitStatus.ahead > 0 && <span className="text-green-400">↑{gitStatus.ahead} ahead</span>}
-                            {gitStatus.behind > 0 && <span className="text-yellow-400">↓{gitStatus.behind} behind</span>}
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="theme-bg-secondary rounded-lg p-3">
-                                <h3 className="text-sm font-medium text-yellow-400 mb-2">Unstaged ({(gitStatus.unstaged || []).length + (gitStatus.untracked || []).length})</h3>
-                                <div className="space-y-1 max-h-48 overflow-y-auto">
-                                    {(gitStatus.unstaged || []).length + (gitStatus.untracked || []).length === 0 ? (
-                                        <div className="text-xs theme-text-muted">No changes</div>
-                                    ) : [...(gitStatus.unstaged || []), ...(gitStatus.untracked || [])].map((file: any) => (
-                                        <div key={file.path} className="flex items-center justify-between text-xs group">
-                                            <button
-                                                onClick={() => openFileDiffPane(file.path, file.status || 'modified')}
-                                                className={`truncate flex-1 text-left hover:underline ${file.isUntracked ? 'text-gray-400' : 'text-yellow-300'}`}
-                                                title="Click to view diff"
-                                            >
-                                                {file.path}
-                                            </button>
-                                            <button onClick={() => gitStageFile(file.path)} className="text-green-400 hover:text-green-300 px-2 opacity-0 group-hover:opacity-100">Stage</button>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="theme-bg-secondary rounded-lg p-3">
-                                <h3 className="text-sm font-medium text-green-400 mb-2">Staged ({(gitStatus.staged || []).length})</h3>
-                                <div className="space-y-1 max-h-48 overflow-y-auto">
-                                    {(gitStatus.staged || []).length === 0 ? (
-                                        <div className="text-xs theme-text-muted">No staged files</div>
-                                    ) : (gitStatus.staged || []).map((file: any) => (
-                                        <div key={file.path} className="flex items-center justify-between text-xs group">
-                                            <button
-                                                onClick={() => openFileDiffPane(file.path, file.status || 'staged')}
-                                                className="text-green-300 truncate flex-1 text-left hover:underline"
-                                                title="Click to view diff"
-                                            >
-                                                {file.path}
-                                            </button>
-                                            <button onClick={() => gitUnstageFile(file.path)} className="text-red-400 hover:text-red-300 px-2 opacity-0 group-hover:opacity-100">Unstage</button>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Commit Section */}
-                        <div className="theme-bg-secondary rounded-lg p-3">
-                            <h3 className="text-sm font-medium theme-text-primary mb-2">Commit</h3>
-                            <textarea
-                                value={gitCommitMessage}
-                                onChange={(e) => setGitCommitMessage(e.target.value)}
-                                placeholder="Commit message..."
-                                className="w-full px-3 py-2 text-sm theme-bg-primary border theme-border rounded-lg resize-none h-20"
-                            />
-                            <div className="flex gap-2 mt-2">
-                                <button
-                                    onClick={gitCommitChanges}
-                                    disabled={!gitCommitMessage.trim() || (gitStatus.staged || []).length === 0}
-                                    className="px-3 py-1.5 text-xs bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg"
-                                >
-                                    Commit
-                                </button>
-                                <button
-                                    onClick={gitPushChanges}
-                                    className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 rounded-lg"
-                                >
-                                    Push
-                                </button>
-                                <button
-                                    onClick={gitPullChanges}
-                                    className="px-3 py-1.5 text-xs bg-purple-600 hover:bg-purple-500 rounded-lg"
-                                >
-                                    Pull
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                ) : gitModalTab === 'diff' ? (
-                    /* Diff Tab */
-                    <div className="space-y-2">
-                        {gitDiffContent ? (
-                            <pre className="text-xs font-mono whitespace-pre-wrap theme-bg-secondary p-3 rounded-lg overflow-auto max-h-[60vh]">
-                                {(gitDiffContent.staged + '\n' + gitDiffContent.unstaged).split('\n').map((line, i) => (
-                                    <div key={i} className={
-                                        line.startsWith('+') && !line.startsWith('+++') ? 'text-green-400' :
-                                        line.startsWith('-') && !line.startsWith('---') ? 'text-red-400' :
-                                        line.startsWith('@@') ? 'text-blue-400' :
-                                        'theme-text-muted'
-                                    }>{line}</div>
-                                ))}
-                            </pre>
-                        ) : (
-                            <div className="text-center theme-text-muted py-8">No diff available</div>
-                        )}
-                    </div>
-                ) : gitModalTab === 'branches' ? (
-                    /* Branches Tab */
-                    <div className="space-y-4">
-                        <div className="flex gap-2">
-                            <input
-                                type="text"
-                                placeholder="New branch name..."
-                                value={gitNewBranchName}
-                                onChange={(e) => setGitNewBranchName(e.target.value)}
-                                className="flex-1 px-3 py-2 text-sm theme-bg-secondary border theme-border rounded-lg"
-                            />
-                            <button
-                                onClick={gitCreateBranch}
-                                disabled={!gitNewBranchName.trim()}
-                                className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 disabled:opacity-50 rounded-lg"
-                            >
-                                Create
-                            </button>
-                        </div>
-
-                        {/* Local Branches */}
-                        <div>
-                            <div className="text-xs font-medium theme-text-muted mb-2 flex items-center gap-2">
-                                <span>Local Branches</span>
-                                <span className="text-purple-400">({gitBranches?.all?.filter((b: string) => !b.startsWith('remotes/')).length || 0})</span>
-                            </div>
-                            <div className="space-y-1">
-                                {gitBranches?.all?.filter((branch: string) => !branch.startsWith('remotes/')).map((branch: string) => (
-                                    <div
-                                        key={branch}
-                                        className={`flex items-center justify-between p-2 rounded text-sm group ${
-                                            branch === gitBranches.current ? 'bg-purple-900/30 border border-purple-500/30' : 'hover:bg-white/5'
-                                        }`}
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            {branch === gitBranches.current && <span className="text-purple-400">●</span>}
-                                            <span className={branch === gitBranches.current ? 'text-purple-400 font-medium' : 'theme-text-primary'}>
-                                                {branch}
-                                            </span>
-                                        </div>
-                                        {branch !== gitBranches.current && (
-                                            <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button
-                                                    onClick={() => gitCheckoutBranch(branch)}
-                                                    className="text-xs text-blue-400 hover:text-blue-300 px-2 py-0.5 rounded hover:bg-blue-900/30"
-                                                >
-                                                    Checkout
-                                                </button>
-                                                <button
-                                                    onClick={() => gitDeleteBranch(branch)}
-                                                    className="text-xs text-red-400 hover:text-red-300 px-2 py-0.5 rounded hover:bg-red-900/30"
-                                                >
-                                                    Delete
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Remote Branches */}
-                        {gitBranches?.all?.some((b: string) => b.startsWith('remotes/')) && (
-                            <div>
-                                <div className="text-xs font-medium theme-text-muted mb-2 flex items-center gap-2">
-                                    <span>Remote Branches</span>
-                                    <span className="text-orange-400">({gitBranches?.all?.filter((b: string) => b.startsWith('remotes/')).length || 0})</span>
-                                </div>
-                                <div className="space-y-1 max-h-48 overflow-y-auto">
-                                    {gitBranches?.all?.filter((branch: string) => branch.startsWith('remotes/')).map((branch: string) => (
-                                        <div
-                                            key={branch}
-                                            className="flex items-center justify-between p-2 rounded text-sm group hover:bg-white/5"
-                                        >
-                                            <span className="theme-text-muted text-xs">{branch.replace('remotes/', '')}</span>
-                                            <button
-                                                onClick={() => gitCheckoutBranch(branch.replace('remotes/origin/', ''))}
-                                                className="text-xs text-blue-400 hover:text-blue-300 opacity-0 group-hover:opacity-100"
-                                            >
-                                                Checkout
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                        {gitError && <div className="text-red-500 text-xs mt-2">{gitError}</div>}
-                        {noUpstreamPrompt && (
-                            <div className="mt-2 p-2 bg-amber-900/30 border border-amber-600/50 rounded text-xs">
-                                <div className="text-amber-400 mb-2">Branch has no upstream. Push to origin/{noUpstreamPrompt.branch}?</div>
-                                <div className="flex gap-2">
-                                    <button onClick={gitPushWithUpstream} disabled={gitLoading} className="px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-white text-[10px]">Push</button>
-                                    <button onClick={gitEnableAutoSetupRemote} disabled={gitLoading} className="px-2 py-1 bg-green-600 hover:bg-green-500 rounded text-white text-[10px]" title="Sets git config push.autoSetupRemote true">Always Auto-Push</button>
-                                    <button onClick={() => setNoUpstreamPrompt(null)} className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-white text-[10px]">Cancel</button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                ) : gitModalTab === 'history' ? (
-                    /* History Tab */
-                    <div className="flex gap-4 h-full min-h-[400px]">
-                        {/* Commit List */}
-                        <div className="w-1/2 theme-bg-secondary rounded-lg p-3 flex flex-col">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-xs font-medium theme-text-muted">Commits</span>
-                                <button onClick={loadGitHistory} className="text-xs theme-text-muted hover:theme-text-primary">
-                                    <RefreshCw size={12} />
-                                </button>
-                            </div>
-                            <div className="flex-1 overflow-y-auto space-y-1">
-                                {gitCommitHistory?.length > 0 ? gitCommitHistory.map((commit: any) => (
-                                    <button
-                                        key={commit.hash}
-                                        onClick={() => loadCommitDetails(commit.hash)}
-                                        className={`w-full text-left p-2 rounded text-xs hover:bg-white/5 transition-colors ${
-                                            gitSelectedCommit?.hash === commit.hash ? 'bg-purple-900/30 border border-purple-500/30' : ''
-                                        }`}
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-purple-400 font-mono">{commit.hash?.slice(0, 7)}</span>
-                                            <span className="theme-text-muted">{new Date(commit.date).toLocaleDateString()}</span>
-                                        </div>
-                                        <div className="theme-text-primary truncate mt-1">{commit.message}</div>
-                                        <div className="theme-text-muted mt-0.5">{commit.author_name || commit.author}</div>
-                                    </button>
-                                )) : (
-                                    <div className="text-center theme-text-muted py-4">No commits</div>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Commit Details */}
-                        <div className="w-1/2 theme-bg-secondary rounded-lg p-3 flex flex-col">
-                            <span className="text-xs font-medium theme-text-muted mb-2">Details</span>
-                            {gitSelectedCommit ? (
-                                <div className="flex-1 overflow-y-auto">
-                                    <div className="space-y-1 text-xs mb-3 pb-3 border-b theme-border">
-                                        <div className="font-mono text-purple-400">{gitSelectedCommit.hash}</div>
-                                        <div className="theme-text-primary">{gitSelectedCommit.author_name} &lt;{gitSelectedCommit.author_email}&gt;</div>
-                                        <div className="theme-text-muted">{new Date(gitSelectedCommit.date).toLocaleString()}</div>
-                                        <div className="theme-text-primary mt-2 whitespace-pre-wrap">{gitSelectedCommit.message}</div>
-                                    </div>
-                                    {gitSelectedCommit.diff && (
-                                        <pre className="text-xs font-mono overflow-auto p-2 bg-black/30 rounded whitespace-pre-wrap">
-                                            {gitSelectedCommit.diff.split('\n').map((line: string, i: number) => (
-                                                <div
-                                                    key={i}
-                                                    className={
-                                                        line.startsWith('+') && !line.startsWith('+++') ? 'text-green-400 bg-green-900/20' :
-                                                        line.startsWith('-') && !line.startsWith('---') ? 'text-red-400 bg-red-900/20' :
-                                                        line.startsWith('@@') ? 'text-cyan-400' :
-                                                        line.startsWith('diff ') ? 'text-purple-400 font-bold mt-2' :
-                                                        'theme-text-muted'
-                                                    }
-                                                >
-                                                    {line}
-                                                </div>
-                                            ))}
-                                        </pre>
-                                    )}
-                                </div>
-                            ) : (
-                                <div className="flex-1 flex items-center justify-center theme-text-muted text-sm">
-                                    Select a commit to view details
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                ) : null}
-            </div>
-        </div>
+        <GitPane
+            nodeId={nodeId}
+            gitStatus={gitStatus}
+            gitModalTab={gitModalTab}
+            gitDiffContent={gitDiffContent}
+            gitBranches={gitBranches}
+            gitCommitHistory={gitCommitHistory}
+            gitCommitMessage={gitCommitMessage}
+            gitNewBranchName={gitNewBranchName}
+            gitSelectedCommit={gitSelectedCommit}
+            gitError={gitError}
+            gitLoading={gitLoading}
+            noUpstreamPrompt={noUpstreamPrompt}
+            setGitCommitMessage={setGitCommitMessage}
+            setGitNewBranchName={setGitNewBranchName}
+            setGitModalTab={setGitModalTab}
+            setNoUpstreamPrompt={setNoUpstreamPrompt}
+            loadGitStatus={loadGitStatus}
+            loadGitDiff={loadGitDiff}
+            loadGitBranches={loadGitBranches}
+            loadGitHistory={loadGitHistory}
+            loadCommitDetails={loadCommitDetails}
+            gitStageFile={gitStageFile}
+            gitUnstageFile={gitUnstageFile}
+            gitCommitChanges={gitCommitChanges}
+            gitPushChanges={gitPushChanges}
+            gitPullChanges={gitPullChanges}
+            gitCreateBranch={gitCreateBranch}
+            gitCheckoutBranch={gitCheckoutBranch}
+            gitDeleteBranch={gitDeleteBranch}
+            gitPushWithUpstream={gitPushWithUpstream}
+            gitEnableAutoSetupRemote={gitEnableAutoSetupRemote}
+            openFileDiffPane={openFileDiffPane}
+        />
     );
 }, [gitStatus, gitModalTab, gitDiffContent, gitBranches, gitCommitHistory, gitCommitMessage, gitNewBranchName, gitSelectedCommit, gitError,
-    setGitCommitMessage, setGitNewBranchName, setGitModalTab,
-    loadGitStatus, loadGitDiff, loadGitBranches, loadGitHistory, loadFileDiff, loadCommitDetails,
-    gitStageFile, gitUnstageFile, gitCommitChanges, gitPushChanges, gitPullChanges, gitCreateBranch, gitCheckoutBranch, gitDeleteBranch, openFileDiffPane]);
+    gitLoading, noUpstreamPrompt,
+    loadGitStatus, loadGitDiff, loadGitBranches, loadGitHistory, loadCommitDetails,
+    gitStageFile, gitUnstageFile, gitCommitChanges, gitPushChanges, gitPullChanges, gitCreateBranch, gitCheckoutBranch, gitDeleteBranch,
+    gitPushWithUpstream, gitEnableAutoSetupRemote, openFileDiffPane]);
+
 
 // Render FolderViewer pane (for pane-based folder browsing)
 const renderFolderViewerPane = useCallback(({ nodeId }: { nodeId: string }) => {
@@ -7022,41 +6436,7 @@ ${contextPrompt}`;
 
 
 
-                            
-                            
-
-    // Update the existing useEffect for resize to include body class management
-    useEffect(() => {
-        const handleMouseUp = () => {
-            setIsResizingSidebar(false);
-            setIsResizingInput(false);
-            document.body.classList.remove('resizing-sidebar', 'resizing-input');
-        };
-
-        if (isResizingSidebar) {
-            document.body.classList.add('resizing-sidebar');
-            document.addEventListener('mousemove', handleSidebarResize);
-            document.addEventListener('mouseup', handleMouseUp);
-            
-            return () => {
-                document.body.classList.remove('resizing-sidebar');
-                document.removeEventListener('mousemove', handleSidebarResize);
-                document.removeEventListener('mouseup', handleMouseUp);
-            };
-        }
-        
-        if (isResizingInput) {
-            document.body.classList.add('resizing-input');
-            document.addEventListener('mousemove', handleInputResize);
-            document.addEventListener('mouseup', handleMouseUp);
-            
-            return () => {
-                document.body.classList.remove('resizing-input');
-                document.removeEventListener('mousemove', handleInputResize);
-                document.removeEventListener('mouseup', handleMouseUp);
-            };
-        }
-    }, [isResizingSidebar, isResizingInput, handleSidebarResize, handleInputResize]);
+    // Resize body class management now handled by useSidebarResize hook
 
 
 
@@ -7813,378 +7193,46 @@ ${contextPrompt}`;
                 jinxList={availableJinxs.map(jinx => ({ jinx_name: jinx.name, description: jinx.description }))}
             />
 
-            {/* Git Modal - Enhanced with tabs */}
+            {/* Git Modal */}
             {gitModalOpen && (
-                <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setGitModalOpen(false)}>
-                    <div className="w-full max-w-5xl max-h-[85vh] theme-bg-primary rounded-lg border theme-border flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-                        {/* Header */}
-                        <div className="flex items-center justify-between p-4 border-b theme-border">
-                            <div className="flex items-center gap-3">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-purple-400">
-                                    <line x1="6" y1="3" x2="6" y2="15"></line>
-                                    <circle cx="18" cy="6" r="3"></circle>
-                                    <circle cx="6" cy="18" r="3"></circle>
-                                    <path d="M18 9a9 9 0 0 1-9 9"></path>
-                                </svg>
-                                <h2 className="text-lg font-semibold theme-text-primary">Git</h2>
-                                {gitStatus?.branch && <span className="text-sm theme-text-muted">({gitStatus.branch})</span>}
-                            </div>
-                            <button onClick={() => setGitModalOpen(false)} className="p-2 theme-hover rounded-lg">
-                                <X size={20} />
-                            </button>
-                        </div>
-
-                        {/* Tab Bar */}
-                        <div className="flex border-b theme-border px-4">
-                            {(['status', 'diff', 'branches', 'history'] as const).map(tab => (
-                                <button
-                                    key={tab}
-                                    onClick={() => {
-                                        setGitModalTab(tab);
-                                        if (tab === 'diff') loadGitDiff();
-                                        if (tab === 'branches') loadGitBranches();
-                                        if (tab === 'history') loadGitHistory();
-                                    }}
-                                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                                        gitModalTab === tab
-                                            ? 'border-purple-500 text-purple-400'
-                                            : 'border-transparent theme-text-muted hover:theme-text-primary'
-                                    }`}
-                                >
-                                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                                </button>
-                            ))}
-                        </div>
-
-                        {/* Tab Content */}
-                        <div className="flex-1 overflow-auto p-4">
-                            {!gitStatus ? (
-                                <div className="text-center theme-text-muted py-8">No git repository in this directory</div>
-                            ) : gitModalTab === 'status' ? (
-                                /* Status Tab */
-                                <div className="space-y-4">
-                                    <div className="flex items-center gap-4 text-sm">
-                                        <span className="theme-text-primary font-medium">Branch: {gitStatus.branch}</span>
-                                        {gitStatus.ahead > 0 && <span className="text-green-400">↑{gitStatus.ahead} ahead</span>}
-                                        {gitStatus.behind > 0 && <span className="text-yellow-400">↓{gitStatus.behind} behind</span>}
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="theme-bg-secondary rounded-lg p-3">
-                                            <h3 className="text-sm font-medium text-green-400 mb-2">Staged ({(gitStatus.staged || []).length})</h3>
-                                            <div className="space-y-1 max-h-48 overflow-y-auto">
-                                                {(gitStatus.staged || []).length === 0 ? (
-                                                    <div className="text-xs theme-text-muted">No staged files</div>
-                                                ) : (gitStatus.staged || []).map((file: any) => (
-                                                    <div key={file.path} className="flex items-center justify-between text-xs group">
-                                                        <button
-                                                            onClick={() => loadFileDiff(file.path, true)}
-                                                            className="text-green-300 truncate flex-1 text-left hover:underline"
-                                                        >
-                                                            {file.path}
-                                                        </button>
-                                                        <button onClick={() => gitUnstageFile(file.path)} className="text-red-400 hover:text-red-300 px-2 opacity-0 group-hover:opacity-100">Unstage</button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        <div className="theme-bg-secondary rounded-lg p-3">
-                                            <h3 className="text-sm font-medium text-yellow-400 mb-2">Unstaged ({(gitStatus.unstaged || []).length + (gitStatus.untracked || []).length})</h3>
-                                            <div className="space-y-1 max-h-48 overflow-y-auto">
-                                                {(gitStatus.unstaged || []).length + (gitStatus.untracked || []).length === 0 ? (
-                                                    <div className="text-xs theme-text-muted">No changes</div>
-                                                ) : [...(gitStatus.unstaged || []), ...(gitStatus.untracked || [])].map((file: any) => (
-                                                    <div key={file.path} className="flex items-center justify-between text-xs group">
-                                                        <button
-                                                            onClick={() => loadFileDiff(file.path, false)}
-                                                            className={`truncate flex-1 text-left hover:underline ${file.isUntracked ? 'text-gray-400' : 'text-yellow-300'}`}
-                                                        >
-                                                            {file.path}
-                                                        </button>
-                                                        <button onClick={() => gitStageFile(file.path)} className="text-green-400 hover:text-green-300 px-2 opacity-0 group-hover:opacity-100">Stage</button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* File Diff Preview */}
-                                    {gitSelectedFile && gitFileDiff && (
-                                        <div className="theme-bg-secondary rounded-lg p-3">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <h3 className="text-sm font-medium theme-text-primary">{gitSelectedFile}</h3>
-                                                <button onClick={() => { setGitSelectedFile(null); setGitFileDiff(null); }} className="text-xs theme-text-muted hover:theme-text-primary">Close</button>
-                                            </div>
-                                            <pre className="text-xs font-mono overflow-auto max-h-60 p-2 bg-black/30 rounded">
-                                                {gitFileDiff.split('\n').map((line, i) => (
-                                                    <div
-                                                        key={i}
-                                                        className={
-                                                            line.startsWith('+') && !line.startsWith('+++') ? 'text-green-400 bg-green-900/20' :
-                                                            line.startsWith('-') && !line.startsWith('---') ? 'text-red-400 bg-red-900/20' :
-                                                            line.startsWith('@@') ? 'text-cyan-400' :
-                                                            'theme-text-muted'
-                                                        }
-                                                    >
-                                                        {line}
-                                                    </div>
-                                                ))}
-                                            </pre>
-                                        </div>
-                                    )}
-
-                                    <div className="space-y-2">
-                                        <input
-                                            type="text"
-                                            className="w-full theme-input text-sm rounded px-3 py-2"
-                                            placeholder="Commit message..."
-                                            value={gitCommitMessage}
-                                            onChange={e => setGitCommitMessage(e.target.value)}
-                                        />
-                                        <div className="flex gap-2">
-                                            <button
-                                                disabled={gitLoading || !gitCommitMessage.trim()}
-                                                onClick={gitCommitChanges}
-                                                className="theme-button-primary px-4 py-2 rounded text-sm flex-1 disabled:opacity-50"
-                                            >
-                                                Commit
-                                            </button>
-                                            <button disabled={gitLoading} onClick={gitPullChanges} className="theme-button px-4 py-2 rounded text-sm flex-1">
-                                                Pull
-                                            </button>
-                                            <button disabled={gitLoading} onClick={gitPushChanges} className="theme-button px-4 py-2 rounded text-sm flex-1">
-                                                Push
-                                            </button>
-                                            <button disabled={gitLoading} onClick={loadGitStatus} className="theme-button px-4 py-2 rounded text-sm">
-                                                Refresh
-                                            </button>
-                                        </div>
-                                        {gitError && <div className="text-red-500 text-xs">{gitError}</div>}
-                                        {noUpstreamPrompt && (
-                                            <div className="mt-2 p-2 bg-amber-900/30 border border-amber-600/50 rounded text-xs">
-                                                <div className="text-amber-400 mb-2">Branch has no upstream. Push to origin/{noUpstreamPrompt.branch}?</div>
-                                                <div className="flex gap-2">
-                                                    <button onClick={gitPushWithUpstream} disabled={gitLoading} className="px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-white text-[10px]">Push</button>
-                                                    <button onClick={gitEnableAutoSetupRemote} disabled={gitLoading} className="px-2 py-1 bg-green-600 hover:bg-green-500 rounded text-white text-[10px]" title="Sets git config push.autoSetupRemote true">Always Auto-Push</button>
-                                                    <button onClick={() => setNoUpstreamPrompt(null)} className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-white text-[10px]">Cancel</button>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            ) : gitModalTab === 'diff' ? (
-                                /* Diff Tab */
-                                <div className="space-y-4">
-                                    <div className="flex gap-2 mb-4">
-                                        <button onClick={loadGitDiff} className="theme-button px-3 py-1 rounded text-sm">Refresh Diff</button>
-                                    </div>
-                                    {gitDiffContent ? (
-                                        <div className="space-y-4">
-                                            {gitDiffContent.staged && (
-                                                <div className="theme-bg-secondary rounded-lg p-3">
-                                                    <h3 className="text-sm font-medium text-green-400 mb-2">Staged Changes</h3>
-                                                    <pre className="text-xs font-mono overflow-auto max-h-64 p-2 bg-black/30 rounded whitespace-pre-wrap">
-                                                        {gitDiffContent.staged.split('\n').map((line, i) => (
-                                                            <div
-                                                                key={i}
-                                                                className={
-                                                                    line.startsWith('+') && !line.startsWith('+++') ? 'text-green-400 bg-green-900/20' :
-                                                                    line.startsWith('-') && !line.startsWith('---') ? 'text-red-400 bg-red-900/20' :
-                                                                    line.startsWith('@@') ? 'text-cyan-400' :
-                                                                    line.startsWith('diff ') ? 'text-purple-400 font-bold mt-2' :
-                                                                    'theme-text-muted'
-                                                                }
-                                                            >
-                                                                {line}
-                                                            </div>
-                                                        ))}
-                                                    </pre>
-                                                </div>
-                                            )}
-                                            {gitDiffContent.unstaged && (
-                                                <div className="theme-bg-secondary rounded-lg p-3">
-                                                    <h3 className="text-sm font-medium text-yellow-400 mb-2">Unstaged Changes</h3>
-                                                    <pre className="text-xs font-mono overflow-auto max-h-64 p-2 bg-black/30 rounded whitespace-pre-wrap">
-                                                        {gitDiffContent.unstaged.split('\n').map((line, i) => (
-                                                            <div
-                                                                key={i}
-                                                                className={
-                                                                    line.startsWith('+') && !line.startsWith('+++') ? 'text-green-400 bg-green-900/20' :
-                                                                    line.startsWith('-') && !line.startsWith('---') ? 'text-red-400 bg-red-900/20' :
-                                                                    line.startsWith('@@') ? 'text-cyan-400' :
-                                                                    line.startsWith('diff ') ? 'text-purple-400 font-bold mt-2' :
-                                                                    'theme-text-muted'
-                                                                }
-                                                            >
-                                                                {line}
-                                                            </div>
-                                                        ))}
-                                                    </pre>
-                                                </div>
-                                            )}
-                                            {!gitDiffContent.staged && !gitDiffContent.unstaged && (
-                                                <div className="text-center theme-text-muted py-8">No changes to display</div>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <div className="text-center theme-text-muted py-8">Loading diff...</div>
-                                    )}
-                                </div>
-                            ) : gitModalTab === 'branches' ? (
-                                /* Branches Tab */
-                                <div className="space-y-4">
-                                    {/* Create New Branch */}
-                                    <div className="theme-bg-secondary rounded-lg p-3">
-                                        <h3 className="text-sm font-medium theme-text-primary mb-2">Create New Branch</h3>
-                                        <div className="flex gap-2">
-                                            <input
-                                                type="text"
-                                                className="flex-1 theme-input text-sm rounded px-3 py-2"
-                                                placeholder="Branch name..."
-                                                value={gitNewBranchName}
-                                                onChange={e => setGitNewBranchName(e.target.value)}
-                                            />
-                                            <button
-                                                disabled={gitLoading || !gitNewBranchName.trim()}
-                                                onClick={gitCreateBranch}
-                                                className="theme-button-primary px-4 py-2 rounded text-sm disabled:opacity-50"
-                                            >
-                                                Create
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* Branch List */}
-                                    <div className="theme-bg-secondary rounded-lg p-3">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <h3 className="text-sm font-medium theme-text-primary">Branches</h3>
-                                            <button onClick={loadGitBranches} className="text-xs theme-text-muted hover:theme-text-primary">Refresh</button>
-                                        </div>
-                                        {gitBranches?.branches ? (
-                                            <div className="space-y-1 max-h-80 overflow-y-auto">
-                                                {gitBranches.branches.map((branch: string) => (
-                                                    <div
-                                                        key={branch}
-                                                        className={`flex items-center justify-between p-2 rounded text-sm ${
-                                                            branch === gitBranches.current ? 'bg-purple-900/30 border border-purple-500/30' : 'hover:bg-white/5'
-                                                        }`}
-                                                    >
-                                                        <div className="flex items-center gap-2">
-                                                            {branch === gitBranches.current && (
-                                                                <span className="text-purple-400">●</span>
-                                                            )}
-                                                            <span className={branch === gitBranches.current ? 'text-purple-400 font-medium' : 'theme-text-primary'}>
-                                                                {branch}
-                                                            </span>
-                                                        </div>
-                                                        {branch !== gitBranches.current && (
-                                                            <div className="flex gap-2">
-                                                                <button
-                                                                    onClick={() => gitCheckoutBranch(branch)}
-                                                                    disabled={gitLoading}
-                                                                    className="text-xs text-blue-400 hover:text-blue-300"
-                                                                >
-                                                                    Checkout
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => gitDeleteBranch(branch)}
-                                                                    disabled={gitLoading}
-                                                                    className="text-xs text-red-400 hover:text-red-300"
-                                                                >
-                                                                    Delete
-                                                                </button>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <div className="text-center theme-text-muted py-4">Loading branches...</div>
-                                        )}
-                                    </div>
-                                    {gitError && <div className="text-red-500 text-xs">{gitError}</div>}
-                                    {noUpstreamPrompt && (
-                                        <div className="mt-2 p-2 bg-amber-900/30 border border-amber-600/50 rounded text-xs">
-                                            <div className="text-amber-400 mb-2">Branch has no upstream. Push to origin/{noUpstreamPrompt.branch}?</div>
-                                            <div className="flex gap-2">
-                                                <button onClick={gitPushWithUpstream} disabled={gitLoading} className="px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-white text-[10px]">Push</button>
-                                                <button onClick={gitEnableAutoSetupRemote} disabled={gitLoading} className="px-2 py-1 bg-green-600 hover:bg-green-500 rounded text-white text-[10px]" title="Sets git config push.autoSetupRemote true">Always Auto-Push</button>
-                                                <button onClick={() => setNoUpstreamPrompt(null)} className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-white text-[10px]">Cancel</button>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            ) : gitModalTab === 'history' ? (
-                                /* History Tab */
-                                <div className="flex gap-4 h-full">
-                                    {/* Commit List */}
-                                    <div className="w-1/2 theme-bg-secondary rounded-lg p-3 flex flex-col">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <h3 className="text-sm font-medium theme-text-primary">Commit History</h3>
-                                            <button onClick={loadGitHistory} className="text-xs theme-text-muted hover:theme-text-primary">Refresh</button>
-                                        </div>
-                                        <div className="flex-1 overflow-y-auto space-y-1">
-                                            {gitCommitHistory.length > 0 ? gitCommitHistory.map((commit: any) => (
-                                                <button
-                                                    key={commit.hash}
-                                                    onClick={() => loadCommitDetails(commit.hash)}
-                                                    className={`w-full text-left p-2 rounded text-xs hover:bg-white/5 ${
-                                                        gitSelectedCommit?.hash === commit.hash ? 'bg-purple-900/30 border border-purple-500/30' : ''
-                                                    }`}
-                                                >
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-purple-400 font-mono">{commit.hash.slice(0, 7)}</span>
-                                                        <span className="theme-text-muted">{new Date(commit.date).toLocaleDateString()}</span>
-                                                    </div>
-                                                    <div className="theme-text-primary truncate mt-1">{commit.message}</div>
-                                                    <div className="theme-text-muted text-xs mt-1">{commit.author_name}</div>
-                                                </button>
-                                            )) : (
-                                                <div className="text-center theme-text-muted py-4">Loading history...</div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Commit Details */}
-                                    <div className="w-1/2 theme-bg-secondary rounded-lg p-3 flex flex-col">
-                                        <h3 className="text-sm font-medium theme-text-primary mb-2">Commit Details</h3>
-                                        {gitSelectedCommit ? (
-                                            <div className="flex-1 overflow-y-auto">
-                                                <div className="space-y-2 text-xs mb-4">
-                                                    <div><span className="theme-text-muted">Hash:</span> <span className="font-mono text-purple-400">{gitSelectedCommit.hash}</span></div>
-                                                    <div><span className="theme-text-muted">Author:</span> <span className="theme-text-primary">{gitSelectedCommit.author_name} &lt;{gitSelectedCommit.author_email}&gt;</span></div>
-                                                    <div><span className="theme-text-muted">Date:</span> <span className="theme-text-primary">{new Date(gitSelectedCommit.date).toLocaleString()}</span></div>
-                                                    <div className="theme-text-primary whitespace-pre-wrap">{gitSelectedCommit.message}</div>
-                                                </div>
-                                                {gitSelectedCommit.diff && (
-                                                    <pre className="text-xs font-mono overflow-auto max-h-64 p-2 bg-black/30 rounded whitespace-pre-wrap">
-                                                        {gitSelectedCommit.diff.split('\n').map((line: string, i: number) => (
-                                                            <div
-                                                                key={i}
-                                                                className={
-                                                                    line.startsWith('+') && !line.startsWith('+++') ? 'text-green-400 bg-green-900/20' :
-                                                                    line.startsWith('-') && !line.startsWith('---') ? 'text-red-400 bg-red-900/20' :
-                                                                    line.startsWith('@@') ? 'text-cyan-400' :
-                                                                    line.startsWith('diff ') ? 'text-purple-400 font-bold mt-2' :
-                                                                    'theme-text-muted'
-                                                                }
-                                                            >
-                                                                {line}
-                                                            </div>
-                                                        ))}
-                                                    </pre>
-                                                )}
-                                            </div>
-                                        ) : (
-                                            <div className="text-center theme-text-muted py-8">Select a commit to view details</div>
-                                        )}
-                                    </div>
-                                </div>
-                            ) : null}
-                        </div>
-                    </div>
-                </div>
+                <GitModal
+                    onClose={() => setGitModalOpen(false)}
+                    gitStatus={gitStatus}
+                    gitModalTab={gitModalTab}
+                    gitDiffContent={gitDiffContent}
+                    gitBranches={gitBranches}
+                    gitCommitHistory={gitCommitHistory}
+                    gitCommitMessage={gitCommitMessage}
+                    gitNewBranchName={gitNewBranchName}
+                    gitSelectedCommit={gitSelectedCommit}
+                    gitSelectedFile={gitSelectedFile}
+                    gitFileDiff={gitFileDiff}
+                    gitError={gitError}
+                    gitLoading={gitLoading}
+                    noUpstreamPrompt={noUpstreamPrompt}
+                    setGitCommitMessage={setGitCommitMessage}
+                    setGitNewBranchName={setGitNewBranchName}
+                    setGitModalTab={setGitModalTab}
+                    setNoUpstreamPrompt={setNoUpstreamPrompt}
+                    setGitSelectedFile={setGitSelectedFile}
+                    setGitFileDiff={setGitFileDiff}
+                    loadGitStatus={loadGitStatus}
+                    loadGitDiff={loadGitDiff}
+                    loadGitBranches={loadGitBranches}
+                    loadGitHistory={loadGitHistory}
+                    loadFileDiff={loadFileDiff}
+                    loadCommitDetails={loadCommitDetails}
+                    gitStageFile={gitStageFile}
+                    gitUnstageFile={gitUnstageFile}
+                    gitCommitChanges={gitCommitChanges}
+                    gitPushChanges={gitPushChanges}
+                    gitPullChanges={gitPullChanges}
+                    gitCreateBranch={gitCreateBranch}
+                    gitCheckoutBranch={gitCheckoutBranch}
+                    gitDeleteBranch={gitDeleteBranch}
+                    gitPushWithUpstream={gitPushWithUpstream}
+                    gitEnableAutoSetupRemote={gitEnableAutoSetupRemote}
+                />
             )}
 
             {/* Workspace Modal */}
@@ -8591,6 +7639,60 @@ const getChatInputProps = useCallback((paneId: string) => ({
     mcpToolsLoading, mcpToolsError, showMcpServersDropdown, activeConversationId, findNodePath, performSplit,
 ]);
 
+// Pane renderer registry - maps contentType to render function
+const paneRenderers = useMemo(() => ({
+    chat: renderChatView,
+    editor: renderFileEditor,
+    terminal: renderTerminalView,
+    pdf: renderPdfViewer,
+    csv: renderCsvViewer,
+    docx: renderDocxViewer,
+    browser: renderBrowserViewer,
+    pptx: renderPptxViewer,
+    latex: renderLatexViewer,
+    notebook: renderNotebookViewer,
+    exp: renderExpViewer,
+    image: renderPicViewer,
+    mindmap: renderMindMapViewer,
+    zip: renderZipViewer,
+    'data-labeler': renderDataLabelerPane,
+    'graph-viewer': renderGraphViewerPane,
+    browsergraph: renderBrowserGraphPane,
+    datadash: renderDataDashPane,
+    dbtool: renderDBToolPane,
+    npcteam: renderNPCTeamPane,
+    jinx: renderJinxPane,
+    teammanagement: renderTeamManagementPane,
+    settings: renderSettingsPane,
+    photoviewer: renderPhotoViewerPane,
+    scherzo: renderScherzoPane,
+    library: renderLibraryViewerPane,
+    help: renderHelpPane,
+    git: renderGitPane,
+    folder: renderFolderViewerPane,
+    projectenv: renderProjectEnvPane,
+    diskusage: renderDiskUsagePane,
+    'memory-manager': renderMemoryManagerPane,
+    'cron-daemon': renderCronDaemonPane,
+    search: renderSearchPane,
+    'markdown-preview': renderMarkdownPreviewPane,
+    'html-preview': renderHtmlPreviewPane,
+    tilejinx: renderTileJinxPane,
+    python: renderTerminalView,
+    branches: renderBranchComparisonPane,
+}), [
+    renderChatView, renderFileEditor, renderTerminalView, renderPdfViewer,
+    renderCsvViewer, renderDocxViewer, renderBrowserViewer, renderPptxViewer,
+    renderLatexViewer, renderNotebookViewer, renderExpViewer, renderPicViewer,
+    renderMindMapViewer, renderZipViewer, renderDataLabelerPane, renderGraphViewerPane,
+    renderBrowserGraphPane, renderDataDashPane, renderDBToolPane, renderNPCTeamPane,
+    renderJinxPane, renderTeamManagementPane, renderSettingsPane, renderPhotoViewerPane,
+    renderScherzoPane, renderLibraryViewerPane, renderHelpPane, renderGitPane,
+    renderFolderViewerPane, renderProjectEnvPane, renderDiskUsagePane, renderMemoryManagerPane,
+    renderCronDaemonPane, renderSearchPane, renderMarkdownPreviewPane, renderHtmlPreviewPane,
+    renderTileJinxPane, renderBranchComparisonPane,
+]);
+
 const layoutComponentApi = useMemo(() => ({
     rootLayoutNode,
     setRootLayoutNode,
@@ -8602,50 +7704,12 @@ const layoutComponentApi = useMemo(() => ({
     closeContentPane,
     moveContentPane,
     createAndAddPaneNodeToLayout,
-    renderChatView,
-    renderFileEditor,
-    renderTerminalView,
-    renderPdfViewer,
-    renderCsvViewer,
-    renderDocxViewer,
-    renderBrowserViewer,
-    renderPptxViewer,
-    renderLatexViewer,
-    renderNotebookViewer,
-    renderExpViewer,
-    renderPicViewer,
-    renderMindMapViewer,
-    renderZipViewer,
-    renderDataLabelerPane,
-    renderGraphViewerPane,
-    renderBrowserGraphPane,
-    renderDataDashPane,
-    renderDBToolPane,
-    renderNPCTeamPane,
-    renderJinxPane,
-    renderTeamManagementPane,
-    renderSettingsPane,
-    renderPhotoViewerPane,
-    renderScherzoPane,
-    renderLibraryViewerPane,
-    renderHelpPane,
-    renderGitPane,
-    renderFolderViewerPane,
-    renderProjectEnvPane,
-    renderDiskUsagePane,
-    renderMemoryManagerPane,
-    renderCronDaemonPane,
-    renderSearchPane,
-    renderMarkdownPreviewPane,
-    renderHtmlPreviewPane,
-    renderTileJinxPane,
-    renderBranchComparisonPane,
+    paneRenderers,
     setPaneContextMenu,
     // Chat-specific props:
     autoScrollEnabled, setAutoScrollEnabled,
     messageSelectionMode, toggleMessageSelectionMode, selectedMessages,
     conversationBranches, showBranchingUI, setShowBranchingUI,
-    // ChatInput props function for rendering input in chat panes (takes paneId)
     getChatInputProps,
     // Zen mode props
     zenModePaneId,
@@ -8672,39 +7736,7 @@ const layoutComponentApi = useMemo(() => ({
     findNodeByPath, findNodePath, activeContentPaneId,
     draggedItem, dropTarget, updateContentPane, performSplit, closeContentPane,
     moveContentPane, createAndAddPaneNodeToLayout,
-    renderChatView, renderFileEditor, renderTerminalView, renderPdfViewer,
-    renderCsvViewer, renderDocxViewer, renderBrowserViewer,
-    renderPptxViewer,
-    renderLatexViewer,
-    renderNotebookViewer,
-    renderExpViewer,
-    renderPicViewer,
-    renderMindMapViewer,
-    renderZipViewer,
-    renderDataLabelerPane,
-    renderGraphViewerPane,
-    renderBrowserGraphPane,
-    renderDataDashPane,
-    renderDBToolPane,
-    renderNPCTeamPane,
-    renderJinxPane,
-    renderTeamManagementPane,
-    renderSettingsPane,
-    renderPhotoViewerPane,
-    renderScherzoPane,
-    renderLibraryViewerPane,
-    renderHelpPane,
-    renderGitPane,
-    renderFolderViewerPane,
-    renderProjectEnvPane,
-    renderDiskUsagePane,
-    renderMemoryManagerPane,
-    renderCronDaemonPane,
-    renderSearchPane,
-    renderMarkdownPreviewPane,
-    renderHtmlPreviewPane,
-    renderTileJinxPane,
-    renderBranchComparisonPane,
+    paneRenderers,
     setActiveContentPaneId, setDraggedItem, setDropTarget,
     setPaneContextMenu,
     autoScrollEnabled, setAutoScrollEnabled,
