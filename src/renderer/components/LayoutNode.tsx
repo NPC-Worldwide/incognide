@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import PaneHeader from './PaneHeader';
 import PaneTabBar from './PaneTabBar';
-import { getFileIcon } from './utils';
+import { getFileName, getFileIcon } from './utils';
 import ChatInput from './ChatInput';
 import DiffViewer from './DiffViewer';
 import { ChatHeaderContent } from './pane-headers';
@@ -614,7 +614,7 @@ export const LayoutNode = memo(({ node, path, component }) => {
                         if (!targetPaneData.tabs || targetPaneData.tabs.length === 0) {
                             const targetTitle = targetPaneData.contentType === 'browser'
                                 ? (targetPaneData.browserUrl || 'Browser')
-                                : (targetPaneData.contentId?.split('/').pop() || targetPaneData.contentType);
+                                : (getFileName(targetPaneData.contentId) || targetPaneData.contentType);
                             targetPaneData.tabs = [{
                                 id: `tab_${Date.now()}_0`,
                                 contentType: targetPaneData.contentType,
@@ -639,7 +639,7 @@ export const LayoutNode = memo(({ node, path, component }) => {
                             // Add source content as a single new tab
                             const sourceTitle = sourcePaneData.contentType === 'browser'
                                 ? (sourcePaneData.browserUrl || 'Browser')
-                                : (sourcePaneData.contentId?.split('/').pop() || sourcePaneData.contentType);
+                                : (getFileName(sourcePaneData.contentId) || sourcePaneData.contentType);
                             targetPaneData.tabs.push({
                                 id: `tab_${Date.now()}_${targetPaneData.tabs.length}`,
                                 contentType: sourcePaneData.contentType,
@@ -701,7 +701,7 @@ export const LayoutNode = memo(({ node, path, component }) => {
                     if (!targetPaneData.tabs || targetPaneData.tabs.length === 0) {
                         const targetTitle = targetPaneData.contentType === 'browser'
                             ? (targetPaneData.browserUrl || 'Browser')
-                            : (targetPaneData.contentId?.split('/').pop() || targetPaneData.contentType);
+                            : (getFileName(targetPaneData.contentId) || targetPaneData.contentType);
                         targetPaneData.tabs = [{
                             id: `tab_${Date.now()}_0`,
                             contentType: targetPaneData.contentType,
@@ -717,7 +717,7 @@ export const LayoutNode = memo(({ node, path, component }) => {
                     // Add the dragged tab
                     const newTabTitle = tabContentType === 'browser'
                         ? (browserUrl || tabContentId || 'Browser')
-                        : (tabContentId?.split('/').pop() || tabContentType);
+                        : (getFileName(tabContentId) || tabContentType);
                     targetPaneData.tabs.push({
                         id: `tab_${Date.now()}_${targetPaneData.tabs.length}`,
                         contentType: tabContentType,
@@ -807,7 +807,7 @@ export const LayoutNode = memo(({ node, path, component }) => {
                         // Convert current content to first tab
                         const currentTitle = paneData.contentType === 'browser'
                             ? (paneData.browserUrl || 'Browser')
-                            : (paneData.contentId?.split('/').pop() || paneData.contentType);
+                            : (getFileName(paneData.contentId) || paneData.contentType);
                         paneData.tabs = [{
                             id: `tab_${Date.now()}_0`,
                             contentType: paneData.contentType,
@@ -823,7 +823,7 @@ export const LayoutNode = memo(({ node, path, component }) => {
                     const browserUrl = draggedItem.url || draggedItem.browserUrl; // Support both property names
                     const newTabTitle = contentType === 'browser'
                         ? (browserUrl || draggedItem.id || 'Browser')
-                        : (draggedItem.id?.split('/').pop() || contentType);
+                        : (getFileName(draggedItem.id) || contentType);
                     const newTab = {
                         id: `tab_${Date.now()}_${paneData.tabs.length}`,
                         contentType,
@@ -1035,7 +1035,7 @@ export const LayoutNode = memo(({ node, path, component }) => {
                             contentId: paneData.contentId,
                             fileContent: paneData.fileContent, // Preserve file content
                             fileChanged: paneData.fileChanged, // Preserve file changed state
-                            title: paneData.contentId?.split('/').pop() || paneData.contentType
+                            title: getFileName(paneData.contentId) || paneData.contentType
                         }];
                     } else {
                         paneData.tabs = [];
@@ -1094,7 +1094,7 @@ export const LayoutNode = memo(({ node, path, component }) => {
             headerTitle = 'Chat';
         } else if (contentType === 'editor' && contentId) {
             headerIcon = getFileIcon(contentId);
-            headerTitle = contentId.split('/').pop();
+            headerTitle = getFileName(contentId);
         } else if (contentType === 'browser') {
             headerIcon = <Globe size={14} className="text-blue-400" />;
             headerTitle = paneData.browserTitle || paneData.browserUrl || 'Web Browser';
@@ -1103,10 +1103,10 @@ export const LayoutNode = memo(({ node, path, component }) => {
             headerTitle = 'Terminal';
         } else if (contentType === 'image') {
             headerIcon = <ImageIcon size={14} className="text-purple-400" />;
-            headerTitle = contentId?.split('/').pop() || 'Image Viewer';
+            headerTitle = getFileName(contentId) || 'Image Viewer';
         } else if (contentType === 'folder') {
             headerIcon = <Folder size={14} className="text-yellow-400" />;
-            headerTitle = contentId?.split('/').pop() || 'Folder';
+            headerTitle = getFileName(contentId) || 'Folder';
         } else if (contentType === 'dbtool') {
             headerIcon = <Database size={14} className="text-cyan-400" />;
             headerTitle = 'Database Tool';
@@ -1160,31 +1160,31 @@ export const LayoutNode = memo(({ node, path, component }) => {
             headerTitle = 'Map Document';
         } else if (contentType === 'markdown-preview') {
             headerIcon = <FileIcon size={14} className="text-blue-400" />;
-            headerTitle = `Preview: ${contentId?.split('/').pop() || 'Markdown'}`;
+            headerTitle = `Preview: ${getFileName(contentId) || 'Markdown'}`;
         } else if (contentType === 'html-preview') {
             headerIcon = <Globe size={14} className="text-orange-400" />;
-            headerTitle = `Preview: ${contentId?.split('/').pop() || 'HTML'}`;
+            headerTitle = `Preview: ${getFileName(contentId) || 'HTML'}`;
         } else if (contentType === 'pdf') {
             headerIcon = <FileIcon size={14} className="text-red-400" />;
-            headerTitle = contentId?.split('/').pop() || 'PDF Viewer';
+            headerTitle = getFileName(contentId) || 'PDF Viewer';
         } else if (contentType === 'csv') {
             headerIcon = <Table size={14} className="text-green-400" />;
-            headerTitle = contentId?.split('/').pop() || 'CSV Viewer';
+            headerTitle = getFileName(contentId) || 'CSV Viewer';
         } else if (contentType === 'latex') {
             headerIcon = <FileIcon size={14} className="text-teal-400" />;
-            headerTitle = contentId?.split('/').pop() || 'LaTeX Editor';
+            headerTitle = getFileName(contentId) || 'LaTeX Editor';
         } else if (contentType === 'docx') {
             headerIcon = <FileIcon size={14} className="text-blue-500" />;
-            headerTitle = contentId?.split('/').pop() || 'Document';
+            headerTitle = getFileName(contentId) || 'Document';
         } else if (contentType === 'pptx') {
             headerIcon = <FileIcon size={14} className="text-orange-500" />;
-            headerTitle = contentId?.split('/').pop() || 'Presentation';
+            headerTitle = getFileName(contentId) || 'Presentation';
         } else if (contentType === 'zip') {
             headerIcon = <FileIcon size={14} className="text-yellow-500" />;
-            headerTitle = contentId?.split('/').pop() || 'Archive';
+            headerTitle = getFileName(contentId) || 'Archive';
         } else if (contentType === 'exp') {
             headerIcon = <FlaskConical size={14} className="text-purple-400" />;
-            headerTitle = contentId?.split('/').pop() || 'Experiment';
+            headerTitle = getFileName(contentId) || 'Experiment';
         } else if (contentType === 'tilejinx') {
             headerIcon = <Zap size={14} className="text-amber-400" />;
             headerTitle = contentId?.replace('.jinx', '') || 'Tile';
@@ -1193,10 +1193,10 @@ export const LayoutNode = memo(({ node, path, component }) => {
             headerTitle = 'Branch Comparison';
         } else if (contentType === 'diff') {
             headerIcon = <GitBranch size={14} className="text-orange-400" />;
-            headerTitle = `Diff: ${contentId?.split('/').pop() || 'File'}`;
+            headerTitle = `Diff: ${getFileName(contentId) || 'File'}`;
         } else if (contentId) {
             headerIcon = getFileIcon(contentId);
-            headerTitle = contentId.split('/').pop();
+            headerTitle = getFileName(contentId);
         }
 
         // Conditionally construct children for PaneHeader (type-specific buttons)
@@ -1444,7 +1444,7 @@ export const LayoutNode = memo(({ node, path, component }) => {
                         onStartRename={() => {
                             if (contentId && (contentType === 'editor' || contentType === 'latex' || contentType === 'csv' || contentType === 'docx' || contentType === 'pptx')) {
                                 setRenamingPaneId(node.id);
-                                setEditedFileName(contentId.split('/').pop() || '');
+                                setEditedFileName(getFileName(contentId) || '');
                             }
                         }}
                         // Renaming props

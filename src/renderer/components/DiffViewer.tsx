@@ -1,3 +1,4 @@
+import { getFileName } from './utils';
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { GitBranch, RefreshCw, Check, X, AlertTriangle, SplitSquareHorizontal, AlignJustify, ChevronDown, ChevronUp, GitMerge, Undo2, ArrowLeft, ArrowRight, Combine, Save } from 'lucide-react';
 import CodeMirror from '@uiw/react-codemirror';
@@ -132,7 +133,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
         setLoading(true);
         setError(null);
         try {
-            const repoPath = currentPath || filePath.split('/').slice(0, -1).join('/');
+            const repoPath = currentPath || filePath.replace(/\\/g, '/').split('/').slice(0, -1).join('/');
             const relativePath = filePath.replace(repoPath + '/', '').replace(repoPath, '');
 
             // Load original content from git (HEAD version)
@@ -175,7 +176,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
 
     const handleStage = async () => {
         try {
-            const repoPath = currentPath || filePath.split('/').slice(0, -1).join('/');
+            const repoPath = currentPath || filePath.replace(/\\/g, '/').split('/').slice(0, -1).join('/');
             const relativePath = filePath.replace(repoPath + '/', '').replace(repoPath, '');
             await (window as any).api?.gitStageFile?.(repoPath, relativePath);
             onStage?.();
@@ -187,7 +188,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     const handleDiscard = async () => {
         if (!confirm('Are you sure you want to discard all changes to this file?')) return;
         try {
-            const repoPath = currentPath || filePath.split('/').slice(0, -1).join('/');
+            const repoPath = currentPath || filePath.replace(/\\/g, '/').split('/').slice(0, -1).join('/');
             const relativePath = filePath.replace(repoPath + '/', '').replace(repoPath, '');
             await (window as any).api?.gitDiscardFile?.(repoPath, relativePath);
             await loadContent();
@@ -246,7 +247,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
         }
     }, [mergeConflicts, modifiedContent, filePath, loadContent]);
 
-    const fileName = filePath.split('/').pop() || filePath;
+    const fileName = getFileName(filePath) || filePath;
     const langExt = getLanguageExtension(filePath);
     const theme = isDark ? vscodeDark : githubLight;
 

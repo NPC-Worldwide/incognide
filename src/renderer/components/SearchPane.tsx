@@ -1,3 +1,4 @@
+import { getFileName } from './utils';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Search, FileText, MessageSquare, Database, Network, X, Loader2 } from 'lucide-react';
 
@@ -55,7 +56,7 @@ const SearchPane: React.FC<SearchPaneProps> = ({
                     if (fileResults?.files) {
                         allResults.push(...fileResults.files.map((f: any) => ({
                             type: 'file' as const,
-                            title: f.name || f.path?.split('/').pop() || 'Unknown',
+                            title: f.name || getFileName(f.path) || 'Unknown',
                             path: f.path,
                             snippet: f.match || f.snippet,
                         })));

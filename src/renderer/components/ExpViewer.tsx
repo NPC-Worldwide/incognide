@@ -1,3 +1,4 @@
+import { getFileName } from './utils';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { BACKEND_URL } from '../config';
 import {
@@ -964,7 +965,7 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                     <FlaskConical className="text-purple-400" size={20} />
                     <div>
                         <div className="text-sm font-medium text-white">
-                            {filePath.split('/').pop()}
+                            {getFileName(filePath)}
                         </div>
                         <div className="text-xs text-gray-500">
                             {expData.status} • Modified {new Date(expData.modified_at).toLocaleString()}

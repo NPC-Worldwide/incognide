@@ -1,3 +1,4 @@
+import { getFileName } from './utils';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { BACKEND_URL } from '../config';
 import {
@@ -584,7 +585,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
             try {
                 const data = JSON.parse(jsonData);
                 if (data.type === 'sidebar-file' && data.path) {
-                    const fileName = data.path.split('/').pop() || data.path;
+                    const fileName = getFileName(data.path) || data.path;
                     const existingNames = new Set(uploadedFiles.map((f: any) => f.name));
                     if (!existingNames.has(fileName)) {
                         setUploadedFiles((prev: any[]) => [...prev, {
@@ -744,9 +745,9 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
             if (!paneData.contentType || paneData.contentType === 'chat') return;
             if (!['editor', 'browser', 'pdf', 'terminal'].includes(paneData.contentType)) return;
             let label = '';
-            if (paneData.contentType === 'editor' && paneData.contentId) label = paneData.contentId.split('/').pop() || paneData.contentId;
+            if (paneData.contentType === 'editor' && paneData.contentId) label = getFileName(paneData.contentId) || paneData.contentId;
             else if (paneData.contentType === 'browser' && paneData.browserUrl) { try { label = new URL(paneData.browserUrl).hostname; } catch { label = paneData.browserUrl.slice(0, 20); } }
-            else if (paneData.contentType === 'pdf' && paneData.contentId) label = paneData.contentId.split('/').pop() || 'PDF';
+            else if (paneData.contentType === 'pdf' && paneData.contentId) label = getFileName(paneData.contentId) || 'PDF';
             else if (paneData.contentType === 'terminal') label = `Term${paneData.shellType ? ` (${paneData.shellType})` : ''}`;
             else label = paneData.contentType;
             if (label) panes.push({ id: paneId, type: paneData.contentType, label });
@@ -880,7 +881,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                 if (!isStreaming && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                                     e.preventDefault();
                                     // Auto-broadcast if multiple models/NPCs selected
-                                    const shouldBroadcast = onBroadcast && selectedModels.length > 0 && selectedNPCs.length > 0 && (selectedModels.length > 1 || selectedNPCs.length > 1);
+                                    const shouldBroadcast = broadcastMode && onBroadcast && selectedModels.length > 0 && selectedNPCs.length > 0 && (selectedModels.length > 1 || selectedNPCs.length > 1);
                                     if (shouldBroadcast) {
                                         onBroadcast(selectedModels, selectedNPCs);
                                     } else {
@@ -904,7 +905,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                             </button>
                         ) : (
                             <button onClick={(e) => {
-                                const shouldBroadcast = onBroadcast && selectedModels.length > 0 && selectedNPCs.length > 0 && (selectedModels.length > 1 || selectedNPCs.length > 1);
+                                const shouldBroadcast = broadcastMode && onBroadcast && selectedModels.length > 0 && selectedNPCs.length > 0 && (selectedModels.length > 1 || selectedNPCs.length > 1);
                                 if (shouldBroadcast) {
                                     onBroadcast(selectedModels, selectedNPCs);
                                 } else {
@@ -1038,7 +1039,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                             if (!isStreaming && e.key === 'Enter' && !e.shiftKey) {
                                                 e.preventDefault();
                                                 // Auto-broadcast if multiple models/NPCs selected
-                                                const shouldBroadcast = onBroadcast && selectedModels.length > 0 && selectedNPCs.length > 0 && (selectedModels.length > 1 || selectedNPCs.length > 1);
+                                                const shouldBroadcast = broadcastMode && onBroadcast && selectedModels.length > 0 && selectedNPCs.length > 0 && (selectedModels.length > 1 || selectedNPCs.length > 1);
                                                 if (shouldBroadcast) {
                                                     onBroadcast(selectedModels, selectedNPCs);
                                                 } else {
@@ -1159,7 +1160,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                             <button
                                 onClick={(e) => {
                                     // Auto-broadcast if multiple models/NPCs selected
-                                    const shouldBroadcast = onBroadcast && selectedModels.length > 0 && selectedNPCs.length > 0 && (selectedModels.length > 1 || selectedNPCs.length > 1);
+                                    const shouldBroadcast = broadcastMode && onBroadcast && selectedModels.length > 0 && selectedNPCs.length > 0 && (selectedModels.length > 1 || selectedNPCs.length > 1);
                                     if (shouldBroadcast && canSend) {
                                         onBroadcast(selectedModels, selectedNPCs);
                                     } else {
@@ -1719,7 +1720,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                                                 });
                                                             }}
                                                         >
-                                                            <span className="truncate">{srv.serverPath.split('/').pop()?.replace(/\.py$/, '') || srv.serverPath}</span>
+                                                            <span className="truncate">{getFileName(srv.serverPath)?.replace(/\.py$/, '') || srv.serverPath}</span>
                                                         </div>
                                                         {srv.serverPath === mcpServerPath && (
                                                             <div className="px-3 py-1 space-y-1">

@@ -1,3 +1,4 @@
+import { getFileName } from './utils';
 import React, { useCallback, useRef, useState } from 'react';
 import {
     X, Plus, MessageSquare, Terminal, Globe, FileText, Image, Book, File, GripVertical, Folder,
@@ -148,25 +149,25 @@ const getTabTitle = (tab: Tab): string => {
         case 'mindmap':
             return 'Mind Map';
         case 'markdown-preview':
-            return `Preview: ${tab.contentId?.split('/').pop() || 'Markdown'}`;
+            return `Preview: ${getFileName(tab.contentId) || 'Markdown'}`;
         case 'pdf':
-            return tab.contentId?.split('/').pop() || 'PDF';
+            return getFileName(tab.contentId) || 'PDF';
         case 'csv':
-            return tab.contentId?.split('/').pop() || 'CSV';
+            return getFileName(tab.contentId) || 'CSV';
         case 'latex':
-            return tab.contentId?.split('/').pop() || 'LaTeX';
+            return getFileName(tab.contentId) || 'LaTeX';
         case 'docx':
-            return tab.contentId?.split('/').pop() || 'Document';
+            return getFileName(tab.contentId) || 'Document';
         case 'pptx':
-            return tab.contentId?.split('/').pop() || 'Presentation';
+            return getFileName(tab.contentId) || 'Presentation';
         case 'zip':
-            return tab.contentId?.split('/').pop() || 'Archive';
+            return getFileName(tab.contentId) || 'Archive';
         case 'image':
-            return tab.contentId?.split('/').pop() || 'Image';
+            return getFileName(tab.contentId) || 'Image';
         case 'folder':
-            return tab.contentId?.split('/').pop() || 'Folder';
+            return getFileName(tab.contentId) || 'Folder';
         default:
-            return tab.contentId?.split('/').pop() || 'Tab';
+            return getFileName(tab.contentId) || 'Tab';
     }
 };
 

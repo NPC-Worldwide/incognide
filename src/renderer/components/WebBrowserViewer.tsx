@@ -1,3 +1,4 @@
+import { getFileName } from './utils';
 import React, { useEffect, useRef, useState, memo, useCallback } from 'react';
 import { ArrowLeft, ArrowRight, RotateCcw, Globe, Home, X, Plus, Settings, Trash2, Lock, GripVertical, Puzzle, Download, FolderOpen, Key, Eye, EyeOff, Shield, Check, Maximize2, Minimize2 } from 'lucide-react';
 
@@ -1612,7 +1613,7 @@ const WebBrowserViewer = memo(({
                                                             <div key={p.partition} className="theme-bg-tertiary rounded p-2">
                                                                 <div className="flex items-center justify-between mb-1">
                                                                     <span className="text-[10px] theme-text-primary truncate max-w-[120px]" title={p.folderPath}>
-                                                                        {p.folderPath.split('/').pop() || p.folderPath}
+                                                                        {getFileName(p.folderPath) || p.folderPath}
                                                                     </span>
                                                                     <button
                                                                         onClick={() => handleImportCookies(p.partition)}

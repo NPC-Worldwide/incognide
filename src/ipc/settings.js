@@ -371,7 +371,7 @@ function register(ctx) {
   const _readPythonEnvConfig = ctxReadPythonEnvConfig || readPythonEnvConfig;
 
   // ==================== SUBMIT MACRO ====================
-  ipcMain.on('submit-macro', (event, command) => {
+  ipcMain.handle('submit-macro', async (event, command) => {
     const mainWindow = getMainWindow();
     if (mainWindow) mainWindow.hide();
   });

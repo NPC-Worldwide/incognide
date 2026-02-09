@@ -1,3 +1,4 @@
+import { getFileName } from './utils';
 import React, { useMemo, useCallback, useRef, useEffect, useState, memo } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { javascript } from '@codemirror/lang-javascript';
@@ -336,7 +337,7 @@ const CodeEditorPane = ({
     if (!paneData) return null;
 
     const { contentId: filePath, fileContent, fileChanged } = paneData;
-    const fileName = filePath?.split('/').pop() || 'Untitled';
+    const fileName = getFileName(filePath) || 'Untitled';
     const isRenaming = renamingPaneId === nodeId;
 
     const handleLoadBlame = useCallback(async () => {

@@ -1,3 +1,4 @@
+import { getFileName } from './utils';
 import React, { useEffect, useState, useCallback, useMemo, memo, useRef } from 'react';
 import {
     Save, Play, ExternalLink, X, SplitSquareHorizontal, Loader, ChevronDown,
@@ -601,7 +602,7 @@ const LatexViewer = ({
                 <div className="flex items-center gap-2">
                     <FileCode size={14} className="text-green-400" />
                     <span className="text-sm font-medium truncate">
-                        {filePath?.split('/').pop() || 'Untitled'}{hasChanges ? ' *' : ''}
+                        {getFileName(filePath) || 'Untitled'}{hasChanges ? ' *' : ''}
                     </span>
                 </div>
                 <div className="flex items-center gap-1">

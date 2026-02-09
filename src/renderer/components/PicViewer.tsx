@@ -1,3 +1,4 @@
+import { getFileName } from './utils';
 import React, { useState, useRef, useCallback, useEffect, memo } from 'react';
 import { ZoomIn, ZoomOut, RotateCw, Download, Maximize2, RefreshCw } from 'lucide-react';
 
@@ -69,7 +70,7 @@ const PicViewer: React.FC<PicViewerProps> = ({ nodeId, contentDataRef }) => {
         try {
             const link = document.createElement('a');
             link.href = `file://${filePath}`;
-            link.download = filePath.split('/').pop() || 'image';
+            link.download = getFileName(filePath) || 'image';
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -199,7 +200,7 @@ const PicViewer: React.FC<PicViewerProps> = ({ nodeId, contentDataRef }) => {
                     <img
                         ref={imageRef}
                         src={imageSrc}
-                        alt={filePath?.split('/').pop() || 'Image'}
+                        alt={getFileName(filePath) || 'Image'}
                         style={{
                             transform: `translate(${position.x}px, ${position.y}px) scale(${scale}) rotate(${rotation}deg)`,
                             transition: isDragging ? 'none' : 'transform 0.1s ease-out',
@@ -222,7 +223,7 @@ const PicViewer: React.FC<PicViewerProps> = ({ nodeId, contentDataRef }) => {
 
             {/* Status Bar */}
             <div className="px-3 py-1 text-xs theme-bg-secondary border-t theme-border theme-text-muted flex items-center gap-4">
-                <span>{filePath?.split('/').pop()}</span>
+                <span>{getFileName(filePath)}</span>
                 {imageLoaded && imageRef.current && (
                     <>
                         <span>{imageRef.current.naturalWidth} x {imageRef.current.naturalHeight}</span>

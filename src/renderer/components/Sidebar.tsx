@@ -1,3 +1,4 @@
+import { getFileName } from './utils';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -944,9 +945,9 @@ const handleApplyPromptToFiles = async (operationType, customPrompt = '') => {
             const response = await window.api.readFileContent(filePath);
             if (response.error) {
                 console.warn(`Could not read file ${filePath}:`, response.error);
-                return `File (${filePath.split('/').pop()}): [Error reading content]`;
+                return `File (${getFileName(filePath)}): [Error reading content]`;
             }
-            const fileName = filePath.split('/').pop();
+            const fileName = getFileName(filePath);
             return `File (${fileName}):\n---\n${response.content}\n---`;
         });
         const filesContent = await Promise.all(filesContentPromises);
@@ -1024,7 +1025,7 @@ const handleApplyPromptToFilesInInput = async (operationType, customPrompt = '')
                 console.warn(`Could not read file ${filePath}:`, response.error);
                 return `File ${index + 1} (${filePath}): [Error reading content: ${response.error}]`;
             }
-            const fileName = filePath.split('/').pop();
+            const fileName = getFileName(filePath);
             return `File ${index + 1} (${fileName}):\n---\n${response.content}\n---`;
         });
         const filesContent = await Promise.all(filesContentPromises);
@@ -1264,7 +1265,7 @@ const handleSidebarItemDelete = async () => {
 const handleSidebarRenameStart = () => {
     if (!sidebarItemContextMenuPos) return;
     const { path } = sidebarItemContextMenuPos;
-    const currentName = path.split('/').pop();
+    const currentName = getFileName(path);
 
     setRenamingPath(path);
     setEditedSidebarItemName(currentName);
@@ -1281,7 +1282,7 @@ const handleZipItems = () => {
 
     // Generate default name
     const defaultName = itemsToZip.length === 1
-        ? itemsToZip[0].split('/').pop()?.replace(/\.[^/.]+$/, '') || 'archive'
+        ? getFileName(itemsToZip[0])?.replace(/\.[^/.]+$/, '') || 'archive'
         : 'archive';
 
     // Show modal
@@ -1330,14 +1331,14 @@ const handleFolderOverview = async () => {
        
         const filesContentPromises = response.files.map(async (filePath) => {
             const fileResponse = await window.api.readFileContent(filePath);
-            const fileName = filePath.split('/').pop();
+            const fileName = getFileName(filePath);
             return fileResponse.error 
                 ? `File (${fileName}): [Error reading content]`
                 : `File (${fileName}):\n---\n${fileResponse.content}\n---`;
         });
         const filesContent = await Promise.all(filesContentPromises);
         
-        const fullPrompt = `Provide a high-level overview of the following ${response.files.length} file(s) from the '${path.split('/').pop()}' folder:\n\n` + filesContent.join('\n\n');
+        const fullPrompt = `Provide a high-level overview of the following ${response.files.length} file(s) from the '${getFileName(path)}' folder:\n\n` + filesContent.join('\n\n');
 
         const { conversation, paneId } = await createNewConversation();
         if (!conversation) throw new Error("Failed to create conversation for overview.");
@@ -1401,7 +1402,7 @@ const renderActiveWindowsIndicator = () => {
                 <div className="mt-1 pl-2 space-y-1">
                     {otherWindows.map(window => (
                         <div key={window.id} className="text-xs theme-text-muted truncate">
-                            📁 {window.path?.split('/').pop() || 'No folder'}
+                            📁 {getFileName(window.path) || 'No folder'}
                             <span className="text-gray-600 ml-2">
                                 ({Math.round((Date.now() - window.lastActive) / 1000)}s ago)
                             </span>
@@ -2648,7 +2649,7 @@ const renderWebsiteList = () => {
                       return;
                   }
                   
-                  const oldName = renamingPath.split('/').pop();
+                  const oldName = getFileName(renamingPath);
                   if (editedSidebarItemName === oldName) {
                       setRenamingPath(null);
                       setEditedSidebarItemName('');
@@ -2711,7 +2712,7 @@ const renderWebsiteList = () => {
                         </button>
                         <button
                             onClick={() => {
-                                const fileNames = selectedFilePaths.map(p => p.split('/').pop()).join(', ');
+                                const fileNames = selectedFilePaths.map(p => getFileName(p)).join(', ');
                                 setInput(prev => `${prev}${prev ? ' ' : ''}${fileNames}`);
                                 setSidebarItemContextMenuPos(null);
                             }}
@@ -2949,7 +2950,7 @@ const renderFolderList = (structure) => {
                         className="flex items-center gap-0.5 p-1 hover:bg-white/10 transition-colors rounded text-gray-400 hover:text-yellow-400"
                         title={currentPath}
                     >
-                        <span className="text-[9px] font-medium truncate max-w-[100px]">{(() => { const name = currentPath?.split('/').pop() || 'Root'; return name.length > 7 ? name.slice(0, 7) + '…' : name; })()}</span>
+                        <span className="text-[9px] font-medium truncate max-w-[100px]">{(() => { const name = getFileName(currentPath) || 'Root'; return name.length > 7 ? name.slice(0, 7) + '…' : name; })()}</span>
                         <ChevronDown size={8} className={`flex-shrink-0 transition-transform text-gray-600 dark:text-gray-400 ${folderDropdownOpen ? 'rotate-180' : ''}`} />
                     </button>
                 </div>
@@ -3015,7 +3016,7 @@ const renderFolderList = (structure) => {
                                             className="w-full flex items-center gap-2 px-2 py-1 text-[10px] text-gray-300 hover:bg-gray-700"
                                         >
                                             <Folder size={10} className="text-yellow-400" />
-                                            <span className="truncate">{path.split('/').pop()}</span>
+                                            <span className="truncate">{getFileName(path)}</span>
                                         </button>
                                     ))}
                                 </>
@@ -3025,7 +3026,7 @@ const renderFolderList = (structure) => {
                                     onClick={() => { switchToPath(baseDir); setFolderDropdownOpen(false); }}
                                     className="w-full flex items-center gap-2 px-2 py-1 text-[10px] text-purple-400 hover:bg-gray-700 border-t border-gray-700"
                                 >
-                                    <Folder size={10} /> {baseDir?.split('/').pop() || 'root'}
+                                    <Folder size={10} /> {getFileName(baseDir) || 'root'}
                                 </button>
                             )}
                         </div>
@@ -3203,8 +3204,8 @@ const renderFolderList = (structure) => {
 
         items = items.filter(Boolean).sort((a, b) => {
             // Extract name from path if name property doesn't exist
-            const aName = a.name || a.path?.split('/').pop() || '';
-            const bName = b.name || b.path?.split('/').pop() || '';
+            const aName = a.name || getFileName(a.path) || '';
+            const bName = b.name || getFileName(b.path) || '';
             const aHidden = aName.startsWith('.');
             const bHidden = bName.startsWith('.');
             const aIsDir = a.type === 'directory';
@@ -3221,7 +3222,7 @@ const renderFolderList = (structure) => {
         });
 
         return items.map(content => {
-            const name = content.name || content.path?.split('/').pop() || 'Unknown';
+            const name = content.name || getFileName(content.path) || 'Unknown';
             const fullPath = content.path || (parentPath ? `${parentPath}/${name}` : name);
             const isFolder = content.type === 'directory';
             const isFile = content.type === 'file';
@@ -3250,7 +3251,7 @@ const renderFolderList = (structure) => {
                                 const data = JSON.parse(e.dataTransfer.getData('application/json') || '{}');
                                 if (data.type === 'file' || data.type === 'folder') {
                                     const sourcePath = data.id;
-                                    const fileName = sourcePath.split('/').pop();
+                                    const fileName = getFileName(sourcePath);
                                     const destPath = `${fullPath}/${fileName}`;
                                     if (sourcePath !== destPath && !destPath.startsWith(sourcePath + '/')) {
                                         await (window as any).api?.renameFile?.(sourcePath, destPath);

@@ -1800,6 +1800,11 @@ registerAll({
   appDir: __dirname,
 });
 
+// Handler that needs createWindow from main.js scope
+ipcMain.handle('open-new-window', async (event, initialPath) => {
+  createWindow(initialPath);
+});
+
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
       if (backendProcess) {

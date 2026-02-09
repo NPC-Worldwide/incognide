@@ -346,9 +346,11 @@ function register(ctx) {
 
     const wc = newBrowserView.webContents;
 
-    // Handle popup windows (Google auth, contacts widget, etc.)
+    // Handle popup windows (window.open, target="_blank")
     wc.setWindowOpenHandler(({ url, disposition }) => {
-      // Google auth and services - open in system browser for proper auth flow
+      log('[Browser] window.open intercepted:', url, 'disposition:', disposition);
+
+      // Google auth - open in system browser for proper auth flow
       if (url.includes('accounts.google.com') ||
           url.includes('accounts.youtube.com') ||
           url.includes('myaccount.google.com')) {
@@ -356,20 +358,79 @@ function register(ctx) {
         return { action: 'deny' };
       }
 
-      // Google widgets (contacts hovercard, etc.) - allow them to open
+      // Google widgets (contacts hovercard, etc.) - allow as popups
       if (url.includes('contacts.google.com/widget') ||
           url.includes('apis.google.com') ||
           url.includes('plus.google.com')) {
-        // Allow these as they're needed for Google Drive functionality
         return { action: 'allow' };
       }
 
-      // For other URLs, send to renderer to open in new browser tab
+      // about:blank or empty URLs: sites like Google Drive call window.open('')
+      // then set the popup's location. We can't capture the final URL from here,
+      // so allow it and intercept navigation on the created window.
+      if (!url || url === 'about:blank') {
+        log('[Browser] Allowing about:blank popup - will intercept navigation');
+        return { action: 'allow' };
+      }
+
+      // All other URLs: open in a new browser tab in the app
       const mw = getMainWindow();
       if (mw && !mw.isDestroyed()) {
         mw.webContents.send('browser-open-in-new-tab', { url, disposition });
       }
       return { action: 'deny' };
+    });
+
+    // Intercept popup windows (from about:blank opens) to capture real navigation
+    wc.on('did-create-window', (newWindow) => {
+      log('[Browser] Popup window created, intercepting navigation');
+      const newWc = newWindow.webContents;
+      let handled = false;
+
+      const forwardAndClose = (realUrl) => {
+        if (handled) return;
+        if (!realUrl || realUrl === 'about:blank') return;
+        handled = true;
+        log('[Browser] Popup navigated to:', realUrl, '- forwarding to renderer');
+        const mw = getMainWindow();
+        if (mw && !mw.isDestroyed()) {
+          mw.webContents.send('browser-open-in-new-tab', { url: realUrl, disposition: 'new-window' });
+        }
+        try { newWindow.close(); } catch (e) {}
+      };
+
+      // The opener script sets window.location after creation
+      newWc.on('will-navigate', (event, navUrl) => {
+        log('[Browser] Popup will-navigate:', navUrl);
+        forwardAndClose(navUrl);
+      });
+      newWc.on('did-navigate', (event, navUrl) => {
+        log('[Browser] Popup did-navigate:', navUrl);
+        forwardAndClose(navUrl);
+      });
+      // Also catch in-page redirects
+      newWc.on('will-redirect', (event, navUrl) => {
+        log('[Browser] Popup will-redirect:', navUrl);
+        forwardAndClose(navUrl);
+      });
+
+      // Fallback: close orphaned popup after 8s
+      setTimeout(() => {
+        if (!handled) {
+          log('[Browser] Popup timeout - closing unhandled popup');
+          // Before closing, check if it navigated somewhere useful
+          try {
+            const finalUrl = newWc.getURL();
+            if (finalUrl && finalUrl !== 'about:blank') {
+              forwardAndClose(finalUrl);
+            } else {
+              newWindow.close();
+            }
+          } catch (e) {
+            try { newWindow.close(); } catch (e2) {}
+          }
+        }
+      }, 8000);
     });
 
     // Listeners now only send events to the renderer; they do not register handlers.

@@ -1,3 +1,4 @@
+import { getFileName } from './utils';
 import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { Viewer, Worker, SpecialZoomLevel } from '@react-pdf-viewer/core';
 import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
@@ -940,7 +941,7 @@ const PdfViewer = ({
             const blob = new Blob([pdfBytes], { type: 'application/pdf' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            const baseName = filePath.split('/').pop()?.replace('.pdf', '') || 'document';
+            const baseName = getFileName(filePath)?.replace('.pdf', '') || 'document';
             a.href = url;
             a.download = `${baseName}_annotated.pdf`;
             a.click();

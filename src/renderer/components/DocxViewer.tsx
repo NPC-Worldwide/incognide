@@ -1,3 +1,4 @@
+import { getFileName } from './utils';
 import React, { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
 import {
     Save, Download, Bold, Italic, List, ListOrdered, AlignLeft, AlignCenter, AlignRight,
@@ -79,6 +80,7 @@ const docxContentCache = new Map<string, {
     html: string;
     fonts?: any;
     pageSize?: any;
+    hasChanges?: boolean;
 }>();
 
 // Document templates
@@ -123,6 +125,8 @@ const DocxViewer = ({
                 setHistoryIndex(0);
                 setIsLoaded(true);
                 setError(null);
+                // Restore unsaved changes flag from cache (survives remount from resize/split)
+                if (cached.hasChanges) setHasChanges(true);
             }
         } else if (isLoaded) {
             // Reset loading state for uncached files
@@ -349,7 +353,12 @@ const DocxViewer = ({
         setHtmlContent(newContent);
         setHasChanges(true);
         addToHistory(newContent);
-    }, [addToHistory]);
+        // Sync to global cache so edits survive component remount (e.g. pane resize/split)
+        if (filePath) {
+            const existing = docxContentCache.get(filePath);
+            docxContentCache.set(filePath, { ...existing, html: newContent, hasChanges: true });
+        }
+    }, [addToHistory, filePath]);
 
     const undo = useCallback(() => {
         if (historyIndex > 0) {
@@ -467,7 +476,7 @@ const DocxViewer = ({
             <!DOCTYPE html>
             <html>
             <head>
-                <title>${filePath?.split('/').pop() || 'Document'}</title>
+                <title>${getFileName(filePath) || 'Document'}</title>
                 <style>
                     @page {
                         size: ${pageSize.width}in ${pageSize.height}in;
@@ -504,7 +513,7 @@ const DocxViewer = ({
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>${filePath?.split('/').pop()}</title>
+    <title>${getFileName(filePath)}</title>
     <style>
         body { font-family: ${currentFont}, sans-serif; max-width: 8.5in; margin: 1in auto; line-height: 1.6; }
         h1 { font-size: 2em; } h2 { font-size: 1.5em; } h3 { font-size: 1.17em; }
@@ -635,7 +644,7 @@ ${htmlContent}
                 className="px-3 py-2 border-b theme-border theme-bg-secondary cursor-move flex items-center justify-between"
             >
                 <span className="text-sm font-medium truncate">
-                    {filePath?.split('/').pop() || 'Document'}{hasChanges ? ' *' : ''}
+                    {getFileName(filePath) || 'Document'}{hasChanges ? ' *' : ''}
                 </span>
                 <div className="flex items-center gap-1">
                     <button onClick={undo} disabled={historyIndex <= 0} className="p-1.5 theme-hover rounded disabled:opacity-30" title="Undo">

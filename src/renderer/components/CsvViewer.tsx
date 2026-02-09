@@ -1,3 +1,4 @@
+import { getFileName } from './utils';
 import React, { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
 import {
     Save,
@@ -51,6 +52,7 @@ const csvDataCache = new Map<string, {
     headers: any[];
     data: any[][];
     workbook?: any;
+    hasChanges?: boolean;
 }>();
 
 // Cell style interface
@@ -166,6 +168,16 @@ const CsvViewer = ({
     useEffect(() => {
         localStorage.setItem('csvViewer_lightMode', JSON.stringify(docLightMode));
     }, [docLightMode]);
+
+    // Sync edited data to global cache so edits survive component remount (pane resize/split)
+    useEffect(() => {
+        const pData = contentDataRef.current[nodeId];
+        const fp = pData?.contentId;
+        if (fp && hasChanges && headers.length > 0) {
+            const existing = csvDataCache.get(fp);
+            csvDataCache.set(fp, { ...existing, headers, data, hasChanges: true });
+        }
+    }, [headers, data, hasChanges, nodeId]);
 
     // Chart state
     const [showChartModal, setShowChartModal] = useState(false);
@@ -689,7 +701,8 @@ const CsvViewer = ({
                 setHeaders(cached.headers || ['Column 1']);
                 setData(cached.data || [[]]);
             }
-            setHasChanges(false);
+            // Restore unsaved changes flag from cache (survives remount from resize/split)
+            setHasChanges(cached.hasChanges || false);
             setError(null);
             return;
         }
@@ -1366,7 +1379,7 @@ const CsvViewer = ({
             >
                 <div className="flex justify-between items-center">
                     <span className="truncate font-semibold">
-                        {filePath ? filePath.split('/').pop() : 'Untitled'}{hasChanges ? ' *' : ''}
+                        {filePath ? getFileName(filePath) : 'Untitled'}{hasChanges ? ' *' : ''}
                     </span>
                     <div className="flex items-center gap-1">
                         <button

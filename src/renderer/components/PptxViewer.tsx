@@ -1,4 +1,5 @@
 // PptxViewer - Enhanced PowerPoint-like Editor
+import { getFileName } from './utils';
 import React, { useEffect, useRef, useState, useCallback, memo, useMemo } from 'react';
 import JSZip from 'jszip';
 import {
@@ -580,6 +581,21 @@ interface Slide {
   background?: string;
 }
 
+// Global cache for parsed PPTX data - survives component remount (resize/split)
+const pptxStateCache = new Map<string, {
+  zip: JSZip;
+  presDoc: Document;
+  presRelsDoc: Document;
+  slides: Slide[];
+  slideOrder: any[];
+  themeColors: Record<string, string>;
+  slideWidth: number;
+  slideHeight: number;
+  pxPerEmu: number;
+  idx: number;
+  hasChanges: boolean;
+}>();
+
 const PptxViewer = ({
   nodeId,
   contentDataRef,
@@ -610,6 +626,18 @@ const PptxViewer = ({
   useEffect(() => {
     localStorage.setItem('pptxViewer_lightMode', JSON.stringify(docLightMode));
   }, [docLightMode]);
+
+  // Sync state to global cache so edits survive component remount (pane resize/split)
+  useEffect(() => {
+    const pData = contentDataRef.current[nodeId];
+    const fp = pData?.contentId;
+    if (fp && zip && slides.length > 0) {
+      pptxStateCache.set(fp, {
+        zip, presDoc, presRelsDoc, slides, slideOrder, themeColors,
+        slideWidth, slideHeight, pxPerEmu, idx, hasChanges
+      });
+    }
+  }, [slides, hasChanges, idx, nodeId]);
 
   const paneData = contentDataRef.current[nodeId];
   const filePath = paneData?.contentId;
@@ -650,6 +678,25 @@ const PptxViewer = ({
 
     const load = async () => {
       if (!filePath) return;
+
+      // Check cache first - restores state after remount (resize/split)
+      const cached = pptxStateCache.get(filePath);
+      if (cached) {
+        setZip(cached.zip);
+        setPresDoc(cached.presDoc);
+        setPresRelsDoc(cached.presRelsDoc);
+        setSlides(cached.slides);
+        setSlideOrder(cached.slideOrder);
+        setThemeColors(cached.themeColors);
+        setSlideWidth(cached.slideWidth);
+        setSlideHeight(cached.slideHeight);
+        setPxPerEmu(cached.pxPerEmu);
+        setIdx(cached.idx);
+        setHasChanges(cached.hasChanges);
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       setErr(null);
 
@@ -1748,7 +1795,7 @@ const PptxViewer = ({
         className="px-3 py-2 border-b theme-border theme-bg-secondary cursor-move flex items-center justify-between"
       >
         <span className="text-sm font-medium truncate">
-          {filePath?.split('/').pop() || 'Presentation'}{hasChanges ? ' *' : ''}
+          {getFileName(filePath) || 'Presentation'}{hasChanges ? ' *' : ''}
         </span>
         <div className="flex items-center gap-1">
           <button onClick={addSlide} className="p-1.5 theme-hover rounded" title="Add slide"><Plus size={14} /></button>

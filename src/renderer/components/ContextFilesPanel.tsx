@@ -1,3 +1,4 @@
+import { getFileName } from './utils';
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { X, File, Folder, Trash2, Plus, ChevronDown, ChevronRight, FileText, FileCode, FileJson, Image, Eye, EyeOff } from 'lucide-react';
 import { ContextFile, ContextFileStorage } from './MessageLabeling';
@@ -88,7 +89,7 @@ export const ContextFilesPanel: React.FC<ContextFilesPanelProps> = ({
     }, []);
 
     const addFileFromPath = (filePath: string, source: 'sidebar' | 'external') => {
-        const name = filePath.split('/').pop() || filePath;
+        const name = getFileName(filePath) || filePath;
         const newFile: ContextFile = {
             id: crypto.randomUUID(),
             path: filePath,

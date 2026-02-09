@@ -175,7 +175,7 @@ export const FolderViewer: React.FC<FolderViewerProps> = ({
     };
 
     const goUp = () => {
-        const parentPath = currentPath.split('/').slice(0, -1).join('/') || '/';
+        const parentPath = currentPath.replace(/\\/g, '/').split('/').slice(0, -1).join('/') || '/';
         navigateTo(parentPath);
     };
 
@@ -243,7 +243,7 @@ export const FolderViewer: React.FC<FolderViewerProps> = ({
         type: 'Type'
     };
 
-    const pathParts = currentPath.split('/').filter(Boolean);
+    const pathParts = currentPath.replace(/\\/g, '/').split('/').filter(Boolean);
 
     return (
         <div className="flex-1 flex flex-col min-h-0 theme-bg-primary">

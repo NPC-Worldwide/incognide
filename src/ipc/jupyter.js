@@ -123,15 +123,59 @@ function register(ctx) {
               workspacePath
           });
 
-          // Wait for kernel to start
-          await new Promise((resolve) => setTimeout(resolve, 3000));
+          // Wait for connection file to appear (poll up to 15s instead of hardcoded 3s)
+          let connectionReady = false;
+          for (let i = 0; i < 30; i++) {
+              await new Promise((resolve) => setTimeout(resolve, 500));
+              try {
+                  await fsPromises.access(connectionFile);
+                  connectionReady = true;
+                  break;
+              } catch {
+                  // Not ready yet
+              }
+              // Check if process died
+              if (proc.exitCode !== null) {
+                  jupyterKernels.delete(kernelId);
+                  return { success: false, error: `Kernel process exited with code ${proc.exitCode}` };
+              }
+          }
 
-          try {
-              await fsPromises.access(connectionFile);
-              return { success: true, kernelId, connectionFile, pythonPath };
-          } catch {
+          if (!connectionReady) {
               return { success: true, kernelId, connectionFile, pythonPath, warning: 'Connection file may not be ready yet' };
           }
+
+          // Verify kernel is actually responsive by running a quick test
+          try {
+              const testProc = spawn(pythonPath, ['-c', `
+import sys, json
+from jupyter_client import BlockingKernelClient
+client = BlockingKernelClient(connection_file=sys.argv[1])
+client.load_connection_file()
+client.start_channels()
+client.wait_for_ready(timeout=15)
+client.stop_channels()
+print(json.dumps({"ready": True}))
+`, connectionFile], { timeout: 20000 });
+              const testResult = await new Promise((resolve) => {
+                  let out = '';
+                  testProc.stdout.on('data', d => { out += d.toString(); });
+                  testProc.on('close', () => {
+                      try {
+                          const r = JSON.parse(out.trim());
+                          resolve(r.ready === true);
+                      } catch { resolve(false); }
+                  });
+                  testProc.on('error', () => resolve(false));
+              });
+              if (!testResult) {
+                  log('[Jupyter] Kernel started but not responsive yet');
+              }
+          } catch (e) {
+              log('[Jupyter] Kernel readiness check failed:', e.message);
+          }
+
+          return { success: true, kernelId, connectionFile, pythonPath };
       } catch (err) {
           console.error('[Jupyter] Failed to start kernel:', err);
           return { success: false, error: err.message };

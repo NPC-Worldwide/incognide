@@ -1,3 +1,4 @@
+import { getFileName } from './utils';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     X, Loader, Image as ImageIcon, Folder,
@@ -76,7 +77,7 @@ const readJSONFile = (file) => new Promise((resolve, reject) => {
             const filePath = img.path;
             return {
                 id: generateId(),
-                name: filePath.split('/').pop(),
+                name: getFileName(filePath),
                 path: filePath,
                 size: 0,
                 type: 'image/jpeg',
@@ -338,7 +339,7 @@ const handleStartFineTune = async () => {
         captions = imagePaths.map(p => manualCaptions[p] || '');
     } else if (captionMode === 'filename') {
         captions = imagePaths.map(p => {
-            const name = p.split('/').pop().replace(/\.[^/.]+$/, '');
+            const name = getFileName(p).replace(/\.[^/.]+$/, '');
             return name.replace(/_/g, ' ').replace(/-/g, ' ');
         });
     }
@@ -504,7 +505,7 @@ const renderFineTuneModal = () => {
                             border theme-border rounded p-2">
                             {selectedImages.map(img => {
                                 const path = img.replace('media://', '');
-                                const name = path.split('/').pop();
+                                const name = getFileName(path);
                                 return (
                                     <div key={img} className="flex gap-2 
                                         items-center">
@@ -845,7 +846,7 @@ const [generatedFilenames, setGeneratedFilenames] = useState([]);
 const exportLabelsAsJSON = () => {
   if (labels.length === 0) return;
   const payload = { image: selectedImage, labels };
-  const filename = `${selectedImage?.split('/').pop() || 'labels'}.labels.json`;
+  const filename = `${getFileName(selectedImage) || 'labels'}.labels.json`;
   downloadFile(JSON.stringify(payload, null, 2), filename, 'application/json');
 };
 
@@ -854,7 +855,7 @@ const exportLabelsAsCSV = () => {
 
   const headers = ['image_filename', 'id', 'label', 'type', 'coords_json'];
   const rows = labels.map(l => {
-      const filename = selectedImage?.split('/').pop() || 'unknown_image';
+      const filename = getFileName(selectedImage) || 'unknown_image';
       const coords_json = JSON.stringify(l.coords);
       const safeLabel = `"${l.label.replace(/"/g, '""')}"`;
       const safeCoords = `"${coords_json.replace(/"/g, '""')}"`;
@@ -862,7 +863,7 @@ const exportLabelsAsCSV = () => {
   });
 
   const csvContent = [headers.join(','), ...rows].join('\n');
-  const filename = `${selectedImage?.split('/').pop() || 'labels'}.labels.csv`;
+  const filename = `${getFileName(selectedImage) || 'labels'}.labels.csv`;
   downloadFile(csvContent, filename, 'text/csv;charset=utf-8;');
 };
 
@@ -947,7 +948,7 @@ const [generateFilename, setGenerateFilename] = useState('vixynt_gen');
     setContextMenu({ visible: true, x: e.clientX, y: e.clientY, imagePath: imgPath });
   };
   const handleRenameStart = () => { 
-    setRenamingImage({ path: selectedImage, newName: selectedImage.split('/').pop() }); 
+    setRenamingImage({ path: selectedImage, newName: getFileName(selectedImage) }); 
     setContextMenu({ visible: false });
     setLightboxIndex(null);
   };
@@ -1350,7 +1351,7 @@ useEffect(() => {
   };
   const exportLabels = () => {
     const payload = { image: selectedImage, labels };
-    downloadJSON(payload, `${selectedImage?.split('/').pop() || 'labels'}.labels.json`);
+    downloadJSON(payload, `${getFileName(selectedImage) || 'labels'}.labels.json`);
   };
   const importLabels = async (file) => {
     try {
@@ -1573,8 +1574,8 @@ const sortedAndFilteredImages = React.useMemo(() => {
     }
     
     result.sort((a, b) => {
-        const nameA = a.split('/').pop().toLowerCase();
-        const nameB = b.split('/').pop().toLowerCase();
+        const nameA = getFileName(a).toLowerCase();
+        const nameB = getFileName(b).toLowerCase();
         const extA = a.split('.').pop().toLowerCase();
         const extB = b.split('.').pop().toLowerCase();
         const metaA = imageMetaCache[a] || {};
@@ -1917,7 +1918,7 @@ const renderGallery = () => (
                 .map((img, index) => {
                     const isSelected = selectedImageGroup.has(img);
                     const isRenaming = renamingImage.path === img;
-                    const filename = img.split('/').pop();
+                    const filename = getFileName(img);
                     const ext = filename.split('.').pop().toUpperCase();
                     const meta = imageMetaCache[img] || {};
                     
@@ -2066,7 +2067,7 @@ const handleUseForGeneration = () => {
      
       setActiveTab('generator');
      
-      setGeneratePrompt(prev => `${prev} ${prev ? '\n\n' : ''}Using reference image: ${contextMenu.imagePath.split('/').pop()}`);
+      setGeneratePrompt(prev => `${prev} ${prev ? '\n\n' : ''}Using reference image: ${getFileName(contextMenu.imagePath)}`);
   }
   setContextMenu({ visible: false });
   setLightboxIndex(null);
@@ -3005,7 +3006,7 @@ const renderWorkflow = useCallback(() => {
                                 <div>
                                     <label className="text-xs text-gray-400">Source Image</label>
                                     <p className="text-sm text-gray-300 mt-1 truncate">
-                                        {node.params.imagePath ? node.params.imagePath.split('/').pop() : 'Not set'}
+                                        {node.params.imagePath ? getFileName(node.params.imagePath) : 'Not set'}
                                     </p>
                                     <button
                                         onClick={() => {
