@@ -331,18 +331,20 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
         const { leftLines, rightLines } = computeDiff;
 
         const renderLine = (item: { line: string; type: string; lineNum: number }, index: number) => {
-            const bgClass = item.type === 'removed' ? 'bg-red-900/40' :
-                           item.type === 'added' ? 'bg-green-900/40' :
-                           item.type === 'empty' ? 'bg-gray-800/30' : '';
-            const textClass = item.type === 'removed' ? 'text-red-200' :
-                             item.type === 'added' ? 'text-green-200' : 'text-gray-300';
+            const bgColor = item.type === 'removed' ? 'rgba(236, 72, 153, 0.25)' :
+                           item.type === 'added' ? 'rgba(20, 184, 166, 0.25)' :
+                           item.type === 'empty' ? 'rgba(50, 50, 50, 0.3)' : undefined;
+            const textClass = item.type === 'removed' ? 'text-pink-300' :
+                             item.type === 'added' ? 'text-teal-300' : 'text-gray-300';
+            const signColor = item.type === 'removed' ? 'text-pink-400' :
+                             item.type === 'added' ? 'text-teal-400' : 'text-gray-500';
 
             return (
-                <div key={index} className={`flex ${bgClass} min-h-[20px] font-mono text-xs`}>
+                <div key={index} className={`flex min-h-[20px] font-mono text-xs`} style={bgColor ? { backgroundColor: bgColor } : undefined}>
                     <span className="w-10 text-right pr-2 text-gray-500 select-none border-r border-gray-700 flex-shrink-0 bg-gray-900/50">
                         {item.lineNum > 0 ? item.lineNum : ''}
                     </span>
-                    <span className="w-5 text-center text-gray-500 select-none flex-shrink-0">
+                    <span className={`w-5 text-center select-none flex-shrink-0 font-bold ${signColor}`}>
                         {item.type === 'removed' ? '−' : item.type === 'added' ? '+' : ''}
                     </span>
                     <pre className={`flex-1 px-2 whitespace-pre overflow-x-auto ${textClass}`}>
@@ -377,7 +379,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
             <div className="flex flex-1 min-h-0">
                 {/* Left side - Original */}
                 <div className="flex-1 flex flex-col border-r theme-border min-w-0">
-                    <div className="px-2 py-1 text-[10px] font-medium text-red-300 bg-red-900/20 flex items-center gap-1">
+                    <div className="px-2 py-1 text-[10px] font-medium text-pink-300 bg-pink-900/20 flex items-center gap-1">
                         <GitBranch size={10} /> Original (HEAD)
                     </div>
                     <div className="flex flex-1 min-h-0">
@@ -388,13 +390,13 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
                         >
                             {leftLines.map(renderLine)}
                         </div>
-                        {renderMinimap(leftMarkers, '#ef4444')}
+                        {renderMinimap(leftMarkers, '#ec4899')}
                     </div>
                 </div>
 
                 {/* Right side - Modified */}
                 <div className="flex-1 flex flex-col min-w-0">
-                    <div className="px-2 py-1 text-[10px] font-medium text-green-300 bg-green-900/20 flex items-center gap-1">
+                    <div className="px-2 py-1 text-[10px] font-medium text-teal-300 bg-teal-900/20 flex items-center gap-1">
                         <GitBranch size={10} /> Modified (Working Copy)
                         {mergeConflicts.length > 0 && (
                             <span className="ml-auto flex items-center gap-1 text-yellow-400">
@@ -410,7 +412,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
                         >
                             {rightLines.map(renderLine)}
                         </div>
-                        {renderMinimap(rightMarkers, '#22c55e')}
+                        {renderMinimap(rightMarkers, '#14b8a6')}
                     </div>
                 </div>
             </div>
@@ -418,40 +420,46 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     };
 
     const renderUnifiedView = () => {
-        const originalLines = (originalContent || '').split('\n');
-        const modifiedLines = (modifiedContent || '').split('\n');
+        const { leftLines, rightLines } = computeDiff;
+
+        // Interleave removed and added lines in order
+        const unifiedLines: { line: string; type: 'removed' | 'added' | 'unchanged' | 'empty'; lineNum: number; origNum: number }[] = [];
+        for (let i = 0; i < leftLines.length; i++) {
+            const left = leftLines[i];
+            const right = rightLines[i];
+            if (left.type === 'removed') {
+                unifiedLines.push({ line: left.line, type: 'removed', lineNum: 0, origNum: left.lineNum });
+            }
+            if (right.type === 'added') {
+                unifiedLines.push({ line: right.line, type: 'added', lineNum: right.lineNum, origNum: 0 });
+            }
+            if (left.type === 'unchanged') {
+                unifiedLines.push({ line: left.line, type: 'unchanged', lineNum: right.lineNum, origNum: left.lineNum });
+            }
+        }
 
         return (
             <div className="flex-1 overflow-auto font-mono text-xs">
-                {modifiedLines.map((line, i) => {
-                    const isConflictStart = line.startsWith('<<<<<<<');
-                    const isConflictMid = line.startsWith('=======');
-                    const isConflictEnd = line.startsWith('>>>>>>>');
-                    const isConflictLine = isConflictStart || isConflictMid || isConflictEnd;
-                    const isAdded = !originalLines.includes(line) && !isConflictLine;
+                {unifiedLines.map((item, i) => {
+                    const bgColor = item.type === 'removed' ? 'rgba(236, 72, 153, 0.25)' :
+                                   item.type === 'added' ? 'rgba(20, 184, 166, 0.25)' : undefined;
+                    const textClass = item.type === 'removed' ? 'text-pink-300' :
+                                     item.type === 'added' ? 'text-teal-300' : 'text-gray-300';
+                    const signColor = item.type === 'removed' ? 'text-pink-400 font-bold' :
+                                     item.type === 'added' ? 'text-teal-400 font-bold' : 'text-gray-500';
 
                     return (
-                        <div
-                            key={i}
-                            className={`flex ${
-                                isConflictStart ? 'bg-red-900/40 text-red-300' :
-                                isConflictEnd ? 'bg-green-900/40 text-green-300' :
-                                isConflictMid ? 'bg-yellow-900/40 text-yellow-300' :
-                                isAdded ? 'bg-green-900/30' :
-                                ''
-                            }`}
-                        >
-                            <span className="w-12 text-right pr-2 text-gray-500 select-none border-r border-gray-700 flex-shrink-0">
-                                {i + 1}
+                        <div key={i} className="flex min-h-[20px]" style={bgColor ? { backgroundColor: bgColor } : undefined}>
+                            <span className="w-10 text-right pr-2 text-gray-500 select-none border-r border-gray-700 flex-shrink-0 bg-gray-900/50">
+                                {item.origNum > 0 ? item.origNum : ''}
                             </span>
-                            <span className={`w-4 text-center flex-shrink-0 ${
-                                isConflictLine ? 'text-yellow-400' :
-                                isAdded ? 'text-green-400' :
-                                'text-gray-500'
-                            }`}>
-                                {isConflictLine ? '!' : isAdded ? '+' : ' '}
+                            <span className="w-10 text-right pr-2 text-gray-500 select-none border-r border-gray-700 flex-shrink-0 bg-gray-900/50">
+                                {item.lineNum > 0 ? item.lineNum : ''}
                             </span>
-                            <pre className="flex-1 whitespace-pre-wrap break-all px-2">{line}</pre>
+                            <span className={`w-5 text-center flex-shrink-0 ${signColor}`}>
+                                {item.type === 'removed' ? '−' : item.type === 'added' ? '+' : ' '}
+                            </span>
+                            <pre className={`flex-1 whitespace-pre-wrap break-all px-2 ${textClass}`}>{item.line || ' '}</pre>
                         </div>
                     );
                 })}
@@ -465,7 +473,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
             return (
                 <div className="flex-1 flex items-center justify-center text-gray-400">
                     <div className="text-center">
-                        <Check size={48} className="mx-auto mb-2 text-green-400" />
+                        <Check size={48} className="mx-auto mb-2 text-teal-400" />
                         <p>No merge conflicts detected</p>
                     </div>
                 </div>
@@ -479,7 +487,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
                 <div className="flex items-center justify-between mb-4">
                     <div className="text-sm">
                         <span className="text-gray-400">Progress: </span>
-                        <span className={resolvedCount === mergeConflicts.length ? 'text-green-400' : 'text-yellow-400'}>
+                        <span className={resolvedCount === mergeConflicts.length ? 'text-teal-400' : 'text-yellow-400'}>
                             {resolvedCount}/{mergeConflicts.length} resolved
                         </span>
                     </div>
@@ -497,7 +505,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
                     <div
                         key={conflict.id}
                         className={`rounded-lg border ${
-                            conflict.resolved ? 'border-green-500/50 bg-green-900/10' : 'border-yellow-500/50 bg-yellow-900/10'
+                            conflict.resolved ? 'border-teal-500/50 bg-teal-900/10' : 'border-yellow-500/50 bg-yellow-900/10'
                         }`}
                     >
                         {/* Conflict header */}
@@ -510,7 +518,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
                                     Lines {conflict.startLine + 1}-{conflict.endLine + 1}
                                 </span>
                                 {conflict.resolved && (
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-400">
                                         Resolved: {conflict.resolved}
                                     </span>
                                 )}
@@ -519,7 +527,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
                                 <div className="flex items-center gap-1">
                                     <button
                                         onClick={() => resolveConflict(conflict.id, 'ours')}
-                                        className="px-2 py-1 text-[10px] bg-red-600/80 hover:bg-red-700 rounded flex items-center gap-1"
+                                        className="px-2 py-1 text-[10px] bg-pink-600/80 hover:bg-pink-700 rounded flex items-center gap-1"
                                         title={`Accept ${conflict.oursLabel}`}
                                     >
                                         <ArrowLeft size={10} /> Ours
@@ -533,7 +541,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
                                     </button>
                                     <button
                                         onClick={() => resolveConflict(conflict.id, 'theirs')}
-                                        className="px-2 py-1 text-[10px] bg-green-600/80 hover:bg-green-700 rounded flex items-center gap-1"
+                                        className="px-2 py-1 text-[10px] bg-teal-600/80 hover:bg-teal-700 rounded flex items-center gap-1"
                                         title={`Accept ${conflict.theirsLabel}`}
                                     >
                                         Theirs <ArrowRight size={10} />
@@ -546,20 +554,20 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
                         <div className="flex">
                             {/* Ours side */}
                             <div className={`flex-1 border-r border-gray-700/50 ${conflict.resolved === 'theirs' ? 'opacity-40' : ''}`}>
-                                <div className="px-2 py-1 text-[10px] font-medium text-red-300 bg-red-900/30 flex items-center gap-1">
+                                <div className="px-2 py-1 text-[10px] font-medium text-pink-300 bg-pink-900/30 flex items-center gap-1">
                                     <ArrowLeft size={10} /> {conflict.oursLabel} (Current)
                                 </div>
-                                <pre className="p-2 text-xs font-mono whitespace-pre-wrap bg-red-900/10 min-h-[60px]">
+                                <pre className="p-2 text-xs font-mono whitespace-pre-wrap bg-pink-900/10 min-h-[60px]">
                                     {conflict.ours || <span className="text-gray-500 italic">(empty)</span>}
                                 </pre>
                             </div>
 
                             {/* Theirs side */}
                             <div className={`flex-1 ${conflict.resolved === 'ours' ? 'opacity-40' : ''}`}>
-                                <div className="px-2 py-1 text-[10px] font-medium text-green-300 bg-green-900/30 flex items-center gap-1">
+                                <div className="px-2 py-1 text-[10px] font-medium text-teal-300 bg-teal-900/30 flex items-center gap-1">
                                     {conflict.theirsLabel} (Incoming) <ArrowRight size={10} />
                                 </div>
-                                <pre className="p-2 text-xs font-mono whitespace-pre-wrap bg-green-900/10 min-h-[60px]">
+                                <pre className="p-2 text-xs font-mono whitespace-pre-wrap bg-teal-900/10 min-h-[60px]">
                                     {conflict.theirs || <span className="text-gray-500 italic">(empty)</span>}
                                 </pre>
                             </div>
@@ -592,8 +600,8 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
                     {diffStatus && (
                         <span className={`text-[10px] px-1.5 py-0.5 rounded ${
                             diffStatus === 'M' ? 'bg-yellow-500/20 text-yellow-400' :
-                            diffStatus === 'A' ? 'bg-green-500/20 text-green-400' :
-                            diffStatus === 'D' ? 'bg-red-500/20 text-red-400' :
+                            diffStatus === 'A' ? 'bg-teal-500/20 text-teal-400' :
+                            diffStatus === 'D' ? 'bg-pink-500/20 text-pink-400' :
                             diffStatus === 'U' ? 'bg-purple-500/20 text-purple-400' :
                             'bg-gray-500/20 text-gray-400'
                         }`}>
@@ -646,14 +654,14 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
                     </button>
                     <button
                         onClick={handleStage}
-                        className="px-2 py-1 text-xs bg-green-600 hover:bg-green-700 rounded flex items-center gap-1"
+                        className="px-2 py-1 text-xs bg-teal-600 hover:bg-teal-700 rounded flex items-center gap-1"
                         title="Stage file"
                     >
                         <Check size={12} /> Stage
                     </button>
                     <button
                         onClick={handleDiscard}
-                        className="px-2 py-1 text-xs bg-red-600/80 hover:bg-red-700 rounded flex items-center gap-1"
+                        className="px-2 py-1 text-xs bg-pink-600/80 hover:bg-pink-700 rounded flex items-center gap-1"
                         title="Discard changes"
                     >
                         <Undo2 size={12} /> Discard

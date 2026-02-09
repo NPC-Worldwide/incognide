@@ -158,6 +158,7 @@ const DocxViewer = ({
     const [showTablePicker, setShowTablePicker] = useState(false);
     const [showTemplatePicker, setShowTemplatePicker] = useState(false);
     const [showMoreTools, setShowMoreTools] = useState(false);
+    const [docxContextMenu, setDocxContextMenu] = useState<{ x: number; y: number } | null>(null);
 
     // Current formatting state
     const [currentFont, setCurrentFont] = useState('Calibri');
@@ -313,13 +314,19 @@ const DocxViewer = ({
         loadDocx();
     }, [filePath]);
 
-    // Set content to editor after it's rendered
+    // Set content to editor only on initial load (not on every content change, which resets cursor)
+    const hasSetInitialContent = useRef(false);
     useEffect(() => {
-        if (isLoaded && editorRef.current && htmlContent) {
-            // console.log('[DOCX] Setting innerHTML after render, length:', htmlContent.length);
+        if (isLoaded && editorRef.current && htmlContent && !hasSetInitialContent.current) {
             editorRef.current.innerHTML = htmlContent;
+            hasSetInitialContent.current = true;
         }
-    }, [isLoaded, htmlContent]);
+    }, [isLoaded]);
+
+    // Reset flag when file changes
+    useEffect(() => {
+        hasSetInitialContent.current = false;
+    }, [filePath]);
 
     // History management
     const addToHistory = useCallback((newContent: string) => {
@@ -623,10 +630,7 @@ ${htmlContent}
                 onDragEnd={() => setDraggedItem(null)}
                 onContextMenu={(e) => {
                     e.preventDefault();
-                    setPaneContextMenu({
-                        isOpen: true, x: e.clientX, y: e.clientY, nodeId,
-                        nodePath: findNodePath(rootLayoutNode, nodeId)
-                    });
+                    setDocxContextMenu({ x: e.clientX, y: e.clientY });
                 }}
                 className="px-3 py-2 border-b theme-border theme-bg-secondary cursor-move flex items-center justify-between"
             >
@@ -1007,6 +1011,11 @@ ${htmlContent}
                         suppressContentEditableWarning
                         onInput={handleInput}
                         onKeyDown={handleKeyDown}
+                        onContextMenu={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setDocxContextMenu({ x: e.clientX, y: e.clientY });
+                        }}
                         className={`docx-editor outline-none ${viewMode === 'page' ? 'shadow-xl mx-auto' : ''}`}
                         style={{
                             width: viewMode === 'page' ? `${pageSize.width}in` : '100%',
@@ -1024,6 +1033,54 @@ ${htmlContent}
                     />
                 </div>
             </div>
+
+            {/* Context Menu */}
+            {docxContextMenu && (
+                <>
+                    <div className="fixed inset-0 z-40" onClick={() => setDocxContextMenu(null)} />
+                    <div
+                        className="fixed theme-bg-secondary theme-border border rounded shadow-lg py-1 z-50 text-sm min-w-[160px]"
+                        style={{ top: docxContextMenu.y, left: docxContextMenu.x }}
+                    >
+                        <button onClick={() => { document.execCommand('cut'); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                            <Scissors size={12} /> Cut
+                        </button>
+                        <button onClick={() => { document.execCommand('copy'); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                            <Clipboard size={12} /> Copy
+                        </button>
+                        <button onClick={() => { document.execCommand('paste'); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                            <ClipboardPaste size={12} /> Paste
+                        </button>
+                        <div className="border-t theme-border my-1" />
+                        <button onClick={() => { execCommand('bold'); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                            <Bold size={12} /> Bold
+                        </button>
+                        <button onClick={() => { execCommand('italic'); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                            <Italic size={12} /> Italic
+                        </button>
+                        <button onClick={() => { execCommand('underline'); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                            <Underline size={12} /> Underline
+                        </button>
+                        <button onClick={() => { execCommand('strikethrough'); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                            <Strikethrough size={12} /> Strikethrough
+                        </button>
+                        <div className="border-t theme-border my-1" />
+                        <button onClick={() => { execCommand('insertUnorderedList'); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                            <List size={12} /> Bullet List
+                        </button>
+                        <button onClick={() => { execCommand('insertOrderedList'); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                            <ListOrdered size={12} /> Numbered List
+                        </button>
+                        <div className="border-t theme-border my-1" />
+                        <button onClick={() => { saveDocument(); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                            <Save size={12} /> Save
+                        </button>
+                        <button onClick={() => { setShowFindReplace(true); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                            <Search size={12} /> Find & Replace
+                        </button>
+                    </div>
+                </>
+            )}
 
             {/* Status Bar */}
             <div className="flex items-center justify-between px-3 py-1 border-t theme-border theme-bg-tertiary text-[10px] text-gray-500">

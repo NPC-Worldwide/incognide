@@ -385,3 +385,61 @@
 .rpv-highlight__area--selected {
     pointer-events: none !important;
 }
+
+/* ============================================
+   PRINT STYLES
+   ============================================ */
+
+@media print {
+    /* Hide everything except the PDF viewer content */
+    body > *:not(.pdf-print-root) {
+        display: none !important;
+    }
+
+    /* Hide app chrome: sidebars, headers, toolbars */
+    .sidebar,
+    .pane-header,
+    [class*="PaneHeader"],
+    [class*="sidebar"],
+    [class*="toolbar"],
+    [class*="theme-bg-secondary"] {
+        display: none !important;
+    }
+
+    /* Show the PDF viewer container full width */
+    .pdf-viewer-container {
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: auto !important;
+        overflow: visible !important;
+    }
+
+    /* Keep highlight overlays visible */
+    .pdf-highlight-overlay {
+        print-color-adjust: exact !important;
+        -webkit-print-color-adjust: exact !important;
+    }
+
+    /* Keep drawing overlays visible */
+    .pdf-drawing-overlay {
+        print-color-adjust: exact !important;
+        -webkit-print-color-adjust: exact !important;
+    }
+
+    /* Hide the drawing canvas (live drawing surface) */
+    .pdf-drawing-canvas {
+        display: none !important;
+    }
+
+    /* Hide the rpv default layout sidebar */
+    .rpv-default-layout__sidebar {
+        display: none !important;
+    }
+
+    /* Hide the rpv toolbar */
+    .rpv-default-layout__toolbar {
+        display: none !important;
+    }
+}

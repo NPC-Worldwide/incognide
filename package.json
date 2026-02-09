@@ -47,11 +47,15 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["arm64"]
+          "arch": [
+            "arm64"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["arm64"]
+          "arch": [
+            "arm64"
+          ]
         }
       ],
       "category": "public.app-category.productivity",
@@ -189,6 +193,7 @@
     "npm": "^11.3.0",
     "os": "^0.1.2",
     "path": "^0.12.7",
+    "pdf-lib": "^1.17.1",
     "react": "^18.3.1",
     "react-chartjs-2": "^5.3.0",
     "react-datasheet-grid": "^4.11.5",

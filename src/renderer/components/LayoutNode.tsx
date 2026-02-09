@@ -1481,17 +1481,6 @@ export const LayoutNode = memo(({ node, path, component }) => {
                 data-pane-id={node.id}
                 data-pane-type={contentType}
                 onClick={() => setActiveContentPaneId(node.id)}
-                onContextMenu={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setPaneContextMenu({
-                        isOpen: true,
-                        x: e.clientX,
-                        y: e.clientY,
-                        nodeId: node.id,
-                        nodePath: path
-                    });
-                }}
                 onDragLeave={() => setDropTarget(null)}
                 onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropTarget({ nodePath: path, side: 'center' }); }}
                 onDrop={(e) => onDrop(e, 'center')}

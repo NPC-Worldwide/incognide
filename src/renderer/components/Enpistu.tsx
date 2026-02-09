@@ -970,6 +970,25 @@ const ChatInterface = () => {
                 }
             }));
         }
+        if (api.api?.onMenuNewTextFile) {
+            cleanups.push(api.api.onMenuNewTextFile(() => createUntitledTextFileRef.current?.()));
+        }
+        if (api.api?.onMenuReopenTab) {
+            cleanups.push(api.api.onMenuReopenTab(() => {
+                const closedTab = closedTabsRef.current.pop();
+                if (closedTab) {
+                    const newPaneId = generateId();
+                    contentDataRef.current[newPaneId] = {
+                        contentType: closedTab.contentType,
+                        contentId: closedTab.contentId,
+                        browserUrl: closedTab.browserUrl,
+                        browserTitle: closedTab.browserTitle
+                    };
+                    setRootLayoutNode(oldRoot => addPaneToLayout(oldRoot, newPaneId));
+                    setActiveContentPaneId(newPaneId);
+                }
+            }));
+        }
         if (api.api?.onMenuGlobalSearch) {
             cleanups.push(api.api.onMenuGlobalSearch(() => {
                 // Open search pane
@@ -1746,6 +1765,8 @@ const ChatInterface = () => {
     const createSettingsPaneRef = useRef<(() => void) | null>(null);
     const createSearchPaneRef = useRef<((query?: string) => void) | null>(null);
     const createHelpPaneRef = useRef<(() => void) | null>(null);
+    const createUntitledTextFileRef = useRef<(() => void) | null>(null);
+    const closedTabsRef = useRef<Array<{contentType: string, contentId: string, browserUrl?: string, browserTitle?: string}>>([]);
 
     useEffect(() => {
         const handleKeyDown = async (e: KeyboardEvent) => {
@@ -1756,13 +1777,10 @@ const ChatInterface = () => {
                 return;
             }
 
-            // Ctrl+Shift+F - Global search
+            // Ctrl+Shift+F - Global search (open SearchPane)
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'f' || e.key === 'F')) {
                 e.preventDefault();
-                setIsGlobalSearch(true);
-                setIsSearching(true);
-                setLocalSearch({ isActive: false, term: '', paneId: null, results: [], currentIndex: -1 });
-                searchInputRef.current?.focus();
+                createSearchPaneRef.current?.('');
                 return;
             }
 
@@ -1868,10 +1886,10 @@ const ChatInterface = () => {
                 return;
             }
 
-            // Ctrl+N - New Folder
+            // Ctrl+N - New untitled text file
             if ((e.ctrlKey || e.metaKey) && (e.key === 'n' || e.key === 'N') && !e.shiftKey) {
                 e.preventDefault();
-                handleCreateNewFolderRef.current?.();
+                createUntitledTextFile();
                 return;
             }
 
@@ -2149,6 +2167,15 @@ const closeContentPane = useCallback((paneId, nodePath) => {
             paneType: paneData.contentType,
             filePath: paneData.contentId,
         });
+        closedTabsRef.current.push({
+            contentType: paneData.contentType,
+            contentId: paneData.contentId,
+            browserUrl: paneData.browserUrl,
+            browserTitle: paneData.browserTitle
+        });
+        if (closedTabsRef.current.length > 20) {
+            closedTabsRef.current.shift();
+        }
     }
 
     // Defensive: if nodePath wasn't provided, compute it
@@ -3349,9 +3376,46 @@ const handleAICodeAction = useCallback(async (type: string, selectedText: string
     });
 }, [currentModel, currentProvider, currentPath]);
 
+// Chat pane action handlers
+const handleCopyChat = useCallback(() => {
+    const paneData = contentDataRef.current[activeContentPaneId];
+    if (!paneData || paneData.contentType !== 'chat') return;
+
+    const messages = paneData.chatMessages?.messages || [];
+    if (messageSelectionMode && selectedMessages.size > 0) {
+        const selectedMsgs = messages.filter(m => selectedMessages.has(m.id));
+        const text = selectedMsgs.map(m => `${m.role === 'user' ? 'User' : (m.npc || m.model || 'Assistant')}: ${m.content}`).join('\n\n');
+        navigator.clipboard.writeText(text);
+    } else {
+        const text = messages.map(m => `${m.role === 'user' ? 'User' : (m.npc || m.model || 'Assistant')}: ${m.content}`).join('\n\n');
+        navigator.clipboard.writeText(text);
+    }
+}, [activeContentPaneId, messageSelectionMode, selectedMessages]);
+
+const handleSaveChat = useCallback(async () => {
+    const paneData = contentDataRef.current[activeContentPaneId];
+    if (!paneData || paneData.contentType !== 'chat') return;
+
+    const messages = paneData.chatMessages?.messages || [];
+    const conversationId = paneData.contentId;
+    const text = messages.map(m => `${m.role === 'user' ? 'User' : (m.npc || m.model || 'Assistant')}: ${m.content}`).join('\n\n');
+
+    const filename = `conversation_${conversationId?.slice(0, 8) || 'export'}_${Date.now()}.md`;
+    const filepath = `${currentPath}/${filename}`;
+
+    try {
+        await window.api.writeFileContent(filepath, `# Conversation Export\n\n${text}`);
+        if (handleFileClickRef.current) {
+            handleFileClickRef.current(filepath);
+        }
+    } catch (err) {
+        setError(err.message);
+    }
+}, [activeContentPaneId, currentPath]);
+
 const renderFileEditor = useCallback(({ nodeId }) => {
     const paneData = contentDataRef.current[nodeId];
-    if (!paneData || !paneData.contentId) {
+    if (!paneData || (!paneData.contentId && !paneData.isUntitled)) {
         return <div className="flex-1 flex items-center justify-center theme-text-muted">No file selected</div>;
     }
 
@@ -3438,8 +3502,6 @@ const renderPdfViewer = useCallback(({ nodeId }) => {
             contentDataRef={contentDataRef}
             currentPath={currentPath}
             activeContentPaneId={activeContentPaneId}
-            pdfContextMenuPos={pdfContextMenuPos}
-            setPdfContextMenuPos={setPdfContextMenuPos}
             handleCopyPdfText={handleCopyPdfText}
             handleHighlightPdfSelection={handleHighlightPdfSelection}
             handleApplyPromptToPdfText={handleApplyPromptToPdfText}
@@ -3448,7 +3510,7 @@ const renderPdfViewer = useCallback(({ nodeId }) => {
             pdfHighlightsTrigger={pdfHighlightsTrigger}
         />
     );
-}, [currentPath, activeContentPaneId, pdfContextMenuPos, pdfHighlights, pdfHighlightsTrigger, handleCopyPdfText, handleHighlightPdfSelection, handleApplyPromptToPdfText]);
+}, [currentPath, activeContentPaneId, pdfHighlights, pdfHighlightsTrigger, handleCopyPdfText, handleHighlightPdfSelection, handleApplyPromptToPdfText]);
 
 const renderCsvViewer = useCallback(({ nodeId }) => {
     return (
@@ -6226,6 +6288,19 @@ ${contextPrompt}`;
         setActiveContentPaneId(newPaneId);
     }, []);
 
+    // Create untitled text file directly without modal
+    const createUntitledTextFile = useCallback(() => {
+        const newPaneId = generateId();
+        contentDataRef.current[newPaneId] = {
+            contentType: 'editor',
+            contentId: '',
+            fileContent: '',
+            isUntitled: true
+        };
+        setRootLayoutNode(oldRoot => addPaneToLayout(oldRoot, newPaneId));
+        setActiveContentPaneId(newPaneId);
+    }, []);
+
     const createNewTextFile = useCallback((defaultFilename?: string) => {
         const filename = defaultFilename || localStorage.getItem('npcStudio_defaultCodeFileType') || 'untitled.py';
         const finalDefault = filename.includes('.') ? filename : `untitled.${filename}`;
@@ -6252,6 +6327,11 @@ ${contextPrompt}`;
             }
         });
     }, [currentPath, loadDirectoryStructure, normalizePath, setError, setPromptModal, setPromptModalValue]);
+
+    // Keep ref updated for keyboard/menu handlers
+    useEffect(() => {
+        createUntitledTextFileRef.current = createUntitledTextFile;
+    }, [createUntitledTextFile]);
 
     // Listen for custom event to create file with specific name
     useEffect(() => {
@@ -8861,7 +8941,7 @@ const renderPaneContextMenu = () => {
     };
 
     const handleNewTextFile = () => {
-        createNewTextFile();
+        createUntitledTextFile();
         setPaneContextMenu(null);
     };
 
@@ -9794,6 +9874,7 @@ const renderMainContent = () => {
         switchToPath={switchToPath}
         handleCreateNewFolder={handleCreateNewFolder}
         createNewTextFile={createNewTextFile}
+        createUntitledTextFile={createUntitledTextFile}
         createNewTerminal={createNewTerminal}
         createNewNotebook={createNewJupyterNotebook}
         createNewExperiment={createNewExperiment}

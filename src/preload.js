@@ -333,6 +333,11 @@ readDocxContent: (filePath) =>
     updatePdfHighlight: (data) => ipcRenderer.invoke('db:updatePdfHighlight', data),
     deletePdfHighlight: (id) => ipcRenderer.invoke('db:deletePdfHighlight', { id }),
 
+    getDrawingsForFile: (filePath) => ipcRenderer.invoke('db:getDrawingsForFile', { filePath }),
+    addPdfDrawing: (data) => ipcRenderer.invoke('db:addPdfDrawing', data),
+    deleteDrawing: (id) => ipcRenderer.invoke('db:deleteDrawing', { id }),
+    clearDrawingsForPage: (filePath, pageIndex) => ipcRenderer.invoke('db:clearDrawingsForPage', { filePath, pageIndex }),
+
     deleteFile: (filePath) => ipcRenderer.invoke('delete-file', filePath),
     zipItems: (itemPaths, zipName) => ipcRenderer.invoke('zip-items', itemPaths, zipName),
     readZipContents: (zipPath) => ipcRenderer.invoke('read-zip-contents', zipPath),
