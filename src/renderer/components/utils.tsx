@@ -272,7 +272,13 @@ export const hashContext = (contexts: any[]) => {
     const contentString = contexts
         .map(ctx => `${ctx.type}:${ctx.path || ctx.url}:${ctx.content?.substring(0, 100)}`)
         .join('|');
-    return btoa(contentString);
+    // Use TextEncoder to handle Unicode characters that btoa can't handle
+    const bytes = new TextEncoder().encode(contentString);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
 };
 
 export const gatherWorkspaceContext = (contentDataRef: React.MutableRefObject<any>, contextFiles?: any[], excludedPaneIds?: Set<string>) => {
