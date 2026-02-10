@@ -11,6 +11,10 @@ import {
     Guitar, ChevronLeft, Star, Package, Layers, FileJson, Tag,
     RefreshCw, Lock, Unlock, Move, MousePointer, Magnet
 } from 'lucide-react';
+import {
+    Renderer as VFRenderer, Stave, StaveNote, Voice, Formatter,
+    Beam, Accidental, StaveConnector
+} from 'vexflow';
 
 interface ScherzoProps {
     currentPath?: string;
@@ -73,6 +77,42 @@ interface TimelineMarker {
     name: string;
     color: string;
 }
+
+// Standard guitar tuning: string index → open string MIDI note
+const GUITAR_TUNING = [64, 59, 55, 50, 45, 40]; // E4, B3, G3, D3, A2, E2
+
+const tabToMidi = (stringIdx: number, fret: number): number => {
+    return GUITAR_TUNING[stringIdx] + fret;
+};
+
+const midiToTab = (midi: number): { string: number; fret: number } | null => {
+    let best: { string: number; fret: number } | null = null;
+    for (let s = 0; s < GUITAR_TUNING.length; s++) {
+        const fret = midi - GUITAR_TUNING[s];
+        if (fret >= 0 && fret <= 24) {
+            if (!best || fret < best.fret) {
+                best = { string: s, fret };
+            }
+        }
+    }
+    return best;
+};
+
+// Map VexFlow staff position (0=top line, each step=one diatonic note down) to MIDI
+const staffPositionToMidi = (pos: number, clef: 'treble' | 'bass'): number => {
+    const diatonic = [0, 2, 4, 5, 7, 9, 11]; // C D E F G A B semitones from C
+    // Treble: top line = F5 (MIDI 77), F is diatonic index 3
+    // Bass: top line = A3 (MIDI 57), A is diatonic index 5
+    const refIdx = clef === 'bass' ? 5 : 3;
+    const refOctave = clef === 'bass' ? 3 : 5;
+
+    let targetIdx = refIdx - pos;
+    let targetOctave = refOctave;
+    while (targetIdx < 0) { targetIdx += 7; targetOctave--; }
+    while (targetIdx >= 7) { targetIdx -= 7; targetOctave++; }
+
+    return (targetOctave + 1) * 12 + diatonic[targetIdx];
+};
 
 // DJ Deck
 interface DJDeck {
@@ -215,7 +255,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
     const [waveformDataCache, setWaveformDataCache] = useState<Map<string, Float32Array>>(new Map());
 
     // Notation state
-    const [notationView, setNotationView] = useState<'piano' | 'sheet' | 'tab'>('piano');
+    const [notationView, setNotationView] = useState<'piano' | 'sheet' | 'tab'>('sheet');
     const [pianoNotes, setPianoNotes] = useState<Array<{ note: number; start: number; duration: number; velocity: number }>>([]);
     const [tabNotes, setTabNotes] = useState<Array<{ string: number; fret: number; start: number; duration: number }>>([]);
     const [notationZoom, setNotationZoom] = useState(1);
@@ -226,6 +266,23 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
     const [notationTimeSignature, setNotationTimeSignature] = useState<[number, number]>([4, 4]);
     const synthRef = useRef<AudioContext | null>(null);
     const activeNotesRef = useRef<Map<number, OscillatorNode>>(new Map());
+    const vexflowRef = useRef<HTMLDivElement | null>(null);
+    const ghostNoteRef = useRef<HTMLDivElement | null>(null);
+    const ghostLabelRef = useRef<HTMLDivElement | null>(null);
+    const dragNoteRef = useRef<{ idx: number; origMidi: number; origBeat: number } | null>(null);
+    const staveLayoutRef = useRef<Array<{
+        x: number; y: number; width: number; measureIdx: number;
+        clef: 'treble' | 'bass'; topLineY: number; bottomLineY: number;
+    }>>([]);
+    const [notationKeySignature, setNotationKeySignature] = useState('C');
+    const [notationClef, setNotationClef] = useState<'treble' | 'bass' | 'grand'>('treble');
+    const [inputNoteDuration, setInputNoteDuration] = useState(1); // beats: 4=whole, 2=half, 1=quarter, 0.5=eighth, 0.25=16th
+    const [inputCursor, setInputCursor] = useState(0); // current beat position for note entry
+    const [inputOctave, setInputOctave] = useState(4);
+    const [notationInstrument, setNotationInstrument] = useState<'sine' | 'triangle' | 'square' | 'sawtooth'>('triangle');
+    const [noteContextMenu, setNoteContextMenu] = useState<{
+        x: number; y: number; noteIdx: number | null; beat: number; measureIdx: number;
+    } | null>(null);
 
     // Analysis state (enhanced)
     const [analysisAudioBuffer, setAnalysisAudioBuffer] = useState<AudioBuffer | null>(null);
@@ -1475,23 +1532,33 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
     const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
     const noteToName = (note: number) => `${noteNames[note % 12]}${Math.floor(note / 12) - 1}`;
 
-    // Notation: Play note
+    // Notation: Play note using selected instrument
     const playNote = useCallback((note: number, velocity: number = 0.5) => {
         if (!synthRef.current) synthRef.current = new AudioContext();
         const ctx = synthRef.current;
 
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
-        osc.type = 'sine';
+        osc.type = notationInstrument;
         osc.frequency.value = noteToFrequency(note);
-        gain.gain.value = velocity * 0.3;
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+        // Shape envelope based on instrument
+        const vol = velocity * 0.3;
+        if (notationInstrument === 'square') {
+            gain.gain.setValueAtTime(vol * 0.5, ctx.currentTime); // quieter for square
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+        } else if (notationInstrument === 'sawtooth') {
+            gain.gain.setValueAtTime(vol * 0.4, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
+        } else {
+            gain.gain.setValueAtTime(vol, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+        }
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start();
-        osc.stop(ctx.currentTime + 0.5);
+        osc.stop(ctx.currentTime + 0.7);
         activeNotesRef.current.set(note, osc);
-    }, []);
+    }, [notationInstrument]);
 
     // Notation: Stop note
     const stopNote = useCallback((note: number) => {
@@ -1513,7 +1580,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         setSelectedNotes(new Set());
     }, [selectedNotes]);
 
-    // Notation: Play composition
+    // Notation: Play composition using selected instrument
     const playNotation = useCallback(() => {
         if (!synthRef.current) synthRef.current = new AudioContext();
         const ctx = synthRef.current;
@@ -1525,21 +1592,21 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
-            osc.type = 'triangle';
+            osc.type = notationInstrument;
             osc.frequency.value = noteToFrequency(note.note);
-            gain.gain.value = note.velocity * 0.3;
-            gain.gain.setValueAtTime(note.velocity * 0.3, noteStartTime);
+            const vol = note.velocity * 0.3 * (notationInstrument === 'square' ? 0.5 : notationInstrument === 'sawtooth' ? 0.4 : 1);
+            gain.gain.setValueAtTime(vol, noteStartTime);
             gain.gain.exponentialRampToValueAtTime(0.01, noteStartTime + noteDuration);
             osc.connect(gain);
             gain.connect(ctx.destination);
             osc.start(noteStartTime);
-            osc.stop(noteStartTime + noteDuration);
+            osc.stop(noteStartTime + noteDuration + 0.05);
         });
 
         setIsNotationPlaying(true);
         const totalDuration = Math.max(...pianoNotes.map(n => n.start + n.duration), 0) * 60 / notationBpm * 1000;
         setTimeout(() => setIsNotationPlaying(false), totalDuration);
-    }, [pianoNotes, notationBpm]);
+    }, [pianoNotes, notationBpm, notationInstrument]);
 
     // Analysis: Load and analyze audio
     const analyzeAudio = useCallback(async (audioPath: string) => {
@@ -3850,123 +3917,882 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
             </div>
         );
 
-        // Sheet Music View
-        const renderSheetMusic = () => (
-            <div className="flex-1 overflow-auto bg-white p-8">
-                <div className="space-y-8">
-                    {Array.from({ length: Math.ceil(measures / 4) }).map((_, lineIdx) => (
-                        <div key={lineIdx} className="relative h-32">
-                            {/* Staff lines */}
-                            <div className="absolute inset-x-0" style={{ top: '20px' }}>
-                                {[0, 1, 2, 3, 4].map(line => (
-                                    <div key={line} className="h-px bg-gray-400 mb-2"/>
+        // VexFlow Sheet Music View
+        const renderSheetMusic = () => {
+            // MIDI note to VexFlow pitch (e.g., 60 -> "C/4", 61 -> "C#/4")
+            const midiToVexPitch = (midi: number): string => {
+                const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+                const octave = Math.floor(midi / 12) - 1;
+                const name = names[midi % 12];
+                return `${name}/${octave}`;
+            };
+
+            // Quantize beat duration to nearest VexFlow duration string
+            const quantizeDuration = (dur: number): string => {
+                if (dur >= 3.5) return 'w';       // whole
+                if (dur >= 1.75) return 'h';      // half
+                if (dur >= 0.875) return 'q';     // quarter
+                if (dur >= 0.4375) return '8';    // eighth
+                if (dur >= 0.21875) return '16';  // sixteenth
+                return '32';                       // thirty-second
+            };
+
+            // Get beat value for VexFlow duration
+            const durationBeats = (d: string): number => {
+                const map: Record<string, number> = { 'w': 4, 'h': 2, 'q': 1, '8': 0.5, '16': 0.25, '32': 0.125 };
+                return map[d] || 1;
+            };
+
+            // Group pianoNotes into measures
+            const groupedMeasures: Array<Array<{ note: number; start: number; duration: number; velocity: number }>> = [];
+            for (let m = 0; m < measures; m++) {
+                const measureStart = m * beatsPerMeasure;
+                const measureEnd = measureStart + beatsPerMeasure;
+                const notesInMeasure = pianoNotes.filter(n => n.start >= measureStart && n.start < measureEnd);
+                groupedMeasures.push(notesInMeasure);
+            }
+
+            // Render VexFlow via ref callback - called when the div mounts
+            const renderVexFlow = (container: HTMLDivElement | null) => {
+                if (!container) return;
+                container.innerHTML = '';
+                staveLayoutRef.current = [];
+
+                const measuresPerLine = 4;
+                const staveWidth = 250;
+                const staveStartX = 10;
+                const lineHeight = notationClef === 'grand' ? 200 : 120;
+                const totalLines = Math.ceil(measures / measuresPerLine);
+                const totalWidth = staveStartX + measuresPerLine * staveWidth + 40;
+                const totalHeight = totalLines * lineHeight + 40;
+
+                const renderer = new VFRenderer(container, VFRenderer.Backends.SVG);
+                renderer.resize(totalWidth, totalHeight);
+                const context = renderer.getContext();
+                context.setFont('Arial', 10);
+
+                for (let line = 0; line < totalLines; line++) {
+                    const y = line * lineHeight + 20;
+
+                    for (let mInLine = 0; mInLine < measuresPerLine; mInLine++) {
+                        const mIdx = line * measuresPerLine + mInLine;
+                        if (mIdx >= measures) break;
+
+                        const x = staveStartX + mInLine * staveWidth;
+                        const isFirstInLine = mInLine === 0;
+                        const isFirstMeasure = mIdx === 0;
+
+                        // Create treble stave
+                        const trebleStave = new Stave(x, y, staveWidth);
+                        if (isFirstInLine) trebleStave.addClef('treble');
+                        if (isFirstMeasure) {
+                            trebleStave.addTimeSignature(`${notationTimeSignature[0]}/${notationTimeSignature[1]}`);
+                            if (notationKeySignature !== 'C') {
+                                trebleStave.addKeySignature(notationKeySignature);
+                            }
+                        }
+                        trebleStave.setContext(context).draw();
+
+                        // Create bass stave for grand staff
+                        let bassStave: Stave | null = null;
+                        if (notationClef === 'grand') {
+                            bassStave = new Stave(x, y + 80, staveWidth);
+                            if (isFirstInLine) bassStave.addClef('bass');
+                            if (isFirstMeasure) {
+                                bassStave.addTimeSignature(`${notationTimeSignature[0]}/${notationTimeSignature[1]}`);
+                                if (notationKeySignature !== 'C') {
+                                    bassStave.addKeySignature(notationKeySignature);
+                                }
+                            }
+                            bassStave.setContext(context).draw();
+
+                            // Connect staves
+                            if (isFirstInLine) {
+                                new StaveConnector(trebleStave, bassStave).setType('single').setContext(context).draw();
+                                new StaveConnector(trebleStave, bassStave).setType('brace').setContext(context).draw();
+                            }
+                        }
+
+                        // Store stave layout for double-click note placement
+                        try {
+                            staveLayoutRef.current.push({
+                                x, y, width: staveWidth, measureIdx: mIdx,
+                                clef: notationClef === 'bass' ? 'bass' : 'treble',
+                                topLineY: trebleStave.getYForLine(0),
+                                bottomLineY: trebleStave.getYForLine(4),
+                            });
+                            if (bassStave) {
+                                staveLayoutRef.current.push({
+                                    x, y: y + 80, width: staveWidth, measureIdx: mIdx,
+                                    clef: 'bass',
+                                    topLineY: bassStave.getYForLine(0),
+                                    bottomLineY: bassStave.getYForLine(4),
+                                });
+                            }
+                        } catch {}
+
+                        // Get notes for this measure
+                        const measureNotes = groupedMeasures[mIdx] || [];
+
+                        // Build VexFlow notes for treble clef (MIDI >= 60)
+                        const trebleNotes: StaveNote[] = [];
+                        const bassNotes: StaveNote[] = [];
+
+                        if (measureNotes.length === 0) {
+                            // Add a whole rest
+                            trebleNotes.push(new StaveNote({
+                                clef: 'treble',
+                                keys: ['B/4'],
+                                duration: 'wr',  // whole rest
+                            }));
+                            if (notationClef === 'grand') {
+                                bassNotes.push(new StaveNote({
+                                    clef: 'bass',
+                                    keys: ['D/3'],
+                                    duration: 'wr',
+                                }));
+                            }
+                        } else {
+                            // Group notes by start time for chord support
+                            const sorted = [...measureNotes].sort((a, b) => a.start - b.start || a.note - b.note);
+                            const measureStart = mIdx * beatsPerMeasure;
+                            let trebleBeatsFilled = 0;
+                            let bassBeatsFilled = 0;
+
+                            // Group notes at same beat into chords
+                            const groups: Array<typeof measureNotes> = [];
+                            for (const n of sorted) {
+                                const last = groups[groups.length - 1];
+                                if (last && Math.abs(last[0].start - n.start) < 0.01) {
+                                    last.push(n);
+                                } else {
+                                    groups.push([n]);
+                                }
+                            }
+
+                            for (const group of groups) {
+                                // Split into treble and bass
+                                const trebleGroup = group.filter(n => !(n.note < 60 && notationClef === 'grand'));
+                                const bassGroup = group.filter(n => n.note < 60 && notationClef === 'grand');
+
+                                const buildChordNote = (notes: typeof group, clef: string) => {
+                                    if (notes.length === 0) return null;
+                                    const maxDur = Math.max(...notes.map(n => n.duration));
+                                    const vexDuration = quantizeDuration(maxDur);
+                                    const beats = durationBeats(vexDuration);
+                                    const keys = notes.map(n => midiToVexPitch(n.note));
+                                    try {
+                                        const staveNote = new StaveNote({ clef, keys, duration: vexDuration });
+                                        keys.forEach((pitch, idx) => {
+                                            const noteName = pitch.split('/')[0];
+                                            if (noteName.includes('#')) staveNote.addModifier(new Accidental('#'), idx);
+                                            else if (noteName.includes('b')) staveNote.addModifier(new Accidental('b'), idx);
+                                        });
+                                        return { staveNote, beats };
+                                    } catch { return null; }
+                                };
+
+                                const trebleChord = buildChordNote(trebleGroup, 'treble');
+                                if (trebleChord) {
+                                    trebleNotes.push(trebleChord.staveNote);
+                                    trebleBeatsFilled += trebleChord.beats;
+                                }
+                                const bassChord = buildChordNote(bassGroup, 'bass');
+                                if (bassChord) {
+                                    bassNotes.push(bassChord.staveNote);
+                                    bassBeatsFilled += bassChord.beats;
+                                }
+                            }
+
+                            // Fill remaining beats with rests
+                            const fillRests = (notes: StaveNote[], beatsFilled: number, clef: string) => {
+                                let remaining = beatsPerMeasure - beatsFilled;
+                                while (remaining > 0) {
+                                    let restDur = 'qr';
+                                    let restBeats = 1;
+                                    if (remaining >= 4) { restDur = 'wr'; restBeats = 4; }
+                                    else if (remaining >= 2) { restDur = 'hr'; restBeats = 2; }
+                                    else if (remaining >= 1) { restDur = 'qr'; restBeats = 1; }
+                                    else if (remaining >= 0.5) { restDur = '8r'; restBeats = 0.5; }
+                                    else { restDur = '16r'; restBeats = 0.25; }
+                                    try {
+                                        notes.push(new StaveNote({
+                                            clef: clef,
+                                            keys: [clef === 'bass' ? 'D/3' : 'B/4'],
+                                            duration: restDur,
+                                        }));
+                                    } catch (e) { break; }
+                                    remaining -= restBeats;
+                                }
+                            };
+
+                            if (trebleNotes.length === 0) {
+                                trebleNotes.push(new StaveNote({ clef: 'treble', keys: ['B/4'], duration: 'wr' }));
+                            } else {
+                                fillRests(trebleNotes, trebleBeatsFilled, 'treble');
+                            }
+                            if (notationClef === 'grand') {
+                                if (bassNotes.length === 0) {
+                                    bassNotes.push(new StaveNote({ clef: 'bass', keys: ['D/3'], duration: 'wr' }));
+                                } else {
+                                    fillRests(bassNotes, bassBeatsFilled, 'bass');
+                                }
+                            }
+                        }
+
+                        // Create voice and format
+                        try {
+                            const trebleVoice = new Voice({ numBeats: beatsPerMeasure, beatValue: notationTimeSignature[1] })
+                                .setMode(Voice.Mode.SOFT);
+                            trebleVoice.addTickables(trebleNotes);
+
+                            // Auto-beam eighth notes and shorter
+                            const trebleBeamable = trebleNotes.filter(n => {
+                                const dur = n.getDuration();
+                                return !dur.includes('r') && (dur === '8' || dur === '16' || dur === '32');
+                            });
+                            const trebleBeams = trebleBeamable.length >= 2 ? Beam.generateBeams(trebleBeamable) : [];
+
+                            if (notationClef === 'grand' && bassStave) {
+                                const bassVoice = new Voice({ numBeats: beatsPerMeasure, beatValue: notationTimeSignature[1] })
+                                    .setMode(Voice.Mode.SOFT);
+                                bassVoice.addTickables(bassNotes);
+
+                                new Formatter().joinVoices([trebleVoice]).joinVoices([bassVoice])
+                                    .format([trebleVoice, bassVoice], staveWidth - (isFirstInLine ? 80 : 20));
+
+                                trebleVoice.draw(context, trebleStave);
+                                bassVoice.draw(context, bassStave);
+
+                                const bassBeamable = bassNotes.filter(n => {
+                                    const dur = n.getDuration();
+                                    return !dur.includes('r') && (dur === '8' || dur === '16' || dur === '32');
+                                });
+                                if (bassBeamable.length >= 2) {
+                                    Beam.generateBeams(bassBeamable).forEach(b => b.setContext(context).draw());
+                                }
+                            } else {
+                                new Formatter().joinVoices([trebleVoice])
+                                    .format([trebleVoice], staveWidth - (isFirstInLine ? 60 : 20));
+                                trebleVoice.draw(context, trebleStave);
+                            }
+
+                            trebleBeams.forEach(b => b.setContext(context).draw());
+                        } catch (e) {
+                            // Formatting error - skip this measure silently
+                        }
+                    }
+                }
+            };
+
+            // Note names for the keyboard input strip
+            const sheetNoteNames = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+            const sheetNoteNamesFull = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+            const addSheetNote = (noteName: string, octave: number) => {
+                const noteIdx = sheetNoteNamesFull.indexOf(noteName);
+                if (noteIdx === -1) return;
+                const midi = (octave + 1) * 12 + noteIdx;
+                addPianoNote(midi, inputCursor, inputNoteDuration, 0.8);
+                playNote(midi);
+            };
+
+            const addSheetRest = () => {
+                // Just advance the cursor without adding a note
+                setInputCursor(prev => prev + inputNoteDuration);
+            };
+
+            // Snap mouse coordinates to nearest staff position
+            // Returns null if not over a stave, otherwise snapped info
+            const snapToStaff = (container: HTMLDivElement, clientX: number, clientY: number) => {
+                if (staveLayoutRef.current.length === 0) return null;
+                const rect = container.getBoundingClientRect();
+                const svgX = (clientX - rect.left) / notationZoom;
+                const svgY = (clientY - rect.top) / notationZoom;
+
+                // Find stave
+                let closestStave: typeof staveLayoutRef.current[0] | null = null;
+                let minDist = Infinity;
+                for (const stave of staveLayoutRef.current) {
+                    const margin = 25;
+                    if (svgX >= stave.x && svgX <= stave.x + stave.width &&
+                        svgY >= stave.topLineY - margin && svgY <= stave.bottomLineY + margin) {
+                        const centerY = (stave.topLineY + stave.bottomLineY) / 2;
+                        const dist = Math.abs(svgY - centerY);
+                        if (dist < minDist) { minDist = dist; closestStave = stave; }
+                    }
+                }
+                if (!closestStave) return null;
+
+                // Snap Y to nearest staff line/space
+                const lineSpacing = (closestStave.bottomLineY - closestStave.topLineY) / 4;
+                const halfLine = lineSpacing / 2;
+                const staffPos = Math.round((svgY - closestStave.topLineY) / halfLine);
+                const snappedSvgY = closestStave.topLineY + staffPos * halfLine;
+                const midi = staffPositionToMidi(staffPos, closestStave.clef);
+
+                // Snap X to beat grid
+                const xRatio = (svgX - closestStave.x) / closestStave.width;
+                const beatInMeasure = Math.max(0, Math.min(beatsPerMeasure - 0.25, xRatio * beatsPerMeasure));
+                const quantStep = Math.min(inputNoteDuration, 0.5);
+                const quantizedBeat = Math.round(beatInMeasure / quantStep) * quantStep;
+                const snappedSvgX = closestStave.x + (quantizedBeat / beatsPerMeasure) * closestStave.width;
+                const globalBeat = closestStave.measureIdx * beatsPerMeasure + quantizedBeat;
+
+                // Convert snapped SVG coords back to screen coords for ghost positioning
+                const screenX = rect.left + snappedSvgX * notationZoom;
+                const screenY = rect.top + snappedSvgY * notationZoom;
+
+                return { midi, globalBeat, screenX, screenY, staffPos, clef: closestStave.clef };
+            };
+
+            // Find existing note near a snapped position (tolerance: same beat, same pitch)
+            const findNoteAt = (midi: number, beat: number): number | null => {
+                for (let i = 0; i < pianoNotes.length; i++) {
+                    const n = pianoNotes[i];
+                    if (Math.abs(n.start - beat) < 0.3 && Math.abs(n.note - midi) <= 1) return i;
+                }
+                return null;
+            };
+
+            // Position the ghost/drag indicator
+            const positionGhost = (scrollContainer: HTMLElement, snap: NonNullable<ReturnType<typeof snapToStaff>>, dragging: boolean) => {
+                const ghost = ghostNoteRef.current;
+                const label = ghostLabelRef.current;
+                if (!ghost || !label) return;
+
+                const scrollRect = scrollContainer.getBoundingClientRect();
+                const gx = snap.screenX - scrollRect.left + scrollContainer.scrollLeft;
+                const gy = snap.screenY - scrollRect.top + scrollContainer.scrollTop;
+
+                ghost.style.display = 'block';
+                ghost.style.left = `${gx - 6}px`;
+                ghost.style.top = `${gy - 6}px`;
+                ghost.style.background = dragging ? 'rgba(234, 88, 12, 0.6)' : 'rgba(147, 51, 234, 0.5)';
+                ghost.style.borderColor = dragging ? 'rgba(234, 88, 12, 0.9)' : 'rgba(147, 51, 234, 0.8)';
+                ghost.style.width = dragging ? '14px' : '12px';
+                ghost.style.height = dragging ? '14px' : '12px';
+
+                label.style.display = 'block';
+                label.style.left = `${gx + 12}px`;
+                label.style.top = `${gy - 10}px`;
+                label.style.color = dragging ? 'rgba(234, 88, 12, 0.9)' : 'rgba(147, 51, 234, 0.9)';
+                label.textContent = noteToName(snap.midi);
+            };
+
+            const hideGhost = () => {
+                if (ghostNoteRef.current) ghostNoteRef.current.style.display = 'none';
+                if (ghostLabelRef.current) ghostLabelRef.current.style.display = 'none';
+            };
+
+            // Mouse move: show ghost OR drag existing note
+            const handleStaffMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+                const vfContainer = e.currentTarget.querySelector('div[style]') as HTMLDivElement;
+                if (!vfContainer) return;
+                const snap = snapToStaff(vfContainer, e.clientX, e.clientY);
+                if (!snap) { hideGhost(); return; }
+
+                const dragging = dragNoteRef.current !== null;
+
+                if (dragging) {
+                    // Show drag ghost at snapped position
+                    positionGhost(e.currentTarget, snap, true);
+                    e.currentTarget.style.cursor = 'grabbing';
+                } else {
+                    // Check if hovering over an existing note
+                    const hoverIdx = findNoteAt(snap.midi, snap.globalBeat);
+                    if (hoverIdx !== null) {
+                        e.currentTarget.style.cursor = 'grab';
+                    } else {
+                        e.currentTarget.style.cursor = 'crosshair';
+                    }
+                    positionGhost(e.currentTarget, snap, false);
+                }
+            };
+
+            const handleStaffMouseLeave = () => {
+                hideGhost();
+                dragNoteRef.current = null;
+            };
+
+            // Mouse down: start dragging if over an existing note
+            const handleStaffMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+                if (e.button !== 0) return; // left click only
+                const vfContainer = e.currentTarget.querySelector('div[style]') as HTMLDivElement;
+                if (!vfContainer) return;
+                const snap = snapToStaff(vfContainer, e.clientX, e.clientY);
+                if (!snap) return;
+
+                const noteIdx = findNoteAt(snap.midi, snap.globalBeat);
+                if (noteIdx !== null) {
+                    e.preventDefault();
+                    dragNoteRef.current = {
+                        idx: noteIdx,
+                        origMidi: pianoNotes[noteIdx].note,
+                        origBeat: pianoNotes[noteIdx].start,
+                    };
+                }
+            };
+
+            // Mouse up: finalize drag
+            const handleStaffMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
+                const drag = dragNoteRef.current;
+                if (!drag) return;
+
+                const vfContainer = e.currentTarget.querySelector('div[style]') as HTMLDivElement;
+                if (!vfContainer) { dragNoteRef.current = null; return; }
+                const snap = snapToStaff(vfContainer, e.clientX, e.clientY);
+                dragNoteRef.current = null;
+                e.currentTarget.style.cursor = 'crosshair';
+
+                if (!snap) return;
+                // Only update if actually moved
+                if (snap.midi !== drag.origMidi || Math.abs(snap.globalBeat - drag.origBeat) > 0.01) {
+                    setPianoNotes(prev => prev.map((n, i) =>
+                        i === drag.idx ? { ...n, note: snap.midi, start: snap.globalBeat } : n
+                    ));
+                    playNote(snap.midi);
+                }
+            };
+
+            // Double-click: place note at snapped position (only if not dragging)
+            const handleStaffDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+                if (dragNoteRef.current) return;
+                const vfContainer = e.currentTarget.querySelector('div[style]') as HTMLDivElement;
+                if (!vfContainer) return;
+                const snap = snapToStaff(vfContainer, e.clientX, e.clientY);
+                if (!snap) return;
+                // Don't place if there's already a note here
+                if (findNoteAt(snap.midi, snap.globalBeat) !== null) return;
+                addPianoNote(snap.midi, snap.globalBeat, inputNoteDuration, 0.8);
+                playNote(snap.midi);
+            };
+
+            // Right-click on staff to get context menu
+            const handleStaffRightClick = (e: React.MouseEvent<HTMLDivElement>) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const vfContainer = e.currentTarget.querySelector('div[style]') as HTMLDivElement;
+                if (!vfContainer || staveLayoutRef.current.length === 0) {
+                    setNoteContextMenu(null);
+                    return;
+                }
+
+                const rect = vfContainer.getBoundingClientRect();
+                const clickX = (e.clientX - rect.left) / notationZoom;
+                const clickY = (e.clientY - rect.top) / notationZoom;
+
+                // Find which stave
+                let closestStave: typeof staveLayoutRef.current[0] | null = null;
+                for (const stave of staveLayoutRef.current) {
+                    const margin = 25;
+                    if (clickX >= stave.x && clickX <= stave.x + stave.width &&
+                        clickY >= stave.topLineY - margin && clickY <= stave.bottomLineY + margin) {
+                        closestStave = stave;
+                        break;
+                    }
+                }
+                if (!closestStave) { setNoteContextMenu(null); return; }
+
+                // Find beat position
+                const xRatio = (clickX - closestStave.x) / closestStave.width;
+                const beatInMeasure = Math.max(0, xRatio * beatsPerMeasure);
+                const globalBeat = closestStave.measureIdx * beatsPerMeasure + beatInMeasure;
+
+                // Check if clicking near an existing note
+                let nearestNoteIdx: number | null = null;
+                let minDist = 0.5; // tolerance in beats
+                pianoNotes.forEach((n, idx) => {
+                    const dist = Math.abs(n.start - globalBeat);
+                    if (dist < minDist) { minDist = dist; nearestNoteIdx = idx; }
+                });
+
+                setNoteContextMenu({
+                    x: e.clientX, y: e.clientY,
+                    noteIdx: nearestNoteIdx,
+                    beat: globalBeat,
+                    measureIdx: closestStave.measureIdx,
+                });
+            };
+
+            const durationOptions = [
+                { value: 4, label: '𝅝', title: 'Whole' },
+                { value: 2, label: '𝅗𝅥', title: 'Half' },
+                { value: 1, label: '♩', title: 'Quarter' },
+                { value: 0.5, label: '♪', title: 'Eighth' },
+                { value: 0.25, label: '𝅘𝅥𝅯', title: '16th' },
+            ];
+
+            return (
+                <div className="flex-1 flex flex-col overflow-hidden bg-white">
+                    {/* Sheet music controls */}
+                    <div className="flex items-center gap-3 px-4 py-2 bg-gray-50 border-b border-gray-200 shrink-0">
+                        <span className="text-xs text-gray-500 font-medium">Key:</span>
+                        <select
+                            value={notationKeySignature}
+                            onChange={(e) => setNotationKeySignature(e.target.value)}
+                            className="px-2 py-1 bg-white border border-gray-300 rounded text-sm text-gray-700"
+                        >
+                            {['C', 'G', 'D', 'A', 'E', 'B', 'F#', 'Cb', 'F', 'Bb', 'Eb', 'Ab', 'Db', 'Gb'].map(k => (
+                                <option key={k} value={k}>{k} major</option>
+                            ))}
+                        </select>
+                        <span className="text-xs text-gray-500 font-medium ml-2">Clef:</span>
+                        <select
+                            value={notationClef}
+                            onChange={(e) => setNotationClef(e.target.value as 'treble' | 'bass' | 'grand')}
+                            className="px-2 py-1 bg-white border border-gray-300 rounded text-sm text-gray-700"
+                        >
+                            <option value="treble">Treble</option>
+                            <option value="bass">Bass</option>
+                            <option value="grand">Grand Staff</option>
+                        </select>
+
+                        <div className="w-px h-5 bg-gray-300 mx-1"/>
+
+                        {/* Note duration selector */}
+                        <span className="text-xs text-gray-500 font-medium">Duration:</span>
+                        <div className="flex gap-0.5">
+                            {durationOptions.map(d => (
+                                <button
+                                    key={d.value}
+                                    onClick={() => setInputNoteDuration(d.value)}
+                                    title={d.title}
+                                    className={`w-8 h-8 flex items-center justify-center rounded text-lg border ${
+                                        inputNoteDuration === d.value
+                                            ? 'bg-purple-600 text-white border-purple-700'
+                                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
+                                    }`}
+                                >
+                                    {d.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="w-px h-5 bg-gray-300 mx-1"/>
+
+                        {/* Octave selector */}
+                        <span className="text-xs text-gray-500 font-medium">Oct:</span>
+                        <div className="flex items-center gap-1">
+                            <button
+                                onClick={() => setInputOctave(o => Math.max(1, o - 1))}
+                                className="w-6 h-6 flex items-center justify-center rounded bg-white border border-gray-300 text-gray-600 hover:bg-gray-100 text-xs"
+                            >-</button>
+                            <span className="text-sm font-medium text-gray-700 w-4 text-center">{inputOctave}</span>
+                            <button
+                                onClick={() => setInputOctave(o => Math.min(7, o + 1))}
+                                className="w-6 h-6 flex items-center justify-center rounded bg-white border border-gray-300 text-gray-600 hover:bg-gray-100 text-xs"
+                            >+</button>
+                        </div>
+
+                        <div className="w-px h-5 bg-gray-300 mx-1"/>
+
+                        {/* Cursor position */}
+                        <span className="text-xs text-gray-500">Beat: {inputCursor.toFixed(1)}</span>
+                        <button
+                            onClick={() => setInputCursor(0)}
+                            className="text-xs text-purple-600 hover:text-purple-800 underline"
+                        >Reset</button>
+
+                        <div className="w-px h-5 bg-gray-300 mx-1"/>
+                        <button
+                            onClick={() => setInputCursor(prev => prev + inputNoteDuration)}
+                            className="px-2 py-1 rounded text-xs font-medium border border-gray-300 bg-white text-gray-600 hover:bg-gray-100"
+                            title="Advance cursor by one note duration"
+                        >Next Beat</button>
+                    </div>
+
+                    {/* Note input keyboard */}
+                    <div className="flex items-center gap-1 px-4 py-2 bg-gray-100 border-b border-gray-200 shrink-0 flex-wrap">
+                        <span className="text-xs text-gray-500 mr-1">Notes:</span>
+                        {sheetNoteNames.map(name => {
+                            const isBlack = name.includes('#');
+                            return (
+                                <React.Fragment key={name}>
+                                    <button
+                                        onClick={() => addSheetNote(name, inputOctave)}
+                                        className="h-10 w-10 rounded font-bold text-sm border border-gray-400 bg-white text-gray-800 hover:bg-purple-100 hover:border-purple-400 active:bg-purple-200 transition-colors"
+                                    >
+                                        {name}{inputOctave}
+                                    </button>
+                                    {/* Add sharp button between notes that have sharps (no sharp between E-F, B-C) */}
+                                    {name !== 'E' && name !== 'B' && (
+                                        <button
+                                            onClick={() => addSheetNote(name + '#', inputOctave)}
+                                            className="h-8 w-7 rounded text-xs font-bold border border-gray-500 bg-gray-800 text-white hover:bg-purple-700 active:bg-purple-800 transition-colors -mx-0.5"
+                                        >
+                                            {name}#
+                                        </button>
+                                    )}
+                                </React.Fragment>
+                            );
+                        })}
+                        <div className="w-px h-8 bg-gray-300 mx-2"/>
+                        <button
+                            onClick={addSheetRest}
+                            className="h-10 px-3 rounded text-sm border border-gray-400 bg-white text-gray-600 hover:bg-yellow-50 hover:border-yellow-400 active:bg-yellow-100 transition-colors"
+                            title="Add rest"
+                        >
+                            Rest
+                        </button>
+                        <button
+                            onClick={() => {
+                                if (pianoNotes.length > 0) {
+                                    const last = pianoNotes[pianoNotes.length - 1];
+                                    setPianoNotes(prev => prev.slice(0, -1));
+                                    setInputCursor(last.start);
+                                }
+                            }}
+                            className="h-10 px-3 rounded text-sm border border-gray-400 bg-white text-gray-600 hover:bg-red-50 hover:border-red-400 active:bg-red-100 transition-colors"
+                            title="Undo last note"
+                        >
+                            <Undo size={14}/>
+                        </button>
+                    </div>
+
+                    {/* VexFlow score display - click+drag to move notes, double-click to place */}
+                    <div
+                        className="flex-1 overflow-auto p-6 cursor-crosshair relative"
+                        onMouseDown={handleStaffMouseDown}
+                        onMouseMove={handleStaffMouseMove}
+                        onMouseUp={handleStaffMouseUp}
+                        onMouseLeave={handleStaffMouseLeave}
+                        onDoubleClick={handleStaffDoubleClick}
+                        onContextMenu={handleStaffRightClick}
+                        onClick={() => setNoteContextMenu(null)}
+                        title="Drag notes to move, double-click to place new"
+                    >
+                        <div
+                            key={`vf-${pianoNotes.length}-${notationKeySignature}-${notationClef}-${notationTimeSignature.join('-')}`}
+                            ref={renderVexFlow}
+                            style={{ transform: `scale(${notationZoom})`, transformOrigin: 'top left' }}
+                        />
+                        {/* Ghost note indicator */}
+                        <div
+                            ref={ghostNoteRef}
+                            className="absolute pointer-events-none"
+                            style={{
+                                display: 'none',
+                                width: 12, height: 12,
+                                borderRadius: '50%',
+                                background: 'rgba(147, 51, 234, 0.5)',
+                                border: '2px solid rgba(147, 51, 234, 0.8)',
+                            }}
+                        />
+                        <div
+                            ref={ghostLabelRef}
+                            className="absolute pointer-events-none text-xs font-bold"
+                            style={{
+                                display: 'none',
+                                color: 'rgba(147, 51, 234, 0.9)',
+                                textShadow: '0 0 3px white, 0 0 3px white',
+                            }}
+                        />
+                    </div>
+
+                    {/* Note context menu */}
+                    {noteContextMenu && (
+                        <div
+                            className="fixed z-50 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 min-w-[180px]"
+                            style={{ left: noteContextMenu.x, top: noteContextMenu.y }}
+                            onClick={() => setNoteContextMenu(null)}
+                        >
+                            {noteContextMenu.noteIdx !== null ? (
+                                <>
+                                    <div className="px-3 py-1 text-xs text-gray-400 border-b border-gray-700">
+                                        {noteToName(pianoNotes[noteContextMenu.noteIdx].note)} - Beat {pianoNotes[noteContextMenu.noteIdx].start.toFixed(1)}
+                                    </div>
+                                    <button
+                                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-700 text-red-400"
+                                        onClick={() => {
+                                            setPianoNotes(prev => prev.filter((_, i) => i !== noteContextMenu.noteIdx));
+                                            setNoteContextMenu(null);
+                                        }}
+                                    >
+                                        Delete Note
+                                    </button>
+                                    <div className="border-t border-gray-700 my-1"/>
+                                    <div className="px-3 py-1 text-xs text-gray-400">Change Duration</div>
+                                    {[
+                                        { v: 4, l: 'Whole' }, { v: 2, l: 'Half' }, { v: 1, l: 'Quarter' },
+                                        { v: 0.5, l: 'Eighth' }, { v: 0.25, l: '16th' }
+                                    ].map(d => (
+                                        <button
+                                            key={d.v}
+                                            className={`w-full text-left px-3 py-1 text-sm hover:bg-gray-700 ${
+                                                pianoNotes[noteContextMenu.noteIdx!]?.duration === d.v ? 'text-purple-400' : 'text-gray-300'
+                                            }`}
+                                            onClick={() => {
+                                                const idx = noteContextMenu.noteIdx!;
+                                                setPianoNotes(prev => prev.map((n, i) => i === idx ? { ...n, duration: d.v } : n));
+                                                setNoteContextMenu(null);
+                                            }}
+                                        >
+                                            {d.l} {pianoNotes[noteContextMenu.noteIdx!]?.duration === d.v ? '  *' : ''}
+                                        </button>
+                                    ))}
+                                    <div className="border-t border-gray-700 my-1"/>
+                                    <div className="px-3 py-1 text-xs text-gray-400">Octave</div>
+                                    <div className="flex gap-1 px-3 py-1">
+                                        <button
+                                            className="px-2 py-0.5 bg-gray-700 rounded text-xs hover:bg-gray-600"
+                                            onClick={() => {
+                                                const idx = noteContextMenu.noteIdx!;
+                                                setPianoNotes(prev => prev.map((n, i) => i === idx ? { ...n, note: Math.max(21, n.note - 12) } : n));
+                                                setNoteContextMenu(null);
+                                            }}
+                                        >Oct -</button>
+                                        <button
+                                            className="px-2 py-0.5 bg-gray-700 rounded text-xs hover:bg-gray-600"
+                                            onClick={() => {
+                                                const idx = noteContextMenu.noteIdx!;
+                                                setPianoNotes(prev => prev.map((n, i) => i === idx ? { ...n, note: Math.min(108, n.note + 12) } : n));
+                                                setNoteContextMenu(null);
+                                            }}
+                                        >Oct +</button>
+                                    </div>
+                                    <div className="border-t border-gray-700 my-1"/>
+                                    <div className="px-3 py-1 text-xs text-gray-400">Velocity</div>
+                                    <div className="flex gap-1 px-3 py-1">
+                                        {[0.3, 0.5, 0.7, 0.9, 1.0].map(v => (
+                                            <button
+                                                key={v}
+                                                className={`px-2 py-0.5 rounded text-xs ${
+                                                    Math.abs((pianoNotes[noteContextMenu.noteIdx!]?.velocity || 0) - v) < 0.05
+                                                        ? 'bg-purple-600' : 'bg-gray-700 hover:bg-gray-600'
+                                                }`}
+                                                onClick={() => {
+                                                    const idx = noteContextMenu.noteIdx!;
+                                                    setPianoNotes(prev => prev.map((n, i) => i === idx ? { ...n, velocity: v } : n));
+                                                    setNoteContextMenu(null);
+                                                }}
+                                            >
+                                                {v === 0.3 ? 'pp' : v === 0.5 ? 'mp' : v === 0.7 ? 'mf' : v === 0.9 ? 'f' : 'ff'}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="px-3 py-1 text-xs text-gray-400 border-b border-gray-700">
+                                        Measure {noteContextMenu.measureIdx + 1}, Beat {(noteContextMenu.beat % beatsPerMeasure).toFixed(1)}
+                                    </div>
+                                    <button
+                                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-700 text-gray-300"
+                                        onClick={() => {
+                                            setInputCursor(noteContextMenu.beat);
+                                            setNoteContextMenu(null);
+                                        }}
+                                    >
+                                        Set Cursor Here
+                                    </button>
+                                    <button
+                                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-700 text-gray-300"
+                                        onClick={() => {
+                                            setInputCursor(noteContextMenu.beat + inputNoteDuration);
+                                            setNoteContextMenu(null);
+                                        }}
+                                    >
+                                        Add Rest Here
+                                    </button>
+                                    <div className="border-t border-gray-700 my-1"/>
+                                    <button
+                                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-700 text-red-400"
+                                        onClick={() => {
+                                            const mStart = noteContextMenu.measureIdx * beatsPerMeasure;
+                                            const mEnd = mStart + beatsPerMeasure;
+                                            setPianoNotes(prev => prev.filter(n => n.start < mStart || n.start >= mEnd));
+                                            setNoteContextMenu(null);
+                                        }}
+                                    >
+                                        Clear Measure
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // Guitar Tab View - derives display from pianoNotes via MIDI→tab conversion
+        const renderGuitarTab = () => {
+            // Convert pianoNotes to tab representation
+            const derivedTabNotes = pianoNotes.map(n => {
+                const tab = midiToTab(n.note);
+                return tab ? { ...tab, start: n.start, duration: n.duration } : null;
+            }).filter(Boolean) as Array<{ string: number; fret: number; start: number; duration: number }>;
+
+            const addTabNote = (stringIdx: number, fret: number, beat: number) => {
+                const midi = tabToMidi(stringIdx, fret);
+                addPianoNote(midi, beat, inputNoteDuration, 0.8);
+                playNote(midi);
+            };
+
+            return (
+                <div className="flex-1 overflow-auto bg-gray-100 p-8">
+                    <div className="bg-white rounded-lg p-6 shadow">
+                        <div className="flex items-center gap-3 mb-4">
+                            <span className="text-sm font-medium">TAB</span>
+                            <span className="text-xs text-gray-400">Standard Tuning (EADGBE)</span>
+                            <div className="w-px h-4 bg-gray-300"/>
+                            <span className="text-xs text-gray-500">Beat: {inputCursor.toFixed(1)}</span>
+                            <button
+                                onClick={() => setInputCursor(0)}
+                                className="text-xs text-purple-600 hover:text-purple-800 underline"
+                            >Reset</button>
+                        </div>
+
+                        {/* Tab staff */}
+                        <div className="relative font-mono text-sm">
+                            {guitarStrings.map((stringName, stringIdx) => (
+                                <div key={stringIdx} className="flex items-center h-6">
+                                    <span className="w-6 text-gray-600 font-bold">{stringName}</span>
+                                    <div className="flex-1 border-b border-gray-400 relative flex">
+                                        {Array.from({ length: totalBeats }).map((_, beat) => (
+                                            <div
+                                                key={beat}
+                                                className={`w-8 text-center border-r cursor-pointer hover:bg-purple-50 ${beat % beatsPerMeasure === 0 ? 'border-gray-500' : 'border-gray-300'}`}
+                                                onClick={() => addTabNote(stringIdx, 0, beat)}
+                                            >
+                                                {derivedTabNotes
+                                                    .filter(n => n.string === stringIdx && Math.floor(n.start) === beat)
+                                                    .map((n, i) => (
+                                                        <span key={i} className="text-purple-600 font-bold">{n.fret}</span>
+                                                    ))}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Fretboard for input */}
+                        <div className="mt-8 border-t pt-4">
+                            <h4 className="text-sm font-medium mb-2">Click fretboard to add notes (at beat {inputCursor.toFixed(1)}):</h4>
+                            <div className="grid grid-cols-13 gap-px bg-amber-900 p-2 rounded" style={{ gridTemplateColumns: 'auto repeat(12, 1fr)' }}>
+                                {guitarStrings.map((stringName, stringIdx) => (
+                                    <React.Fragment key={stringIdx}>
+                                        <div className="h-6 flex items-center justify-center text-xs text-amber-200 font-bold px-1">{stringName}</div>
+                                        {Array.from({ length: 12 }).map((_, fret) => (
+                                            <div
+                                                key={fret}
+                                                onClick={() => {
+                                                    addTabNote(stringIdx, fret, inputCursor);
+                                                }}
+                                                className="h-6 bg-amber-100 border-r border-gray-400 flex items-center justify-center text-xs cursor-pointer hover:bg-purple-200"
+                                            >
+                                                {fret}
+                                            </div>
+                                        ))}
+                                    </React.Fragment>
                                 ))}
                             </div>
-                            {/* Clef */}
-                            <div className="absolute left-2 text-5xl text-gray-700" style={{ top: '-5px' }}>𝄞</div>
-                            {/* Time signature */}
-                            {lineIdx === 0 && (
-                                <div className="absolute left-12 text-lg font-bold text-gray-700" style={{ top: '10px' }}>
-                                    <div>{notationTimeSignature[0]}</div>
-                                    <div>{notationTimeSignature[1]}</div>
-                                </div>
-                            )}
-                            {/* Measure bars */}
-                            {[0, 1, 2, 3].map(m => (
-                                <div
-                                    key={m}
-                                    className="absolute h-10 border-r border-gray-500"
-                                    style={{ left: `${80 + (m + 1) * 180}px`, top: '20px' }}
-                                />
-                            ))}
-                            {/* Notes on staff */}
-                            {pianoNotes
-                                .filter(n => Math.floor(n.start / beatsPerMeasure / 4) === lineIdx)
-                                .map((note, idx) => {
-                                    const measureInLine = Math.floor(note.start / beatsPerMeasure) % 4;
-                                    const beatInMeasure = note.start % beatsPerMeasure;
-                                    const staffPos = 60 - note.note; // C4 = 60, middle of staff
-                                    const x = 100 + measureInLine * 180 + beatInMeasure * 40;
-                                    const y = 25 + staffPos * 4;
-                                    return (
-                                        <div
-                                            key={idx}
-                                            className="absolute w-4 h-4 bg-gray-900 rounded-full"
-                                            style={{ left: `${x}px`, top: `${Math.min(Math.max(y, 10), 50)}px` }}
-                                        />
-                                    );
-                                })}
-                        </div>
-                    ))}
-                </div>
-            </div>
-        );
-
-        // Guitar Tab View
-        const renderGuitarTab = () => (
-            <div className="flex-1 overflow-auto bg-gray-100 p-8">
-                <div className="bg-white rounded-lg p-6 shadow">
-                    <div className="flex gap-2 mb-4">
-                        <span className="text-sm font-medium">TAB</span>
-                        <span className="text-xs text-gray-400">Standard Tuning (EADGBE)</span>
-                    </div>
-
-                    {/* Tab staff */}
-                    <div className="relative font-mono text-sm">
-                        {guitarStrings.map((stringName, stringIdx) => (
-                            <div key={stringIdx} className="flex items-center h-6">
-                                <span className="w-6 text-gray-600 font-bold">{stringName}</span>
-                                <div className="flex-1 border-b border-gray-400 relative flex">
-                                    {Array.from({ length: totalBeats }).map((_, beat) => (
-                                        <div
-                                            key={beat}
-                                            className={`w-8 text-center border-r ${beat % beatsPerMeasure === 0 ? 'border-gray-500' : 'border-gray-300'}`}
-                                            onClick={() => {
-                                                // Add a tab note
-                                                setTabNotes(prev => [...prev, { string: stringIdx, fret: 0, start: beat, duration: 0.5 }]);
-                                            }}
-                                        >
-                                            {tabNotes
-                                                .filter(n => n.string === stringIdx && Math.floor(n.start) === beat)
-                                                .map((n, i) => (
-                                                    <span key={i} className="text-purple-600 font-bold">{n.fret}</span>
-                                                ))}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-
-                    {/* Fretboard for input */}
-                    <div className="mt-8 border-t pt-4">
-                        <h4 className="text-sm font-medium mb-2">Click fretboard to add notes:</h4>
-                        <div className="grid grid-cols-12 gap-px bg-amber-900 p-2 rounded">
-                            {guitarStrings.map((_, stringIdx) => (
-                                <React.Fragment key={stringIdx}>
-                                    {Array.from({ length: 12 }).map((_, fret) => (
-                                        <div
-                                            key={fret}
-                                            onClick={() => {
-                                                setTabNotes(prev => [...prev, {
-                                                    string: stringIdx,
-                                                    fret,
-                                                    start: notationPlayhead,
-                                                    duration: 0.5
-                                                }]);
-                                            }}
-                                            className="h-6 bg-amber-100 border-r border-gray-400 flex items-center justify-center text-xs cursor-pointer hover:bg-purple-200"
-                                        >
-                                            {fret}
-                                        </div>
-                                    ))}
-                                </React.Fragment>
-                            ))}
                         </div>
                     </div>
                 </div>
-            </div>
-        );
+            );
+        };
 
         return (
             <div className="flex-1 flex flex-col overflow-hidden">
@@ -4031,8 +4857,28 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     >
                         <option value="4/4">4/4</option>
                         <option value="3/4">3/4</option>
-                        <option value="6/8">6/8</option>
                         <option value="2/4">2/4</option>
+                        <option value="6/8">6/8</option>
+                        <option value="5/4">5/4</option>
+                        <option value="7/8">7/8</option>
+                        <option value="2/2">2/2</option>
+                        <option value="3/8">3/8</option>
+                        <option value="12/8">12/8</option>
+                    </select>
+
+                    <div className="w-px h-6 bg-gray-600 mx-2"/>
+
+                    {/* Instrument selector */}
+                    <span className="text-xs text-gray-400">Instrument:</span>
+                    <select
+                        value={notationInstrument}
+                        onChange={(e) => setNotationInstrument(e.target.value as typeof notationInstrument)}
+                        className="px-2 py-1 bg-gray-700 rounded text-sm"
+                    >
+                        <option value="triangle">Piano</option>
+                        <option value="sine">Flute</option>
+                        <option value="square">Organ</option>
+                        <option value="sawtooth">Strings</option>
                     </select>
 
                     <div className="flex-1"/>
@@ -4048,7 +4894,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
                     {/* Clear all */}
                     <button
-                        onClick={() => { setPianoNotes([]); setTabNotes([]); setSelectedNotes(new Set()); }}
+                        onClick={() => { setPianoNotes([]); setSelectedNotes(new Set()); setInputCursor(0); }}
                         className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm"
                     >
                         Clear All
@@ -4366,15 +5212,15 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
             <div className="flex-1 flex overflow-hidden">
                 {renderSidebar()}
                 <main className="flex-1 flex flex-col overflow-hidden relative">
-                    {/* Mode Selector */}
-                    <div className="absolute top-2 left-2 z-30">
+                    {/* Mode Selector - inline bar, not absolute overlay */}
+                    <div className="flex items-center h-10 px-2 bg-gray-900/80 border-b border-gray-700 shrink-0">
                         <div className="relative group">
                             <button className="flex items-center gap-2 px-3 py-1.5 bg-gray-800/90 hover:bg-gray-700 rounded-lg border border-gray-600 text-sm backdrop-blur-sm">
                                 <CurrentModeIcon size={16} className="text-purple-400"/>
                                 <span className="font-medium">{currentMode_obj.name}</span>
                                 <ChevronRight size={14} className="text-gray-500 rotate-90"/>
                             </button>
-                            <div className="absolute top-full left-0 mt-1 w-48 bg-gray-800/95 backdrop-blur-sm rounded-lg border border-gray-600 shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
+                            <div className="absolute top-full left-0 mt-1 w-48 bg-gray-800/95 backdrop-blur-sm rounded-lg border border-gray-600 shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
                                 <div className="py-1">
                                     {['browse', 'create', 'edit', 'analyze', 'train'].map(group => (
                                         <React.Fragment key={group}>
