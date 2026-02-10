@@ -383,8 +383,13 @@ export function useLayoutManager({ trackActivity }: UseLayoutManagerParams) {
         });
 
         setActiveContentPaneId(newPaneId);
+
+        if (contentType === 'editor' || contentType === 'chat') {
+            updateContentPane(newPaneId, contentType, finalContentId);
+        }
+
         return newPaneId;
-    }, []);
+    }, [updateContentPane]);
 
     // Move a content pane (drag & drop)
     const moveContentPane = useCallback((draggedId: string, draggedPath: number[], targetPath: number[], dropSide: string) => {

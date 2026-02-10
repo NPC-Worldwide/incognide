@@ -624,9 +624,4 @@ const MarkdownRenderer = ({ content, onOpenFile }: { content: string; onOpenFile
   return <ContentWithImages content={content} onOpenFile={onOpenFile} />;
 };
 
-// Custom comparison to prevent reload on pane resize
-const arePropsEqual = (prevProps: any, nextProps: any) => {
-    return prevProps.nodeId === nextProps.nodeId;
-};
-
-export default memo(MarkdownRenderer, arePropsEqual);
+export default MarkdownRenderer;
