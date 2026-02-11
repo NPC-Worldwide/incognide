@@ -408,6 +408,13 @@ const CodeEditorPane = ({
         }
     }, [nodeId, contentDataRef, setRootLayoutNode, setPromptModal, currentPath]);
 
+    // Expose save function on paneData so the header save button can call it
+    useEffect(() => {
+        const paneData = contentDataRef.current[nodeId];
+        if (paneData) paneData.onSave = onSave;
+        return () => { if (paneData) delete paneData.onSave; };
+    }, [nodeId, onSave, contentDataRef]);
+
     const onEditorContextMenu = useCallback((e, selection) => {
         e.preventDefault();
         e.stopPropagation();

@@ -1095,6 +1095,9 @@ export const LayoutNode = memo(({ node, path, component }) => {
         } else if (contentType === 'editor' && contentId) {
             headerIcon = getFileIcon(contentId);
             headerTitle = getFileName(contentId);
+        } else if (contentType === 'editor' && !contentId) {
+            headerIcon = <FileIcon size={14} className="text-gray-400" />;
+            headerTitle = 'Untitled';
         } else if (contentType === 'browser') {
             headerIcon = <Globe size={14} className="text-blue-400" />;
             headerTitle = paneData.browserTitle || paneData.browserUrl || 'Web Browser';
@@ -1228,9 +1231,7 @@ export const LayoutNode = memo(({ node, path, component }) => {
                     <button
                         onClick={(e) => {
                             e.stopPropagation();
-                            // Trigger save - this will be handled by CodeEditor's onSave
-                            const event = new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true });
-                            document.dispatchEvent(event);
+                            if (paneData?.onSave) paneData.onSave();
                         }}
                         className="p-1 rounded text-xs theme-button theme-hover"
                         title="Save file (Ctrl+S)"
@@ -1440,7 +1441,7 @@ export const LayoutNode = memo(({ node, path, component }) => {
                         setDraggedItem={setDraggedItem}
                         setPaneContextMenu={setPaneContextMenu}
                         fileChanged={paneData?.fileChanged || activeTab?.fileChanged}
-                        onSave={() => { /* No-op, actual save logic is in renderFileEditor */ }}
+                        onSave={() => { if (paneData?.onSave) paneData.onSave(); }}
                         onStartRename={() => {
                             if (contentId && (contentType === 'editor' || contentType === 'latex' || contentType === 'csv' || contentType === 'docx' || contentType === 'pptx')) {
                                 setRenamingPaneId(node.id);

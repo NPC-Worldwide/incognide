@@ -108,10 +108,14 @@ export const PaneHeader = React.memo(({
                         whiteSpace: 'nowrap',
                         fontWeight: 600
                     }}
-                    title={filePath ? `Double-click to rename: ${title}` : title}
+                    title={filePath ? `Double-click to rename: ${title}` : (onSave ? 'Double-click to save as...' : title)}
                     onDoubleClick={(e) => {
                         e.stopPropagation();
-                        if (onStartRename && filePath) onStartRename();
+                        if (onStartRename && filePath) {
+                            onStartRename();
+                        } else if (onSave && !filePath) {
+                            onSave();
+                        }
                     }}
                 >
                     {title}{fileChanged ? ' *' : ''}
