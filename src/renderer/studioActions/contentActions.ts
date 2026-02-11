@@ -56,6 +56,30 @@ async function read_pane(
       };
       break;
 
+    case 'csv':
+      if (data.readSpreadsheetData) {
+        content = await data.readSpreadsheetData({ maxRows: 100, includeStats: true });
+      } else {
+        content = { type: 'csv', path: contentId };
+      }
+      break;
+
+    case 'docx':
+      if (data.readDocumentContent) {
+        content = await data.readDocumentContent({ format: 'text' });
+      } else {
+        content = { type: 'docx', path: contentId };
+      }
+      break;
+
+    case 'pptx':
+      if (data.readPresentation) {
+        content = await data.readPresentation();
+      } else {
+        content = { type: 'pptx', path: contentId };
+      }
+      break;
+
     default:
       content = contentId;
   }

@@ -615,6 +615,129 @@ ${htmlContent}
         return () => document.removeEventListener('click', handleClick);
     }, []);
 
+    // ═══════════════════════════════════════════════════════════════════
+    // Studio Actions: Expose document methods for AI control
+    // ═══════════════════════════════════════════════════════════════════
+    useEffect(() => {
+        if (!contentDataRef.current[nodeId]) return;
+        const ref = contentDataRef.current[nodeId];
+
+        // READ: Get document content as text or HTML
+        ref.readDocumentContent = async (opts?: { format?: 'text' | 'html' }) => {
+            const format = opts?.format || 'text';
+            if (format === 'html') {
+                return { success: true, content: editorRef.current?.innerHTML || '', format: 'html', filePath };
+            }
+            return {
+                success: true,
+                content: editorRef.current?.innerText || '',
+                format: 'text',
+                stats: documentStats,
+                filePath,
+            };
+        };
+
+        // EVAL: Execute arbitrary JS with access to {html, text, editorEl}
+        ref.evalDocument = async (code: string) => {
+            try {
+                const fn = new Function('ctx', code);
+                const result = fn({
+                    html: editorRef.current?.innerHTML || '',
+                    text: editorRef.current?.innerText || '',
+                    editorEl: editorRef.current,
+                });
+                if (result?.html !== undefined && editorRef.current) {
+                    editorRef.current.innerHTML = result.html;
+                    handleInput();
+                }
+                setHasChanges(true);
+                return { success: true, ...(result || {}) };
+            } catch (err: any) {
+                return { success: false, error: err.message };
+            }
+        };
+
+        // WRITE: Replace entire document content
+        ref.writeDocumentContent = async (html: string) => {
+            if (editorRef.current) {
+                editorRef.current.innerHTML = html;
+                handleInput();
+                setHasChanges(true);
+            }
+            return { success: true };
+        };
+
+        // WRITE: Insert content at position
+        ref.insertDocumentContent = async (html: string, position?: 'cursor' | 'end' | 'start') => {
+            if (!editorRef.current) return { success: false, error: 'Editor not ready' };
+            if (position === 'end') {
+                editorRef.current.innerHTML += html;
+            } else if (position === 'start') {
+                editorRef.current.innerHTML = html + editorRef.current.innerHTML;
+            } else {
+                insertAtCursor(html);
+            }
+            handleInput();
+            setHasChanges(true);
+            return { success: true };
+        };
+
+        // FORMAT: Apply formatting command
+        ref.formatDocument = async (command: string, value?: string) => {
+            editorRef.current?.focus();
+            execCommand(command, value || null);
+            return { success: true, command };
+        };
+
+        // TABLE: Insert table
+        ref.insertDocumentTable = async (rows: number, cols: number) => {
+            insertTable(rows, cols);
+            return { success: true, rows, cols };
+        };
+
+        // FIND
+        ref.findInDocument = async (searchText: string) => {
+            const content = editorRef.current?.innerText || '';
+            const regex = new RegExp(searchText, 'gi');
+            const matches = content.match(regex);
+            return { success: true, matchCount: matches?.length || 0, searchText };
+        };
+
+        // FIND & REPLACE
+        ref.replaceInDocument = async (search: string, replacement: string, all?: boolean) => {
+            if (!editorRef.current) return { success: false, error: 'Editor not ready' };
+            const content = editorRef.current.innerHTML;
+            const regex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), all ? 'gi' : 'i');
+            const newContent = content.replace(regex, replacement);
+            const changed = newContent !== content;
+            if (changed) {
+                editorRef.current.innerHTML = newContent;
+                handleInput();
+                setHasChanges(true);
+            }
+            return { success: true, changed };
+        };
+
+        // SAVE
+        ref.saveDocument = async () => {
+            await saveDocument();
+            return { success: true };
+        };
+
+        // STATS
+        ref.getDocumentStats = async () => {
+            return { success: true, ...documentStats, filePath };
+        };
+
+        // EXPORT
+        ref.exportDocumentAs = async (format: 'html' | 'markdown') => {
+            if (format === 'html') await exportAsHtml();
+            else if (format === 'markdown') await exportAsMarkdown();
+            return { success: true, format };
+        };
+    }, [nodeId, filePath, documentStats, handleInput, insertAtCursor, execCommand,
+        insertTable, saveDocument, exportAsHtml, exportAsMarkdown]);
+
     if (error) return <div className="p-4 text-red-500">Error: {error}</div>;
     if (!isLoaded) return (
         <div className="h-full flex items-center justify-center theme-bg-secondary">

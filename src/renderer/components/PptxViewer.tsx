@@ -1702,6 +1702,175 @@ const PptxViewer = ({
     });
   }, [emuToPx, updateParaHTML, themeColors]);
 
+  // ═══════════════════════════════════════════════════════════════════
+  // Studio Actions: Expose presentation methods for AI control
+  // ═══════════════════════════════════════════════════════════════════
+  const slidesRef = useRef(slides);
+  const idxRef = useRef(idx);
+  useEffect(() => { slidesRef.current = slides; }, [slides]);
+  useEffect(() => { idxRef.current = idx; }, [idx]);
+
+  useEffect(() => {
+    if (!contentDataRef.current[nodeId]) return;
+    const ref = contentDataRef.current[nodeId];
+
+    // READ: Get presentation overview with text content per slide
+    ref.readPresentation = async () => {
+      const s = slidesRef.current;
+      return {
+        success: true,
+        slideCount: s.length,
+        currentSlideIndex: idxRef.current,
+        slides: s.map((slide, i) => ({
+          index: i,
+          name: slide.name,
+          shapeCount: slide.shapes.length,
+          textContent: slide.shapes
+            .filter(sh => sh.type === 'text' && sh.paras)
+            .map(sh => sh.paras!.map(p => {
+              const div = document.createElement('div');
+              div.innerHTML = p.html;
+              return div.innerText;
+            }).join('\n'))
+            .join(' | '),
+          background: slide.background,
+        })),
+        filePath,
+        hasChanges,
+      };
+    };
+
+    // READ: Get detailed info about a specific slide
+    ref.readSlide = async (slideIndex?: number) => {
+      const si = slideIndex ?? idxRef.current;
+      const slide = slidesRef.current[si];
+      if (!slide) return { success: false, error: `Slide ${si} not found. Total slides: ${slidesRef.current.length}` };
+      return {
+        success: true,
+        index: si,
+        shapes: slide.shapes.map((sh, i) => ({
+          index: i,
+          type: sh.type,
+          position: sh.xfrm,
+          text: sh.paras?.map(p => {
+            const div = document.createElement('div');
+            div.innerHTML = p.html;
+            return div.innerText;
+          }).join('\n'),
+          fillColor: sh.fillColor,
+          shapeType: sh.shapeType,
+          name: sh.name,
+        })),
+        background: slide.background,
+      };
+    };
+
+    // EVAL: Execute arbitrary JS with access to slides data
+    ref.evalPresentation = async (code: string) => {
+      try {
+        const fn = new Function('ctx', code);
+        const result = fn({
+          slides: JSON.parse(JSON.stringify(slidesRef.current)),
+          currentIndex: idxRef.current,
+        });
+        if (result?.slides) {
+          setSlides(result.slides);
+          setHasChanges(true);
+        }
+        if (result?.currentIndex !== undefined) setIdx(result.currentIndex);
+        return { success: true, slideCount: result?.slides?.length || slidesRef.current.length };
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    };
+
+    // NAVIGATE: Go to slide
+    ref.goToSlide = async (slideIndex: number) => {
+      if (slideIndex < 0 || slideIndex >= slidesRef.current.length) {
+        return { success: false, error: `Invalid slide index: ${slideIndex}. Total: ${slidesRef.current.length}` };
+      }
+      setIdx(slideIndex);
+      return { success: true, slideIndex };
+    };
+
+    // WRITE: Update text in a shape
+    ref.updateSlideText = async (shapeIndex: number, text: string, slideIndex?: number) => {
+      const si = slideIndex ?? idxRef.current;
+      setSlides(prev => {
+        const next = [...prev];
+        const s = { ...next[si] };
+        const shapes = [...s.shapes];
+        const sh = { ...shapes[shapeIndex] };
+        if (sh.paras && sh.paras.length > 0) {
+          const paras = [...sh.paras];
+          // Replace all paragraph text, keep first para formatting
+          paras[0] = { ...paras[0], html: text.replace(/</g, '&lt;').replace(/>/g, '&gt;') };
+          // Remove extra paragraphs if just setting a single text
+          sh.paras = [paras[0]];
+        }
+        shapes[shapeIndex] = sh;
+        s.shapes = shapes;
+        next[si] = s;
+        return next;
+      });
+      setHasChanges(true);
+      return { success: true };
+    };
+
+    // STRUCT: Add slide
+    ref.addPresentationSlide = async () => {
+      addSlide();
+      return { success: true, slideCount: slidesRef.current.length + 1 };
+    };
+
+    // STRUCT: Delete slide
+    ref.deletePresentationSlide = async (slideIndex?: number) => {
+      const si = slideIndex ?? idxRef.current;
+      if (slidesRef.current.length <= 1) return { success: false, error: 'Cannot delete the only slide' };
+      setSlides(prev => prev.filter((_, i) => i !== si));
+      setIdx(Math.max(0, si - 1));
+      setHasChanges(true);
+      return { success: true };
+    };
+
+    // STRUCT: Duplicate slide
+    ref.duplicatePresentationSlide = async (slideIndex?: number) => {
+      const si = slideIndex ?? idxRef.current;
+      const slide = slidesRef.current[si];
+      if (!slide) return { success: false, error: `Slide ${si} not found` };
+      const cloned: Slide = {
+        ...slide,
+        shapes: slide.shapes.map(s => ({ ...s, paras: s.paras?.map(p => ({ ...p })) })),
+      };
+      setSlides(prev => {
+        const next = [...prev];
+        next.splice(si + 1, 0, cloned);
+        return next;
+      });
+      setIdx(si + 1);
+      setHasChanges(true);
+      return { success: true, slideCount: slidesRef.current.length + 1 };
+    };
+
+    // STYLE: Set slide background
+    ref.setPresentationSlideBackground = async (color: string) => {
+      setSlideBackground(color);
+      return { success: true, color };
+    };
+
+    // SHAPE: Add shape
+    ref.addPresentationShape = async (shapeType: string, color?: string) => {
+      addShape(shapeType, color || '#4285f4');
+      return { success: true, shapeType };
+    };
+
+    // SAVE
+    ref.savePresentation = async () => {
+      await save();
+      return { success: true };
+    };
+  }, [nodeId, filePath, hasChanges, addSlide, addShape, setSlideBackground, save, updateParaHTML]);
+
   // Error state
   if (err) {
     return (
