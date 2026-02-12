@@ -130,6 +130,9 @@ function register(ctx) {
     delete cleanEnv.VSCODE_CWD;
     delete cleanEnv.VSCODE_NLS_CONFIG;
 
+    // Force unbuffered stdout for Python so output isn't lost after terminal resize (SIGWINCH)
+    cleanEnv.PYTHONUNBUFFERED = '1';
+
     // Set BROWSER to incognide so URLs opened from terminal (like gcloud auth login)
     // open in incognide's browser pane instead of the system browser
     // This works because incognide's second-instance handler catches URL arguments

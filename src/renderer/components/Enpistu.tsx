@@ -399,7 +399,8 @@ const ChatInterface = () => {
         gitNewBranchName, setGitNewBranchName, gitSelectedCommit,
         gitFileDiff, setGitFileDiff,
         loadGitStatus, gitStageFile, gitUnstageFile, gitCommitChanges,
-        gitPullChanges, gitPushChanges, gitPushWithUpstream, gitEnableAutoSetupRemote,
+        gitPullChanges, gitPushChanges, gitPushWithUpstream, gitEnableAutoSetupRemote, gitPullAndPush,
+        pushRejectedPrompt, setPushRejectedPrompt,
         loadGitDiff, loadGitBranches, loadGitHistory,
         gitCreateBranch, gitCheckoutBranch, gitDeleteBranch,
         loadCommitDetails, loadFileDiff,
@@ -2933,14 +2934,17 @@ const renderGitPane = useCallback(({ nodeId }: { nodeId: string }) => {
             gitDeleteBranch={gitDeleteBranch}
             gitPushWithUpstream={gitPushWithUpstream}
             gitEnableAutoSetupRemote={gitEnableAutoSetupRemote}
+            gitPullAndPush={gitPullAndPush}
+            pushRejectedPrompt={pushRejectedPrompt}
+            setPushRejectedPrompt={setPushRejectedPrompt}
             openFileDiffPane={openFileDiffPane}
         />
     );
 }, [gitStatus, gitModalTab, gitDiffContent, gitBranches, gitCommitHistory, gitCommitMessage, gitNewBranchName, gitSelectedCommit, gitError,
-    gitLoading, noUpstreamPrompt,
+    gitLoading, noUpstreamPrompt, pushRejectedPrompt,
     loadGitStatus, loadGitDiff, loadGitBranches, loadGitHistory, loadCommitDetails,
     gitStageFile, gitUnstageFile, gitCommitChanges, gitPushChanges, gitPullChanges, gitCreateBranch, gitCheckoutBranch, gitDeleteBranch,
-    gitPushWithUpstream, gitEnableAutoSetupRemote, openFileDiffPane]);
+    gitPushWithUpstream, gitEnableAutoSetupRemote, gitPullAndPush, setPushRejectedPrompt, openFileDiffPane]);
 
 
 // Render FolderViewer pane (for pane-based folder browsing)
@@ -6339,6 +6343,9 @@ ${contextPrompt}`;
                     gitDeleteBranch={gitDeleteBranch}
                     gitPushWithUpstream={gitPushWithUpstream}
                     gitEnableAutoSetupRemote={gitEnableAutoSetupRemote}
+                    gitPullAndPush={gitPullAndPush}
+                    pushRejectedPrompt={pushRejectedPrompt}
+                    setPushRejectedPrompt={setPushRejectedPrompt}
                 />
             )}
 

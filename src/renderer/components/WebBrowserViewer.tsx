@@ -1211,8 +1211,10 @@ const WebBrowserViewer = memo(({
                     if (creds && creds.username && creds.password) {
                         // Check if this exact credential is already saved
                         const existingResult = await (window as any).api?.passwordGetForSite?.(creds.site);
+                        // passwordGetForSite returns { id, site, username } without password for security,
+                        // so we check by username only (already filtered by site domain)
                         const isDuplicate = existingResult?.credentials?.some(
-                            (saved: any) => saved.username === creds.username && saved.password === creds.password
+                            (saved: any) => saved.username === creds.username
                         );
                         if (!isDuplicate) {
                             setPendingCredentials(creds);

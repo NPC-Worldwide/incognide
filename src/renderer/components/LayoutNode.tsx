@@ -1272,6 +1272,36 @@ export const LayoutNode = memo(({ node, path, component }) => {
             );
         }
 
+        // LaTeX pane buttons (save, compile)
+        if (contentType === 'latex') {
+            paneHeaderChildren = (
+                <div className="flex items-center gap-1">
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (paneData?.onSave) paneData.onSave();
+                        }}
+                        disabled={!paneData?.hasChanges || paneData?.isSaving}
+                        className="p-1 rounded text-xs theme-button theme-hover disabled:opacity-30"
+                        title="Save (Ctrl+S)"
+                    >
+                        {paneData?.isSaving ? <Loader size={12} className="animate-spin" /> : <Save size={12} />}
+                    </button>
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (paneData?.onCompile) paneData.onCompile(true);
+                        }}
+                        disabled={paneData?.isCompiling}
+                        className={`p-1 rounded text-xs theme-button theme-hover disabled:opacity-50 ${paneData?.isCompiling ? 'text-yellow-400' : paneData?.compileStatus === 'success' ? 'text-green-400' : paneData?.compileStatus === 'error' ? 'text-red-400' : ''}`}
+                        title="Compile & Preview (Ctrl+Enter)"
+                    >
+                        {paneData?.isCompiling ? <Loader size={12} className="animate-spin" /> : <Play size={12} />}
+                    </button>
+                </div>
+            );
+        }
+
         // Chat pane uses custom header content
         if (contentType === 'chat') {
             const chatStats = paneData?.chatStats || { messageCount: 0, tokenCount: 0, models: new Set(), agents: new Set(), providers: new Set() };

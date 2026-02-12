@@ -2322,7 +2322,7 @@ const renderWebsiteList = () => {
                                     className={`text-left truncate hover:underline flex-1 ${file.isUntracked ? "text-gray-400" : "text-yellow-300"}`}
                                     title={`Click to view diff: ${file.path}`}
                                 >
-                                    {file.path} (<span className="font-medium">{file.status}</span>)
+                                    {getFileName(file.path)} (<span className="font-medium">{file.status}</span>)
                                 </button>
                                 <button
                                     onClick={() => gitStageFile(file.path)}
@@ -2345,7 +2345,7 @@ const renderWebsiteList = () => {
                                     className="text-left truncate hover:underline flex-1"
                                     title={`Click to view diff: ${file.path}`}
                                 >
-                                    {file.path} (<span className="text-teal-500 font-medium">{file.status}</span>)
+                                    {getFileName(file.path)} (<span className="text-teal-500 font-medium">{file.status}</span>)
                                 </button>
                                 <button
                                     onClick={() => gitUnstageFile(file.path)}
@@ -2418,6 +2418,26 @@ const renderWebsiteList = () => {
                                     </div>
                                 </div>
                             )}
+                            {pushRejectedPrompt && (
+                                <div className="mt-2 p-2 bg-amber-900/30 border border-amber-600/50 rounded text-xs">
+                                    <div className="text-amber-400 mb-2">Push rejected — remote has new commits. Pull first to integrate?</div>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={gitPullAndPush}
+                                            disabled={gitLoading}
+                                            className="px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-white text-[10px]"
+                                        >
+                                            Pull & Push
+                                        </button>
+                                        <button
+                                            onClick={() => setPushRejectedPrompt(false)}
+                                            className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-white text-[10px]"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
@@ -2480,16 +2500,20 @@ const renderWebsiteList = () => {
       };
       
       const [noUpstreamPrompt, setNoUpstreamPrompt] = useState<{ branch: string; command: string } | null>(null);
+      const [pushRejectedPrompt, setPushRejectedPrompt] = useState(false);
 
       const gitPushChanges = async () => {
         setGitLoading(true);
         setGitError(null);
         setNoUpstreamPrompt(null);
+        setPushRejectedPrompt(false);
         try {
           const result = await window.api.gitPush(currentPath);
           if (!result.success) {
             if (result.noUpstream) {
               setNoUpstreamPrompt({ branch: result.currentBranch, command: result.suggestedCommand });
+            } else if (result.rejected) {
+              setPushRejectedPrompt(true);
             } else {
               setGitError(result.error || 'Failed to push');
             }
@@ -2528,6 +2552,29 @@ const renderWebsiteList = () => {
           await gitPushWithUpstream();
         } catch (err) {
           setGitError(err.message || 'Failed to set config');
+        }
+      };
+
+      const gitPullAndPush = async () => {
+        setGitLoading(true);
+        setGitError(null);
+        setPushRejectedPrompt(false);
+        try {
+          const pullResult = await window.api.gitPull(currentPath);
+          if (!pullResult.success) {
+            setGitError(pullResult.error || 'Failed to pull');
+            return;
+          }
+          const pushResult = await window.api.gitPush(currentPath);
+          if (!pushResult.success) {
+            setGitError(pushResult.error || 'Failed to push after pull');
+          } else {
+            await loadGitStatus();
+          }
+        } catch (err) {
+          setGitError(err.message || 'Failed to pull and push');
+        } finally {
+          setGitLoading(false);
         }
       };
 
@@ -3982,6 +4029,27 @@ const renderFolderList = (structure) => {
 
                             {gitError && <div className="text-[9px] text-pink-400">{gitError}</div>}
 
+                            {noUpstreamPrompt && (
+                                <div className="p-1.5 bg-amber-900/30 border border-amber-600/50 rounded">
+                                    <div className="text-amber-400 text-[9px] mb-1">No upstream. Push to origin/{noUpstreamPrompt.branch}?</div>
+                                    <div className="flex gap-1">
+                                        <button onClick={gitPushWithUpstream} disabled={gitLoading} className="px-1.5 py-0.5 bg-blue-600 hover:bg-blue-500 rounded text-white text-[9px]">Push</button>
+                                        <button onClick={gitEnableAutoSetupRemote} disabled={gitLoading} className="px-1.5 py-0.5 bg-teal-600 hover:bg-teal-500 rounded text-white text-[9px]" title="Sets git config push.autoSetupRemote true">Always Auto-Push</button>
+                                        <button onClick={() => setNoUpstreamPrompt(null)} className="px-1.5 py-0.5 bg-gray-600 hover:bg-gray-500 rounded text-white text-[9px]">Cancel</button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {pushRejectedPrompt && (
+                                <div className="p-1.5 bg-amber-900/30 border border-amber-600/50 rounded">
+                                    <div className="text-amber-400 text-[9px] mb-1">Push rejected — remote has new commits. Pull first?</div>
+                                    <div className="flex gap-1">
+                                        <button onClick={gitPullAndPush} disabled={gitLoading} className="px-1.5 py-0.5 bg-blue-600 hover:bg-blue-500 rounded text-white text-[9px]">Pull & Push</button>
+                                        <button onClick={() => setPushRejectedPrompt(false)} className="px-1.5 py-0.5 bg-gray-600 hover:bg-gray-500 rounded text-white text-[9px]">Cancel</button>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Separator before file list */}
                             {totalChanges > 0 && <div className="border-t border-gray-700/50" />}
 
@@ -4011,7 +4079,7 @@ const renderFolderList = (structure) => {
                                                 onClick={() => openDiffViewer(file.path, 'conflict')}
                                                 className="text-pink-300 truncate text-left hover:underline mb-1"
                                             >
-                                                {file.path}
+                                                {getFileName(file.path)}
                                             </button>
                                             <div className="flex items-center gap-1">
                                                 <button
@@ -4056,7 +4124,7 @@ const renderFolderList = (structure) => {
                                                 onClick={() => openDiffViewer(file.path, file.status)}
                                                 className="text-yellow-300 truncate flex-1 text-left hover:underline"
                                             >
-                                                {file.path}
+                                                {getFileName(file.path)}
                                             </button>
                                             <div className="flex items-center gap-1">
                                                 <span className="text-yellow-500 text-[9px] opacity-60" title={file.status}>{shortStatus}</span>
@@ -4106,7 +4174,7 @@ const renderFolderList = (structure) => {
                                                 onClick={() => openDiffViewer(file.path, file.status)}
                                                 className="text-teal-300 truncate flex-1 text-left hover:underline"
                                             >
-                                                {file.path}
+                                                {getFileName(file.path)}
                                             </button>
                                             <div className="flex items-center gap-1">
                                                 <span className="text-teal-500 text-[9px] opacity-60">{file.status}</span>
@@ -4142,7 +4210,7 @@ const renderFolderList = (structure) => {
                                                 onClick={() => handleFileClick(`${currentPath}/${file.path}`)}
                                                 className="text-gray-400 truncate flex-1 text-left hover:underline"
                                             >
-                                                {file.path}
+                                                {getFileName(file.path)}
                                             </button>
                                             <div className="flex items-center gap-1">
                                                 <span className="text-gray-500 text-[9px] opacity-60">new</span>

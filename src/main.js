@@ -662,7 +662,8 @@ app.on('web-contents-created', (event, contents) => {
       });
       newWindow.webContents.on('will-navigate', (event, url) => {
         if (url && url !== 'about:blank') {
-          event.preventDefault();
+          // Don't call event.preventDefault() - that blocks popups like Google Drive→Colab
+          // Instead, let the navigation happen and capture it via did-navigate
           checkAndRedirect(url);
         }
       });
@@ -1290,6 +1291,113 @@ if (!gotTheLock) {
   app.quit();
 } else {
 
+  // Register incognide:// protocol handler so browser-interceptor.sh deep links work
+  if (process.defaultApp) {
+    // Dev mode: register with path to electron + script
+    app.setAsDefaultProtocolClient('incognide', process.execPath, [path.resolve(process.argv[1])]);
+  } else {
+    app.setAsDefaultProtocolClient('incognide');
+  }
+
+  // Queue for URLs received before the main window is ready
+  let pendingDeepLinkUrl = null;
+
+  // Helper to open a URL in the app's browser pane
+  const openUrlInBrowserPane = (targetUrl) => {
+    const windows = BrowserWindow.getAllWindows();
+    if (windows.length) {
+      const mainWindow = BrowserWindow.getFocusedWindow() || windows[0];
+      log(`[DEEP-LINK] Opening URL in browser pane: ${targetUrl}`);
+      mainWindow.webContents.send('open-url-in-browser', { url: targetUrl });
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    } else {
+      // Window not ready yet, queue it
+      pendingDeepLinkUrl = targetUrl;
+    }
+  };
+
+  // Handle incognide:// deep links (macOS open-url event)
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    log(`[DEEP-LINK] Received open-url: ${url}`);
+
+    // Parse incognide://open-url?url=<encoded-url>
+    if (url.startsWith('incognide://open-url')) {
+      const prefix = 'incognide://open-url?url=';
+      if (url.startsWith(prefix)) {
+        let targetUrl = url.substring(prefix.length);
+        // Decode %26 back to & (browser-interceptor.sh encodes & for shell safety)
+        targetUrl = decodeURIComponent(targetUrl);
+        openUrlInBrowserPane(targetUrl);
+      }
+    } else if (url.startsWith('incognide://')) {
+      // Other incognide:// schemes - try to extract a URL
+      const match = url.match(/url=(.+)/);
+      if (match) {
+        openUrlInBrowserPane(decodeURIComponent(match[1]));
+      }
+    }
+  });
+
+  // Watch browser_intercept.txt for URLs written by browser-interceptor.sh (fallback)
+  const interceptFilePath = path.join(os.homedir(), '.npcsh', 'incognide', 'browser_intercept.txt');
+  let interceptWatcher = null;
+  const startInterceptFileWatcher = () => {
+    try {
+      // Ensure the directory exists
+      const interceptDir = path.dirname(interceptFilePath);
+      fs.mkdirSync(interceptDir, { recursive: true });
+
+      // Track file size to only read new lines
+      let lastSize = 0;
+      try {
+        lastSize = fs.statSync(interceptFilePath).size;
+      } catch (e) {
+        // File doesn't exist yet, that's fine
+      }
+
+      interceptWatcher = fs.watch(interceptDir, (eventType, filename) => {
+        if (filename !== 'browser_intercept.txt') return;
+        try {
+          const stat = fs.statSync(interceptFilePath);
+          if (stat.size > lastSize) {
+            // Read only the new content
+            const fd = fs.openSync(interceptFilePath, 'r');
+            const buf = Buffer.alloc(stat.size - lastSize);
+            fs.readSync(fd, buf, 0, buf.length, lastSize);
+            fs.closeSync(fd);
+            lastSize = stat.size;
+
+            const newContent = buf.toString('utf8').trim();
+            if (newContent) {
+              // Each line is a URL
+              const urls = newContent.split('\n').filter(u => u.trim());
+              for (const url of urls) {
+                const trimmed = url.trim();
+                if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+                  log(`[INTERCEPT-FILE] Opening URL from browser_intercept.txt: ${trimmed}`);
+                  openUrlInBrowserPane(trimmed);
+                }
+              }
+            }
+          }
+        } catch (e) {
+          log(`[INTERCEPT-FILE] Error reading intercept file: ${e.message}`);
+        }
+      });
+      log('[INTERCEPT-FILE] Watching browser_intercept.txt for intercepted URLs');
+    } catch (e) {
+      log(`[INTERCEPT-FILE] Failed to start file watcher: ${e.message}`);
+    }
+  };
+
+  // Export pending URL getter for use after window creation
+  const getPendingDeepLinkUrl = () => {
+    const url = pendingDeepLinkUrl;
+    pendingDeepLinkUrl = null;
+    return url;
+  };
 
   const expandHomeDir = (filepath) => {
     if (filepath.startsWith('~')) {
@@ -1298,7 +1406,7 @@ if (!gotTheLock) {
     return filepath;
   };
 
- 
+
   app.on('second-instance', (event, commandLine, workingDirectory) => {
     const windows = BrowserWindow.getAllWindows();
     if (windows.length) {
@@ -1812,6 +1920,16 @@ function createWindow(cliArgs = {}) {
           mainWindow.webContents.send('open-url-in-browser', { url: openUrl });
         }
       }
+
+      // Check for any deep link URLs that arrived before the window was ready
+      const pendingUrl = getPendingDeepLinkUrl();
+      if (pendingUrl) {
+        log(`[DEEP-LINK] Opening pending deep link URL: ${pendingUrl}`);
+        mainWindow.webContents.send('open-url-in-browser', { url: pendingUrl });
+      }
+
+      // Start watching the intercept file for URLs from browser-interceptor.sh
+      startInterceptFileWatcher();
     });
 }
 

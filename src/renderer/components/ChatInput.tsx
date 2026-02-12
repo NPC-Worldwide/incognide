@@ -738,6 +738,8 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     };
 
     // Context pane chips - inline display of open panes with toggle
+    // Recompute on every render since contentDataRef is a mutable ref that
+    // doesn't trigger React updates when panes are added/removed
     const openPanes = useMemo(() => {
         if (!contentDataRef?.current) return [];
         const panes: Array<{ id: string; type: string; label: string }> = [];
@@ -753,7 +755,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
             if (label) panes.push({ id: paneId, type: paneData.contentType, label });
         });
         return panes;
-    }, [contentDataRef?.current]);
+    });
 
     const isPaneIncluded = (paneId: string) => {
         if (contextPaneOverrides && contextPaneOverrides[paneId] !== undefined) return contextPaneOverrides[paneId];

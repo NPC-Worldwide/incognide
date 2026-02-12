@@ -553,6 +553,20 @@ const LatexViewer = ({
         return () => window.removeEventListener('keydown', handler);
     }, [save, compile]);
 
+    // Expose save/compile on paneData so PaneHeader buttons can call them
+    useEffect(() => {
+        const paneData = contentDataRef.current[nodeId];
+        if (paneData) {
+            paneData.onSave = save;
+            paneData.onCompile = compile;
+            paneData.hasChanges = hasChanges;
+            paneData.fileChanged = hasChanges;
+            paneData.isSaving = isSaving;
+            paneData.isCompiling = isCompiling;
+            paneData.compileStatus = compileStatus;
+        }
+    }, [nodeId, save, compile, hasChanges, isSaving, isCompiling, compileStatus, contentDataRef]);
+
     // Close menus on outside click
     useEffect(() => {
         const handler = (e: MouseEvent) => {
@@ -583,61 +597,7 @@ const LatexViewer = ({
 
     return (
         <div className="h-full flex flex-col theme-bg-secondary overflow-hidden">
-            {/* Header */}
-            <div
-                draggable
-                onDragStart={(e) => {
-                    e.dataTransfer.effectAllowed = 'move';
-                    const nodePath = findNodePath(rootLayoutNode, nodeId);
-                    e.dataTransfer.setData('application/json', JSON.stringify({ type: 'pane', id: nodeId, nodePath }));
-                    setTimeout(() => setDraggedItem({ type: 'pane', id: nodeId, nodePath }), 0);
-                }}
-                onDragEnd={() => setDraggedItem(null)}
-                onContextMenu={(e) => {
-                    e.preventDefault();
-                    setPaneContextMenu({ isOpen: true, x: e.clientX, y: e.clientY, nodeId, nodePath: findNodePath(rootLayoutNode, nodeId) });
-                }}
-                className="px-3 py-2 border-b theme-border theme-bg-secondary cursor-move flex items-center justify-between"
-            >
-                <div className="flex items-center gap-2">
-                    <FileCode size={14} className="text-green-400" />
-                    <span className="text-sm font-medium truncate">
-                        {getFileName(filePath) || 'Untitled'}{hasChanges ? ' *' : ''}
-                    </span>
-                </div>
-                <div className="flex items-center gap-1">
-                    <button onClick={save} disabled={!hasChanges || isSaving} className="p-1.5 theme-hover rounded disabled:opacity-30" title="Save (Ctrl+S)">
-                        {isSaving ? <Loader size={14} className="animate-spin" /> : <Save size={14} />}
-                    </button>
-                    <button
-                        onClick={() => compile(true)}
-                        disabled={isCompiling}
-                        className={`p-1.5 theme-hover rounded disabled:opacity-50 flex items-center gap-1 ${isCompiling ? 'text-yellow-400' : compileStatus === 'success' ? 'text-green-400' : compileStatus === 'error' ? 'text-red-400' : ''}`}
-                        title="Compile & Preview (Ctrl+Enter)"
-                    >
-                        {isCompiling ? <Loader size={14} className="animate-spin" /> : <Play size={14} />}
-                    </button>
-                    <button onClick={() => openPdfInSplit(filePath.replace(/\.tex$/i, '.pdf'))} className="p-1.5 theme-hover rounded" title="Open PDF in split">
-                        <SplitSquareHorizontal size={14} />
-                    </button>
-                    <button onClick={async () => { await (window as any).api.openFile(filePath.replace(/\.tex$/i, '.pdf')); }} className="p-1.5 theme-hover rounded" title="Open PDF externally">
-                        <ExternalLink size={14} />
-                    </button>
-                    <div className="w-px h-4 bg-gray-600 mx-1" />
-                    <button onClick={() => setShowOutline(!showOutline)} className={`p-1.5 rounded ${showOutline ? 'bg-blue-600/30' : 'theme-hover'}`} title="Document Outline">
-                        <BookOpen size={14} />
-                    </button>
-                    <button onClick={() => setShowSymbols(!showSymbols)} className={`p-1.5 rounded ${showSymbols ? 'bg-blue-600/30' : 'theme-hover'}`} title="Math Symbols">
-                        <Sigma size={14} />
-                    </button>
-                    <button onClick={() => setShowLog(!showLog)} className={`p-1.5 rounded ${showLog ? 'bg-blue-600/30' : 'theme-hover'}`} title="Build Log">
-                        <Terminal size={14} />
-                    </button>
-                    <button onClick={() => closeContentPane(nodeId, findNodePath(rootLayoutNode, nodeId))} className="p-1.5 theme-hover rounded-full" title="Close">
-                        <X size={14} />
-                    </button>
-                </div>
-            </div>
+            {/* Header is now rendered by PaneHeader in LayoutNode */}
 
             {/* Toolbar */}
             <div className="px-2 py-1.5 border-b theme-border theme-bg-tertiary flex items-center gap-1 flex-wrap">

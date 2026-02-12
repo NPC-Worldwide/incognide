@@ -147,7 +147,13 @@
     "buildDependenciesFromSource": false,
     "nodeGypRebuild": false,
     "npmRebuild": false,
-    "forceCodeSigning": false
+    "forceCodeSigning": false,
+    "protocols": [
+      {
+        "name": "Incognide URL",
+        "schemes": ["incognide"]
+      }
+    ]
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.2.0",

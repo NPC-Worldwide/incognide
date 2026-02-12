@@ -1029,12 +1029,48 @@ export const usePaneAwareStreamListeners = (
         const cleanupStreamComplete = window.api.onStreamComplete(handleStreamComplete);
         const cleanupStreamError = window.api.onStreamError(handleStreamError);
 
+        // Safety net: periodically check for stale streams that never received stream-complete
+        // This handles cases where the backend fails to send completion (e.g., sender destroyed, connection drop)
+        const staleStreamInterval = setInterval(() => {
+            const activeStreams = Object.keys(streamToPaneRef.current);
+            if (activeStreams.length === 0) return;
+
+            for (const streamId of activeStreams) {
+                const targetPaneId = streamToPaneRef.current[streamId];
+                if (!targetPaneId) continue;
+                const paneData = contentDataRef.current[targetPaneId];
+                if (!paneData?.chatMessages) continue;
+                const msg = paneData.chatMessages.allMessages.find((m: any) => m.id === streamId);
+                if (!msg || !msg.isStreaming) {
+                    // Stream ref exists but message isn't streaming - clean up orphan
+                    delete streamToPaneRef.current[streamId];
+                    continue;
+                }
+                // If the message has content but hasn't updated in a while, the stream likely dropped
+                // We track this by checking if the message timestamp is old
+                const msgTime = new Date(msg.timestamp).getTime();
+                const elapsed = Date.now() - msgTime;
+                // If streaming for more than 5 minutes with content, mark as complete
+                if (elapsed > 300000 && msg.content && msg.content.length > 0) {
+                    console.warn(`[STREAM] Stale stream detected: ${streamId} (${Math.round(elapsed/1000)}s). Marking as complete.`);
+                    msg.isStreaming = false;
+                    msg.streamId = null;
+                    delete streamToPaneRef.current[streamId];
+                    if (Object.keys(streamToPaneRef.current).length === 0) {
+                        setIsStreaming(false);
+                    }
+                    setRootLayoutNode(prev => ({ ...prev }));
+                }
+            }
+        }, 30000); // Check every 30 seconds
+
         listenersAttached.current = true;
 
         return () => {
             cleanupStreamData();
             cleanupStreamComplete();
             cleanupStreamError();
+            clearInterval(staleStreamInterval);
             listenersAttached.current = false;
         };
     }, [config, listenersAttached, streamToPaneRef, contentDataRef, setRootLayoutNode, setIsStreaming, setAiEditModal, parseAgenticResponse, getConversationStats, refreshConversations, studioContext]);
