@@ -24,35 +24,56 @@ from mcp.server.fastmcp import FastMCP
 mcp = FastMCP("incognide_mcp")
 
 # Incognide backend URL - connects to the same backend that serves the frontend
-INCOGNIDE_BACKEND_URL = os.environ.get("INCOGNIDE_BACKEND_URL", "http://127.0.0.1:5437")
+# Dev: 5437, Prod: 5337. Auto-detect if not explicitly set.
+def _detect_backend_url():
+    explicit = os.environ.get("INCOGNIDE_BACKEND_URL", "")
+    if explicit:
+        return explicit
+    import socket
+    for port in [5337, 5437]:  # Prefer prod
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.5)
+            s.connect(("127.0.0.1", port))
+            s.close()
+            return f"http://127.0.0.1:{port}"
+        except:
+            pass
+    return "http://127.0.0.1:5437"  # Fallback to dev
+
+INCOGNIDE_BACKEND_URL = _detect_backend_url()
+
+# Target window for actions (set via set_target_window tool)
+_target_window_id = ""
 
 
-async def call_incognide_action(action: str, args: Dict[str, Any]) -> Dict[str, Any]:
+async def call_incognide_action(action: str, args: Dict[str, Any], window_id: str = "") -> Dict[str, Any]:
     """
     Call an Incognide studio action via the backend API.
 
     Args:
         action: The action name (e.g., 'open_pane', 'navigate')
         args: Arguments for the action
+        window_id: Optional window ID to target. Falls back to _target_window_id.
 
     Returns:
         Result dictionary from the action
     """
     import sys
-    print(f"[MCP SERVER] call_incognide_action: {action} args={args}", file=sys.stderr)
-    print(f"[MCP SERVER] Backend URL: {INCOGNIDE_BACKEND_URL}", file=sys.stderr)
+    effective_window_id = window_id or _target_window_id
+    print(f"[MCP SERVER] call_incognide_action: {action} window={effective_window_id}", file=sys.stderr)
     try:
+        payload = {"action": action, "args": args}
+        if effective_window_id:
+            payload["window_id"] = effective_window_id
         async with aiohttp.ClientSession() as session:
-            print(f"[MCP SERVER] POSTing to {INCOGNIDE_BACKEND_URL}/api/studio/action", file=sys.stderr)
             async with session.post(
                 f"{INCOGNIDE_BACKEND_URL}/api/studio/action",
-                json={"action": action, "args": args},
+                json=payload,
                 timeout=aiohttp.ClientTimeout(total=30)
             ) as response:
-                print(f"[MCP SERVER] Response status: {response.status}", file=sys.stderr)
                 if response.status == 200:
                     result = await response.json()
-                    print(f"[MCP SERVER] Result: {result}", file=sys.stderr)
                     return result
                 else:
                     error_text = await response.text()
@@ -67,6 +88,78 @@ async def call_incognide_action(action: str, args: Dict[str, Any]) -> Dict[str, 
         traceback.print_exc(file=sys.stderr)
         return {"success": False, "error": f"Error: {str(e)}"}
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# WINDOW MANAGEMENT TOOLS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@mcp.tool()
+async def list_windows() -> str:
+    """
+    List all connected Incognide windows with their IDs, folder paths, and titles.
+    Use this to discover which windows are open before targeting actions.
+
+    Returns:
+        JSON array of windows with id, folder, title
+    """
+    import sys
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{INCOGNIDE_BACKEND_URL}/api/studio/windows",
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    return json.dumps(result, indent=2)
+                else:
+                    error_text = await response.text()
+                    return json.dumps({"success": False, "error": f"HTTP {response.status}: {error_text}"})
+    except Exception as e:
+        print(f"[MCP SERVER] list_windows error: {e}", file=sys.stderr)
+        return json.dumps({"success": False, "error": str(e)})
+
+
+@mcp.tool()
+async def set_target_window(window_id: str) -> str:
+    """
+    Set the default target window for all subsequent actions.
+    After calling this, all tools will route to this window unless overridden.
+    Use list_windows() first to find the right window ID.
+
+    Args:
+        window_id: The window ID to target (from list_windows), or empty string to clear
+
+    Returns:
+        JSON confirmation with the set window ID
+    """
+    global _target_window_id
+    _target_window_id = window_id
+    return json.dumps({
+        "success": True,
+        "target_window_id": window_id,
+        "message": f"Target window set to: {window_id}" if window_id else "Target window cleared (broadcast mode)"
+    })
+
+
+@mcp.tool()
+async def get_target_window() -> str:
+    """
+    Get the currently set target window ID.
+
+    Returns:
+        JSON with the current target window ID
+    """
+    return json.dumps({
+        "success": True,
+        "target_window_id": _target_window_id,
+        "is_set": bool(_target_window_id)
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PANE MANAGEMENT TOOLS
+# ═══════════════════════════════════════════════════════════════════════════════
 
 @mcp.tool()
 async def open_pane(
@@ -1104,7 +1197,8 @@ async def presentation_save(pane_id: str = "active") -> str:
 if __name__ == "__main__":
     print(f"Starting Incognide MCP server...")
     print(f"Backend URL: {INCOGNIDE_BACKEND_URL}")
-    print(f"Available tools: open_pane, close_pane, focus_pane, list_panes,")
+    print(f"Available tools: list_windows, set_target_window, get_target_window,")
+    print(f"                 open_pane, close_pane, focus_pane, list_panes,")
     print(f"                 navigate_browser, show_diff, request_approval,")
     print(f"                 notify, get_browser_info, split_pane, zen_mode,")
     print(f"                 run_terminal, browser_click, browser_type,")

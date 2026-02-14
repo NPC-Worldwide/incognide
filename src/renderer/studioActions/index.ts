@@ -19,6 +19,8 @@ export interface StudioContext {
   toggleZenMode?: (paneId: string) => void;
   generateId: () => string;
   findPanePath: (node: any, paneId: string, path?: number[]) => number[] | null;
+  windowId?: string;
+  currentPath?: string;
 }
 
 export interface StudioActionResult {
@@ -53,6 +55,7 @@ async function ensureInitialized() {
   await import('./browserActions');
   await import('./dataActions');
   await import('./uiActions');
+  await import('./windowActions');
 
   console.log('[StudioActions] All actions loaded:', Object.keys(actions));
 }
