@@ -8,6 +8,24 @@ const yaml = require('js-yaml');
 function register(ctx) {
   const { ipcMain, getMainWindow, callBackendApi, BACKEND_URL, log, generateId, activeStreams, appDir } = ctx;
 
+  // ============== Deploy bundled MCP servers ==============
+  // Copy incognide_mcp_server.py from app source to ~/.npcsh/incognide/npc_team/
+  (async () => {
+    try {
+      const sourcePath = path.join(appDir, 'mcp_servers', 'incognide_mcp_server.py');
+      const destDir = path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team');
+      const destPath = path.join(destDir, 'incognide_mcp_server.py');
+
+      if (fs.existsSync(sourcePath)) {
+        await fsPromises.mkdir(destDir, { recursive: true });
+        await fsPromises.copyFile(sourcePath, destPath);
+        log(`[MCP] Deployed incognide_mcp_server.py to ${destPath}`);
+      }
+    } catch (e) {
+      console.warn('[MCP] Failed to deploy incognide_mcp_server.py:', e.message);
+    }
+  })();
+
   // ============== Jinx Handlers ==============
 
   ipcMain.handle('getAvailableJinxs', async (event, { currentPath, npc }) => {

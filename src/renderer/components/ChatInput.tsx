@@ -955,15 +955,16 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
 
                 {/* Input area - moved above selectors */}
                 <div className="flex-1 overflow-visible flex flex-col">
-                    <ContextFilesPanel
-                        isCollapsed={contextFilesCollapsed}
-                        onToggleCollapse={() => setContextFilesCollapsed(!contextFilesCollapsed)}
-                        contextFiles={contextFiles}
-                        setContextFiles={setContextFiles}
-                        currentPath={currentPath}
-                    />
+                    <div className="relative">
+                        <ContextFilesPanel
+                            isCollapsed={contextFilesCollapsed}
+                            onToggleCollapse={() => setContextFilesCollapsed(!contextFilesCollapsed)}
+                            contextFiles={contextFiles}
+                            setContextFiles={setContextFiles}
+                            currentPath={currentPath}
+                        />
+                    </div>
                     {renderAttachmentThumbnails()}
-                    {renderContextPaneChips()}
 
                     <div className="flex-1 flex items-stretch p-2 gap-2">
                         <div className="flex-grow relative h-full">

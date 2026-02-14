@@ -1488,6 +1488,12 @@ useEffect(() => {
             return;
         }
 
+        // Only execute actions targeted at this window or broadcast (no window_id)
+        if (actionData.window_id && actionData.window_id !== windowId) {
+            console.log('[MCP] Skipping action for different window:', actionId, actionData.window_id);
+            return;
+        }
+
         console.log('[MCP] Executing action:', actionId, actionData.action);
 
         const ctx: StudioContext = {
@@ -1501,6 +1507,8 @@ useEffect(() => {
             updateContentPane: updateContentPaneRef.current,
             generateId,
             findPanePath: (node: any, paneId: string) => findNodePath(node, paneId),
+            windowId,
+            currentPath: currentPathRef.current,
         };
 
         try {
@@ -1522,7 +1530,25 @@ useEffect(() => {
     };
 
     const connect = () => {
-        eventSource = new EventSource(`${BACKEND_URL}/api/studio/actions_stream`);
+        const params = new URLSearchParams();
+        if (windowId) params.set('windowId', windowId);
+        if (currentPathRef.current) params.set('folder', currentPathRef.current);
+        const qs = params.toString();
+        const url = `${BACKEND_URL}/api/studio/actions_stream${qs ? '?' + qs : ''}`;
+        eventSource = new EventSource(url);
+
+        // Register window metadata
+        if (windowId) {
+            fetch(`${BACKEND_URL}/api/studio/register_window`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    windowId,
+                    folder: currentPathRef.current || '',
+                    title: document.title || 'Incognide',
+                })
+            }).catch(() => {});
+        }
 
         eventSource.onmessage = (event) => {
             try {
@@ -1548,7 +1574,7 @@ useEffect(() => {
         eventSource?.close();
         if (reconnectTimeout) clearTimeout(reconnectTimeout);
     };
-}, []);
+}, [windowId]);
 
 // Handle resend message - opens resend modal
 const handleResendMessage = useCallback((messageToResend: any) => {
