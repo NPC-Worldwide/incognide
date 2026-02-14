@@ -739,11 +739,15 @@ export const LayoutNode = memo(({ node, path, component }) => {
                     const existingPaneIds = new Set(Object.keys(contentDataRef.current));
                     performSplit(path, side, tabContentType, tabContentId);
 
-                    // Find the newly created pane and set browserUrl directly
-                    if (tabContentType === 'browser' && browserUrl) {
-                        const newPaneId = Object.keys(contentDataRef.current).find(id => !existingPaneIds.has(id));
-                        if (newPaneId && contentDataRef.current[newPaneId]) {
+                    // Find the newly created pane and set browserUrl/fileContent directly
+                    const newPaneId = Object.keys(contentDataRef.current).find(id => !existingPaneIds.has(id));
+                    if (newPaneId && contentDataRef.current[newPaneId]) {
+                        if (tabContentType === 'browser' && browserUrl) {
                             contentDataRef.current[newPaneId].browserUrl = browserUrl;
+                        }
+                        if (fileContent !== undefined) {
+                            contentDataRef.current[newPaneId].fileContent = fileContent;
+                            contentDataRef.current[newPaneId].fileChanged = fileChanged || false;
                         }
                     }
                 }
@@ -1272,10 +1276,11 @@ export const LayoutNode = memo(({ node, path, component }) => {
             );
         }
 
-        // LaTeX pane buttons (save, compile)
+        // LaTeX pane buttons (save, compile, status)
         if (contentType === 'latex') {
             paneHeaderChildren = (
                 <div className="flex items-center gap-1">
+                    {paneData?.hasChanges && <span className="text-yellow-400 text-[10px]">modified</span>}
                     <button
                         onClick={(e) => {
                             e.stopPropagation();
@@ -1505,14 +1510,14 @@ export const LayoutNode = memo(({ node, path, component }) => {
                     <>
                         {/* Center drop zone - explicit zone for adding as tab */}
                         <div
-                            className={`absolute left-1/4 right-1/4 top-1/4 bottom-1/4 z-10 ${isTargeted && dropTarget.side === 'center' ? 'bg-green-500/30 border-2 border-dashed border-green-400' : ''}`}
+                            className={`absolute left-1/4 right-1/4 top-1/4 bottom-1/4 z-[20] ${isTargeted && dropTarget.side === 'center' ? 'bg-green-500/30 border-2 border-dashed border-green-400' : ''}`}
                             onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropTarget({ nodePath: path, side: 'center' }); }}
                             onDrop={(e) => onDrop(e, 'center')}
                         />
-                        <div className={`absolute left-0 top-0 bottom-0 w-1/4 z-10 ${isTargeted && dropTarget.side === 'left' ? 'bg-blue-500/30' : ''}`} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropTarget({ nodePath: path, side: 'left' }); }} onDrop={(e) => onDrop(e, 'left')} />
-                        <div className={`absolute right-0 top-0 bottom-0 w-1/4 z-10 ${isTargeted && dropTarget.side === 'right' ? 'bg-blue-500/30' : ''}`} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropTarget({ nodePath: path, side: 'right' }); }} onDrop={(e) => onDrop(e, 'right')} />
-                        <div className={`absolute left-0 top-0 right-0 h-1/4 z-10 ${isTargeted && dropTarget.side === 'top' ? 'bg-blue-500/30' : ''}`} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropTarget({ nodePath: path, side: 'top' }); }} onDrop={(e) => onDrop(e, 'top')} />
-                        <div className={`absolute left-0 bottom-0 right-0 h-1/4 z-10 ${isTargeted && dropTarget.side === 'bottom' ? 'bg-blue-500/30' : ''}`} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropTarget({ nodePath: path, side: 'bottom' }); }} onDrop={(e) => onDrop(e, 'bottom')} />
+                        <div className={`absolute left-0 top-0 bottom-0 w-1/4 z-[20] ${isTargeted && dropTarget.side === 'left' ? 'bg-blue-500/30' : ''}`} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropTarget({ nodePath: path, side: 'left' }); }} onDrop={(e) => onDrop(e, 'left')} />
+                        <div className={`absolute right-0 top-0 bottom-0 w-1/4 z-[20] ${isTargeted && dropTarget.side === 'right' ? 'bg-blue-500/30' : ''}`} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropTarget({ nodePath: path, side: 'right' }); }} onDrop={(e) => onDrop(e, 'right')} />
+                        <div className={`absolute left-0 top-0 right-0 h-1/4 z-[20] ${isTargeted && dropTarget.side === 'top' ? 'bg-blue-500/30' : ''}`} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropTarget({ nodePath: path, side: 'top' }); }} onDrop={(e) => onDrop(e, 'top')} />
+                        <div className={`absolute left-0 bottom-0 right-0 h-1/4 z-[20] ${isTargeted && dropTarget.side === 'bottom' ? 'bg-blue-500/30' : ''}`} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropTarget({ nodePath: path, side: 'bottom' }); }} onDrop={(e) => onDrop(e, 'bottom')} />
                     </>
                 )}
                 {/* Render content - for multi-tab panes with browsers/terminals, render ALL tabs to keep them mounted */}

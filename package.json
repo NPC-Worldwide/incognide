@@ -3,7 +3,7 @@
   "version": "0.1.4",
   "description": "Explore the unknown, build the future, own your data.",
   "author": "Chris Agostino <info@npcworldwi.de>",
-  "main": "src/main.js",
+  "main": "src/main.js", 
   "files": [
     "bin/cli.js",
     "dist/index.html",

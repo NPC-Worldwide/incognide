@@ -88,33 +88,59 @@ export const stripSourcePrefix = (name: string | undefined | null): string => {
     return name.replace(/^(project:|global:)/, '');
 };
 
+// Styled extension badge for file icons — distinctive per file type
+const ExtBadge = ({ label, color, bg }: { label: string; color: string; bg: string }) => (
+    <span className="flex-shrink-0 inline-flex items-center justify-center rounded" style={{
+        width: 18, height: 16, fontSize: label.length > 3 ? '7px' : '8px', fontWeight: 700,
+        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+        color, background: bg, letterSpacing: '-0.3px', lineHeight: 1,
+    }}>
+        {label}
+    </span>
+);
+
 export const getFileIcon = (filename: string) => {
     const ext = filename.split('.').pop()?.toLowerCase() || '';
     const iconProps = { size: 16, className: "flex-shrink-0" };
     switch(ext) {
-        case 'py': return <Code2 {...iconProps} 
-            className={`${iconProps.className} text-blue-500`} />;
-        case 'js': return <Code2 {...iconProps} 
-            className={`${iconProps.className} text-yellow-400`} />;
-        case 'md': return <FileText {...iconProps} 
-            className={`${iconProps.className} text-green-400`} />;
-        case 'json': return <FileJson {...iconProps} 
-            className={`${iconProps.className} text-orange-400`} />;
-        case 'csv': case 'xlsx': case 'xls': return <BarChart3 {...iconProps} 
-            className={`${iconProps.className} text-green-500`} />;
-        case 'docx': case 'doc': return <FileText {...iconProps} 
-            className={`${iconProps.className} text-blue-600`} />;
-        case 'pdf': return <FileText {...iconProps} 
-            className={`${iconProps.className} text-purple-400`} />;
+        case 'py': return <ExtBadge label="py" color="#60a5fa" bg="rgba(96,165,250,0.15)" />;
+        case 'js': return <ExtBadge label="js" color="#facc15" bg="rgba(250,204,21,0.15)" />;
+        case 'ts': return <ExtBadge label="ts" color="#3b82f6" bg="rgba(59,130,246,0.15)" />;
+        case 'tsx': return <ExtBadge label="tsx" color="#38bdf8" bg="rgba(56,189,248,0.12)" />;
+        case 'jsx': return <ExtBadge label="jsx" color="#fbbf24" bg="rgba(251,191,36,0.12)" />;
+        case 'md': return <ExtBadge label="md" color="#4ade80" bg="rgba(74,222,128,0.12)" />;
+        case 'json': return <ExtBadge label="{}" color="#fb923c" bg="rgba(251,146,60,0.15)" />;
+        case 'csv': return <ExtBadge label="csv" color="#22c55e" bg="rgba(34,197,94,0.12)" />;
+        case 'xlsx': case 'xls': return <ExtBadge label="xls" color="#22c55e" bg="rgba(34,197,94,0.15)" />;
+        case 'docx': case 'doc': return <ExtBadge label="doc" color="#3b82f6" bg="rgba(59,130,246,0.15)" />;
+        case 'pdf': return <ExtBadge label="pdf" color="#f87171" bg="rgba(248,113,113,0.15)" />;
+        case 'pptx': case 'ppt': return <ExtBadge label="ppt" color="#f97316" bg="rgba(249,115,22,0.15)" />;
+        case 'html': return <ExtBadge label="htm" color="#f472b6" bg="rgba(244,114,182,0.12)" />;
+        case 'css': return <ExtBadge label="css" color="#a78bfa" bg="rgba(167,139,250,0.12)" />;
+        case 'yaml': case 'yml': return <ExtBadge label="yml" color="#f9a8d4" bg="rgba(249,168,212,0.12)" />;
+        case 'sh': case 'bash': case 'zsh': return <ExtBadge label="sh" color="#a3e635" bg="rgba(163,230,53,0.12)" />;
+        case 'sql': return <ExtBadge label="sql" color="#38bdf8" bg="rgba(56,189,248,0.12)" />;
+        case 'rs': return <ExtBadge label="rs" color="#fb923c" bg="rgba(251,146,60,0.12)" />;
+        case 'go': return <ExtBadge label="go" color="#22d3ee" bg="rgba(34,211,238,0.12)" />;
+        case 'c': case 'h': return <ExtBadge label={ext} color="#60a5fa" bg="rgba(96,165,250,0.12)" />;
+        case 'cpp': case 'cc': case 'hpp': return <ExtBadge label="c++" color="#818cf8" bg="rgba(129,140,248,0.12)" />;
+        case 'java': return <ExtBadge label="java" color="#f97316" bg="rgba(249,115,22,0.12)" />;
+        case 'rb': return <ExtBadge label="rb" color="#f87171" bg="rgba(248,113,113,0.12)" />;
+        case 'ipynb': return <ExtBadge label="nb" color="#f97316" bg="rgba(249,115,22,0.15)" />;
+        case 'exp': return <ExtBadge label="exp" color="#c084fc" bg="rgba(192,132,252,0.15)" />;
+        case 'png': case 'jpg': case 'jpeg': case 'gif': case 'svg': case 'webp':
+            return <ExtBadge label={ext.slice(0, 3)} color="#e879f9" bg="rgba(232,121,249,0.12)" />;
+        case 'tex': case 'latex': case 'sty': case 'cls': case 'bib':
+            return <span className="flex-shrink-0 inline-flex items-center justify-center rounded" style={{
+                width: 18, height: 16, fontSize: '8px', fontWeight: 800,
+                fontFamily: '"CMU Serif", "Computer Modern", Georgia, serif',
+                color: '#4ade80', background: 'rgba(74,222,128,0.12)',
+                letterSpacing: '-0.5px', lineHeight: 1,
+            }}>
+                T<span style={{ fontSize: '6px', verticalAlign: 'sub', marginLeft: '-0.5px' }}>E</span>X
+            </span>;
 
-        // ✅ ADD THESE TWO ↓↓↓
-        case 'pptx': return <FileText {...iconProps}
-            className={`${iconProps.className} text-red-500`} />;
-        case 'tex': return <FileText {...iconProps}
-            className={`${iconProps.className} text-yellow-500`} />;
-        // ✅ END ADD ↑↑↑
-
-        default: return <File {...iconProps} 
+        default: return <File {...iconProps}
             className={`${iconProps.className} text-gray-400`} />;
     }
 };

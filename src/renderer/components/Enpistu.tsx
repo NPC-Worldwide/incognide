@@ -442,6 +442,13 @@ const ChatInterface = () => {
     const [contextFiles, setContextFiles] = useState<ContextFile[]>(() => ContextFileStorage.getAll());
     const [contextFilesCollapsed, setContextFilesCollapsed] = useState(true);
 
+    // Pane version counter - increments whenever layout changes so ChatInput can recompute open panes
+    const paneVersionRef = useRef(0);
+    const paneVersion = useMemo(() => {
+        paneVersionRef.current += 1;
+        return paneVersionRef.current;
+    }, [rootLayoutNode]);
+
     // Pane context auto-include settings
     const [autoIncludeContext, setAutoIncludeContext] = useState<boolean>(() => {
         const stored = localStorage.getItem('autoIncludeContext');
@@ -6541,6 +6548,7 @@ const getChatInputProps = useCallback((paneId: string) => ({
     autoIncludeContext, setAutoIncludeContext,
     contextPaneOverrides, setContextPaneOverrides,
     contentDataRef,
+    paneVersion,
     // Per-pane execution mode
     executionMode: getPaneExecutionMode(paneId),
     setExecutionMode: (mode: string) => setPaneExecutionMode(paneId, mode),
@@ -6740,7 +6748,7 @@ const getChatInputProps = useCallback((paneId: string) => ({
     input, inputHeight, isInputMinimized, isInputExpanded, isResizingInput,
     isStreaming, handleInputSubmit, handleInterruptStream,
     uploadedFiles, contextFiles, contextFilesCollapsed, currentPath,
-    autoIncludeContext, contextPaneOverrides, contentDataRef,
+    autoIncludeContext, contextPaneOverrides, contentDataRef, paneVersion,
     getPaneExecutionMode, setPaneExecutionMode, getPaneSelectedJinx, setPaneSelectedJinx,
     getPaneShowJinxDropdown, setPaneShowJinxDropdown,
     jinxInputValues, jinxsToDisplay,
@@ -6922,6 +6930,31 @@ const handleConversationSelect = async (conversationId: string, skipMessageLoad 
             }
         }
     }
+
+    // Restore last used NPC and model from conversation messages
+    if (paneIdToUpdate && !skipMessageLoad) {
+        const paneData = contentDataRef.current[paneIdToUpdate];
+        const allMsgs = paneData?.chatMessages?.allMessages;
+        if (allMsgs && allMsgs.length > 0) {
+            // Find the last assistant message to get the NPC and model used
+            for (let i = allMsgs.length - 1; i >= 0; i--) {
+                const msg = allMsgs[i];
+                if (msg.role === 'assistant') {
+                    if (msg.npc && availableNPCs.some((n: any) => n.value === msg.npc || n.name === msg.npc)) {
+                        setCurrentNPC(msg.npc);
+                        setSelectedNPCs([msg.npc]);
+                    }
+                    if (msg.model) {
+                        setCurrentModel(msg.model);
+                        setSelectedModels([msg.model]);
+                        if (msg.provider) setCurrentProvider(msg.provider);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
     return paneIdToUpdate;
 };
 

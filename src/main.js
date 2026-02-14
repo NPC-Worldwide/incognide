@@ -435,8 +435,13 @@ function killBackendProcess() {  if (backendProcess) {    log('Killing backend p
 
 async function waitForServer(maxAttempts = 120, delay = 1000) {
   log('Waiting for backend server to start...');
-  
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // If the backend process has already exited, stop waiting
+    if (backendProcess && backendProcess.exitCode !== null) {
+      log(`Backend process already exited with code ${backendProcess.exitCode}, stopping wait`);
+      return false;
+    }
     try {
       const response = await fetch(`${BACKEND_URL}/api/health`);
       if (response.ok) {
@@ -444,14 +449,14 @@ async function waitForServer(maxAttempts = 120, delay = 1000) {
         return true;
       }
     } catch (err) {
-     
+
       log(`Waiting for server... attempt ${attempt}/${maxAttempts}`);
     }
-    
-   
+
+
     await new Promise(resolve => setTimeout(resolve, delay));
   }
-  
+
   log('Backend server failed to start in the allocated time');
   return false;
 }
@@ -788,49 +793,75 @@ app.whenReady().then(async () => {
 
     log(`Using backend path: ${backendPath}${spawnArgs.length ? ' ' + spawnArgs.join(' ') : ''}`);
 
-    backendProcess = spawn(backendPath, spawnArgs, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-      env: {
-        ...process.env,
-        INCOGNIDE_PORT: String(BACKEND_PORT),
-        FLASK_DEBUG: '1',
-        PYTHONUNBUFFERED: '1',
-        PYTHONIOENCODING: 'utf-8',
-        HOME: os.homedir(),
-      },
-    });
+    const backendEnv = {
+      ...process.env,
+      INCOGNIDE_PORT: String(BACKEND_PORT),
+      FLASK_DEBUG: '1',
+      PYTHONUNBUFFERED: '1',
+      PYTHONIOENCODING: 'utf-8',
+      HOME: os.homedir(),
+    };
 
-    backendProcess.stdout.on("data", (data) => {
-      logBackend(`stdout: ${data.toString().trim()}`);
-    });
+    const spawnBackend = (bPath, bArgs, label) => {
+      log(`Spawning backend (${label}): ${bPath} ${bArgs.join(' ')}`);
+      const proc = spawn(bPath, bArgs, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+        env: backendEnv,
+      });
 
-    backendProcess.stderr.on("data", (data) => {
-      const msg = data.toString().trim();
-      logBackend(`stderr: ${msg}`);
-      // Check for critical errors
-      if (msg.includes('ModuleNotFoundError') || msg.includes('ImportError')) {
-        log(`CRITICAL: Backend missing dependencies: ${msg}`);
+      proc.stdout.on("data", (data) => {
+        logBackend(`stdout: ${data.toString().trim()}`);
+      });
+
+      proc.stderr.on("data", (data) => {
+        const msg = data.toString().trim();
+        logBackend(`stderr: ${msg}`);
+        if (msg.includes('ModuleNotFoundError') || msg.includes('ImportError')) {
+          log(`CRITICAL: Backend missing dependencies: ${msg}`);
+        }
+      });
+
+      proc.on('error', (err) => {
+        log(`Backend process error (${label}): ${err.message}`);
+      });
+
+      proc.on('close', (code) => {
+        if (code !== null && code !== 0) {
+          logBackend(`Backend server (${label}) exited with code: ${code}`);
+        }
+      });
+
+      return proc;
+    };
+
+    backendProcess = spawnBackend(backendPath, spawnArgs, 'bundled');
+
+    let serverReady = await waitForServer();
+
+    // If bundled backend failed, fall back to system Python
+    if (!serverReady && backendProcess.exitCode !== null && backendProcess.exitCode !== 0) {
+      log('Bundled backend failed to start — attempting fallback to system Python...');
+      const pythonPaths = ['python3', 'python'];
+      for (const pyPath of pythonPaths) {
+        try {
+          execSync(`${pyPath} -c "import npcpy.serve"`, { stdio: 'ignore', timeout: 10000 });
+          log(`Found working Python with npcpy: ${pyPath}`);
+          backendProcess = spawnBackend(pyPath, ['-m', 'npcpy.serve'], 'python-fallback');
+          serverReady = await waitForServer(30, 1000);
+          if (serverReady) break;
+        } catch (e) {
+          log(`Python fallback with ${pyPath} not available: ${e.message}`);
+        }
       }
-    });
+    }
 
-    backendProcess.on('error', (err) => {
-      log(`Backend process error: ${err.message}`);
-    });
-
-    backendProcess.on('close', (code) => {
-      if (code !== 0) {
-        logBackend(`Backend server exited with code: ${code}`);
-      }
-    });
-
-    const serverReady = await waitForServer();
     if (!serverReady) {
-      log('Backend server failed to start in time - check backend.log for details');
+      log('Backend server failed to start - check backend.log for details');
       // Try to initialize npcsh directly if backend failed
       try {
         log('Attempting direct npcsh initialization...');
-        const initResult = execSync(`python3 -c "from npcsh._state import initialize_base_npcs_if_needed; import os; initialize_base_npcs_if_needed(os.path.expanduser('~/.npcsh/npcsh_history.db'))"`, {
+        execSync(`python3 -c "from npcsh._state import initialize_base_npcs_if_needed; import os; initialize_base_npcs_if_needed(os.path.expanduser('~/.npcsh/npcsh_history.db'))"`, {
           timeout: 30000,
           env: { ...process.env, HOME: os.homedir() }
         });

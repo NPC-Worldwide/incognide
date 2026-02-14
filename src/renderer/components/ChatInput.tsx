@@ -62,6 +62,7 @@ interface ChatInputProps {
     contextPaneOverrides: Record<string, boolean>;
     setContextPaneOverrides: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
     contentDataRef: React.MutableRefObject<any>;
+    paneVersion?: number;
     // Execution mode
     executionMode: string;
     setExecutionMode: (val: string) => void;
@@ -135,7 +136,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         uploadedFiles, setUploadedFiles, contextFiles, setContextFiles,
         contextFilesCollapsed, setContextFilesCollapsed, currentPath,
         autoIncludeContext, setAutoIncludeContext,
-        contextPaneOverrides, setContextPaneOverrides, contentDataRef,
+        contextPaneOverrides, setContextPaneOverrides, contentDataRef, paneVersion,
         executionMode, setExecutionMode, selectedJinx, setSelectedJinx,
         jinxInputValues, setJinxInputValues, jinxsToDisplay,
         showJinxDropdown, setShowJinxDropdown,
@@ -738,24 +739,24 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     };
 
     // Context pane chips - inline display of open panes with toggle
-    // Recompute on every render since contentDataRef is a mutable ref that
-    // doesn't trigger React updates when panes are added/removed
+    // Recompute whenever paneVersion changes (triggered by layout changes)
     const openPanes = useMemo(() => {
         if (!contentDataRef?.current) return [];
         const panes: Array<{ id: string; type: string; label: string }> = [];
         Object.entries(contentDataRef.current).forEach(([paneId, paneData]: [string, any]) => {
             if (!paneData.contentType || paneData.contentType === 'chat') return;
-            if (!['editor', 'browser', 'pdf', 'terminal'].includes(paneData.contentType)) return;
+            if (!['editor', 'browser', 'pdf', 'terminal', 'latex', 'csv', 'image', 'notebook'].includes(paneData.contentType)) return;
             let label = '';
-            if (paneData.contentType === 'editor' && paneData.contentId) label = getFileName(paneData.contentId) || paneData.contentId;
+            if ((paneData.contentType === 'editor' || paneData.contentType === 'latex' || paneData.contentType === 'csv' || paneData.contentType === 'notebook') && paneData.contentId) label = getFileName(paneData.contentId) || paneData.contentId;
             else if (paneData.contentType === 'browser' && paneData.browserUrl) { try { label = new URL(paneData.browserUrl).hostname; } catch { label = paneData.browserUrl.slice(0, 20); } }
             else if (paneData.contentType === 'pdf' && paneData.contentId) label = getFileName(paneData.contentId) || 'PDF';
+            else if (paneData.contentType === 'image' && paneData.contentId) label = getFileName(paneData.contentId) || 'Image';
             else if (paneData.contentType === 'terminal') label = `Term${paneData.shellType ? ` (${paneData.shellType})` : ''}`;
             else label = paneData.contentType;
             if (label) panes.push({ id: paneId, type: paneData.contentType, label });
         });
         return panes;
-    });
+    }, [paneVersion]);
 
     const isPaneIncluded = (paneId: string) => {
         if (contextPaneOverrides && contextPaneOverrides[paneId] !== undefined) return contextPaneOverrides[paneId];
@@ -962,6 +963,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                         currentPath={currentPath}
                     />
                     {renderAttachmentThumbnails()}
+                    {renderContextPaneChips()}
 
                     <div className="flex-1 flex items-stretch p-2 gap-2">
                         <div className="flex-grow relative h-full">
@@ -1281,7 +1283,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                             className={`w-full h-9 flex items-center justify-center gap-2 rounded-lg text-xs font-medium transition-all duration-200 ${
                                 selectedModels.length > 1
                                     ? 'bg-gradient-to-br from-blue-500/30 to-indigo-600/30 text-blue-200 border border-blue-400/40'
-                                    : 'bg-white/5 text-gray-300 border border-white/10 hover:bg-white/10'
+                                    : 'theme-bg-secondary theme-text-secondary theme-border border theme-hover'
                             }`}
                             disabled={modelsLoading || !!modelsError}
                             onClick={() => { setShowModelsDropdown(!showModelsDropdown); setShowNpcsDropdown(false); setShowJinxDropdown(false); }}
@@ -1297,19 +1299,19 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                             <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${showModelsDropdown ? 'rotate-180' : ''}`} />
                         </button>
                         {showModelsDropdown && !modelsLoading && !modelsError && (
-                            <div className="absolute z-[100] left-0 right-0 bottom-full mb-1 bg-black/95 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl overflow-hidden w-72">
-                                <div className="px-2 py-1.5 border-b border-white/5">
+                            <div className="absolute z-[100] left-0 right-0 bottom-full mb-1 theme-bg-primary backdrop-blur-xl theme-border border rounded-lg shadow-2xl overflow-hidden w-72">
+                                <div className="px-2 py-1.5 border-b theme-border">
                                     <input
                                         ref={modelSearchRef}
                                         type="text"
                                         value={modelSearch}
                                         onChange={(e) => setModelSearch(e.target.value)}
                                         placeholder="Search models..."
-                                        className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-blue-500/50"
+                                        className="w-full theme-input border theme-border rounded px-2 py-1 text-xs theme-text-primary placeholder-gray-500 focus:outline-none focus:border-blue-500/50"
                                         onKeyDown={(e) => e.stopPropagation()}
                                     />
                                 </div>
-                                <div className="px-2 py-1 border-b border-white/5 flex items-center justify-between">
+                                <div className="px-2 py-1 border-b theme-border flex items-center justify-between">
                                     <button
                                         onClick={() => setBroadcastMode(!broadcastMode)}
                                         className={`text-[9px] px-1.5 py-0.5 rounded ${broadcastMode ? 'bg-purple-500/30 text-purple-300' : 'bg-white/5 text-gray-500 hover:text-gray-300'}`}
@@ -1348,7 +1350,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                         );
                                     })}
                                     {filteredModels.length === 0 && (
-                                        <div className="px-2 py-3 text-xs text-gray-500 text-center">No models match "{modelSearch}"</div>
+                                        <div className="px-2 py-3 text-xs text-gray-500 text-center">No models found</div>
                                     )}
                                 </div>
                             </div>
@@ -1361,7 +1363,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                             className={`w-full h-9 flex items-center justify-center gap-2 rounded-lg text-xs font-medium transition-all duration-200 ${
                                 selectedNPCs.length > 1
                                     ? 'bg-gradient-to-br from-green-500/30 to-emerald-600/30 text-green-200 border border-green-400/40'
-                                    : 'bg-white/5 text-gray-300 border border-white/10 hover:bg-white/10'
+                                    : 'theme-bg-secondary theme-text-secondary theme-border border theme-hover'
                             }`}
                             disabled={npcsLoading || !!npcsError}
                             onClick={() => { setShowNpcsDropdown(!showNpcsDropdown); setShowModelsDropdown(false); setShowJinxDropdown(false); }}
@@ -1377,19 +1379,19 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                             <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${showNpcsDropdown ? 'rotate-180' : ''}`} />
                         </button>
                         {showNpcsDropdown && !npcsLoading && !npcsError && (
-                            <div className="absolute z-[100] left-0 right-0 bottom-full mb-1 bg-black/95 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl overflow-hidden w-64">
-                                <div className="px-2 py-1.5 border-b border-white/5">
+                            <div className="absolute z-[100] left-0 right-0 bottom-full mb-1 theme-bg-primary backdrop-blur-xl theme-border border rounded-lg shadow-2xl overflow-hidden w-64">
+                                <div className="px-2 py-1.5 border-b theme-border">
                                     <input
                                         ref={npcSearchRef}
                                         type="text"
                                         value={npcSearch}
                                         onChange={(e) => setNpcSearch(e.target.value)}
                                         placeholder="Search NPCs..."
-                                        className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-green-500/50"
+                                        className="w-full theme-input border theme-border rounded px-2 py-1 text-xs theme-text-primary placeholder-gray-500 focus:outline-none focus:border-green-500/50"
                                         onKeyDown={(e) => e.stopPropagation()}
                                     />
                                 </div>
-                                <div className="px-2 py-1 border-b border-white/5 flex items-center justify-between">
+                                <div className="px-2 py-1 border-b theme-border flex items-center justify-between">
                                     <button
                                         onClick={() => setBroadcastMode(!broadcastMode)}
                                         className={`text-[9px] px-1.5 py-0.5 rounded ${broadcastMode ? 'bg-purple-500/30 text-purple-300' : 'bg-white/5 text-gray-500 hover:text-gray-300'}`}
@@ -1427,7 +1429,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                         );
                                     })}
                                     {filteredNPCs.length === 0 && (
-                                        <div className="px-2 py-3 text-xs text-gray-500 text-center">No NPCs match "{npcSearch}"</div>
+                                        <div className="px-2 py-3 text-xs text-gray-500 text-center">No NPCs found</div>
                                     )}
                                 </div>
                             </div>
