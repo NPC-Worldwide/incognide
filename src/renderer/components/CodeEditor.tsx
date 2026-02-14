@@ -35,6 +35,7 @@ const editorTheme = EditorView.theme({
     '&': {
         height: '100%',
         fontSize: '14px',
+        backgroundColor: '#1e1e2e',
     },
     '.cm-content': {
         fontFamily: '"Fira Code", "JetBrains Mono", "Cascadia Code", Menlo, Monaco, monospace',
@@ -44,14 +45,17 @@ const editorTheme = EditorView.theme({
         borderLeftColor: '#89b4fa',
         borderLeftWidth: '2px',
     },
-    '.cm-selectionBackground, &.cm-focused .cm-selectionBackground, .cm-content ::selection': {
-        backgroundColor: 'rgba(137, 180, 250, 0.3)',
+    '& .cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
+        backgroundColor: '#284f78',
     },
-    '.cm-activeLine': {
-        backgroundColor: 'rgba(137, 180, 250, 0.08)',
+    '& .cm-content ::selection': {
+        backgroundColor: 'transparent',
     },
-    '.cm-activeLineGutter': {
-        backgroundColor: 'rgba(137, 180, 250, 0.1)',
+    '& .cm-activeLine, &.cm-focused .cm-activeLine': {
+        backgroundColor: '#1e2030',
+    },
+    '& .cm-activeLineGutter': {
+        backgroundColor: '#1e2030',
     },
     '.cm-gutters': {
         backgroundColor: '#1e1e2e',
@@ -89,8 +93,9 @@ const editorTheme = EditorView.theme({
     '.cm-searchMatch.cm-searchMatch-selected': {
         backgroundColor: 'rgba(166, 227, 161, 0.4)',
     },
-    '.cm-selectionMatch': {
-        backgroundColor: 'rgba(137, 180, 250, 0.2)',
+    '& .cm-selectionMatch': {
+        backgroundColor: '#3d3522',
+        outline: '1px solid #5c4f2a',
     },
     '.cm-panels': {
         backgroundColor: '#1e1e2e',
@@ -142,7 +147,7 @@ const editorTheme = EditorView.theme({
     },
 }, { dark: true });
 
-const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMenu, onSelect, onSendToTerminal }) => {
+const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMenu, onSelect, onSendToTerminal, savedEditorState, onEditorStateChange }) => {
     const editorRef = useRef(null);
 
     const languageExtension = useMemo(() => {
@@ -290,6 +295,21 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
         return () => editorDOM.removeEventListener('keydown', handleKeyDown, true);
     }, [onSendToTerminal]);
 
+    // Save editor state (undo history, cursor) on unmount
+    useEffect(() => {
+        return () => {
+            if (onEditorStateChange && editorRef.current?.view) {
+                try {
+                    const view = editorRef.current.view;
+                    onEditorStateChange({
+                        json: view.state.toJSON({ history: history() }),
+                        cursorPos: view.state.selection.main.head,
+                    });
+                } catch (e) { /* serialization failure is OK */ }
+            }
+        };
+    }, [onEditorStateChange]);
+
     return (
         <CodeMirror
             ref={editorRef}
@@ -299,6 +319,10 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
             extensions={extensions}
             onChange={onChange}
             onUpdate={handleUpdate}
+            initialState={savedEditorState ? {
+                json: savedEditorState.json,
+                fields: { history: history() },
+            } : undefined}
         />
     );
 });
@@ -408,6 +432,29 @@ const CodeEditorPane = ({
         }
     }, [nodeId, contentDataRef, setRootLayoutNode, setPromptModal, currentPath]);
 
+    // Expose save function on paneData so the header save button can call it
+    useEffect(() => {
+        const paneData = contentDataRef.current[nodeId];
+        if (paneData) paneData.onSave = onSave;
+        return () => { if (paneData) delete paneData.onSave; };
+    }, [nodeId, onSave, contentDataRef]);
+
+    // Autosave: debounced write to disk 3 seconds after last edit
+    useEffect(() => {
+        const currentPaneData = contentDataRef.current[nodeId];
+        if (!currentPaneData?.fileChanged || !currentPaneData?.contentId || currentPaneData?.isUntitled) return;
+        const timer = setTimeout(async () => {
+            try {
+                await (window as any).api.writeFileContent(currentPaneData.contentId, currentPaneData.fileContent);
+                currentPaneData.fileChanged = false;
+                setRootLayoutNode(p => ({ ...p }));
+            } catch (e) {
+                // Silent fail for autosave
+            }
+        }, 3000);
+        return () => clearTimeout(timer);
+    }, [fileContent, fileChanged, nodeId, contentDataRef, setRootLayoutNode]);
+
     const onEditorContextMenu = useCallback((e, selection) => {
         e.preventDefault();
         e.stopPropagation();
@@ -463,6 +510,8 @@ const CodeEditorPane = ({
                         onSelect={handleTextSelection}
                         onContextMenu={onEditorContextMenu}
                         onSendToTerminal={onSendToTerminal}
+                        savedEditorState={paneData?._editorStateJSON ? { json: paneData._editorStateJSON } : undefined}
+                        onEditorStateChange={(state) => { if (paneData) { paneData._editorStateJSON = state.json; paneData._cursorPos = state.cursorPos; } }}
                     />
                 </div>
             </div>

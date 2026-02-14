@@ -1,4 +1,4 @@
-import { getFileName } from './utils';
+import { getFileName, getFileIcon } from './utils';
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { X, File, Folder, Trash2, Plus, ChevronDown, ChevronRight, FileText, FileCode, FileJson, Image, Eye, EyeOff } from 'lucide-react';
 import { ContextFile, ContextFileStorage } from './MessageLabeling';
@@ -11,43 +11,6 @@ interface ContextFilesPanelProps {
     onFileClick?: (file: ContextFile) => void;
     currentPath?: string;
 }
-
-const getFileIcon = (filename: string) => {
-    const ext = filename.split('.').pop()?.toLowerCase();
-    switch (ext) {
-        case 'js':
-        case 'jsx':
-        case 'ts':
-        case 'tsx':
-        case 'py':
-        case 'rb':
-        case 'go':
-        case 'rs':
-        case 'java':
-        case 'c':
-        case 'cpp':
-        case 'h':
-            return <FileCode size={14} className="text-blue-400" />;
-        case 'json':
-        case 'yaml':
-        case 'yml':
-        case 'toml':
-            return <FileJson size={14} className="text-yellow-400" />;
-        case 'md':
-        case 'txt':
-        case 'rst':
-            return <FileText size={14} className="text-gray-400" />;
-        case 'png':
-        case 'jpg':
-        case 'jpeg':
-        case 'gif':
-        case 'svg':
-        case 'webp':
-            return <Image size={14} className="text-green-400" />;
-        default:
-            return <File size={14} className="text-gray-400" />;
-    }
-};
 
 export const ContextFilesPanel: React.FC<ContextFilesPanelProps> = ({
     isCollapsed = false,

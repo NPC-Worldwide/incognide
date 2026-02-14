@@ -525,8 +525,23 @@ function register(ctx) {
 
         log(`[BROWSER] Starting download: ${filename} to ${finalPath}`);
 
+        // Get cookies from the webview session for authenticated downloads
+        const fetchHeaders = {};
+        try {
+            // Try to get cookies from the sender's session (webview session)
+            const senderSession = event.sender.session || session.defaultSession;
+            const cookies = await senderSession.cookies.get({ url });
+            if (cookies.length > 0) {
+                fetchHeaders['Cookie'] = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+            }
+            // Also set a browser-like user agent to avoid 403s from user-agent checks
+            fetchHeaders['User-Agent'] = event.sender.getUserAgent?.() || 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36';
+        } catch (cookieErr) {
+            log(`[BROWSER] Could not get session cookies: ${cookieErr.message}`);
+        }
+
         // Download the file with progress tracking
-        const response = await fetch(url, { signal: controller.signal });
+        const response = await fetch(url, { signal: controller.signal, headers: fetchHeaders });
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
         const contentLength = parseInt(response.headers.get('content-length') || '0', 10);

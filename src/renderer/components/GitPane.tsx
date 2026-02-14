@@ -33,6 +33,9 @@ interface GitPaneProps {
     gitDeleteBranch: (branch: string) => void;
     gitPushWithUpstream: () => void;
     gitEnableAutoSetupRemote: () => void;
+    gitPullAndPush: () => void;
+    pushRejectedPrompt: boolean;
+    setPushRejectedPrompt: (v: boolean) => void;
     openFileDiffPane: (filePath: string, status: string) => void;
 }
 
@@ -68,6 +71,9 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
     gitDeleteBranch,
     gitPushWithUpstream,
     gitEnableAutoSetupRemote,
+    gitPullAndPush,
+    pushRejectedPrompt,
+    setPushRejectedPrompt,
     openFileDiffPane,
 }) => {
     return (
@@ -310,6 +316,15 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
                                     <button onClick={gitPushWithUpstream} disabled={gitLoading} className="px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-white text-[10px]">Push</button>
                                     <button onClick={gitEnableAutoSetupRemote} disabled={gitLoading} className="px-2 py-1 bg-green-600 hover:bg-green-500 rounded text-white text-[10px]" title="Sets git config push.autoSetupRemote true">Always Auto-Push</button>
                                     <button onClick={() => setNoUpstreamPrompt(null)} className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-white text-[10px]">Cancel</button>
+                                </div>
+                            </div>
+                        )}
+                        {pushRejectedPrompt && (
+                            <div className="mt-2 p-2 bg-amber-900/30 border border-amber-600/50 rounded text-xs">
+                                <div className="text-amber-400 mb-2">Push rejected — remote has new commits. Pull first to integrate?</div>
+                                <div className="flex gap-2">
+                                    <button onClick={gitPullAndPush} disabled={gitLoading} className="px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-white text-[10px]">Pull & Push</button>
+                                    <button onClick={() => setPushRejectedPrompt(false)} className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-white text-[10px]">Cancel</button>
                                 </div>
                             </div>
                         )}

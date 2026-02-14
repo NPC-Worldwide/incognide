@@ -51,6 +51,7 @@ async function ensureInitialized() {
   await import('./contentActions');
   await import('./tabActions');
   await import('./browserActions');
+  await import('./dataActions');
   await import('./uiActions');
 
   console.log('[StudioActions] All actions loaded:', Object.keys(actions));

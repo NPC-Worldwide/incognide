@@ -1352,6 +1352,165 @@ const CsvViewer = ({
         return selectedCell?.row === rowIndex && selectedCell?.col === colIndex;
     };
 
+    // ═══════════════════════════════════════════════════════════════════
+    // Studio Actions: Expose spreadsheet methods for AI control
+    // (Same pattern as WebBrowserViewer registering browserClick, etc.)
+    // ═══════════════════════════════════════════════════════════════════
+    const dataRef = useRef(data);
+    const headersRef = useRef(headers);
+    useEffect(() => { dataRef.current = data; }, [data]);
+    useEffect(() => { headersRef.current = headers; }, [headers]);
+
+    useEffect(() => {
+        if (!contentDataRef.current[nodeId]) return;
+        const ref = contentDataRef.current[nodeId];
+
+        // READ: Get spreadsheet data, headers, metadata
+        ref.readSpreadsheetData = async (opts?: { maxRows?: number; includeStats?: boolean }) => {
+            const limit = opts?.maxRows || 500;
+            const d = dataRef.current;
+            const h = headersRef.current;
+            const truncated = d.length > limit;
+            const result: any = {
+                success: true,
+                headers: [...h],
+                data: d.slice(0, limit),
+                rowCount: d.length,
+                columnCount: h.length,
+                truncated,
+                activeSheet,
+                sheetNames,
+                filePath,
+            };
+            if (opts?.includeStats) {
+                result.columnStats = h.map((hdr, i) => ({
+                    header: hdr,
+                    ...getColumnStats(i),
+                }));
+            }
+            return result;
+        };
+
+        // EVAL: Execute arbitrary JS with access to {headers, data, XLSX}
+        // The AI writes code that transforms the data - can do ANY operation
+        ref.evalSpreadsheet = async (code: string) => {
+            try {
+                const fn = new Function('ctx', code);
+                const result = fn({
+                    headers: [...headersRef.current],
+                    data: dataRef.current.map(r => [...r]),
+                    XLSX,
+                });
+                if (result && result.headers) setHeaders(result.headers);
+                if (result && result.data) {
+                    setData(result.data);
+                    addToHistory(result.data, result.headers || headersRef.current);
+                }
+                setHasChanges(true);
+                return {
+                    success: true,
+                    rowCount: result?.data?.length ?? dataRef.current.length,
+                    columnCount: result?.headers?.length ?? headersRef.current.length,
+                };
+            } catch (err: any) {
+                return { success: false, error: err.message };
+            }
+        };
+
+        // UPDATE: Single cell
+        ref.updateSpreadsheetCell = async (row: number, col: number, value: any) => {
+            updateCell(row, col, value);
+            return { success: true, row, col, value };
+        };
+
+        // UPDATE: Batch cells (single setData for performance)
+        ref.updateSpreadsheetCells = async (updates: { row: number; col: number; value: any }[]) => {
+            setData(prevData => {
+                const newData = prevData.map(r => [...r]);
+                for (const u of updates) {
+                    if (!newData[u.row]) newData[u.row] = new Array(headersRef.current.length).fill('');
+                    newData[u.row][u.col] = u.value;
+                }
+                addToHistory(newData, headersRef.current);
+                return newData;
+            });
+            setHasChanges(true);
+            return { success: true, updatedCount: updates.length };
+        };
+
+        // UPDATE: Header
+        ref.updateSpreadsheetHeader = async (col: number, value: string) => {
+            updateHeader(col, value);
+            return { success: true, col, value };
+        };
+
+        // STRUCT: Add/delete rows and columns
+        ref.addSpreadsheetRow = async (index?: number) => {
+            addRow(index);
+            return { success: true, rowCount: dataRef.current.length + 1 };
+        };
+
+        ref.deleteSpreadsheetRow = async (index: number) => {
+            deleteRow(index);
+            return { success: true };
+        };
+
+        ref.addSpreadsheetColumn = async (name?: string) => {
+            addColumn();
+            if (name) updateHeader(headersRef.current.length, name);
+            return { success: true, columnCount: headersRef.current.length + 1 };
+        };
+
+        ref.deleteSpreadsheetColumn = async (col: number) => {
+            deleteColumn(col);
+            return { success: true };
+        };
+
+        // SORT/FILTER
+        ref.sortSpreadsheet = async (col: number, direction: 'asc' | 'desc') => {
+            setSortConfig({ column: col, direction });
+            return { success: true, column: col, direction };
+        };
+
+        ref.filterSpreadsheet = async (col: number, value: string) => {
+            setFilters(prev => ({ ...prev, [col]: value }));
+            return { success: true, column: col, filter: value };
+        };
+
+        ref.clearSpreadsheetFilters = async () => {
+            clearFilters();
+            return { success: true };
+        };
+
+        // STATS
+        ref.getSpreadsheetColumnStats = async (col: number) => {
+            return { success: true, header: headersRef.current[col], ...getColumnStats(col) };
+        };
+
+        // SAVE
+        ref.saveSpreadsheet = async () => {
+            await saveSpreadsheet();
+            return { success: true };
+        };
+
+        // EXPORT
+        ref.exportSpreadsheet = async (format: 'csv' | 'json' | 'xlsx') => {
+            await exportData(format);
+            return { success: true, format };
+        };
+
+        // SWITCH SHEET (xlsx only)
+        ref.switchSpreadsheetSheet = async (sheetName: string) => {
+            if (workbook && sheetNames.includes(sheetName)) {
+                switchSheet(sheetName);
+                return { success: true, sheet: sheetName };
+            }
+            return { success: false, error: `Sheet not found: ${sheetName}. Available: ${sheetNames.join(', ')}` };
+        };
+    }, [nodeId, activeSheet, sheetNames, filePath, workbook,
+        updateCell, updateHeader, addRow, deleteRow, addColumn, deleteColumn,
+        getColumnStats, saveSpreadsheet, exportData, clearFilters, addToHistory, switchSheet]);
+
     if (error) return <div className="p-4 text-red-500">Error: {error}</div>;
 
     const hasActiveFilters = searchQuery.trim() || Object.values(filters).some(f => f.trim()) || sortConfig;

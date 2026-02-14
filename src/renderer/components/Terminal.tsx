@@ -368,6 +368,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                 cursorBlink: true,
                 fontFamily: '"Fira Code", monospace',
                 fontSize: 14,
+                scrollback: scrollback,
                 theme: isDarkMode ? darkTheme : lightTheme,
             });
             const fitAddon = new FitAddon();
@@ -385,25 +386,29 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             const resizeObserver = new ResizeObserver(() => {
                 if (resizeTimeout) clearTimeout(resizeTimeout);
                 resizeTimeout = setTimeout(() => {
-                    // Capture scroll position before resize
-                    const scrollOffset = term.buffer.active?.viewportY ?? 0;
-                    const wasAtBottom = term.buffer.active?.viewportY === term.buffer.active?.baseY;
+                    requestAnimationFrame(() => {
+                        // Capture scroll position before resize
+                        const wasAtBottom = term.buffer.active?.viewportY === term.buffer.active?.baseY;
+                        const scrollOffset = term.buffer.active?.viewportY ?? 0;
 
-                    fitAddon.fit();
+                        fitAddon.fit();
 
-                    // Restore scroll position after resize (unless was at bottom, stay at bottom)
-                    if (!wasAtBottom && scrollOffset !== term.buffer.active?.viewportY) {
-                        term.scrollToLine(scrollOffset);
-                    }
+                        // Restore scroll position after resize (unless was at bottom, stay at bottom)
+                        if (wasAtBottom) {
+                            term.scrollToBottom();
+                        } else if (scrollOffset !== term.buffer.active?.viewportY) {
+                            term.scrollToLine(scrollOffset);
+                        }
 
-                    if (isSessionReady.current) {
-                        window.api.resizeTerminal?.({
-                            id: terminalId,
-                            cols: term.cols,
-                            rows: term.rows
-                        });
-                    }
-                }, 50); // 50ms debounce
+                        if (isSessionReady.current) {
+                            window.api.resizeTerminal?.({
+                                id: terminalId,
+                                cols: term.cols,
+                                rows: term.rows
+                            });
+                        }
+                    });
+                }, 100); // 100ms debounce for smoother resize
             });
             resizeObserver.observe(terminalRef.current);
 

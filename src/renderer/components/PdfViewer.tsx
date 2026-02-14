@@ -1291,18 +1291,25 @@ const PdfViewer = ({
             // Keyboard shortcuts (only when not typing in an input)
             const tag = (e.target as HTMLElement)?.tagName;
             if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+            // Also skip if target is a contenteditable element or inside a CodeMirror editor
+            if ((e.target as HTMLElement)?.isContentEditable) return;
+            if ((e.target as HTMLElement)?.closest?.('.cm-editor')) return;
+
+            // Single-key shortcuts (no modifier) only fire when this PDF pane is active
+            const isPaneActive = activeContentPaneId === nodeId;
+
             if (e.key === 'z' && (e.ctrlKey || e.metaKey) && drawingMode) {
                 e.preventDefault();
                 handleUndoLastDrawing();
-            } else if (e.key === 'p' && !e.ctrlKey && !e.metaKey) {
+            } else if (isPaneActive && e.key === 'p' && !e.ctrlKey && !e.metaKey) {
                 e.preventDefault();
                 setDrawingMode(true);
                 setDrawingTool('pen');
-            } else if (e.key === 'e' && !e.ctrlKey && !e.metaKey) {
+            } else if (isPaneActive && e.key === 'e' && !e.ctrlKey && !e.metaKey) {
                 e.preventDefault();
                 setDrawingMode(true);
                 setDrawingTool('eraser');
-            } else if (e.key === 't' && !e.ctrlKey && !e.metaKey) {
+            } else if (isPaneActive && e.key === 't' && !e.ctrlKey && !e.metaKey) {
                 e.preventDefault();
                 setTextPlacementMode(true);
                 setDrawingMode(true);
@@ -1310,7 +1317,7 @@ const PdfViewer = ({
         };
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [localContextMenuPos, inlineComment, textInput, signaturePlacementMode, textPlacementMode, drawingMode, handleUndoLastDrawing]);
+    }, [localContextMenuPos, inlineComment, textInput, signaturePlacementMode, textPlacementMode, drawingMode, handleUndoLastDrawing, activeContentPaneId, nodeId]);
 
     // Enforce text layer invisibility and scale factor via MutationObserver
     useEffect(() => {

@@ -194,9 +194,18 @@ export function useLayoutManager({ trackActivity }: UseLayoutManagerParams) {
         }
     }, [updateContentPane]);
 
-    // Close a content pane
+    // Close a content pane (with unsaved changes warning)
     const closeContentPane = useCallback((paneId: string, nodePath?: number[]) => {
         const paneData = contentDataRef.current[paneId];
+
+        // Check for unsaved changes before closing
+        if (paneData && (paneData.fileChanged || paneData.hasChanges)) {
+            const fileName = paneData.contentId?.split('/').pop() || 'this file';
+            if (!confirm(`"${fileName}" has unsaved changes. Close anyway?`)) {
+                return; // User cancelled
+            }
+        }
+
         if (paneData) {
             trackActivity('pane_close', {
                 paneType: paneData.contentType,

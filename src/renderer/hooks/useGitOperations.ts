@@ -10,6 +10,7 @@ export function useGitOperations({ currentPath }: UseGitOperationsParams) {
     const [gitLoading, setGitLoading] = useState(false);
     const [gitError, setGitError] = useState<string | null>(null);
     const [noUpstreamPrompt, setNoUpstreamPrompt] = useState<{ branch: string; command: string } | null>(null);
+    const [pushRejectedPrompt, setPushRejectedPrompt] = useState(false);
     const [gitModalTab, setGitModalTab] = useState<'status' | 'diff' | 'branches' | 'history'>('status');
     const [gitDiffContent, setGitDiffContent] = useState<GitDiffData | null>(null);
     const [gitBranches, setGitBranches] = useState<GitBranchesData | null>(null);
@@ -88,11 +89,14 @@ export function useGitOperations({ currentPath }: UseGitOperationsParams) {
         setGitLoading(true);
         setGitError(null);
         setNoUpstreamPrompt(null);
+        setPushRejectedPrompt(false);
         try {
             const result = await (window as any).api.gitPush(currentPath);
             if (!result.success) {
                 if (result.noUpstream) {
                     setNoUpstreamPrompt({ branch: result.currentBranch, command: result.suggestedCommand });
+                } else if (result.rejected) {
+                    setPushRejectedPrompt(true);
                 } else {
                     setGitError(result.error || 'Failed to push');
                 }
@@ -131,6 +135,29 @@ export function useGitOperations({ currentPath }: UseGitOperationsParams) {
             await gitPushWithUpstream();
         } catch (err: any) {
             setGitError(err.message || 'Failed to set config');
+        }
+    };
+
+    const gitPullAndPush = async () => {
+        setGitLoading(true);
+        setGitError(null);
+        setPushRejectedPrompt(false);
+        try {
+            const pullResult = await (window as any).api.gitPull(currentPath);
+            if (!pullResult.success) {
+                setGitError(pullResult.error || 'Failed to pull');
+                return;
+            }
+            const pushResult = await (window as any).api.gitPush(currentPath);
+            if (!pushResult.success) {
+                setGitError(pushResult.error || 'Failed to push after pull');
+            } else {
+                await loadGitStatus();
+            }
+        } catch (err: any) {
+            setGitError(err.message || 'Failed to pull and push');
+        } finally {
+            setGitLoading(false);
         }
     };
 
@@ -280,6 +307,9 @@ export function useGitOperations({ currentPath }: UseGitOperationsParams) {
         gitPushChanges,
         gitPushWithUpstream,
         gitEnableAutoSetupRemote,
+        gitPullAndPush,
+        pushRejectedPrompt,
+        setPushRejectedPrompt,
         loadGitDiff,
         loadGitBranches,
         loadGitHistory,

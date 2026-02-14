@@ -1,9 +1,9 @@
 {
   "name": "incognide",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Explore the unknown, build the future, own your data.",
   "author": "Chris Agostino <info@npcworldwi.de>",
-  "main": "src/main.js",
+  "main": "src/main.js", 
   "files": [
     "bin/cli.js",
     "dist/index.html",
@@ -147,7 +147,13 @@
     "buildDependenciesFromSource": false,
     "nodeGypRebuild": false,
     "npmRebuild": false,
-    "forceCodeSigning": false
+    "forceCodeSigning": false,
+    "protocols": [
+      {
+        "name": "Incognide URL",
+        "schemes": ["incognide"]
+      }
+    ]
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.2.0",

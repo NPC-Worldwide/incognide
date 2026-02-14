@@ -117,8 +117,9 @@ function register(ctx) {
       return { success: true, summary: pushResult };
     } catch (err) {
       console.error(`[Git] Error pushing in ${repoPath}:`, err);
+      const msg = err.message || '';
       // Check if it's the "no upstream branch" error
-      const isNoUpstream = err.message && err.message.includes('has no upstream branch');
+      const isNoUpstream = msg.includes('has no upstream branch');
       if (isNoUpstream) {
         // Get current branch name
         const git = simpleGit(repoPath);
@@ -126,13 +127,22 @@ function register(ctx) {
         const currentBranch = branchResult.current;
         return {
           success: false,
-          error: err.message,
+          error: msg,
           noUpstream: true,
           currentBranch,
           suggestedCommand: `git push --set-upstream origin ${currentBranch}`
         };
       }
-      return { success: false, error: err.message };
+      // Check if push was rejected because remote has new commits
+      const isRejected = msg.includes('rejected') || msg.includes('fetch first') || msg.includes('non-fast-forward');
+      if (isRejected) {
+        return {
+          success: false,
+          error: msg,
+          rejected: true
+        };
+      }
+      return { success: false, error: msg };
     }
   });
 
