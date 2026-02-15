@@ -1922,13 +1922,15 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                             disabled={resyncing}
                             onClick={async () => {
                                 setResyncing(true);
-                                // First sync from package to get base setup
+                                // First sync from package to get base npcsh setup
                                 const result = await (window as any).api.npcshInit();
                                 if (result?.error) {
                                     console.error('Re-sync failed:', result.error);
                                     setResyncing(false);
                                     return;
                                 }
+                                // Re-deploy incognide team on top so it stays prioritized
+                                await (window as any).api.deployIncognideTeam?.();
 
                                 // Then save any custom NPCs that were added
                                 for (const npc of setupNpcs.filter(n => n.isNew && n.enabled)) {

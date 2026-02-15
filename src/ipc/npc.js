@@ -165,16 +165,21 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('get-jinxs-global', async () => {
+  // globalPath arg: defaults to incognide team. Pass 'npcsh' for raw npcsh global jinxs.
+  ipcMain.handle('get-jinxs-global', async (event, globalPath) => {
     try {
-        const response = await fetch(`${BACKEND_URL}/api/jinxs/global`);
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+        if (globalPath === 'npcsh') {
+            const response = await fetch(`${BACKEND_URL}/api/jinxs/global`);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const data = await response.json();
+            return { jinxs: (data.jinxs || []).map(j => ({ ...j, source: 'npcsh' })) };
         }
 
+        const teamPath = globalPath || INCOGNIDE_TEAM_PATH;
+        const response = await fetch(`${BACKEND_URL}/api/jinxs/project?currentPath=${encodeURIComponent(teamPath)}`);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const data = await response.json();
-        console.log('Global jinxs data:', data);
-        return data;
+        return { jinxs: (data.jinxs || []).map(j => ({ ...j, source: globalPath ? 'custom' : 'incognide' })) };
     } catch (err) {
         console.error('Error loading global jinxs:', err);
         return { jinxs: [], error: err.message };
@@ -238,18 +243,31 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('getNPCTeamGlobal', async () => {
+  const INCOGNIDE_TEAM_PATH = path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team');
+
+  // globalPath arg: defaults to incognide team. Pass 'npcsh' to get the raw npcsh global team.
+  ipcMain.handle('getNPCTeamGlobal', async (event, globalPath) => {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/npc_team_global`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      if (!response.ok) {
-        throw new Error('Failed to fetch NPC team');
+      if (globalPath === 'npcsh') {
+        // Raw npcsh global team
+        const response = await fetch(`${BACKEND_URL}/api/npc_team_global`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        if (!response.ok) throw new Error('Failed to fetch NPC team');
+        const data = await response.json();
+        return { npcs: (data.npcs || []).map(n => ({ ...n, source: 'npcsh' })) };
       }
-      return await response.json();
+
+      // Default: incognide team (or custom path)
+      const teamPath = globalPath || INCOGNIDE_TEAM_PATH;
+      const response = await fetch(`${BACKEND_URL}/api/npc_team_project?currentPath=${encodeURIComponent(teamPath)}`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (!response.ok) throw new Error(`Failed to fetch NPC team from ${teamPath}`);
+      const data = await response.json();
+      return { npcs: (data.npcs || []).map(n => ({ ...n, source: globalPath ? 'custom' : 'incognide' })) };
     } catch (error) {
       console.error('Error fetching NPC team:', error);
       throw error;
@@ -290,6 +308,35 @@ function register(ctx) {
         npcs: [],
         error: error.message
       };
+    }
+  });
+
+  // Re-deploy incognide team (called after re-sync to restore incognide NPCs/jinxs)
+  ipcMain.handle('deploy-incognide-team', async () => {
+    const destBase = path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team');
+    try {
+      await fsPromises.mkdir(destBase, { recursive: true });
+      const npcTeamSrc = path.join(appDir, 'npc_team');
+      if (fs.existsSync(npcTeamSrc)) {
+        const copyRecursive = async (src, dest) => {
+          const stat = await fsPromises.stat(src);
+          if (stat.isDirectory()) {
+            await fsPromises.mkdir(dest, { recursive: true });
+            const entries = await fsPromises.readdir(src);
+            for (const entry of entries) {
+              await copyRecursive(path.join(src, entry), path.join(dest, entry));
+            }
+          } else {
+            await fsPromises.copyFile(src, dest);
+          }
+        };
+        await copyRecursive(npcTeamSrc, destBase);
+        log(`[NPC] Re-deployed incognide npc_team to ${destBase}`);
+        return { success: true };
+      }
+      return { success: true };
+    } catch (e) {
+      return { error: e.message };
     }
   });
 

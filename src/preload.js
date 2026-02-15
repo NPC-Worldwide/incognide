@@ -658,6 +658,7 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
     npcshCheck: () => ipcRenderer.invoke('npcsh-check'),
     npcshPackageContents: () => ipcRenderer.invoke('npcsh-package-contents'),
     npcshInit: () => ipcRenderer.invoke('npcsh-init'),
+    deployIncognideTeam: () => ipcRenderer.invoke('deploy-incognide-team'),
 
     // NPC Team Sync
     npcTeamSyncStatus: () => ipcRenderer.invoke('npc-team:sync-status'),
