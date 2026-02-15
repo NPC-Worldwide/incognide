@@ -1,0 +1,15 @@
+jinx_name: show_diff
+description: Show a diff view comparing two versions of content or files.
+inputs:
+  - original
+  - modified
+  - { title: "Diff View" }
+steps:
+  - name: show_diff
+    engine: incognide
+    action: open_pane
+    args:
+      type: "diff"
+      original: "{{ original }}"
+      modified: "{{ modified }}"
+      title: "{{ title }}"

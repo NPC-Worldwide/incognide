@@ -8,21 +8,45 @@ const yaml = require('js-yaml');
 function register(ctx) {
   const { ipcMain, getMainWindow, callBackendApi, BACKEND_URL, log, generateId, activeStreams, appDir } = ctx;
 
-  // ============== Deploy bundled MCP servers ==============
-  // Copy incognide_mcp_server.py from app source to ~/.npcsh/incognide/npc_team/
+  // ============== Deploy bundled incognide npc_team ==============
+  // Copy npc_team (NPCs, ctx, jinxs) and MCP servers to ~/.npcsh/incognide/npc_team/
   (async () => {
+    const destBase = path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team');
     try {
-      const sourcePath = path.join(appDir, 'mcp_servers', 'incognide_mcp_server.py');
-      const destDir = path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team');
-      const destPath = path.join(destDir, 'incognide_mcp_server.py');
+      await fsPromises.mkdir(destBase, { recursive: true });
 
-      if (fs.existsSync(sourcePath)) {
-        await fsPromises.mkdir(destDir, { recursive: true });
-        await fsPromises.copyFile(sourcePath, destPath);
-        log(`[MCP] Deployed incognide_mcp_server.py to ${destPath}`);
+      // Deploy npc_team files (ledbi.npc, incognide.ctx, jinxs/)
+      const npcTeamSrc = path.join(appDir, 'npc_team');
+      if (fs.existsSync(npcTeamSrc)) {
+        const copyRecursive = async (src, dest) => {
+          const stat = await fsPromises.stat(src);
+          if (stat.isDirectory()) {
+            await fsPromises.mkdir(dest, { recursive: true });
+            const entries = await fsPromises.readdir(src);
+            for (const entry of entries) {
+              await copyRecursive(path.join(src, entry), path.join(dest, entry));
+            }
+          } else {
+            await fsPromises.copyFile(src, dest);
+          }
+        };
+        await copyRecursive(npcTeamSrc, destBase);
+        log(`[NPC] Deployed incognide npc_team to ${destBase}`);
+      }
+
+      // Deploy MCP servers
+      const mcpSrc = path.join(appDir, 'mcp_servers');
+      if (fs.existsSync(mcpSrc)) {
+        const mcpFiles = await fsPromises.readdir(mcpSrc);
+        for (const file of mcpFiles) {
+          if (file.endsWith('_mcp_server.py') || file === 'mcp_server.py') {
+            await fsPromises.copyFile(path.join(mcpSrc, file), path.join(destBase, file));
+            log(`[MCP] Deployed ${file} to ${destBase}`);
+          }
+        }
       }
     } catch (e) {
-      console.warn('[MCP] Failed to deploy incognide_mcp_server.py:', e.message);
+      console.warn('[NPC] Failed to deploy incognide npc_team:', e.message);
     }
   })();
 

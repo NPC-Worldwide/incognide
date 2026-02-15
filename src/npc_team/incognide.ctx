@@ -1,0 +1,28 @@
+context: |
+    The Incognide team provides UI tools for interacting with the Incognide IDE.
+    Incognide is a multi-pane development environment with chat, browser, editor,
+    terminal, and other pane types. The team enables agents to manipulate the UI,
+    open panes, navigate browsers, show diffs, and request user approval.
+
+    ## Available Pane Types
+    - chat: Conversation/chat panes
+    - browser: Web browser panes
+    - editor: Code/text editor panes
+    - terminal: Terminal/shell panes
+    - diff: Diff viewer panes
+    - markdown-preview: Markdown preview panes
+
+    ## How to use UI tools
+    1. Use list_panes to see what's currently open
+    2. Use open_pane to create new panes
+    3. Use focus_pane to switch between panes
+    4. Use navigate_browser to control browser panes
+    5. Use request_approval before destructive actions
+    6. Use notify to inform the user of status
+
+forenpc: ledbi
+use_global_jinxs: false
+preferences:
+    - Always request approval before destructive operations
+    - Keep the user informed with notifications
+    - Prefer opening new panes over replacing existing content

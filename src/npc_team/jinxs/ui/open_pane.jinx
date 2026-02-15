@@ -1,0 +1,14 @@
+jinx_name: open_pane
+description: Open a new pane in Incognide. Supports browser, editor, terminal, chat, and diff pane types. Use position to control where the pane opens (right, left, up, down).
+inputs:
+  - pane_type
+  - { content_id: "" }
+  - { position: "right" }
+steps:
+  - name: open_pane
+    engine: incognide
+    action: open_pane
+    args:
+      type: "{{ pane_type }}"
+      path: "{{ content_id }}"
+      position: "{{ position }}"
