@@ -860,13 +860,32 @@ function register(ctx) {
 
   // ============== Context Handlers ==============
 
+  // Find the .ctx file in a team directory (e.g. incognide.ctx, npcsh.ctx, team.ctx)
+  async function findCtxFile(teamDir) {
+    try {
+      const files = await fsPromises.readdir(teamDir);
+      const ctxFile = files.find(f => f.endsWith('.ctx'));
+      if (ctxFile) return path.join(teamDir, ctxFile);
+    } catch (e) { /* dir doesn't exist */ }
+    return null;
+  }
+
   // globalPath: 'npcsh' for raw npcsh context, omit for incognide (default)
   ipcMain.handle('get-global-context', async (event, globalPath) => {
     if (globalPath === 'npcsh') {
       return await callBackendApi(`${BACKEND_URL}/api/context/global`);
     }
-    const teamPath = globalPath || INCOGNIDE_TEAM_PATH;
-    return await callBackendApi(`${BACKEND_URL}/api/context/project?path=${encodeURIComponent(teamPath)}`);
+    // Read incognide .ctx file directly
+    const teamDir = globalPath || INCOGNIDE_TEAM_PATH;
+    const ctxFilePath = await findCtxFile(teamDir);
+    if (!ctxFilePath) return { context: {}, error: null };
+    try {
+      const content = await fsPromises.readFile(ctxFilePath, 'utf-8');
+      const context = yaml.load(content) || {};
+      return { context, path: ctxFilePath, error: null };
+    } catch (err) {
+      return { context: {}, error: err.message };
+    }
   });
 
   ipcMain.handle('save-global-context', async (event, contextData, globalPath) => {
@@ -877,12 +896,17 @@ function register(ctx) {
         body: JSON.stringify({ context: contextData }),
       });
     }
-    const teamPath = globalPath || INCOGNIDE_TEAM_PATH;
-    return await callBackendApi(`${BACKEND_URL}/api/context/project`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: teamPath, context: contextData }),
-    });
+    // Write incognide .ctx file directly
+    const teamDir = globalPath || INCOGNIDE_TEAM_PATH;
+    let ctxFilePath = await findCtxFile(teamDir);
+    if (!ctxFilePath) ctxFilePath = path.join(teamDir, 'incognide.ctx');
+    try {
+      const content = yaml.dump(contextData);
+      await fsPromises.writeFile(ctxFilePath, content, 'utf-8');
+      return { success: true, error: null };
+    } catch (err) {
+      return { error: err.message };
+    }
   });
 
   // Check if ~/.npcsh exists and has a valid npc_team

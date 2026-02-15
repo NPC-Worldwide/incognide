@@ -1363,9 +1363,9 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                     <Users className="text-purple-400" size={24} />
                     <h2 className="text-xl font-semibold">Team Management</h2>
                 </div>
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
                     {/* Project/Global Toggle */}
-                    <div className="flex items-center gap-2 bg-gray-800 rounded-lg p-1">
+                    <div className="flex items-center bg-gray-800 rounded-lg p-1">
                         {hasProjectTeam ? (
                             <button
                                 onClick={() => setIsGlobal(false)}
@@ -1383,30 +1383,33 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                 <Plus size={14} /> Project
                             </button>
                         )}
-                        <button
-                            onClick={() => setIsGlobal(true)}
-                            className={`px-3 py-1.5 rounded text-sm font-medium transition ${isGlobal ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
-                        >
-                            Global
-                        </button>
-                    </div>
-                    {isGlobal && (
-                        <>
-                            {/* Incognide / npcsh sub-toggle */}
-                            <div className="flex items-center gap-1 bg-gray-800 rounded-lg p-0.5">
+                        {/* When global: show Incognide/npcsh sub-toggle inline */}
+                        {isGlobal ? (
+                            <>
                                 <button
-                                    onClick={() => setGlobalSource('incognide')}
-                                    className={`px-2.5 py-1 rounded text-xs font-medium transition ${globalSource === 'incognide' ? 'bg-amber-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                                    onClick={() => { setIsGlobal(true); setGlobalSource('incognide'); }}
+                                    className={`px-3 py-1.5 rounded text-sm font-medium transition ${globalSource === 'incognide' ? 'bg-amber-600 text-white' : 'text-gray-400 hover:text-white'}`}
                                 >
                                     Incognide
                                 </button>
                                 <button
-                                    onClick={() => setGlobalSource('npcsh')}
-                                    className={`px-2.5 py-1 rounded text-xs font-medium transition ${globalSource === 'npcsh' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                                    onClick={() => { setIsGlobal(true); setGlobalSource('npcsh'); }}
+                                    className={`px-3 py-1.5 rounded text-sm font-medium transition ${globalSource === 'npcsh' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'}`}
                                 >
                                     npcsh
                                 </button>
-                            </div>
+                            </>
+                        ) : (
+                            <button
+                                onClick={() => setIsGlobal(true)}
+                                className={`px-3 py-1.5 rounded text-sm font-medium transition ${isGlobal ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                            >
+                                Global
+                            </button>
+                        )}
+                    </div>
+                    {isGlobal && (
+                        <>
                             <NPCTeamSync compact />
                             <button
                                 onClick={() => setResyncModal(true)}

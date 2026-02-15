@@ -13,7 +13,7 @@ const CtxEditor = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = 
         if (isOpen) {
             loadContexts();
         }
-    }, [isOpen, currentPath]);
+    }, [isOpen, currentPath, globalPath]);
 
     useEffect(() => {
         const handleKeyDown = (event) => {
