@@ -8,21 +8,45 @@ const yaml = require('js-yaml');
 function register(ctx) {
   const { ipcMain, getMainWindow, callBackendApi, BACKEND_URL, log, generateId, activeStreams, appDir } = ctx;
 
-  // ============== Deploy bundled MCP servers ==============
-  // Copy incognide_mcp_server.py from app source to ~/.npcsh/incognide/npc_team/
+  // ============== Deploy bundled incognide npc_team ==============
+  // Copy npc_team (NPCs, ctx, jinxs) and MCP servers to ~/.npcsh/incognide/npc_team/
   (async () => {
+    const destBase = path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team');
     try {
-      const sourcePath = path.join(appDir, 'mcp_servers', 'incognide_mcp_server.py');
-      const destDir = path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team');
-      const destPath = path.join(destDir, 'incognide_mcp_server.py');
+      await fsPromises.mkdir(destBase, { recursive: true });
 
-      if (fs.existsSync(sourcePath)) {
-        await fsPromises.mkdir(destDir, { recursive: true });
-        await fsPromises.copyFile(sourcePath, destPath);
-        log(`[MCP] Deployed incognide_mcp_server.py to ${destPath}`);
+      // Deploy npc_team files (ledbi.npc, incognide.ctx, jinxs/)
+      const npcTeamSrc = path.join(appDir, 'npc_team');
+      if (fs.existsSync(npcTeamSrc)) {
+        const copyRecursive = async (src, dest) => {
+          const stat = await fsPromises.stat(src);
+          if (stat.isDirectory()) {
+            await fsPromises.mkdir(dest, { recursive: true });
+            const entries = await fsPromises.readdir(src);
+            for (const entry of entries) {
+              await copyRecursive(path.join(src, entry), path.join(dest, entry));
+            }
+          } else {
+            await fsPromises.copyFile(src, dest);
+          }
+        };
+        await copyRecursive(npcTeamSrc, destBase);
+        log(`[NPC] Deployed incognide npc_team to ${destBase}`);
+      }
+
+      // Deploy MCP servers
+      const mcpSrc = path.join(appDir, 'mcp_servers');
+      if (fs.existsSync(mcpSrc)) {
+        const mcpFiles = await fsPromises.readdir(mcpSrc);
+        for (const file of mcpFiles) {
+          if (file.endsWith('_mcp_server.py') || file === 'mcp_server.py') {
+            await fsPromises.copyFile(path.join(mcpSrc, file), path.join(destBase, file));
+            log(`[MCP] Deployed ${file} to ${destBase}`);
+          }
+        }
       }
     } catch (e) {
-      console.warn('[MCP] Failed to deploy incognide_mcp_server.py:', e.message);
+      console.warn('[NPC] Failed to deploy incognide npc_team:', e.message);
     }
   })();
 
@@ -141,16 +165,21 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('get-jinxs-global', async () => {
+  // globalPath arg: defaults to incognide team. Pass 'npcsh' for raw npcsh global jinxs.
+  ipcMain.handle('get-jinxs-global', async (event, globalPath) => {
     try {
-        const response = await fetch(`${BACKEND_URL}/api/jinxs/global`);
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+        if (globalPath === 'npcsh') {
+            const response = await fetch(`${BACKEND_URL}/api/jinxs/global`);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const data = await response.json();
+            return { jinxs: (data.jinxs || []).map(j => ({ ...j, source: 'npcsh' })) };
         }
 
+        const teamPath = globalPath || INCOGNIDE_TEAM_PATH;
+        const response = await fetch(`${BACKEND_URL}/api/jinxs/project?currentPath=${encodeURIComponent(teamPath)}`);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const data = await response.json();
-        console.log('Global jinxs data:', data);
-        return data;
+        return { jinxs: (data.jinxs || []).map(j => ({ ...j, source: globalPath ? 'custom' : 'incognide' })) };
     } catch (err) {
         console.error('Error loading global jinxs:', err);
         return { jinxs: [], error: err.message };
@@ -176,8 +205,13 @@ function register(ctx) {
     }
   });
 
+  // data.globalPath: 'npcsh' to save to npcsh global, omit for incognide (default)
   ipcMain.handle('save-jinx', async (event, data) => {
     try {
+        if (data.globalPath !== 'npcsh' && !data.currentPath) {
+            data.currentPath = data.globalPath || INCOGNIDE_TEAM_PATH;
+        }
+        delete data.globalPath;
         const response = await fetch(`${BACKEND_URL}/api/jinxs/save`, {
             method: 'POST',
             headers: {
@@ -199,8 +233,14 @@ function register(ctx) {
 
   // ============== NPC Team Handlers ==============
 
+  // data.globalPath: 'npcsh' to save to npcsh global, omit for incognide (default)
   ipcMain.handle('save-npc', async (event, data) => {
     try {
+        // If saving to incognide team (default), include the team path
+        if (data.globalPath !== 'npcsh' && !data.currentPath) {
+            data.currentPath = data.globalPath || INCOGNIDE_TEAM_PATH;
+        }
+        delete data.globalPath;
         const response = await fetch(`${BACKEND_URL}/api/save_npc`, {
             method: 'POST',
             headers: {
@@ -214,18 +254,31 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('getNPCTeamGlobal', async () => {
+  const INCOGNIDE_TEAM_PATH = path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team');
+
+  // globalPath arg: defaults to incognide team. Pass 'npcsh' to get the raw npcsh global team.
+  ipcMain.handle('getNPCTeamGlobal', async (event, globalPath) => {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/npc_team_global`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      if (!response.ok) {
-        throw new Error('Failed to fetch NPC team');
+      if (globalPath === 'npcsh') {
+        // Raw npcsh global team
+        const response = await fetch(`${BACKEND_URL}/api/npc_team_global`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        if (!response.ok) throw new Error('Failed to fetch NPC team');
+        const data = await response.json();
+        return { npcs: (data.npcs || []).map(n => ({ ...n, source: 'npcsh' })) };
       }
-      return await response.json();
+
+      // Default: incognide team (or custom path)
+      const teamPath = globalPath || INCOGNIDE_TEAM_PATH;
+      const response = await fetch(`${BACKEND_URL}/api/npc_team_project?currentPath=${encodeURIComponent(teamPath)}`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (!response.ok) throw new Error(`Failed to fetch NPC team from ${teamPath}`);
+      const data = await response.json();
+      return { npcs: (data.npcs || []).map(n => ({ ...n, source: globalPath ? 'custom' : 'incognide' })) };
     } catch (error) {
       console.error('Error fetching NPC team:', error);
       throw error;
@@ -266,6 +319,114 @@ function register(ctx) {
         npcs: [],
         error: error.message
       };
+    }
+  });
+
+  // Re-deploy incognide team (called after re-sync to restore incognide NPCs/jinxs)
+  ipcMain.handle('deploy-incognide-team', async () => {
+    const destBase = path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team');
+    try {
+      await fsPromises.mkdir(destBase, { recursive: true });
+      const npcTeamSrc = path.join(appDir, 'npc_team');
+      if (fs.existsSync(npcTeamSrc)) {
+        const copyRecursive = async (src, dest) => {
+          const stat = await fsPromises.stat(src);
+          if (stat.isDirectory()) {
+            await fsPromises.mkdir(dest, { recursive: true });
+            const entries = await fsPromises.readdir(src);
+            for (const entry of entries) {
+              await copyRecursive(path.join(src, entry), path.join(dest, entry));
+            }
+          } else {
+            await fsPromises.copyFile(src, dest);
+          }
+        };
+        await copyRecursive(npcTeamSrc, destBase);
+        log(`[NPC] Re-deployed incognide npc_team to ${destBase}`);
+        return { success: true };
+      }
+      return { success: true };
+    } catch (e) {
+      return { error: e.message };
+    }
+  });
+
+  // ============== NPC Team Sync Handlers ==============
+
+  ipcMain.handle('npc-team:sync-status', async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/npc-team/status`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch (err) {
+      return { status: 'unavailable', error: err.message };
+    }
+  });
+
+  ipcMain.handle('npc-team:sync-init', async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/npc-team/init`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('npc-team:sync-pull', async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/npc-team/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('npc-team:sync-resolve', async (event, { filePath, resolution, content }) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/npc-team/resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file: filePath, resolution, content })
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('npc-team:sync-commit', async (event, { message }) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/npc-team/commit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message })
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('npc-team:sync-diff', async (event, { filePath }) => {
+    try {
+      const params = filePath ? `?file=${encodeURIComponent(filePath)}` : '';
+      const response = await fetch(`${BACKEND_URL}/api/npc-team/diff${params}`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch (err) {
+      return { error: err.message };
     }
   });
 
@@ -699,16 +860,53 @@ function register(ctx) {
 
   // ============== Context Handlers ==============
 
-  ipcMain.handle('get-global-context', async () => {
-    return await callBackendApi(`${BACKEND_URL}/api/context/global`);
+  // Find the .ctx file in a team directory (e.g. incognide.ctx, npcsh.ctx, team.ctx)
+  async function findCtxFile(teamDir) {
+    try {
+      const files = await fsPromises.readdir(teamDir);
+      const ctxFile = files.find(f => f.endsWith('.ctx'));
+      if (ctxFile) return path.join(teamDir, ctxFile);
+    } catch (e) { /* dir doesn't exist */ }
+    return null;
+  }
+
+  // globalPath: 'npcsh' for raw npcsh context, omit for incognide (default)
+  ipcMain.handle('get-global-context', async (event, globalPath) => {
+    if (globalPath === 'npcsh') {
+      return await callBackendApi(`${BACKEND_URL}/api/context/global`);
+    }
+    // Read incognide .ctx file directly
+    const teamDir = globalPath || INCOGNIDE_TEAM_PATH;
+    const ctxFilePath = await findCtxFile(teamDir);
+    if (!ctxFilePath) return { context: {}, error: null };
+    try {
+      const content = await fsPromises.readFile(ctxFilePath, 'utf-8');
+      const context = yaml.load(content) || {};
+      return { context, path: ctxFilePath, error: null };
+    } catch (err) {
+      return { context: {}, error: err.message };
+    }
   });
 
-  ipcMain.handle('save-global-context', async (event, contextData) => {
-    return await callBackendApi(`${BACKEND_URL}/api/context/global`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ context: contextData }),
-    });
+  ipcMain.handle('save-global-context', async (event, contextData, globalPath) => {
+    if (globalPath === 'npcsh') {
+      return await callBackendApi(`${BACKEND_URL}/api/context/global`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ context: contextData }),
+      });
+    }
+    // Write incognide .ctx file directly
+    const teamDir = globalPath || INCOGNIDE_TEAM_PATH;
+    let ctxFilePath = await findCtxFile(teamDir);
+    if (!ctxFilePath) ctxFilePath = path.join(teamDir, 'incognide.ctx');
+    try {
+      const content = yaml.dump(contextData);
+      await fsPromises.writeFile(ctxFilePath, content, 'utf-8');
+      return { success: true, error: null };
+    } catch (err) {
+      return { error: err.message };
+    }
   });
 
   // Check if ~/.npcsh exists and has a valid npc_team

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import AutosizeTextarea from './AutosizeTextarea';
 
-const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = true }) => {
+const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = true, globalPath = undefined }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [jinxs, setJinxs] = useState([]);
@@ -33,8 +33,8 @@ const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = t
             setLoading(true);
             setError(null);
             
-            const response = isGlobal 
-                ? await window.api.getJinxsGlobal() 
+            const response = isGlobal
+                ? await window.api.getJinxsGlobal(globalPath)
                 : await window.api.getJinxsProject(currentPath);
 
             if (response.error) {
@@ -47,7 +47,7 @@ const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = t
             setLoading(false);
         };
         loadJinxs();
-    }, [isOpen, isGlobal, currentPath]);
+    }, [isOpen, isGlobal, currentPath, globalPath]);
 
     const buildFolderTree = (jinxsList) => {
         const tree = { folders: {}, files: [] };
@@ -297,16 +297,17 @@ const labelExecution = async (messageId, label) => {
         const response = await window.api.saveJinx({
             jinx: editedJinx,
             isGlobal,
-            currentPath
+            currentPath,
+            globalPath,
         });
-        
+
         if (response.error) {
             setError(response.error);
             return;
         }
-        
+
         const refreshed = isGlobal
-            ? await window.api.getJinxsGlobal()
+            ? await window.api.getJinxsGlobal(globalPath)
             : await window.api.getJinxsProject(currentPath);
         setJinxs(refreshed.jinxs || []);
         setSelectedJinx(editedJinx);

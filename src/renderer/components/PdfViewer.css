@@ -143,6 +143,12 @@
    PAGE LAYERS
    ============================================ */
 
+/* Remove default box-shadow border between pages */
+.pdf-viewer-container .rpv-core__page-layer::after,
+.rpv-core__page-layer::after {
+    box-shadow: none !important;
+}
+
 .pdf-viewer-container .rpv-core__page-layer,
 .rpv-core__page-layer {
     user-select: text !important;

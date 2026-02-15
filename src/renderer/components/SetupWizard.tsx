@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Terminal, Package, Check, AlertCircle, RefreshCw, ChevronRight, Sparkles, Cpu, Mic, Zap, Box, Wand2, Bot, ChevronLeft, Info, Server, HardDrive, X } from 'lucide-react';
+import { Terminal, Package, Check, AlertCircle, RefreshCw, ChevronRight, Sparkles, Cpu, Mic, Zap, Box, Wand2, Bot, ChevronLeft, Info, Server, HardDrive, X, Folder, Cloud, KeyRound } from 'lucide-react';
 
 interface PythonInfo {
     name: string;
@@ -21,66 +21,7 @@ interface InstallOption {
     recommended?: boolean;
 }
 
-interface NPCAgent {
-    id: string;
-    name: string;
-    description: string;
-    color: string;
-    imagePath: string;
-    jinxs: string[];
-}
-
-// NPC team agents with their descriptions
-const NPC_AGENTS: NPCAgent[] = [
-    {
-        id: 'sibiji',
-        name: 'Sibiji',
-        description: 'The orchestrator and general manager. Delegates tasks to specialist agents based on their expertise.',
-        color: 'rgb(148,0,211)',
-        imagePath: 'sibiji.png',
-        jinxs: ['delegate', 'convene', 'sh', 'python', 'search']
-    },
-    {
-        id: 'corca',
-        name: 'Corca',
-        description: 'Software development specialist. Expert in writing, reviewing, and debugging code with focus on simplicity and clarity.',
-        color: 'rgb(64,224,208)',
-        imagePath: 'corca.png',
-        jinxs: ['sh', 'python', 'edit_file', 'load_file', 'search']
-    },
-    {
-        id: 'plonk',
-        name: 'Plonk',
-        description: 'Browser and GUI automation specialist. Controls browsers, takes screenshots, and automates desktop interactions.',
-        color: 'rgb(34,139,34)',
-        imagePath: 'plonk.png',
-        jinxs: ['browser', 'computer_use', 'sh', 'python']
-    },
-    {
-        id: 'guac',
-        name: 'Guac',
-        description: 'Data analysis and visualization specialist. Creates charts, processes data, and generates insights.',
-        color: 'rgb(50,205,50)',
-        imagePath: 'guac.png',
-        jinxs: ['data', 'charts', 'python']
-    },
-    {
-        id: 'alicanto',
-        name: 'Alicanto',
-        description: 'Research and information gathering specialist. Searches the web and compiles comprehensive research.',
-        color: 'rgb(255,215,0)',
-        imagePath: 'alicanto.png',
-        jinxs: ['search', 'web', 'summarize']
-    },
-    {
-        id: 'yap',
-        name: 'Yap',
-        description: 'Voice and audio specialist. Handles text-to-speech, speech-to-text, and audio processing.',
-        color: 'rgb(255,105,180)',
-        imagePath: 'yap.png',
-        jinxs: ['tts', 'stt', 'audio']
-    }
-];
+type UserPath = 'no-ai' | 'cloud-ai' | 'local-ai';
 
 interface ModelInfo {
     provider: string;
@@ -92,7 +33,7 @@ const INSTALL_OPTIONS: InstallOption[] = [
     {
         id: 'lite',
         name: 'Lite',
-        description: 'Minimal install - chat and basic features only',
+        description: 'Minimal install - basic features only',
         extras: 'lite',
         icon: <Zap size={20} className="text-yellow-400" />,
     },
@@ -120,10 +61,13 @@ const INSTALL_OPTIONS: InstallOption[] = [
     },
 ];
 
-type SetupStep = 'welcome' | 'concepts' | 'agents' | 'choose' | 'extras' | 'models' | 'creating' | 'installing' | 'complete' | 'error';
+type SetupStep = 'welcome' | 'path' | 'cloud-keys' | 'extras' | 'models' | 'creating' | 'installing' | 'concepts' | 'complete' | 'error';
 
 const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
-    const [step, setStep] = useState<SetupStep>('welcome');
+    // Path selection
+    const [userPath, setUserPath] = useState<UserPath>('local-ai');
+
+    // Python/install state
     const [detectedPythons, setDetectedPythons] = useState<PythonInfo[]>([]);
     const [selectedPython, setSelectedPython] = useState<PythonInfo | null>(null);
     const [selectedExtras, setSelectedExtras] = useState<string>('local');
@@ -131,10 +75,9 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     const [error, setError] = useState<string | null>(null);
     const [installOutput, setInstallOutput] = useState<string[]>([]);
     const [loading, setLoading] = useState(false);
-    const [useNewVenv, setUseNewVenv] = useState(true);
     const logContainerRef = useRef<HTMLDivElement>(null);
-    const [selectedAgent, setSelectedAgent] = useState<NPCAgent | null>(null);
-    const [npcImagesPath, setNpcImagesPath] = useState<string>('');
+
+    // Model detection state
     const [detectedModels, setDetectedModels] = useState<ModelInfo[]>([]);
     const [checkingModels, setCheckingModels] = useState(false);
     const [platform, setPlatform] = useState<string>('');
@@ -146,15 +89,24 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     const [installError, setInstallError] = useState<string | null>(null);
     const [installMessage, setInstallMessage] = useState<string | null>(null);
 
-    // Auto-scroll log container when new output arrives
+    // Cloud API key state
+    const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+
+    // Step state
+    const [step, setStep] = useState<SetupStep>('welcome');
+
+    // NPC images path
+    const [npcImagesPath, setNpcImagesPath] = useState<string>('');
+
+    // Auto-scroll log container
     useEffect(() => {
         if (logContainerRef.current) {
             logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
         }
     }, [installOutput]);
 
+    // Detect Python on mount
     useEffect(() => {
-        // Detect available Python installations
         const detect = async () => {
             try {
                 const result = await (window as any).api?.setupDetectPython?.();
@@ -176,9 +128,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         const getPath = async () => {
             try {
                 const path = await (window as any).api?.getNpcImagesPath?.();
-                if (path) {
-                    setNpcImagesPath(path);
-                }
+                if (path) setNpcImagesPath(path);
             } catch (err) {
                 console.error('Error getting NPC images path:', err);
             }
@@ -186,45 +136,50 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         getPath();
     }, []);
 
-    // Check platform, homebrew, and xcode on mount
+    // Check platform and tools
     useEffect(() => {
-        const checkPlatformAndTools = async () => {
+        const check = async () => {
             try {
                 const platformResult = await (window as any).api?.getPlatform?.();
-                if (platformResult?.platform) {
-                    setPlatform(platformResult.platform);
-                }
+                if (platformResult?.platform) setPlatform(platformResult.platform);
                 const brewResult = await (window as any).api?.checkHomebrew?.();
-                if (brewResult?.available) {
-                    setHomebrewAvailable(true);
-                }
+                if (brewResult?.available) setHomebrewAvailable(true);
                 const xcodeResult = await (window as any).api?.checkXcode?.();
-                if (xcodeResult?.available) {
-                    setXcodeAvailable(true);
-                }
+                if (xcodeResult?.available) setXcodeAvailable(true);
             } catch (err) {
                 console.error('Error checking platform/tools:', err);
             }
         };
-        checkPlatformAndTools();
+        check();
     }, []);
 
-    // Check for available local models
+    // Listen for install progress
+    useEffect(() => {
+        const unsubscribe = (window as any).api?.onSetupInstallProgress?.((data: { type: string; text: string }) => {
+            if (data.text) {
+                const lines = data.text.split('\n').filter((line: string) => line.trim());
+                if (lines.length > 0) {
+                    setInstallOutput(prev => [...prev, ...lines].slice(-100));
+                }
+            }
+        });
+        return () => unsubscribe?.();
+    }, []);
+
+    // Check local models
     const checkLocalModels = async () => {
         setCheckingModels(true);
         setInstallError(null);
         try {
             const result = await (window as any).api?.detectLocalModels?.();
-            if (result?.models) {
-                setDetectedModels(result.models);
-            }
+            if (result?.models) setDetectedModels(result.models);
         } catch (err) {
             console.error('Error detecting models:', err);
         }
         setCheckingModels(false);
     };
 
-    // Install Ollama (opens download page on Mac/Windows, auto-installs on Linux)
+    // Install Ollama
     const handleInstallOllama = async (method?: string) => {
         setInstallingOllama(true);
         setInstallError(null);
@@ -232,15 +187,11 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         try {
             const result = await (window as any).api?.installOllama?.(method);
             if (result?.success) {
-                // Refresh model detection
                 await checkLocalModels();
                 setInstallMessage(result.message);
             } else if (result?.openDownload) {
-                // Open download page (Mac/Windows)
                 (window as any).api?.openExternal?.(result.downloadUrl);
                 setInstallMessage(result.message || 'Download page opened. Install Ollama, then click Refresh.');
-            } else if (result?.needsBrew) {
-                setInstallError('Homebrew is required for brew install. Use the download option instead.');
             } else {
                 setInstallError(result?.error || 'Failed to install Ollama');
             }
@@ -250,113 +201,74 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         setInstallingOllama(false);
     };
 
-    // Install Xcode CLT (Mac only)
+    // Install Xcode CLT
     const handleInstallXcode = async () => {
         setInstallingXcode(true);
         setInstallError(null);
         try {
             const result = await (window as any).api?.installXcode?.();
-            if (result?.success) {
-                setInstallMessage(result.message);
-            } else {
-                setInstallError(result?.error || 'Failed to open Xcode installer');
-            }
+            if (result?.success) setInstallMessage(result.message);
+            else setInstallError(result?.error || 'Failed to open Xcode installer');
         } catch (err: any) {
             setInstallError(err.message || 'Failed to install Xcode');
         }
         setInstallingXcode(false);
     };
 
-    // Install Homebrew (Mac only)
+    // Install Homebrew
     const handleInstallHomebrew = async () => {
         setInstallingHomebrew(true);
         setInstallError(null);
         try {
             const result = await (window as any).api?.installHomebrew?.();
-            if (result?.success) {
-                setHomebrewAvailable(true);
-            } else {
-                setInstallError(result?.error || 'Failed to install Homebrew');
-            }
+            if (result?.success) setHomebrewAvailable(true);
+            else setInstallError(result?.error || 'Failed to install Homebrew');
         } catch (err: any) {
             setInstallError(err.message || 'Failed to install Homebrew');
         }
         setInstallingHomebrew(false);
     };
 
-    // Listen for install progress updates
-    useEffect(() => {
-        const unsubscribe = (window as any).api?.onSetupInstallProgress?.((data: { type: string; text: string }) => {
-            if (data.text) {
-                // Filter out empty lines and progress bars that don't add info
-                const lines = data.text.split('\n').filter(line => line.trim());
-                if (lines.length > 0) {
-                    setInstallOutput(prev => [...prev, ...lines].slice(-100)); // Keep last 100 lines
-                }
-            }
-        });
-        return () => unsubscribe?.();
-    }, []);
-
-    // After choosing Python, go to extras selection
-    const handlePythonChoice = (createNew: boolean, python?: PythonInfo) => {
-        setUseNewVenv(createNew);
-        if (!createNew && python) {
-            setSelectedPython(python);
-        }
-        setStep('extras');
+    // Determine extras based on path
+    const getExtrasForPath = (): string => {
+        if (userPath === 'no-ai') return 'lite';
+        if (userPath === 'cloud-ai') return selectedExtras === 'local' ? 'lite' : selectedExtras;
+        return selectedExtras;
     };
 
-    // Go to models step (check local models before install)
-    const handleGoToModels = async () => {
-        setStep('models');
-        await checkLocalModels();
-    };
-
-    // Start installation with selected extras
+    // Start installation
     const handleStartInstall = async () => {
         setError(null);
         setInstallOutput([]);
+        setStep('creating');
+        setInstallOutput(['Creating virtual environment at ~/.npcsh/incognide/venv...']);
 
-        if (useNewVenv) {
-            // Create new venv first
-            setStep('creating');
-            setInstallOutput(['Creating virtual environment at ~/.npcsh/incognide/venv...']);
-
-            try {
-                const result = await (window as any).api?.setupCreateVenv?.();
-                if (!result?.success) {
-                    throw new Error(result?.error || 'Failed to create virtual environment');
-                }
-
-                setInstallOutput(prev => [...prev, result.message || 'Virtual environment created']);
-                setPythonPath(result.pythonPath);
-                await installNpcpy(result.pythonPath);
-            } catch (err: any) {
-                setError(err.message);
-                setStep('error');
+        try {
+            const result = await (window as any).api?.setupCreateVenv?.();
+            if (!result?.success) {
+                throw new Error(result?.error || 'Failed to create virtual environment');
             }
-        } else if (selectedPython) {
-            setPythonPath(selectedPython.path);
-            await installNpcpy(selectedPython.path);
-        } else {
-            setError('No Python selected');
+            setInstallOutput(prev => [...prev, result.message || 'Virtual environment created']);
+            setPythonPath(result.pythonPath);
+            await installNpcpy(result.pythonPath);
+        } catch (err: any) {
+            setError(err.message);
             setStep('error');
         }
     };
 
     const installNpcpy = async (path: string) => {
         setStep('installing');
-        const packageSpec = `npcpy[${selectedExtras}]`;
+        const extras = getExtrasForPath();
+        const packageSpec = `npcpy[${extras}]`;
         setInstallOutput(prev => [...prev, `Installing ${packageSpec}...`]);
-        setInstallOutput(prev => [...prev, 'This may take several minutes depending on your selection...']);
+        setInstallOutput(prev => [...prev, 'This may take several minutes...']);
 
         try {
-            const result = await (window as any).api?.setupInstallNpcpy?.(path, selectedExtras);
+            const result = await (window as any).api?.setupInstallNpcpy?.(path, extras);
             if (!result?.success) {
                 throw new Error(result?.error || 'Failed to install npcpy');
             }
-
             setInstallOutput(prev => [...prev, `${packageSpec} installed successfully!`]);
             await completeSetup(path);
         } catch (err: any) {
@@ -369,6 +281,25 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         setInstallOutput(prev => [...prev, 'Saving configuration...']);
 
         try {
+            // Save user profile with chosen path
+            const aiEnabled = userPath !== 'no-ai';
+            await (window as any).api?.profileSave?.({
+                path: userPath,
+                aiEnabled,
+                extras: getExtrasForPath(),
+                setupComplete: true,
+                tutorialComplete: false,
+            });
+
+            // Save any API keys entered
+            if (userPath === 'cloud-ai' && Object.keys(apiKeys).length > 0) {
+                for (const [key, value] of Object.entries(apiKeys)) {
+                    if (value.trim()) {
+                        await (window as any).api?.saveGlobalSetting?.(key, value.trim());
+                    }
+                }
+            }
+
             const result = await (window as any).api?.setupComplete?.(path);
             if (!result?.success) {
                 throw new Error(result?.error || 'Failed to complete setup');
@@ -376,16 +307,28 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
             setInstallOutput(prev => [...prev, 'Starting backend...']);
 
-            // Restart backend with new Python
             const restartResult = await (window as any).api?.setupRestartBackend?.();
             if (!restartResult?.success) {
-                // Not fatal - backend might start on next app launch
                 setInstallOutput(prev => [...prev, 'Note: Backend will start on next app launch']);
             } else {
                 setInstallOutput(prev => [...prev, 'Backend started successfully!']);
             }
 
-            setStep('complete');
+            // Deploy NPC team
+            setInstallOutput(prev => [...prev, 'Setting up NPC team...']);
+            try {
+                await (window as any).api?.deployNpcTeam?.();
+                setInstallOutput(prev => [...prev, 'NPC team deployed successfully!']);
+            } catch (err) {
+                setInstallOutput(prev => [...prev, 'Note: NPC team will be set up on next launch']);
+            }
+
+            // For AI paths, show concepts screen; for no-ai, go straight to complete
+            if (userPath !== 'no-ai') {
+                setStep('concepts');
+            } else {
+                setStep('complete');
+            }
         } catch (err: any) {
             setError(err.message);
             setStep('error');
@@ -403,6 +346,31 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         }
     };
 
+    // Navigate from path selection to the next appropriate step
+    const handlePathNext = () => {
+        if (userPath === 'no-ai') {
+            handleStartInstall();
+        } else if (userPath === 'cloud-ai') {
+            setStep('cloud-keys');
+        } else {
+            // local-ai
+            setStep('extras');
+        }
+    };
+
+    // Navigate from cloud keys to install
+    const handleCloudKeysNext = () => {
+        handleStartInstall();
+    };
+
+    // Navigate from extras to models
+    const handleExtrasNext = async () => {
+        setStep('models');
+        await checkLocalModels();
+    };
+
+    // ─── RENDER FUNCTIONS ───────────────────────────────────────
+
     const renderWelcome = () => (
         <div className="space-y-6">
             <div className="text-center">
@@ -410,80 +378,101 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                     <Sparkles size={32} className="text-white" />
                 </div>
                 <h1 className="text-2xl font-bold text-white mb-2">Welcome to Incognide</h1>
-                <p className="text-gray-400">Let's set up your environment</p>
+                <p className="text-gray-400">Your personal workspace</p>
             </div>
 
-            <div className="bg-gray-800/50 rounded-lg p-4 space-y-3">
-                <p className="text-sm text-gray-300">
-                    Incognide uses Python for features like image generation, chat, and more.
-                    We'll help you set up a dedicated Python environment with all the necessary packages.
-                </p>
-                <div className="flex items-start gap-2 text-sm text-blue-400">
-                    <Package size={16} className="mt-0.5 flex-shrink-0" />
-                    <span>This will install npcpy and its dependencies</span>
-                </div>
+            <div className="bg-gray-800/50 rounded-lg p-4 text-sm text-gray-300">
+                Incognide is a workspace for files, code, documents, browsing, and optionally AI-powered tools.
+                Let's get you set up.
             </div>
 
-            <div className="flex gap-3">
-                <button
-                    onClick={() => setStep('concepts')}
-                    className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
-                >
-                    Get Started <ChevronRight size={18} />
-                </button>
-            </div>
+            <button
+                onClick={() => setStep('path')}
+                className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
+            >
+                Get Started <ChevronRight size={18} />
+            </button>
 
             <button
                 onClick={handleSkip}
                 disabled={loading}
                 className="w-full text-sm text-gray-500 hover:text-gray-400"
             >
-                Skip for now (features will be limited)
+                Skip for now
             </button>
         </div>
     );
 
-    const renderConcepts = () => (
-        <div className="space-y-6">
+    const renderPathSelection = () => (
+        <div className="space-y-5">
             <div className="text-center">
-                <h2 className="text-xl font-bold text-white mb-2">Core Concepts</h2>
-                <p className="text-gray-400 text-sm">NPCs and Jinxs</p>
+                <h2 className="text-xl font-bold text-white mb-1">How do you want to use Incognide?</h2>
+                <p className="text-gray-400 text-sm">You can change this anytime in Settings</p>
             </div>
 
-            {/* NPCs explanation */}
-            <div className="bg-gradient-to-br from-purple-900/30 to-purple-800/20 border border-purple-500/30 rounded-lg p-4">
-                <div className="flex items-center gap-2 mb-2">
-                    <Bot size={20} className="text-purple-400" />
-                    <h3 className="font-semibold text-white">NPCs (Personas)</h3>
-                </div>
-                <p className="text-sm text-gray-300 mb-3">
-                    NPCs are personas that can be used in chat or as autonomous agents - each with a specific role, personality, and set of jinxs they can invoke.
-                </p>
-                <ul className="text-sm text-gray-400 space-y-1 ml-4">
-                    <li>• Chat with NPCs or let them work autonomously</li>
-                    <li>• Each NPC has different tools and capabilities</li>
-                    <li>• Create your own custom NPCs</li>
-                </ul>
-            </div>
+            <div className="space-y-3">
+                {/* Workspace (no AI) */}
+                <button
+                    onClick={() => setUserPath('no-ai')}
+                    className={`w-full p-4 rounded-lg text-left border transition-all ${
+                        userPath === 'no-ai'
+                            ? 'border-blue-500/50 bg-blue-600/20'
+                            : 'border-gray-700 bg-gray-800/50 hover:bg-gray-800'
+                    }`}
+                >
+                    <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-gray-700 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <Folder size={20} className="text-gray-300" />
+                        </div>
+                        <div className="flex-1">
+                            <div className="font-medium text-white">Workspace</div>
+                            <div className="text-sm text-gray-400 mt-0.5">Files, editor, terminal, browser, documents — no AI</div>
+                        </div>
+                        {userPath === 'no-ai' && <Check size={20} className="text-blue-400 flex-shrink-0 mt-1" />}
+                    </div>
+                </button>
 
-            {/* Jinxs explanation */}
-            <div className="bg-gradient-to-br from-green-900/30 to-green-800/20 border border-green-500/30 rounded-lg p-4">
-                <div className="flex items-center gap-2 mb-2">
-                    <Wand2 size={20} className="text-green-400" />
-                    <h3 className="font-semibold text-white">Jinxs (Tools & Spells)</h3>
-                </div>
-                <p className="text-sm text-gray-300 mb-3">
-                    Jinxs are reusable action templates that you and your agents can invoke. They're built with Jinja templating, so they can adapt to different inputs and contexts:
-                </p>
-                <ul className="text-sm text-gray-400 space-y-1 ml-4">
-                    <li>• <span className="text-green-300">search</span> - search the web for information</li>
-                    <li>• <span className="text-green-300">browser</span> - control and automate a web browser</li>
-                    <li>• <span className="text-green-300">summarize</span> - condense documents and content</li>
-                    <li>• <span className="text-green-300">sh / python</span> - run commands and scripts</li>
-                </ul>
-                <p className="text-xs text-gray-500 mt-2">
-                    Create custom jinxs to automate any workflow.
-                </p>
+                {/* Cloud AI */}
+                <button
+                    onClick={() => setUserPath('cloud-ai')}
+                    className={`w-full p-4 rounded-lg text-left border transition-all ${
+                        userPath === 'cloud-ai'
+                            ? 'border-blue-500/50 bg-blue-600/20'
+                            : 'border-gray-700 bg-gray-800/50 hover:bg-gray-800'
+                    }`}
+                >
+                    <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-blue-700 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <Cloud size={20} className="text-blue-300" />
+                        </div>
+                        <div className="flex-1">
+                            <div className="font-medium text-white">Cloud AI</div>
+                            <div className="text-sm text-gray-400 mt-0.5">Use OpenAI, Anthropic, Gemini — no local setup needed</div>
+                        </div>
+                        {userPath === 'cloud-ai' && <Check size={20} className="text-blue-400 flex-shrink-0 mt-1" />}
+                    </div>
+                </button>
+
+                {/* Local AI */}
+                <button
+                    onClick={() => setUserPath('local-ai')}
+                    className={`w-full p-4 rounded-lg text-left border transition-all ${
+                        userPath === 'local-ai'
+                            ? 'border-blue-500/50 bg-blue-600/20'
+                            : 'border-gray-700 bg-gray-800/50 hover:bg-gray-800'
+                    }`}
+                >
+                    <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-purple-700 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <Cpu size={20} className="text-purple-300" />
+                        </div>
+                        <div className="flex-1">
+                            <div className="font-medium text-white">Local AI</div>
+                            <div className="text-sm text-gray-400 mt-0.5">Run models locally with Ollama — private and offline</div>
+                        </div>
+                        {userPath === 'local-ai' && <Check size={20} className="text-blue-400 flex-shrink-0 mt-1" />}
+                    </div>
+                </button>
             </div>
 
             <div className="flex gap-3">
@@ -494,110 +483,114 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                     <ChevronLeft size={16} /> Back
                 </button>
                 <button
-                    onClick={() => setStep('agents')}
-                    className="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
+                    onClick={handlePathNext}
+                    className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
                 >
-                    Meet the NPCs <ChevronRight size={18} />
+                    Continue <ChevronRight size={18} />
                 </button>
             </div>
         </div>
     );
 
-    const renderAgents = () => (
-        <div className="space-y-4">
+    const renderCloudKeys = () => (
+        <div className="space-y-5">
             <div className="text-center">
-                <h2 className="text-xl font-bold text-white mb-1">Available NPCs</h2>
-                <p className="text-gray-400 text-sm">Click to learn more about each</p>
+                <h2 className="text-xl font-bold text-white mb-1">API Keys (Optional)</h2>
+                <p className="text-gray-400 text-sm">Add keys now or later in Settings</p>
             </div>
 
-            {/* Agent modal */}
-            {selectedAgent && (
-                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setSelectedAgent(null)}>
-                    <div className="bg-gray-800 border border-gray-700 rounded-xl p-5 max-w-sm w-full" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-start justify-between mb-3">
-                            <div className="flex items-center gap-3">
-                                {npcImagesPath ? (
-                                    <img
-                                        src={`file://${npcImagesPath}/${selectedAgent.imagePath}`}
-                                        alt={selectedAgent.name}
-                                        className="w-14 h-14 rounded-xl object-cover"
-                                        style={{ borderColor: selectedAgent.color, borderWidth: 2 }}
-                                    />
-                                ) : (
-                                    <div className="w-14 h-14 rounded-xl flex items-center justify-center" style={{ backgroundColor: selectedAgent.color }}>
-                                        <Bot size={28} className="text-white" />
-                                    </div>
-                                )}
-                                <div>
-                                    <h3 className="font-bold text-white text-lg">{selectedAgent.name}</h3>
-                                    <p className="text-xs text-gray-400">NPC</p>
-                                </div>
-                            </div>
-                            <button onClick={() => setSelectedAgent(null)} className="text-gray-500 hover:text-gray-300">
-                                <X size={20} />
-                            </button>
-                        </div>
-                        <p className="text-sm text-gray-300 mb-4">{selectedAgent.description}</p>
-                        <div>
-                            <div className="text-xs text-gray-500 mb-2 font-medium">Available Jinxs:</div>
-                            <div className="flex flex-wrap gap-1.5">
-                                {selectedAgent.jinxs.map(jinx => (
-                                    <span key={jinx} className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">
-                                        {jinx}
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
+            <div className="space-y-3">
+                {[
+                    { key: 'OPENAI_API_KEY', label: 'OpenAI', placeholder: 'sk-...' },
+                    { key: 'ANTHROPIC_API_KEY', label: 'Anthropic', placeholder: 'sk-ant-...' },
+                    { key: 'GEMINI_API_KEY', label: 'Google Gemini', placeholder: 'AI...' },
+                ].map(({ key, label, placeholder }) => (
+                    <div key={key}>
+                        <label className="text-xs text-gray-400 font-medium block mb-1">{label}</label>
+                        <input
+                            type="password"
+                            value={apiKeys[key] || ''}
+                            onChange={(e) => setApiKeys(prev => ({ ...prev, [key]: e.target.value }))}
+                            placeholder={placeholder}
+                            className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none"
+                        />
                     </div>
-                </div>
-            )}
-
-            {/* Agent grid */}
-            <div className="grid grid-cols-3 gap-3">
-                {NPC_AGENTS.map(agent => (
-                    <button
-                        key={agent.id}
-                        onClick={() => setSelectedAgent(agent)}
-                        className="p-3 rounded-lg border border-gray-700 bg-gray-800/50 hover:bg-gray-800 hover:border-gray-600 transition-all text-center"
-                    >
-                        {npcImagesPath ? (
-                            <img
-                                src={`file://${npcImagesPath}/${agent.imagePath}`}
-                                alt={agent.name}
-                                className="w-12 h-12 mx-auto rounded-lg object-cover mb-2"
-                                style={{ borderColor: agent.color, borderWidth: 2 }}
-                            />
-                        ) : (
-                            <div
-                                className="w-12 h-12 mx-auto rounded-lg flex items-center justify-center mb-2"
-                                style={{ backgroundColor: agent.color }}
-                            >
-                                <Bot size={24} className="text-white" />
-                            </div>
-                        )}
-                        <div className="text-sm font-medium text-white">{agent.name}</div>
-                        <div className="text-[10px] text-gray-500 mt-0.5 line-clamp-1">{agent.jinxs.slice(0, 2).join(', ')}</div>
-                    </button>
                 ))}
             </div>
 
             <div className="bg-gray-800/50 rounded-lg p-3 text-xs text-gray-400">
-                <Info size={12} className="inline mr-1" />
-                Select an NPC in a chat pane to use their persona and jinxs.
+                <KeyRound size={12} className="inline mr-1" />
+                Keys are stored locally and never sent anywhere except the provider's API.
             </div>
 
             <div className="flex gap-3">
                 <button
-                    onClick={() => setStep('concepts')}
+                    onClick={() => setStep('path')}
                     className="py-2 px-4 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center gap-1"
                 >
                     <ChevronLeft size={16} /> Back
                 </button>
                 <button
-                    onClick={() => setStep('choose')}
-                    className="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
+                    onClick={handleCloudKeysNext}
+                    className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
                 >
-                    Setup Python <ChevronRight size={18} />
+                    {Object.values(apiKeys).some(v => v.trim()) ? 'Install' : "I'll do this later"} <ChevronRight size={18} />
+                </button>
+            </div>
+        </div>
+    );
+
+    const renderExtras = () => (
+        <div className="space-y-5">
+            <div className="text-center">
+                <h2 className="text-xl font-bold text-white mb-1">Choose Features</h2>
+                <p className="text-gray-400 text-sm">Select which capabilities to install</p>
+            </div>
+
+            <div className="space-y-3">
+                {INSTALL_OPTIONS.map((option) => (
+                    <button
+                        key={option.id}
+                        onClick={() => setSelectedExtras(option.extras)}
+                        className={`w-full p-4 rounded-lg text-left border transition-all ${
+                            selectedExtras === option.extras
+                                ? 'border-blue-500/50 bg-blue-600/20'
+                                : 'border-gray-700 bg-gray-800/50 hover:bg-gray-800'
+                        }`}
+                    >
+                        <div className="flex items-start gap-3">
+                            <div className="w-10 h-10 bg-gray-700 rounded-lg flex items-center justify-center flex-shrink-0">
+                                {option.icon}
+                            </div>
+                            <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                    <span className="font-medium text-white">{option.name}</span>
+                                    {option.recommended && (
+                                        <span className="text-xs bg-blue-500/30 text-blue-300 px-2 py-0.5 rounded">Recommended</span>
+                                    )}
+                                </div>
+                                <div className="text-sm text-gray-400 mt-1">{option.description}</div>
+                            </div>
+                            {selectedExtras === option.extras && (
+                                <Check size={20} className="text-blue-400 flex-shrink-0" />
+                            )}
+                        </div>
+                    </button>
+                ))}
+            </div>
+
+            <div className="flex gap-3">
+                <button
+                    onClick={() => setStep('path')}
+                    className="py-2 px-4 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center gap-1"
+                >
+                    <ChevronLeft size={16} /> Back
+                </button>
+                <button
+                    onClick={handleExtrasNext}
+                    className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
+                >
+                    Next <ChevronRight size={18} />
                 </button>
             </div>
         </div>
@@ -634,11 +627,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                                             disabled={installingOllama}
                                             className="text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-2 py-0.5 rounded flex items-center gap-1"
                                         >
-                                            {installingOllama ? (
-                                                <><RefreshCw size={10} className="animate-spin" /> ...</>
-                                            ) : (
-                                                'Download'
-                                            )}
+                                            {installingOllama ? <><RefreshCw size={10} className="animate-spin" /> ...</> : 'Download'}
                                         </button>
                                         {platform === 'darwin' && homebrewAvailable && (
                                             <button
@@ -681,25 +670,9 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                             </div>
                             <p className="text-xs text-gray-400">GUI for running GGUF models</p>
                         </div>
-
-                        {/* llama.cpp */}
-                        <div className={`p-3 rounded-lg border ${detectedModels.find(m => m.provider === 'llamacpp')?.available ? 'border-green-500/50 bg-green-900/20' : 'border-gray-700 bg-gray-800/50'}`}>
-                            <div className="flex items-center justify-between mb-1">
-                                <div className="flex items-center gap-2">
-                                    <Cpu size={18} className={detectedModels.find(m => m.provider === 'llamacpp')?.available ? 'text-green-400' : 'text-gray-500'} />
-                                    <span className="font-medium text-white">llama.cpp</span>
-                                </div>
-                                {detectedModels.find(m => m.provider === 'llamacpp')?.available ? (
-                                    <span className="text-xs bg-green-500/30 text-green-300 px-2 py-0.5 rounded">Detected</span>
-                                ) : (
-                                    <span className="text-xs text-gray-500">Not found</span>
-                                )}
-                            </div>
-                            <p className="text-xs text-gray-400">Efficient C++ inference engine</p>
-                        </div>
                     </div>
 
-                    {/* Xcode CLT recommendation for Mac */}
+                    {/* Mac-specific helpers */}
                     {platform === 'darwin' && !xcodeAvailable && (
                         <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
                             <div className="flex items-center justify-between mb-1">
@@ -707,18 +680,15 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                                 <button
                                     onClick={handleInstallXcode}
                                     disabled={installingXcode}
-                                    className="text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-2 py-0.5 rounded flex items-center gap-1"
+                                    className="text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-2 py-0.5 rounded"
                                 >
                                     {installingXcode ? 'Opening...' : 'Install'}
                                 </button>
                             </div>
-                            <p className="text-xs text-gray-400">
-                                Recommended for development tools and compiling packages.
-                            </p>
+                            <p className="text-xs text-gray-400">Recommended for compiling packages.</p>
                         </div>
                     )}
 
-                    {/* Homebrew notice for Mac */}
                     {platform === 'darwin' && !homebrewAvailable && (
                         <div className="bg-gray-800/50 border border-gray-600 rounded-lg p-3">
                             <div className="flex items-center justify-between mb-1">
@@ -726,41 +696,24 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                                 <button
                                     onClick={handleInstallHomebrew}
                                     disabled={installingHomebrew}
-                                    className="text-xs bg-gray-600 hover:bg-gray-500 disabled:bg-gray-700 text-white px-2 py-0.5 rounded flex items-center gap-1"
+                                    className="text-xs bg-gray-600 hover:bg-gray-500 disabled:bg-gray-700 text-white px-2 py-0.5 rounded"
                                 >
-                                    {installingHomebrew ? (
-                                        <><RefreshCw size={10} className="animate-spin" /> Installing...</>
-                                    ) : (
-                                        'Install'
-                                    )}
+                                    {installingHomebrew ? <><RefreshCw size={10} className="animate-spin" /> Installing...</> : 'Install'}
                                 </button>
                             </div>
-                            <p className="text-xs text-gray-500">
-                                Package manager for macOS. Enables "brew" install option.
-                            </p>
+                            <p className="text-xs text-gray-500">Package manager for macOS.</p>
                         </div>
                     )}
 
-                    {/* Install message */}
                     {installMessage && (
                         <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
                             <p className="text-xs text-blue-300">{installMessage}</p>
                         </div>
                     )}
 
-                    {/* Install error */}
                     {installError && (
                         <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-3">
                             <p className="text-xs text-red-300">{installError}</p>
-                        </div>
-                    )}
-
-                    {!detectedModels.some(m => m.available) && !installError && !installMessage && (
-                        <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-3">
-                            <p className="text-xs text-yellow-300 mb-2">No local model providers detected.</p>
-                            <p className="text-xs text-gray-400">
-                                Click "Download" to get Ollama, or use cloud APIs (OpenAI, Anthropic, etc.).
-                            </p>
                         </div>
                     )}
 
@@ -782,128 +735,9 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 </button>
                 <button
                     onClick={handleStartInstall}
-                    className="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
+                    className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
                 >
                     Install <ChevronRight size={18} />
-                </button>
-            </div>
-        </div>
-    );
-
-    const renderChoose = () => (
-        <div className="space-y-6">
-            <div className="text-center">
-                <h2 className="text-xl font-bold text-white mb-2">Choose Python Setup</h2>
-                <p className="text-gray-400 text-sm">Select how you want to configure Python</p>
-            </div>
-
-            {/* Option 1: Create new venv (recommended) */}
-            <button
-                onClick={() => handlePythonChoice(true)}
-                className="w-full p-4 bg-blue-600/20 border border-blue-500/50 hover:bg-blue-600/30 rounded-lg text-left"
-            >
-                <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <Terminal size={20} className="text-white" />
-                    </div>
-                    <div>
-                        <div className="font-medium text-white">Create New Environment (Recommended)</div>
-                        <div className="text-sm text-gray-400 mt-1">
-                            Creates a dedicated virtual environment at ~/.npcsh/incognide/venv
-                        </div>
-                    </div>
-                </div>
-            </button>
-
-            {/* Option 2: Use existing Python */}
-            <div className="space-y-3">
-                <div className="text-sm text-gray-400">Or use an existing Python installation:</div>
-
-                {detectedPythons.length === 0 ? (
-                    <div className="text-sm text-gray-500 p-3 bg-gray-800/50 rounded-lg">
-                        No Python installations detected
-                    </div>
-                ) : (
-                    <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
-                        {detectedPythons.map((python, idx) => (
-                            <button
-                                key={idx}
-                                onClick={() => handlePythonChoice(false, python)}
-                                className="w-full p-3 rounded-lg text-left border border-gray-700 bg-gray-800/50 hover:bg-gray-800"
-                            >
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <div className="text-sm font-medium text-white">{python.name}</div>
-                                        <div className="text-xs text-gray-500">{python.version}</div>
-                                    </div>
-                                    <ChevronRight size={16} className="text-gray-500" />
-                                </div>
-                            </button>
-                        ))}
-                    </div>
-                )}
-            </div>
-
-            <button
-                onClick={() => setStep('agents')}
-                className="w-full text-sm text-gray-500 hover:text-gray-400"
-            >
-                Back
-            </button>
-        </div>
-    );
-
-    const renderExtras = () => (
-        <div className="space-y-6">
-            <div className="text-center">
-                <h2 className="text-xl font-bold text-white mb-2">Choose Features</h2>
-                <p className="text-gray-400 text-sm">Select which capabilities to install</p>
-            </div>
-
-            <div className="space-y-3">
-                {INSTALL_OPTIONS.map((option) => (
-                    <button
-                        key={option.id}
-                        onClick={() => setSelectedExtras(option.extras)}
-                        className={`w-full p-4 rounded-lg text-left border transition-all ${
-                            selectedExtras === option.extras
-                                ? 'border-blue-500/50 bg-blue-600/20'
-                                : 'border-gray-700 bg-gray-800/50 hover:bg-gray-800'
-                        }`}
-                    >
-                        <div className="flex items-start gap-3">
-                            <div className="w-10 h-10 bg-gray-700 rounded-lg flex items-center justify-center flex-shrink-0">
-                                {option.icon}
-                            </div>
-                            <div className="flex-1">
-                                <div className="flex items-center gap-2">
-                                    <span className="font-medium text-white">{option.name}</span>
-                                    {option.recommended && (
-                                        <span className="text-xs bg-blue-500/30 text-blue-300 px-2 py-0.5 rounded">Recommended</span>
-                                    )}
-                                </div>
-                                <div className="text-sm text-gray-400 mt-1">{option.description}</div>
-                            </div>
-                            {selectedExtras === option.extras && (
-                                <Check size={20} className="text-blue-400 flex-shrink-0" />
-                            )}
-                        </div>
-                    </button>
-                ))}
-            </div>
-
-            <div className="flex gap-3">
-                <button
-                    onClick={() => setStep('choose')}
-                    className="flex-1 py-2 px-4 bg-gray-700 hover:bg-gray-600 text-white rounded-lg"
-                >
-                    Back
-                </button>
-                <button
-                    onClick={handleGoToModels}
-                    className="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
-                >
-                    Next <ChevronRight size={18} />
                 </button>
             </div>
         </div>
@@ -918,7 +752,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 <h2 className="text-lg font-bold text-white mb-1">
                     {step === 'creating' ? 'Creating Environment' : 'Installing Packages'}
                 </h2>
-                <p className="text-gray-400 text-xs">This may take several minutes for large packages...</p>
+                <p className="text-gray-400 text-xs">This may take several minutes...</p>
             </div>
 
             <div
@@ -936,28 +770,104 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         </div>
     );
 
+    const renderConcepts = () => (
+        <div className="space-y-5">
+            <div className="text-center">
+                <h2 className="text-xl font-bold text-white mb-1">Meet Your AI Team</h2>
+                <p className="text-gray-400 text-sm">AI assistants and tools at your fingertips</p>
+            </div>
+
+            {/* Ledbi - the Incognide forenpc */}
+            <div className="bg-gradient-to-br from-amber-900/30 to-amber-800/20 border border-amber-500/30 rounded-lg p-4">
+                <div className="flex items-center gap-3 mb-3">
+                    {npcImagesPath ? (
+                        <img
+                            src={`file://${npcImagesPath}/ledbi.png`}
+                            alt="Ledbi"
+                            className="w-14 h-14 rounded-xl object-cover"
+                            style={{ borderColor: 'rgb(139,69,19)', borderWidth: 2 }}
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                    ) : null}
+                    <div>
+                        <h3 className="font-bold text-white text-lg">Ledbi</h3>
+                        <p className="text-xs text-amber-400">Your UI Assistant</p>
+                    </div>
+                </div>
+                <p className="text-sm text-gray-300 mb-2">
+                    A loyal helper who manages your workspace — opens panes, navigates browsers, and keeps things organized.
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                    {['open_pane', 'close_pane', 'navigate', 'notify'].map(jinx => (
+                        <span key={jinx} className="text-xs bg-amber-900/40 text-amber-300 px-2 py-0.5 rounded">{jinx}</span>
+                    ))}
+                </div>
+            </div>
+
+            {/* Quick concepts */}
+            <div className="grid grid-cols-2 gap-3">
+                <div className="bg-gradient-to-br from-purple-900/30 to-purple-800/20 border border-purple-500/30 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                        <Bot size={16} className="text-purple-400" />
+                        <h4 className="font-semibold text-white text-sm">NPCs</h4>
+                    </div>
+                    <p className="text-xs text-gray-400">
+                        AI personas with specific roles and skills. Chat with them or let them work autonomously.
+                    </p>
+                </div>
+                <div className="bg-gradient-to-br from-green-900/30 to-green-800/20 border border-green-500/30 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                        <Wand2 size={16} className="text-green-400" />
+                        <h4 className="font-semibold text-white text-sm">Jinxs</h4>
+                    </div>
+                    <p className="text-xs text-gray-400">
+                        Reusable action templates — search, browse, summarize, run code, and more.
+                    </p>
+                </div>
+            </div>
+
+            <button
+                onClick={() => setStep('complete')}
+                className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
+            >
+                Let's Go <ChevronRight size={18} />
+            </button>
+        </div>
+    );
+
     const renderComplete = () => (
         <div className="space-y-6">
             <div className="text-center">
                 <div className="w-16 h-16 mx-auto mb-4 bg-green-600 rounded-2xl flex items-center justify-center">
                     <Check size={32} className="text-white" />
                 </div>
-                <h2 className="text-xl font-bold text-white mb-2">Setup Complete!</h2>
-                <p className="text-gray-400 text-sm">Your Python environment is ready</p>
+                <h2 className="text-xl font-bold text-white mb-2">You're All Set!</h2>
+                <p className="text-gray-400 text-sm">
+                    {userPath === 'no-ai'
+                        ? 'Your workspace is ready'
+                        : 'Your AI-powered workspace is ready'
+                    }
+                </p>
             </div>
 
             <div className="bg-gray-800/50 rounded-lg p-4 space-y-2 text-sm">
                 <div className="flex items-center gap-2 text-green-400">
                     <Check size={14} />
-                    <span>Virtual environment created</span>
+                    <span>Environment created</span>
                 </div>
                 <div className="flex items-center gap-2 text-green-400">
                     <Check size={14} />
                     <span>npcpy installed</span>
                 </div>
+                {userPath !== 'no-ai' && (
+                    <div className="flex items-center gap-2 text-green-400">
+                        <Check size={14} />
+                        <span>AI features enabled ({userPath === 'cloud-ai' ? 'Cloud' : 'Local'})</span>
+                    </div>
+                )}
                 <div className="flex items-center gap-2 text-green-400">
                     <Check size={14} />
-                    <span>Backend configured</span>
+                    <span>NPC team deployed</span>
                 </div>
             </div>
 
@@ -984,9 +894,24 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 <p className="text-sm text-red-400">{error}</p>
             </div>
 
+            {installOutput.length > 0 && (
+                <details className="text-xs">
+                    <summary className="text-gray-500 cursor-pointer hover:text-gray-400">Show install log</summary>
+                    <div className="bg-gray-900 rounded-lg p-3 mt-2 h-32 overflow-y-auto font-mono">
+                        {installOutput.map((line, idx) => (
+                            <div key={idx} className="text-gray-500 whitespace-pre-wrap break-all">{line}</div>
+                        ))}
+                    </div>
+                </details>
+            )}
+
             <div className="flex gap-3">
                 <button
-                    onClick={() => setStep('choose')}
+                    onClick={() => {
+                        setError(null);
+                        setInstallOutput([]);
+                        setStep('path');
+                    }}
                     className="flex-1 py-2 px-4 bg-gray-700 hover:bg-gray-600 text-white rounded-lg"
                 >
                     Try Again
@@ -1005,12 +930,12 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         <div className="fixed top-0 left-0 right-0 bottom-0 w-screen h-screen bg-gray-900 flex items-center justify-center p-4 z-[9999] overflow-auto">
             <div className="w-full max-w-md bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-2xl my-auto">
                 {step === 'welcome' && renderWelcome()}
-                {step === 'concepts' && renderConcepts()}
-                {step === 'agents' && renderAgents()}
-                {step === 'choose' && renderChoose()}
+                {step === 'path' && renderPathSelection()}
+                {step === 'cloud-keys' && renderCloudKeys()}
                 {step === 'extras' && renderExtras()}
                 {step === 'models' && renderModels()}
                 {(step === 'creating' || step === 'installing') && renderInstalling()}
+                {step === 'concepts' && renderConcepts()}
                 {step === 'complete' && renderComplete()}
                 {step === 'error' && renderError()}
             </div>

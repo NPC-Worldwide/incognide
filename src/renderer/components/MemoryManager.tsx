@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useAiEnabled } from './AiFeatureContext';
 import {
     Database, Search, Check, X, Edit2, Clock, Filter, RefreshCw,
     Download, Upload, Plus, Trash2, Star, FileJson, Sparkles,
@@ -61,6 +62,7 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
     currentTeam = '',
     isPane = false
 }) => {
+    const aiEnabled = useAiEnabled();
     const [memories, setMemories] = useState<Memory[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -671,14 +673,16 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                         >
                             Memories
                         </button>
-                        <button
-                            onClick={() => setActiveTab('datasets')}
-                            className={`px-3 py-1 text-sm rounded flex items-center gap-1 ${
-                                activeTab === 'datasets' ? 'bg-amber-600 text-white' : 'text-gray-400 hover:text-white'
-                            }`}
-                        >
-                            <Sparkles size={12} /> Training Datasets
-                        </button>
+                        {aiEnabled && (
+                            <button
+                                onClick={() => setActiveTab('datasets')}
+                                className={`px-3 py-1 text-sm rounded flex items-center gap-1 ${
+                                    activeTab === 'datasets' ? 'bg-amber-600 text-white' : 'text-gray-400 hover:text-white'
+                                }`}
+                            >
+                                <Sparkles size={12} /> Training Datasets
+                            </button>
+                        )}
                     </div>
                 </div>
                 {!isPane && onClose && (

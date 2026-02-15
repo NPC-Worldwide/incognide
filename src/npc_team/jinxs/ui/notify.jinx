@@ -1,0 +1,14 @@
+jinx_name: notify
+description: Show a notification toast to the user. Type can be info, success, warning, or error.
+inputs:
+  - message
+  - { type: "info" }
+  - { duration: 3000 }
+steps:
+  - name: notify
+    engine: incognide
+    action: notify
+    args:
+      message: "{{ message }}"
+      type: "{{ type }}"
+      duration: "{{ duration }}"

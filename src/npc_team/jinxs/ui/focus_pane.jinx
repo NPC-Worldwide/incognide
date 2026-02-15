@@ -1,0 +1,10 @@
+jinx_name: focus_pane
+description: Focus/activate a specific pane in Incognide by its ID.
+inputs:
+  - pane_id
+steps:
+  - name: focus_pane
+    engine: incognide
+    action: focus_pane
+    args:
+      paneId: "{{ pane_id }}"

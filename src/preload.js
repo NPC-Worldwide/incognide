@@ -363,8 +363,9 @@ readDocxContent: (filePath) =>
     tileJinxRecompile: () => ipcRenderer.invoke('tile-jinx-recompile'),
     transformTsx: (code) => ipcRenderer.invoke('transformTsx', code),
 
-    getGlobalContext: () => ipcRenderer.invoke('get-global-context'),
-    saveGlobalContext: (contextData) => ipcRenderer.invoke('save-global-context', contextData),
+    // globalPath: 'npcsh' for raw npcsh context, omit for incognide (default)
+    getGlobalContext: (globalPath) => ipcRenderer.invoke('get-global-context', globalPath),
+    saveGlobalContext: (contextData, globalPath) => ipcRenderer.invoke('save-global-context', contextData, globalPath),
     getProjectContext: (path) => ipcRenderer.invoke('get-project-context', path),
     saveProjectContext: (data) => ipcRenderer.invoke('save-project-context', data),
     initProjectTeam: (path) => ipcRenderer.invoke('init-project-team', path),
@@ -481,19 +482,8 @@ onTerminalClosed: (callback) => {
     updateBrowserBounds: (args) => ipcRenderer.invoke('update-browser-bounds', args),
     getBrowserHistory: (folderPath) => ipcRenderer.invoke('get-browser-history', folderPath),
     browserAddToHistory: (data) => ipcRenderer.invoke('browser-add-to-history', data),
-    getJinxsGlobal: async () => {
-        try {
-            const response = await fetch(`${BACKEND_URL}/api/jinxs/global`);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            const data = await response.json();
-            return data; 
-        } catch (error) {
-            console.error('Error loading global jinxs:', error);
-            return { jinxs: [], error: error.message };
-        }
-    },
+    // globalPath: optional. 'npcsh' for raw npcsh team, omit for incognide (default)
+    getJinxsGlobal: (globalPath) => ipcRenderer.invoke('get-jinxs-global', globalPath),
     getJinxsProject: async (currentPath) => {
         try {
             const response = await fetch(`${BACKEND_URL}/api/jinxs/project?currentPath=${encodeURIComponent(currentPath)}`);
@@ -578,6 +568,10 @@ onTerminalClosed: (callback) => {
     pythonEnvInstallPackage: (workspacePath, packageName, extraArgs) => ipcRenderer.invoke('python-env-install-package', workspacePath, packageName, extraArgs),
     pythonEnvUninstallPackage: (workspacePath, packageName) => ipcRenderer.invoke('python-env-uninstall-package', workspacePath, packageName),
 
+    // User profile
+    profileGet: () => ipcRenderer.invoke('profile:get'),
+    profileSave: (profile) => ipcRenderer.invoke('profile:save', profile),
+
     // First-run setup
     setupCheckNeeded: () => ipcRenderer.invoke('setup:checkNeeded'),
     setupGetBackendPythonPath: () => ipcRenderer.invoke('setup:getBackendPythonPath'),
@@ -631,7 +625,8 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
         }
         return await ipcRenderer.invoke('getNPCTeamProject', currentPath);
     },
-    getNPCTeamGlobal: () => ipcRenderer.invoke('getNPCTeamGlobal'),
+    // globalPath: optional. 'npcsh' for raw npcsh team, omit for incognide (default)
+    getNPCTeamGlobal: (globalPath) => ipcRenderer.invoke('getNPCTeamGlobal', globalPath),
     onBrowserShowContextMenu: (callback) => {
         const handler = (_, data) => callback(data);
         ipcRenderer.on('browser-show-context-menu', handler);
@@ -654,6 +649,15 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
     npcshCheck: () => ipcRenderer.invoke('npcsh-check'),
     npcshPackageContents: () => ipcRenderer.invoke('npcsh-package-contents'),
     npcshInit: () => ipcRenderer.invoke('npcsh-init'),
+    deployIncognideTeam: () => ipcRenderer.invoke('deploy-incognide-team'),
+
+    // NPC Team Sync
+    npcTeamSyncStatus: () => ipcRenderer.invoke('npc-team:sync-status'),
+    npcTeamSyncInit: () => ipcRenderer.invoke('npc-team:sync-init'),
+    npcTeamSyncPull: () => ipcRenderer.invoke('npc-team:sync-pull'),
+    npcTeamSyncResolve: (args) => ipcRenderer.invoke('npc-team:sync-resolve', args),
+    npcTeamSyncCommit: (args) => ipcRenderer.invoke('npc-team:sync-commit', args),
+    npcTeamSyncDiff: (args) => ipcRenderer.invoke('npc-team:sync-diff', args),
 
     getLogsDir: () => ipcRenderer.invoke('getLogsDir'),
     readLogFile: (logType) => ipcRenderer.invoke('readLogFile', logType),

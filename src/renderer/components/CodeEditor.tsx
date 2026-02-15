@@ -1,4 +1,5 @@
 import { getFileName } from './utils';
+import { useAiEnabled } from './AiFeatureContext';
 import React, { useMemo, useCallback, useRef, useEffect, useState, memo } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { javascript } from '@codemirror/lang-javascript';
@@ -352,6 +353,7 @@ const CodeEditorPane = ({
     onRunScript,
     onSendToTerminal,
 }) => {
+    const aiEnabled = useAiEnabled();
     const paneData = contentDataRef.current[nodeId];
     const [showBlame, setShowBlame] = useState(false);
     const [blameData, setBlameData] = useState<any[] | null>(null);
@@ -539,7 +541,7 @@ const CodeEditorPane = ({
                             className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-sm">
                             Paste
                         </button>
-                        {contextMenuSelection && (
+                        {aiEnabled && contextMenuSelection && (
                             <>
                                 <div className="border-t theme-border my-1"></div>
                                 <button onClick={() => { handleAIEdit('ask', contextMenuSelection); setEditorContextMenuPos(null); }}
@@ -587,21 +589,25 @@ const CodeEditorPane = ({
                             className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-sm">
                             <Edit size={16} />Rename File
                         </button>
-                        <div className="border-t theme-border my-1"></div>
-                        <button
-                            onClick={() => {
-                                setEditorContextMenuPos(null);
-                                setPromptModal({
-                                    isOpen: true,
-                                    title: 'Agentic Code Edit',
-                                    message: 'What would you like AI to do with all open files?',
-                                    defaultValue: 'Add error handling and improve code quality',
-                                    onConfirm: (instruction) => startAgenticEdit(instruction)
-                                });
-                            }}
-                            className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left text-blue-400 text-sm">
-                            <BrainCircuit size={16} />Agentic Edit
-                        </button>
+                        {aiEnabled && (
+                            <>
+                                <div className="border-t theme-border my-1"></div>
+                                <button
+                                    onClick={() => {
+                                        setEditorContextMenuPos(null);
+                                        setPromptModal({
+                                            isOpen: true,
+                                            title: 'Agentic Code Edit',
+                                            message: 'What would you like AI to do with all open files?',
+                                            defaultValue: 'Add error handling and improve code quality',
+                                            onConfirm: (instruction) => startAgenticEdit(instruction)
+                                        });
+                                    }}
+                                    className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left text-blue-400 text-sm">
+                                    <BrainCircuit size={16} />Agentic Edit
+                                </button>
+                            </>
+                        )}
                     </div>
                 </>
             )}

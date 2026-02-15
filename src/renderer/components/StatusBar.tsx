@@ -4,6 +4,7 @@ import {
     BrainCircuit, Clock, Bot, Zap, Users, Database, ChevronRight, ChevronDown
 } from 'lucide-react';
 import MemoryIcon from './MemoryIcon';
+import { useAiEnabled } from './AiFeatureContext';
 
 interface PaneItem {
     id: string;
@@ -58,6 +59,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
     sidebarCollapsed = false,
     onExpandSidebar,
 }) => {
+    const aiEnabled = useAiEnabled();
     // Common button style - explicit transparent background, only icon colored
     const btnClass = "p-2 rounded transition-colors hover:opacity-80 bg-transparent";
 
@@ -79,7 +81,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
                     <ChevronRight size={20} />
                 </button>
             )}
-            {/* Left side - DB, Memory, KG */}
+            {/* Left side - DB, Memory (AI only), KG */}
             {/* DB Tool button */}
             <button
                 onClick={() => createDBToolPane?.()}
@@ -89,18 +91,21 @@ const StatusBar: React.FC<StatusBarProps> = ({
                 <Database size={20} />
             </button>
 
-            {/* Memory button */}
-            <button
-                onClick={() => createMemoryManagerPane?.()}
-                className={`${btnClass} text-amber-600 dark:text-amber-400 flex items-center gap-1`}
-                title={pendingMemoryCount > 0 ? `Memory: ${pendingMemoryCount} pending` : "Memory Manager"}
-            >
-                <MemoryIcon size={20} />
-                {pendingMemoryCount > 0 && <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>}
-            </button>
+            {/* Memory button - AI only */}
+            {aiEnabled && (
+                <button
+                    onClick={() => createMemoryManagerPane?.()}
+                    className={`${btnClass} text-amber-600 dark:text-amber-400 flex items-center gap-1`}
+                    title={pendingMemoryCount > 0 ? `Memory: ${pendingMemoryCount} pending` : "Memory Manager"}
+                >
+                    <MemoryIcon size={20} />
+                    {pendingMemoryCount > 0 && <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>}
+                </button>
+            )}
 
             {/* KG button */}
             <button
+                data-tutorial="kg-button"
                 onClick={() => createGraphViewerPane?.()}
                 className={`${btnClass} text-emerald-600 dark:text-emerald-400 flex items-center gap-1`}
                 title={kgGeneration !== null && kgGeneration !== undefined ? `Knowledge Graph (Gen ${kgGeneration})` : "Knowledge Graph"}
@@ -147,35 +152,39 @@ const StatusBar: React.FC<StatusBarProps> = ({
 
             <div className="flex-1" />
 
-            {/* Right side - NPCs, Jinxs, Team Management */}
-            <div className="flex items-center gap-1">
-                {/* NPCs button */}
-                <button
-                    onClick={() => createNPCTeamPane?.()}
-                    className={`${btnClass} text-cyan-600 dark:text-cyan-400`}
-                    title="NPCs"
-                >
-                    <Bot size={20} />
-                </button>
+            {/* Right side - NPCs, Jinxs, Team Management (AI only) */}
+            {aiEnabled && (
+                <div className="flex items-center gap-1">
+                    {/* NPCs button */}
+                    <button
+                        data-tutorial="npc-team-button"
+                        onClick={() => createNPCTeamPane?.()}
+                        className={`${btnClass} text-cyan-600 dark:text-cyan-400`}
+                        title="NPCs"
+                    >
+                        <Bot size={20} />
+                    </button>
 
-                {/* Jinxs button */}
-                <button
-                    onClick={() => createJinxPane?.()}
-                    className={`${btnClass} text-yellow-600 dark:text-yellow-400`}
-                    title="Jinxs"
-                >
-                    <Zap size={20} />
-                </button>
+                    {/* Jinxs button */}
+                    <button
+                        onClick={() => createJinxPane?.()}
+                        className={`${btnClass} text-yellow-600 dark:text-yellow-400`}
+                        title="Jinxs"
+                    >
+                        <Zap size={20} />
+                    </button>
 
-                {/* Team Management button */}
-                <button
-                    onClick={() => createTeamManagementPane?.()}
-                    className={`${btnClass} text-indigo-600 dark:text-indigo-400`}
-                    title="Team Management (NPCs, Jinxs, Databases, MCP, Cron, SQL Models)"
-                >
-                    <Users size={20} />
-                </button>
-            </div>
+                    {/* Team Management button */}
+                    <button
+                        data-tutorial="team-management-button"
+                        onClick={() => createTeamManagementPane?.()}
+                        className={`${btnClass} text-indigo-600 dark:text-indigo-400`}
+                        title="Team Management (NPCs, Jinxs, Databases, MCP, Cron, SQL Models)"
+                    >
+                        <Users size={20} />
+                    </button>
+                </div>
+            )}
             </div>
         </div>
     );

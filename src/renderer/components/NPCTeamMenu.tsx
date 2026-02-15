@@ -36,7 +36,8 @@ const NPCTeamMenu = ({
     currentPath,
     startNewConversation,
     embedded = false,
-    isGlobal = true
+    isGlobal = true,
+    globalPath = undefined,
 }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -96,19 +97,19 @@ const NPCTeamMenu = ({
             setError(null);
             
             const npcResponse = isGlobal
-                ? await window.api.getNPCTeamGlobal()
+                ? await window.api.getNPCTeamGlobal(globalPath)
                 : await window.api.getNPCTeamProject(currentPath);
             setNpcs(npcResponse.npcs || []);
-            
+
             const jinxResponse = isGlobal
-                ? await window.api.getJinxsGlobal()
+                ? await window.api.getJinxsGlobal(globalPath)
                 : await window.api.getJinxsProject(currentPath);
             setAvailableJinxs(jinxResponse.jinxs || []);
             
             setLoading(false);
         };
         loadData();
-    }, [isOpen, isGlobal, currentPath]);
+    }, [isOpen, isGlobal, currentPath, globalPath]);
 
     useEffect(() => {
         let filtered = executionHistory;
@@ -375,16 +376,17 @@ const NPCTeamMenu = ({
         const response = await window.api.saveNPC({
             npc: npcToSave,
             isGlobal,
-            currentPath
+            currentPath,
+            globalPath,
         });
-        
+
         if (response.error) {
             setError(response.error);
             return;
         }
-        
+
         const updatedNpcs = await (isGlobal
-            ? window.api.getNPCTeamGlobal()
+            ? window.api.getNPCTeamGlobal(globalPath)
             : window.api.getNPCTeamProject(currentPath));
         setNpcs(updatedNpcs.npcs || []);
         setSelectedNpc(npcToSave);

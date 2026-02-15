@@ -1,0 +1,12 @@
+jinx_name: run_terminal
+description: Run a command in a terminal pane. Specify the command to execute and optionally the pane_id of the terminal (defaults to "active" for the currently active terminal pane).
+inputs:
+  - command
+  - { pane_id: "active" }
+steps:
+  - name: run_terminal
+    engine: incognide
+    action: run_terminal
+    args:
+      command: "{{ command }}"
+      paneId: "{{ pane_id }}"

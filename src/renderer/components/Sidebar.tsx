@@ -1,5 +1,6 @@
 import { getFileName } from './utils';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useAiEnabled } from './AiFeatureContext';
 import { createPortal } from 'react-dom';
 import {
     Folder, File, Globe, ChevronRight, Settings, Edit,
@@ -88,6 +89,7 @@ const Sidebar = (props: any) => {
         onExpandTopBar, onCollapseTopBar, setDownloadManagerOpen
     } = props;
 
+    const aiEnabled = useAiEnabled();
     const WINDOW_WORKSPACES_KEY = 'npcStudioWorkspaces';
     const ACTIVE_WINDOWS_KEY = 'npcStudioActiveWindows';
 
@@ -4464,6 +4466,7 @@ const getPlaceholderText = () => {
 return (
     <>
     <div
+        data-tutorial="sidebar"
         className="border-r theme-border flex flex-col flex-shrink-0 theme-sidebar relative"
         style={{
             width: sidebarCollapsed ? '0px' : `${sidebarWidth}px`,
@@ -4499,7 +4502,7 @@ return (
         <div className={`border-b border-gray-700 flex-shrink-0 relative group/header ${sidebarCollapsed || topBarCollapsed ? 'hidden' : ''}`} style={{ height: topBarHeight }}>
             <div className="grid grid-cols-4 divide-x divide-gray-700 h-full">
                 {/* Terminals dropdown */}
-                <div className="relative" data-dropdown="terminal">
+                <div className="relative" data-dropdown="terminal" data-tutorial="terminal-button">
                     <button
                         onClick={() => createNewTerminal?.(defaultNewTerminalType)}
                         className="w-full h-full flex items-center justify-center hover:bg-teal-500/20 relative transition-colors"
@@ -4527,22 +4530,26 @@ return (
                                 <Terminal size={11} className="text-green-400" /><span>Bash</span>
                                 {defaultNewTerminalType === 'system' && <Star size={8} className="text-yellow-400 ml-auto" />}
                             </button>
-                            <button
-                                onClick={() => { createNewTerminal?.('npcsh'); setTerminalDropdownOpen(false); }}
-                                onContextMenu={(e) => { e.preventDefault(); setDefaultNewTerminalType('npcsh'); setTerminalDropdownOpen(false); }}
-                                className={`flex items-center gap-2 px-2 py-1 w-full text-left hover:bg-gray-700 text-xs ${defaultNewTerminalType === 'npcsh' ? 'bg-purple-900/30 text-purple-300' : 'text-gray-200'}`}
-                            >
-                                <Sparkles size={11} className="text-purple-400" /><span>npcsh</span>
-                                {defaultNewTerminalType === 'npcsh' && <Star size={8} className="text-yellow-400 ml-auto" />}
-                            </button>
-                            <button
-                                onClick={() => { createNewTerminal?.('guac'); setTerminalDropdownOpen(false); }}
-                                onContextMenu={(e) => { e.preventDefault(); setDefaultNewTerminalType('guac'); setTerminalDropdownOpen(false); }}
-                                className={`flex items-center gap-2 px-2 py-1 w-full text-left hover:bg-gray-700 text-xs ${defaultNewTerminalType === 'guac' ? 'bg-yellow-900/30 text-yellow-300' : 'text-gray-200'}`}
-                            >
-                                <Code2 size={11} className="text-yellow-400" /><span>guac</span>
-                                {defaultNewTerminalType === 'guac' && <Star size={8} className="text-yellow-400 ml-auto" />}
-                            </button>
+                            {aiEnabled && (
+                                <button
+                                    onClick={() => { createNewTerminal?.('npcsh'); setTerminalDropdownOpen(false); }}
+                                    onContextMenu={(e) => { e.preventDefault(); setDefaultNewTerminalType('npcsh'); setTerminalDropdownOpen(false); }}
+                                    className={`flex items-center gap-2 px-2 py-1 w-full text-left hover:bg-gray-700 text-xs ${defaultNewTerminalType === 'npcsh' ? 'bg-purple-900/30 text-purple-300' : 'text-gray-200'}`}
+                                >
+                                    <Sparkles size={11} className="text-purple-400" /><span>npcsh</span>
+                                    {defaultNewTerminalType === 'npcsh' && <Star size={8} className="text-yellow-400 ml-auto" />}
+                                </button>
+                            )}
+                            {aiEnabled && (
+                                <button
+                                    onClick={() => { createNewTerminal?.('guac'); setTerminalDropdownOpen(false); }}
+                                    onContextMenu={(e) => { e.preventDefault(); setDefaultNewTerminalType('guac'); setTerminalDropdownOpen(false); }}
+                                    className={`flex items-center gap-2 px-2 py-1 w-full text-left hover:bg-gray-700 text-xs ${defaultNewTerminalType === 'guac' ? 'bg-yellow-900/30 text-yellow-300' : 'text-gray-200'}`}
+                                >
+                                    <Code2 size={11} className="text-yellow-400" /><span>guac</span>
+                                    {defaultNewTerminalType === 'guac' && <Star size={8} className="text-yellow-400 ml-auto" />}
+                                </button>
+                            )}
                         </div>
                     )}
                 </div>
@@ -4808,8 +4815,8 @@ return (
                                 style={isCollapsed ? {} : { flex: sectionId === 'websites' ? '1 1 0%' : '1.4 1 0%' }}
                             >
                                 {sectionId === 'websites' && renderWebsiteList()}
-                                {sectionId === 'files' && renderFolderList(folderStructure)}
-                                {sectionId === 'conversations' && renderConversationList(directoryConversations)}
+                                {sectionId === 'files' && <div data-tutorial="file-browser">{renderFolderList(folderStructure)}</div>}
+                                {sectionId === 'conversations' && aiEnabled && <div data-tutorial="conversations">{renderConversationList(directoryConversations)}</div>}
                                 {sectionId === 'git' && renderGitSection()}
                             </div>
                         );
@@ -5167,13 +5174,15 @@ return (
             >
                 {isDarkMode ? <Moon size={18} className="text-blue-400" /> : <Sun size={18} className="text-yellow-400" />}
             </button>
-            <button
-                onClick={() => setIsPredictiveTextEnabled?.(!isPredictiveTextEnabled)}
-                className={`p-2 rounded-full transition-all ${isPredictiveTextEnabled ? 'bg-purple-600 text-white' : 'hover:bg-teal-500/20 text-gray-400 hover:text-purple-400'}`}
-                title={isPredictiveTextEnabled ? "Disable Predictive Text" : "Enable Predictive Text"}
-            >
-                <BrainCircuit size={18} />
-            </button>
+            {aiEnabled && (
+                <button
+                    onClick={() => setIsPredictiveTextEnabled?.(!isPredictiveTextEnabled)}
+                    className={`p-2 rounded-full transition-all ${isPredictiveTextEnabled ? 'bg-purple-600 text-white' : 'hover:bg-teal-500/20 text-gray-400 hover:text-purple-400'}`}
+                    title={isPredictiveTextEnabled ? "Disable Predictive Text" : "Enable Predictive Text"}
+                >
+                    <BrainCircuit size={18} />
+                </button>
+            )}
             <button
                 onClick={deleteSelectedConversations}
                 className={`p-2 rounded-full hover:bg-teal-500/20 transition-all ${(selectedFiles?.size > 0 || selectedConvos?.size > 0) ? 'text-red-400' : 'text-gray-400'}`}

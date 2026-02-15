@@ -8,6 +8,7 @@ import CtxEditor from './CtxEditor';
 import NPCTeamMenu from './NPCTeamMenu';
 import JinxMenu from './JinxMenu';
 import McpServerMenu from './McpServerMenu';
+import NPCTeamSync from './NPCTeamSync';
 
 interface TeamManagementProps {
     isOpen: boolean;
@@ -1283,10 +1284,14 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
 }) => {
     const [activeTab, setActiveTab] = useState<TabId>('context');
     const [isGlobal, setIsGlobal] = useState(false);
+    const [globalSource, setGlobalSource] = useState<'incognide' | 'npcsh'>('incognide');
     const [hasProjectTeam, setHasProjectTeam] = useState<boolean | null>(null);
     const [initializingTeam, setInitializingTeam] = useState(false);
     const [resyncModal, setResyncModal] = useState(false);
     const [resyncing, setResyncing] = useState(false);
+
+    // The globalPath to pass to API calls — undefined for incognide (default), 'npcsh' for npcsh
+    const globalPath = isGlobal ? (globalSource === 'npcsh' ? 'npcsh' : undefined) : undefined;
 
     // Check if project has npc_team folder
     useEffect(() => {
@@ -1358,9 +1363,9 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                     <Users className="text-purple-400" size={24} />
                     <h2 className="text-xl font-semibold">Team Management</h2>
                 </div>
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
                     {/* Project/Global Toggle */}
-                    <div className="flex items-center gap-2 bg-gray-800 rounded-lg p-1">
+                    <div className="flex items-center bg-gray-800 rounded-lg p-1">
                         {hasProjectTeam ? (
                             <button
                                 onClick={() => setIsGlobal(false)}
@@ -1378,22 +1383,43 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                 <Plus size={14} /> Project
                             </button>
                         )}
-                        <button
-                            onClick={() => setIsGlobal(true)}
-                            className={`px-3 py-1.5 rounded text-sm font-medium transition ${isGlobal ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
-                        >
-                            Global
-                        </button>
+                        {/* When global: show Incognide/npcsh sub-toggle inline */}
+                        {isGlobal ? (
+                            <>
+                                <button
+                                    onClick={() => { setIsGlobal(true); setGlobalSource('incognide'); }}
+                                    className={`px-3 py-1.5 rounded text-sm font-medium transition ${globalSource === 'incognide' ? 'bg-amber-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                                >
+                                    Incognide
+                                </button>
+                                <button
+                                    onClick={() => { setIsGlobal(true); setGlobalSource('npcsh'); }}
+                                    className={`px-3 py-1.5 rounded text-sm font-medium transition ${globalSource === 'npcsh' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                                >
+                                    npcsh
+                                </button>
+                            </>
+                        ) : (
+                            <button
+                                onClick={() => setIsGlobal(true)}
+                                className={`px-3 py-1.5 rounded text-sm font-medium transition ${isGlobal ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                            >
+                                Global
+                            </button>
+                        )}
                     </div>
                     {isGlobal && (
-                        <button
-                            onClick={() => setResyncModal(true)}
-                            className="px-3 py-1.5 rounded text-sm font-medium bg-gray-700 hover:bg-gray-600 text-gray-300 transition flex items-center gap-1"
-                            title="Re-sync global team from package defaults"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
-                            Re-sync
-                        </button>
+                        <>
+                            <NPCTeamSync compact />
+                            <button
+                                onClick={() => setResyncModal(true)}
+                                className="px-3 py-1.5 rounded text-sm font-medium bg-gray-700 hover:bg-gray-600 text-gray-300 transition flex items-center gap-1"
+                                title="Re-sync global team from package defaults"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+                                Re-sync
+                            </button>
+                        </>
                     )}
                     {!embedded && (
                         <button
@@ -1433,17 +1459,22 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                         currentPath={currentPath}
                         embedded={true}
                         isGlobal={isGlobal}
+                        globalPath={globalPath}
                     />
                 )}
                 {activeTab === 'npcs' && (
-                    <NPCTeamMenu
-                        isOpen={true}
-                        onClose={() => {}}
-                        currentPath={currentPath}
-                        startNewConversation={startNewConversation}
-                        embedded={true}
-                        isGlobal={isGlobal}
-                    />
+                    <div className="space-y-4">
+                        {isGlobal && <NPCTeamSync />}
+                        <NPCTeamMenu
+                            isOpen={true}
+                            onClose={() => {}}
+                            currentPath={currentPath}
+                            startNewConversation={startNewConversation}
+                            embedded={true}
+                            isGlobal={isGlobal}
+                            globalPath={globalPath}
+                        />
+                    </div>
                 )}
                 {activeTab === 'jinxs' && (
                     <JinxMenu
@@ -1452,6 +1483,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                         currentPath={currentPath}
                         embedded={true}
                         isGlobal={isGlobal}
+                        globalPath={globalPath}
                     />
                 )}
                 {activeTab === 'databases' && (
@@ -1915,13 +1947,15 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                             disabled={resyncing}
                             onClick={async () => {
                                 setResyncing(true);
-                                // First sync from package to get base setup
+                                // First sync from package to get base npcsh setup
                                 const result = await (window as any).api.npcshInit();
                                 if (result?.error) {
                                     console.error('Re-sync failed:', result.error);
                                     setResyncing(false);
                                     return;
                                 }
+                                // Re-deploy incognide team on top so it stays prioritized
+                                await (window as any).api.deployIncognideTeam?.();
 
                                 // Then save any custom NPCs that were added
                                 for (const npc of setupNpcs.filter(n => n.isNew && n.enabled)) {

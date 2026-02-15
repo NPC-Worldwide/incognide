@@ -1,0 +1,12 @@
+jinx_name: navigate_browser
+description: Navigate a browser pane to a specific URL. If pane_id is not provided, navigates the active browser pane.
+inputs:
+  - url
+  - { pane_id: "active" }
+steps:
+  - name: navigate
+    engine: incognide
+    action: navigate
+    args:
+      paneId: "{{ pane_id }}"
+      url: "{{ url }}"
