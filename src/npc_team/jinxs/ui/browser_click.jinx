@@ -1,0 +1,16 @@
+jinx_name: browser_click
+description: Click on an element in a browser pane. Use selector for CSS selectors (e.g., "button.submit", "#login-btn") or text to match element content (e.g., "English", "Sign In").
+inputs:
+  - { selector: "" }
+  - { text: "" }
+  - { index: 0 }
+  - { pane_id: "active" }
+steps:
+  - name: browser_click
+    engine: incognide
+    action: browser_click
+    args:
+      selector: "{{ selector }}"
+      text: "{{ text }}"
+      index: "{{ index }}"
+      paneId: "{{ pane_id }}"

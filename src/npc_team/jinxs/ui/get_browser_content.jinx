@@ -1,0 +1,10 @@
+jinx_name: get_browser_content
+description: Get the text content of a webpage in a browser pane. Returns cleaned text content, URL, and title.
+inputs:
+  - { pane_id: "active" }
+steps:
+  - name: get_browser_content
+    engine: incognide
+    action: get_browser_content
+    args:
+      paneId: "{{ pane_id }}"

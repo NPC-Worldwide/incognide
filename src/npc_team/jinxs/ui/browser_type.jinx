@@ -1,0 +1,18 @@
+jinx_name: browser_type
+description: Type text into an input field in a browser pane. Use selector to find the input by CSS selector, placeholder, name, or aria-label.
+inputs:
+  - selector
+  - text
+  - { clear: true }
+  - { submit: false }
+  - { pane_id: "active" }
+steps:
+  - name: browser_type
+    engine: incognide
+    action: browser_type
+    args:
+      selector: "{{ selector }}"
+      text: "{{ text }}"
+      clear: "{{ clear }}"
+      submit: "{{ submit }}"
+      paneId: "{{ pane_id }}"

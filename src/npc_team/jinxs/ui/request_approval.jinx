@@ -1,0 +1,12 @@
+jinx_name: request_approval
+description: Request user approval before performing an action. Shows a confirmation dialog and returns whether the user approved.
+inputs:
+  - message
+  - { title: "Approval Required" }
+steps:
+  - name: request_approval
+    engine: incognide
+    action: confirm
+    args:
+      message: "{{ message }}"
+      title: "{{ title }}"

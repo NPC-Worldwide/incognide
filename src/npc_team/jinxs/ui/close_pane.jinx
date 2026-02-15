@@ -1,0 +1,10 @@
+jinx_name: close_pane
+description: Close a pane in Incognide. Use pane_id to specify which pane, or leave empty to close the active pane.
+inputs:
+  - { pane_id: "active" }
+steps:
+  - name: close_pane
+    engine: incognide
+    action: close_pane
+    args:
+      paneId: "{{ pane_id }}"
