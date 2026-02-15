@@ -205,8 +205,13 @@ function register(ctx) {
     }
   });
 
+  // data.globalPath: 'npcsh' to save to npcsh global, omit for incognide (default)
   ipcMain.handle('save-jinx', async (event, data) => {
     try {
+        if (data.globalPath !== 'npcsh' && !data.currentPath) {
+            data.currentPath = data.globalPath || INCOGNIDE_TEAM_PATH;
+        }
+        delete data.globalPath;
         const response = await fetch(`${BACKEND_URL}/api/jinxs/save`, {
             method: 'POST',
             headers: {
@@ -228,8 +233,14 @@ function register(ctx) {
 
   // ============== NPC Team Handlers ==============
 
+  // data.globalPath: 'npcsh' to save to npcsh global, omit for incognide (default)
   ipcMain.handle('save-npc', async (event, data) => {
     try {
+        // If saving to incognide team (default), include the team path
+        if (data.globalPath !== 'npcsh' && !data.currentPath) {
+            data.currentPath = data.globalPath || INCOGNIDE_TEAM_PATH;
+        }
+        delete data.globalPath;
         const response = await fetch(`${BACKEND_URL}/api/save_npc`, {
             method: 'POST',
             headers: {
@@ -849,15 +860,28 @@ function register(ctx) {
 
   // ============== Context Handlers ==============
 
-  ipcMain.handle('get-global-context', async () => {
-    return await callBackendApi(`${BACKEND_URL}/api/context/global`);
+  // globalPath: 'npcsh' for raw npcsh context, omit for incognide (default)
+  ipcMain.handle('get-global-context', async (event, globalPath) => {
+    if (globalPath === 'npcsh') {
+      return await callBackendApi(`${BACKEND_URL}/api/context/global`);
+    }
+    const teamPath = globalPath || INCOGNIDE_TEAM_PATH;
+    return await callBackendApi(`${BACKEND_URL}/api/context/project?path=${encodeURIComponent(teamPath)}`);
   });
 
-  ipcMain.handle('save-global-context', async (event, contextData) => {
-    return await callBackendApi(`${BACKEND_URL}/api/context/global`, {
+  ipcMain.handle('save-global-context', async (event, contextData, globalPath) => {
+    if (globalPath === 'npcsh') {
+      return await callBackendApi(`${BACKEND_URL}/api/context/global`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ context: contextData }),
+      });
+    }
+    const teamPath = globalPath || INCOGNIDE_TEAM_PATH;
+    return await callBackendApi(`${BACKEND_URL}/api/context/project`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ context: contextData }),
+      body: JSON.stringify({ path: teamPath, context: contextData }),
     });
   });
 

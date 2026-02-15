@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FileJson, X, Save, Plus, Trash2 } from 'lucide-react';
 import AutosizeTextarea from './AutosizeTextarea';
 
-const CtxEditor = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = false }) => {
+const CtxEditor = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = false, globalPath = undefined }) => {
 
     const [globalCtx, setGlobalCtx] = useState({});
     const [projectCtx, setProjectCtx] = useState({});
@@ -29,7 +29,7 @@ const CtxEditor = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = 
         setIsLoading(true);
         setError(null);
         try {
-            const globalRes = await window.api.getGlobalContext();
+            const globalRes = await window.api.getGlobalContext(globalPath);
             if (globalRes.error) throw new Error(`Global: ${globalRes.error}`);
             setGlobalCtx(globalRes.context || {});
 
@@ -53,7 +53,7 @@ const CtxEditor = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = 
         setError(null);
         try {
             if (isGlobal) {
-                await window.api.saveGlobalContext(globalCtx);
+                await window.api.saveGlobalContext(globalCtx, globalPath);
             } else if (currentPath) {
                 await window.api.saveProjectContext({ path: currentPath, contextData: projectCtx });
             }

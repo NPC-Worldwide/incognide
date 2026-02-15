@@ -1284,10 +1284,14 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
 }) => {
     const [activeTab, setActiveTab] = useState<TabId>('context');
     const [isGlobal, setIsGlobal] = useState(false);
+    const [globalSource, setGlobalSource] = useState<'incognide' | 'npcsh'>('incognide');
     const [hasProjectTeam, setHasProjectTeam] = useState<boolean | null>(null);
     const [initializingTeam, setInitializingTeam] = useState(false);
     const [resyncModal, setResyncModal] = useState(false);
     const [resyncing, setResyncing] = useState(false);
+
+    // The globalPath to pass to API calls — undefined for incognide (default), 'npcsh' for npcsh
+    const globalPath = isGlobal ? (globalSource === 'npcsh' ? 'npcsh' : undefined) : undefined;
 
     // Check if project has npc_team folder
     useEffect(() => {
@@ -1388,6 +1392,21 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                     </div>
                     {isGlobal && (
                         <>
+                            {/* Incognide / npcsh sub-toggle */}
+                            <div className="flex items-center gap-1 bg-gray-800 rounded-lg p-0.5">
+                                <button
+                                    onClick={() => setGlobalSource('incognide')}
+                                    className={`px-2.5 py-1 rounded text-xs font-medium transition ${globalSource === 'incognide' ? 'bg-amber-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                                >
+                                    Incognide
+                                </button>
+                                <button
+                                    onClick={() => setGlobalSource('npcsh')}
+                                    className={`px-2.5 py-1 rounded text-xs font-medium transition ${globalSource === 'npcsh' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                                >
+                                    npcsh
+                                </button>
+                            </div>
                             <NPCTeamSync compact />
                             <button
                                 onClick={() => setResyncModal(true)}
@@ -1437,6 +1456,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                         currentPath={currentPath}
                         embedded={true}
                         isGlobal={isGlobal}
+                        globalPath={globalPath}
                     />
                 )}
                 {activeTab === 'npcs' && (
@@ -1449,6 +1469,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                             startNewConversation={startNewConversation}
                             embedded={true}
                             isGlobal={isGlobal}
+                            globalPath={globalPath}
                         />
                     </div>
                 )}
@@ -1459,6 +1480,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                         currentPath={currentPath}
                         embedded={true}
                         isGlobal={isGlobal}
+                        globalPath={globalPath}
                     />
                 )}
                 {activeTab === 'databases' && (
