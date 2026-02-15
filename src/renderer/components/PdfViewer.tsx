@@ -1611,6 +1611,17 @@ const PdfViewer = ({
                             fileUrl={pdfData}
                             plugins={[defaultLayoutPluginInstance, zoomPluginInstance]}
                             defaultScale={SpecialZoomLevel.PageWidth}
+                            pageLayout={{
+                                transformSize: ({ size }) => ({
+                                    height: size.height + 8,
+                                    width: size.width,
+                                }),
+                                buildPageStyles: () => ({
+                                    alignItems: 'center',
+                                    display: 'flex',
+                                    justifyContent: 'center',
+                                }),
+                            }}
                             onDocumentLoad={handleDocumentLoad}
                             onZoom={(e) => {
                                 setCurrentScale(e.scale);
