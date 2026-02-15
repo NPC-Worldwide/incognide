@@ -1,5 +1,6 @@
 import { getFileName } from './utils';
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useAiEnabled } from './AiFeatureContext';
 import {
     X, Loader, Image as ImageIcon, Folder,
     Camera, Wand2, Sliders, Grid, Upload, Trash2, Edit,
@@ -99,6 +100,7 @@ const readJSONFile = (file) => new Promise((resolve, reject) => {
     };
 
 const PhotoViewer = ({ currentPath, onStartConversation }) => {
+    const aiEnabled = useAiEnabled();
     const [activeTab, setActiveTab] = useState('gallery');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -3157,13 +3159,15 @@ const renderDatasetManager = useCallback(() => {
                                     >
                                         <PlusCircle size={14}/> Add Selected ({selectedImageGroup.size})
                                     </button>
-                                    <button
-                                        onClick={() => setShowFineTuneModal(true)}
-                                        disabled={!dataset.images || dataset.images.length < 5}
-                                        className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded text-sm flex items-center gap-2"
-                                    >
-                                        <Sparkles size={14}/> Train Model
-                                    </button>
+                                    {aiEnabled && (
+                                        <button
+                                            onClick={() => setShowFineTuneModal(true)}
+                                            disabled={!dataset.images || dataset.images.length < 5}
+                                            className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded text-sm flex items-center gap-2"
+                                        >
+                                            <Sparkles size={14}/> Train Model
+                                        </button>
+                                    )}
                                 </div>
                             </div>
 
@@ -5201,15 +5205,15 @@ const renderDarkRoomLegacy = () => {
     </div>
 )}
 
-{selection && (
+{aiEnabled && selection && (
     <div className="p-4 border-b theme-border space-y-2">
         <h5 className="font-semibold text-base">Selection</h5>
-        
+
         <div>
             <label className="text-xs">Model</label>
-            <select 
-                value={selectedModel} 
-                onChange={e => setSelectedModel(e.target.value)} 
+            <select
+                value={selectedModel}
+                onChange={e => setSelectedModel(e.target.value)}
                 className="w-full theme-input text-xs mt-1"
             >
                 {availableModels.map(model => (
@@ -5294,7 +5298,9 @@ const VIXYNT_MODES = [
     { id: 'labeling', name: 'Labeling', icon: Tag, group: 'manage' }
 ];
 
-const currentMode = VIXYNT_MODES.find(m => m.id === activeTab) || VIXYNT_MODES[0];
+const AI_VIXYNT_MODE_IDS = ['generator', 'video-gen', 'workflow'];
+const filteredModes = aiEnabled ? VIXYNT_MODES : VIXYNT_MODES.filter(m => !AI_VIXYNT_MODE_IDS.includes(m.id));
+const currentMode = filteredModes.find(m => m.id === activeTab) || filteredModes[0];
 const CurrentIcon = currentMode.icon;
 
 return (
@@ -5313,7 +5319,7 @@ return (
             <div className="absolute top-full left-0 mt-1 w-48 bg-gray-800/95 backdrop-blur-sm rounded-lg border border-gray-600 shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
               <div className="py-1">
                 <div className="px-3 py-1 text-xs text-gray-500 uppercase">Browse</div>
-                {VIXYNT_MODES.filter(m => m.group === 'browse').map(mode => {
+                {filteredModes.filter(m => m.group === 'browse').map(mode => {
                   const ModeIcon = mode.icon;
                   return (
                     <button
@@ -5325,8 +5331,8 @@ return (
                     </button>
                   );
                 })}
-                <div className="px-3 py-1 text-xs text-gray-500 uppercase mt-1">Create</div>
-                {VIXYNT_MODES.filter(m => m.group === 'create').map(mode => {
+                {filteredModes.some(m => m.group === 'create') && <div className="px-3 py-1 text-xs text-gray-500 uppercase mt-1">Create</div>}
+                {filteredModes.filter(m => m.group === 'create').map(mode => {
                   const ModeIcon = mode.icon;
                   return (
                     <button
@@ -5339,7 +5345,7 @@ return (
                   );
                 })}
                 <div className="px-3 py-1 text-xs text-gray-500 uppercase mt-1">Edit</div>
-                {VIXYNT_MODES.filter(m => m.group === 'edit').map(mode => {
+                {filteredModes.filter(m => m.group === 'edit').map(mode => {
                   const ModeIcon = mode.icon;
                   return (
                     <button
@@ -5352,7 +5358,7 @@ return (
                   );
                 })}
                 <div className="px-3 py-1 text-xs text-gray-500 uppercase mt-1">Manage</div>
-                {VIXYNT_MODES.filter(m => m.group === 'manage').map(mode => {
+                {filteredModes.filter(m => m.group === 'manage').map(mode => {
                   const ModeIcon = mode.icon;
                   return (
                     <button
@@ -5371,14 +5377,14 @@ return (
 
         {activeTab === 'gallery' && renderGallery()}
         {activeTab === 'editor' && renderDarkRoom()}
-        {activeTab === 'generator' && renderGenerator()}
-        {activeTab === 'video-gen' && renderVideoGenerator()}
-        {activeTab === 'workflow' && renderWorkflow()}
+        {aiEnabled && activeTab === 'generator' && renderGenerator()}
+        {aiEnabled && activeTab === 'video-gen' && renderVideoGenerator()}
+        {aiEnabled && activeTab === 'workflow' && renderWorkflow()}
         {activeTab === 'video-editor' && renderVideoEditor()}
         {activeTab === 'datasets' && renderDatasetManager()}
         {activeTab === 'metadata' && renderMetadata()}
         {activeTab === 'labeling' && renderLabeling()}
-        {renderFineTuneModal()}
+        {aiEnabled && renderFineTuneModal()}
       </main>
     </div>
     {renderImageContextMenu()}

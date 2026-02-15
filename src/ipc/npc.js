@@ -293,6 +293,85 @@ function register(ctx) {
     }
   });
 
+  // ============== NPC Team Sync Handlers ==============
+
+  ipcMain.handle('npc-team:sync-status', async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/npc-team/status`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch (err) {
+      return { status: 'unavailable', error: err.message };
+    }
+  });
+
+  ipcMain.handle('npc-team:sync-init', async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/npc-team/init`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('npc-team:sync-pull', async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/npc-team/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('npc-team:sync-resolve', async (event, { filePath, resolution, content }) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/npc-team/resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file: filePath, resolution, content })
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('npc-team:sync-commit', async (event, { message }) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/npc-team/commit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message })
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('npc-team:sync-diff', async (event, { filePath }) => {
+    try {
+      const params = filePath ? `?file=${encodeURIComponent(filePath)}` : '';
+      const response = await fetch(`${BACKEND_URL}/api/npc-team/diff${params}`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
   // ============== MCP Server Handlers ==============
 
   // --- MCP Server helpers ---

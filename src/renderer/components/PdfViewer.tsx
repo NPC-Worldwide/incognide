@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import PdfDrawingCanvas from './PdfDrawingCanvas';
 import SignatureModal from './SignatureModal';
+import { useAiEnabled } from './AiFeatureContext';
 
 import '@react-pdf-viewer/core/lib/styles/index.css';
 import '@react-pdf-viewer/default-layout/lib/styles/index.css';
@@ -107,6 +108,7 @@ const PdfContextMenu = ({
     onAddComment
 }) => {
     // All hooks MUST be called before any conditional return
+    const aiEnabled = useAiEnabled();
     const copyText = useCallback(() => {
         handleCopyPdfText(selectedPdfText?.text);
         setPdfContextMenuPos(null);
@@ -174,13 +176,17 @@ const PdfContextMenu = ({
                         >
                             <MessageSquare size={12} /> Add Comment
                         </button>
-                        <div className="border-t theme-border my-1" />
-                        <button onClick={summarizeText} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
-                            <FileText size={12} /> Summarize
-                        </button>
-                        <button onClick={explainText} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
-                            <BookOpen size={12} /> Explain
-                        </button>
+                        {aiEnabled && (
+                            <>
+                                <div className="border-t theme-border my-1" />
+                                <button onClick={summarizeText} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                                    <FileText size={12} /> Summarize
+                                </button>
+                                <button onClick={explainText} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                                    <BookOpen size={12} /> Explain
+                                </button>
+                            </>
+                        )}
                     </>
                 ) : (
                     <div className="px-4 py-1.5 text-xs text-gray-500">Select text for options</div>

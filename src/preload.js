@@ -578,6 +578,10 @@ onTerminalClosed: (callback) => {
     pythonEnvInstallPackage: (workspacePath, packageName, extraArgs) => ipcRenderer.invoke('python-env-install-package', workspacePath, packageName, extraArgs),
     pythonEnvUninstallPackage: (workspacePath, packageName) => ipcRenderer.invoke('python-env-uninstall-package', workspacePath, packageName),
 
+    // User profile
+    profileGet: () => ipcRenderer.invoke('profile:get'),
+    profileSave: (profile) => ipcRenderer.invoke('profile:save', profile),
+
     // First-run setup
     setupCheckNeeded: () => ipcRenderer.invoke('setup:checkNeeded'),
     setupGetBackendPythonPath: () => ipcRenderer.invoke('setup:getBackendPythonPath'),
@@ -654,6 +658,14 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
     npcshCheck: () => ipcRenderer.invoke('npcsh-check'),
     npcshPackageContents: () => ipcRenderer.invoke('npcsh-package-contents'),
     npcshInit: () => ipcRenderer.invoke('npcsh-init'),
+
+    // NPC Team Sync
+    npcTeamSyncStatus: () => ipcRenderer.invoke('npc-team:sync-status'),
+    npcTeamSyncInit: () => ipcRenderer.invoke('npc-team:sync-init'),
+    npcTeamSyncPull: () => ipcRenderer.invoke('npc-team:sync-pull'),
+    npcTeamSyncResolve: (args) => ipcRenderer.invoke('npc-team:sync-resolve', args),
+    npcTeamSyncCommit: (args) => ipcRenderer.invoke('npc-team:sync-commit', args),
+    npcTeamSyncDiff: (args) => ipcRenderer.invoke('npc-team:sync-diff', args),
 
     getLogsDir: () => ipcRenderer.invoke('getLogsDir'),
     readLogFile: (logType) => ipcRenderer.invoke('readLogFile', logType),

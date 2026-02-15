@@ -8,6 +8,7 @@ import CtxEditor from './CtxEditor';
 import NPCTeamMenu from './NPCTeamMenu';
 import JinxMenu from './JinxMenu';
 import McpServerMenu from './McpServerMenu';
+import NPCTeamSync from './NPCTeamSync';
 
 interface TeamManagementProps {
     isOpen: boolean;
@@ -1386,14 +1387,17 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                         </button>
                     </div>
                     {isGlobal && (
-                        <button
-                            onClick={() => setResyncModal(true)}
-                            className="px-3 py-1.5 rounded text-sm font-medium bg-gray-700 hover:bg-gray-600 text-gray-300 transition flex items-center gap-1"
-                            title="Re-sync global team from package defaults"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
-                            Re-sync
-                        </button>
+                        <>
+                            <NPCTeamSync compact />
+                            <button
+                                onClick={() => setResyncModal(true)}
+                                className="px-3 py-1.5 rounded text-sm font-medium bg-gray-700 hover:bg-gray-600 text-gray-300 transition flex items-center gap-1"
+                                title="Re-sync global team from package defaults"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+                                Re-sync
+                            </button>
+                        </>
                     )}
                     {!embedded && (
                         <button
@@ -1436,14 +1440,17 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                     />
                 )}
                 {activeTab === 'npcs' && (
-                    <NPCTeamMenu
-                        isOpen={true}
-                        onClose={() => {}}
-                        currentPath={currentPath}
-                        startNewConversation={startNewConversation}
-                        embedded={true}
-                        isGlobal={isGlobal}
-                    />
+                    <div className="space-y-4">
+                        {isGlobal && <NPCTeamSync />}
+                        <NPCTeamMenu
+                            isOpen={true}
+                            onClose={() => {}}
+                            currentPath={currentPath}
+                            startNewConversation={startNewConversation}
+                            embedded={true}
+                            isGlobal={isGlobal}
+                        />
+                    </div>
                 )}
                 {activeTab === 'jinxs' && (
                     <JinxMenu

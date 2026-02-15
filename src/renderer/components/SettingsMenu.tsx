@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useAiEnabled, useAiFeature } from './AiFeatureContext';
 import { BACKEND_URL } from '../config';
 import { Settings, X, Save, FolderOpen, Eye, EyeOff, DownloadCloud, Trash2, Keyboard, KeyRound, Plus, Copy, ExternalLink, Terminal, Volume2, Mic, Play, Square, Upload } from 'lucide-react';
 import { Modal, Card, Button, Input, Select } from 'npcts';
@@ -1320,10 +1321,15 @@ const PermissionsManager = () => {
     const checkPermissions = useCallback(async () => {
         setLoading(true);
         try {
-            const media = await (window as any).api.checkMediaPermissions();
-            setPermissions(media);
-            const screen = await (window as any).api.getScreenCaptureStatus();
-            setScreenCapture(screen);
+            const api = (window as any).api;
+            if (api?.checkMediaPermissions) {
+                const media = await api.checkMediaPermissions();
+                setPermissions(media);
+            }
+            if (api?.getScreenCaptureStatus) {
+                const screen = await api.getScreenCaptureStatus();
+                setScreenCapture(screen);
+            }
         } catch (err) {
             console.error('Failed to check permissions:', err);
         }
@@ -1488,6 +1494,8 @@ const PermissionsManager = () => {
 };
 
 const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableModels = [], embedded = false, initialTab = 'global' }) => {
+    const aiEnabled = useAiEnabled();
+    const { userPath, setUserPath, setAiEnabled } = useAiFeature();
     const [activeTab, setActiveTab] = useState(initialTab);
     const [globalSettings, setGlobalSettings] = useState(defaultSettings);
     const [customGlobalVars, setCustomGlobalVars] = useState([{ key: '', value: '' }]);
@@ -1642,7 +1650,8 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
         onClose();
     };
 
-    const tabs = [
+    const AI_SETTINGS_TABS = ['models', 'voice', 'providers'];
+    const allTabs = [
         { id: 'account', name: 'Account' },
         { id: 'global', name: 'Global Settings' },
         { id: 'theme', name: 'Theme' },
@@ -1654,6 +1663,7 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
         { id: 'python', name: 'Python Environment' },
         { id: 'permissions', name: 'Permissions' }
     ];
+    const tabs = aiEnabled ? allTabs : allTabs.filter(t => !AI_SETTINGS_TABS.includes(t.id));
 
     const isSensitiveField = (key) => {
         const sensitiveWords = ['key', 'token', 'secret', 'password', 'api'];
@@ -1688,66 +1698,107 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                         <h3 className="text-lg font-medium text-white">Account & Sync</h3>
                         <p className="text-sm text-gray-400">Sign in to sync your settings, conversations, and files across devices.</p>
                         <div className="max-w-sm">
-                            <UserMenu />
+                            {import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? (
+                                <UserMenu />
+                            ) : (
+                                <p className="text-xs text-gray-500">Account sync is not configured.</p>
+                            )}
                         </div>
                     </div>
                 )}
 
                 {activeTab === 'global' && (
                     <>
+                        <div className="border border-gray-700 rounded-lg p-3">
+                            <label className="flex items-center justify-between cursor-pointer">
+                                <div>
+                                    <span className="text-sm font-medium">AI Features</span>
+                                    <p className="text-[10px] text-gray-400 mt-0.5">Enable chat, NPC team, memory, and AI tools across the app</p>
+                                </div>
+                                <div
+                                    onClick={() => setAiEnabled(!aiEnabled)}
+                                    className={`relative w-10 h-5 rounded-full transition-colors ${aiEnabled ? 'bg-blue-500' : 'bg-gray-600'}`}
+                                >
+                                    <div className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${aiEnabled ? 'translate-x-5' : ''}`} />
+                                </div>
+                            </label>
+                        </div>
+
+                        <button
+                            onClick={async () => {
+                                try {
+                                    await (window as any).api?.profileSave?.({ tutorialComplete: false });
+                                    window.location.reload();
+                                } catch (err) {
+                                    console.error('Error resetting tutorial:', err);
+                                }
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm border border-gray-700 rounded-lg hover:bg-gray-700/50 text-gray-300 transition-colors"
+                        >
+                            Replay Tutorial
+                        </button>
+
                         <Input
                             label="Default Directory"
                             value={globalSettings.default_folder}
                             onChange={(e) => setGlobalSettings({...globalSettings, default_folder: e.target.value})}
                         />
-                        <Input
-                            label="Model"
-                            value={globalSettings.model || ''}
-                            onChange={(e) => setGlobalSettings({...globalSettings, model: e.target.value})}
-                        />
-                        <Input
-                            label="Provider"
-                            value={globalSettings.provider || ''}
-                            onChange={(e) => setGlobalSettings({...globalSettings, provider: e.target.value})}
-                        />
-
-                        <div className="border border-gray-700 rounded-lg p-3">
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={globalSettings.is_predictive_text_enabled}
-                                    onChange={(e) => setGlobalSettings({...globalSettings, is_predictive_text_enabled: e.target.checked})}
-                                    className="w-4 h-4"
+                        {aiEnabled && (
+                            <>
+                                <Input
+                                    label="Model"
+                                    value={globalSettings.model || ''}
+                                    onChange={(e) => setGlobalSettings({...globalSettings, model: e.target.value})}
                                 />
-                                <span className="text-sm font-medium">Predictive Text (Copilot)</span>
-                            </label>
-                            {globalSettings.is_predictive_text_enabled && (
-                                <div className="mt-3">
-                                    <Select
-                                        label="Model for Predictions"
-                                        value={globalSettings.predictive_text_model}
-                                        onChange={(e) => setGlobalSettings({...globalSettings, predictive_text_model: e.target.value})}
-                                        options={availableModels.map(m => ({ value: m.value, label: m.display_name }))}
+                                <Input
+                                    label="Provider"
+                                    value={globalSettings.provider || ''}
+                                    onChange={(e) => setGlobalSettings({...globalSettings, provider: e.target.value})}
+                                />
+                            </>
+                        )}
+
+                        {aiEnabled && (
+                            <div className="border border-gray-700 rounded-lg p-3">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={globalSettings.is_predictive_text_enabled}
+                                        onChange={(e) => setGlobalSettings({...globalSettings, is_predictive_text_enabled: e.target.checked})}
+                                        className="w-4 h-4"
                                     />
-                                </div>
-                            )}
-                        </div>
+                                    <span className="text-sm font-medium">Predictive Text (Copilot)</span>
+                                </label>
+                                {globalSettings.is_predictive_text_enabled && (
+                                    <div className="mt-3">
+                                        <Select
+                                            label="Model for Predictions"
+                                            value={globalSettings.predictive_text_model}
+                                            onChange={(e) => setGlobalSettings({...globalSettings, predictive_text_model: e.target.value})}
+                                            options={availableModels.map(m => ({ value: m.value, label: m.display_name }))}
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
-                        <div className="border border-gray-700 rounded-lg p-3">
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={globalSettings.default_to_agent || false}
-                                    onChange={(e) => setGlobalSettings({...globalSettings, default_to_agent: e.target.checked})}
-                                    className="w-4 h-4"
-                                />
-                                <span className="text-sm font-medium">Default to Agent Mode</span>
-                            </label>
-                            <p className="text-xs text-gray-400 mt-1">
-                                When enabled, new chats will default to agent mode (tool_agent) instead of chat mode.
-                                Agent mode allows the AI to execute tools like file operations, terminal commands, and web search.
-                            </p>
-                        </div>
+                        {aiEnabled && (
+                            <div className="border border-gray-700 rounded-lg p-3">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={globalSettings.default_to_agent || false}
+                                        onChange={(e) => setGlobalSettings({...globalSettings, default_to_agent: e.target.checked})}
+                                        className="w-4 h-4"
+                                    />
+                                    <span className="text-sm font-medium">Default to Agent Mode</span>
+                                </label>
+                                <p className="text-xs text-gray-400 mt-1">
+                                    When enabled, new chats will default to agent mode (tool_agent) instead of chat mode.
+                                    Agent mode allows the AI to execute tools like file operations, terminal commands, and web search.
+                                </p>
+                            </div>
+                        )}
 
                         <Select
                             label="Default New Pane Type"

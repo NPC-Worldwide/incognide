@@ -16,7 +16,7 @@ import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab, undo, redo } from '@codemirror/commands';
 import { HighlightStyle, syntaxHighlighting, indentOnInput, bracketMatching, foldGutter, foldKeymap, StreamLanguage } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
-import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
+import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap, type CompletionContext } from '@codemirror/autocomplete';
 import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { lintGutter } from '@codemirror/lint';
 
@@ -569,6 +569,64 @@ const LatexViewer = ({
     const editorRef = useRef<any>(null);
     const editorViewRef = useRef<any>(null);
 
+    // Bibliography state
+    const [bibFilePath, setBibFilePath] = useState<string | null>(null);
+    const [bibEntries, setBibEntries] = useState<{ key: string; title?: string; author?: string; year?: string }[]>([]);
+    const [availableBibFiles, setAvailableBibFiles] = useState<string[]>([]);
+    const bibEntriesRef = useRef(bibEntries);
+    bibEntriesRef.current = bibEntries;
+
+    // Scan for .bib files in the same directory
+    useEffect(() => {
+        if (!filePath) return;
+        const dir = filePath.substring(0, filePath.lastIndexOf('/')) || filePath.substring(0, filePath.lastIndexOf('\\'));
+        if (!dir) return;
+        (async () => {
+            try {
+                const result = await (window as any).api?.readDir?.(dir);
+                if (result?.files) {
+                    const bibs = result.files.filter((f: any) => (f.name || f).endsWith('.bib')).map((f: any) => f.name || f);
+                    setAvailableBibFiles(bibs);
+                    // Auto-select first .bib if none selected
+                    if (!bibFilePath && bibs.length > 0) {
+                        setBibFilePath(dir + '/' + bibs[0]);
+                    }
+                }
+            } catch (err) {
+                // Directory listing may not be available
+            }
+        })();
+    }, [filePath]);
+
+    // Load bib entries when bibFilePath changes
+    useEffect(() => {
+        if (!bibFilePath) { setBibEntries([]); return; }
+        (async () => {
+            try {
+                const result = await (window as any).api?.readFile?.(bibFilePath);
+                const text = typeof result === 'string' ? result : result?.content || '';
+                if (!text) return;
+                // Simple .bib parser: extract @type{key, title, author, year}
+                const entries: { key: string; title?: string; author?: string; year?: string }[] = [];
+                const entryRegex = /@\w+\s*\{\s*([^,\s]+)\s*,([^@]*)/g;
+                let match;
+                while ((match = entryRegex.exec(text)) !== null) {
+                    const key = match[1];
+                    const body = match[2];
+                    const getField = (field: string) => {
+                        const m = new RegExp(field + '\\s*=\\s*[{"]([^}"]*)[}"]', 'i').exec(body);
+                        return m ? m[1] : undefined;
+                    };
+                    entries.push({ key, title: getField('title'), author: getField('author'), year: getField('year') });
+                }
+                setBibEntries(entries);
+            } catch (err) {
+                console.error('Failed to load bib file:', err);
+                setBibEntries([]);
+            }
+        })();
+    }, [bibFilePath]);
+
     // Wrap setContent to always sync to contentDataRef so content survives remounts
     const setContent = useCallback((valOrFn: string | ((prev: string) => string)) => {
         setContentRaw(prev => {
@@ -592,7 +650,14 @@ const LatexViewer = ({
     const outline = useMemo(() => {
         const items: { level: number; title: string; line: number; kind: string }[] = [];
         const lines = content.split('\n');
+        let inCommentBlock = false;
         lines.forEach((line, idx) => {
+            const trimmed = line.trimStart();
+            // Track \iffalse...\fi comment blocks
+            if (trimmed.startsWith('\\iffalse')) { inCommentBlock = true; return; }
+            if (inCommentBlock) { if (trimmed.startsWith('\\fi')) inCommentBlock = false; return; }
+            // Skip commented-out lines
+            if (trimmed.startsWith('%')) return;
             // Sections
             const secMatch = line.match(/\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)\*?\{([^}]+)\}/);
             if (secMatch) {
@@ -651,6 +716,190 @@ const LatexViewer = ({
         return errors;
     }, [compileLog]);
 
+    // LaTeX command autocompletion: triggers when typing \
+    const latexCommandCompletion = useCallback((context: CompletionContext) => {
+        const before = context.matchBefore(/\\[a-zA-Z]*/);
+        if (!before || before.text.length < 1) return null;
+        // Don't trigger inside \cite{...} — that's handled by citation completion
+        const lineText = context.state.doc.lineAt(context.pos).text;
+        const upToCursor = lineText.slice(0, context.pos - context.state.doc.lineAt(context.pos).from);
+        if (/\\(?:cite|textcite|parencite|autocite|citet|citep|nocite)\{[^}]*$/.test(upToCursor)) return null;
+
+        const commands: { label: string; detail?: string; type: string; boost?: number }[] = [
+            // Sectioning
+            { label: '\\section{}', detail: 'Section', type: 'keyword', boost: 10 },
+            { label: '\\subsection{}', detail: 'Subsection', type: 'keyword', boost: 9 },
+            { label: '\\subsubsection{}', detail: 'Subsubsection', type: 'keyword', boost: 8 },
+            { label: '\\chapter{}', detail: 'Chapter', type: 'keyword', boost: 7 },
+            { label: '\\paragraph{}', detail: 'Paragraph', type: 'keyword' },
+            { label: '\\part{}', detail: 'Part', type: 'keyword' },
+            // Formatting
+            { label: '\\textbf{}', detail: 'Bold', type: 'function', boost: 9 },
+            { label: '\\textit{}', detail: 'Italic', type: 'function', boost: 9 },
+            { label: '\\underline{}', detail: 'Underline', type: 'function', boost: 8 },
+            { label: '\\emph{}', detail: 'Emphasis', type: 'function', boost: 7 },
+            { label: '\\texttt{}', detail: 'Monospace', type: 'function' },
+            { label: '\\textsc{}', detail: 'Small Caps', type: 'function' },
+            { label: '\\textsf{}', detail: 'Sans Serif', type: 'function' },
+            { label: '\\textsl{}', detail: 'Slanted', type: 'function' },
+            { label: '\\textrm{}', detail: 'Roman', type: 'function' },
+            // Font size
+            { label: '\\tiny', detail: 'Tiny size', type: 'property' },
+            { label: '\\scriptsize', detail: 'Script size', type: 'property' },
+            { label: '\\footnotesize', detail: 'Footnote size', type: 'property' },
+            { label: '\\small', detail: 'Small size', type: 'property' },
+            { label: '\\normalsize', detail: 'Normal size', type: 'property' },
+            { label: '\\large', detail: 'Large size', type: 'property' },
+            { label: '\\Large', detail: 'Larger size', type: 'property' },
+            { label: '\\LARGE', detail: 'Even larger', type: 'property' },
+            { label: '\\huge', detail: 'Huge size', type: 'property' },
+            { label: '\\Huge', detail: 'Largest size', type: 'property' },
+            // Environments
+            { label: '\\begin{}', detail: 'Begin environment', type: 'keyword', boost: 10 },
+            { label: '\\end{}', detail: 'End environment', type: 'keyword', boost: 10 },
+            // Math
+            { label: '\\frac{}{}', detail: 'Fraction', type: 'function', boost: 6 },
+            { label: '\\sqrt{}', detail: 'Square root', type: 'function' },
+            { label: '\\sum', detail: 'Summation', type: 'function' },
+            { label: '\\int', detail: 'Integral', type: 'function' },
+            { label: '\\prod', detail: 'Product', type: 'function' },
+            { label: '\\lim', detail: 'Limit', type: 'function' },
+            { label: '\\infty', detail: 'Infinity', type: 'constant' },
+            { label: '\\alpha', detail: 'Greek: alpha', type: 'constant' },
+            { label: '\\beta', detail: 'Greek: beta', type: 'constant' },
+            { label: '\\gamma', detail: 'Greek: gamma', type: 'constant' },
+            { label: '\\delta', detail: 'Greek: delta', type: 'constant' },
+            { label: '\\epsilon', detail: 'Greek: epsilon', type: 'constant' },
+            { label: '\\lambda', detail: 'Greek: lambda', type: 'constant' },
+            { label: '\\mu', detail: 'Greek: mu', type: 'constant' },
+            { label: '\\sigma', detail: 'Greek: sigma', type: 'constant' },
+            { label: '\\theta', detail: 'Greek: theta', type: 'constant' },
+            { label: '\\pi', detail: 'Greek: pi', type: 'constant' },
+            { label: '\\omega', detail: 'Greek: omega', type: 'constant' },
+            { label: '\\phi', detail: 'Greek: phi', type: 'constant' },
+            { label: '\\psi', detail: 'Greek: psi', type: 'constant' },
+            { label: '\\mathbb{}', detail: 'Blackboard bold', type: 'function' },
+            { label: '\\mathcal{}', detail: 'Calligraphic', type: 'function' },
+            { label: '\\mathrm{}', detail: 'Roman in math', type: 'function' },
+            { label: '\\mathbf{}', detail: 'Bold math', type: 'function' },
+            { label: '\\vec{}', detail: 'Vector arrow', type: 'function' },
+            { label: '\\hat{}', detail: 'Hat accent', type: 'function' },
+            { label: '\\bar{}', detail: 'Bar accent', type: 'function' },
+            { label: '\\tilde{}', detail: 'Tilde accent', type: 'function' },
+            { label: '\\dot{}', detail: 'Dot accent', type: 'function' },
+            { label: '\\ddot{}', detail: 'Double dot', type: 'function' },
+            { label: '\\left', detail: 'Auto-sizing left', type: 'keyword' },
+            { label: '\\right', detail: 'Auto-sizing right', type: 'keyword' },
+            { label: '\\leq', detail: 'Less or equal', type: 'constant' },
+            { label: '\\geq', detail: 'Greater or equal', type: 'constant' },
+            { label: '\\neq', detail: 'Not equal', type: 'constant' },
+            { label: '\\approx', detail: 'Approximately', type: 'constant' },
+            { label: '\\equiv', detail: 'Equivalent', type: 'constant' },
+            { label: '\\subset', detail: 'Subset', type: 'constant' },
+            { label: '\\supset', detail: 'Superset', type: 'constant' },
+            { label: '\\in', detail: 'Element of', type: 'constant' },
+            { label: '\\forall', detail: 'For all', type: 'constant' },
+            { label: '\\exists', detail: 'Exists', type: 'constant' },
+            { label: '\\partial', detail: 'Partial deriv', type: 'constant' },
+            { label: '\\nabla', detail: 'Nabla/Del', type: 'constant' },
+            { label: '\\cdot', detail: 'Center dot', type: 'constant' },
+            { label: '\\times', detail: 'Times', type: 'constant' },
+            { label: '\\rightarrow', detail: 'Right arrow', type: 'constant' },
+            { label: '\\leftarrow', detail: 'Left arrow', type: 'constant' },
+            { label: '\\Rightarrow', detail: 'Double right arrow', type: 'constant' },
+            { label: '\\Leftarrow', detail: 'Double left arrow', type: 'constant' },
+            // References
+            { label: '\\label{}', detail: 'Label', type: 'keyword', boost: 6 },
+            { label: '\\ref{}', detail: 'Reference', type: 'keyword', boost: 6 },
+            { label: '\\eqref{}', detail: 'Equation ref', type: 'keyword' },
+            { label: '\\pageref{}', detail: 'Page reference', type: 'keyword' },
+            { label: '\\cite{}', detail: 'Citation', type: 'keyword', boost: 8 },
+            { label: '\\textcite{}', detail: 'Text citation', type: 'keyword' },
+            { label: '\\parencite{}', detail: 'Paren citation', type: 'keyword' },
+            { label: '\\autocite{}', detail: 'Auto citation', type: 'keyword' },
+            { label: '\\footcite{}', detail: 'Footnote cite', type: 'keyword' },
+            // Lists / structure
+            { label: '\\item', detail: 'List item', type: 'keyword', boost: 7 },
+            { label: '\\footnote{}', detail: 'Footnote', type: 'function' },
+            { label: '\\caption{}', detail: 'Caption', type: 'function' },
+            // Includes / preamble
+            { label: '\\usepackage{}', detail: 'Use package', type: 'keyword', boost: 5 },
+            { label: '\\documentclass{}', detail: 'Document class', type: 'keyword', boost: 5 },
+            { label: '\\input{}', detail: 'Input file', type: 'keyword' },
+            { label: '\\include{}', detail: 'Include file', type: 'keyword' },
+            { label: '\\bibliography{}', detail: 'Bibliography', type: 'keyword' },
+            { label: '\\bibliographystyle{}', detail: 'Bib style', type: 'keyword' },
+            // Spacing / breaks
+            { label: '\\newline', detail: 'New line', type: 'keyword' },
+            { label: '\\newpage', detail: 'New page', type: 'keyword' },
+            { label: '\\hspace{}', detail: 'Horizontal space', type: 'function' },
+            { label: '\\vspace{}', detail: 'Vertical space', type: 'function' },
+            { label: '\\noindent', detail: 'No indent', type: 'keyword' },
+            // Figures / tables
+            { label: '\\includegraphics{}', detail: 'Include image', type: 'function', boost: 6 },
+            { label: '\\centering', detail: 'Center content', type: 'keyword' },
+            { label: '\\hline', detail: 'Horizontal line', type: 'keyword' },
+            { label: '\\multicolumn{}{}{}', detail: 'Multi column', type: 'function' },
+            { label: '\\title{}', detail: 'Title', type: 'keyword' },
+            { label: '\\author{}', detail: 'Author', type: 'keyword' },
+            { label: '\\date{}', detail: 'Date', type: 'keyword' },
+            { label: '\\maketitle', detail: 'Make title', type: 'keyword' },
+            { label: '\\tableofcontents', detail: 'Table of contents', type: 'keyword' },
+        ];
+
+        return {
+            from: before.from,
+            options: commands.map(c => ({
+                label: c.label,
+                detail: c.detail,
+                type: c.type,
+                boost: c.boost,
+                apply: (view: any, completion: any, from: number, to: number) => {
+                    const text = c.label;
+                    // Place cursor inside the first {} if it exists
+                    const firstBrace = text.indexOf('{');
+                    if (firstBrace >= 0) {
+                        view.dispatch({
+                            changes: { from, to, insert: text },
+                            selection: { anchor: from + firstBrace + 1 },
+                        });
+                    } else {
+                        view.dispatch({
+                            changes: { from, to, insert: text },
+                            selection: { anchor: from + text.length },
+                        });
+                    }
+                },
+            })),
+            filter: true,
+        };
+    }, []);
+
+    // Citation autocompletion: triggers after \cite{, \textcite{, \parencite{, \autocite{, \citet{, \citep{
+    const citationCompletion = useCallback((context: CompletionContext) => {
+        const before = context.matchBefore(/\\(?:cite|textcite|parencite|autocite|citet|citep|nocite)\{[^}]*/);
+        if (!before) return null;
+        const bracePos = before.text.indexOf('{');
+        if (bracePos === -1) return null;
+        // Handle multiple citations separated by comma
+        const afterBrace = before.text.slice(bracePos + 1);
+        const lastComma = afterBrace.lastIndexOf(',');
+        const partial = (lastComma >= 0 ? afterBrace.slice(lastComma + 1) : afterBrace).trim();
+        const fromPos = before.to - partial.length;
+        const entries = bibEntriesRef.current;
+        if (entries.length === 0) return null;
+        return {
+            from: fromPos,
+            options: entries.map(e => ({
+                label: e.key,
+                detail: e.year ? `(${e.year})` : undefined,
+                info: [e.author, e.title].filter(Boolean).join(' — ') || undefined,
+                type: 'text',
+            })),
+            filter: true,
+        };
+    }, []);
+
     const extensions = useMemo(() => [
         latexLanguage,
         syntaxHighlighting(latexHighlightStyle),
@@ -670,7 +919,9 @@ const LatexViewer = ({
         crosshairCursor(),
         highlightSelectionMatches(),
         search(),
-        autocompletion(),
+        autocompletion({
+            override: [citationCompletion, latexCommandCompletion],
+        }),
         keymap.of([
             ...closeBracketsKeymap,
             ...defaultKeymap,
@@ -684,7 +935,7 @@ const LatexViewer = ({
         EditorView.updateListener.of((update) => {
             if (update.view) editorViewRef.current = update.view;
         }),
-    ], []);
+    ], [citationCompletion, latexCommandCompletion]);
 
     // Save editor state (including undo history) on unmount so it survives layout changes
     useEffect(() => {
@@ -727,21 +978,27 @@ const LatexViewer = ({
     }, [filePath]);
 
     // Insert text at cursor, or wrap selection for formatting commands
+    // Commands ending with '{' auto-close with '}' and place cursor inside
     const insertAtCursor = useCallback((text: string) => {
         const view = editorViewRef.current;
         if (view) {
             const { from, to } = view.state.selection.main;
             const selectedText = view.state.sliceDoc(from, to);
+            const endsWithBrace = text.endsWith('{');
 
-            // Check if this is a wrapping command (e.g., \textbf{, \textit{, \underline{, etc.)
-            const isWrappingCmd = text.endsWith('{') && selectedText.length > 0;
-
-            if (isWrappingCmd) {
+            if (endsWithBrace && selectedText.length > 0) {
                 // Wrap selection: \textbf{selected text}
                 const wrapped = text + selectedText + '}';
                 view.dispatch({
                     changes: { from, to, insert: wrapped },
                     selection: { anchor: from + text.length, head: from + text.length + selectedText.length },
+                });
+            } else if (endsWithBrace) {
+                // No selection: insert \textbf{} with cursor between braces
+                const withClose = text + '}';
+                view.dispatch({
+                    changes: { from, to, insert: withClose },
+                    selection: { anchor: from + text.length },
                 });
             } else {
                 view.dispatch({
@@ -1041,7 +1298,7 @@ const LatexViewer = ({
         </div>
     );
 
-    const ToolbarDivider = () => <div className="w-px h-5 bg-white/[0.06] mx-1" />;
+    const ToolbarDivider = () => <div className="w-px h-5 theme-border mx-1 opacity-30" />;
 
     const ToolbarButton = ({ onClick, title, active, disabled, children }: any) => (
         <button
@@ -1049,14 +1306,14 @@ const LatexViewer = ({
             title={title}
             disabled={disabled}
             className={`w-7 h-7 flex items-center justify-center rounded-md transition-all duration-150
-                ${disabled ? 'opacity-25 cursor-default' : 'active:scale-90 text-gray-400 hover:text-gray-100'}
+                ${disabled ? 'opacity-25 cursor-default' : 'active:scale-90 theme-text-muted'}
             `}
             style={active ? {
                 background: 'linear-gradient(180deg, rgba(96,165,250,0.2) 0%, rgba(96,165,250,0.1) 100%)',
                 color: '#93c5fd',
                 boxShadow: 'inset 0 0 0 1px rgba(96,165,250,0.2), 0 0 8px rgba(96,165,250,0.08)',
             } : undefined}
-            onMouseEnter={e => { if (!active && !disabled) e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; }}
+            onMouseEnter={e => { if (!active && !disabled) e.currentTarget.style.background = 'rgba(128,128,128,0.12)'; }}
             onMouseLeave={e => { if (!active && !disabled) e.currentTarget.style.background = 'transparent'; }}
         >
             {children}
@@ -1064,13 +1321,9 @@ const LatexViewer = ({
     );
 
     return (
-        <div className="h-full flex flex-col overflow-hidden" style={{ background: '#1a1b26' }}>
+        <div className="h-full flex flex-col overflow-hidden theme-bg-primary">
             {/* Toolbar */}
-            <div className="flex items-center gap-0.5 px-2 h-10 flex-shrink-0" style={{
-                background: 'linear-gradient(180deg, #1c1d2b 0%, #16171f 100%)',
-                borderBottom: '1px solid rgba(255,255,255,0.06)',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-            }}>
+            <div className="flex items-center gap-0.5 px-2 h-10 flex-shrink-0 theme-bg-secondary border-b theme-border">
                 {/* Outline toggle — leftmost */}
                 <ToolbarButton onClick={() => setShowOutline(!showOutline)} title="Outline" active={showOutline}><PanelLeft size={14} /></ToolbarButton>
 
@@ -1174,6 +1427,33 @@ const LatexViewer = ({
                         </div>
                     );
                 })}
+
+                {/* Bib file selector */}
+                {availableBibFiles.length > 0 && (
+                    <>
+                        <ToolbarDivider />
+                        <div className="flex items-center gap-1">
+                            <BookOpen size={11} className="text-yellow-400/70" />
+                            <select
+                                value={bibFilePath ? bibFilePath.split('/').pop() || '' : ''}
+                                onChange={(e) => {
+                                    if (!e.target.value) { setBibFilePath(null); return; }
+                                    const dir = filePath.substring(0, filePath.lastIndexOf('/'));
+                                    setBibFilePath(dir + '/' + e.target.value);
+                                }}
+                                className="h-6 px-1 text-[10px] bg-transparent border border-white/10 rounded text-gray-300 focus:outline-none focus:border-yellow-500/50"
+                            >
+                                <option value="">No .bib</option>
+                                {availableBibFiles.map(f => (
+                                    <option key={f} value={f}>{f}</option>
+                                ))}
+                            </select>
+                            {bibEntries.length > 0 && (
+                                <span className="text-[9px] text-gray-500">{bibEntries.length} refs</span>
+                            )}
+                        </div>
+                    </>
+                )}
 
                 <div className="flex-1" />
 

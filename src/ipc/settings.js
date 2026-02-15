@@ -362,6 +362,7 @@ function register(ctx) {
           cronJobs, daemons, scheduleCronJob,
           deviceConfig, updateDeviceConfig, getOrCreateDeviceId,
           needsFirstRunSetup, saveBackendPythonPath, markSetupComplete, getBackendPythonPath,
+          getUserProfile, saveUserProfile,
           registerGlobalShortcut, app, backendProcess, killBackendProcess,
           ensureUserDataDirectory, waitForServer, logBackend,
           logsDir, electronLogPath, backendLogPath,
@@ -1354,6 +1355,27 @@ function register(ctx) {
 
       return { success: true };
     } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  // ==================== USER PROFILE ====================
+
+  ipcMain.handle('profile:get', async () => {
+    try {
+      return getUserProfile();
+    } catch (err) {
+      console.error('Error getting user profile:', err);
+      return { path: 'local-ai', aiEnabled: true, extras: 'local', tutorialComplete: false, setupComplete: false };
+    }
+  });
+
+  ipcMain.handle('profile:save', async (event, profile) => {
+    try {
+      const saved = saveUserProfile(profile);
+      return { success: saved };
+    } catch (err) {
+      console.error('Error saving user profile:', err);
       return { success: false, error: err.message };
     }
   });

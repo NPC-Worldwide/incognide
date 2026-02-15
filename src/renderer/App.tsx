@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { ClerkProvider } from '@clerk/clerk-react';
 import Enpistu from './components/Enpistu';
 import SetupWizard from './components/SetupWizard';
+import AppTutorial from './components/AppTutorial';
 import { AuthProvider } from './components/AuthProvider';
+import { AiFeatureProvider } from './components/AiFeatureContext';
 
 // Clerk publishable key from environment
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || '';
@@ -22,12 +24,21 @@ const AuthWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 const App: React.FC = () => {
   const [showSetup, setShowSetup] = useState<boolean | null>(null);
+  const [showTutorial, setShowTutorial] = useState(false);
 
   useEffect(() => {
     const checkSetup = async () => {
       try {
         const result = await (window as any).api?.setupCheckNeeded?.();
         setShowSetup(result?.needed ?? false);
+
+        // If setup is already done, check if tutorial should show
+        if (!result?.needed) {
+          const profile = await (window as any).api?.profileGet?.();
+          if (profile && profile.setupComplete && !profile.tutorialComplete) {
+            setShowTutorial(true);
+          }
+        }
       } catch (err) {
         console.error('Error checking setup:', err);
         setShowSetup(false);
@@ -35,6 +46,21 @@ const App: React.FC = () => {
     };
     checkSetup();
   }, []);
+
+  const handleSetupComplete = () => {
+    setShowSetup(false);
+    // Show tutorial after setup completes
+    setShowTutorial(true);
+  };
+
+  const handleTutorialComplete = async () => {
+    setShowTutorial(false);
+    try {
+      await (window as any).api?.profileSave?.({ tutorialComplete: true });
+    } catch (err) {
+      console.error('Error saving tutorial state:', err);
+    }
+  };
 
   // Loading state while checking
   if (showSetup === null) {
@@ -49,14 +75,17 @@ const App: React.FC = () => {
   if (showSetup) {
     return (
       <AuthWrapper>
-        <SetupWizard onComplete={() => setShowSetup(false)} />
+        <SetupWizard onComplete={handleSetupComplete} />
       </AuthWrapper>
     );
   }
 
   return (
     <AuthWrapper>
-      <Enpistu />
+      <AiFeatureProvider>
+        <Enpistu />
+        {showTutorial && <AppTutorial onComplete={handleTutorialComplete} />}
+      </AiFeatureProvider>
     </AuthWrapper>
   );
 };

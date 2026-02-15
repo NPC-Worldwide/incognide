@@ -130,6 +130,7 @@ import { ChatMessage } from './ChatMessage';
 import BroadcastResponseRow from './BroadcastResponseRow';
 import { PredictiveTextOverlay } from './PredictiveTextOverlay';
 import { usePredictiveText } from './PredictiveText';
+import { useAiEnabled } from './AiFeatureContext';
 import { CommandPalette } from './CommandPalette';
 import { MessageLabel, ConversationLabel, ContextFile, ContextFileStorage } from './MessageLabeling';
 import ConversationLabeling from './ConversationLabeling';
@@ -245,6 +246,7 @@ const WEB_SEARCH_PROVIDERS: Record<WebSearchProvider, { name: string; url: strin
 };
 
 const ChatInterface = () => {
+    const aiEnabled = useAiEnabled();
     const [gitPanelCollapsed, setGitPanelCollapsed] = useState(true);
     const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
     const [pdfHighlightsTrigger, setPdfHighlightsTrigger] = useState(0);
@@ -734,9 +736,9 @@ const ChatInterface = () => {
     // Website history loader hook
     const loadWebsiteHistory = useLoadWebsiteHistory(currentPath, setWebsiteHistory, setCommonSites);
 
-    // Predictive text hook
+    // Predictive text hook (disabled when AI is off)
     usePredictiveText({
-        isPredictiveTextEnabled,
+        isPredictiveTextEnabled: aiEnabled && isPredictiveTextEnabled,
         predictiveTextModel,
         predictiveTextProvider,
         currentPath,
@@ -6939,15 +6941,18 @@ const handleConversationSelect = async (conversationId: string, skipMessageLoad 
         paneIdToUpdate = newPaneId;
     }
     else {
-        paneIdToUpdate = activeContentPaneId || Object.keys(contentDataRef.current)[0];
+        // Check if active pane is already a chat — if so, reuse it; otherwise create a new pane
+        const activePaneData = activeContentPaneId ? contentDataRef.current[activeContentPaneId] : null;
+        const activeIsChat = activePaneData?.contentType === 'chat';
 
-        // ADD THIS CHECK: Only update if the pane exists and is not empty
-        if (paneIdToUpdate && contentDataRef.current[paneIdToUpdate]) {
+        if (activeIsChat && activeContentPaneId) {
+            // Reuse existing chat pane
+            paneIdToUpdate = activeContentPaneId;
             await updateContentPane(paneIdToUpdate, 'chat', conversationId, skipMessageLoad);
             setActiveContentPaneId(paneIdToUpdate);
             setRootLayoutNode(prev => ({...prev}));
         } else {
-            console.warn('[SELECT_CONVO] No valid pane to update, creating new one');
+            // Active pane is NOT a chat (editor, terminal, etc.) — create a new pane instead of replacing
             const newPaneId = createAndAddPaneNodeToLayout('chat', conversationId);
             if (newPaneId) {
                 await updateContentPane(newPaneId, 'chat', conversationId, skipMessageLoad);
@@ -7432,6 +7437,7 @@ const renderMainContent = () => {
             <div className="h-full px-3 flex items-center gap-3 text-[12px] theme-bg-secondary border-b theme-border">
             {/* Settings - left of path */}
             <button
+                data-tutorial="settings-button"
                 onClick={() => createSettingsPane?.()}
                 className="p-2 theme-hover rounded theme-text-muted"
                 title="Settings"
@@ -7819,7 +7825,7 @@ const renderMainContent = () => {
     return (
         <main className={`flex-1 flex flex-col bg-gray-900 ${isDarkMode ? 'dark-mode' : 'light-mode'} overflow-hidden`}>
             {topBar}
-            <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 flex overflow-hidden" data-tutorial="pane-area">
                 {rootLayoutNode ? (
                     <LayoutNode node={rootLayoutNode} path={[]} component={layoutComponentApi} />
                 ) : (
@@ -8012,13 +8018,15 @@ const renderMainContent = () => {
         setDownloadManagerOpen={setDownloadManagerOpen}
     />
     {renderMainContent()}
-        <PredictiveTextOverlay
-            predictionSuggestion={predictionSuggestion}
-            predictionTargetElement={predictionTargetElement}
-            isPredictiveTextEnabled={isPredictiveTextEnabled}
-            setPredictionSuggestion={setPredictionSuggestion}
-            setPredictionTargetElement={setPredictionTargetElement}
-        />
+        {aiEnabled && (
+            <PredictiveTextOverlay
+                predictionSuggestion={predictionSuggestion}
+                predictionTargetElement={predictionTargetElement}
+                isPredictiveTextEnabled={isPredictiveTextEnabled}
+                setPredictionSuggestion={setPredictionSuggestion}
+                setPredictionTargetElement={setPredictionTargetElement}
+            />
+        )}
         <CommandPalette
             isOpen={commandPaletteOpen}
             onClose={() => setCommandPaletteOpen(false)}

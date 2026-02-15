@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useAiEnabled } from './AiFeatureContext';
 import {
     Music, Play, Pause, Square, Circle, SkipBack, SkipForward,
     Volume2, VolumeX, Upload, Download, Trash2, Plus, Search,
@@ -164,6 +165,7 @@ interface AudioDataset {
 }
 
 export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
+    const aiEnabled = useAiEnabled();
     // Mode/tab state
     const [activeMode, setActiveMode] = useState('library');
 
@@ -675,7 +677,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
     ];
 
     // Scherzo modes
-    const SCHERZO_MODES = [
+    const ALL_SCHERZO_MODES = [
         { id: 'library', name: 'Library', icon: Library, group: 'browse' },
         { id: 'generator', name: 'Generate', icon: Sparkles, group: 'create' },
         { id: 'editor', name: 'Editor', icon: Waves, group: 'edit' },
@@ -684,6 +686,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         { id: 'notation', name: 'Notation', icon: Music2, group: 'analyze' },
         { id: 'datasets', name: 'Datasets', icon: Package, group: 'train' }
     ];
+    const SCHERZO_MODES = aiEnabled ? ALL_SCHERZO_MODES : ALL_SCHERZO_MODES.filter(m => m.id !== 'generator');
 
     const currentMode_obj = SCHERZO_MODES.find(m => m.id === activeMode) || SCHERZO_MODES[0];
     const CurrentModeIcon = currentMode_obj.icon;
@@ -5247,7 +5250,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     </div>
 
                     {activeMode === 'library' && renderLibrary()}
-                    {activeMode === 'generator' && renderGenerator()}
+                    {aiEnabled && activeMode === 'generator' && renderGenerator()}
                     {activeMode === 'editor' && renderEditor()}
                     {activeMode === 'dj' && renderDJMixer()}
                     {activeMode === 'analysis' && renderAnalysis()}

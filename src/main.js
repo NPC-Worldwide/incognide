@@ -1054,6 +1054,42 @@ function markSetupComplete() {
   }
 }
 
+// ==================== USER PROFILE ====================
+const userProfilePath = path.join(os.homedir(), '.npcsh', 'incognide', 'user_profile.json');
+
+const defaultUserProfile = {
+  path: 'local-ai',
+  aiEnabled: true,
+  extras: 'local',
+  tutorialComplete: false,
+  setupComplete: false,
+};
+
+function getUserProfile() {
+  try {
+    if (fs.existsSync(userProfilePath)) {
+      const content = fs.readFileSync(userProfilePath, 'utf8');
+      return { ...defaultUserProfile, ...JSON.parse(content) };
+    }
+  } catch (err) {
+    log('Error reading user profile:', err);
+  }
+  return { ...defaultUserProfile };
+}
+
+function saveUserProfile(profile) {
+  try {
+    fs.mkdirSync(path.dirname(userProfilePath), { recursive: true });
+    const merged = { ...getUserProfile(), ...profile };
+    fs.writeFileSync(userProfilePath, JSON.stringify(merged, null, 2));
+    log('Saved user profile:', JSON.stringify(merged));
+    return true;
+  } catch (err) {
+    log('Error saving user profile:', err);
+    return false;
+  }
+}
+
 
 function registerGlobalShortcut(win) {
   if (!win) {
@@ -1993,6 +2029,8 @@ registerAll({
   saveBackendPythonPath,
   markSetupComplete,
   getBackendPythonPath,
+  getUserProfile,
+  saveUserProfile,
   registerGlobalShortcut,
   backendProcess,
   killBackendProcess,
