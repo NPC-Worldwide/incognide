@@ -3,7 +3,8 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { BACKEND_URL } from '../config';
 import {
     Send, Paperclip, Maximize2, ChevronDown, Star, ListFilter, FolderTree, Minimize2, Mic, MicOff, Volume2, GitBranch, SlidersHorizontal, Save, Trash2, Zap, X,
-    FileCode, Globe, FileText, Terminal as TerminalIcon, Eye, EyeOff, ToggleLeft, ToggleRight
+    FileCode, Globe, FileText, Terminal as TerminalIcon, Eye, EyeOff, ToggleLeft, ToggleRight,
+    Database, BarChart3, BrainCircuit, Image, Bot, Users, Music, Search, BookOpen, Folder, HardDrive, HelpCircle, Clock, Settings, MessageSquare, Tag
 } from 'lucide-react';
 import MemoryIcon from './MemoryIcon';
 import ContextFilesPanel from './ContextFilesPanel';
@@ -743,16 +744,26 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     const openPanes = useMemo(() => {
         if (!contentDataRef?.current) return [];
         const panes: Array<{ id: string; type: string; label: string }> = [];
+        const PANE_LABELS: Record<string, string> = {
+            'graph-viewer': 'Knowledge Graph', 'datadash': 'Dashboard', 'dbtool': 'Database',
+            'memory-manager': 'Memory', 'photoviewer': 'Photos', 'npcteam': 'NPCs',
+            'jinx': 'Jinxs', 'teammanagement': 'Team', 'diff': 'Diff',
+            'browsergraph': 'Web Graph', 'scherzo': 'Audio', 'library': 'Library',
+            'diskusage': 'Disk Usage', 'help': 'Help', 'cron-daemon': 'Cron',
+            'projectenv': 'Environment', 'search': 'Search', 'settings': 'Settings',
+            'data-labeler': 'Data Labeler', 'tilejinx': 'Tile Jinx', 'git': 'Git',
+            'docx': 'Document', 'pptx': 'Presentation', 'mindmap': 'Mind Map',
+            'zip': 'Archive', 'exp': 'Experiment', 'folder': 'Folder',
+        };
         Object.entries(contentDataRef.current).forEach(([paneId, paneData]: [string, any]) => {
             if (!paneData.contentType || paneData.contentType === 'chat') return;
-            if (!['editor', 'browser', 'pdf', 'terminal', 'latex', 'csv', 'image', 'notebook'].includes(paneData.contentType)) return;
             let label = '';
             if ((paneData.contentType === 'editor' || paneData.contentType === 'latex' || paneData.contentType === 'csv' || paneData.contentType === 'notebook') && paneData.contentId) label = getFileName(paneData.contentId) || paneData.contentId;
             else if (paneData.contentType === 'browser' && paneData.browserUrl) { try { label = new URL(paneData.browserUrl).hostname; } catch { label = paneData.browserUrl.slice(0, 20); } }
             else if (paneData.contentType === 'pdf' && paneData.contentId) label = getFileName(paneData.contentId) || 'PDF';
             else if (paneData.contentType === 'image' && paneData.contentId) label = getFileName(paneData.contentId) || 'Image';
             else if (paneData.contentType === 'terminal') label = `Term${paneData.shellType ? ` (${paneData.shellType})` : ''}`;
-            else label = paneData.contentType;
+            else label = PANE_LABELS[paneData.contentType] || paneData.contentType;
             if (label) panes.push({ id: paneId, type: paneData.contentType, label });
         });
         return panes;
@@ -769,12 +780,33 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     };
 
     const paneIcon = (type: string) => {
+        const s = 10;
+        const cls = "flex-shrink-0";
         switch (type) {
-            case 'editor': return <FileCode size={10} className="flex-shrink-0" />;
-            case 'browser': return <Globe size={10} className="flex-shrink-0" />;
-            case 'pdf': return <FileText size={10} className="flex-shrink-0" />;
-            case 'terminal': return <TerminalIcon size={10} className="flex-shrink-0" />;
-            default: return null;
+            case 'editor': case 'latex': case 'notebook': return <FileCode size={s} className={cls} />;
+            case 'browser': case 'browsergraph': return <Globe size={s} className={cls} />;
+            case 'pdf': case 'docx': case 'pptx': return <FileText size={s} className={cls} />;
+            case 'terminal': return <TerminalIcon size={s} className={cls} />;
+            case 'image': case 'photoviewer': return <Image size={s} className={cls} />;
+            case 'csv': return <FileText size={s} className={cls} />;
+            case 'graph-viewer': case 'diff': case 'git': case 'mindmap': return <GitBranch size={s} className={cls} />;
+            case 'datadash': return <BarChart3 size={s} className={cls} />;
+            case 'dbtool': return <Database size={s} className={cls} />;
+            case 'memory-manager': return <BrainCircuit size={s} className={cls} />;
+            case 'npcteam': return <Bot size={s} className={cls} />;
+            case 'jinx': case 'tilejinx': return <Zap size={s} className={cls} />;
+            case 'teammanagement': return <Users size={s} className={cls} />;
+            case 'scherzo': return <Music size={s} className={cls} />;
+            case 'search': return <Search size={s} className={cls} />;
+            case 'library': return <BookOpen size={s} className={cls} />;
+            case 'folder': return <Folder size={s} className={cls} />;
+            case 'diskusage': return <HardDrive size={s} className={cls} />;
+            case 'help': return <HelpCircle size={s} className={cls} />;
+            case 'cron-daemon': return <Clock size={s} className={cls} />;
+            case 'settings': case 'projectenv': return <Settings size={s} className={cls} />;
+            case 'data-labeler': return <Tag size={s} className={cls} />;
+            case 'exp': return <FileText size={s} className={cls} />;
+            default: return <FileText size={s} className={cls} />;
         }
     };
 

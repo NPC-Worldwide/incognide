@@ -353,9 +353,10 @@ function register(ctx) {
 
   // ============== NPC Team Sync Handlers ==============
 
-  ipcMain.handle('npc-team:sync-status', async () => {
+  ipcMain.handle('npc-team:sync-status', async (event, globalPath) => {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/npc-team/status`);
+      const teamPath = globalPath === 'npcsh' ? 'npcsh' : 'incognide';
+      const response = await fetch(`${BACKEND_URL}/api/npc-team/status?team_path=${teamPath}`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return await response.json();
     } catch (err) {
@@ -363,12 +364,13 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('npc-team:sync-init', async () => {
+  ipcMain.handle('npc-team:sync-init', async (event, globalPath) => {
     try {
+      const teamPath = globalPath === 'npcsh' ? 'npcsh' : 'incognide';
       const response = await fetch(`${BACKEND_URL}/api/npc-team/init`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
+        body: JSON.stringify({ team_path: teamPath })
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return await response.json();
@@ -377,12 +379,13 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('npc-team:sync-pull', async () => {
+  ipcMain.handle('npc-team:sync-pull', async (event, globalPath) => {
     try {
+      const teamPath = globalPath === 'npcsh' ? 'npcsh' : 'incognide';
       const response = await fetch(`${BACKEND_URL}/api/npc-team/sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
+        body: JSON.stringify({ team_path: teamPath })
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return await response.json();
@@ -391,12 +394,13 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('npc-team:sync-resolve', async (event, { filePath, resolution, content }) => {
+  ipcMain.handle('npc-team:sync-resolve', async (event, { filePath, resolution, content, globalPath }) => {
     try {
+      const teamPath = globalPath === 'npcsh' ? 'npcsh' : 'incognide';
       const response = await fetch(`${BACKEND_URL}/api/npc-team/resolve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file: filePath, resolution, content })
+        body: JSON.stringify({ file: filePath, resolution, content, team_path: teamPath })
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return await response.json();
@@ -405,12 +409,13 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('npc-team:sync-commit', async (event, { message }) => {
+  ipcMain.handle('npc-team:sync-commit', async (event, { message, globalPath }) => {
     try {
+      const teamPath = globalPath === 'npcsh' ? 'npcsh' : 'incognide';
       const response = await fetch(`${BACKEND_URL}/api/npc-team/commit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message })
+        body: JSON.stringify({ message, team_path: teamPath })
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return await response.json();
@@ -419,9 +424,10 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('npc-team:sync-diff', async (event, { filePath }) => {
+  ipcMain.handle('npc-team:sync-diff', async (event, { filePath, globalPath }) => {
     try {
-      const params = filePath ? `?file=${encodeURIComponent(filePath)}` : '';
+      const teamPath = globalPath === 'npcsh' ? 'npcsh' : 'incognide';
+      const params = `?team_path=${teamPath}${filePath ? `&file=${encodeURIComponent(filePath)}` : ''}`;
       const response = await fetch(`${BACKEND_URL}/api/npc-team/diff${params}`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return await response.json();

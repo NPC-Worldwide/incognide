@@ -484,6 +484,41 @@ function register(ctx) {
     }
   });
 
+  // ==================== LOCAL MODEL DETECTION ====================
+  ipcMain.handle('detect-local-models', async () => {
+    const models = [];
+
+    // Check Ollama directly (port 11434) — works even if backend isn't running
+    try {
+      const ollamaRes = await fetch('http://127.0.0.1:11434/api/tags', { signal: AbortSignal.timeout(3000) });
+      if (ollamaRes.ok) {
+        const data = await ollamaRes.json();
+        const modelNames = (data.models || []).map(m => m.name || m.model).filter(Boolean);
+        models.push({ provider: 'ollama', available: true, models: modelNames });
+      } else {
+        models.push({ provider: 'ollama', available: false, models: [] });
+      }
+    } catch {
+      models.push({ provider: 'ollama', available: false, models: [] });
+    }
+
+    // Check LM Studio (port 1234)
+    try {
+      const lmRes = await fetch('http://127.0.0.1:1234/v1/models', { signal: AbortSignal.timeout(3000) });
+      if (lmRes.ok) {
+        const data = await lmRes.json();
+        const modelNames = (data.data || []).map(m => m.id).filter(Boolean);
+        models.push({ provider: 'lmstudio', available: true, models: modelNames });
+      } else {
+        models.push({ provider: 'lmstudio', available: false, models: [] });
+      }
+    } catch {
+      models.push({ provider: 'lmstudio', available: false, models: [] });
+    }
+
+    return { models };
+  });
+
   // ==================== OLLAMA ====================
   ipcMain.handle('ollama:checkStatus', async () => {
     log('[Main Process] Checking Ollama status via backend...');

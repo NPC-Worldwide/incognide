@@ -314,11 +314,19 @@ export const gatherWorkspaceContext = (contentDataRef: React.MutableRefObject<an
     Object.entries(contentDataRef.current).forEach(([paneId, paneData]: [string, any]) => {
         // Skip panes that are excluded from context
         if (excludedPaneIds && excludedPaneIds.has(paneId)) return;
-        if (paneData.contentType === 'editor' && paneData.fileContent) {
+        const fileContentTypes = ['editor', 'latex', 'csv', 'notebook', 'docx', 'pptx', 'exp', 'mindmap'];
+        if (fileContentTypes.includes(paneData.contentType) && (paneData.fileContent || paneData.contentId)) {
             contexts.push({
                 type: 'file',
                 path: paneData.contentId,
-                content: paneData.fileContent,
+                content: paneData.fileContent || '',
+                paneId: paneId,
+                source: 'open-pane'
+            });
+        } else if (paneData.contentType === 'image' && paneData.contentId) {
+            contexts.push({
+                type: 'image',
+                path: paneData.contentId,
                 paneId: paneId,
                 source: 'open-pane'
             });

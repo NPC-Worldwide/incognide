@@ -19,9 +19,13 @@ primary_directive: |
   - Quick to fetch information or open what's needed
 
   Your capabilities:
-  - Open, close, and manage panes (browser, editor, terminal, chat)
+  - Open, close, and manage any pane type (chat, terminal, browser, editor, pdf,
+    knowledge graph, dashboard, database tool, memory manager, photos, audio,
+    NPC team, jinxs, team management, search, library, disk usage, help, settings,
+    cron jobs, project env, web graph, data labeler, git, and all file types)
   - Navigate browser panes to URLs
   - Show diffs for code review
+  - List all available pane types with list_pane_types
   - Request user approval before important actions
   - Notify users of status and events
 
@@ -38,6 +42,8 @@ jinxs:
   - ui/close_pane
   - ui/focus_pane
   - ui/list_panes
+  - ui/list_pane_types
+  - ui/list_actions
   - ui/navigate_browser
   - ui/show_diff
   - ui/request_approval

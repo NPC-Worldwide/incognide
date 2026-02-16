@@ -165,25 +165,39 @@ async def get_target_window() -> str:
 async def open_pane(
     pane_type: str,
     content_id: str = "",
-    position: str = "right"
+    position: str = "right",
+    shell_type: str = ""
 ) -> str:
     """
     Open a new pane in Incognide.
 
     Args:
-        pane_type: Type of pane to open (browser, editor, terminal, chat, diff)
-        content_id: Content ID - URL for browser, file path for editor, etc.
-        position: Where to open the pane (right, left, up, down)
+        pane_type: Type of pane to open. Tool panes (no path needed): chat, terminal,
+            graph-viewer, datadash, dbtool, memory-manager, photoviewer, scherzo,
+            npcteam, jinx, teammanagement, search, library, diskusage, help,
+            settings, cron-daemon, projectenv, browsergraph, data-labeler, git.
+            File panes (path required): editor, pdf, csv, docx, pptx, latex,
+            notebook, exp, mindmap, zip, image, folder.
+            URL panes: browser.
+        content_id: Content ID - URL for browser, file path for file panes. Not needed for tool panes.
+        position: Where to open the pane (right, left, top, bottom)
+        shell_type: For terminal panes: system, npcsh, or guac
 
     Returns:
         JSON result with pane ID and status
     """
-    result = await call_incognide_action("open_pane", {
+    args = {
         "type": pane_type,
-        "path": content_id,
-        "url": content_id if pane_type == "browser" else None,
         "position": position
-    })
+    }
+    if content_id:
+        if pane_type == "browser":
+            args["url"] = content_id
+        else:
+            args["path"] = content_id
+    if shell_type:
+        args["shellType"] = shell_type
+    result = await call_incognide_action("open_pane", args)
     return json.dumps(result, indent=2)
 
 
@@ -226,6 +240,30 @@ async def list_panes() -> str:
         JSON array of panes with their IDs, types, titles, and status
     """
     result = await call_incognide_action("list_panes", {})
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def list_pane_types() -> str:
+    """
+    List all available pane types that can be opened in Incognide.
+
+    Returns:
+        JSON array of pane types with their names, descriptions, and whether they require a path or URL
+    """
+    result = await call_incognide_action("list_pane_types", {})
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def list_actions() -> str:
+    """
+    List all available studio actions that can be performed in Incognide, organized by category.
+
+    Returns:
+        JSON with all action names and categories (pane management, content, browser, tabs, data, UI, window)
+    """
+    result = await call_incognide_action("list_actions", {})
     return json.dumps(result, indent=2)
 
 
@@ -1198,9 +1236,9 @@ if __name__ == "__main__":
     print(f"Starting Incognide MCP server...")
     print(f"Backend URL: {INCOGNIDE_BACKEND_URL}")
     print(f"Available tools: list_windows, set_target_window, get_target_window,")
-    print(f"                 open_pane, close_pane, focus_pane, list_panes,")
+    print(f"                 open_pane, close_pane, focus_pane, list_panes, list_pane_types,")
     print(f"                 navigate_browser, show_diff, request_approval,")
-    print(f"                 notify, get_browser_info, split_pane, zen_mode,")
+    print(f"                 notify, get_browser_info, split_pane, zen_mode, list_actions,")
     print(f"                 run_terminal, browser_click, browser_type,")
     print(f"                 get_browser_content, browser_screenshot, browser_eval,")
     print(f"                 spreadsheet_read, spreadsheet_eval, spreadsheet_update_cell,")

@@ -1493,7 +1493,7 @@ const PermissionsManager = () => {
     );
 };
 
-const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableModels = [], embedded = false, initialTab = 'global' }) => {
+const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableModels = [], embedded = false, initialTab = 'global', onRerunSetup = undefined }) => {
     const aiEnabled = useAiEnabled();
     const { userPath, setUserPath, setAiEnabled } = useAiFeature();
     const [activeTab, setActiveTab] = useState(initialTab);
@@ -1738,6 +1738,15 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                             Replay Tutorial
                         </button>
 
+                        {onRerunSetup && (
+                            <button
+                                onClick={onRerunSetup}
+                                className="w-full text-left px-3 py-2 text-sm border border-gray-700 rounded-lg hover:bg-gray-700/50 text-gray-300 transition-colors"
+                            >
+                                Re-run Setup Wizard
+                            </button>
+                        )}
+
                         <Input
                             label="Default Directory"
                             value={globalSettings.default_folder}
@@ -1851,7 +1860,7 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                             />
                         </div>
 
-                        <Card title="Custom Global Variables">
+                        <Card title="Custom Global Variables" className="!h-auto">
                             <div className="max-h-64 overflow-y-auto pr-2 mb-3">
                                 {customGlobalVars.map((variable, index) => (
                                     <div key={index} className="flex gap-2 mb-2">

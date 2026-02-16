@@ -7,6 +7,7 @@
  */
 
 import { registerAction, StudioContext, StudioActionResult } from './index';
+import { collectPaneInfo } from './paneActions';
 
 const BACKEND_URL = (window as any).__BACKEND_URL__ ||
   `http://127.0.0.1:${(window as any).__BACKEND_PORT__ || '5437'}`;
@@ -34,26 +35,32 @@ async function get_window_info(
   _args: Record<string, any>,
   ctx: StudioContext
 ): Promise<StudioActionResult> {
-  // Collect pane info from contentDataRef
-  const panes: any[] = [];
-  if (ctx.contentDataRef?.current) {
-    for (const [paneId, data] of Object.entries(ctx.contentDataRef.current)) {
-      panes.push({
-        id: paneId,
-        type: (data as any).contentType || 'unknown',
-        title: (data as any).browserTitle || (data as any).contentId || paneId,
-        isActive: paneId === ctx.activeContentPaneId,
-      });
+  // Use collectPaneInfo for consistent, detailed pane info
+  const panes = collectPaneInfo(
+    ctx.rootLayoutNode,
+    ctx.contentDataRef.current,
+    ctx.activeContentPaneId
+  );
+
+  // Enrich with extra detail (URLs, shell types, file paths)
+  const enrichedPanes = panes.map(pane => {
+    const data = ctx.contentDataRef.current[pane.id] || {};
+    const extra: Record<string, any> = {};
+    if (data.browserUrl) extra.url = data.browserUrl;
+    if (data.shellType) extra.shellType = data.shellType;
+    if (data.contentId && typeof data.contentId === 'string' && data.contentId.includes('/')) {
+      extra.filePath = data.contentId;
     }
-  }
+    return { ...pane, ...extra };
+  });
 
   return {
     success: true,
     windowId: ctx.windowId || '',
     currentPath: ctx.currentPath || '',
     title: document.title || 'Incognide',
-    paneCount: panes.length,
-    panes,
+    paneCount: enrichedPanes.length,
+    panes: enrichedPanes,
   };
 }
 

@@ -1659,6 +1659,7 @@ const renderWebsiteList = () => {
                 onDragEnd={handleSectionDragEnd}
                 onClick={() => setWebsitesCollapsed(!websitesCollapsed)}
                 className="flex items-stretch w-full py-4 bg-gradient-to-r from-purple-800/40 to-indigo-700/35 cursor-pointer hover:bg-white/5"
+                data-tutorial="browser-section"
             >
                 {/* Left: chevron, then conditional controls */}
                 <div className="flex items-center pl-1 gap-0">
@@ -2207,7 +2208,7 @@ const renderWebsiteList = () => {
         return (
             <div className="mt-4 border-t theme-border pt-2">
                 {/* Header with collapse toggle */}
-                <div className="flex items-center justify-between px-4 py-1">
+                <div className="flex items-center justify-between px-4 py-1" data-tutorial="disk-usage">
                     <div className="text-xs text-gray-500 font-medium flex items-center gap-2">
                         <HardDrive size={14} />
                         Disk Usage
@@ -4500,7 +4501,7 @@ return (
 
         {/* Header Actions - hidden when sidebar or top bar is collapsed */}
         <div className={`border-b border-gray-700 flex-shrink-0 relative group/header ${sidebarCollapsed || topBarCollapsed ? 'hidden' : ''}`} style={{ height: topBarHeight }}>
-            <div className="grid grid-cols-4 divide-x divide-gray-700 h-full">
+            <div className="grid grid-cols-4 divide-x divide-gray-700 h-full" data-tutorial="creation-tiles">
                 {/* Terminals dropdown */}
                 <div className="relative" data-dropdown="terminal" data-tutorial="terminal-button">
                     <button
@@ -4554,7 +4555,7 @@ return (
                     )}
                 </div>
                 {/* Notebooks/Experiments dropdown */}
-                <div className="relative" data-dropdown="notebook">
+                <div className="relative" data-dropdown="notebook" data-tutorial="notebook-button">
                     <button
                         onClick={() => defaultNewNotebookType === 'notebook' ? createNewNotebook?.() : createNewExperiment?.()}
                         className="w-full h-full flex items-center justify-center hover:bg-teal-500/20 py-4 relative transition-colors"
@@ -4592,7 +4593,7 @@ return (
                     )}
                 </div>
                 {/* Code Files dropdown */}
-                <div className="relative" data-dropdown="code-file">
+                <div className="relative" data-dropdown="code-file" data-tutorial="code-file-button">
                     <button
                         onClick={() => createFileWithExtension(defaultCodeFileType)}
                         className="w-full h-full flex items-center justify-center hover:bg-teal-500/20 py-4 relative transition-colors"
@@ -4627,7 +4628,7 @@ return (
                     )}
                 </div>
                 {/* Business Documents dropdown */}
-                <div className="relative" data-dropdown="doc">
+                <div className="relative" data-dropdown="doc" data-tutorial="document-button">
                     <button
                         onClick={() => createNewDocument?.(defaultNewDocumentType)}
                         className="w-full h-full flex items-center justify-center hover:bg-teal-500/20 py-4 relative transition-colors"
@@ -4814,10 +4815,10 @@ return (
                                 className={`transition-all duration-150 ${isCollapsed ? 'flex-shrink-0' : 'min-h-0'} ${draggedSection === sectionId ? 'opacity-50 scale-95' : ''} ${dropTargetSection === sectionId && draggedSection !== sectionId ? `ring-2 ${sectionColors[sectionId]} rounded-lg bg-white/5` : ''}`}
                                 style={isCollapsed ? {} : { flex: sectionId === 'websites' ? '1 1 0%' : '1.4 1 0%' }}
                             >
-                                {sectionId === 'websites' && renderWebsiteList()}
+                                {sectionId === 'websites' && <div data-tutorial="website-browser">{renderWebsiteList()}</div>}
                                 {sectionId === 'files' && <div data-tutorial="file-browser">{renderFolderList(folderStructure)}</div>}
                                 {sectionId === 'conversations' && aiEnabled && <div data-tutorial="conversations">{renderConversationList(directoryConversations)}</div>}
-                                {sectionId === 'git' && renderGitSection()}
+                                {sectionId === 'git' && <div data-tutorial="git-browser">{renderGitSection()}</div>}
                             </div>
                         );
                     })}

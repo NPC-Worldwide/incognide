@@ -1,9 +1,16 @@
 jinx_name: open_pane
-description: Open a new pane in Incognide. Supports browser, editor, terminal, chat, and diff pane types. Use position to control where the pane opens (right, left, up, down).
+description: >
+  Open a new pane in Incognide. Tool panes (no content_id needed): chat, terminal,
+  graph-viewer, datadash, dbtool, memory-manager, photoviewer, scherzo, npcteam,
+  jinx, teammanagement, search, library, diskusage, help, settings, cron-daemon,
+  projectenv, browsergraph, data-labeler, git. File panes (content_id = file path):
+  editor, pdf, csv, docx, pptx, latex, notebook, exp, mindmap, zip, image, folder.
+  URL panes (content_id = URL): browser. Position: right, left, top, bottom.
 inputs:
   - pane_type
   - { content_id: "" }
   - { position: "right" }
+  - { shell_type: "" }
 steps:
   - name: open_pane
     engine: incognide
@@ -12,3 +19,4 @@ steps:
       type: "{{ pane_type }}"
       path: "{{ content_id }}"
       position: "{{ position }}"
+      shellType: "{{ shell_type }}"

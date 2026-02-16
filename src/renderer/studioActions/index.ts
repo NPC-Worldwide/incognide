@@ -96,3 +96,25 @@ export function getRegisteredActions(): string[] {
 export function hasAction(name: string): boolean {
   return name in actions;
 }
+
+// Built-in action: list all available studio actions
+registerAction('list_actions', async () => {
+  const actionNames = Object.keys(actions).sort();
+  const categories: Record<string, string[]> = {
+    'Pane Management': actionNames.filter(a => ['open_pane', 'close_pane', 'focus_pane', 'split_pane', 'list_panes', 'list_pane_types', 'zen_mode'].includes(a)),
+    'Content': actionNames.filter(a => ['read_pane', 'write_file', 'get_selection', 'run_terminal'].includes(a)),
+    'Tabs': actionNames.filter(a => a.includes('tab')),
+    'Browser': actionNames.filter(a => a.startsWith('browser_') || ['navigate', 'get_browser_info', 'get_browser_content'].includes(a)),
+    'Spreadsheet': actionNames.filter(a => a.startsWith('spreadsheet_')),
+    'Document': actionNames.filter(a => a.startsWith('document_')),
+    'Presentation': actionNames.filter(a => a.startsWith('presentation_')),
+    'UI': actionNames.filter(a => ['notify', 'confirm', 'open_file_picker', 'send_message', 'switch_npc'].includes(a)),
+    'Window': actionNames.filter(a => ['list_windows', 'get_window_info'].includes(a)),
+  };
+  return {
+    success: true,
+    actions: actionNames,
+    categories,
+    count: actionNames.length
+  };
+});

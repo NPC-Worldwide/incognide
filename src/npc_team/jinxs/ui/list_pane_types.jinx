@@ -1,0 +1,8 @@
+jinx_name: list_pane_types
+description: List all available pane types that can be opened in Incognide, with descriptions and whether they require a path or URL.
+inputs: []
+steps:
+  - name: list_pane_types
+    engine: incognide
+    action: list_pane_types
+    args: {}

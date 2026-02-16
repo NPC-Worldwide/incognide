@@ -353,8 +353,10 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         } else if (userPath === 'cloud-ai') {
             setStep('cloud-keys');
         } else {
-            // local-ai
-            setStep('extras');
+            // local-ai — skip extras, default to 'local', go straight to models
+            setSelectedExtras('local');
+            setStep('models');
+            checkLocalModels();
         }
     };
 
@@ -728,7 +730,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
             <div className="flex gap-3">
                 <button
-                    onClick={() => setStep('extras')}
+                    onClick={() => setStep('path')}
                     className="py-2 px-4 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center gap-1"
                 >
                     <ChevronLeft size={16} /> Back
@@ -767,6 +769,19 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                     ))
                 )}
             </div>
+
+            <button
+                onClick={() => {
+                    if (userPath !== 'no-ai') {
+                        setStep('concepts');
+                    } else {
+                        setStep('complete');
+                    }
+                }}
+                className="w-full py-2 text-sm text-gray-500 hover:text-gray-300 transition-colors"
+            >
+                Skip — continue in background
+            </button>
         </div>
     );
 

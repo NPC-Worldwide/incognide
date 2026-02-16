@@ -769,19 +769,19 @@ const StatsGridContent = ({ stats, onStatClick, timePeriod = 'all' }: { stats: a
     };
 
     return (
-        <div className="flex flex-wrap gap-x-3 gap-y-1">
+        <div className="space-y-0.5">
             {stats.map((stat, i) => {
                 const StatIcon = iconMap[stat.icon] || Zap;
                 return (
                     <div
                         key={i}
-                        className="flex items-center gap-1 cursor-pointer hover:opacity-80"
+                        className="flex items-center gap-1.5 cursor-pointer hover:opacity-80 px-0.5"
                         onClick={() => stat.trendQuery && onStatClick?.({ ...stat, title: stat.label })}
                         title={stat.trendQuery ? 'Click to see trend' : stat.label}
                     >
-                        <StatIcon size={12} className={stat.color || 'text-gray-400'} />
-                        <span className="font-bold text-sm">{formatValue(gridData[stat.label], stat.format)}</span>
-                        <span className="text-[10px] theme-text-muted">{stat.label}</span>
+                        <StatIcon size={10} className={stat.color || 'text-gray-400'} />
+                        <span className="text-[10px] theme-text-muted flex-1 truncate">{stat.label}</span>
+                        <span className="font-bold text-xs tabular-nums">{formatValue(gridData[stat.label], stat.format)}</span>
                     </div>
                 );
             })}
@@ -1032,13 +1032,11 @@ const DashboardWidget = ({ config, onContextMenu, timePeriod = 'all' }: { config
             <StatListModal isOpen={expandedList} onClose={() => setExpandedList(false)} title={config.title} query={config.query} iconName={config.iconName} />
             {isCompact ? (
                 <div onContextMenu={(e) => onContextMenu(e, config.id)}>
-                    <div className="flex items-center gap-1 mb-1">
-                        <Icon className={config.iconColor || 'text-gray-400'} size={12} />
-                        <span className="text-[11px] font-semibold theme-text-secondary">{config.title}</span>
+                    <div className="flex items-center gap-1 mb-0.5">
+                        <Icon className={config.iconColor || 'text-gray-400'} size={10} />
+                        <span className="text-[10px] font-semibold theme-text-secondary truncate">{config.title}</span>
                     </div>
-                    <div className="flex flex-wrap gap-x-2 gap-y-0.5">
-                        {renderContent()}
-                    </div>
+                    {renderContent()}
                 </div>
             ) : (
                 <div className="theme-bg-tertiary rounded-lg flex flex-col relative p-2.5 h-full" onContextMenu={(e) => onContextMenu(e, config.id)}>
@@ -2614,7 +2612,7 @@ const handleAcceptGeneratedSql = () => {
                                 </div>
                             </div>
                             {!collapsedSections['stats_grids'] && (
-                                <div className="p-1.5 grid grid-cols-2 gap-1.5">
+                                <div className="p-1.5 grid grid-cols-4 gap-1">
                                     {statsGridWidgets.map(widget => (
                                         <div key={widget.id} className="theme-bg-secondary rounded p-1.5" onContextMenu={(e) => handleContextMenu(e, widget.id)}>
                                             <DashboardWidget config={widget} onContextMenu={handleContextMenu} timePeriod={statsTimePeriod}/>

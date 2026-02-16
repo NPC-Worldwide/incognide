@@ -1,7 +1,8 @@
 import React from 'react';
 import {
     MessageSquare, Terminal, Globe, FileText, File as FileIcon,
-    BrainCircuit, Clock, Bot, Zap, Users, Database, ChevronRight, ChevronDown
+    BrainCircuit, Clock, Bot, Zap, Users, Database, ChevronRight, ChevronDown,
+    GitBranch, Image, Music, Settings, BarChart3
 } from 'lucide-react';
 import MemoryIcon from './MemoryIcon';
 import { useAiEnabled } from './AiFeatureContext';
@@ -145,7 +146,17 @@ const StatusBar: React.FC<StatusBarProps> = ({
                         {pane.type === 'terminal' && <Terminal size={20} />}
                         {pane.type === 'browser' && <Globe size={20} />}
                         {pane.type === 'pdf' && <FileText size={20} />}
-                        {!['chat', 'editor', 'terminal', 'browser', 'pdf'].includes(pane.type) && <FileIcon size={20} />}
+                        {pane.type === 'graph-viewer' && <GitBranch size={20} />}
+                        {pane.type === 'datadash' && <BarChart3 size={20} />}
+                        {pane.type === 'dbtool' && <Database size={20} />}
+                        {pane.type === 'memory-manager' && <BrainCircuit size={20} />}
+                        {pane.type === 'photoviewer' && <Image size={20} />}
+                        {pane.type === 'npcteam' && <Bot size={20} />}
+                        {pane.type === 'jinx' && <Zap size={20} />}
+                        {pane.type === 'teammanagement' && <Users size={20} />}
+                        {pane.type === 'diff' && <GitBranch size={20} />}
+                        {pane.type === 'browsergraph' && <Globe size={20} />}
+                        {!['chat', 'editor', 'terminal', 'browser', 'pdf', 'graph-viewer', 'datadash', 'dbtool', 'memory-manager', 'photoviewer', 'npcteam', 'jinx', 'teammanagement', 'diff', 'browsergraph'].includes(pane.type) && <FileIcon size={20} />}
                     </button>
                 ))}
             </div>
@@ -167,6 +178,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
 
                     {/* Jinxs button */}
                     <button
+                        data-tutorial="jinxs-button"
                         onClick={() => createJinxPane?.()}
                         className={`${btnClass} text-yellow-600 dark:text-yellow-400`}
                         title="Jinxs"
