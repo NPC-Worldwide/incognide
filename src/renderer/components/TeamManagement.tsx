@@ -1383,44 +1383,13 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                 <Plus size={14} /> Project
                             </button>
                         )}
-                        {/* When global: show Incognide/npcsh sub-toggle inline */}
-                        {isGlobal ? (
-                            <>
-                                <button
-                                    onClick={() => { setIsGlobal(true); setGlobalSource('incognide'); }}
-                                    className={`px-3 py-1.5 rounded text-sm font-medium transition ${globalSource === 'incognide' ? 'bg-amber-600 text-white' : 'text-gray-400 hover:text-white'}`}
-                                >
-                                    Incognide
-                                </button>
-                                <button
-                                    onClick={() => { setIsGlobal(true); setGlobalSource('npcsh'); }}
-                                    className={`px-3 py-1.5 rounded text-sm font-medium transition ${globalSource === 'npcsh' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'}`}
-                                >
-                                    npcsh
-                                </button>
-                            </>
-                        ) : (
-                            <button
-                                onClick={() => setIsGlobal(true)}
-                                className={`px-3 py-1.5 rounded text-sm font-medium transition ${isGlobal ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
-                            >
-                                Global
-                            </button>
-                        )}
+                        <button
+                            onClick={() => setIsGlobal(true)}
+                            className={`px-3 py-1.5 rounded text-sm font-medium transition ${isGlobal ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            Global
+                        </button>
                     </div>
-                    {isGlobal && (
-                        <>
-                            <NPCTeamSync compact />
-                            <button
-                                onClick={() => setResyncModal(true)}
-                                className="px-3 py-1.5 rounded text-sm font-medium bg-gray-700 hover:bg-gray-600 text-gray-300 transition flex items-center gap-1"
-                                title="Re-sync global team from package defaults"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
-                                Re-sync
-                            </button>
-                        </>
-                    )}
                     {!embedded && (
                         <button
                             onClick={onClose}
@@ -1433,21 +1402,39 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
             </div>
 
             {/* Tab Navigation */}
-            <div className="flex border-b theme-border px-4 flex-shrink-0">
-                {tabs.map((tab) => (
-                    <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id)}
-                        className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                            activeTab === tab.id
-                                ? 'border-purple-500 text-purple-400'
-                                : 'border-transparent theme-text-secondary hover:theme-text-primary'
-                        }`}
-                    >
-                        {tab.icon}
-                        {tab.label}
-                    </button>
-                ))}
+            <div className="flex items-center justify-between border-b theme-border px-4 flex-shrink-0">
+                <div className="flex">
+                    {tabs.map((tab) => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                                activeTab === tab.id
+                                    ? 'border-purple-500 text-purple-400'
+                                    : 'border-transparent theme-text-secondary hover:theme-text-primary'
+                            }`}
+                        >
+                            {tab.icon}
+                            {tab.label}
+                        </button>
+                    ))}
+                </div>
+                {isGlobal && (
+                    <div className="flex items-center bg-gray-800 rounded-lg p-0.5">
+                        <button
+                            onClick={() => setGlobalSource('incognide')}
+                            className={`px-2.5 py-1 rounded text-xs font-medium transition ${globalSource === 'incognide' ? 'bg-amber-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            Incognide
+                        </button>
+                        <button
+                            onClick={() => setGlobalSource('npcsh')}
+                            className={`px-2.5 py-1 rounded text-xs font-medium transition ${globalSource === 'npcsh' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            npcsh
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Tab Content */}
@@ -1464,7 +1451,19 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                 )}
                 {activeTab === 'npcs' && (
                     <div className="space-y-4">
-                        {isGlobal && <NPCTeamSync />}
+                        {isGlobal && (
+                            <div className="flex items-center gap-2">
+                                <NPCTeamSync globalPath={globalPath} />
+                                <button
+                                    onClick={() => setResyncModal(true)}
+                                    className="px-3 py-1.5 rounded text-sm font-medium bg-gray-700 hover:bg-gray-600 text-gray-300 transition flex items-center gap-1"
+                                    title="Re-sync global team from package defaults"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+                                    Re-sync
+                                </button>
+                            </div>
+                        )}
                         <NPCTeamMenu
                             isOpen={true}
                             onClose={() => {}}

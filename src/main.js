@@ -171,6 +171,20 @@ const ensureTablesExist = async () => {
       );
   `;
 
+  const createJinxExecutionLogTable = `
+      CREATE TABLE IF NOT EXISTS jinx_execution_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          jinx_name TEXT NOT NULL,
+          npc_name TEXT,
+          input_summary TEXT,
+          output_summary TEXT,
+          status TEXT DEFAULT 'success',
+          duration_ms INTEGER,
+          folder_path TEXT,
+          timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+  `;
+
   const createIndexes = `
       CREATE INDEX IF NOT EXISTS idx_file_path ON pdf_highlights(file_path);
       CREATE INDEX IF NOT EXISTS idx_pdf_drawings_file ON pdf_drawings(file_path);
@@ -181,6 +195,8 @@ const ensureTablesExist = async () => {
       CREATE INDEX IF NOT EXISTS idx_history_pane ON browser_history(pane_id);
       CREATE INDEX IF NOT EXISTS idx_navigations_pane ON browser_navigations(pane_id);
       CREATE INDEX IF NOT EXISTS idx_navigations_folder ON browser_navigations(folder_path);
+      CREATE INDEX IF NOT EXISTS idx_jinx_log_name ON jinx_execution_log(jinx_name);
+      CREATE INDEX IF NOT EXISTS idx_jinx_log_folder ON jinx_execution_log(folder_path);
   `;
 
   try {
@@ -190,6 +206,7 @@ const ensureTablesExist = async () => {
       await dbQuery(createBrowserHistoryTable);
       await dbQuery(createBrowserNavigationsTable);
       await dbQuery(createDrawingsTable);
+      await dbQuery(createJinxExecutionLogTable);
       await dbQuery(createIndexes);
 
       // Helper to add column only if it doesn't exist

@@ -13,66 +13,189 @@ interface TutorialStep {
 }
 
 const TUTORIAL_STEPS: TutorialStep[] = [
+    // === Core Layout ===
     {
         selector: '[data-tutorial="sidebar"]',
         title: 'Sidebar',
-        description: 'Your command center. Browse files, manage websites, and access conversations from here.',
-        paths: ['no-ai', 'cloud-ai', 'local-ai'],
-        position: 'right',
-    },
-    {
-        selector: '[data-tutorial="terminal-button"]',
-        title: 'Terminal',
-        description: 'Open a terminal to run commands directly. Click the dropdown arrow for shell options.',
-        paths: ['no-ai', 'cloud-ai', 'local-ai'],
-        position: 'bottom',
-    },
-    {
-        selector: '[data-tutorial="file-browser"]',
-        title: 'File Browser',
-        description: 'Browse and manage your files and folders. Click to open, right-click for more options.',
+        description: 'Your command center. Files, websites, and conversations all live here. Sections are draggable — reorder them how you like.',
         paths: ['no-ai', 'cloud-ai', 'local-ai'],
         position: 'right',
     },
     {
         selector: '[data-tutorial="pane-area"]',
-        title: 'Workspace Panes',
-        description: 'Your workspace area. Open multiple panes side by side — editors, terminals, browsers, and more. Drag tabs to rearrange.',
+        title: 'Workspace',
+        description: 'Everything opens here as panes — editors, terminals, browsers, viewers. Split horizontally or vertically, drag tabs between panes, and build any layout you want.',
         paths: ['no-ai', 'cloud-ai', 'local-ai'],
-        position: 'left',
+        position: 'bottom',
     },
+
+    // === Creation Tiles ===
     {
-        selector: '[data-tutorial="settings-button"]',
-        title: 'Settings',
-        description: 'Configure your environment — appearance, keybindings, models, and more.',
+        selector: '[data-tutorial="creation-tiles"]',
+        title: 'Quick Create',
+        description: 'Four creation buttons for the things you use most. Click for the default action, use the dropdown arrow for more options. Right-click any option to set it as the default.',
         paths: ['no-ai', 'cloud-ai', 'local-ai'],
         position: 'bottom',
     },
     {
+        selector: '[data-tutorial="terminal-button"]',
+        title: 'Terminal',
+        description: 'Open a system terminal, or use the dropdown for npcsh (AI-powered shell). Terminals run in panes alongside your other work.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'bottom',
+    },
+    {
+        selector: '[data-tutorial="notebook-button"]',
+        title: 'Notebooks & Experiments',
+        description: 'Create Jupyter-style notebooks for interactive coding with inline outputs. Or create experiments to run and track repeatable workflows.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'bottom',
+    },
+    {
+        selector: '[data-tutorial="code-file-button"]',
+        title: 'Code & Text Files',
+        description: 'Create new files in any language — Python, JavaScript, TypeScript, Rust, LaTeX, Markdown, and more. The editor has syntax highlighting, autocomplete, and AI-powered actions.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'bottom',
+    },
+    {
+        selector: '[data-tutorial="document-button"]',
+        title: 'Documents',
+        description: 'Create Word, Excel, PowerPoint, and mind map documents. Edit them directly in the app with full formatting support.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'bottom',
+    },
+
+    // === Sidebar Sections ===
+    {
+        selector: '[data-tutorial="file-browser"]',
+        title: 'File Browser',
+        description: 'Browse your project files and folders. Click to open in a pane, right-click for rename, delete, copy path, and more. Drag files to rearrange.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'right',
+    },
+    {
+        selector: '[data-tutorial="website-browser"]',
+        title: 'Websites',
+        description: 'Your bookmarked websites and browsing history. Quick-access links organized by workspace.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'right',
+    },
+    {
+        selector: '[data-tutorial="git-browser"]',
+        title: 'Git',
+        description: 'View git status, branches, and commit history for your project. Stage changes and manage your repository directly from the sidebar.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'right',
+    },
+    {
+        selector: '[data-tutorial="browser-section"]',
+        title: 'Web Browser',
+        description: 'Built-in web browser with tab management. Browse the web, save bookmarks, and view sites side-by-side with your code. Click the globe icon to open a new browser pane.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'right',
+    },
+
+    // === Upper Right Tools ===
+    {
+        selector: '[data-tutorial="vixynt-button"]',
+        title: 'Vixynt — Image Studio',
+        description: 'Generate images from text prompts, edit photos with AI-powered tools, apply generative fill, and manage your image library. Supports multiple generation models and providers.',
+        paths: ['cloud-ai', 'local-ai'],
+        position: 'bottom',
+    },
+    {
+        selector: '[data-tutorial="scherzo-button"]',
+        title: 'Scherzo — Audio Studio',
+        description: 'Multi-track audio editor with waveform visualization. Record, trim, mix clips, and generate audio with AI. Supports drag-and-drop clips on a timeline.',
+        paths: ['cloud-ai', 'local-ai'],
+        position: 'bottom',
+    },
+    {
+        selector: '[data-tutorial="disk-usage-button"]',
+        title: 'Disk Usage Analyzer',
+        description: 'Visual breakdown of what\'s using space in your project. Drill into folders, identify large files, and keep your workspace lean.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'bottom',
+    },
+    {
+        selector: '[data-tutorial="cron-button"]',
+        title: 'Assembly Line',
+        description: 'Schedule recurring tasks with cron jobs, run persistent daemons, and manage SQL models. Assign NPC agents or jinxs to automate workflows on a schedule.',
+        paths: ['cloud-ai', 'local-ai'],
+        position: 'bottom',
+    },
+
+    // === Bottom Bar (left) ===
+    {
         selector: '[data-tutorial="kg-button"]',
         title: 'Knowledge Graph',
-        description: 'Your personal knowledge base. Organize concepts, facts, and relationships visually.',
+        description: 'Your personal knowledge base. Add concepts and facts, see how they connect. View as a force graph, table, tree, or grouped cards. Search, filter, and organize.',
         paths: ['no-ai', 'cloud-ai', 'local-ai'],
         position: 'top',
     },
     {
+        selector: '[data-tutorial="settings-button"]',
+        title: 'Settings',
+        description: 'Configure everything — theme, models, providers, voice/TTS, keybindings, global variables, and app mode. Re-run this tutorial or the setup wizard from here.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'right',
+    },
+    {
+        selector: '[data-tutorial="help-button"]',
+        title: 'Help',
+        description: 'Built-in documentation and guides. Learn about keyboard shortcuts, features, jinx authoring, NPC configuration, and more.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'right',
+    },
+    {
+        selector: '[data-tutorial="dashboard-button"]',
+        title: 'Data Dashboard',
+        description: 'Visualize your data with charts and tables. Load CSVs, query databases, and build interactive dashboards from your project data.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'right',
+    },
+    {
+        selector: '[data-tutorial="search-bar"]',
+        title: 'Local Search',
+        description: 'Search your project files and conversation history. Hit Enter to open a dedicated search pane with results across your workspace.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'bottom',
+    },
+    {
+        selector: '[data-tutorial="web-search-bar"]',
+        title: 'Web Search',
+        description: 'Search the web directly from the toolbar. Uses your configured search providers to find results online — separate from the local file search next to it.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'bottom',
+    },
+
+    // === AI Features ===
+    {
         selector: '[data-tutorial="conversations"]',
-        title: 'AI Conversations',
-        description: 'Start AI conversations. Your chat history is saved per directory so context stays relevant.',
+        title: 'Chat with AI Models',
+        description: 'Chat with any model from any provider — scoped to your current directory. History persists per project. Drag files into chat for context. Switch models and NPC agents per conversation.',
         paths: ['cloud-ai', 'local-ai'],
         position: 'right',
     },
     {
         selector: '[data-tutorial="npc-team-button"]',
-        title: 'NPC Team',
-        description: 'Meet your AI team. Each NPC agent has specialized skills and personality. Ledbi is your UI assistant.',
+        title: 'NPCs',
+        description: 'Your AI agents — each NPC has a personality, model, and specialized jinxs (tools). Ledbi (pronounced like Irish "Levi") is your default UI assistant. Add, edit, or remove NPCs to build your ideal team.',
+        paths: ['cloud-ai', 'local-ai'],
+        position: 'top',
+    },
+    {
+        selector: '[data-tutorial="jinxs-button"]',
+        title: 'Jinxs',
+        description: 'Jinxs are tools your NPCs can use — function calls, API integrations, UI actions, and custom scripts. Browse, create, and assign jinxs to NPCs from here.',
         paths: ['cloud-ai', 'local-ai'],
         position: 'top',
     },
     {
         selector: '[data-tutorial="team-management-button"]',
-        title: 'Team Management',
-        description: 'Manage your NPC team, jinxs (AI tools), databases, MCP servers, and more — all in one place.',
+        title: 'Team Context',
+        description: 'Configure your team\'s shared context — the forenpc, project description, databases, MCP servers, and custom key-value pairs. Manage project-level vs. global context.',
         paths: ['cloud-ai', 'local-ai'],
         position: 'top',
     },
@@ -95,25 +218,29 @@ function computeTooltipPosition(
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
+    // For very large targets (e.g. pane area), use the visible center rather than edges
+    const centerY = Math.max(padding, Math.min(targetRect.top + targetRect.height / 2, vh - padding));
+    const centerX = Math.max(padding, Math.min(targetRect.left + targetRect.width / 2, vw - padding));
+
     const positions = {
         bottom: {
-            top: targetRect.bottom + gap,
-            left: Math.max(padding, Math.min(targetRect.left + targetRect.width / 2 - tooltipWidth / 2, vw - tooltipWidth - padding)),
+            top: Math.min(targetRect.bottom + gap, vh - tooltipHeight - padding),
+            left: Math.max(padding, Math.min(centerX - tooltipWidth / 2, vw - tooltipWidth - padding)),
             arrowSide: 'top' as const,
         },
         top: {
-            top: targetRect.top - tooltipHeight - gap,
-            left: Math.max(padding, Math.min(targetRect.left + targetRect.width / 2 - tooltipWidth / 2, vw - tooltipWidth - padding)),
+            top: Math.max(padding, targetRect.top - tooltipHeight - gap),
+            left: Math.max(padding, Math.min(centerX - tooltipWidth / 2, vw - tooltipWidth - padding)),
             arrowSide: 'bottom' as const,
         },
         right: {
-            top: Math.max(padding, Math.min(targetRect.top + targetRect.height / 2 - tooltipHeight / 2, vh - tooltipHeight - padding)),
-            left: targetRect.right + gap,
+            top: Math.max(padding, Math.min(centerY - tooltipHeight / 2, vh - tooltipHeight - padding)),
+            left: Math.min(targetRect.right + gap, vw - tooltipWidth - padding),
             arrowSide: 'left' as const,
         },
         left: {
-            top: Math.max(padding, Math.min(targetRect.top + targetRect.height / 2 - tooltipHeight / 2, vh - tooltipHeight - padding)),
-            left: targetRect.left - tooltipWidth - gap,
+            top: Math.max(padding, Math.min(centerY - tooltipHeight / 2, vh - tooltipHeight - padding)),
+            left: Math.max(padding, targetRect.left - tooltipWidth - gap),
             arrowSide: 'right' as const,
         },
     };
@@ -133,7 +260,12 @@ function computeTooltipPosition(
         }
     }
 
-    return positions.bottom;
+    // Fallback: center of viewport
+    return {
+        top: Math.max(padding, vh / 2 - tooltipHeight / 2),
+        left: Math.max(padding, vw / 2 - tooltipWidth / 2),
+        arrowSide: 'top',
+    };
 }
 
 interface AppTutorialProps {

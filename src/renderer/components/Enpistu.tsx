@@ -245,7 +245,7 @@ const WEB_SEARCH_PROVIDERS: Record<WebSearchProvider, { name: string; url: strin
     sibiji: { name: 'Sibiji', url: 'https://sibiji.com/search?q=' },
 };
 
-const ChatInterface = () => {
+const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const aiEnabled = useAiEnabled();
     const [gitPanelCollapsed, setGitPanelCollapsed] = useState(true);
     const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -4821,6 +4821,7 @@ ${contextPrompt}`;
                 onPathChange={handlePathChange}
                 availableModels={availableModels}
                 embedded={true}
+                onRerunSetup={onRerunSetup}
             />
         );
     }, [currentPath, handlePathChange, availableModels]);
@@ -5608,6 +5609,7 @@ ${contextPrompt}`;
     predictiveTextProvider={predictiveTextProvider}
     setPredictiveTextProvider={setPredictiveTextProvider}
     availableModels={availableModels} // Pass available models for dropdown
+    onRerunSetup={onRerunSetup}
 />
 
 <DownloadManager
@@ -7450,6 +7452,7 @@ const renderMainContent = () => {
                 onClick={() => createHelpPane?.()}
                 className="p-2 theme-hover rounded theme-text-muted"
                 title="Help"
+                data-tutorial="help-button"
             >
                 <HelpCircle size={18} />
             </button>
@@ -7459,6 +7462,7 @@ const renderMainContent = () => {
                 onClick={() => createDataDashPane?.()}
                 className="p-2 theme-hover rounded theme-text-muted"
                 title="Data Dashboard"
+                data-tutorial="dashboard-button"
             >
                 <BarChart3 size={18} />
             </button>
@@ -7467,6 +7471,7 @@ const renderMainContent = () => {
 
             {/* App Search */}
             <div
+                data-tutorial="search-bar"
                 className="flex items-center gap-2 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400/30 transition-all"
                 style={{ width: Math.max(100, topBarHeight * 4) }}
             >
@@ -7523,7 +7528,7 @@ const renderMainContent = () => {
             </div>
 
             {/* Web Search */}
-            <div className="flex items-center gap-2 w-40 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-cyan-400 focus-within:ring-1 focus-within:ring-cyan-400/30 transition-all">
+            <div data-tutorial="web-search-bar" className="flex items-center gap-2 w-40 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-cyan-400 focus-within:ring-1 focus-within:ring-cyan-400/30 transition-all">
                 <Globe size={14} className="text-cyan-400 flex-shrink-0" />
                 <input
                     type="text"
@@ -7557,6 +7562,7 @@ const renderMainContent = () => {
                     onClick={() => createPhotoViewerPane?.()}
                     className="p-2 theme-hover rounded theme-text-muted"
                     title="Vixynt"
+                    data-tutorial="vixynt-button"
                 >
                     <Image size={18} />
                 </button>
@@ -7564,6 +7570,7 @@ const renderMainContent = () => {
                     onClick={() => createScherzoPane?.()}
                     className="p-2 theme-hover rounded theme-text-muted"
                     title="Scherzo"
+                    data-tutorial="scherzo-button"
                 >
                     <Music size={18} />
                 </button>
@@ -7571,6 +7578,7 @@ const renderMainContent = () => {
                     onClick={() => createDiskUsagePane?.()}
                     className="p-2 theme-hover rounded theme-text-muted"
                     title="Disk Usage Analyzer"
+                    data-tutorial="disk-usage-button"
                 >
                     <HardDrive size={18} />
                 </button>
@@ -7578,6 +7586,7 @@ const renderMainContent = () => {
                     onClick={() => createCronDaemonPane()}
                     className="p-2 theme-hover rounded theme-text-muted"
                     title="Assembly Line (Cron, Daemons, SQL Models)"
+                    data-tutorial="cron-button"
                 >
                     {/* Smokestack / Factory icon */}
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -7811,16 +7820,31 @@ const renderMainContent = () => {
     }
 
     // Pane items for dock
-    const paneItems = Object.entries(contentDataRef.current).map(([paneId, data]: [string, any]) => ({
-        id: paneId,
-        type: data?.contentType || 'empty',
-        title: data?.contentType === 'chat'
-            ? `Chat ${data?.contentId?.slice(-6) || ''}`
-            : data?.contentType === 'editor'
-                ? getFileName(data?.contentId) || 'File'
-                : data?.contentType || 'Pane',
-        isActive: paneId === activeContentPaneId
-    }));
+    const PANE_TITLES: Record<string, string> = {
+        'chat': 'Chat',
+        'editor': 'File',
+        'terminal': 'Terminal',
+        'browser': 'Browser',
+        'pdf': 'PDF',
+        'graph-viewer': 'Knowledge Graph',
+        'datadash': 'Dashboard',
+        'dbtool': 'Database',
+        'memory-manager': 'Memory',
+        'photoviewer': 'Photos',
+        'npcteam': 'NPCs',
+        'jinx': 'Jinxs',
+        'teammanagement': 'Team',
+        'diff': 'Diff',
+        'browsergraph': 'Web Graph',
+    };
+    const paneItems = Object.entries(contentDataRef.current).map(([paneId, data]: [string, any]) => {
+        const ct = data?.contentType || 'empty';
+        let title = PANE_TITLES[ct] || ct || 'Pane';
+        if (ct === 'chat') title = `Chat ${data?.contentId?.slice(-6) || ''}`;
+        else if (ct === 'editor') title = getFileName(data?.contentId) || 'File';
+        else if (ct === 'terminal') title = `Terminal${data?.shellType ? ` (${data.shellType})` : ''}`;
+        return { id: paneId, type: ct, title, isActive: paneId === activeContentPaneId };
+    });
 
     return (
         <main className={`flex-1 flex flex-col bg-gray-900 ${isDarkMode ? 'dark-mode' : 'light-mode'} overflow-hidden`}>

@@ -15,9 +15,10 @@ interface SyncStatus {
 
 interface NPCTeamSyncProps {
     compact?: boolean;
+    globalPath?: string;
 }
 
-const NPCTeamSync: React.FC<NPCTeamSyncProps> = ({ compact = false }) => {
+const NPCTeamSync: React.FC<NPCTeamSyncProps> = ({ compact = false, globalPath }) => {
     const [syncStatus, setSyncStatus] = useState<SyncStatus>({ status: 'unavailable' });
     const [loading, setLoading] = useState(false);
     const [syncing, setSyncing] = useState(false);
@@ -29,7 +30,7 @@ const NPCTeamSync: React.FC<NPCTeamSyncProps> = ({ compact = false }) => {
     const fetchStatus = useCallback(async () => {
         setLoading(true);
         try {
-            const result = await api?.npcTeamSyncStatus?.();
+            const result = await api?.npcTeamSyncStatus?.(globalPath);
             if (result && !result.error) {
                 setSyncStatus(result);
             } else {
@@ -40,7 +41,7 @@ const NPCTeamSync: React.FC<NPCTeamSyncProps> = ({ compact = false }) => {
         } finally {
             setLoading(false);
         }
-    }, [api]);
+    }, [api, globalPath]);
 
     useEffect(() => {
         fetchStatus();
@@ -50,7 +51,7 @@ const NPCTeamSync: React.FC<NPCTeamSyncProps> = ({ compact = false }) => {
         setSyncing(true);
         setSyncResult(null);
         try {
-            const result = await api?.npcTeamSyncPull?.();
+            const result = await api?.npcTeamSyncPull?.(globalPath);
             if (result?.error) {
                 setSyncResult(`Sync failed: ${result.error}`);
             } else if (result?.conflicts?.length > 0) {
@@ -70,7 +71,7 @@ const NPCTeamSync: React.FC<NPCTeamSyncProps> = ({ compact = false }) => {
     const handleInit = async () => {
         setSyncing(true);
         try {
-            const result = await api?.npcTeamSyncInit?.();
+            const result = await api?.npcTeamSyncInit?.(globalPath);
             if (result?.error) {
                 setSyncResult(`Init failed: ${result.error}`);
             } else {
@@ -86,7 +87,7 @@ const NPCTeamSync: React.FC<NPCTeamSyncProps> = ({ compact = false }) => {
 
     const handleResolve = async (filePath: string, resolution: 'ours' | 'theirs') => {
         try {
-            const result = await api?.npcTeamSyncResolve?.({ filePath, resolution });
+            const result = await api?.npcTeamSyncResolve?.({ filePath, resolution, globalPath });
             if (result?.error) {
                 setSyncResult(`Resolve failed: ${result.error}`);
             } else {

@@ -28,60 +28,93 @@ async function read_pane(
 
   let content: any = null;
 
-  switch (contentType) {
-    case 'editor':
-    case 'markdown-preview':
-      content = fileContent || null;
-      break;
+  // File-content pane types that store their content in fileContent
+  const fileContentTypes = ['editor', 'markdown-preview', 'latex', 'notebook', 'exp', 'mindmap'];
 
-    case 'chat':
-      // Return recent chat messages
-      const messages = chatMessages?.messages || chatMessages?.allMessages || [];
-      content = messages.slice(-50).map((m: any) => ({
-        role: m.role,
-        content: m.content?.substring(0, 1000), // Truncate long messages
-        timestamp: m.timestamp
-      }));
-      break;
-
-    case 'terminal':
-      // Terminal output would need special handling
-      content = data.terminalOutput || null;
-      break;
-
-    case 'browser':
-      content = {
-        url: data.browserUrl,
-        title: data.browserTitle
-      };
-      break;
-
-    case 'csv':
-      if (data.readSpreadsheetData) {
-        content = await data.readSpreadsheetData({ maxRows: 100, includeStats: true });
-      } else {
-        content = { type: 'csv', path: contentId };
+  if (fileContentTypes.includes(contentType)) {
+    content = fileContent || null;
+  } else {
+    switch (contentType) {
+      case 'chat': {
+        const messages = chatMessages?.messages || chatMessages?.allMessages || [];
+        content = messages.slice(-50).map((m: any) => ({
+          role: m.role,
+          content: m.content?.substring(0, 1000),
+          timestamp: m.timestamp
+        }));
+        break;
       }
-      break;
 
-    case 'docx':
-      if (data.readDocumentContent) {
-        content = await data.readDocumentContent({ format: 'text' });
-      } else {
-        content = { type: 'docx', path: contentId };
-      }
-      break;
+      case 'terminal':
+        if (data.getTerminalContext) {
+          try { content = data.getTerminalContext(); } catch { content = data.terminalOutput || null; }
+        } else {
+          content = data.terminalOutput || null;
+        }
+        break;
 
-    case 'pptx':
-      if (data.readPresentation) {
-        content = await data.readPresentation();
-      } else {
-        content = { type: 'pptx', path: contentId };
-      }
-      break;
+      case 'browser':
+        content = { url: data.browserUrl, title: data.browserTitle };
+        break;
 
-    default:
-      content = contentId;
+      case 'csv':
+        if (data.readSpreadsheetData) {
+          content = await data.readSpreadsheetData({ maxRows: 100, includeStats: true });
+        } else {
+          content = { type: 'csv', path: contentId };
+        }
+        break;
+
+      case 'docx':
+        if (data.readDocumentContent) {
+          content = await data.readDocumentContent({ format: 'text' });
+        } else {
+          content = { type: 'docx', path: contentId };
+        }
+        break;
+
+      case 'pptx':
+        if (data.readPresentation) {
+          content = await data.readPresentation();
+        } else {
+          content = { type: 'pptx', path: contentId };
+        }
+        break;
+
+      case 'image':
+        content = { type: 'image', path: contentId };
+        break;
+
+      case 'pdf':
+        content = { type: 'pdf', path: contentId };
+        break;
+
+      case 'graph-viewer':
+      case 'datadash':
+      case 'dbtool':
+      case 'memory-manager':
+      case 'photoviewer':
+      case 'scherzo':
+      case 'npcteam':
+      case 'jinx':
+      case 'teammanagement':
+      case 'search':
+      case 'library':
+      case 'diskusage':
+      case 'help':
+      case 'settings':
+      case 'cron-daemon':
+      case 'projectenv':
+      case 'browsergraph':
+      case 'data-labeler':
+      case 'git':
+      case 'folder':
+        content = { type: contentType, status: 'open' };
+        break;
+
+      default:
+        content = contentId;
+    }
   }
 
   return {

@@ -35,7 +35,7 @@ const App: React.FC = () => {
         // If setup is already done, check if tutorial should show
         if (!result?.needed) {
           const profile = await (window as any).api?.profileGet?.();
-          if (profile && profile.setupComplete && !profile.tutorialComplete) {
+          if (profile && !profile.tutorialComplete) {
             setShowTutorial(true);
           }
         }
@@ -80,10 +80,20 @@ const App: React.FC = () => {
     );
   }
 
+  const handleRerunSetup = async () => {
+    // Reset profile so setup runs fresh
+    try {
+      await (window as any).api?.profileSave?.({ setupComplete: false, tutorialComplete: false });
+    } catch (err) {
+      console.error('Error resetting profile:', err);
+    }
+    setShowSetup(true);
+  };
+
   return (
     <AuthWrapper>
       <AiFeatureProvider>
-        <Enpistu />
+        <Enpistu onRerunSetup={handleRerunSetup} />
         {showTutorial && <AppTutorial onComplete={handleTutorialComplete} />}
       </AiFeatureProvider>
     </AuthWrapper>

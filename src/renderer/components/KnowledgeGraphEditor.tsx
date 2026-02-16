@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
     GitBranch, Brain, Zap, Loader, Plus, Link, X, Trash2, Repeat, Search,
     ChevronDown, ChevronUp, ChevronRight, ArrowRight, BarChart3, Network,
-    FolderTree, LayoutGrid, Table2
+    FolderTree, LayoutGrid, Table2, Edit3, Check, ZoomIn, Minus, Maximize2
 } from 'lucide-react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { useAiEnabled } from './AiFeatureContext';
@@ -34,12 +34,12 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
     // View tab
     const [activeTab, setActiveTab] = useState<ViewTab>('graph');
 
-    // Quick-add (always visible)
+    // Quick-add
     const [newNodeName, setNewNodeName] = useState('');
     const [newNodeType, setNewNodeType] = useState<'concept' | 'fact'>('concept');
+    // Edge state (kept for API, UI uses connect mode)
     const [newEdgeSource, setNewEdgeSource] = useState('');
     const [newEdgeTarget, setNewEdgeTarget] = useState('');
-    const [showEdgeAdd, setShowEdgeAdd] = useState(false);
 
     // Search state
     const [searchQuery, setSearchQuery] = useState('');
@@ -51,15 +51,35 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
     // Multi-select
     const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
 
-    // Table sort
+    // Table sort + inline edit
     const [tableSortField, setTableSortField] = useState<'name' | 'type' | 'connections'>('connections');
     const [tableSortDir, setTableSortDir] = useState<'asc' | 'desc'>('desc');
     const [tableFilter, setTableFilter] = useState('');
+    const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+    const [editingNodeName, setEditingNodeName] = useState('');
 
     // Tree state
     const [treeRootId, setTreeRootId] = useState<string | null>(null);
     const [treeExpanded, setTreeExpanded] = useState<Set<string>>(new Set());
     const [treeBreadcrumbs, setTreeBreadcrumbs] = useState<string[]>([]);
+
+    // Detail panel
+    const [showDetail, setShowDetail] = useState(true);
+
+    // Pending delete confirmation (inline, no native confirm())
+    const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+
+    // Graph interaction: connect mode + double-click-to-add
+    const [connectMode, setConnectMode] = useState(false);
+    const [connectSource, setConnectSource] = useState<string | null>(null);
+    const [newNodePopup, setNewNodePopup] = useState<{ x: number; y: number } | null>(null);
+    const [newNodePopupName, setNewNodePopupName] = useState('');
+    const [newNodePopupType, setNewNodePopupType] = useState<'concept' | 'fact'>('concept');
+    const lastBgClickTime = useRef(0);
+
+    // Context menu + hover
+    const [contextMenu, setContextMenu] = useState<{ x: number; y: number; node: any } | null>(null);
+    const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
 
     // Auto-sizing for graph
     const graphContainerRef = useRef<HTMLDivElement>(null);
@@ -179,7 +199,10 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         return { nodes: sourceNodes, links: sourceLinks };
     }, [kgData, kgViewMode, kgNodeFilter, networkStats, cooccurrenceData]);
 
-    // Node degree map for table/tree
+    // All node names for autocomplete
+    const allNodeNames = useMemo(() => processedGraphData.nodes.map((n: any) => n.id), [processedGraphData]);
+
+    // Node degree map
     const nodeDegreeMap = useMemo(() => {
         const map: Record<string, number> = {};
         processedGraphData.links.forEach((l: any) => {
@@ -207,6 +230,28 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         return map;
     }, [processedGraphData]);
 
+    // Connected components for tree view
+    const connectedComponents = useMemo(() => {
+        const visited = new Set<string>();
+        const components: { root: string; nodes: string[] }[] = [];
+        processedGraphData.nodes.forEach((n: any) => {
+            if (visited.has(n.id)) return;
+            const comp: string[] = [];
+            const stack = [n.id];
+            while (stack.length > 0) {
+                const curr = stack.pop()!;
+                if (visited.has(curr)) continue;
+                visited.add(curr);
+                comp.push(curr);
+                (adjacencyMap[curr] || []).forEach(nb => { if (!visited.has(nb)) stack.push(nb); });
+            }
+            let best = comp[0], bestDeg = 0;
+            comp.forEach(id => { const d = nodeDegreeMap[id] || 0; if (d > bestDeg) { bestDeg = d; best = id; } });
+            components.push({ root: best, nodes: comp });
+        });
+        return components.sort((a, b) => b.nodes.length - a.nodes.length);
+    }, [processedGraphData, adjacencyMap, nodeDegreeMap]);
+
     // Community grouping
     const communityGroups = useMemo(() => {
         const groups: Record<string, any[]> = {};
@@ -218,7 +263,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         return groups;
     }, [processedGraphData]);
 
-    // Graph rendering helpers
+    // Graph rendering
     const getNodeColor = useCallback((node: any) => {
         if (selectedNodeIds.has(node.id)) return '#f59e0b';
         if (highlightedNodes.size > 0 && highlightedNodes.has(node.id)) return '#22c55e';
@@ -243,6 +288,69 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
     }, [networkStats]);
 
     const getLinkWidth = useCallback((link: any) => (link.weight ? Math.min(5, link.weight / 2) : 1), []);
+
+    // Draw node labels on graph
+    const nodeCanvasObject = useCallback((node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+        const label = node.id;
+        const size = getNodeSize(node);
+        const color = connectSource === node.id ? '#f97316' : selectedKgNode?.id === node.id ? '#f59e0b' : getNodeColor(node);
+
+        // Hover: dim non-neighbors
+        const isHovered = hoveredNodeId === node.id;
+        const isHoverNeighbor = hoveredNodeId ? (adjacencyMap[hoveredNodeId] || []).includes(node.id) : false;
+        const isImportant = highlightedNodes.has(node.id) || selectedKgNode?.id === node.id || selectedNodeIds.has(node.id) || isHovered;
+        if (hoveredNodeId && !isHovered && !isHoverNeighbor && !isImportant) {
+            ctx.globalAlpha = 0.15;
+        }
+
+        // Draw node circle
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, size, 0, 2 * Math.PI, false);
+        ctx.fillStyle = color;
+        ctx.fill();
+
+        // Concept nodes get a ring
+        if (node.type === 'concept') {
+            ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+        // Hovered node gets a white ring
+        if (isHovered) {
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, size + 3, 0, 2 * Math.PI, false);
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        }
+        // Connect source gets an orange ring
+        if (connectSource === node.id) {
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, size + 3, 0, 2 * Math.PI, false);
+            ctx.strokeStyle = '#f97316';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // Draw label when important or zoomed in
+        if (isImportant || globalScale > 3.5) {
+            const fontSize = Math.max(10, 12 / globalScale);
+            ctx.font = `${fontSize}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+
+            const maxLen = globalScale > 2 ? 40 : 20;
+            const displayLabel = label.length > maxLen ? label.slice(0, maxLen) + '...' : label;
+
+            const textWidth = ctx.measureText(displayLabel).width;
+            ctx.fillStyle = 'rgba(0,0,0,0.7)';
+            ctx.fillRect(node.x - textWidth / 2 - 2, node.y + size + 2, textWidth + 4, fontSize + 2);
+
+            ctx.fillStyle = isImportant ? '#fff' : 'rgba(255,255,255,0.8)';
+            ctx.fillText(displayLabel, node.x, node.y + size + 3);
+        }
+        ctx.globalAlpha = 1;
+    }, [getNodeColor, getNodeSize, highlightedNodes, selectedKgNode, selectedNodeIds, connectSource, hoveredNodeId, adjacencyMap]);
 
     // Actions
     const handleKgProcessTrigger = async (type: string) => {
@@ -288,13 +396,13 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
     };
 
     const handleDeleteKgNode = async (nodeId: string) => {
-        if (!confirm(`Delete node "${nodeId}" and all its connections?`)) return;
         setKgLoading(true);
         try {
             await (window as any).api?.kg_deleteNode?.({ nodeId });
             setSelectedKgNode(null);
             selectedNodeIds.delete(nodeId);
             setSelectedNodeIds(new Set(selectedNodeIds));
+            setPendingDelete(null);
             fetchKgData(currentKgGeneration ?? undefined);
         } catch (err: any) {
             setKgError(err.message);
@@ -305,7 +413,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
 
     const handleBulkDelete = async () => {
         if (selectedNodeIds.size === 0) return;
-        if (!confirm(`Delete ${selectedNodeIds.size} selected nodes and all their connections?`)) return;
         setKgLoading(true);
         try {
             for (const nodeId of selectedNodeIds) {
@@ -313,6 +420,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
             }
             setSelectedNodeIds(new Set());
             setSelectedKgNode(null);
+            setPendingDelete(null);
             fetchKgData(currentKgGeneration ?? undefined);
         } catch (err: any) {
             setKgError(err.message);
@@ -328,7 +436,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
             await (window as any).api?.kg_addEdge?.({ sourceId: newEdgeSource.trim(), targetId: newEdgeTarget.trim() });
             setNewEdgeSource('');
             setNewEdgeTarget('');
-            setShowEdgeAdd(false);
             fetchKgData(currentKgGeneration ?? undefined);
         } catch (err: any) {
             setKgError(err.message);
@@ -338,7 +445,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
     };
 
     const handleDeleteKgEdge = async (sourceId: string, targetId: string) => {
-        if (!confirm(`Delete connection from "${sourceId}" to "${targetId}"?`)) return;
         setKgLoading(true);
         try {
             await (window as any).api?.kg_deleteEdge?.({ sourceId, targetId });
@@ -350,9 +456,86 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         }
     };
 
+    // Add node from double-click popup
+    const handlePopupAddNode = async () => {
+        if (!newNodePopupName.trim()) return;
+        setKgLoading(true);
+        try {
+            await (window as any).api?.kg_addNode?.({ nodeId: newNodePopupName.trim(), nodeType: newNodePopupType });
+            setNewNodePopup(null);
+            setNewNodePopupName('');
+            fetchKgData(currentKgGeneration ?? undefined);
+        } catch (err: any) {
+            setKgError(err.message);
+        } finally {
+            setKgLoading(false);
+        }
+    };
+
+    // Double-click on graph background → add node popup
+    const handleBackgroundClick = useCallback((event: MouseEvent) => {
+        setContextMenu(null);
+        if (connectMode) {
+            setConnectSource(null);
+            return;
+        }
+        const now = Date.now();
+        if (now - lastBgClickTime.current < 400) {
+            const rect = graphContainerRef.current?.getBoundingClientRect();
+            if (rect) {
+                setNewNodePopup({ x: event.clientX - rect.left, y: event.clientY - rect.top });
+                setNewNodePopupName('');
+                setNewNodePopupType('concept');
+            }
+            lastBgClickTime.current = 0;
+        } else {
+            lastBgClickTime.current = now;
+            setNewNodePopup(null);
+        }
+    }, [connectMode]);
+
+    // Keyboard shortcuts
+    useEffect(() => {
+        const handleKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                if (contextMenu) setContextMenu(null);
+                else if (newNodePopup) setNewNodePopup(null);
+                else if (connectMode) { setConnectMode(false); setConnectSource(null); }
+            }
+            // Delete key for selected node (not when typing in input)
+            if ((e.key === 'Delete' || (e.key === 'Backspace' && !e.metaKey)) && selectedKgNode && !editingNodeId) {
+                const tag = (document.activeElement as HTMLElement)?.tagName;
+                if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+                    e.preventDefault();
+                    setPendingDelete(selectedKgNode.id);
+                }
+            }
+        };
+        window.addEventListener('keydown', handleKey);
+        return () => window.removeEventListener('keydown', handleKey);
+    }, [connectMode, newNodePopup, contextMenu, selectedKgNode, editingNodeId]);
+
     const handleNodeClick = useCallback((node: any, event?: MouseEvent) => {
+        if (connectMode) {
+            if (!connectSource) {
+                setConnectSource(node.id);
+            } else if (connectSource !== node.id) {
+                (async () => {
+                    setKgLoading(true);
+                    try {
+                        await (window as any).api?.kg_addEdge?.({ sourceId: connectSource, targetId: node.id });
+                        setConnectSource(null);
+                        fetchKgData(currentKgGeneration ?? undefined);
+                    } catch (err: any) {
+                        setKgError(err.message);
+                    } finally {
+                        setKgLoading(false);
+                    }
+                })();
+            }
+            return;
+        }
         if (event?.shiftKey) {
-            // Multi-select with shift
             setSelectedNodeIds(prev => {
                 const next = new Set(prev);
                 if (next.has(node.id)) next.delete(node.id);
@@ -362,8 +545,40 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         } else {
             setSelectedKgNode(node);
             setSelectedNodeIds(new Set());
+            setShowDetail(true);
+        }
+    }, [connectMode, connectSource, fetchKgData, currentKgGeneration]);
+
+    // Right-click context menu
+    const handleNodeRightClick = useCallback((node: any, event: MouseEvent) => {
+        event.preventDefault();
+        const rect = graphContainerRef.current?.getBoundingClientRect();
+        if (rect) {
+            setContextMenu({ x: event.clientX - rect.left, y: event.clientY - rect.top, node });
         }
     }, []);
+
+    // Hover handler
+    const handleNodeHover = useCallback((node: any | null) => {
+        setHoveredNodeId(node ? node.id : null);
+    }, []);
+
+    // Zoom controls
+    const handleZoomIn = useCallback(() => graphRef.current?.zoom(graphRef.current.zoom() * 1.5, 300), []);
+    const handleZoomOut = useCallback(() => graphRef.current?.zoom(graphRef.current.zoom() / 1.5, 300), []);
+    const handleZoomFit = useCallback(() => graphRef.current?.zoomToFit(400, 40), []);
+
+    // Center graph on a node
+    const centerOnNode = useCallback((nodeId: string) => {
+        const node = processedGraphData.nodes.find((n: any) => n.id === nodeId);
+        if (node && graphRef.current) {
+            graphRef.current.centerAt(node.x, node.y, 500);
+            graphRef.current.zoom(3, 500);
+        }
+        setSelectedKgNode(node || { id: nodeId });
+        setShowDetail(true);
+        setActiveTab('graph');
+    }, [processedGraphData]);
 
     const toggleTableSort = (field: 'name' | 'type' | 'connections') => {
         if (tableSortField === field) {
@@ -394,22 +609,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         return nodes;
     }, [processedGraphData, nodeDegreeMap, tableFilter, tableSortField, tableSortDir]);
 
-    // Tree root: default to highest-degree node
-    useEffect(() => {
-        if (treeRootId || processedGraphData.nodes.length === 0) return;
-        let best = processedGraphData.nodes[0]?.id;
-        let bestDeg = 0;
-        processedGraphData.nodes.forEach((n: any) => {
-            const deg = nodeDegreeMap[n.id] || 0;
-            if (deg > bestDeg) { bestDeg = deg; best = n.id; }
-        });
-        if (best) {
-            setTreeRootId(best);
-            setTreeBreadcrumbs([best]);
-            setTreeExpanded(new Set([best]));
-        }
-    }, [processedGraphData, nodeDegreeMap, treeRootId]);
-
     const setTreeRoot = (nodeId: string) => {
         setTreeRootId(nodeId);
         setTreeBreadcrumbs(prev => [...prev, nodeId]);
@@ -425,7 +624,16 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         });
     };
 
-    // --- Render: Tab bar ---
+    // Inline delete confirmation widget
+    const DeleteConfirm = ({ nodeId, onConfirm, onCancel }: { nodeId: string; onConfirm: () => void; onCancel: () => void }) => (
+        <span className="inline-flex items-center gap-1 ml-1">
+            <span className="text-[10px] text-red-400">Delete?</span>
+            <button onClick={(e) => { e.stopPropagation(); onConfirm(); }} className="p-0.5 bg-red-600 hover:bg-red-500 text-white rounded" title="Confirm delete"><Check size={10} /></button>
+            <button onClick={(e) => { e.stopPropagation(); onCancel(); }} className="p-0.5 theme-bg-secondary theme-text-muted rounded" title="Cancel"><X size={10} /></button>
+        </span>
+    );
+
+    // Tab bar
     const tabs: { id: ViewTab; label: string; icon: React.ReactNode }[] = [
         { id: 'graph', label: 'Graph', icon: <Network size={14} /> },
         { id: 'table', label: 'Table', icon: <Table2 size={14} /> },
@@ -433,7 +641,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         { id: 'groups', label: 'Groups', icon: <LayoutGrid size={14} /> },
     ];
 
-    // --- Render: Tree node recursion ---
+    // Tree node recursion
     const renderTreeNode = (nodeId: string, depth: number, visited: Set<string>) => {
         if (visited.has(nodeId)) return null;
         visited.add(nodeId);
@@ -447,10 +655,10 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         return (
             <div key={nodeId} style={{ paddingLeft: depth * 20 }}>
                 <div
-                    className={`flex items-center gap-2 py-1.5 px-2 rounded text-sm cursor-pointer transition-colors ${
+                    className={`flex items-center gap-2 py-1 px-2 rounded text-sm cursor-pointer transition-colors group ${
                         isSelected ? 'theme-bg-active theme-text-primary' : 'hover:theme-bg-hover theme-text-secondary'
                     }`}
-                    onClick={() => setSelectedKgNode(node)}
+                    onClick={() => { setSelectedKgNode(node); setShowDetail(true); }}
                 >
                     {hasChildren ? (
                         <button
@@ -465,24 +673,41 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${node.type === 'concept' ? 'bg-purple-500' : 'bg-blue-500'}`} />
                     <span className="truncate flex-1 font-mono text-xs" title={nodeId}>{nodeId}</span>
                     <span className="text-xs theme-text-muted">{nodeDegreeMap[nodeId] || 0}</span>
-                    {hasChildren && (
-                        <button
-                            onClick={(e) => { e.stopPropagation(); setTreeRoot(nodeId); }}
-                            className="p-0.5 theme-text-muted hover:text-blue-400"
-                            title="Set as root"
-                        >
-                            <ArrowRight size={12} />
-                        </button>
-                    )}
+                    <div className="hidden group-hover:flex items-center gap-1">
+                        {hasChildren && (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); setTreeRoot(nodeId); }}
+                                className="p-0.5 theme-text-muted hover:text-blue-400"
+                                title="Set as root"
+                            >
+                                <ArrowRight size={12} />
+                            </button>
+                        )}
+                        {pendingDelete === nodeId ? (
+                            <DeleteConfirm nodeId={nodeId} onConfirm={() => handleDeleteKgNode(nodeId)} onCancel={() => setPendingDelete(null)} />
+                        ) : (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); setPendingDelete(nodeId); }}
+                                className="p-0.5 text-red-400 hover:text-red-300"
+                                title="Delete"
+                            >
+                                <Trash2 size={12} />
+                            </button>
+                        )}
+                    </div>
                 </div>
                 {isExpanded && hasChildren && children.map(childId => renderTreeNode(childId, depth + 1, new Set(visited)))}
             </div>
         );
     };
 
-    // --- Render: Selected node detail panel ---
+    // Selected node detail panel
     const renderNodeDetail = () => {
-        if (!selectedKgNode) return null;
+        if (!selectedKgNode) return (
+            <div className="text-xs theme-text-muted text-center py-6 italic">
+                Click a node to see details
+            </div>
+        );
         const outgoing = processedGraphData.links.filter((l: any) =>
             (typeof l.source === 'string' ? l.source : l.source?.id) === selectedKgNode.id
         );
@@ -490,19 +715,55 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
             (typeof l.target === 'string' ? l.target : l.target?.id) === selectedKgNode.id
         );
         return (
-            <div className="theme-bg-secondary p-3 rounded-lg border theme-border">
+            <div>
                 <div className="flex items-center justify-between mb-2">
-                    <h5 className="font-semibold text-sm theme-text-primary">Selected Node</h5>
-                    <button onClick={() => setSelectedKgNode(null)} className="theme-text-muted hover:theme-text-primary"><X size={14} /></button>
+                    <h5 className="font-semibold text-xs theme-text-primary">Selected Node</h5>
+                    <button onClick={() => { setSelectedKgNode(null); setPendingDelete(null); }} className="theme-text-muted hover:theme-text-primary"><X size={14} /></button>
                 </div>
-                <p className="text-sm font-mono text-blue-400 truncate mb-1" title={selectedKgNode.id}>{selectedKgNode.id}</p>
-                <p className="text-xs theme-text-muted mb-2">Type: {selectedKgNode.type || 'concept'}</p>
-                <button
-                    onClick={() => handleDeleteKgNode(selectedKgNode.id)}
-                    className="w-full text-xs py-1.5 bg-red-600 hover:bg-red-500 text-white rounded flex items-center justify-center gap-2 transition-colors mb-3"
-                >
-                    <Trash2 size={14} /> Delete Node
-                </button>
+                <p className="text-xs font-mono text-blue-400 break-words mb-1" title={selectedKgNode.id}>{selectedKgNode.id}</p>
+                <div className="flex items-center gap-2 mb-2">
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                        selectedKgNode.type === 'concept' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'
+                    }`}>
+                        {selectedKgNode.type || 'concept'}
+                    </span>
+                    <button
+                        onClick={() => centerOnNode(selectedKgNode.id)}
+                        className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-0.5"
+                    >
+                        <ZoomIn size={10} /> Focus
+                    </button>
+                    <button
+                        onClick={() => { setConnectMode(true); setConnectSource(selectedKgNode.id); setActiveTab('graph'); }}
+                        className="text-[10px] text-orange-400 hover:text-orange-300 flex items-center gap-0.5"
+                    >
+                        <Link size={10} /> Connect
+                    </button>
+                    <button
+                        onClick={() => { setTreeRootId(selectedKgNode.id); setTreeBreadcrumbs([selectedKgNode.id]); setTreeExpanded(new Set([selectedKgNode.id])); setActiveTab('tree'); }}
+                        className="text-[10px] text-green-400 hover:text-green-300 flex items-center gap-0.5"
+                    >
+                        <FolderTree size={10} /> Tree
+                    </button>
+                </div>
+
+                {/* Delete button */}
+                {pendingDelete === selectedKgNode.id ? (
+                    <div className="flex items-center gap-2 mb-3">
+                        <span className="text-xs text-red-400">Delete this node?</span>
+                        <button onClick={() => handleDeleteKgNode(selectedKgNode.id)} className="px-2 py-1 text-xs bg-red-600 hover:bg-red-500 text-white rounded">Yes</button>
+                        <button onClick={() => setPendingDelete(null)} className="px-2 py-1 text-xs theme-bg-secondary theme-text-muted rounded border theme-border">No</button>
+                    </div>
+                ) : (
+                    <button
+                        onClick={() => setPendingDelete(selectedKgNode.id)}
+                        className="w-full text-xs py-1.5 bg-red-900/30 hover:bg-red-900/50 text-red-400 rounded flex items-center justify-center gap-2 transition-colors mb-3 border border-red-900/50"
+                    >
+                        <Trash2 size={12} /> Delete Node
+                    </button>
+                )}
+
+                {/* Connections */}
                 <div className="border-t theme-border pt-2">
                     <h6 className="text-xs theme-text-muted font-semibold mb-2">
                         Connections ({outgoing.length + incoming.length})
@@ -510,17 +771,21 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                     {outgoing.length > 0 && (
                         <div className="mb-2">
                             <span className="text-[10px] theme-text-muted flex items-center gap-1 mb-1">→ Outgoing ({outgoing.length})</span>
-                            <div className="space-y-1">
+                            <div className="space-y-0.5">
                                 {outgoing.map((edge: any, i: number) => {
                                     const targetId = typeof edge.target === 'string' ? edge.target : edge.target?.id;
                                     return (
-                                        <div key={i} className="flex items-center gap-1 text-xs theme-bg-primary rounded px-2 py-1">
-                                            <span className="theme-text-secondary truncate flex-1 font-mono" title={targetId}>{targetId}</span>
+                                        <div key={i} className="flex items-center gap-1 text-xs theme-bg-primary rounded px-2 py-1 group">
+                                            <span
+                                                className="theme-text-secondary truncate flex-1 font-mono cursor-pointer hover:text-blue-400"
+                                                title={targetId}
+                                                onClick={() => centerOnNode(targetId)}
+                                            >{targetId}</span>
                                             <button
                                                 onClick={() => handleDeleteKgEdge(selectedKgNode.id, targetId)}
-                                                className="p-0.5 text-red-400 hover:text-red-300 hover:bg-red-900/30 rounded flex-shrink-0"
+                                                className="p-0.5 text-red-400 hover:text-red-300 hover:bg-red-900/30 rounded flex-shrink-0 opacity-0 group-hover:opacity-100"
                                                 title="Remove connection"
-                                            ><X size={12} /></button>
+                                            ><X size={10} /></button>
                                         </div>
                                     );
                                 })}
@@ -530,17 +795,21 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                     {incoming.length > 0 && (
                         <div className="mb-2">
                             <span className="text-[10px] theme-text-muted flex items-center gap-1 mb-1">← Incoming ({incoming.length})</span>
-                            <div className="space-y-1">
+                            <div className="space-y-0.5">
                                 {incoming.map((edge: any, i: number) => {
                                     const sourceId = typeof edge.source === 'string' ? edge.source : edge.source?.id;
                                     return (
-                                        <div key={i} className="flex items-center gap-1 text-xs theme-bg-primary rounded px-2 py-1">
-                                            <span className="theme-text-secondary truncate flex-1 font-mono" title={sourceId}>{sourceId}</span>
+                                        <div key={i} className="flex items-center gap-1 text-xs theme-bg-primary rounded px-2 py-1 group">
+                                            <span
+                                                className="theme-text-secondary truncate flex-1 font-mono cursor-pointer hover:text-blue-400"
+                                                title={sourceId}
+                                                onClick={() => centerOnNode(sourceId)}
+                                            >{sourceId}</span>
                                             <button
                                                 onClick={() => handleDeleteKgEdge(sourceId, selectedKgNode.id)}
-                                                className="p-0.5 text-red-400 hover:text-red-300 hover:bg-red-900/30 rounded flex-shrink-0"
+                                                className="p-0.5 text-red-400 hover:text-red-300 hover:bg-red-900/30 rounded flex-shrink-0 opacity-0 group-hover:opacity-100"
                                                 title="Remove connection"
-                                            ><X size={12} /></button>
+                                            ><X size={10} /></button>
                                         </div>
                                     );
                                 })}
@@ -555,24 +824,55 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         );
     };
 
+    // Empty state
+    const renderEmptyState = () => (
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
+            <GitBranch className="text-green-400/30" size={48} />
+            <div className="text-center">
+                <h3 className="text-sm font-semibold theme-text-primary mb-1">Knowledge Graph is Empty</h3>
+                <p className="text-xs theme-text-muted max-w-xs">
+                    Add concepts and facts using the bar above, or chat with an AI model to automatically build your knowledge graph over time.
+                </p>
+            </div>
+            <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1 text-xs theme-text-muted">
+                    <span className="w-3 h-3 rounded-full bg-purple-500 inline-block" /> Concepts
+                </div>
+                <div className="flex items-center gap-1 text-xs theme-text-muted">
+                    <span className="w-3 h-3 rounded-full bg-blue-500 inline-block" /> Facts
+                </div>
+            </div>
+        </div>
+    );
+
+    // Datalist for edge autocomplete
+    const nodeDatalist = (
+        <datalist id="kg-node-names">
+            {allNodeNames.map(name => <option key={name} value={name} />)}
+        </datalist>
+    );
+
     // --- Main content ---
     const content = (
         <div className="flex flex-col h-full theme-bg-primary">
-            {/* Header: title + actions */}
-            <div className="flex items-center justify-between px-4 py-2 border-b theme-border flex-shrink-0">
-                <h4 className="text-base font-semibold flex items-center gap-2 theme-text-primary">
-                    <GitBranch className="text-green-400" size={18} />Knowledge Graph
+            {nodeDatalist}
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-3 py-1.5 border-b theme-border flex-shrink-0">
+                <h4 className="text-sm font-semibold flex items-center gap-2 theme-text-primary">
+                    <GitBranch className="text-green-400" size={16} />Knowledge Graph
+                    <span className="text-xs theme-text-muted font-normal">{processedGraphData.nodes.length} nodes · {processedGraphData.links.length} edges</span>
                 </h4>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                     {aiEnabled && (
                         <>
-                            <button onClick={() => handleKgProcessTrigger('sleep')} disabled={kgLoading} className="px-3 py-1 text-xs theme-bg-secondary hover:opacity-80 theme-text-secondary rounded flex items-center gap-1.5 disabled:opacity-50 border theme-border"><Zap size={13} /> Sleep</button>
-                            <button onClick={() => handleKgProcessTrigger('dream')} disabled={kgLoading} className="px-3 py-1 text-xs theme-bg-secondary hover:opacity-80 theme-text-secondary rounded flex items-center gap-1.5 disabled:opacity-50 border theme-border"><Brain size={13} /> Dream</button>
+                            <button onClick={() => handleKgProcessTrigger('sleep')} disabled={kgLoading} className="px-2 py-1 text-[11px] theme-bg-secondary hover:opacity-80 theme-text-secondary rounded flex items-center gap-1 disabled:opacity-50 border theme-border"><Zap size={11} /> Sleep</button>
+                            <button onClick={() => handleKgProcessTrigger('dream')} disabled={kgLoading} className="px-2 py-1 text-[11px] theme-bg-secondary hover:opacity-80 theme-text-secondary rounded flex items-center gap-1 disabled:opacity-50 border theme-border"><Brain size={11} /> Dream</button>
                         </>
                     )}
                     {kgGenerations.length > 0 && (
-                        <div className="flex items-center gap-1.5 ml-2">
-                            <span className="text-xs theme-text-muted">Gen:</span>
+                        <div className="flex items-center gap-1 ml-1">
+                            <span className="text-[11px] theme-text-muted">Gen:</span>
                             <select
                                 value={currentKgGeneration ?? ''}
                                 onChange={(e) => {
@@ -580,18 +880,18 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                                     setCurrentKgGeneration(gen);
                                     fetchKgData(gen);
                                 }}
-                                className="px-2 py-1 text-xs theme-bg-secondary theme-text-primary border theme-border rounded"
+                                className="px-1.5 py-0.5 text-[11px] theme-bg-secondary theme-text-primary border theme-border rounded"
                             >
                                 {kgGenerations.map(g => <option key={g} value={g}>{g}</option>)}
                             </select>
-                            <button onClick={handleKgRollback} disabled={currentKgGeneration === 0 || kgLoading} className="p-1 text-red-400 hover:text-red-300 disabled:opacity-50" title="Rollback one generation"><Repeat size={14} /></button>
+                            <button onClick={handleKgRollback} disabled={currentKgGeneration === 0 || kgLoading} className="p-0.5 text-red-400 hover:text-red-300 disabled:opacity-50" title="Rollback one generation"><Repeat size={13} /></button>
                         </div>
                     )}
                 </div>
             </div>
 
-            {/* Quick-add bar + search */}
-            <div className="flex items-center gap-2 px-4 py-2 border-b theme-border flex-shrink-0 flex-wrap">
+            {/* Toolbar: add + search */}
+            <div className="flex items-center gap-2 px-3 py-1.5 border-b theme-border flex-shrink-0">
                 {/* Quick-add node */}
                 <div className="flex items-center gap-1">
                     <input
@@ -600,7 +900,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                         onChange={(e) => setNewNodeName(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleAddKgNode()}
                         placeholder="Add node..."
-                        className="px-2 py-1 text-xs theme-bg-secondary theme-text-primary border theme-border rounded w-36 focus:outline-none focus:border-green-500"
+                        className="px-2 py-1 text-xs theme-bg-secondary theme-text-primary border theme-border rounded w-32 focus:outline-none focus:border-green-500"
                     />
                     <select
                         value={newNodeType}
@@ -618,36 +918,21 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                     ><Plus size={14} /></button>
                 </div>
 
-                {/* Add edge toggle */}
+                {/* Connect mode: click two nodes to link them */}
                 <button
-                    onClick={() => setShowEdgeAdd(!showEdgeAdd)}
-                    className={`p-1 rounded text-xs flex items-center gap-1 border ${showEdgeAdd ? 'border-blue-500 text-blue-400' : 'theme-border theme-text-muted'}`}
-                    title="Add edge"
-                ><Link size={14} /></button>
-                {showEdgeAdd && (
-                    <div className="flex items-center gap-1">
-                        <input
-                            type="text"
-                            value={newEdgeSource}
-                            onChange={(e) => setNewEdgeSource(e.target.value)}
-                            placeholder="From..."
-                            className="px-2 py-1 text-xs theme-bg-secondary theme-text-primary border theme-border rounded w-28 focus:outline-none focus:border-blue-500"
-                        />
-                        <ArrowRight size={12} className="theme-text-muted" />
-                        <input
-                            type="text"
-                            value={newEdgeTarget}
-                            onChange={(e) => setNewEdgeTarget(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && handleAddKgEdge()}
-                            placeholder="To..."
-                            className="px-2 py-1 text-xs theme-bg-secondary theme-text-primary border theme-border rounded w-28 focus:outline-none focus:border-blue-500"
-                        />
-                        <button
-                            onClick={handleAddKgEdge}
-                            disabled={!newEdgeSource.trim() || !newEdgeTarget.trim() || kgLoading}
-                            className="p-1 bg-blue-600 hover:bg-blue-500 text-white rounded disabled:opacity-50"
-                        ><Plus size={14} /></button>
-                    </div>
+                    onClick={() => { setConnectMode(!connectMode); setConnectSource(null); }}
+                    className={`p-1 rounded text-xs flex items-center gap-1 border transition-colors ${
+                        connectMode ? 'border-orange-500 text-orange-400 bg-orange-500/10' : 'theme-border theme-text-muted hover:theme-text-primary'
+                    }`}
+                    title={connectMode ? 'Exit connect mode (Esc)' : 'Connect mode: click two nodes to link them'}
+                >
+                    <Link size={14} />
+                    {connectMode && <span className="text-[10px]">Linking...</span>}
+                </button>
+                {connectSource && (
+                    <span className="text-[10px] text-orange-400 animate-pulse">
+                        {connectSource.length > 20 ? connectSource.slice(0, 20) + '...' : connectSource} → ?
+                    </span>
                 )}
 
                 <div className="flex-1" />
@@ -664,54 +949,51 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                 {/* Search */}
                 <div className="flex items-center gap-1">
                     <div className="relative">
-                        <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 theme-text-muted" />
+                        <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 theme-text-muted" />
                         <input
                             type="text"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                             placeholder="Search..."
-                            className="pl-7 pr-7 py-1 text-xs theme-bg-secondary theme-text-primary border theme-border rounded w-40 focus:outline-none focus:border-green-500"
+                            className="pl-6 pr-6 py-1 text-xs theme-bg-secondary theme-text-primary border theme-border rounded w-36 focus:outline-none focus:border-green-500"
                         />
                         {searchQuery && (
-                            <button onClick={clearSearch} className="absolute right-2 top-1/2 -translate-y-1/2 theme-text-muted hover:theme-text-primary"><X size={12} /></button>
+                            <button onClick={clearSearch} className="absolute right-1.5 top-1/2 -translate-y-1/2 theme-text-muted hover:theme-text-primary"><X size={11} /></button>
                         )}
                     </div>
-                    <button
-                        onClick={handleSearch}
-                        disabled={isSearching || !searchQuery.trim()}
-                        className="p-1 bg-green-600 hover:bg-green-500 text-white rounded disabled:opacity-50"
-                    >{isSearching ? <Loader size={14} className="animate-spin" /> : <Search size={14} />}</button>
                 </div>
             </div>
 
-            {/* Search results dropdown */}
+            {/* Search results */}
             {showSearchResults && (searchResults.facts.length > 0 || searchResults.concepts.length > 0) && (
-                <div className="mx-4 mt-1 theme-bg-secondary border theme-border rounded-lg max-h-36 overflow-y-auto flex-shrink-0">
+                <div className="mx-3 mt-1 theme-bg-secondary border theme-border rounded-lg max-h-32 overflow-y-auto flex-shrink-0">
                     <button
                         onClick={() => setShowSearchResults(false)}
-                        className="w-full px-3 py-1.5 flex items-center justify-between text-xs theme-text-secondary hover:theme-bg-hover"
+                        className="w-full px-3 py-1 flex items-center justify-between text-xs theme-text-secondary hover:theme-bg-hover"
                     >
-                        <span>Results: {searchResults.facts.length} facts, {searchResults.concepts.length} concepts</span>
+                        <span>{searchResults.facts.length + searchResults.concepts.length} results</span>
                         <ChevronUp size={12} />
                     </button>
-                    <div className="px-3 pb-2 space-y-1">
+                    <div className="px-3 pb-2 space-y-0.5">
                         {searchResults.concepts.map((c: any, i: number) => (
                             <div
                                 key={`c-${i}`}
-                                className="text-xs p-1.5 bg-purple-900/20 rounded cursor-pointer hover:bg-purple-900/40"
-                                onClick={() => { setSelectedKgNode({ id: c.name, type: 'concept' }); graphRef.current?.centerAt?.(0, 0, 500); }}
+                                className="text-xs p-1.5 bg-purple-900/20 rounded cursor-pointer hover:bg-purple-900/40 flex items-center gap-2"
+                                onClick={() => centerOnNode(c.name)}
                             >
-                                <span className="text-purple-400 font-medium">[Concept]</span> {c.name}
+                                <span className="w-2 h-2 rounded-full bg-purple-500 flex-shrink-0" />
+                                <span className="truncate">{c.name}</span>
                             </div>
                         ))}
                         {searchResults.facts.map((f: any, i: number) => (
                             <div
                                 key={`f-${i}`}
-                                className="text-xs p-1.5 bg-blue-900/20 rounded cursor-pointer hover:bg-blue-900/40"
-                                onClick={() => { setSelectedKgNode({ id: f.statement, type: 'fact' }); graphRef.current?.centerAt?.(0, 0, 500); }}
+                                className="text-xs p-1.5 bg-blue-900/20 rounded cursor-pointer hover:bg-blue-900/40 flex items-center gap-2"
+                                onClick={() => centerOnNode(f.statement)}
                             >
-                                <span className="text-blue-400 font-medium">[Fact]</span> {f.statement}
+                                <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
+                                <span className="truncate">{f.statement}</span>
                             </div>
                         ))}
                     </div>
@@ -719,12 +1001,12 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
             )}
 
             {/* View tabs */}
-            <div className="flex items-center gap-1 px-4 py-1.5 border-b theme-border flex-shrink-0">
+            <div className="flex items-center gap-1 px-3 py-1 border-b theme-border flex-shrink-0">
                 {tabs.map(tab => (
                     <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
-                        className={`px-3 py-1 text-xs rounded flex items-center gap-1.5 transition-colors ${
+                        className={`px-2.5 py-1 text-[11px] rounded flex items-center gap-1 transition-colors ${
                             activeTab === tab.id
                                 ? 'bg-green-600 text-white'
                                 : 'theme-bg-secondary theme-text-muted hover:theme-text-primary border theme-border'
@@ -734,54 +1016,151 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                     </button>
                 ))}
                 {activeTab === 'graph' && (
-                    <div className="flex items-center gap-2 ml-4">
-                        <select value={kgViewMode} onChange={(e) => setKgViewMode(e.target.value)} className="px-2 py-1 text-xs theme-bg-secondary theme-text-primary border theme-border rounded">
+                    <div className="flex items-center gap-1.5 ml-3">
+                        <select value={kgViewMode} onChange={(e) => setKgViewMode(e.target.value)} className="px-1.5 py-0.5 text-[11px] theme-bg-secondary theme-text-primary border theme-border rounded">
                             <option value="full">Full Network</option>
                             <option value="cooccurrence">Co-occurrence</option>
                         </select>
-                        <select value={kgNodeFilter} onChange={(e) => setKgNodeFilter(e.target.value)} className="px-2 py-1 text-xs theme-bg-secondary theme-text-primary border theme-border rounded">
+                        <select value={kgNodeFilter} onChange={(e) => setKgNodeFilter(e.target.value)} className="px-1.5 py-0.5 text-[11px] theme-bg-secondary theme-text-primary border theme-border rounded">
                             <option value="all">All Nodes</option>
                             <option value="high-degree">High-Degree</option>
                         </select>
                     </div>
                 )}
-                <div className="flex-1" />
-                <span className="text-xs theme-text-muted">{processedGraphData.nodes.length} nodes · {processedGraphData.links.length} edges</span>
             </div>
 
-            {kgError && <div className="text-red-400 text-center text-xs py-2 px-4 flex-shrink-0">{kgError}</div>}
+            {kgError && <div className="text-red-400 text-center text-xs py-1.5 px-3 flex-shrink-0">{kgError}</div>}
 
-            {/* Main view area */}
+            {/* Main view */}
             {kgLoading ? (
                 <div className="flex-1 flex items-center justify-center">
                     <Loader className="animate-spin text-green-400" size={32} />
                 </div>
+            ) : processedGraphData.nodes.length === 0 ? (
+                renderEmptyState()
             ) : (
                 <div className="flex-1 flex overflow-hidden">
                     {/* View content */}
                     <div className="flex-1 overflow-auto">
-                        {/* === GRAPH VIEW === */}
+                        {/* GRAPH VIEW */}
                         {activeTab === 'graph' && (
-                            <div ref={graphContainerRef} className="w-full h-full">
+                            <div ref={graphContainerRef} className="w-full h-full relative">
                                 <ForceGraph2D
                                     ref={graphRef}
                                     graphData={processedGraphData}
-                                    nodeLabel="id"
-                                    nodeVal={getNodeSize}
-                                    nodeColor={(node: any) => selectedKgNode?.id === node.id ? '#f59e0b' : getNodeColor(node)}
+                                    nodeCanvasObject={nodeCanvasObject}
+                                    nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
+                                        const size = getNodeSize(node);
+                                        ctx.beginPath();
+                                        ctx.arc(node.x, node.y, size + 2, 0, 2 * Math.PI, false);
+                                        ctx.fillStyle = color;
+                                        ctx.fill();
+                                    }}
                                     linkWidth={getLinkWidth}
                                     linkDirectionalParticles={kgViewMode === 'full' ? 1 : 0}
                                     linkDirectionalParticleWidth={2}
-                                    linkColor={() => 'rgba(255,255,255,0.3)'}
+                                    linkColor={(link: any) => {
+                                        if (!hoveredNodeId) return 'rgba(255,255,255,0.2)';
+                                        const src = typeof link.source === 'string' ? link.source : link.source?.id;
+                                        const tgt = typeof link.target === 'string' ? link.target : link.target?.id;
+                                        if (src === hoveredNodeId || tgt === hoveredNodeId) return 'rgba(255,255,255,0.7)';
+                                        return 'rgba(255,255,255,0.05)';
+                                    }}
                                     onNodeClick={(node: any, event: MouseEvent) => handleNodeClick(node, event)}
+                                    onNodeRightClick={handleNodeRightClick}
+                                    onNodeHover={handleNodeHover}
+                                    onBackgroundClick={handleBackgroundClick}
                                     width={graphDimensions.width}
                                     height={graphDimensions.height}
                                     backgroundColor="transparent"
                                 />
+                                {/* Right-click context menu */}
+                                {contextMenu && (
+                                    <div
+                                        className="absolute z-30 theme-bg-secondary border theme-border rounded-lg shadow-xl py-1 min-w-[140px]"
+                                        style={{ left: contextMenu.x, top: contextMenu.y }}
+                                        onClick={() => setContextMenu(null)}
+                                    >
+                                        <button
+                                            onClick={() => centerOnNode(contextMenu.node.id)}
+                                            className="w-full text-left px-3 py-1.5 text-xs theme-text-secondary hover:theme-bg-hover flex items-center gap-2"
+                                        ><ZoomIn size={12} /> Focus</button>
+                                        <button
+                                            onClick={() => { setConnectMode(true); setConnectSource(contextMenu.node.id); }}
+                                            className="w-full text-left px-3 py-1.5 text-xs theme-text-secondary hover:theme-bg-hover flex items-center gap-2"
+                                        ><Link size={12} /> Connect from here</button>
+                                        <button
+                                            onClick={() => { setTreeRootId(contextMenu.node.id); setTreeBreadcrumbs([contextMenu.node.id]); setTreeExpanded(new Set([contextMenu.node.id])); setActiveTab('tree'); }}
+                                            className="w-full text-left px-3 py-1.5 text-xs theme-text-secondary hover:theme-bg-hover flex items-center gap-2"
+                                        ><FolderTree size={12} /> View in tree</button>
+                                        <div className="border-t theme-border my-1" />
+                                        <button
+                                            onClick={() => { setPendingDelete(contextMenu.node.id); setSelectedKgNode(contextMenu.node); setShowDetail(true); }}
+                                            className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-red-900/20 flex items-center gap-2"
+                                        ><Trash2 size={12} /> Delete</button>
+                                    </div>
+                                )}
+                                {/* Zoom controls */}
+                                <div className="absolute bottom-3 right-3 flex flex-col gap-1 z-10">
+                                    <button onClick={handleZoomIn} className="p-1.5 theme-bg-secondary/80 border theme-border rounded hover:theme-bg-hover backdrop-blur-sm" title="Zoom in"><ZoomIn size={14} className="theme-text-muted" /></button>
+                                    <button onClick={handleZoomOut} className="p-1.5 theme-bg-secondary/80 border theme-border rounded hover:theme-bg-hover backdrop-blur-sm" title="Zoom out"><Minus size={14} className="theme-text-muted" /></button>
+                                    <button onClick={handleZoomFit} className="p-1.5 theme-bg-secondary/80 border theme-border rounded hover:theme-bg-hover backdrop-blur-sm" title="Fit all"><Maximize2 size={14} className="theme-text-muted" /></button>
+                                </div>
+                                {/* Hint */}
+                                {!connectMode && !newNodePopup && !contextMenu && processedGraphData.nodes.length > 0 && (
+                                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-[10px] theme-text-muted/50 pointer-events-none select-none">
+                                        Double-click to add node · Right-click for options · Shift+click to multi-select
+                                    </div>
+                                )}
+                                {/* Connect mode overlay */}
+                                {connectMode && (
+                                    <div className="absolute top-2 left-1/2 -translate-x-1/2 px-3 py-1 bg-orange-500/20 border border-orange-500/50 rounded-full text-xs text-orange-400 z-10 pointer-events-none">
+                                        {connectSource
+                                            ? `Click target node to connect from "${connectSource.length > 15 ? connectSource.slice(0, 15) + '...' : connectSource}"`
+                                            : 'Click first node to start connection'}
+                                    </div>
+                                )}
+                                {/* Double-click popup for adding node */}
+                                {newNodePopup && (
+                                    <div
+                                        className="absolute z-20 theme-bg-secondary border theme-border rounded-lg shadow-xl p-2"
+                                        style={{ left: newNodePopup.x, top: newNodePopup.y, transform: 'translate(-50%, -100%) translateY(-8px)' }}
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <div className="flex items-center gap-1">
+                                            <input
+                                                type="text"
+                                                value={newNodePopupName}
+                                                onChange={(e) => setNewNodePopupName(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter' && newNodePopupName.trim()) handlePopupAddNode();
+                                                    else if (e.key === 'Escape') setNewNodePopup(null);
+                                                }}
+                                                placeholder="Node name..."
+                                                className="px-2 py-1 text-xs theme-bg-primary theme-text-primary border theme-border rounded w-32 focus:outline-none focus:border-green-500"
+                                                autoFocus
+                                            />
+                                            <select
+                                                value={newNodePopupType}
+                                                onChange={(e) => setNewNodePopupType(e.target.value as 'concept' | 'fact')}
+                                                className="px-1 py-1 text-[10px] theme-bg-primary theme-text-primary border theme-border rounded"
+                                            >
+                                                <option value="concept">Concept</option>
+                                                <option value="fact">Fact</option>
+                                            </select>
+                                            <button
+                                                onClick={handlePopupAddNode}
+                                                disabled={!newNodePopupName.trim()}
+                                                className="p-1 bg-green-600 hover:bg-green-500 text-white rounded disabled:opacity-50"
+                                            ><Plus size={14} /></button>
+                                            <button onClick={() => setNewNodePopup(null)} className="p-1 theme-text-muted hover:theme-text-primary"><X size={12} /></button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
 
-                        {/* === TABLE VIEW === */}
+                        {/* TABLE VIEW */}
                         {activeTab === 'table' && (
                             <div className="p-3">
                                 <div className="mb-2">
@@ -792,12 +1171,13 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                                         placeholder="Filter nodes..."
                                         className="px-2 py-1 text-xs theme-bg-secondary theme-text-primary border theme-border rounded w-60 focus:outline-none focus:border-green-500"
                                     />
+                                    <span className="text-xs theme-text-muted ml-2">{tableData.length} nodes</span>
                                 </div>
                                 <div className="overflow-auto max-h-full">
                                     <table className="w-full text-xs">
                                         <thead>
                                             <tr className="border-b theme-border">
-                                                <th className="w-8 p-2">
+                                                <th className="w-8 p-1.5">
                                                     <input
                                                         type="checkbox"
                                                         checked={selectedNodeIds.size === tableData.length && tableData.length > 0}
@@ -811,16 +1191,16 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                                                         className="accent-green-500"
                                                     />
                                                 </th>
-                                                <th className="text-left p-2 cursor-pointer hover:text-green-400 theme-text-secondary" onClick={() => toggleTableSort('name')}>
+                                                <th className="text-left p-1.5 cursor-pointer hover:text-green-400 theme-text-secondary" onClick={() => toggleTableSort('name')}>
                                                     Name {tableSortField === 'name' && (tableSortDir === 'asc' ? '↑' : '↓')}
                                                 </th>
-                                                <th className="text-left p-2 cursor-pointer hover:text-green-400 theme-text-secondary w-24" onClick={() => toggleTableSort('type')}>
+                                                <th className="text-left p-1.5 cursor-pointer hover:text-green-400 theme-text-secondary w-20" onClick={() => toggleTableSort('type')}>
                                                     Type {tableSortField === 'type' && (tableSortDir === 'asc' ? '↑' : '↓')}
                                                 </th>
-                                                <th className="text-left p-2 cursor-pointer hover:text-green-400 theme-text-secondary w-28" onClick={() => toggleTableSort('connections')}>
-                                                    Connections {tableSortField === 'connections' && (tableSortDir === 'asc' ? '↑' : '↓')}
+                                                <th className="text-left p-1.5 cursor-pointer hover:text-green-400 theme-text-secondary w-16" onClick={() => toggleTableSort('connections')}>
+                                                    Links {tableSortField === 'connections' && (tableSortDir === 'asc' ? '↑' : '↓')}
                                                 </th>
-                                                <th className="w-20 p-2 theme-text-secondary text-right">Actions</th>
+                                                <th className="w-20 p-1.5 theme-text-secondary text-right">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -830,9 +1210,9 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                                                     className={`border-b theme-border transition-colors cursor-pointer ${
                                                         selectedKgNode?.id === node.id ? 'theme-bg-active' : 'hover:theme-bg-hover'
                                                     }`}
-                                                    onClick={() => setSelectedKgNode(node)}
+                                                    onClick={() => { setSelectedKgNode(node); setShowDetail(true); }}
                                                 >
-                                                    <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                                                    <td className="p-1.5" onClick={(e) => e.stopPropagation()}>
                                                         <input
                                                             type="checkbox"
                                                             checked={selectedNodeIds.has(node.id)}
@@ -847,21 +1227,55 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                                                             className="accent-green-500"
                                                         />
                                                     </td>
-                                                    <td className="p-2 font-mono theme-text-primary truncate max-w-xs" title={node.id}>{node.id}</td>
-                                                    <td className="p-2">
+                                                    <td className="p-1.5 font-mono theme-text-primary max-w-xs" title={node.id}>
+                                                        {editingNodeId === node.id ? (
+                                                            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                                                <input
+                                                                    type="text"
+                                                                    value={editingNodeName}
+                                                                    onChange={(e) => setEditingNodeName(e.target.value)}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter') {
+                                                                            // TODO: rename via API when supported
+                                                                            setEditingNodeId(null);
+                                                                        } else if (e.key === 'Escape') {
+                                                                            setEditingNodeId(null);
+                                                                        }
+                                                                    }}
+                                                                    className="px-1 py-0.5 text-xs theme-bg-primary border theme-border rounded w-full focus:outline-none focus:border-green-500"
+                                                                    autoFocus
+                                                                />
+                                                                <button onClick={() => setEditingNodeId(null)} className="p-0.5 theme-text-muted"><X size={12} /></button>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="truncate block">{node.id}</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="p-1.5">
                                                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
                                                             node.type === 'concept' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'
                                                         }`}>
                                                             {node.type || 'concept'}
                                                         </span>
                                                     </td>
-                                                    <td className="p-2 theme-text-secondary">{node.connections}</td>
-                                                    <td className="p-2 text-right" onClick={(e) => e.stopPropagation()}>
-                                                        <button
-                                                            onClick={() => handleDeleteKgNode(node.id)}
-                                                            className="p-1 text-red-400 hover:text-red-300 hover:bg-red-900/30 rounded"
-                                                            title="Delete node"
-                                                        ><Trash2 size={12} /></button>
+                                                    <td className="p-1.5 theme-text-secondary">{node.connections}</td>
+                                                    <td className="p-1.5 text-right" onClick={(e) => e.stopPropagation()}>
+                                                        <div className="flex items-center justify-end gap-1">
+                                                            <button
+                                                                onClick={() => centerOnNode(node.id)}
+                                                                className="p-1 theme-text-muted hover:text-blue-400 rounded"
+                                                                title="Focus in graph"
+                                                            ><ZoomIn size={12} /></button>
+                                                            {pendingDelete === node.id ? (
+                                                                <DeleteConfirm nodeId={node.id} onConfirm={() => handleDeleteKgNode(node.id)} onCancel={() => setPendingDelete(null)} />
+                                                            ) : (
+                                                                <button
+                                                                    onClick={() => setPendingDelete(node.id)}
+                                                                    className="p-1 text-red-400 hover:text-red-300 hover:bg-red-900/30 rounded"
+                                                                    title="Delete node"
+                                                                ><Trash2 size={12} /></button>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -874,15 +1288,18 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                             </div>
                         )}
 
-                        {/* === TREE VIEW === */}
+                        {/* TREE VIEW */}
                         {activeTab === 'tree' && (
                             <div className="p-3">
-                                {/* Breadcrumbs */}
-                                {treeBreadcrumbs.length > 1 && (
+                                {treeRootId && treeBreadcrumbs.length > 0 && (
                                     <div className="flex items-center gap-1 mb-2 flex-wrap">
+                                        <button
+                                            onClick={() => { setTreeRootId(null); setTreeBreadcrumbs([]); setTreeExpanded(new Set()); }}
+                                            className="text-xs px-1.5 py-0.5 rounded theme-text-muted hover:theme-text-primary"
+                                        >All</button>
                                         {treeBreadcrumbs.map((crumb, i) => (
                                             <React.Fragment key={i}>
-                                                {i > 0 && <ChevronRight size={10} className="theme-text-muted" />}
+                                                <ChevronRight size={10} className="theme-text-muted" />
                                                 <button
                                                     onClick={() => {
                                                         setTreeRootId(crumb);
@@ -900,84 +1317,118 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                                     </div>
                                 )}
                                 <div className="overflow-auto max-h-full">
-                                    {treeRootId ? renderTreeNode(treeRootId, 0, new Set()) : (
+                                    {treeRootId ? (
+                                        renderTreeNode(treeRootId, 0, new Set())
+                                    ) : connectedComponents.length > 0 ? (
+                                        connectedComponents.map((comp, ci) => (
+                                            <div key={ci} className={ci > 0 ? 'mt-2 pt-2 border-t theme-border' : ''}>
+                                                {connectedComponents.length > 1 && (
+                                                    <div className="text-[10px] theme-text-muted mb-1 px-2">
+                                                        {comp.nodes.length} nodes
+                                                    </div>
+                                                )}
+                                                {renderTreeNode(comp.root, 0, new Set())}
+                                            </div>
+                                        ))
+                                    ) : (
                                         <p className="text-center theme-text-muted text-xs py-8">No nodes in graph</p>
                                     )}
                                 </div>
                             </div>
                         )}
 
-                        {/* === GROUPS VIEW === */}
+                        {/* GROUPS VIEW */}
                         {activeTab === 'groups' && (
-                            <div className="p-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                {Object.entries(communityGroups).sort(([, a], [, b]) => b.length - a.length).map(([groupName, nodes]) => (
+                            <div className="p-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {Object.entries(communityGroups).sort(([, a], [, b]) => b.length - a.length).map(([groupName, nodes]) => {
+                                    const topNodes = [...nodes].sort((a: any, b: any) => (nodeDegreeMap[b.id] || 0) - (nodeDegreeMap[a.id] || 0)).slice(0, 3);
+                                    return (
                                     <div key={groupName} className="theme-bg-secondary border theme-border rounded-lg p-3">
-                                        <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center justify-between mb-1">
                                             <h5 className="text-sm font-semibold theme-text-primary">{groupName}</h5>
-                                            <span className="text-xs theme-text-muted">{nodes.length} nodes</span>
+                                            <span className="text-xs theme-text-muted">{nodes.length}</span>
                                         </div>
-                                        <div className="space-y-1 max-h-48 overflow-y-auto">
-                                            {nodes.slice(0, 20).map((node: any) => (
+                                        <div className="text-[10px] theme-text-muted mb-2 truncate">
+                                            {topNodes.map((n: any) => n.id).join(', ')}
+                                        </div>
+                                        <div className="space-y-0.5 max-h-48 overflow-y-auto">
+                                            {nodes.slice(0, 30).map((node: any) => (
                                                 <div
                                                     key={node.id}
-                                                    className={`flex items-center gap-2 text-xs px-2 py-1 rounded cursor-pointer transition-colors ${
+                                                    className={`flex items-center gap-2 text-xs px-2 py-1 rounded cursor-pointer transition-colors group ${
                                                         selectedKgNode?.id === node.id ? 'theme-bg-active' : 'hover:theme-bg-hover'
                                                     }`}
-                                                    onClick={() => setSelectedKgNode(node)}
+                                                    onClick={() => { setSelectedKgNode(node); setShowDetail(true); }}
                                                 >
                                                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${node.type === 'concept' ? 'bg-purple-500' : 'bg-blue-500'}`} />
                                                     <span className="font-mono theme-text-secondary truncate flex-1">{node.id}</span>
-                                                    <span className="theme-text-muted">{nodeDegreeMap[node.id] || 0}</span>
+                                                    <span className="theme-text-muted text-[10px]">{nodeDegreeMap[node.id] || 0}</span>
+                                                    {pendingDelete === node.id ? (
+                                                        <DeleteConfirm nodeId={node.id} onConfirm={() => handleDeleteKgNode(node.id)} onCancel={() => setPendingDelete(null)} />
+                                                    ) : (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); setPendingDelete(node.id); }}
+                                                            className="p-0.5 text-red-400 hover:text-red-300 rounded opacity-0 group-hover:opacity-100"
+                                                            title="Delete"
+                                                        ><Trash2 size={11} /></button>
+                                                    )}
                                                 </div>
                                             ))}
-                                            {nodes.length > 20 && (
-                                                <p className="text-xs theme-text-muted text-center py-1">+{nodes.length - 20} more</p>
+                                            {nodes.length > 30 && (
+                                                <p className="text-xs theme-text-muted text-center py-1">+{nodes.length - 30} more</p>
                                             )}
                                         </div>
                                     </div>
-                                ))}
+                                    );
+                                })}
                                 {Object.keys(communityGroups).length === 0 && (
                                     <p className="text-center theme-text-muted text-xs py-8 col-span-full">No groups detected</p>
                                 )}
                             </div>
-                        )}
-                    </div>
-
-                    {/* Right sidebar: node detail + stats */}
-                    <div className="w-64 flex-shrink-0 border-l theme-border overflow-y-auto p-3 space-y-3">
-                        {renderNodeDetail()}
-
-                        <div className="theme-bg-secondary p-3 rounded-lg border theme-border">
-                            <h5 className="font-semibold text-xs mb-2 theme-text-primary">Stats</h5>
-                            <p className="text-xs theme-text-muted">Nodes: <span className="font-bold theme-text-primary">{processedGraphData.nodes.length}</span></p>
-                            <p className="text-xs theme-text-muted">Edges: <span className="font-bold theme-text-primary">{processedGraphData.links.length}</span></p>
-                            {networkStats && (
-                                <>
-                                    <p className="text-xs theme-text-muted">Density: <span className="font-bold theme-text-primary">{networkStats.density?.toFixed(4)}</span></p>
-                                    <p className="text-xs theme-text-muted">Avg Degree: <span className="font-bold theme-text-primary">{networkStats.avg_degree?.toFixed(2)}</span></p>
-                                </>
-                            )}
-                        </div>
-
-                        {centralityData?.degree && (
-                            <div className="theme-bg-secondary p-3 rounded-lg border theme-border">
-                                <h5 className="font-semibold text-xs mb-2 theme-text-primary">Top Central</h5>
-                                <div className="space-y-1 max-h-40 overflow-y-auto">
-                                    {Object.entries(centralityData.degree).sort(([, a], [, b]) => (b as number) - (a as number)).slice(0, 8).map(([node, score]) => (
-                                        <div
-                                            key={node}
-                                            className="text-xs cursor-pointer hover:theme-bg-hover p-1 rounded"
-                                            title={node}
-                                            onClick={() => setSelectedKgNode({ id: node })}
-                                        >
-                                            <div className="truncate font-mono theme-text-secondary">{node}</div>
-                                            <div className="text-green-400 font-semibold">{(score as number).toFixed(3)}</div>
-                                        </div>
-                                    ))}
-                                </div>
                             </div>
                         )}
                     </div>
+
+                    {/* Right sidebar: detail + stats */}
+                    {showDetail && (
+                        <div className="w-56 flex-shrink-0 border-l theme-border overflow-y-auto p-2.5 space-y-2.5">
+                            {renderNodeDetail()}
+
+                            <div className="theme-bg-secondary p-2.5 rounded-lg border theme-border">
+                                <h5 className="font-semibold text-[11px] mb-1.5 theme-text-primary">Stats</h5>
+                                <div className="space-y-0.5 text-[11px]">
+                                    <p className="theme-text-muted">Nodes: <span className="font-bold theme-text-primary">{processedGraphData.nodes.length}</span></p>
+                                    <p className="theme-text-muted">Edges: <span className="font-bold theme-text-primary">{processedGraphData.links.length}</span></p>
+                                    {networkStats && (
+                                        <>
+                                            <p className="theme-text-muted">Density: <span className="font-bold theme-text-primary">{networkStats.density?.toFixed(4)}</span></p>
+                                            <p className="theme-text-muted">Avg Degree: <span className="font-bold theme-text-primary">{networkStats.avg_degree?.toFixed(1)}</span></p>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+
+                            {centralityData?.degree && (
+                                <div className="theme-bg-secondary p-2.5 rounded-lg border theme-border">
+                                    <h5 className="font-semibold text-[11px] mb-1.5 theme-text-primary">Most Connected</h5>
+                                    <div className="space-y-0.5 max-h-32 overflow-y-auto">
+                                        {Object.entries(centralityData.degree).sort(([, a], [, b]) => (b as number) - (a as number)).slice(0, 6).map(([node, score]) => (
+                                            <div
+                                                key={node}
+                                                className="text-[11px] cursor-pointer hover:theme-bg-hover p-1 rounded flex items-center gap-1.5"
+                                                title={node}
+                                                onClick={() => centerOnNode(node)}
+                                            >
+                                                <span className="truncate font-mono theme-text-secondary flex-1">{node}</span>
+                                                <span className="text-green-400 font-semibold">{(score as number).toFixed(2)}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             )}
         </div>
@@ -999,9 +1450,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                             <X size={18} />
                         </button>
                     </div>
-                    <div className="flex-1 overflow-hidden">
-                        {content}
-                    </div>
+                    <div className="flex-1 overflow-hidden">{content}</div>
                 </div>
             </div>
         );
