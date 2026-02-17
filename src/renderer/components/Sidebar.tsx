@@ -1669,21 +1669,21 @@ const renderWebsiteList = () => {
                         <>
                             <button
                                 onClick={(e) => { e.stopPropagation(); loadWebsiteHistory(); }}
-                                className="p-1 theme-bg-tertiary border theme-border rounded transition-all text-gray-400 hover:text-purple-400 hover:border-purple-500/40 active:scale-95"
+                                className="p-1.5 hover:bg-purple-500/20 rounded transition-all text-gray-400 hover:text-purple-400"
                                 title="Refresh"
                             >
                                 <RefreshCw size={11} />
                             </button>
                             <button
                                 onClick={(e) => { e.stopPropagation(); setShowWebsitesSettings(!showWebsitesSettings); }}
-                                className={`p-1 theme-bg-tertiary border rounded transition-all active:scale-95 ${showWebsitesSettings ? 'text-purple-400 border-purple-500/40' : 'theme-border text-gray-400 hover:text-purple-400 hover:border-purple-500/40'}`}
+                                className={`p-1.5 hover:bg-purple-500/20 rounded transition-all ${showWebsitesSettings ? 'text-purple-400 bg-purple-500/20' : 'text-gray-400 hover:text-purple-400'}`}
                                 title="Settings"
                             >
                                 <Settings size={11} />
                             </button>
                             <button
                                 onClick={(e) => { e.stopPropagation(); createBrowserGraphPane?.(); }}
-                                className="p-1 theme-bg-tertiary border theme-border rounded transition-all text-gray-400 hover:text-cyan-400 hover:border-cyan-500/40 active:scale-95"
+                                className="p-1.5 hover:bg-cyan-500/20 rounded transition-all text-gray-400 hover:text-cyan-400"
                                 title="Browser History Graph"
                             >
                                 <Network size={11} />
@@ -1691,16 +1691,14 @@ const renderWebsiteList = () => {
                         </>
                     )}
                 </div>
-                {/* Right: new browser button */}
-                <div className="ml-auto flex items-center pr-1">
-                    <button
-                        onClick={(e) => { e.stopPropagation(); createNewBrowser?.(); setWebsitesCollapsed(false); }}
-                        className="p-1 theme-bg-tertiary border theme-border rounded transition-all hover:border-purple-500/40 active:scale-95"
-                        title="New Browser"
-                    >
-                        <Globe size={11} className="text-purple-300" />
-                    </button>
-                </div>
+                {/* Right: main icon - full height clickable area */}
+                <button
+                    onClick={(e) => { e.stopPropagation(); createNewBrowser?.(); setWebsitesCollapsed(false); }}
+                    className="ml-auto flex items-center justify-center w-1/4 py-4 -my-4 hover:bg-purple-500/20 transition-all"
+                    title="New Browser"
+                >
+                    <Globe size={12} className="text-purple-300" />
+                </button>
             </div>
             {/* Websites Settings Panel */}
             {showWebsitesSettings && (
@@ -2099,7 +2097,7 @@ const renderWebsiteList = () => {
                         <MemoryIcon size={12} className="text-purple-400 mr-1" />
                         <button
                             onClick={(e) => { e.stopPropagation(); loadMemories(); }}
-                            className="p-1.5 theme-hover rounded transition-all text-gray-400 hover:text-purple-400"
+                            className="p-1.5 hover:bg-purple-500/20 rounded transition-all text-gray-400 hover:text-purple-400"
                             title="Refresh memories"
                         >
                             <RefreshCw size={12} />
@@ -2185,7 +2183,7 @@ const renderWebsiteList = () => {
                         <Network size={12} className="text-cyan-400 mr-1" />
                         <button
                             onClick={(e) => { e.stopPropagation(); loadKnowledgeEntities(); }}
-                            className="p-1.5 theme-hover rounded transition-all text-gray-400 hover:text-cyan-400"
+                            className="p-1.5 hover:bg-cyan-500/20 rounded transition-all text-gray-400 hover:text-cyan-400"
                             title="Refresh knowledge graph"
                         >
                             <RefreshCw size={12} />
@@ -2330,7 +2328,7 @@ const renderWebsiteList = () => {
                         {!gitPanelCollapsed && (
                             <button
                                 onClick={(e) => { e.stopPropagation(); refreshGitStatus?.(); }}
-                                className="p-1.5 theme-hover rounded transition-all text-gray-400 hover:text-blue-400"
+                                className="p-1.5 hover:bg-blue-500/20 rounded transition-all text-gray-400 hover:text-blue-400"
                                 title="Refresh git status"
                             >
                                 <RefreshCw size={12} />
@@ -2351,7 +2349,7 @@ const renderWebsiteList = () => {
                                     console.error('[Sidebar] createGitPane is not defined!');
                                 }
                             }}
-                            className="p-1.5 theme-hover rounded transition-all text-gray-400 hover:text-blue-400"
+                            className="p-1.5 hover:bg-blue-500/20 rounded transition-all text-gray-400 hover:text-blue-400"
                             title="Open full Git pane"
                         >
                             <ExternalLink size={12} />
@@ -3230,21 +3228,21 @@ const renderFolderList = (structure) => {
                         <>
                             <button
                                 onClick={(e) => { e.stopPropagation(); handleRefreshFilesAndFolders(); }}
-                                className="p-1 theme-bg-tertiary border theme-border rounded transition-all text-gray-400 hover:text-yellow-400 hover:border-yellow-500/40 active:scale-95"
+                                className="p-1.5 hover:bg-yellow-500/20 rounded transition-all text-gray-400 hover:text-yellow-400"
                                 title="Refresh files"
                             >
                                 <RefreshCw size={11} />
                             </button>
                             <button
                                 onClick={(e) => { e.stopPropagation(); setShowFilesSettings(!showFilesSettings); }}
-                                className={`p-1 theme-bg-tertiary border rounded transition-all active:scale-95 ${showFilesSettings ? 'text-yellow-400 border-yellow-500/40' : 'theme-border text-gray-400 hover:text-yellow-400 hover:border-yellow-500/40'}`}
+                                className={`p-1.5 hover:bg-yellow-500/20 rounded transition-all ${showFilesSettings ? 'text-yellow-400 bg-yellow-500/20' : 'text-gray-400 hover:text-yellow-400'}`}
                                 title="Settings"
                             >
                                 <Settings size={11} />
                             </button>
                             <button
                                 onClick={(e) => { e.stopPropagation(); handleCreateNewFolder?.(); }}
-                                className="p-1 theme-bg-tertiary border theme-border rounded transition-all text-gray-400 hover:text-yellow-400 hover:border-yellow-500/40 active:scale-95"
+                                className="p-1.5 hover:bg-yellow-500/20 rounded transition-all text-gray-400 hover:text-yellow-400"
                                 title="New Folder"
                             >
                                 <Plus size={11} />
@@ -3253,7 +3251,7 @@ const renderFolderList = (structure) => {
                     )}
                 </div>
                 {/* Middle: folder nav buttons */}
-                <div className="ml-auto flex items-center" style={{ position: 'relative', overflow: 'visible' }}>
+                <div className="flex-1 flex items-center justify-end" style={{ position: 'relative', overflow: 'visible' }}>
                     <button
                         onClick={(e) => { e.stopPropagation(); if (currentPath !== baseDir) goUpDirectory(currentPath, baseDir, switchToPath, setError); }}
                         disabled={currentPath === baseDir}
@@ -3311,29 +3309,27 @@ const renderFolderList = (structure) => {
                         <ChevronDown size={8} className={`flex-shrink-0 transition-transform text-gray-600 dark:text-gray-400 ${folderDropdownOpen ? 'rotate-180' : ''}`} />
                     </button>
                 </div>
-                {/* Right: browse + folder pane icons */}
-                <div className="flex items-center gap-0.5 pr-1">
-                    <button
-                        onClick={async (e) => {
-                            e.stopPropagation();
-                            try {
-                                const result = await (window as any).api.open_directory_picker();
-                                if (result) { switchToPath(result); }
-                            } catch {}
-                        }}
-                        className="p-1 theme-bg-tertiary border theme-border rounded transition-all hover:border-blue-500/40 active:scale-95"
-                        title="Browse for folder"
-                    >
-                        <FolderPlus size={11} className="text-blue-400" />
-                    </button>
-                    <button
-                        onClick={(e) => { e.stopPropagation(); createAndAddPaneNodeToLayout?.({ contentType: 'folder', contentId: currentPath }); setFilesCollapsed(false); }}
-                        className="p-1 theme-bg-tertiary border theme-border rounded transition-all hover:border-yellow-500/40 active:scale-95"
-                        title="Open folder pane"
-                    >
-                        <FolderOpen size={11} className="text-yellow-300" />
-                    </button>
-                </div>
+                {/* Right: browse (small) + folder pane (full w-1/4 like other sections) */}
+                <button
+                    onClick={async (e) => {
+                        e.stopPropagation();
+                        try {
+                            const result = await (window as any).api.open_directory_picker();
+                            if (result) { switchToPath(result); }
+                        } catch {}
+                    }}
+                    className="flex items-center justify-center px-1.5 py-4 -my-4 hover:bg-yellow-500/20 transition-all"
+                    title="Browse for folder"
+                >
+                    <FolderPlus size={11} className="text-blue-400" />
+                </button>
+                <button
+                    onClick={(e) => { e.stopPropagation(); createAndAddPaneNodeToLayout?.({ contentType: 'folder', contentId: currentPath }); setFilesCollapsed(false); }}
+                    className="flex items-center justify-center w-1/4 py-4 -my-4 hover:bg-yellow-500/20 transition-all"
+                    title="Open folder pane"
+                >
+                    <FolderOpen size={12} className="text-yellow-300" />
+                </button>
                 {/* Folder dropdown container */}
                 <div style={{ position: 'relative', overflow: 'visible' }}>
                     {/* Folder dropdown - fixed positioning to show over pane content */}
@@ -3878,14 +3874,14 @@ const renderFolderList = (structure) => {
                             <>
                                 <button
                                     onClick={(e) => { e.stopPropagation(); refreshConversations(); }}
-                                    className="p-1 theme-bg-tertiary border theme-border rounded transition-all text-gray-400 hover:text-green-400 hover:border-green-500/40 active:scale-95"
+                                    className="p-1.5 hover:bg-green-500/20 rounded transition-all text-gray-400 hover:text-green-400"
                                     title="Refresh conversations"
                                 >
                                     <RefreshCw size={11} />
                                 </button>
                                 <button
                                     onClick={(e) => { e.stopPropagation(); setShowConversationsSettings(!showConversationsSettings); }}
-                                    className={`p-1 theme-bg-tertiary border rounded transition-all active:scale-95 ${showConversationsSettings ? 'text-green-400 border-green-500/40' : 'theme-border text-gray-400 hover:text-green-400 hover:border-green-500/40'}`}
+                                    className={`p-1.5 hover:bg-green-500/20 rounded transition-all ${showConversationsSettings ? 'text-green-400 bg-green-500/20' : 'text-gray-400 hover:text-green-400'}`}
                                     title="Settings"
                                 >
                                     <Settings size={11} />
@@ -3901,7 +3897,7 @@ const renderFolderList = (structure) => {
                                         }
                                         setShowConvoFilters(!showConvoFilters);
                                     }}
-                                    className={`p-1 theme-bg-tertiary border rounded transition-all active:scale-95 ${activeFilterCount > 0 || showConvoFilters ? 'text-green-400 border-green-500/40' : 'theme-border text-gray-400 hover:text-green-400 hover:border-green-500/40'}`}
+                                    className={`p-1.5 hover:bg-green-500/20 rounded transition-all ${activeFilterCount > 0 || showConvoFilters ? 'text-green-400 bg-green-500/20' : 'text-gray-400 hover:text-green-400'}`}
                                     title="Filter conversations"
                                 >
                                     <Filter size={11} />
@@ -3909,16 +3905,14 @@ const renderFolderList = (structure) => {
                             </>
                         )}
                     </div>
-                    {/* Right: new chat button */}
-                    <div className="ml-auto flex items-center pr-1">
-                        <button
-                            onClick={(e) => { e.stopPropagation(); createNewConversation?.(); setConversationsCollapsed(false); }}
-                            className="p-1 theme-bg-tertiary border theme-border rounded transition-all hover:border-green-500/40 active:scale-95"
-                            title="New Chat"
-                        >
-                            <MessageSquare size={11} className="text-green-300" />
-                        </button>
-                    </div>
+                    {/* Right: main icon - full height clickable area */}
+                    <button
+                        onClick={(e) => { e.stopPropagation(); createNewConversation?.(); setConversationsCollapsed(false); }}
+                        className="ml-auto flex items-center justify-center w-1/4 py-4 -my-4 hover:bg-green-500/20 transition-all"
+                        title="New Chat"
+                    >
+                        <MessageSquare size={12} className="text-green-300" />
+                    </button>
                 </div>
                 {/* Conversations Settings Panel */}
                 {showConversationsSettings && (
@@ -4203,15 +4197,13 @@ const renderFolderList = (structure) => {
                         <div className="flex items-center pl-1 gap-0">
                             <ChevronRight size={14} className="text-gray-600 dark:text-gray-400" />
                         </div>
-                        <div className="ml-auto flex items-center pr-1">
-                            <button
-                                onClick={(e) => { e.stopPropagation(); createGitPane?.(); }}
-                                className="p-1 theme-bg-tertiary border theme-border rounded transition-all hover:border-orange-500/40 active:scale-95"
-                                title="Open full Git pane"
-                            >
-                                <GitBranch size={11} className="text-orange-400" />
-                            </button>
-                        </div>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); createGitPane?.(); }}
+                            className="ml-auto flex items-center justify-center w-1/4 py-4 -my-4 hover:bg-orange-500/20 transition-all"
+                            title="Open full Git pane"
+                        >
+                            <GitBranch size={12} className="text-orange-400" />
+                        </button>
                     </div>
                 </div>
             );
@@ -4263,23 +4255,21 @@ const renderFolderList = (structure) => {
                         {!gitPanelCollapsed && (
                             <button
                                 onClick={(e) => { e.stopPropagation(); loadGitStatus(); }}
-                                className="p-1 theme-bg-tertiary border theme-border rounded transition-all text-gray-400 hover:text-orange-400 hover:border-orange-500/40 active:scale-95"
+                                className="p-1.5 hover:bg-orange-500/20 rounded transition-all text-gray-400 hover:text-orange-400"
                                 title="Refresh git status"
                             >
                                 <RefreshCw size={11} />
                             </button>
                         )}
                     </div>
-                    {/* Right: git pane button */}
-                    <div className="ml-auto flex items-center pr-1">
-                        <button
-                            onClick={(e) => { e.stopPropagation(); createGitPane?.(); }}
-                            className="p-1 theme-bg-tertiary border theme-border rounded transition-all hover:border-orange-500/40 active:scale-95"
-                            title="Open full Git pane"
-                        >
-                            <GitBranch size={11} className="text-orange-400" />
-                        </button>
-                    </div>
+                    {/* Right: main icon - full height clickable area */}
+                    <button
+                        onClick={(e) => { e.stopPropagation(); createGitPane?.(); }}
+                        className="ml-auto flex items-center justify-center w-1/4 py-4 -my-4 hover:bg-orange-500/20 transition-all"
+                        title="Open full Git pane"
+                    >
+                        <GitBranch size={12} className="text-orange-400" />
+                    </button>
                 </div>
             </div>
         );

@@ -3740,10 +3740,10 @@ const renderMessageContextMenu = () => null;
     const handleGlobalDragStart = useCallback((e, item) => {
     // BrowserView hiding is now handled centrally by the draggedItem useEffect
 
-    // Set data transfer for context files panel
+    // Set data transfer for context files panel (use separate MIME type to avoid overwriting application/json)
     if (item.type === 'file' && item.id) {
         e.dataTransfer.setData('text/plain', item.id);
-        e.dataTransfer.setData('application/json', JSON.stringify({
+        e.dataTransfer.setData('application/x-sidebar-file', JSON.stringify({
             type: 'sidebar-file',
             path: item.id
         }));
@@ -4038,12 +4038,13 @@ const handleBrowserDialogNavigate = (url) => {
         setIsHovering(false);
 
         // Check for sidebar file drag (add to context files)
+        const sidebarFileData = e.dataTransfer.getData('application/x-sidebar-file');
         const jsonData = e.dataTransfer.getData('application/json');
         const textData = e.dataTransfer.getData('text/plain');
 
-        if (jsonData) {
+        if (sidebarFileData || jsonData) {
             try {
-                const data = JSON.parse(jsonData);
+                const data = JSON.parse(sidebarFileData || jsonData);
                 if (data.type === 'sidebar-file' && data.path) {
                     // Add to context files
                     const response = await window.api?.readFileContent?.(data.path);
