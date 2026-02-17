@@ -137,15 +137,23 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
                                     {(gitStatus.unstaged || []).length + (gitStatus.untracked || []).length === 0 ? (
                                         <div className="text-xs theme-text-muted">No changes</div>
                                     ) : [...(gitStatus.unstaged || []), ...(gitStatus.untracked || [])].map((file: any) => (
-                                        <div key={file.path} className="flex items-center justify-between text-xs group">
-                                            <button
-                                                onClick={() => openFileDiffPane(file.path, file.status || 'modified')}
-                                                className={`truncate flex-1 text-left hover:underline ${file.isUntracked ? 'text-gray-400' : 'text-yellow-300'}`}
-                                                title="Click to view diff"
-                                            >
-                                                {file.path}
-                                            </button>
-                                            <button onClick={() => gitStageFile(file.path)} className="text-green-400 hover:text-green-300 px-2 opacity-0 group-hover:opacity-100">Stage</button>
+                                        <div key={`${file.path}-${file.statusCode}`} className="flex items-center justify-between text-xs group">
+                                            <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
+                                                <span className={`font-mono font-bold flex-shrink-0 w-3 text-center ${
+                                                    file.statusCode === 'M' ? 'text-yellow-400' :
+                                                    file.statusCode === 'D' ? 'text-red-400' :
+                                                    file.statusCode === '?' ? 'text-gray-400' :
+                                                    'text-gray-400'
+                                                }`} title={file.status}>{file.statusCode}</span>
+                                                <button
+                                                    onClick={() => openFileDiffPane(file.path, file.status || 'modified')}
+                                                    className={`truncate text-left hover:underline ${file.isUntracked ? 'text-gray-400' : 'text-yellow-300'}`}
+                                                    title={`${file.status} — Click to view diff`}
+                                                >
+                                                    {file.path}
+                                                </button>
+                                            </div>
+                                            <button onClick={() => gitStageFile(file.path)} className="text-green-400 hover:text-green-300 px-2 opacity-0 group-hover:opacity-100 flex-shrink-0">Stage</button>
                                         </div>
                                     ))}
                                 </div>
@@ -157,15 +165,25 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
                                     {(gitStatus.staged || []).length === 0 ? (
                                         <div className="text-xs theme-text-muted">No staged files</div>
                                     ) : (gitStatus.staged || []).map((file: any) => (
-                                        <div key={file.path} className="flex items-center justify-between text-xs group">
-                                            <button
-                                                onClick={() => openFileDiffPane(file.path, file.status || 'staged')}
-                                                className="text-green-300 truncate flex-1 text-left hover:underline"
-                                                title="Click to view diff"
-                                            >
-                                                {file.path}
-                                            </button>
-                                            <button onClick={() => gitUnstageFile(file.path)} className="text-red-400 hover:text-red-300 px-2 opacity-0 group-hover:opacity-100">Unstage</button>
+                                        <div key={`${file.path}-${file.statusCode}`} className="flex items-center justify-between text-xs group">
+                                            <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
+                                                <span className={`font-mono font-bold flex-shrink-0 w-3 text-center ${
+                                                    file.statusCode === 'M' ? 'text-yellow-400' :
+                                                    file.statusCode === 'A' ? 'text-green-400' :
+                                                    file.statusCode === 'D' ? 'text-red-400' :
+                                                    file.statusCode === 'R' ? 'text-blue-400' :
+                                                    file.statusCode === 'C' ? 'text-cyan-400' :
+                                                    'text-gray-400'
+                                                }`} title={file.status}>{file.statusCode}</span>
+                                                <button
+                                                    onClick={() => openFileDiffPane(file.path, file.status || 'staged')}
+                                                    className="text-green-300 truncate text-left hover:underline"
+                                                    title={`${file.status} — Click to view diff`}
+                                                >
+                                                    {file.path}
+                                                </button>
+                                            </div>
+                                            <button onClick={() => gitUnstageFile(file.path)} className="text-red-400 hover:text-red-300 px-2 opacity-0 group-hover:opacity-100 flex-shrink-0">Unstage</button>
                                         </div>
                                     ))}
                                 </div>

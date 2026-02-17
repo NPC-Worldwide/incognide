@@ -146,6 +146,20 @@ export const getFileIcon = (filename: string) => {
 };
 
 // Custom hook for loading website history
+// Extract the registrable domain (TLD+1) from a hostname
+const getRootDomain = (hostname: string): string => {
+    const parts = hostname.split('.');
+    // Handle known multi-part TLDs
+    const multiPartTlds = ['co.uk', 'com.au', 'co.nz', 'co.jp', 'co.kr', 'com.br', 'co.in', 'org.uk', 'ac.uk', 'gov.uk'];
+    if (parts.length >= 3) {
+        const lastTwo = parts.slice(-2).join('.');
+        if (multiPartTlds.includes(lastTwo)) {
+            return parts.slice(-3).join('.');
+        }
+    }
+    return parts.length >= 2 ? parts.slice(-2).join('.') : hostname;
+};
+
 export const useLoadWebsiteHistory = (
     currentPath: string | null,
     setWebsiteHistory: (history: any[]) => void,
@@ -157,30 +171,58 @@ export const useLoadWebsiteHistory = (
         const response = await window.api.getBrowserHistory(currentPath);
         if (response?.history) {
             setWebsiteHistory(response.history);
-            
-            // Calculate common sites based on visit frequency
-            const siteMap = new Map();
+
+            // Group by root domain, track subdomain frequencies
+            const domainGroups = new Map<string, {
+                rootDomain: string;
+                totalCount: number;
+                favicon: string;
+                subdomains: Map<string, { hostname: string; count: number; lastVisited: string; favicon: string }>;
+            }>();
+
             response.history.forEach((item: any) => {
-                const domain = new URL(item.url).hostname;
-                if (!siteMap.has(domain)) {
-                    siteMap.set(domain, {
-                        domain,
-                        count: 0,
-                        lastVisited: item.timestamp,
-                        favicon: `https://www.google.com/s2/favicons?domain=${domain}&sz=32`
-                    });
-                }
-                const site = siteMap.get(domain);
-                site.count++;
-                if (new Date(item.timestamp) > new Date(site.lastVisited)) {
-                    site.lastVisited = item.timestamp;
-                }
+                try {
+                    const url = new URL(item.url);
+                    const hostname = url.hostname;
+                    const root = getRootDomain(hostname);
+
+                    if (!domainGroups.has(root)) {
+                        domainGroups.set(root, {
+                            rootDomain: root,
+                            totalCount: 0,
+                            favicon: `https://www.google.com/s2/favicons?domain=${root}&sz=32`,
+                            subdomains: new Map()
+                        });
+                    }
+                    const group = domainGroups.get(root)!;
+                    group.totalCount++;
+
+                    if (!group.subdomains.has(hostname)) {
+                        group.subdomains.set(hostname, {
+                            hostname,
+                            count: 0,
+                            lastVisited: item.timestamp,
+                            favicon: `https://www.google.com/s2/favicons?domain=${hostname}&sz=32`
+                        });
+                    }
+                    const sub = group.subdomains.get(hostname)!;
+                    sub.count++;
+                    if (new Date(item.timestamp) > new Date(sub.lastVisited)) {
+                        sub.lastVisited = item.timestamp;
+                    }
+                } catch {}
             });
 
-            // Sort by visit count and take top 10
-            const common = Array.from(siteMap.values())
-                .sort((a: any, b: any) => b.count - a.count)
-                .slice(0, 10);
+            // Sort groups by total count, convert subdomains to sorted array
+            const common = Array.from(domainGroups.values())
+                .sort((a, b) => b.totalCount - a.totalCount)
+                .slice(0, 15)
+                .map(g => ({
+                    rootDomain: g.rootDomain,
+                    totalCount: g.totalCount,
+                    favicon: g.favicon,
+                    subdomains: Array.from(g.subdomains.values()).sort((a, b) => b.count - a.count)
+                }));
             setCommonSites(common);
         }
     } catch (err) {

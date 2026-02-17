@@ -1198,6 +1198,16 @@ function register(ctx) {
     }
   });
 
+  ipcMain.handle('copy-file', async (_, srcPath, destPath) => {
+    try {
+      await fsPromises.copyFile(srcPath, destPath);
+      return { success: true, error: null };
+    } catch (err) {
+      console.error('Error copying file:', err);
+      return { success: false, error: err.message };
+    }
+  });
+
   // ============================================
   // File Permission Management (chmod/chown)
   // ============================================

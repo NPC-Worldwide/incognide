@@ -121,7 +121,7 @@ import { getFileName,
 import { BranchingUI, createBranchPoint } from './BranchingUI';
 import BranchOptionsModal, { BranchOptions } from './BranchOptionsModal';
 import BranchVisualizer from './BranchVisualizer';
-import { addPaneToLayout } from './LayoutNode';
+import { addPaneToLayout, collectPaneIds } from './LayoutNode';
 // Note: Sidebar.tsx, ChatViewer.tsx are code fragments, not proper modules yet
 import PaneHeader from './PaneHeader';
 import { LayoutNode } from './LayoutNode';
@@ -667,7 +667,36 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
 
     const [draggedItem, setDraggedItem] = useState(null);
     const [dropTarget, setDropTarget] = useState(null);
-   
+
+    // Hide BrowserViews and block webview interaction during any pane drag
+    useEffect(() => {
+        if (draggedItem) {
+            document.body.classList.add('layout-dragging');
+            // Hide all BrowserViews so they don't intercept drag events
+            Object.values(contentDataRef.current).forEach((paneData: any) => {
+                if (paneData.contentType === 'browser' && paneData.contentId) {
+                    (window as any).api.browserSetVisibility({ viewId: paneData.contentId, visible: false });
+                }
+            });
+        } else {
+            document.body.classList.remove('layout-dragging');
+            // Restore all BrowserViews
+            Object.values(contentDataRef.current).forEach((paneData: any) => {
+                if (paneData.contentType === 'browser' && paneData.contentId) {
+                    (window as any).api.browserSetVisibility({ viewId: paneData.contentId, visible: true });
+                }
+            });
+        }
+        return () => {
+            document.body.classList.remove('layout-dragging');
+            Object.values(contentDataRef.current).forEach((paneData: any) => {
+                if (paneData.contentType === 'browser' && paneData.contentId) {
+                    (window as any).api.browserSetVisibility({ viewId: paneData.contentId, visible: true });
+                }
+            });
+        };
+    }, [draggedItem]);
+
     const currentPathRef = useRef(currentPath);
     currentPathRef.current = currentPath;
     const activeContentPaneIdRef = useRef(activeContentPaneId);
@@ -924,6 +953,38 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         }
         if (api.api?.onMenuShowShortcuts) {
             cleanups.push(api.api.onMenuShowShortcuts(() => createHelpPaneRef.current?.()));
+        }
+
+        // Zoom handlers — zoom the active browser webview if active pane is a browser, else zoom the app
+        const handleZoom = (direction: 'in' | 'out' | 'reset') => {
+            const activePaneId = activeContentPaneIdRef.current;
+            const paneData = contentDataRef.current[activePaneId];
+            if (paneData?.contentType === 'browser') {
+                // Dispatch event so the specific browser pane handles zoom
+                window.dispatchEvent(new CustomEvent('incognide-zoom', {
+                    detail: { paneId: activePaneId, direction }
+                }));
+            } else {
+                // Zoom the main renderer (app-level zoom)
+                const wc = (window as any).require?.('electron')?.remote?.webFrame;
+                // Use webFrame from the renderer's own context
+                if (direction === 'in') {
+                    document.body.style.zoom = String(parseFloat(document.body.style.zoom || '1') + 0.1);
+                } else if (direction === 'out') {
+                    document.body.style.zoom = String(Math.max(0.5, parseFloat(document.body.style.zoom || '1') - 0.1));
+                } else {
+                    document.body.style.zoom = '1';
+                }
+            }
+        };
+        if (api.api?.onZoomIn) {
+            cleanups.push(api.api.onZoomIn(() => handleZoom('in')));
+        }
+        if (api.api?.onZoomOut) {
+            cleanups.push(api.api.onZoomOut(() => handleZoom('out')));
+        }
+        if (api.api?.onZoomReset) {
+            cleanups.push(api.api.onZoomReset(() => handleZoom('reset')));
         }
 
         return () => {
@@ -2324,6 +2385,7 @@ const renderChatView = useCallback(({ nodeId }) => {
                         else if (['csv', 'xlsx', 'xls'].includes(ext || '')) contentType = 'csv';
                         else if (['docx', 'doc'].includes(ext || '')) contentType = 'docx';
                         else if (ext === 'pptx') contentType = 'pptx';
+                        else if (ext === 'tex') contentType = 'latex';
                         // Open in new tile to the right
                         const nodePath = findNodePath(rootLayoutNodeRef.current, nodeId);
                         if (nodePath) {
@@ -2995,6 +3057,7 @@ const renderFolderViewerPane = useCallback(({ nodeId }: { nodeId: string }) => {
         else if (['csv', 'xlsx', 'xls'].includes(ext || '')) contentType = 'csv';
         else if (['docx', 'doc'].includes(ext || '')) contentType = 'docx';
         else if (ext === 'pptx') contentType = 'pptx';
+        else if (ext === 'tex') contentType = 'latex';
         else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext || '')) contentType = 'image';
 
         // Add as a new tab in the current pane
@@ -3362,8 +3425,10 @@ useEffect(() => {
 
     // Track open browsers - only update if actually changed
     useEffect(() => {
+        // Only show browsers that actually exist in the current layout tree
+        const activePaneIds = new Set(collectPaneIds(rootLayoutNode));
         const browsers = Object.entries(contentDataRef.current)
-            .filter(([_, data]) => data.contentType === 'browser')
+            .filter(([paneId, data]) => data.contentType === 'browser' && activePaneIds.has(paneId))
             .map(([paneId, data]) => ({
                 paneId,
                 url: data.browserUrl,
@@ -3673,11 +3738,7 @@ const renderMessageContextMenu = () => null;
     }, []);
 
     const handleGlobalDragStart = useCallback((e, item) => {
-    Object.values(contentDataRef.current).forEach(paneData => {
-        if (paneData.contentType === 'browser' && paneData.contentId) {
-        window.api.browserSetVisibility({ viewId: paneData.contentId, visible: false });
-        }
-  });
+    // BrowserView hiding is now handled centrally by the draggedItem useEffect
 
     // Set data transfer for context files panel
     if (item.type === 'file' && item.id) {
@@ -3701,14 +3762,9 @@ const renderMessageContextMenu = () => null;
     }, [rootLayoutNode, findNodePath]);
 
 const handleGlobalDragEnd = () => {
+  // BrowserView restoration is now handled centrally by the draggedItem useEffect
   setDraggedItem(null);
   setDropTarget(null);
-
-  Object.values(contentDataRef.current).forEach(paneData => {
-    if (paneData.contentType === 'browser' && paneData.contentId) {
-      window.api.browserSetVisibility({ viewId: paneData.contentId, visible: true });
-    }
-  });
 };    
   
 
@@ -6608,6 +6664,7 @@ const getChatInputProps = useCallback((paneId: string) => ({
         else if (['csv', 'xlsx', 'xls'].includes(ext || '')) contentType = 'csv';
         else if (['docx', 'doc'].includes(ext || '')) contentType = 'docx';
         else if (ext === 'pptx') contentType = 'pptx';
+        else if (ext === 'tex') contentType = 'latex';
         // Open in new tile to the right
         const nodePath = findNodePath(rootLayoutNodeRef.current, paneId);
         if (nodePath) {
@@ -7626,7 +7683,7 @@ const renderMainContent = () => {
 
     if (!rootLayoutNode) {
         return (
-            <main className={`flex-1 flex flex-col bg-gray-900 ${isDarkMode ? 'dark-mode' : 'light-mode'} overflow-hidden`}>
+            <main className={`flex-1 flex flex-col theme-bg-primary ${isDarkMode ? 'dark-mode' : 'light-mode'} overflow-hidden`}>
                 {topBar}
                 <div
                     className="flex-1 flex items-center justify-center border-2 border-dashed border-gray-400 m-4"
@@ -7847,7 +7904,7 @@ const renderMainContent = () => {
     });
 
     return (
-        <main className={`flex-1 flex flex-col bg-gray-900 ${isDarkMode ? 'dark-mode' : 'light-mode'} overflow-hidden`}>
+        <main className={`flex-1 flex flex-col theme-bg-primary ${isDarkMode ? 'dark-mode' : 'light-mode'} overflow-hidden`}>
             {topBar}
             <div className="flex-1 flex overflow-hidden" data-tutorial="pane-area">
                 {rootLayoutNode ? (
@@ -7882,7 +7939,7 @@ const renderMainContent = () => {
 
 
     return (
-        <div className={`chat-container ${isDarkMode ? 'dark-mode' : 'light-mode'} h-screen flex flex-col bg-gray-900 text-gray-100 font-mono`}>
+        <div className={`chat-container ${isDarkMode ? 'dark-mode' : 'light-mode'} h-screen flex flex-col theme-bg-primary theme-text-primary font-mono`}>
 <div className="flex flex-1 overflow-hidden">
     <Sidebar
         // Pass all necessary state and functions as props
@@ -8064,7 +8121,7 @@ const renderMainContent = () => {
 
             {/* Zen Mode Overlay */}
             {zenModePaneId && contentDataRef.current[zenModePaneId] && (
-                <div className="fixed inset-0 z-[200] bg-gray-900 flex flex-col">
+                <div className="fixed inset-0 z-[200] theme-bg-primary flex flex-col">
                     {/* Zen mode header with minimize/close */}
                     <div className="p-2 border-b theme-border text-xs theme-text-muted flex-shrink-0 theme-bg-secondary flex justify-between items-center">
                         <div className="flex items-center gap-2">

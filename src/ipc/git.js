@@ -10,50 +10,44 @@ function register(ctx) {
       const git = simpleGit(repoPath);
       const status = await git.status();
 
-      const allChangedFiles = status.files.map(f => {
-        let fileStatus = '';
-        let isStaged = false;
-        let isUntracked = false;
+      const stagedFiles = [];
+      const unstagedFiles = [];
+      const untrackedFiles = [];
 
-        // Determine the primary status for display
+      for (const f of status.files) {
+        // A file can be both staged AND have unstaged changes (e.g. "MM")
+        // Handle staged status (index column)
         if (f.index === 'M') {
-          fileStatus = 'Staged Modified'; // Modified in index
-          isStaged = true;
+          stagedFiles.push({ path: f.path, status: 'Modified', statusCode: 'M', isStaged: true, isUntracked: false });
         } else if (f.index === 'A') {
-          fileStatus = 'Staged Added'; // Added to index
-          isStaged = true;
+          stagedFiles.push({ path: f.path, status: 'Added', statusCode: 'A', isStaged: true, isUntracked: false });
         } else if (f.index === 'D') {
-          fileStatus = 'Staged Deleted'; // Deleted from index
-          isStaged = true;
-        } else if (f.working_dir === 'M') {
-          fileStatus = 'Modified'; // Modified in working directory, not staged
-        } else if (f.working_dir === 'D') {
-          fileStatus = 'Deleted'; // Deleted in working directory, not staged
-        } else if (f.index === '??') {
-          fileStatus = 'Untracked'; // Untracked file
-          isUntracked = true;
-        } else {
-          fileStatus = 'Unknown Change'; // Fallback for any other types
+          stagedFiles.push({ path: f.path, status: 'Deleted', statusCode: 'D', isStaged: true, isUntracked: false });
+        } else if (f.index === 'R') {
+          stagedFiles.push({ path: f.path, status: 'Renamed', statusCode: 'R', isStaged: true, isUntracked: false });
+        } else if (f.index === 'C') {
+          stagedFiles.push({ path: f.path, status: 'Copied', statusCode: 'C', isStaged: true, isUntracked: false });
         }
 
-        return {
-          path: f.path,
-          status: fileStatus,
-          isStaged: isStaged,
-          isUntracked: isUntracked,
-        };
-      });
+        // Handle unstaged status (working_dir column)
+        if (f.working_dir === 'M') {
+          unstagedFiles.push({ path: f.path, status: 'Modified', statusCode: 'M', isStaged: false, isUntracked: false });
+        } else if (f.working_dir === 'D') {
+          unstagedFiles.push({ path: f.path, status: 'Deleted', statusCode: 'D', isStaged: false, isUntracked: false });
+        } else if (f.index === '?' || f.working_dir === '?') {
+          untrackedFiles.push({ path: f.path, status: 'Untracked', statusCode: '?', isStaged: false, isUntracked: true });
+        }
+      }
 
       return {
         success: true,
         branch: status.current,
         ahead: status.ahead,
         behind: status.behind,
-        // Filter based on the new structured 'allChangedFiles'
-        staged: allChangedFiles.filter(f => f.isStaged),
-        unstaged: allChangedFiles.filter(f => !f.isStaged && !f.isUntracked),
-        untracked: allChangedFiles.filter(f => f.isUntracked),
-        hasChanges: allChangedFiles.length > 0
+        staged: stagedFiles,
+        unstaged: unstagedFiles,
+        untracked: untrackedFiles,
+        hasChanges: stagedFiles.length + unstagedFiles.length + untrackedFiles.length > 0
       };
     } catch (err) {
       console.error(`[Git] Error getting status for ${repoPath}:`, err);

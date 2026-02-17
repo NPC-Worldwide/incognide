@@ -1466,7 +1466,8 @@ body.light-mode .p-2.rounded-full.text-red-400 {
     display: none;
 }
 
-body.layout-resizing .webview-resize-overlay {
+body.layout-resizing .webview-resize-overlay,
+body.layout-dragging .webview-resize-overlay {
     display: block;
     pointer-events: auto;
     cursor: inherit;

@@ -350,18 +350,30 @@ function register(ctx) {
     wc.setWindowOpenHandler(({ url, disposition }) => {
       log('[Browser] window.open intercepted:', url, 'disposition:', disposition);
 
-      // Google auth - open in system browser for proper auth flow
+      // Google auth — allow as popup so OAuth tokens stay in the webview's session
+      // (opening in system browser breaks gcloud login, Google Drive, Colab auth flows)
       if (url.includes('accounts.google.com') ||
           url.includes('accounts.youtube.com') ||
           url.includes('myaccount.google.com')) {
-        shell.openExternal(url);
+        log('[Browser] Allowing Google auth popup in-app for OAuth flow');
+        return { action: 'allow' };
+      }
+
+      // Google Colab — open as new tab in the app
+      if (url.includes('colab.research.google.com')) {
+        log('[Browser] Opening Colab in new tab');
+        const mw = getMainWindow();
+        if (mw && !mw.isDestroyed()) {
+          mw.webContents.send('browser-open-in-new-tab', { url, disposition });
+        }
         return { action: 'deny' };
       }
 
       // Google widgets (contacts hovercard, etc.) - allow as popups
       if (url.includes('contacts.google.com/widget') ||
           url.includes('apis.google.com') ||
-          url.includes('plus.google.com')) {
+          url.includes('plus.google.com') ||
+          url.includes('drive.google.com')) {
         return { action: 'allow' };
       }
 
