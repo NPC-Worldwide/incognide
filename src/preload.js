@@ -343,6 +343,7 @@ readDocxContent: (filePath) =>
     readZipContents: (zipPath) => ipcRenderer.invoke('read-zip-contents', zipPath),
     extractZip: (zipPath, targetDir, entryPath) => ipcRenderer.invoke('extract-zip', zipPath, targetDir, entryPath),
     renameFile: (oldPath, newPath) => ipcRenderer.invoke('renameFile', oldPath, newPath),
+    copyFile: (srcPath, destPath) => ipcRenderer.invoke('copy-file', srcPath, destPath),
     chmod: (options) => ipcRenderer.invoke('chmod', options),
     chown: (options) => ipcRenderer.invoke('chown', options),
 
@@ -725,6 +726,23 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
         const handler = (_, data) => callback(data);
         ipcRenderer.on('jupyter:installProgress', handler);
         return () => ipcRenderer.removeListener('jupyter:installProgress', handler);
+    },
+
+    // Zoom control events (from menu accelerators — forwarded to renderer so active webview can be zoomed)
+    onZoomIn: (callback) => {
+        const handler = () => callback();
+        ipcRenderer.on('zoom-in', handler);
+        return () => ipcRenderer.removeListener('zoom-in', handler);
+    },
+    onZoomOut: (callback) => {
+        const handler = () => callback();
+        ipcRenderer.on('zoom-out', handler);
+        return () => ipcRenderer.removeListener('zoom-out', handler);
+    },
+    onZoomReset: (callback) => {
+        const handler = () => callback();
+        ipcRenderer.on('zoom-reset', handler);
+        return () => ipcRenderer.removeListener('zoom-reset', handler);
     },
 
     // Version and Update APIs

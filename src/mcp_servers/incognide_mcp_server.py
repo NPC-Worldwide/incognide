@@ -13,6 +13,7 @@ communicate with the Incognide frontend via the Flask backend.
 """
 
 import os
+import sys
 import json
 import asyncio
 import aiohttp
@@ -59,9 +60,9 @@ async def call_incognide_action(action: str, args: Dict[str, Any], window_id: st
     Returns:
         Result dictionary from the action
     """
-    import sys
     effective_window_id = window_id or _target_window_id
-    print(f"[MCP SERVER] call_incognide_action: {action} window={effective_window_id}", file=sys.stderr)
+    # CRITICAL: Logging to stderr so it doesn't break MCP stdout JSON pipe
+    sys.stderr.write(f"[MCP SERVER] call_incognide_action: {action} window={effective_window_id}\n")
     try:
         payload = {"action": action, "args": args}
         if effective_window_id:
@@ -77,13 +78,13 @@ async def call_incognide_action(action: str, args: Dict[str, Any], window_id: st
                     return result
                 else:
                     error_text = await response.text()
-                    print(f"[MCP SERVER] Error: HTTP {response.status}: {error_text}", file=sys.stderr)
+                    sys.stderr.write(f"[MCP SERVER] Error: HTTP {response.status}: {error_text}\n")
                     return {"success": False, "error": f"HTTP {response.status}: {error_text}"}
     except aiohttp.ClientError as e:
-        print(f"[MCP SERVER] Connection error: {e}", file=sys.stderr)
+        sys.stderr.write(f"[MCP SERVER] Connection error: {e}\n")
         return {"success": False, "error": f"Connection error: {str(e)}"}
     except Exception as e:
-        print(f"[MCP SERVER] Exception: {e}", file=sys.stderr)
+        sys.stderr.write(f"[MCP SERVER] Exception: {e}\n")
         import traceback
         traceback.print_exc(file=sys.stderr)
         return {"success": False, "error": f"Error: {str(e)}"}
@@ -102,7 +103,6 @@ async def list_windows() -> str:
     Returns:
         JSON array of windows with id, folder, title
     """
-    import sys
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -116,7 +116,7 @@ async def list_windows() -> str:
                     error_text = await response.text()
                     return json.dumps({"success": False, "error": f"HTTP {response.status}: {error_text}"})
     except Exception as e:
-        print(f"[MCP SERVER] list_windows error: {e}", file=sys.stderr)
+        sys.stderr.write(f"[MCP SERVER] list_windows error: {e}\n")
         return json.dumps({"success": False, "error": str(e)})
 
 
@@ -1233,26 +1233,27 @@ async def presentation_save(pane_id: str = "active") -> str:
 
 
 if __name__ == "__main__":
-    print(f"Starting Incognide MCP server...")
-    print(f"Backend URL: {INCOGNIDE_BACKEND_URL}")
-    print(f"Available tools: list_windows, set_target_window, get_target_window,")
-    print(f"                 open_pane, close_pane, focus_pane, list_panes, list_pane_types,")
-    print(f"                 navigate_browser, show_diff, request_approval,")
-    print(f"                 notify, get_browser_info, split_pane, zen_mode, list_actions,")
-    print(f"                 run_terminal, browser_click, browser_type,")
-    print(f"                 get_browser_content, browser_screenshot, browser_eval,")
-    print(f"                 spreadsheet_read, spreadsheet_eval, spreadsheet_update_cell,")
-    print(f"                 spreadsheet_update_cells, spreadsheet_add_row, spreadsheet_delete_row,")
-    print(f"                 spreadsheet_add_column, spreadsheet_delete_column, spreadsheet_sort,")
-    print(f"                 spreadsheet_stats, spreadsheet_save, spreadsheet_export,")
-    print(f"                 spreadsheet_switch_sheet,")
-    print(f"                 document_read, document_eval, document_write,")
-    print(f"                 document_find_replace, document_format, document_insert_table,")
-    print(f"                 document_save, document_stats,")
-    print(f"                 presentation_read, presentation_read_slide, presentation_eval,")
-    print(f"                 presentation_update_text, presentation_add_slide,")
-    print(f"                 presentation_delete_slide, presentation_duplicate_slide,")
-    print(f"                 presentation_set_background, presentation_add_shape,")
-    print(f"                 presentation_save")
+    # CRITICAL: Using stderr for all debug messages so stdout remains pure JSON-RPC
+    sys.stderr.write(f"Starting Incognide MCP server...\n")
+    sys.stderr.write(f"Backend URL: {INCOGNIDE_BACKEND_URL}\n")
+    sys.stderr.write(f"Available tools: list_windows, set_target_window, get_target_window,\n")
+    sys.stderr.write(f"                 open_pane, close_pane, focus_pane, list_panes, list_pane_types,\n")
+    sys.stderr.write(f"                 navigate_browser, show_diff, request_approval,\n")
+    sys.stderr.write(f"                 notify, get_browser_info, split_pane, zen_mode, list_actions,\n")
+    sys.stderr.write(f"                 run_terminal, browser_click, browser_type,\n")
+    sys.stderr.write(f"                 get_browser_content, browser_screenshot, browser_eval,\n")
+    sys.stderr.write(f"                 spreadsheet_read, spreadsheet_eval, spreadsheet_update_cell,\n")
+    sys.stderr.write(f"                 spreadsheet_update_cells, spreadsheet_add_row, spreadsheet_delete_row,\n")
+    sys.stderr.write(f"                 spreadsheet_add_column, spreadsheet_delete_column, spreadsheet_sort,\n")
+    sys.stderr.write(f"                 spreadsheet_stats, spreadsheet_save, spreadsheet_export,\n")
+    sys.stderr.write(f"                 spreadsheet_switch_sheet,\n")
+    sys.stderr.write(f"                 document_read, document_eval, document_write,\n")
+    sys.stderr.write(f"                 document_find_replace, document_format, document_insert_table,\n")
+    sys.stderr.write(f"                 document_save, document_stats,\n")
+    sys.stderr.write(f"                 presentation_read, presentation_read_slide, presentation_eval,\n")
+    sys.stderr.write(f"                 presentation_update_text, presentation_add_slide,\n")
+    sys.stderr.write(f"                 presentation_delete_slide, presentation_duplicate_slide,\n")
+    sys.stderr.write(f"                 presentation_set_background, presentation_add_shape,\n")
+    sys.stderr.write(f"                 presentation_save\n")
 
     mcp.run(transport="stdio")

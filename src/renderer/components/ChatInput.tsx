@@ -582,10 +582,10 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         setIsHovering(false);
 
         // Check for sidebar file drag
-        const jsonData = e.dataTransfer.getData('application/json');
-        if (jsonData) {
+        const sidebarData = e.dataTransfer.getData('application/x-sidebar-file') || e.dataTransfer.getData('application/json');
+        if (sidebarData) {
             try {
-                const data = JSON.parse(jsonData);
+                const data = JSON.parse(sidebarData);
                 if (data.type === 'sidebar-file' && data.path) {
                     const fileName = getFileName(data.path) || data.path;
                     const existingNames = new Set(uploadedFiles.map((f: any) => f.name));

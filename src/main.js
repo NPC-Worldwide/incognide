@@ -1386,11 +1386,17 @@ if (!gotTheLock) {
   // Queue for URLs received before the main window is ready
   let pendingDeepLinkUrl = null;
 
+  // Track last active window so URLs route to the right place
+  let lastActiveWindow = null;
+  app.on('browser-window-focus', (_, window) => { lastActiveWindow = window; });
+
   // Helper to open a URL in the app's browser pane
   const openUrlInBrowserPane = (targetUrl) => {
     const windows = BrowserWindow.getAllWindows();
     if (windows.length) {
-      const mainWindow = BrowserWindow.getFocusedWindow() || windows[0];
+      const mainWindow = BrowserWindow.getFocusedWindow() ||
+        (lastActiveWindow && !lastActiveWindow.isDestroyed() ? lastActiveWindow : null) ||
+        windows[0];
       log(`[DEEP-LINK] Opening URL in browser pane: ${targetUrl}`);
       mainWindow.webContents.send('open-url-in-browser', { url: targetUrl });
       if (mainWindow.isMinimized()) mainWindow.restore();
@@ -1494,8 +1500,10 @@ if (!gotTheLock) {
   app.on('second-instance', (event, commandLine, workingDirectory) => {
     const windows = BrowserWindow.getAllWindows();
     if (windows.length) {
-      // Use focused window if available, otherwise fall back to first window
-      const mainWindow = BrowserWindow.getFocusedWindow() || windows[0];
+      // Use focused window, then last active, then first window
+      const mainWindow = BrowserWindow.getFocusedWindow() ||
+        (lastActiveWindow && !lastActiveWindow.isDestroyed() ? lastActiveWindow : null) ||
+        windows[0];
 
       // Parse CLI args from second instance
       const folderArg = commandLine.find(arg => arg.startsWith('--folder='));
@@ -1836,9 +1844,27 @@ function createWindow(cliArgs = {}) {
           { role: 'forceReload' },
           { role: 'toggleDevTools' },
           { type: 'separator' },
-          { role: 'resetZoom' },
-          { role: 'zoomIn' },
-          { role: 'zoomOut' },
+          {
+            label: 'Actual Size',
+            accelerator: 'CmdOrCtrl+0',
+            click: (_, focusedWindow) => {
+              if (focusedWindow) focusedWindow.webContents.send('zoom-reset');
+            }
+          },
+          {
+            label: 'Zoom In',
+            accelerator: 'CmdOrCtrl+=',
+            click: (_, focusedWindow) => {
+              if (focusedWindow) focusedWindow.webContents.send('zoom-in');
+            }
+          },
+          {
+            label: 'Zoom Out',
+            accelerator: 'CmdOrCtrl+-',
+            click: (_, focusedWindow) => {
+              if (focusedWindow) focusedWindow.webContents.send('zoom-out');
+            }
+          },
           { type: 'separator' },
           { role: 'togglefullscreen' }
         ]

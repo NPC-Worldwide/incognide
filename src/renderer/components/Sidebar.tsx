@@ -468,6 +468,7 @@ const Sidebar = (props: any) => {
     const [openBrowsersCollapsed, setOpenBrowsersCollapsed] = useState(() => localStorage.getItem('sidebar_openBrowsersCollapsed') === 'true');
     const [commonSitesCollapsed, setCommonSitesCollapsed] = useState(() => localStorage.getItem('sidebar_commonSitesCollapsed') === 'true');
     const [recentHistoryCollapsed, setRecentHistoryCollapsed] = useState(() => localStorage.getItem('sidebar_recentHistoryCollapsed') === 'true');
+    const [expandedDomains, setExpandedDomains] = useState<Set<string>>(new Set());
 
     // Persist collapse states
     useEffect(() => { localStorage.setItem('sidebar_bookmarksCollapsed', String(bookmarksCollapsed)); }, [bookmarksCollapsed]);
@@ -1658,34 +1659,34 @@ const renderWebsiteList = () => {
                 onDragStart={handleSectionDragStart('websites')}
                 onDragEnd={handleSectionDragEnd}
                 onClick={() => setWebsitesCollapsed(!websitesCollapsed)}
-                className="flex items-stretch w-full py-4 bg-gradient-to-r from-purple-800/40 to-indigo-700/35 cursor-pointer hover:bg-white/5"
+                className="flex items-stretch w-full py-4 bg-gradient-to-r from-purple-800/40 to-indigo-700/35 cursor-pointer theme-hover"
                 data-tutorial="browser-section"
             >
                 {/* Left: chevron, then conditional controls */}
                 <div className="flex items-center pl-1 gap-0">
-                    <ChevronRight size={14} className={`transform transition-transform text-gray-600 dark:text-gray-400 ${websitesCollapsed ? "" : "rotate-90"}`} />
+                    <ChevronRight size={14} className={`transform transition-transform theme-text-muted dark:text-gray-400 ${websitesCollapsed ? "" : "rotate-90"}`} />
                     {!websitesCollapsed && (
                         <>
                             <button
                                 onClick={(e) => { e.stopPropagation(); loadWebsiteHistory(); }}
-                                className="p-1.5 hover:bg-white/10 rounded transition-all text-gray-400 hover:text-purple-400"
+                                className="p-1.5 hover:bg-purple-500/20 rounded transition-all text-gray-400 hover:text-purple-400"
                                 title="Refresh"
                             >
-                                <RefreshCw size={12} />
+                                <RefreshCw size={11} />
                             </button>
                             <button
                                 onClick={(e) => { e.stopPropagation(); setShowWebsitesSettings(!showWebsitesSettings); }}
-                                className={`p-1.5 hover:bg-white/10 rounded transition-all ${showWebsitesSettings ? 'text-purple-400' : 'text-gray-400 hover:text-purple-400'}`}
+                                className={`p-1.5 hover:bg-purple-500/20 rounded transition-all ${showWebsitesSettings ? 'text-purple-400 bg-purple-500/20' : 'text-gray-400 hover:text-purple-400'}`}
                                 title="Settings"
                             >
-                                <Settings size={12} />
+                                <Settings size={11} />
                             </button>
                             <button
                                 onClick={(e) => { e.stopPropagation(); createBrowserGraphPane?.(); }}
-                                className="p-1.5 hover:bg-white/10 rounded transition-all text-gray-400 hover:text-cyan-400"
+                                className="p-1.5 hover:bg-cyan-500/20 rounded transition-all text-gray-400 hover:text-cyan-400"
                                 title="Browser History Graph"
                             >
-                                <Network size={12} />
+                                <Network size={11} />
                             </button>
                         </>
                     )}
@@ -1693,7 +1694,7 @@ const renderWebsiteList = () => {
                 {/* Right: main icon - full height clickable area */}
                 <button
                     onClick={(e) => { e.stopPropagation(); createNewBrowser?.(); setWebsitesCollapsed(false); }}
-                    className="ml-auto flex items-center justify-center w-1/4 py-4 -my-4 hover:bg-white/10 transition-all"
+                    className="ml-auto flex items-center justify-center w-1/4 py-4 -my-4 hover:bg-purple-500/20 transition-all"
                     title="New Browser"
                 >
                     <Globe size={12} className="text-purple-300" />
@@ -1703,7 +1704,7 @@ const renderWebsiteList = () => {
             {showWebsitesSettings && (
                 <div className="p-2 bg-purple-900/20 border-y border-purple-500/30 text-[10px] space-y-2">
                     <div className="flex items-center justify-between">
-                        <label className="text-gray-300">Group by domain</label>
+                        <label className="theme-text-primary">Group by domain</label>
                         <input
                             type="checkbox"
                             checked={websitesSettings.groupByDomain}
@@ -1717,7 +1718,7 @@ const renderWebsiteList = () => {
                             type="number"
                             value={websitesSettings.timeRangeDays}
                             onChange={(e) => setWebsitesSettings(s => ({ ...s, timeRangeDays: parseInt(e.target.value) || 0 }))}
-                            className="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-gray-200"
+                            className="w-full theme-bg-tertiary theme-border border rounded px-2 py-1 theme-text-primary"
                             min="0"
                         />
                     </div>
@@ -1727,7 +1728,7 @@ const renderWebsiteList = () => {
                             type="number"
                             value={websitesSettings.maxHistory}
                             onChange={(e) => setWebsitesSettings(s => ({ ...s, maxHistory: parseInt(e.target.value) || 100 }))}
-                            className="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-gray-200"
+                            className="w-full theme-bg-tertiary theme-border border rounded px-2 py-1 theme-text-primary"
                             min="10"
                         />
                     </div>
@@ -1738,13 +1739,13 @@ const renderWebsiteList = () => {
                             value={websitesSettings.excludedDomains}
                             onChange={(e) => setWebsitesSettings(s => ({ ...s, excludedDomains: e.target.value }))}
                             placeholder="facebook.com,twitter.com"
-                            className="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-gray-200 placeholder-gray-600"
+                            className="w-full theme-bg-tertiary theme-border border rounded px-2 py-1 theme-text-primary placeholder:opacity-50"
                         />
                     </div>
                 </div>
             )}
             {!websitesCollapsed && allWebsites.length > 0 && (
-                <div className="px-1 py-1 bg-black/20 border-b border-white/5">
+                <div className="px-1 py-1 theme-bg-secondary border-b theme-border">
                     <div className="relative">
                         <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
                         <input
@@ -1752,10 +1753,10 @@ const renderWebsiteList = () => {
                             value={websiteSearch}
                             onChange={(e) => setWebsiteSearch(e.target.value)}
                             placeholder="Search websites..."
-                            className="w-full bg-white/5 border border-white/10 rounded pl-7 pr-2 py-1 text-[11px] text-gray-300 placeholder-gray-600 focus:outline-none focus:border-purple-500/50"
+                            className="w-full theme-bg-tertiary theme-border border rounded pl-7 pr-2 py-1 text-[11px] theme-text-primary placeholder:opacity-50 focus:outline-none focus:border-purple-500/50"
                         />
                         {websiteSearch && (
-                            <button onClick={() => setWebsiteSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+                            <button onClick={() => setWebsiteSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:theme-text-primary">
                                 <X size={10} />
                             </button>
                         )}
@@ -1774,12 +1775,12 @@ const renderWebsiteList = () => {
             {header}
 
             {!websitesCollapsed && (
-                <div className="bg-black/10 flex-1 min-h-0 overflow-y-auto">
+                <div className="theme-bg-secondary flex-1 min-h-0 overflow-y-auto">
                     {/* Currently Open Browsers */}
                     {openBrowsers.length > 0 && (
-                        <div className="border-b border-white/5">
+                        <div className="border-b theme-border">
                             <div
-                                className="text-[10px] text-gray-500 px-2 py-1 font-medium flex items-center justify-between cursor-pointer hover:bg-white/5"
+                                className="text-[10px] text-gray-500 px-2 py-1 font-medium flex items-center justify-between cursor-pointer theme-hover"
                                 onClick={() => setOpenBrowsersCollapsed(!openBrowsersCollapsed)}
                             >
                                 <span className="flex items-center gap-1"><Globe size={10} className="text-blue-400" /> Open ({openBrowsers.length})</span>
@@ -1802,13 +1803,13 @@ const renderWebsiteList = () => {
                                     className={`flex items-center gap-2 px-2 py-1.5 w-full text-left transition-all group ${
                                         activeContentPaneId === browser.paneId
                                             ? 'bg-teal-500/20 border-l-2 border-teal-500'
-                                            : 'hover:bg-white/5 border-l-2 border-transparent'
+                                            : 'theme-hover border-l-2 border-transparent'
                                     }`}
                                 >
                                     <Globe size={13} className="text-blue-400 flex-shrink-0" />
                                     <div className="flex flex-col overflow-hidden min-w-0 flex-1">
-                                        <span className="text-[11px] truncate text-gray-200">{browser.title}</span>
-                                        <span className="text-[9px] text-gray-600 truncate">{browser.url}</span>
+                                        <span className="text-[11px] truncate theme-text-primary">{browser.title}</span>
+                                        <span className="text-[9px] theme-text-muted truncate">{browser.url}</span>
                                     </div>
                                 </button>
                             ))}
@@ -1817,16 +1818,16 @@ const renderWebsiteList = () => {
 
                     {/* Bookmarks */}
                     {bookmarks.length > 0 && (
-                        <div className="border-b border-white/5">
+                        <div className="border-b theme-border">
                             <div
-                                className="text-[10px] text-gray-500 px-2 py-1.5 font-medium flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors"
+                                className="text-[10px] text-gray-500 px-2 py-1.5 font-medium flex items-center justify-between cursor-pointer theme-hover transition-colors"
                                 onClick={() => setBookmarksCollapsed(!bookmarksCollapsed)}
                             >
                                 <span className="flex items-center gap-1.5">
                                     <Star size={10} className="text-yellow-400" />
                                     Bookmarks ({bookmarks.length})
                                 </span>
-                                <ChevronRight size={10} className={`transform transition-transform text-gray-600 ${bookmarksCollapsed ? '' : 'rotate-90'}`} />
+                                <ChevronRight size={10} className={`transform transition-transform theme-text-muted ${bookmarksCollapsed ? '' : 'rotate-90'}`} />
                             </div>
                             {!bookmarksCollapsed && bookmarks.map((bookmark, idx) => (
                                 <button
@@ -1842,77 +1843,133 @@ const renderWebsiteList = () => {
                                             title: bookmark.title
                                         });
                                     }}
-                                    className="flex items-center gap-2 px-2 py-1.5 w-full text-left hover:bg-white/5 transition-all group border-l-2 border-transparent hover:border-yellow-500/50"
+                                    className="flex items-center gap-2 px-2 py-1.5 w-full text-left theme-hover transition-all group border-l-2 border-transparent hover:border-yellow-500/50"
                                 >
                                     <Star size={12} className="text-yellow-400 flex-shrink-0" />
                                     <div className="flex flex-col overflow-hidden min-w-0 flex-1">
-                                        <span className="text-[11px] truncate text-gray-200">{bookmark.title}</span>
-                                        <span className="text-[9px] text-gray-600 truncate">{bookmark.url}</span>
+                                        <span className="text-[11px] truncate theme-text-primary">{bookmark.title}</span>
+                                        <span className="text-[9px] theme-text-muted truncate">{bookmark.url}</span>
                                     </div>
                                 </button>
                             ))}
                         </div>
                     )}
 
-                    {/* Common Sites */}
+                    {/* Frequent Sites — grouped by root domain */}
                     {commonSites.length > 0 && (
-                        <div className="border-b border-white/5">
+                        <div className="border-b theme-border">
                             <div
-                                className="text-[10px] text-gray-500 px-2 py-1.5 font-medium flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors"
+                                className="text-[10px] text-gray-500 px-2 py-1.5 font-medium flex items-center justify-between cursor-pointer theme-hover transition-colors"
                                 onClick={() => setCommonSitesCollapsed(!commonSitesCollapsed)}
                             >
                                 <span className="flex items-center gap-1.5">
                                     <Globe size={10} className="text-green-400" />
                                     Frequent ({commonSites.length})
                                 </span>
-                                <ChevronRight size={10} className={`transform transition-transform text-gray-600 ${commonSitesCollapsed ? '' : 'rotate-90'}`} />
+                                <ChevronRight size={10} className={`transform transition-transform theme-text-muted ${commonSitesCollapsed ? '' : 'rotate-90'}`} />
                             </div>
-                            {!commonSitesCollapsed && commonSites.map(site => (
-                                <button
-                                    key={site.domain}
-                                    draggable="true"
-                                    onDragStart={(e) => {
-                                        e.dataTransfer.effectAllowed = 'copyMove';
-                                        handleGlobalDragStart(e, {
-                                            type: 'browser',
-                                            id: `browser_${generateId()}`,
-                                            url: `https://${site.domain}`
-                                        });
-                                    }}
-                                    onDragEnd={handleGlobalDragEnd}
-                                    onClick={() => createNewBrowser(`https://${site.domain}`)}
-                                    onContextMenu={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        setWebsiteContextMenu({
-                                            x: e.clientX,
-                                            y: e.clientY,
-                                            url: `https://${site.domain}`,
-                                            title: site.domain
-                                        });
-                                    }}
-                                    className="flex items-center gap-2 px-2 py-1.5 w-full text-left hover:bg-white/5 transition-all group border-l-2 border-transparent hover:border-green-500/50"
-                                >
-                                    <img
-                                        src={site.favicon}
-                                        alt=""
-                                        className="w-3.5 h-3.5 flex-shrink-0 rounded"
-                                        onError={(e) => {
-                                            e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="gray" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>';
-                                        }}
-                                    />
-                                    <div className="flex flex-col overflow-hidden min-w-0 flex-1">
-                                        <span className="text-[11px] truncate text-gray-200">{site.domain}</span>
-                                        <span className="text-[9px] text-gray-600">
-                                            {site.count} visits
-                                        </span>
+                            {!commonSitesCollapsed && commonSites.map((group: any) => {
+                                const isExpanded = expandedDomains.has(group.rootDomain);
+                                const hasMultipleSubdomains = group.subdomains && group.subdomains.length > 1;
+                                return (
+                                    <div key={group.rootDomain}>
+                                        {/* Root domain row */}
+                                        <button
+                                            draggable="true"
+                                            onDragStart={(e) => {
+                                                e.dataTransfer.effectAllowed = 'copyMove';
+                                                handleGlobalDragStart(e, {
+                                                    type: 'browser',
+                                                    id: `browser_${generateId()}`,
+                                                    url: `https://${group.rootDomain}`
+                                                });
+                                            }}
+                                            onDragEnd={handleGlobalDragEnd}
+                                            onClick={() => {
+                                                if (hasMultipleSubdomains) {
+                                                    setExpandedDomains(prev => {
+                                                        const next = new Set(prev);
+                                                        if (next.has(group.rootDomain)) next.delete(group.rootDomain);
+                                                        else next.add(group.rootDomain);
+                                                        return next;
+                                                    });
+                                                } else {
+                                                    const hostname = group.subdomains?.[0]?.hostname || group.rootDomain;
+                                                    createNewBrowser(`https://${hostname}`);
+                                                }
+                                            }}
+                                            onContextMenu={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                setWebsiteContextMenu({
+                                                    x: e.clientX,
+                                                    y: e.clientY,
+                                                    url: `https://${group.rootDomain}`,
+                                                    title: group.rootDomain
+                                                });
+                                            }}
+                                            className="flex items-center gap-2 px-2 py-1.5 w-full text-left theme-hover transition-all group border-l-2 border-transparent hover:border-green-500/50"
+                                        >
+                                            {hasMultipleSubdomains && (
+                                                <ChevronRight size={8} className={`text-gray-600 flex-shrink-0 transform transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                            )}
+                                            <img
+                                                src={group.favicon}
+                                                alt=""
+                                                className="w-3.5 h-3.5 flex-shrink-0 rounded"
+                                                onError={(e: any) => {
+                                                    e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="gray" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>';
+                                                }}
+                                            />
+                                            <div className="flex flex-col overflow-hidden min-w-0 flex-1">
+                                                <span className="text-[11px] truncate theme-text-primary">{group.rootDomain}</span>
+                                                <span className="text-[9px] text-gray-600">
+                                                    {group.totalCount} visit{group.totalCount !== 1 ? 's' : ''}{hasMultipleSubdomains ? ` · ${group.subdomains.length} sites` : ''}
+                                                </span>
+                                            </div>
+                                        </button>
+                                        {/* Subdomain entries */}
+                                        {isExpanded && group.subdomains?.map((sub: any) => (
+                                            <button
+                                                key={sub.hostname}
+                                                draggable="true"
+                                                onDragStart={(e) => {
+                                                    e.dataTransfer.effectAllowed = 'copyMove';
+                                                    handleGlobalDragStart(e, {
+                                                        type: 'browser',
+                                                        id: `browser_${generateId()}`,
+                                                        url: `https://${sub.hostname}`
+                                                    });
+                                                }}
+                                                onDragEnd={handleGlobalDragEnd}
+                                                onClick={() => createNewBrowser(`https://${sub.hostname}`)}
+                                                onContextMenu={(e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    setWebsiteContextMenu({
+                                                        x: e.clientX,
+                                                        y: e.clientY,
+                                                        url: `https://${sub.hostname}`,
+                                                        title: sub.hostname
+                                                    });
+                                                }}
+                                                className="flex items-center gap-2 pl-6 pr-2 py-1 w-full text-left theme-hover transition-all group border-l-2 border-transparent hover:border-green-500/30"
+                                            >
+                                                <img
+                                                    src={sub.favicon}
+                                                    alt=""
+                                                    className="w-3 h-3 flex-shrink-0 rounded"
+                                                    onError={(e: any) => {
+                                                        e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="gray" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>';
+                                                    }}
+                                                />
+                                                <span className="text-[10px] truncate text-gray-400 flex-1 min-w-0">{sub.hostname}</span>
+                                                <span className="text-[9px] text-gray-600 flex-shrink-0">{sub.count}</span>
+                                            </button>
+                                        ))}
                                     </div>
-                                    <Plus
-                                        size={10}
-                                        className="text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity hover:text-green-400"
-                                    />
-                                </button>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
 
@@ -1920,17 +1977,17 @@ const renderWebsiteList = () => {
                     {websiteHistory.length > 0 && (
                         <div>
                             <div
-                                className="text-[10px] text-gray-500 px-2 py-1.5 font-medium flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors"
+                                className="text-[10px] text-gray-500 px-2 py-1.5 font-medium flex items-center justify-between cursor-pointer theme-hover transition-colors"
                                 onClick={() => setRecentHistoryCollapsed(!recentHistoryCollapsed)}
                             >
                                 <span className="flex items-center gap-1.5">
                                     <Clock size={10} className="text-cyan-400" />
                                     History ({websiteHistory.length})
                                 </span>
-                                <ChevronRight size={10} className={`transform transition-transform text-gray-600 ${recentHistoryCollapsed ? '' : 'rotate-90'}`} />
+                                <ChevronRight size={10} className={`transform transition-transform theme-text-muted ${recentHistoryCollapsed ? '' : 'rotate-90'}`} />
                             </div>
-                            {!recentHistoryCollapsed && <div className="max-h-48 overflow-y-auto">
-                                {websiteHistory.slice(0, 20).map((item, idx) => (
+                            {!recentHistoryCollapsed && <div>
+                                {websiteHistory.slice(0, 30).map((item, idx) => (
                                     <button
                                         key={`${item.url}-${idx}`}
                                         draggable="true"
@@ -1954,7 +2011,7 @@ const renderWebsiteList = () => {
                                                 title: item.title || new URL(item.url).hostname
                                             });
                                         }}
-                                        className="flex items-center gap-2 px-2 py-1.5 w-full text-left hover:bg-white/5 transition-all group border-l-2 border-transparent hover:border-cyan-500/50"
+                                        className="flex items-center gap-2 px-2 py-1.5 w-full text-left theme-hover transition-all group border-l-2 border-transparent hover:border-cyan-500/50"
                                     >
                                         <Globe size={11} className="text-gray-500 flex-shrink-0" />
                                         <div className="flex flex-col overflow-hidden min-w-0 flex-1">
@@ -2040,7 +2097,7 @@ const renderWebsiteList = () => {
                         <MemoryIcon size={12} className="text-purple-400 mr-1" />
                         <button
                             onClick={(e) => { e.stopPropagation(); loadMemories(); }}
-                            className="p-1.5 hover:bg-white/10 rounded transition-all text-gray-400 hover:text-purple-400"
+                            className="p-1.5 hover:bg-purple-500/20 rounded transition-all text-gray-400 hover:text-purple-400"
                             title="Refresh memories"
                         >
                             <RefreshCw size={12} />
@@ -2049,16 +2106,16 @@ const renderWebsiteList = () => {
                     {/* Right side: Clickable dropdown area */}
                     <div
                         onClick={() => setMemoriesCollapsed(!memoriesCollapsed)}
-                        className="flex-1 flex items-center justify-end gap-1.5 px-2 py-4 cursor-pointer hover:bg-white/5"
+                        className="flex-1 flex items-center justify-end gap-1.5 px-2 py-4 cursor-pointer theme-hover"
                     >
-                        <ChevronRight size={14} className={`transform transition-transform text-gray-600 dark:text-gray-400 ${memoriesCollapsed ? "" : "rotate-90"}`} />
+                        <ChevronRight size={14} className={`transform transition-transform theme-text-muted dark:text-gray-400 ${memoriesCollapsed ? "" : "rotate-90"}`} />
                     </div>
                 </div>
 
                 {!memoriesCollapsed && (
                     <>
                         {/* Search */}
-                        <div className="px-1 py-1 bg-black/20 border-b border-white/5">
+                        <div className="px-1 py-1 theme-bg-secondary border-b theme-border">
                             <div className="relative">
                                 <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
                                 <input
@@ -2066,10 +2123,10 @@ const renderWebsiteList = () => {
                                     value={memorySearch}
                                     onChange={(e) => setMemorySearch(e.target.value)}
                                     placeholder="Search memories..."
-                                    className="w-full bg-white/5 border border-white/10 rounded pl-7 pr-2 py-1 text-[11px] text-gray-300 placeholder-gray-600 focus:outline-none focus:border-purple-500/50"
+                                    className="w-full theme-bg-tertiary theme-border border rounded pl-7 pr-2 py-1 text-[11px] theme-text-primary placeholder:opacity-50 focus:outline-none focus:border-purple-500/50"
                                 />
                                 {memorySearch && (
-                                    <button onClick={() => setMemorySearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+                                    <button onClick={() => setMemorySearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:theme-text-primary">
                                         <X size={10} />
                                     </button>
                                 )}
@@ -2077,7 +2134,7 @@ const renderWebsiteList = () => {
                         </div>
 
                         {/* Memory list */}
-                        <div className="bg-black/10 max-h-[200px] overflow-y-auto">
+                        <div className="theme-bg-secondary max-h-[200px] overflow-y-auto">
                             {loadingMemories ? (
                                 <div className="px-3 py-3 text-[11px] text-gray-500 text-center">Loading...</div>
                             ) : filteredMemories.length === 0 ? (
@@ -2088,13 +2145,13 @@ const renderWebsiteList = () => {
                                 filteredMemories.map((memory, index) => (
                                     <div
                                         key={memory.id || index}
-                                        className="px-2 py-1.5 hover:bg-white/5 border-l-2 border-transparent hover:border-purple-500/50 cursor-pointer"
+                                        className="px-2 py-1.5 theme-hover border-l-2 border-transparent hover:border-purple-500/50 cursor-pointer"
                                         onClick={() => {
                                             // Could open memory in a viewer pane
                                             console.log('Memory clicked:', memory);
                                         }}
                                     >
-                                        <div className="text-[11px] text-gray-200 truncate">{memory.content || memory.summary || 'Memory'}</div>
+                                        <div className="text-[11px] theme-text-primary truncate">{memory.content || memory.summary || 'Memory'}</div>
                                         <div className="text-[9px] text-gray-500 flex items-center gap-1 mt-0.5">
                                             <span className="px-1 py-0.5 bg-purple-500/20 rounded text-purple-400">{memory.type || 'general'}</span>
                                             {memory.timestamp && <span>{new Date(memory.timestamp).toLocaleDateString()}</span>}
@@ -2126,7 +2183,7 @@ const renderWebsiteList = () => {
                         <Network size={12} className="text-cyan-400 mr-1" />
                         <button
                             onClick={(e) => { e.stopPropagation(); loadKnowledgeEntities(); }}
-                            className="p-1.5 hover:bg-white/10 rounded transition-all text-gray-400 hover:text-cyan-400"
+                            className="p-1.5 hover:bg-cyan-500/20 rounded transition-all text-gray-400 hover:text-cyan-400"
                             title="Refresh knowledge graph"
                         >
                             <RefreshCw size={12} />
@@ -2135,16 +2192,16 @@ const renderWebsiteList = () => {
                     {/* Right side: Clickable dropdown area */}
                     <div
                         onClick={() => setKnowledgeCollapsed(!knowledgeCollapsed)}
-                        className="flex-1 flex items-center justify-end gap-1.5 px-2 py-4 cursor-pointer hover:bg-white/5"
+                        className="flex-1 flex items-center justify-end gap-1.5 px-2 py-4 cursor-pointer theme-hover"
                     >
-                        <ChevronRight size={14} className={`transform transition-transform text-gray-600 dark:text-gray-400 ${knowledgeCollapsed ? "" : "rotate-90"}`} />
+                        <ChevronRight size={14} className={`transform transition-transform theme-text-muted dark:text-gray-400 ${knowledgeCollapsed ? "" : "rotate-90"}`} />
                     </div>
                 </div>
 
                 {!knowledgeCollapsed && (
                     <>
                         {/* Search */}
-                        <div className="px-1 py-1 bg-black/20 border-b border-white/5">
+                        <div className="px-1 py-1 theme-bg-secondary border-b theme-border">
                             <div className="relative">
                                 <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
                                 <input
@@ -2152,10 +2209,10 @@ const renderWebsiteList = () => {
                                     value={knowledgeSearch}
                                     onChange={(e) => setKnowledgeSearch(e.target.value)}
                                     placeholder="Search entities..."
-                                    className="w-full bg-white/5 border border-white/10 rounded pl-7 pr-2 py-1 text-[11px] text-gray-300 placeholder-gray-600 focus:outline-none focus:border-cyan-500/50"
+                                    className="w-full theme-bg-tertiary theme-border border rounded pl-7 pr-2 py-1 text-[11px] theme-text-primary placeholder:opacity-50 focus:outline-none focus:border-cyan-500/50"
                                 />
                                 {knowledgeSearch && (
-                                    <button onClick={() => setKnowledgeSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+                                    <button onClick={() => setKnowledgeSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:theme-text-primary">
                                         <X size={10} />
                                     </button>
                                 )}
@@ -2163,7 +2220,7 @@ const renderWebsiteList = () => {
                         </div>
 
                         {/* Entity list */}
-                        <div className="bg-black/10 max-h-[200px] overflow-y-auto">
+                        <div className="theme-bg-secondary max-h-[200px] overflow-y-auto">
                             {loadingKnowledge ? (
                                 <div className="px-3 py-3 text-[11px] text-gray-500 text-center">Loading...</div>
                             ) : filteredEntities.length === 0 ? (
@@ -2174,13 +2231,13 @@ const renderWebsiteList = () => {
                                 filteredEntities.map((entity, index) => (
                                     <div
                                         key={entity.id || index}
-                                        className="px-2 py-1.5 hover:bg-white/5 border-l-2 border-transparent hover:border-cyan-500/50 cursor-pointer"
+                                        className="px-2 py-1.5 theme-hover border-l-2 border-transparent hover:border-cyan-500/50 cursor-pointer"
                                         onClick={() => {
                                             // Could open entity in knowledge graph viewer
                                             createGraphViewerPane?.();
                                         }}
                                     >
-                                        <div className="text-[11px] text-gray-200 truncate flex items-center gap-1">
+                                        <div className="text-[11px] theme-text-primary truncate flex items-center gap-1">
                                             <Share2 size={10} className="text-cyan-400" />
                                             {entity.name || 'Entity'}
                                         </div>
@@ -2266,12 +2323,12 @@ const renderWebsiteList = () => {
                     <div className="flex items-center pl-1 gap-0">
                         <ChevronRight
                             size={14}
-                            className={`transform transition-transform text-gray-600 dark:text-gray-400 ${gitPanelCollapsed ? "" : "rotate-90"}`}
+                            className={`transform transition-transform theme-text-muted dark:text-gray-400 ${gitPanelCollapsed ? "" : "rotate-90"}`}
                         />
                         {!gitPanelCollapsed && (
                             <button
                                 onClick={(e) => { e.stopPropagation(); refreshGitStatus?.(); }}
-                                className="p-1.5 hover:bg-white/10 rounded transition-all text-gray-400 hover:text-blue-400"
+                                className="p-1.5 hover:bg-blue-500/20 rounded transition-all text-gray-400 hover:text-blue-400"
                                 title="Refresh git status"
                             >
                                 <RefreshCw size={12} />
@@ -2292,7 +2349,7 @@ const renderWebsiteList = () => {
                                     console.error('[Sidebar] createGitPane is not defined!');
                                 }
                             }}
-                            className="p-1.5 hover:bg-white/10 rounded transition-all text-gray-400 hover:text-blue-400"
+                            className="p-1.5 hover:bg-blue-500/20 rounded transition-all text-gray-400 hover:text-blue-400"
                             title="Open full Git pane"
                         >
                             <ExternalLink size={12} />
@@ -2737,17 +2794,125 @@ const renderWebsiteList = () => {
     const { x, y, path, type, isInaccessible } = sidebarItemContextMenuPos;
 
     const selectedFilePaths = Array.from(selectedFiles);
+    const fileName = getFileName(path);
+    const ext = fileName?.includes('.') ? fileName.split('.').pop()?.toLowerCase() : '';
+
+    // Helper to send a command to the first open terminal (or create one)
+    const runInTerminal = async (command: string) => {
+        // Find existing terminal
+        const terminalPaneId = Object.keys(contentDataRef.current).find(
+            id => contentDataRef.current[id]?.contentType === 'terminal'
+        );
+        if (terminalPaneId) {
+            const sessionId = contentDataRef.current[terminalPaneId]?.contentId;
+            if (sessionId) {
+                (window as any).api?.writeToTerminal?.({ id: sessionId, data: command + '\n' });
+            }
+        } else {
+            // Create a new terminal, then send command after a short delay
+            createNewTerminal?.('system');
+            setTimeout(() => {
+                const newTermPaneId = Object.keys(contentDataRef.current).find(
+                    id => contentDataRef.current[id]?.contentType === 'terminal'
+                );
+                if (newTermPaneId) {
+                    const sessionId = contentDataRef.current[newTermPaneId]?.contentId;
+                    if (sessionId) {
+                        (window as any).api?.writeToTerminal?.({ id: sessionId, data: command + '\n' });
+                    }
+                }
+            }, 1500);
+        }
+        setSidebarItemContextMenuPos(null);
+    };
+
+    // Determine file-type-specific actions
+    const getFileTypeActions = () => {
+        if (type !== 'file' || !ext) return null;
+        const actions: { label: string; icon: any; onClick: () => void }[] = [];
+
+        // Runnable scripts
+        if (ext === 'py') {
+            actions.push({ label: 'Run (python3)', icon: Play, onClick: () => runInTerminal(`python3 "${path}"`) });
+        } else if (['js', 'mjs'].includes(ext)) {
+            actions.push({ label: 'Run (node)', icon: Play, onClick: () => runInTerminal(`node "${path}"`) });
+        } else if (ext === 'ts') {
+            actions.push({ label: 'Run (npx tsx)', icon: Play, onClick: () => runInTerminal(`npx tsx "${path}"`) });
+        } else if (['sh', 'bash'].includes(ext)) {
+            actions.push({ label: 'Run (bash)', icon: Play, onClick: () => runInTerminal(`bash "${path}"`) });
+        } else if (ext === 'rb') {
+            actions.push({ label: 'Run (ruby)', icon: Play, onClick: () => runInTerminal(`ruby "${path}"`) });
+        }
+
+        // Compilable
+        if (ext === 'tex') {
+            actions.push({ label: 'Compile (pdflatex)', icon: Zap, onClick: () => runInTerminal(`pdflatex -output-directory="${path.substring(0, path.lastIndexOf('/'))}" "${path}"`) });
+        } else if (ext === 'c') {
+            actions.push({ label: 'Compile & Run (gcc)', icon: Zap, onClick: () => runInTerminal(`gcc -o /tmp/_out "${path}" && /tmp/_out`) });
+        } else if (['cpp', 'cc', 'cxx'].includes(ext)) {
+            actions.push({ label: 'Compile & Run (g++)', icon: Zap, onClick: () => runInTerminal(`g++ -o /tmp/_out "${path}" && /tmp/_out`) });
+        } else if (ext === 'rs') {
+            actions.push({ label: 'Run (cargo run)', icon: Zap, onClick: () => runInTerminal(`cd "${path.substring(0, path.lastIndexOf('/'))}" && cargo run`) });
+        } else if (ext === 'go') {
+            actions.push({ label: 'Run (go run)', icon: Play, onClick: () => runInTerminal(`go run "${path}"`) });
+        } else if (ext === 'java') {
+            actions.push({ label: 'Run (java)', icon: Play, onClick: () => runInTerminal(`java "${path}"`) });
+        }
+
+        // Open as specific content type
+        if (ext === 'ipynb') {
+            actions.push({ label: 'Open as Notebook', icon: BookOpen, onClick: () => { handleFileClick(path); setSidebarItemContextMenuPos(null); } });
+        }
+        if (['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico', 'tiff'].includes(ext)) {
+            actions.push({ label: 'Open in Photo Viewer', icon: Image, onClick: () => { handleFileClick(path); setSidebarItemContextMenuPos(null); } });
+        }
+        if (ext === 'pdf') {
+            actions.push({ label: 'Open in PDF Viewer', icon: FileText, onClick: () => { handleFileClick(path); setSidebarItemContextMenuPos(null); } });
+        }
+        if (['csv', 'xlsx', 'xls', 'tsv'].includes(ext)) {
+            actions.push({ label: 'Open in Data Viewer', icon: Table, onClick: () => { handleFileClick(path); setSidebarItemContextMenuPos(null); } });
+        }
+        if (ext === 'npc') {
+            actions.push({ label: 'Edit NPC', icon: Bot, onClick: () => { handleFileClick(path); setSidebarItemContextMenuPos(null); } });
+        }
+        if (ext === 'jinx') {
+            actions.push({ label: 'Edit Jinx', icon: Zap, onClick: () => { handleFileClick(path); setSidebarItemContextMenuPos(null); } });
+        }
+        if (['md', 'html', 'htm'].includes(ext)) {
+            actions.push({ label: 'Preview', icon: Eye, onClick: () => { handleFileClick(path); setSidebarItemContextMenuPos(null); } });
+        }
+
+        return actions.length > 0 ? actions : null;
+    };
+
+    const fileTypeActions = type === 'file' ? getFileTypeActions() : null;
+
+    // Menu button styling
+    const menuBtnClass = "flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-xs";
 
     return (
         <>
             <div
                 className="fixed inset-0 z-40"
                 onClick={() => setSidebarItemContextMenuPos(null)}
+                onContextMenu={(e) => {
+                    // Allow right-click to pass through — close this menu so the new one can open
+                    setSidebarItemContextMenuPos(null);
+                }}
+                onKeyDown={(e) => {
+                    if (e.key === 'Escape') setSidebarItemContextMenuPos(null);
+                }}
+                tabIndex={-1}
+                ref={(el) => el?.focus()}
             />
             <div
-                className="fixed theme-bg-secondary theme-border border rounded shadow-lg py-1 z-50 text-sm"
-                style={{ top: y, left: x }}
+                className="fixed theme-bg-secondary theme-border border rounded shadow-lg py-1 z-50 text-sm max-h-[80vh] overflow-y-auto"
+                style={{ top: y, left: x, minWidth: 220 }}
+                onKeyDown={(e) => {
+                    if (e.key === 'Escape') setSidebarItemContextMenuPos(null);
+                }}
             >
+                {/* ===== FILE-SPECIFIC: Chat actions ===== */}
                 {type === 'file' && !isInaccessible && (
                     <>
                         <button
@@ -2755,9 +2920,9 @@ const renderWebsiteList = () => {
                                 handleApplyPromptToFilesInInput('custom', `Here is the content of the file(s):`);
                                 setSidebarItemContextMenuPos(null);
                             }}
-                            className="flex items-center gap-2 px-4 py-3 theme-hover w-full text-left theme-text-primary"
+                            className={menuBtnClass}
                         >
-                            <MessageSquare size={16} />
+                            <MessageSquare size={14} />
                             <span>Add Content to Chat ({selectedFilePaths.length})</span>
                         </button>
                         <button
@@ -2766,22 +2931,40 @@ const renderWebsiteList = () => {
                                 setInput(prev => `${prev}${prev ? ' ' : ''}${fileNames}`);
                                 setSidebarItemContextMenuPos(null);
                             }}
-                            className="flex items-center gap-2 px-4 py-3 theme-hover w-full text-left theme-text-primary"
+                            className={menuBtnClass}
                         >
-                            <File size={16} />
+                            <File size={14} />
                             <span>Add Filename(s) to Chat</span>
                         </button>
                         <div className="border-t theme-border my-1"></div>
                     </>
                 )}
 
+                {/* ===== FILE-TYPE-SPECIFIC ACTIONS ===== */}
+                {fileTypeActions && (
+                    <>
+                        {fileTypeActions.map((action, i) => (
+                            <button
+                                key={i}
+                                onClick={action.onClick}
+                                className={menuBtnClass}
+                            >
+                                <action.icon size={14} />
+                                <span>{action.label}</span>
+                            </button>
+                        ))}
+                        <div className="border-t theme-border my-1"></div>
+                    </>
+                )}
+
+                {/* ===== DIRECTORY-SPECIFIC ACTIONS ===== */}
                 {type === 'directory' && !isInaccessible && (
                     <>
                         <button
                             onClick={() => handleOpenFolderAsWorkspace(path)}
-                            className="flex items-center gap-2 px-4 py-3 theme-hover w-full text-left theme-text-primary"
+                            className={menuBtnClass}
                         >
-                            <Folder size={16} />
+                            <Folder size={14} />
                             <span>Open as Workspace</span>
                         </button>
                         <button
@@ -2791,31 +2974,119 @@ const renderWebsiteList = () => {
                                     const newPath = `${path}/${newFolderName.trim()}`;
                                     try {
                                         await (window as any).api?.createDirectory?.(newPath);
-                                        refreshFolderStructure?.();
+                                        await refreshDirectoryStructureOnly();
                                     } catch (err) {
                                         console.error('Failed to create folder:', err);
                                     }
                                 }
                                 setSidebarItemContextMenuPos(null);
                             }}
-                            className="flex items-center gap-2 px-4 py-3 theme-hover w-full text-left theme-text-primary"
+                            className={menuBtnClass}
                         >
-                            <FolderPlus size={16} />
+                            <FolderPlus size={14} />
                             <span>New Folder Here</span>
+                        </button>
+                        <button
+                            onClick={async () => {
+                                const newFileName = prompt('New file name:');
+                                if (newFileName && newFileName.trim()) {
+                                    const newFilePath = `${path}/${newFileName.trim()}`;
+                                    try {
+                                        await (window as any).api?.writeFileContent?.(newFilePath, '');
+                                        await refreshDirectoryStructureOnly();
+                                    } catch (err) {
+                                        console.error('Failed to create file:', err);
+                                    }
+                                }
+                                setSidebarItemContextMenuPos(null);
+                            }}
+                            className={menuBtnClass}
+                        >
+                            <FileText size={14} />
+                            <span>New File Here</span>
+                        </button>
+                        <button
+                            onClick={() => {
+                                createNewTerminal?.('system');
+                                // Set cwd by sending cd command after terminal opens
+                                setTimeout(() => {
+                                    const termPaneId = Object.keys(contentDataRef.current).find(
+                                        id => contentDataRef.current[id]?.contentType === 'terminal'
+                                    );
+                                    if (termPaneId) {
+                                        const sessionId = contentDataRef.current[termPaneId]?.contentId;
+                                        if (sessionId) {
+                                            (window as any).api?.writeToTerminal?.({ id: sessionId, data: `cd "${path}"\n` });
+                                        }
+                                    }
+                                }, 1000);
+                                setSidebarItemContextMenuPos(null);
+                            }}
+                            className={menuBtnClass}
+                        >
+                            <Terminal size={14} />
+                            <span>Open in Terminal</span>
                         </button>
                         <div className="border-t theme-border my-1"></div>
                     </>
                 )}
 
-                {/* Permission options - always show for both files and directories */}
+                {/* ===== COMMON ACTIONS (all items) ===== */}
+                <button
+                    onClick={() => {
+                        navigator.clipboard.writeText(path);
+                        setSidebarItemContextMenuPos(null);
+                    }}
+                    className={menuBtnClass}
+                >
+                    <Copy size={14} />
+                    <span>Copy Path</span>
+                </button>
+                <button
+                    onClick={() => {
+                        (window as any).api?.showItemInFolder?.(path);
+                        setSidebarItemContextMenuPos(null);
+                    }}
+                    className={menuBtnClass}
+                >
+                    <ExternalLink size={14} />
+                    <span>Show in Finder</span>
+                </button>
+
+                {/* Duplicate (files only) */}
+                {type === 'file' && !isInaccessible && (
+                    <button
+                        onClick={async () => {
+                            const dir = path.substring(0, path.lastIndexOf('/'));
+                            const baseName = fileName.substring(0, fileName.lastIndexOf('.'));
+                            const extension = fileName.substring(fileName.lastIndexOf('.'));
+                            const destPath = `${dir}/${baseName}_copy${extension}`;
+                            try {
+                                await (window as any).api?.copyFile?.(path, destPath);
+                                await refreshDirectoryStructureOnly();
+                            } catch (err) {
+                                console.error('Failed to duplicate file:', err);
+                            }
+                            setSidebarItemContextMenuPos(null);
+                        }}
+                        className={menuBtnClass}
+                    >
+                        <Copy size={14} />
+                        <span>Duplicate</span>
+                    </button>
+                )}
+
+                <div className="border-t theme-border my-1"></div>
+
+                {/* ===== PERMISSIONS ===== */}
                 <button
                     onClick={() => {
                         setPermissionDialog({ path, type: 'chmod' });
                         setSidebarItemContextMenuPos(null);
                     }}
-                    className="flex items-center gap-2 px-4 py-3 theme-hover w-full text-left theme-text-primary"
+                    className={menuBtnClass}
                 >
-                    <KeyRound size={16} />
+                    <KeyRound size={14} />
                     <span>Change Permissions (chmod)</span>
                 </button>
                 <button
@@ -2823,28 +3094,29 @@ const renderWebsiteList = () => {
                         setPermissionDialog({ path, type: 'chown' });
                         setSidebarItemContextMenuPos(null);
                     }}
-                    className="flex items-center gap-2 px-4 py-3 theme-hover w-full text-left theme-text-primary"
+                    className={menuBtnClass}
                 >
-                    <Users size={16} />
+                    <Users size={14} />
                     <span>Change Owner (chown)</span>
                 </button>
                 <div className="border-t theme-border my-1"></div>
 
+                {/* ===== RENAME, ZIP ===== */}
                 {!isInaccessible && (
                     <>
                         <button
                             onClick={handleSidebarRenameStart}
-                            className="flex items-center gap-2 px-4 py-3 theme-hover w-full text-left theme-text-primary"
+                            className={menuBtnClass}
                         >
-                            <Edit size={16} />
+                            <Edit size={14} />
                             <span>Rename</span>
                         </button>
 
                         <button
                             onClick={handleZipItems}
-                            className="flex items-center gap-2 px-4 py-3 theme-hover w-full text-left theme-text-primary"
+                            className={menuBtnClass}
                         >
-                            <Archive size={16} />
+                            <Archive size={14} />
                             <span>Zip{selectedFiles.size > 1 ? ` (${selectedFiles.size} items)` : ''}</span>
                         </button>
 
@@ -2852,11 +3124,12 @@ const renderWebsiteList = () => {
                     </>
                 )}
 
+                {/* ===== DELETE ===== */}
                 <button
                     onClick={handleSidebarItemDelete}
-                    className="flex items-center gap-2 px-4 py-3 theme-hover w-full text-left text-red-400"
+                    className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left text-red-400 text-xs"
                 >
-                    <Trash size={16} />
+                    <Trash size={14} />
                     <span>Delete</span>
                 </button>
             </div>
@@ -2946,44 +3219,76 @@ const renderFolderList = (structure) => {
                 onDragStart={handleSectionDragStart('files')}
                 onDragEnd={handleSectionDragEnd}
                 onClick={() => setFilesCollapsed(!filesCollapsed)}
-                className="flex items-stretch w-full py-4 bg-gradient-to-r from-yellow-800/40 to-amber-700/35 cursor-pointer hover:bg-white/5"
+                className="flex items-stretch w-full py-4 bg-gradient-to-r from-yellow-800/40 to-amber-700/35 cursor-pointer theme-hover"
             >
                 {/* Left: chevron, then conditional controls */}
                 <div className="flex items-center gap-0 pl-1">
-                    <ChevronRight size={14} className={`transform transition-transform text-gray-600 dark:text-gray-400 ${filesCollapsed ? "" : "rotate-90"}`} />
+                    <ChevronRight size={14} className={`transform transition-transform theme-text-muted dark:text-gray-400 ${filesCollapsed ? "" : "rotate-90"}`} />
                     {!filesCollapsed && (
                         <>
                             <button
                                 onClick={(e) => { e.stopPropagation(); handleRefreshFilesAndFolders(); }}
-                                className="p-1.5 hover:bg-white/10 rounded transition-all text-gray-400 hover:text-yellow-400"
+                                className="p-1.5 hover:bg-yellow-500/20 rounded transition-all text-gray-400 hover:text-yellow-400"
                                 title="Refresh files"
                             >
-                                <RefreshCw size={12} />
+                                <RefreshCw size={11} />
                             </button>
                             <button
                                 onClick={(e) => { e.stopPropagation(); setShowFilesSettings(!showFilesSettings); }}
-                                className={`p-1.5 hover:bg-white/10 rounded transition-all ${showFilesSettings ? 'text-yellow-400' : 'text-gray-400 hover:text-yellow-400'}`}
+                                className={`p-1.5 hover:bg-yellow-500/20 rounded transition-all ${showFilesSettings ? 'text-yellow-400 bg-yellow-500/20' : 'text-gray-400 hover:text-yellow-400'}`}
                                 title="Settings"
                             >
-                                <Settings size={12} />
+                                <Settings size={11} />
                             </button>
                             <button
                                 onClick={(e) => { e.stopPropagation(); handleCreateNewFolder?.(); }}
-                                className="p-1.5 hover:bg-white/10 rounded transition-all text-gray-400 hover:text-yellow-400"
+                                className="p-1.5 hover:bg-yellow-500/20 rounded transition-all text-gray-400 hover:text-yellow-400"
                                 title="New Folder"
                             >
-                                <Plus size={12} />
+                                <Plus size={11} />
                             </button>
                         </>
                     )}
                 </div>
                 {/* Middle: folder nav buttons */}
-                <div className="ml-auto flex items-center" style={{ position: 'relative', overflow: 'visible' }}>
+                <div className="flex-1 flex items-center justify-end" style={{ position: 'relative', overflow: 'visible' }}>
                     <button
                         onClick={(e) => { e.stopPropagation(); if (currentPath !== baseDir) goUpDirectory(currentPath, baseDir, switchToPath, setError); }}
                         disabled={currentPath === baseDir}
-                        className={`p-1 pr-0 hover:bg-white/10 rounded transition-all ${currentPath === baseDir ? 'opacity-40' : 'text-gray-400 hover:text-yellow-400'}`}
-                        title="Go up one folder"
+                        className={`p-1 pr-0 theme-hover rounded transition-all ${currentPath === baseDir ? 'opacity-40' : 'text-gray-400 hover:text-yellow-400'}`}
+                        title="Go up one folder — drop files here to move to parent"
+                        onDragOver={(e) => {
+                            if (currentPath !== baseDir) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                e.dataTransfer.dropEffect = 'move';
+                                (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(234, 179, 8, 0.3)';
+                            }
+                        }}
+                        onDragLeave={(e) => {
+                            (e.currentTarget as HTMLElement).style.backgroundColor = '';
+                        }}
+                        onDrop={async (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            (e.currentTarget as HTMLElement).style.backgroundColor = '';
+                            if (currentPath === baseDir) return;
+                            try {
+                                const data = JSON.parse(e.dataTransfer.getData('application/json') || '{}');
+                                if (data.type === 'file' || data.type === 'folder') {
+                                    const sourcePath = data.id;
+                                    const fileName = getFileName(sourcePath);
+                                    const parentPath = currentPath.substring(0, currentPath.lastIndexOf('/'));
+                                    const destPath = `${parentPath}/${fileName}`;
+                                    if (sourcePath !== destPath && !destPath.startsWith(sourcePath + '/')) {
+                                        await (window as any).api?.renameFile?.(sourcePath, destPath);
+                                        await refreshDirectoryStructureOnly();
+                                    }
+                                }
+                            } catch (err) {
+                                console.error('Failed to move item to parent:', err);
+                            }
+                        }}
                     >
                         <ArrowUp size={10} />
                     </button>
@@ -2997,49 +3302,47 @@ const renderFolderList = (structure) => {
                             }
                             setFolderDropdownOpen(!folderDropdownOpen);
                         }}
-                        className="flex items-center gap-0.5 p-1 hover:bg-white/10 transition-colors rounded text-gray-400 hover:text-yellow-400"
+                        className="flex items-center gap-0.5 p-1 theme-hover transition-colors rounded text-gray-400 hover:text-yellow-400"
                         title={currentPath}
                     >
                         <span className="text-[9px] font-medium truncate max-w-[100px]">{(() => { const name = getFileName(currentPath) || 'Root'; return name.length > 7 ? name.slice(0, 7) + '…' : name; })()}</span>
                         <ChevronDown size={8} className={`flex-shrink-0 transition-transform text-gray-600 dark:text-gray-400 ${folderDropdownOpen ? 'rotate-180' : ''}`} />
                     </button>
                 </div>
-                {/* Right: browse + folder pane icons */}
-                <div className="flex items-center">
-                    <button
-                        onClick={async (e) => {
-                            e.stopPropagation();
-                            try {
-                                const result = await (window as any).api.open_directory_picker();
-                                if (result) { switchToPath(result); }
-                            } catch {}
-                        }}
-                        className="flex items-center justify-center px-1.5 py-4 -my-4 hover:bg-white/10 transition-all"
-                        title="Browse for folder"
-                    >
-                        <FolderPlus size={11} className="text-blue-400" />
-                    </button>
-                    <button
-                        onClick={(e) => { e.stopPropagation(); createAndAddPaneNodeToLayout?.({ contentType: 'folder', contentId: currentPath }); setFilesCollapsed(false); }}
-                        className="flex items-center justify-center px-1.5 py-4 -my-4 hover:bg-white/10 transition-all"
-                        title="Open folder pane"
-                    >
-                        <FolderOpen size={12} className="text-yellow-300" />
-                    </button>
-                </div>
+                {/* Right: browse (small) + folder pane (full w-1/4 like other sections) */}
+                <button
+                    onClick={async (e) => {
+                        e.stopPropagation();
+                        try {
+                            const result = await (window as any).api.open_directory_picker();
+                            if (result) { switchToPath(result); }
+                        } catch {}
+                    }}
+                    className="flex items-center justify-center px-1.5 py-4 -my-4 hover:bg-yellow-500/20 transition-all"
+                    title="Browse for folder"
+                >
+                    <FolderPlus size={11} className="text-blue-400" />
+                </button>
+                <button
+                    onClick={(e) => { e.stopPropagation(); createAndAddPaneNodeToLayout?.({ contentType: 'folder', contentId: currentPath }); setFilesCollapsed(false); }}
+                    className="flex items-center justify-center w-1/4 py-4 -my-4 hover:bg-yellow-500/20 transition-all"
+                    title="Open folder pane"
+                >
+                    <FolderOpen size={12} className="text-yellow-300" />
+                </button>
                 {/* Folder dropdown container */}
                 <div style={{ position: 'relative', overflow: 'visible' }}>
                     {/* Folder dropdown - fixed positioning to show over pane content */}
                     {folderDropdownOpen && (
                         <div
-                            className="fixed bg-gray-800 border border-gray-700 rounded shadow-xl py-1 min-w-[220px]"
+                            className="fixed theme-bg-secondary theme-border border rounded shadow-xl py-1 min-w-[220px]"
                             style={{ top: folderDropdownPos.top, left: folderDropdownPos.left, zIndex: 99999 }}
                         >
-                            <div className="px-2 py-1 border-b border-gray-700">
+                            <div className="px-2 py-1 border-b theme-border">
                                 <div className="text-[9px] text-gray-500 truncate" title={currentPath}>{currentPath}</div>
                             </div>
                             {/* Action buttons - Key and Native Explorer only */}
-                            <div className="flex gap-1 p-1.5 border-b border-gray-700">
+                            <div className="flex gap-1 p-1.5 border-b theme-border">
                                 <button
                                     onClick={() => { createProjectEnvPane?.(); setFolderDropdownOpen(false); }}
                                     className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] bg-amber-600/20 text-amber-400 rounded hover:bg-amber-600/30"
@@ -3063,7 +3366,7 @@ const renderFolderList = (structure) => {
                                         <button
                                             key={i}
                                             onClick={() => { switchToPath(path); setFolderDropdownOpen(false); }}
-                                            className="w-full flex items-center gap-2 px-2 py-1 text-[10px] text-gray-300 hover:bg-gray-700"
+                                            className="w-full flex items-center gap-2 px-2 py-1 text-[10px] theme-text-primary theme-hover"
                                         >
                                             <Folder size={10} className="text-yellow-400" />
                                             <span className="truncate">{getFileName(path)}</span>
@@ -3074,7 +3377,7 @@ const renderFolderList = (structure) => {
                             {currentPath !== baseDir && (
                                 <button
                                     onClick={() => { switchToPath(baseDir); setFolderDropdownOpen(false); }}
-                                    className="w-full flex items-center gap-2 px-2 py-1 text-[10px] text-purple-400 hover:bg-gray-700 border-t border-gray-700"
+                                    className="w-full flex items-center gap-2 px-2 py-1 text-[10px] text-purple-400 theme-hover border-t theme-border"
                                 >
                                     <Folder size={10} /> {getFileName(baseDir) || 'root'}
                                 </button>
@@ -3087,7 +3390,7 @@ const renderFolderList = (structure) => {
             {showFilesSettings && (
                 <div className="p-2 bg-yellow-900/20 border-y border-yellow-500/30 text-[10px] space-y-2">
                     <div className="flex items-center justify-between">
-                        <label className="text-gray-300">Show hidden files</label>
+                        <label className="theme-text-primary">Show hidden files</label>
                         <input
                             type="checkbox"
                             checked={filesSettings.showHidden}
@@ -3102,7 +3405,7 @@ const renderFolderList = (structure) => {
                             value={filesSettings.allowedExtensions}
                             onChange={(e) => setFilesSettings(s => ({ ...s, allowedExtensions: e.target.value }))}
                             placeholder=".py,.js,.tsx,.md"
-                            className="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-gray-200 placeholder-gray-600"
+                            className="w-full theme-bg-tertiary theme-border border rounded px-2 py-1 theme-text-primary placeholder:opacity-50"
                         />
                     </div>
                     <div>
@@ -3112,7 +3415,7 @@ const renderFolderList = (structure) => {
                             value={filesSettings.excludedExtensions}
                             onChange={(e) => setFilesSettings(s => ({ ...s, excludedExtensions: e.target.value }))}
                             placeholder=".pyc,.git"
-                            className="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-gray-200 placeholder-gray-600"
+                            className="w-full theme-bg-tertiary theme-border border rounded px-2 py-1 theme-text-primary placeholder:opacity-50"
                         />
                     </div>
                     <div>
@@ -3122,7 +3425,7 @@ const renderFolderList = (structure) => {
                             value={filesSettings.excludedFolders}
                             onChange={(e) => setFilesSettings(s => ({ ...s, excludedFolders: e.target.value }))}
                             placeholder="node_modules,.git"
-                            className="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-gray-200 placeholder-gray-600"
+                            className="w-full theme-bg-tertiary theme-border border rounded px-2 py-1 theme-text-primary placeholder:opacity-50"
                         />
                     </div>
                     <div>
@@ -3131,7 +3434,7 @@ const renderFolderList = (structure) => {
                             type="number"
                             value={filesSettings.maxDepth}
                             onChange={(e) => setFilesSettings(s => ({ ...s, maxDepth: parseInt(e.target.value) || 10 }))}
-                            className="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-gray-200"
+                            className="w-full theme-bg-tertiary theme-border border rounded px-2 py-1 theme-text-primary"
                             min="1"
                             max="50"
                         />
@@ -3139,7 +3442,7 @@ const renderFolderList = (structure) => {
                 </div>
             )}
             {!filesCollapsed && (
-                <div className="bg-black/20 border-b border-white/5">
+                <div className="theme-bg-secondary border-b theme-border">
                     {/* Search input */}
                     {fileCount > 5 && (
                         <div className="px-1 py-1">
@@ -3150,10 +3453,10 @@ const renderFolderList = (structure) => {
                                     value={fileSearch}
                                     onChange={(e) => setFileSearch(e.target.value)}
                                     placeholder="Search files..."
-                                    className="w-full bg-white/5 border border-white/10 rounded pl-7 pr-2 py-1 text-[11px] text-gray-300 placeholder-gray-600 focus:outline-none focus:border-yellow-500/50"
+                                    className="w-full theme-bg-tertiary theme-border border rounded pl-7 pr-2 py-1 text-[11px] theme-text-primary placeholder:opacity-50 focus:outline-none focus:border-yellow-500/50"
                                 />
                                 {fileSearch && (
-                                    <button onClick={() => setFileSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+                                    <button onClick={() => setFileSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:theme-text-primary">
                                         <X size={10} />
                                     </button>
                                 )}
@@ -3162,7 +3465,7 @@ const renderFolderList = (structure) => {
                     )}
                     {/* File type filter */}
                     {showFileTypeFilter && (
-                        <div className="px-1 py-1 border-t border-white/5">
+                        <div className="px-1 py-1 border-t theme-border">
                             <div className="relative">
                                 <Filter size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
                                 <input
@@ -3170,10 +3473,10 @@ const renderFolderList = (structure) => {
                                     value={fileTypeFilter}
                                     onChange={(e) => setFileTypeFilter(e.target.value)}
                                     placeholder=".py .js .tsx (comma or space separated)"
-                                    className="w-full bg-white/5 border border-white/10 rounded pl-7 pr-6 py-1 text-[11px] text-gray-300 placeholder-gray-600 focus:outline-none focus:border-yellow-500/50"
+                                    className="w-full theme-bg-tertiary theme-border border rounded pl-7 pr-6 py-1 text-[11px] theme-text-primary placeholder:opacity-50 focus:outline-none focus:border-yellow-500/50"
                                 />
                                 {fileTypeFilter && (
-                                    <button onClick={() => setFileTypeFilter('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+                                    <button onClick={() => setFileTypeFilter('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:theme-text-primary">
                                         <X size={10} />
                                     </button>
                                 )}
@@ -3190,7 +3493,7 @@ const renderFolderList = (structure) => {
                                     <button
                                         key={preset.label}
                                         onClick={() => setFileTypeFilter(fileTypeFilter ? `${fileTypeFilter} ${preset.ext}` : preset.ext)}
-                                        className="text-[9px] px-1.5 py-0.5 bg-white/5 hover:bg-white/10 rounded text-gray-400 hover:text-yellow-400 transition-colors"
+                                        className="text-[9px] px-1.5 py-0.5 bg-white/5 theme-hover rounded text-gray-400 hover:text-yellow-400 transition-colors"
                                         title={`Add ${preset.ext}`}
                                     >
                                         {preset.label}
@@ -3227,14 +3530,14 @@ const renderFolderList = (structure) => {
             <div>
                 {header}
                 {activeFile && (
-                    <div className="bg-black/10 p-1">
+                    <div className="theme-bg-secondary p-1">
                         <button
                             onClick={() => handleFileClick(activeFile.content.path)}
-                            className="flex items-center gap-2 px-2 py-1.5 w-full hover:bg-white/5 text-left rounded transition-all border-l-2 border-yellow-500"
+                            className="flex items-center gap-2 px-2 py-1.5 w-full theme-hover text-left rounded transition-all border-l-2 border-yellow-500"
                             title={`Edit ${activeFile.name}`}
                         >
                             {getFileIcon(activeFile.name)}
-                            <span className="text-[11px] text-gray-200 truncate">{activeFile.name}</span>
+                            <span className="text-[11px] theme-text-primary truncate">{activeFile.name}</span>
                         </button>
                     </div>
                 )}
@@ -3305,7 +3608,7 @@ const renderFolderList = (structure) => {
                                     const destPath = `${fullPath}/${fileName}`;
                                     if (sourcePath !== destPath && !destPath.startsWith(sourcePath + '/')) {
                                         await (window as any).api?.renameFile?.(sourcePath, destPath);
-                                        refreshFolderStructure?.();
+                                        await refreshDirectoryStructureOnly();
                                     }
                                 }
                             } catch (err) {
@@ -3445,7 +3748,36 @@ const renderFolderList = (structure) => {
         <div className="flex flex-col h-full">
             {header}
             {!filesCollapsed && (
-                <div className="bg-black/10 flex-1 min-h-0 overflow-y-auto">
+                <div
+                    className="theme-bg-secondary flex-1 min-h-0 overflow-y-auto"
+                    onDragOver={(e) => {
+                        // Accept file/folder drops onto the root workspace area
+                        const types = e.dataTransfer.types;
+                        if (types.includes('application/json')) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            e.dataTransfer.dropEffect = 'move';
+                        }
+                    }}
+                    onDrop={async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        try {
+                            const data = JSON.parse(e.dataTransfer.getData('application/json') || '{}');
+                            if (data.type === 'file' || data.type === 'folder') {
+                                const sourcePath = data.id;
+                                const fileName = getFileName(sourcePath);
+                                const destPath = `${currentPath}/${fileName}`;
+                                if (sourcePath !== destPath && !destPath.startsWith(sourcePath + '/')) {
+                                    await (window as any).api?.renameFile?.(sourcePath, destPath);
+                                    await refreshDirectoryStructureOnly();
+                                }
+                            }
+                        } catch (err) {
+                            console.error('Failed to move item to workspace root:', err);
+                        }
+                    }}
+                >
                     {isEmpty ? (
                         <div className="px-3 py-3 text-[11px] text-gray-500 text-center">Empty directory</div>
                     ) : fileSearch.trim() && Object.keys(filteredStructure).length === 0 ? (
@@ -3533,26 +3865,26 @@ const renderFolderList = (structure) => {
                     onDragStart={handleSectionDragStart('conversations')}
                     onDragEnd={handleSectionDragEnd}
                     onClick={() => setConversationsCollapsed(!conversationsCollapsed)}
-                    className="flex items-stretch w-full py-4 bg-gradient-to-r from-green-800/40 to-emerald-700/35 cursor-pointer hover:bg-white/5"
+                    className="flex items-stretch w-full py-4 bg-gradient-to-r from-green-800/40 to-emerald-700/35 cursor-pointer theme-hover"
                 >
                     {/* Left: chevron, then conditional controls */}
                     <div className="flex items-center pl-1 gap-0">
-                        <ChevronRight size={14} className={`transform transition-transform text-gray-600 dark:text-gray-400 ${conversationsCollapsed ? "" : "rotate-90"}`} />
+                        <ChevronRight size={14} className={`transform transition-transform theme-text-muted dark:text-gray-400 ${conversationsCollapsed ? "" : "rotate-90"}`} />
                         {!conversationsCollapsed && (
                             <>
                                 <button
                                     onClick={(e) => { e.stopPropagation(); refreshConversations(); }}
-                                    className="p-1.5 hover:bg-white/10 rounded transition-all text-gray-400 hover:text-green-400"
+                                    className="p-1.5 hover:bg-green-500/20 rounded transition-all text-gray-400 hover:text-green-400"
                                     title="Refresh conversations"
                                 >
-                                    <RefreshCw size={12} />
+                                    <RefreshCw size={11} />
                                 </button>
                                 <button
                                     onClick={(e) => { e.stopPropagation(); setShowConversationsSettings(!showConversationsSettings); }}
-                                    className={`p-1.5 hover:bg-white/10 rounded transition-all ${showConversationsSettings ? 'text-green-400' : 'text-gray-400 hover:text-green-400'}`}
+                                    className={`p-1.5 hover:bg-green-500/20 rounded transition-all ${showConversationsSettings ? 'text-green-400 bg-green-500/20' : 'text-gray-400 hover:text-green-400'}`}
                                     title="Settings"
                                 >
-                                    <Settings size={12} />
+                                    <Settings size={11} />
                                 </button>
                                 <button
                                     onClick={(e) => {
@@ -3565,10 +3897,10 @@ const renderFolderList = (structure) => {
                                         }
                                         setShowConvoFilters(!showConvoFilters);
                                     }}
-                                    className={`p-1.5 hover:bg-white/10 rounded transition-all ${activeFilterCount > 0 || showConvoFilters ? 'text-green-400' : 'text-gray-400 hover:text-green-400'}`}
+                                    className={`p-1.5 hover:bg-green-500/20 rounded transition-all ${activeFilterCount > 0 || showConvoFilters ? 'text-green-400 bg-green-500/20' : 'text-gray-400 hover:text-green-400'}`}
                                     title="Filter conversations"
                                 >
-                                    <Filter size={12} />
+                                    <Filter size={11} />
                                 </button>
                             </>
                         )}
@@ -3576,7 +3908,7 @@ const renderFolderList = (structure) => {
                     {/* Right: main icon - full height clickable area */}
                     <button
                         onClick={(e) => { e.stopPropagation(); createNewConversation?.(); setConversationsCollapsed(false); }}
-                        className="ml-auto flex items-center justify-center w-1/4 py-4 -my-4 hover:bg-white/10 transition-all"
+                        className="ml-auto flex items-center justify-center w-1/4 py-4 -my-4 hover:bg-green-500/20 transition-all"
                         title="New Chat"
                     >
                         <MessageSquare size={12} className="text-green-300" />
@@ -3590,7 +3922,7 @@ const renderFolderList = (structure) => {
                             <select
                                 value={conversationsSettings.sortBy}
                                 onChange={(e) => setConversationsSettings(s => ({ ...s, sortBy: e.target.value }))}
-                                className="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-gray-200"
+                                className="w-full theme-bg-tertiary theme-border border rounded px-2 py-1 theme-text-primary"
                             >
                                 <option value="date">Date</option>
                                 <option value="title">Title</option>
@@ -3603,7 +3935,7 @@ const renderFolderList = (structure) => {
                             <select
                                 value={conversationsSettings.sortOrder}
                                 onChange={(e) => setConversationsSettings(s => ({ ...s, sortOrder: e.target.value }))}
-                                className="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-gray-200"
+                                className="w-full theme-bg-tertiary theme-border border rounded px-2 py-1 theme-text-primary"
                             >
                                 <option value="desc">Newest first</option>
                                 <option value="asc">Oldest first</option>
@@ -3624,14 +3956,14 @@ const renderFolderList = (structure) => {
                                 type="number"
                                 value={conversationsSettings.maxDisplay}
                                 onChange={(e) => setConversationsSettings(s => ({ ...s, maxDisplay: parseInt(e.target.value) || 100 }))}
-                                className="w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-gray-200"
+                                className="w-full theme-bg-tertiary theme-border border rounded px-2 py-1 theme-text-primary"
                                 min="10"
                             />
                         </div>
                     </div>
                 )}
                 {!conversationsCollapsed && (
-                    <div className="bg-black/20 border-b border-white/5">
+                    <div className="theme-bg-secondary border-b theme-border">
                         {/* Search input */}
                         {sortedConversations.length > 0 && (
                             <div className="px-1 py-1">
@@ -3642,10 +3974,10 @@ const renderFolderList = (structure) => {
                                         value={convoSearch}
                                         onChange={(e) => setConvoSearch(e.target.value)}
                                         placeholder="Search conversations..."
-                                        className="w-full bg-white/5 border border-white/10 rounded pl-7 pr-2 py-1 text-[11px] text-gray-300 placeholder-gray-600 focus:outline-none focus:border-green-500/50"
+                                        className="w-full theme-bg-tertiary theme-border border rounded pl-7 pr-2 py-1 text-[11px] theme-text-primary placeholder:opacity-50 focus:outline-none focus:border-green-500/50"
                                     />
                                     {convoSearch && (
-                                        <button onClick={() => setConvoSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+                                        <button onClick={() => setConvoSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:theme-text-primary">
                                             <X size={10} />
                                         </button>
                                     )}
@@ -3654,7 +3986,7 @@ const renderFolderList = (structure) => {
                         )}
                         {/* Advanced filters */}
                         {showConvoFilters && (
-                            <div className="px-1 py-1 border-t border-white/5 space-y-1.5">
+                            <div className="px-1 py-1 border-t theme-border space-y-1.5">
                                 {/* NPC filter */}
                                 <div className="relative">
                                     <Bot size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
@@ -3663,7 +3995,7 @@ const renderFolderList = (structure) => {
                                         value={convoNpcFilter}
                                         onChange={(e) => setConvoNpcFilter(e.target.value)}
                                         placeholder="Filter by NPC (comma separated)..."
-                                        className="w-full bg-white/5 border border-white/10 rounded pl-7 pr-6 py-1 text-[11px] text-gray-300 placeholder-gray-600 focus:outline-none focus:border-green-500/50"
+                                        className="w-full theme-bg-tertiary theme-border border rounded pl-7 pr-6 py-1 text-[11px] theme-text-primary placeholder:opacity-50 focus:outline-none focus:border-green-500/50"
                                         list="npc-suggestions"
                                     />
                                     {uniqueNpcs.length > 0 && (
@@ -3672,7 +4004,7 @@ const renderFolderList = (structure) => {
                                         </datalist>
                                     )}
                                     {convoNpcFilter && (
-                                        <button onClick={() => setConvoNpcFilter('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+                                        <button onClick={() => setConvoNpcFilter('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:theme-text-primary">
                                             <X size={10} />
                                         </button>
                                     )}
@@ -3685,7 +4017,7 @@ const renderFolderList = (structure) => {
                                         value={convoModelFilter}
                                         onChange={(e) => setConvoModelFilter(e.target.value)}
                                         placeholder="Filter by model/provider..."
-                                        className="w-full bg-white/5 border border-white/10 rounded pl-7 pr-6 py-1 text-[11px] text-gray-300 placeholder-gray-600 focus:outline-none focus:border-green-500/50"
+                                        className="w-full theme-bg-tertiary theme-border border rounded pl-7 pr-6 py-1 text-[11px] theme-text-primary placeholder:opacity-50 focus:outline-none focus:border-green-500/50"
                                         list="model-suggestions"
                                     />
                                     {uniqueModels.length > 0 && (
@@ -3694,7 +4026,7 @@ const renderFolderList = (structure) => {
                                         </datalist>
                                     )}
                                     {convoModelFilter && (
-                                        <button onClick={() => setConvoModelFilter('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+                                        <button onClick={() => setConvoModelFilter('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:theme-text-primary">
                                             <X size={10} />
                                         </button>
                                     )}
@@ -3739,7 +4071,7 @@ const renderFolderList = (structure) => {
                                                 setConvoDateFrom(from.toISOString().split('T')[0]);
                                                 setConvoDateTo(today.toISOString().split('T')[0]);
                                             }}
-                                            className="text-[9px] px-1.5 py-0.5 bg-white/5 hover:bg-white/10 rounded text-gray-400 hover:text-green-400 transition-colors"
+                                            className="text-[9px] px-1.5 py-0.5 bg-white/5 theme-hover rounded text-gray-400 hover:text-green-400 transition-colors"
                                         >
                                             {preset.label}
                                         </button>
@@ -3777,14 +4109,14 @@ const renderFolderList = (structure) => {
                 <div>
                     {header}
                     {activeConversation && !currentFile && (
-                        <div className="bg-black/10 p-1">
+                        <div className="theme-bg-secondary p-1">
                             <button
                                 onClick={() => handleConversationSelect(activeConversation.id)}
-                                className="flex items-center gap-2 px-2 py-1.5 w-full hover:bg-white/5 text-left rounded transition-all border-l-2 border-green-500"
+                                className="flex items-center gap-2 px-2 py-1.5 w-full theme-hover text-left rounded transition-all border-l-2 border-green-500"
                             >
                                 <MessageSquare size={14} className="text-green-400 flex-shrink-0" />
                                 <div className="flex flex-col overflow-hidden min-w-0">
-                                    <span className="text-[11px] truncate text-gray-200">{activeConversation.title || 'Untitled'}</span>
+                                    <span className="text-[11px] truncate theme-text-primary">{activeConversation.title || 'Untitled'}</span>
                                 </div>
                             </button>
                         </div>
@@ -3797,7 +4129,7 @@ const renderFolderList = (structure) => {
             <div className="flex flex-col h-full">
                 {header}
                 {!conversationsCollapsed && (
-                    <div className="bg-black/10 flex-1 min-h-0 overflow-y-auto">
+                    <div className="theme-bg-secondary flex-1 min-h-0 overflow-y-auto">
                         {filteredConversations.length === 0 ? (
                             <div className="px-3 py-3 text-[11px] text-gray-500 text-center">No matches for "{convoSearch}"</div>
                         ) : (
@@ -3837,7 +4169,7 @@ const renderFolderList = (structure) => {
                                         setContextMenuPos({ x: e.clientX, y: e.clientY });
                                     }}
                                     className={`flex items-center gap-2 px-2 py-1.5 w-full text-left transition-all group
-                                        ${isActive ? 'bg-green-500/20 border-l-2 border-green-500' : 'hover:bg-white/5 border-l-2 border-transparent'}
+                                        ${isActive ? 'bg-green-500/20 border-l-2 border-green-500' : 'theme-hover border-l-2 border-transparent'}
                                         ${isSelected ? 'bg-teal-500/10' : ''}`}
                                 >
                                     <MessageSquare size={13} className={`flex-shrink-0 ${isActive ? 'text-green-400' : 'text-gray-500 group-hover:text-gray-400'}`} />
@@ -3867,7 +4199,7 @@ const renderFolderList = (structure) => {
                         </div>
                         <button
                             onClick={(e) => { e.stopPropagation(); createGitPane?.(); }}
-                            className="ml-auto flex items-center justify-center w-1/4 py-4 -my-4 hover:bg-white/10 transition-all"
+                            className="ml-auto flex items-center justify-center w-1/4 py-4 -my-4 hover:bg-orange-500/20 transition-all"
                             title="Open full Git pane"
                         >
                             <GitBranch size={12} className="text-orange-400" />
@@ -3915,25 +4247,25 @@ const renderFolderList = (structure) => {
                     onDragStart={handleSectionDragStart('git')}
                     onDragEnd={handleSectionDragEnd}
                     onClick={() => setGitPanelCollapsed(!gitPanelCollapsed)}
-                    className="flex items-stretch w-full py-4 bg-gradient-to-r from-orange-900/20 to-amber-900/20 cursor-pointer hover:bg-white/5"
+                    className="flex items-stretch w-full py-4 bg-gradient-to-r from-orange-900/20 to-amber-900/20 cursor-pointer theme-hover"
                 >
                     {/* Left: chevron, then conditional controls */}
                     <div className="flex items-center pl-1 gap-0">
-                        <ChevronRight size={14} className={`transform transition-transform text-gray-600 dark:text-gray-400 ${!gitPanelCollapsed ? 'rotate-90' : ''}`} />
+                        <ChevronRight size={14} className={`transform transition-transform theme-text-muted dark:text-gray-400 ${!gitPanelCollapsed ? 'rotate-90' : ''}`} />
                         {!gitPanelCollapsed && (
                             <button
                                 onClick={(e) => { e.stopPropagation(); loadGitStatus(); }}
-                                className="p-1.5 hover:bg-white/10 rounded transition-all text-gray-400 hover:text-orange-400"
+                                className="p-1.5 hover:bg-orange-500/20 rounded transition-all text-gray-400 hover:text-orange-400"
                                 title="Refresh git status"
                             >
-                                <RefreshCw size={12} />
+                                <RefreshCw size={11} />
                             </button>
                         )}
                     </div>
-                    {/* Right: GitBranch button - full height clickable area */}
+                    {/* Right: main icon - full height clickable area */}
                     <button
                         onClick={(e) => { e.stopPropagation(); createGitPane?.(); }}
-                        className="ml-auto flex items-center justify-center w-1/4 py-4 -my-4 hover:bg-white/10 transition-all"
+                        className="ml-auto flex items-center justify-center w-1/4 py-4 -my-4 hover:bg-orange-500/20 transition-all"
                         title="Open full Git pane"
                     >
                         <GitBranch size={12} className="text-orange-400" />
@@ -4054,7 +4386,7 @@ const renderFolderList = (structure) => {
                             )}
 
                             {/* Separator before file list */}
-                            {totalChanges > 0 && <div className="border-t border-gray-700/50" />}
+                            {totalChanges > 0 && <div className="border-t theme-border/50" />}
 
                             {/* Merge conflicts */}
                             {conflicted.length > 0 && (
@@ -4207,7 +4539,7 @@ const renderFolderList = (structure) => {
                                     {untracked.map(file => (
                                         <div
                                             key={file.path}
-                                            className="flex items-center justify-between w-full px-2 py-1 text-[10px] hover:bg-white/5 rounded group"
+                                            className="flex items-center justify-between w-full px-2 py-1 text-[10px] theme-hover rounded group"
                                         >
                                             <button
                                                 onClick={() => handleFileClick(`${currentPath}/${file.path}`)}
@@ -4491,7 +4823,7 @@ return (
         {/* Expand top bar hover button - shows when top bar is collapsed */}
         {topBarCollapsed && !sidebarCollapsed && (
             <div
-                className="group h-6 flex items-center justify-center border-b border-gray-700 hover:bg-blue-500/20 cursor-pointer transition-all"
+                className="group h-6 flex items-center justify-center border-b theme-border hover:bg-blue-500/20 cursor-pointer transition-all"
                 onClick={onExpandTopBar}
                 title="Show top bar"
             >
@@ -4500,13 +4832,13 @@ return (
         )}
 
         {/* Header Actions - hidden when sidebar or top bar is collapsed */}
-        <div className={`border-b border-gray-700 flex-shrink-0 relative group/header ${sidebarCollapsed || topBarCollapsed ? 'hidden' : ''}`} style={{ height: topBarHeight }}>
-            <div className="grid grid-cols-4 divide-x divide-gray-700 h-full" data-tutorial="creation-tiles">
+        <div className={`border-b theme-border flex-shrink-0 relative group/header ${sidebarCollapsed || topBarCollapsed ? 'hidden' : ''}`} style={{ height: topBarHeight }}>
+            <div className="grid grid-cols-4 divide-x theme-border h-full" data-tutorial="creation-tiles">
                 {/* Terminals dropdown */}
                 <div className="relative" data-dropdown="terminal" data-tutorial="terminal-button">
                     <button
                         onClick={() => createNewTerminal?.(defaultNewTerminalType)}
-                        className="w-full h-full flex items-center justify-center hover:bg-teal-500/20 relative transition-colors"
+                        className="w-full h-full flex items-center justify-center hover:bg-teal-500/20 active:bg-teal-500/30 relative transition-colors"
                         title={`New ${defaultNewTerminalType === 'system' ? 'Bash' : defaultNewTerminalType} Terminal`}
                     >
                         {defaultNewTerminalType === 'system' && <Terminal size={18} className="text-green-400" />}
@@ -4515,18 +4847,18 @@ return (
                     </button>
                     <button
                         onClick={(e) => { e.stopPropagation(); setTerminalDropdownOpen(!terminalDropdownOpen); }}
-                        className="absolute top-0 right-0 w-1/2 h-1/2 flex items-center justify-center hover:bg-white/10 rounded-bl transition-colors"
+                        className="absolute top-0 right-0 w-1/2 h-1/2 flex items-center justify-center theme-hover rounded-bl transition-colors"
                         title="More terminal options"
                     >
                         <ChevronDown size={7} className="text-gray-500" />
                     </button>
                     {terminalDropdownOpen && (
-                        <div className="absolute left-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded shadow-xl z-[9999] py-1 min-w-[110px]">
+                        <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[9999] py-1 min-w-[110px]">
                             <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Right-click to set default</div>
                             <button
                                 onClick={() => { createNewTerminal?.('system'); setTerminalDropdownOpen(false); }}
                                 onContextMenu={(e) => { e.preventDefault(); setDefaultNewTerminalType('system'); setTerminalDropdownOpen(false); }}
-                                className={`flex items-center gap-2 px-2 py-1 w-full text-left hover:bg-gray-700 text-xs ${defaultNewTerminalType === 'system' ? 'bg-green-900/30 text-green-300' : 'text-gray-200'}`}
+                                className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewTerminalType === 'system' ? 'bg-green-900/30 text-green-300' : 'theme-text-primary'}`}
                             >
                                 <Terminal size={11} className="text-green-400" /><span>Bash</span>
                                 {defaultNewTerminalType === 'system' && <Star size={8} className="text-yellow-400 ml-auto" />}
@@ -4535,7 +4867,7 @@ return (
                                 <button
                                     onClick={() => { createNewTerminal?.('npcsh'); setTerminalDropdownOpen(false); }}
                                     onContextMenu={(e) => { e.preventDefault(); setDefaultNewTerminalType('npcsh'); setTerminalDropdownOpen(false); }}
-                                    className={`flex items-center gap-2 px-2 py-1 w-full text-left hover:bg-gray-700 text-xs ${defaultNewTerminalType === 'npcsh' ? 'bg-purple-900/30 text-purple-300' : 'text-gray-200'}`}
+                                    className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewTerminalType === 'npcsh' ? 'bg-purple-900/30 text-purple-300' : 'theme-text-primary'}`}
                                 >
                                     <Sparkles size={11} className="text-purple-400" /><span>npcsh</span>
                                     {defaultNewTerminalType === 'npcsh' && <Star size={8} className="text-yellow-400 ml-auto" />}
@@ -4545,7 +4877,7 @@ return (
                                 <button
                                     onClick={() => { createNewTerminal?.('guac'); setTerminalDropdownOpen(false); }}
                                     onContextMenu={(e) => { e.preventDefault(); setDefaultNewTerminalType('guac'); setTerminalDropdownOpen(false); }}
-                                    className={`flex items-center gap-2 px-2 py-1 w-full text-left hover:bg-gray-700 text-xs ${defaultNewTerminalType === 'guac' ? 'bg-yellow-900/30 text-yellow-300' : 'text-gray-200'}`}
+                                    className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewTerminalType === 'guac' ? 'bg-yellow-900/30 text-yellow-300' : 'theme-text-primary'}`}
                                 >
                                     <Code2 size={11} className="text-yellow-400" /><span>guac</span>
                                     {defaultNewTerminalType === 'guac' && <Star size={8} className="text-yellow-400 ml-auto" />}
@@ -4565,18 +4897,18 @@ return (
                     </button>
                     <button
                         onClick={(e) => { e.stopPropagation(); setChatPlusDropdownOpen(!chatPlusDropdownOpen); }}
-                        className="absolute top-0 right-0 w-1/2 h-1/2 flex items-center justify-center hover:bg-white/10 rounded-bl transition-colors"
+                        className="absolute top-0 right-0 w-1/2 h-1/2 flex items-center justify-center theme-hover rounded-bl transition-colors"
                         title="More options"
                     >
                         <ChevronDown size={7} className="text-gray-500" />
                     </button>
                     {chatPlusDropdownOpen && (
-                        <div className="absolute left-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded shadow-xl z-[9999] py-1 min-w-[120px]">
+                        <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[9999] py-1 min-w-[120px]">
                             <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Right-click to set default</div>
                             <button
                                 onClick={() => { createNewNotebook?.(); setChatPlusDropdownOpen(false); }}
                                 onContextMenu={(e) => { e.preventDefault(); setDefaultNewNotebookType('notebook'); setChatPlusDropdownOpen(false); }}
-                                className={`flex items-center gap-2 px-2 py-1 w-full text-left hover:bg-gray-700 text-xs ${defaultNewNotebookType === 'notebook' ? 'bg-orange-900/30 text-orange-300' : 'text-gray-200'}`}
+                                className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewNotebookType === 'notebook' ? 'bg-orange-900/30 text-orange-300' : 'theme-text-primary'}`}
                             >
                                 <FileText size={11} className="text-orange-400" /><span>Notebook</span>
                                 {defaultNewNotebookType === 'notebook' && <Star size={8} className="text-yellow-400 ml-auto" />}
@@ -4584,7 +4916,7 @@ return (
                             <button
                                 onClick={() => { createNewExperiment?.(); setChatPlusDropdownOpen(false); }}
                                 onContextMenu={(e) => { e.preventDefault(); setDefaultNewNotebookType('experiment'); setChatPlusDropdownOpen(false); }}
-                                className={`flex items-center gap-2 px-2 py-1 w-full text-left hover:bg-gray-700 text-xs ${defaultNewNotebookType === 'experiment' ? 'bg-purple-900/30 text-purple-300' : 'text-gray-200'}`}
+                                className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewNotebookType === 'experiment' ? 'bg-purple-900/30 text-purple-300' : 'theme-text-primary'}`}
                             >
                                 <FlaskConical size={11} className="text-purple-400" /><span>Experiment</span>
                                 {defaultNewNotebookType === 'experiment' && <Star size={8} className="text-yellow-400 ml-auto" />}
@@ -4603,20 +4935,20 @@ return (
                     </button>
                     <button
                         onClick={(e) => { e.stopPropagation(); setCodeFileDropdownOpen(!codeFileDropdownOpen); }}
-                        className="absolute top-0 right-0 w-1/2 h-1/2 flex items-center justify-center hover:bg-white/10 rounded-bl transition-colors"
+                        className="absolute top-0 right-0 w-1/2 h-1/2 flex items-center justify-center theme-hover rounded-bl transition-colors"
                         title="More file types"
                     >
                         <ChevronDown size={7} className="text-gray-500" />
                     </button>
                     {codeFileDropdownOpen && (
-                        <div className="absolute left-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded shadow-xl z-[9999] py-1 min-w-[150px] max-h-60 overflow-y-auto">
+                        <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[9999] py-1 min-w-[150px] max-h-60 overflow-y-auto">
                             <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Right-click to set default</div>
                             {commonFileTypes.map(type => (
                                 <button
                                     key={type.ext}
                                     onClick={() => { createFileWithExtension(type.ext); setCodeFileDropdownOpen(false); }}
                                     onContextMenu={(e) => { e.preventDefault(); setDefaultCodeFileType(type.ext); setCodeFileDropdownOpen(false); }}
-                                    className={`flex items-center gap-2 px-2 py-1 w-full text-left hover:bg-gray-700 text-xs ${defaultCodeFileType === type.ext ? 'bg-cyan-900/30 text-cyan-300' : 'text-gray-200'}`}
+                                    className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultCodeFileType === type.ext ? 'bg-cyan-900/30 text-cyan-300' : 'theme-text-primary'}`}
                                 >
                                     <span className="w-3 text-center text-[10px]">{type.icon}</span>
                                     <span className="flex-1">{type.label}</span>
@@ -4638,18 +4970,18 @@ return (
                     </button>
                     <button
                         onClick={(e) => { e.stopPropagation(); setDocDropdownOpen(!docDropdownOpen); }}
-                        className="absolute top-0 right-0 w-1/2 h-1/2 flex items-center justify-center hover:bg-white/10 rounded-bl transition-colors"
+                        className="absolute top-0 right-0 w-1/2 h-1/2 flex items-center justify-center theme-hover rounded-bl transition-colors"
                         title="More document types"
                     >
                         <ChevronDown size={7} className="text-gray-500" />
                     </button>
                     {docDropdownOpen && (
-                        <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded shadow-xl z-[9999] py-1 min-w-[130px]">
+                        <div className="absolute right-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[9999] py-1 min-w-[130px]">
                             <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Right-click to set default</div>
                             <button
                                 onClick={() => { createNewDocument?.('docx'); setDocDropdownOpen(false); }}
                                 onContextMenu={(e) => { e.preventDefault(); setDefaultNewDocumentType('docx'); setDocDropdownOpen(false); }}
-                                className={`flex items-center gap-2 px-2 py-1 w-full text-left hover:bg-gray-700 text-xs ${defaultNewDocumentType === 'docx' ? 'bg-blue-900/30 text-blue-300' : 'text-gray-200'}`}
+                                className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewDocumentType === 'docx' ? 'bg-blue-900/30 text-blue-300' : 'theme-text-primary'}`}
                             >
                                 <FileText size={11} className="text-blue-300" /><span>Word</span>
                                 {defaultNewDocumentType === 'docx' && <Star size={8} className="text-yellow-400 ml-auto" />}
@@ -4657,7 +4989,7 @@ return (
                             <button
                                 onClick={() => { createNewDocument?.('xlsx'); setDocDropdownOpen(false); }}
                                 onContextMenu={(e) => { e.preventDefault(); setDefaultNewDocumentType('xlsx'); setDocDropdownOpen(false); }}
-                                className={`flex items-center gap-2 px-2 py-1 w-full text-left hover:bg-gray-700 text-xs ${defaultNewDocumentType === 'xlsx' ? 'bg-green-900/30 text-green-300' : 'text-gray-200'}`}
+                                className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewDocumentType === 'xlsx' ? 'bg-green-900/30 text-green-300' : 'theme-text-primary'}`}
                             >
                                 <FileJson size={11} className="text-green-300" /><span>Excel</span>
                                 {defaultNewDocumentType === 'xlsx' && <Star size={8} className="text-yellow-400 ml-auto" />}
@@ -4665,7 +4997,7 @@ return (
                             <button
                                 onClick={() => { createNewDocument?.('pptx'); setDocDropdownOpen(false); }}
                                 onContextMenu={(e) => { e.preventDefault(); setDefaultNewDocumentType('pptx'); setDocDropdownOpen(false); }}
-                                className={`flex items-center gap-2 px-2 py-1 w-full text-left hover:bg-gray-700 text-xs ${defaultNewDocumentType === 'pptx' ? 'bg-orange-900/30 text-orange-300' : 'text-gray-200'}`}
+                                className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewDocumentType === 'pptx' ? 'bg-orange-900/30 text-orange-300' : 'theme-text-primary'}`}
                             >
                                 <BarChart3 size={11} className="text-orange-300" /><span>PowerPoint</span>
                                 {defaultNewDocumentType === 'pptx' && <Star size={8} className="text-yellow-400 ml-auto" />}
@@ -4673,7 +5005,7 @@ return (
                             <button
                                 onClick={() => { createNewDocument?.('mapx'); setDocDropdownOpen(false); }}
                                 onContextMenu={(e) => { e.preventDefault(); setDefaultNewDocumentType('mapx'); setDocDropdownOpen(false); }}
-                                className={`flex items-center gap-2 px-2 py-1 w-full text-left hover:bg-gray-700 text-xs ${defaultNewDocumentType === 'mapx' ? 'bg-pink-900/30 text-pink-300' : 'text-gray-200'}`}
+                                className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewDocumentType === 'mapx' ? 'bg-pink-900/30 text-pink-300' : 'theme-text-primary'}`}
                             >
                                 <Share2 size={11} className="text-pink-300" /><span>Mind Map</span>
                                 {defaultNewDocumentType === 'mapx' && <Star size={8} className="text-yellow-400 ml-auto" />}
@@ -4695,7 +5027,7 @@ return (
                                 onDragOver={handleTileDragOver}
                                 onDrop={(e) => handleTileDrop(e, tile.id)}
                                 className={`flex items-center gap-2 px-2 py-1 rounded text-xs cursor-move ${
-                                    draggedTileId === tile.id ? 'bg-blue-600/30 border border-teal-500' : 'bg-gray-700/50 hover:bg-gray-700'
+                                    draggedTileId === tile.id ? 'bg-blue-600/30 border border-teal-500' : 'bg-gray-700/50 theme-hover'
                                 }`}
                             >
                                 <span className="text-gray-500">⋮⋮</span>
@@ -4812,13 +5144,13 @@ return (
                             <div
                                 key={sectionId}
                                 data-section-id={sectionId}
-                                className={`transition-all duration-150 ${isCollapsed ? 'flex-shrink-0' : 'min-h-0'} ${draggedSection === sectionId ? 'opacity-50 scale-95' : ''} ${dropTargetSection === sectionId && draggedSection !== sectionId ? `ring-2 ${sectionColors[sectionId]} rounded-lg bg-white/5` : ''}`}
+                                className={`transition-all duration-150 ${isCollapsed ? 'flex-shrink-0' : 'min-h-0 overflow-hidden'} ${draggedSection === sectionId ? 'opacity-50 scale-95' : ''} ${dropTargetSection === sectionId && draggedSection !== sectionId ? `ring-2 ${sectionColors[sectionId]} rounded-lg bg-white/5` : ''}`}
                                 style={isCollapsed ? {} : { flex: sectionId === 'websites' ? '1 1 0%' : '1.4 1 0%' }}
                             >
-                                {sectionId === 'websites' && <div data-tutorial="website-browser">{renderWebsiteList()}</div>}
-                                {sectionId === 'files' && <div data-tutorial="file-browser">{renderFolderList(folderStructure)}</div>}
-                                {sectionId === 'conversations' && aiEnabled && <div data-tutorial="conversations">{renderConversationList(directoryConversations)}</div>}
-                                {sectionId === 'git' && <div data-tutorial="git-browser">{renderGitSection()}</div>}
+                                {sectionId === 'websites' && <div data-tutorial="website-browser" className="h-full overflow-hidden">{renderWebsiteList()}</div>}
+                                {sectionId === 'files' && <div data-tutorial="file-browser" className="h-full overflow-hidden">{renderFolderList(folderStructure)}</div>}
+                                {sectionId === 'conversations' && aiEnabled && <div data-tutorial="conversations" className="h-full overflow-hidden">{renderConversationList(directoryConversations)}</div>}
+                                {sectionId === 'git' && <div data-tutorial="git-browser" className="h-full overflow-hidden">{renderGitSection()}</div>}
                             </div>
                         );
                     })}
@@ -5135,7 +5467,7 @@ return (
 
         {/* Collapse controls row: Down arrow (left) | Sidebar collapse (right) */}
         {!sidebarCollapsed && (
-        <div className="flex items-center border-t border-gray-700" style={{ height: bottomBarHeight }}>
+        <div className="flex items-center border-t theme-border" style={{ height: bottomBarHeight }}>
             <button
                 onClick={() => setBottomGridCollapsed(!bottomGridCollapsed)}
                 className="flex-1 flex items-center justify-center h-full hover:bg-teal-500/20 transition-all border-r border-gray-700"
@@ -5159,7 +5491,7 @@ return (
 
         {/* Download + Theme + Predictive Text + Delete + Incognide buttons - at very bottom when expanded */}
         {!bottomGridCollapsed && !sidebarCollapsed && (
-        <div className="flex justify-center items-center gap-2 border-t border-gray-700" style={{ height: bottomBarHeight }}>
+        <div className="flex justify-center items-center gap-2 border-t theme-border" style={{ height: bottomBarHeight }}>
             <button
                 onClick={() => setDownloadManagerOpen?.(true)}
                 className="p-2 rounded-full hover:bg-teal-500/20 transition-all text-gray-400 hover:text-blue-400"

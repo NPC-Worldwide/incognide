@@ -34,10 +34,10 @@ export const ContextFilesPanel: React.FC<ContextFilesPanelProps> = ({
     }, []);
 
     const handleDrop = useCallback((e: React.DragEvent) => {
-        const jsonData = e.dataTransfer.getData('application/json');
-        if (jsonData) {
+        const sidebarData = e.dataTransfer.getData('application/x-sidebar-file');
+        if (sidebarData) {
             try {
-                const data = JSON.parse(jsonData);
+                const data = JSON.parse(sidebarData);
                 if (data.type === 'sidebar-file') {
                     return;
                 }

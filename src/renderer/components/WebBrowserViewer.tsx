@@ -52,6 +52,7 @@ const WebBrowserViewer = memo(({
     const [showPasswordsMenu, setShowPasswordsMenu] = useState(false);
     const [allPasswords, setAllPasswords] = useState<any[]>([]);
     const [showPasswordValue, setShowPasswordValue] = useState<string | null>(null);
+    const [showRefreshMenu, setShowRefreshMenu] = useState(false);
 
     // Find in page state
     const [findText, setFindText] = useState('');
@@ -634,6 +635,32 @@ const WebBrowserViewer = memo(({
     const handleBack = useCallback(() => webviewRef.current?.goBack(), []);
     const handleForward = useCallback(() => webviewRef.current?.goForward(), []);
     const handleRefresh = useCallback(() => webviewRef.current?.reload(), []);
+
+    // macOS two-finger swipe navigation (forward/back)
+    useEffect(() => {
+        const container = document.querySelector(`[data-pane-id="${nodeId}"]`);
+        if (!container) return;
+
+        let lastSwipeTime = 0;
+        const handleSwipe = (e: WheelEvent) => {
+            const now = Date.now();
+            if (now - lastSwipeTime < 500) return;
+            // macOS trackpad swipe emits wheel events with deltaX
+            // Only trigger on horizontal scroll with minimal vertical component
+            if (Math.abs(e.deltaX) > 30 && Math.abs(e.deltaY) < Math.abs(e.deltaX) * 0.5) {
+                if (e.deltaX < -50 && webviewRef.current?.canGoBack()) {
+                    lastSwipeTime = now;
+                    webviewRef.current.goBack();
+                } else if (e.deltaX > 50 && webviewRef.current?.canGoForward()) {
+                    lastSwipeTime = now;
+                    webviewRef.current.goForward();
+                }
+            }
+        };
+
+        container.addEventListener('wheel', handleSwipe as EventListener, { passive: true });
+        return () => container.removeEventListener('wheel', handleSwipe as EventListener);
+    }, [nodeId]);
     // Handle find in page
     const handleFindInPage = useCallback((text: string, forward: boolean = true) => {
         const webview = webviewRef.current;
@@ -686,7 +713,36 @@ const WebBrowserViewer = memo(({
         return () => window.removeEventListener('incognide-open-find-bar', handleOpenFindBar as EventListener);
     }, [nodeId]);
 
-    const handleHardRefresh = useCallback(() => webviewRef.current?.reloadIgnoringCache(), []);
+    // Listen for zoom events from menu accelerators (Ctrl+=/Ctrl+-/Ctrl+0)
+    useEffect(() => {
+        const handleZoom = (e: CustomEvent) => {
+            if (e.detail?.paneId !== nodeId) return;
+            const wv = webviewRef.current as any;
+            if (!wv?.getZoomLevel) return;
+            const direction = e.detail.direction;
+            if (direction === 'in') {
+                wv.setZoomLevel(Math.min(wv.getZoomLevel() + 0.5, 5));
+            } else if (direction === 'out') {
+                wv.setZoomLevel(Math.max(wv.getZoomLevel() - 0.5, -5));
+            } else if (direction === 'reset') {
+                wv.setZoomLevel(0);
+            }
+        };
+        window.addEventListener('incognide-zoom', handleZoom as EventListener);
+        return () => window.removeEventListener('incognide-zoom', handleZoom as EventListener);
+    }, [nodeId]);
+
+    const handleHardRefresh = useCallback(() => {
+        const webview = webviewRef.current;
+        if (!webview) return;
+        // Clear service worker caches inside the webview, then reload ignoring HTTP cache
+        try {
+            webview.executeJavaScript(
+                `if(window.caches){caches.keys().then(ks=>Promise.all(ks.map(k=>caches.delete(k))))}`
+            ).catch(() => {});
+        } catch {}
+        webview.reloadIgnoringCache();
+    }, []);
 
     // Keyboard shortcuts: Backspace for back, Ctrl/Cmd+F for find (only when this pane is focused)
     // Note: Ctrl+R, Ctrl+T, Ctrl+N are handled globally in Enpistu.tsx and main.js
@@ -738,6 +794,49 @@ const WebBrowserViewer = memo(({
                 return;
             }
 
+            // Ctrl+Shift+R / Cmd+Shift+R - hard refresh
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'R') {
+                e.preventDefault();
+                e.stopPropagation();
+                handleHardRefresh();
+                return;
+            }
+
+            // Ctrl+= / Cmd+= — zoom in the webview
+            if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) {
+                e.preventDefault();
+                e.stopPropagation();
+                const wv = webviewRef.current as any;
+                if (wv?.getZoomLevel) {
+                    const current = wv.getZoomLevel();
+                    wv.setZoomLevel(Math.min(current + 0.5, 5));
+                }
+                return;
+            }
+
+            // Ctrl+- / Cmd+- — zoom out the webview
+            if ((e.ctrlKey || e.metaKey) && e.key === '-') {
+                e.preventDefault();
+                e.stopPropagation();
+                const wv = webviewRef.current as any;
+                if (wv?.getZoomLevel) {
+                    const current = wv.getZoomLevel();
+                    wv.setZoomLevel(Math.max(current - 0.5, -5));
+                }
+                return;
+            }
+
+            // Ctrl+0 / Cmd+0 — reset zoom
+            if ((e.ctrlKey || e.metaKey) && e.key === '0') {
+                e.preventDefault();
+                e.stopPropagation();
+                const wv = webviewRef.current as any;
+                if (wv?.setZoomLevel) {
+                    wv.setZoomLevel(0);
+                }
+                return;
+            }
+
             // Backspace = go back (only if not in a text input)
             if (e.key === 'Backspace') {
                 const isTextInput = target.tagName === 'INPUT' ||
@@ -752,7 +851,7 @@ const WebBrowserViewer = memo(({
 
         document.addEventListener('keydown', handleKeyDown, true);
         return () => document.removeEventListener('keydown', handleKeyDown, true);
-    }, [canGoBack, handleBack, nodeId, showFindBar, findText, handleFindInPage, handleStopFindInPage]);
+    }, [canGoBack, handleBack, handleHardRefresh, nodeId, showFindBar, findText, handleFindInPage, handleStopFindInPage]);
     const handleHome = useCallback(() => {
         const initial = initialUrlRef.current;
         let homeUrl = initial;
@@ -1188,9 +1287,17 @@ const WebBrowserViewer = memo(({
             }
         };
 
-        const handleIpcMessage = (event: any) => {
+        const handleIpcMessage = async (event: any) => {
             if (event.channel === 'password-detected') {
                 const { site, username, password } = event.args[0];
+                // Check if this credential is already saved before prompting
+                try {
+                    const existingResult = await (window as any).api?.passwordGetForSite?.(site);
+                    const isDuplicate = existingResult?.credentials?.some(
+                        (saved: any) => saved.username === username
+                    );
+                    if (isDuplicate) return;
+                } catch { /* proceed to prompt on error */ }
                 setPendingCredentials({ site, username, password });
                 setShowPasswordPrompt(true);
             }
@@ -1336,14 +1443,43 @@ const WebBrowserViewer = memo(({
                 <div className="flex items-center gap-0.5 px-1 border-r theme-border">
                     <button onClick={handleBack} disabled={!canGoBack} className="p-1 theme-hover rounded disabled:opacity-30" title="Back"><ArrowLeft size={16} /></button>
                     <button onClick={handleForward} disabled={!canGoForward} className="p-1 theme-hover rounded disabled:opacity-30" title="Forward"><ArrowRight size={16} /></button>
-                    <button
-                        onClick={(e) => e.shiftKey ? handleHardRefresh() : handleRefresh()}
-                        onContextMenu={(e) => { e.preventDefault(); handleHardRefresh(); }}
-                        className="p-1 theme-hover rounded"
-                        title="Refresh (Ctrl+R) | Shift+Click or Right-click for Hard Refresh (Ctrl+Shift+R)"
-                    >
-                        <RotateCcw size={16} className={loading ? 'animate-spin' : ''} />
-                    </button>
+                    <div className="relative">
+                        <div className="flex items-center">
+                            <button
+                                onClick={handleRefresh}
+                                className="p-1 theme-hover rounded-l"
+                                title="Refresh"
+                            >
+                                <RotateCcw size={16} className={loading ? 'animate-spin' : ''} />
+                            </button>
+                            <button
+                                onClick={() => { setShowRefreshMenu(!showRefreshMenu); setShowSessionMenu(false); setShowExtensionsMenu(false); setShowPasswordsMenu(false); setShowPermissionsMenu(false); }}
+                                className="px-0.5 py-1 theme-hover rounded-r border-l theme-border text-gray-400"
+                                title="Refresh options"
+                            >
+                                <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"><path d="M1 3l3 3 3-3z"/></svg>
+                            </button>
+                        </div>
+                        {showRefreshMenu && (
+                            <>
+                                <div className="fixed inset-0 z-40" onClick={() => setShowRefreshMenu(false)} />
+                                <div className="absolute top-full left-0 mt-1 z-50 theme-bg-secondary border theme-border rounded shadow-lg py-1 min-w-[160px]">
+                                    <button
+                                        onClick={() => { handleRefresh(); setShowRefreshMenu(false); }}
+                                        className="flex items-center gap-2 w-full px-3 py-1.5 text-xs theme-hover text-left theme-text-primary"
+                                    >
+                                        <RotateCcw size={12} /> Refresh
+                                    </button>
+                                    <button
+                                        onClick={() => { handleHardRefresh(); setShowRefreshMenu(false); }}
+                                        className="flex items-center gap-2 w-full px-3 py-1.5 text-xs theme-hover text-left theme-text-primary"
+                                    >
+                                        <RotateCcw size={12} /> Hard Refresh
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
                     <button onClick={handleHome} className="p-1 theme-hover rounded" title="Home"><Home size={16} /></button>
                 </div>
 
@@ -1398,7 +1534,7 @@ const WebBrowserViewer = memo(({
                     {/* Site permissions button */}
                     <div className="relative">
                         <button
-                            onClick={() => { setShowPermissionsMenu(!showPermissionsMenu); setShowSessionMenu(false); setShowExtensionsMenu(false); setShowPasswordsMenu(false); }}
+                            onClick={() => { setShowPermissionsMenu(!showPermissionsMenu); setShowSessionMenu(false); setShowExtensionsMenu(false); setShowPasswordsMenu(false); setShowRefreshMenu(false); }}
                             className={`p-1 theme-hover rounded ${getPermissionsForSite(currentUrl).length > 0 ? 'text-blue-400' : ''}`}
                             title="Site Permissions"
                         >
@@ -1439,7 +1575,7 @@ const WebBrowserViewer = memo(({
                     {/* Passwords manager button */}
                     <div className="relative">
                         <button
-                            onClick={() => { setShowPasswordsMenu(!showPasswordsMenu); setShowSessionMenu(false); setShowExtensionsMenu(false); setShowPermissionsMenu(false); }}
+                            onClick={() => { setShowPasswordsMenu(!showPasswordsMenu); setShowSessionMenu(false); setShowExtensionsMenu(false); setShowPermissionsMenu(false); setShowRefreshMenu(false); }}
                             className="p-1 theme-hover rounded"
                             title="Saved Passwords"
                         >
@@ -1492,7 +1628,7 @@ const WebBrowserViewer = memo(({
 
                     {/* Extensions button */}
                     <div className="relative">
-                        <button onClick={() => { setShowExtensionsMenu(!showExtensionsMenu); setShowSessionMenu(false); setShowPasswordsMenu(false); setShowPermissionsMenu(false); }} className={`p-1 theme-hover rounded ${extensions.length > 0 ? 'text-purple-400' : ''}`} title="Extensions"><Puzzle size={16} /></button>
+                        <button onClick={() => { setShowExtensionsMenu(!showExtensionsMenu); setShowSessionMenu(false); setShowPasswordsMenu(false); setShowPermissionsMenu(false); setShowRefreshMenu(false); }} className={`p-1 theme-hover rounded ${extensions.length > 0 ? 'text-purple-400' : ''}`} title="Extensions"><Puzzle size={16} /></button>
                         {showExtensionsMenu && (
                             <>
                                 <div className="fixed inset-0 z-40" onClick={() => setShowExtensionsMenu(false)} />
@@ -1544,7 +1680,7 @@ const WebBrowserViewer = memo(({
 
                     {/* Settings button */}
                     <div className="relative">
-                        <button onClick={() => { setShowSessionMenu(!showSessionMenu); setShowExtensionsMenu(false); }} className="p-1 theme-hover rounded" title="Settings"><Settings size={16} /></button>
+                        <button onClick={() => { setShowSessionMenu(!showSessionMenu); setShowExtensionsMenu(false); setShowRefreshMenu(false); }} className="p-1 theme-hover rounded" title="Settings"><Settings size={16} /></button>
                         {showSessionMenu && (
                             <>
                                 <div className="fixed inset-0 z-40" onClick={() => setShowSessionMenu(false)} />
