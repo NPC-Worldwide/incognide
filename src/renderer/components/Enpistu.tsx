@@ -419,6 +419,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         topBarHeight, setTopBarHeight, bottomBarHeight, setBottomBarHeight,
         isResizingTopBar, setIsResizingTopBar, isResizingBottomBar, setIsResizingBottomBar,
         topBarCollapsed, setTopBarCollapsed,
+        bottomBarCollapsed, setBottomBarCollapsed,
         handleSidebarResize, handleInputResize,
     } = useSidebarResize();
 
@@ -7492,7 +7493,15 @@ const renderAttachmentThumbnails = () => {
 const renderMainContent = () => {
 
     // Top bar component - collapsible, resizable
-    const topBar = topBarCollapsed ? null : (
+    const topBar = topBarCollapsed ? (
+        <div
+            className="h-1 hover:h-4 flex items-center justify-center cursor-pointer theme-bg-secondary border-b theme-border transition-all group flex-shrink-0"
+            onClick={() => { setTopBarCollapsed(false); localStorage.setItem('npcStudio_topBarCollapsed', 'false'); }}
+            title="Show top bar"
+        >
+            <ChevronDown size={10} className="opacity-0 group-hover:opacity-60" />
+        </div>
+    ) : (
         <div className="flex-shrink-0 relative" style={{ height: topBarHeight }}>
             <div className="h-full px-3 flex items-center gap-3 text-[12px] theme-bg-secondary border-b theme-border">
             {/* Settings - left of path */}
@@ -7526,6 +7535,15 @@ const renderMainContent = () => {
             </button>
 
             <div className="flex-1" />
+
+            {/* Collapse top bar */}
+            <button
+                onClick={() => { setTopBarCollapsed(true); localStorage.setItem('npcStudio_topBarCollapsed', 'true'); }}
+                className="p-1.5 theme-hover rounded theme-text-muted"
+                title="Hide top bar"
+            >
+                <ChevronUp size={14} />
+            </button>
 
             {/* App Search */}
             <div
@@ -7855,24 +7873,38 @@ const renderMainContent = () => {
                         </div>
                     </div>
                 </div>
-                <StatusBar
-                    createDBToolPane={createDBToolPane}
-                    createTeamManagementPane={createTeamManagementPane}
-                    paneItems={[]}
-                    setActiveContentPaneId={setActiveContentPaneId}
-                    pendingMemoryCount={pendingMemoryCount}
-                    createMemoryManagerPane={createMemoryManagerPane}
-                    kgGeneration={kgGeneration}
-                    createGraphViewerPane={createGraphViewerPane}
-                    createNPCTeamPane={createNPCTeamPane}
-                    createJinxPane={createJinxPane}
-                    height={bottomBarHeight}
-                    onStartResize={() => setIsResizingBottomBar(true)}
-                    sidebarCollapsed={sidebarCollapsed}
-                    onExpandSidebar={() => setSidebarCollapsed(false)}
-                    topBarCollapsed={topBarCollapsed}
-                    onExpandTopBar={() => { setTopBarCollapsed(false); localStorage.setItem('npcStudio_topBarCollapsed', 'false'); }}
-                />
+                {bottomBarCollapsed ? (
+                    <div
+                        className="h-1 hover:h-4 flex items-center justify-center cursor-pointer theme-bg-tertiary border-t theme-border transition-all group"
+                        onClick={() => { setBottomBarCollapsed(false); localStorage.setItem('npcStudio_bottomBarCollapsed', 'false'); }}
+                        title="Show status bar"
+                    >
+                        <ChevronUp size={10} className="opacity-0 group-hover:opacity-60" />
+                    </div>
+                ) : (
+                    <StatusBar
+                        createDBToolPane={createDBToolPane}
+                        createTeamManagementPane={createTeamManagementPane}
+                        paneItems={[]}
+                        setActiveContentPaneId={setActiveContentPaneId}
+                        pendingMemoryCount={pendingMemoryCount}
+                        createMemoryManagerPane={createMemoryManagerPane}
+                        kgGeneration={kgGeneration}
+                        createGraphViewerPane={createGraphViewerPane}
+                        createNPCTeamPane={createNPCTeamPane}
+                        createJinxPane={createJinxPane}
+                        height={bottomBarHeight}
+                        onStartResize={() => setIsResizingBottomBar(true)}
+                        sidebarCollapsed={sidebarCollapsed}
+                        onExpandSidebar={() => setSidebarCollapsed(false)}
+                        topBarCollapsed={topBarCollapsed}
+                        onExpandTopBar={() => { setTopBarCollapsed(false); localStorage.setItem('npcStudio_topBarCollapsed', 'false'); }}
+                        appVersion={appVersion}
+                        updateAvailable={updateAvailable}
+                        onCheckForUpdates={checkForUpdates}
+                        onCollapse={() => { setBottomBarCollapsed(true); localStorage.setItem('npcStudio_bottomBarCollapsed', 'true'); }}
+                    />
+                )}
             </main>
         );
     }
@@ -7916,24 +7948,38 @@ const renderMainContent = () => {
                     </div>
                 )}
             </div>
-            <StatusBar
-                createDBToolPane={createDBToolPane}
-                createTeamManagementPane={createTeamManagementPane}
-                paneItems={paneItems}
-                setActiveContentPaneId={setActiveContentPaneId}
-                pendingMemoryCount={pendingMemoryCount}
-                createMemoryManagerPane={createMemoryManagerPane}
-                kgGeneration={kgGeneration}
-                createGraphViewerPane={createGraphViewerPane}
-                createNPCTeamPane={createNPCTeamPane}
-                createJinxPane={createJinxPane}
-                height={bottomBarHeight}
-                onStartResize={() => setIsResizingBottomBar(true)}
-                sidebarCollapsed={sidebarCollapsed}
-                onExpandSidebar={() => setSidebarCollapsed(false)}
-                topBarCollapsed={topBarCollapsed}
-                onExpandTopBar={() => { setTopBarCollapsed(false); localStorage.setItem('npcStudio_topBarCollapsed', 'false'); }}
-            />
+            {bottomBarCollapsed ? (
+                <div
+                    className="h-1 hover:h-4 flex items-center justify-center cursor-pointer theme-bg-tertiary border-t theme-border transition-all group"
+                    onClick={() => { setBottomBarCollapsed(false); localStorage.setItem('npcStudio_bottomBarCollapsed', 'false'); }}
+                    title="Show status bar"
+                >
+                    <ChevronUp size={10} className="opacity-0 group-hover:opacity-60" />
+                </div>
+            ) : (
+                <StatusBar
+                    createDBToolPane={createDBToolPane}
+                    createTeamManagementPane={createTeamManagementPane}
+                    paneItems={paneItems}
+                    setActiveContentPaneId={setActiveContentPaneId}
+                    pendingMemoryCount={pendingMemoryCount}
+                    createMemoryManagerPane={createMemoryManagerPane}
+                    kgGeneration={kgGeneration}
+                    createGraphViewerPane={createGraphViewerPane}
+                    createNPCTeamPane={createNPCTeamPane}
+                    createJinxPane={createJinxPane}
+                    height={bottomBarHeight}
+                    onStartResize={() => setIsResizingBottomBar(true)}
+                    sidebarCollapsed={sidebarCollapsed}
+                    onExpandSidebar={() => setSidebarCollapsed(false)}
+                    topBarCollapsed={topBarCollapsed}
+                    onExpandTopBar={() => { setTopBarCollapsed(false); localStorage.setItem('npcStudio_topBarCollapsed', 'false'); }}
+                    appVersion={appVersion}
+                    updateAvailable={updateAvailable}
+                    onCheckForUpdates={checkForUpdates}
+                    onCollapse={() => { setBottomBarCollapsed(true); localStorage.setItem('npcStudio_bottomBarCollapsed', 'true'); }}
+                />
+            )}
         </main>
     );
 };

@@ -277,7 +277,7 @@ let jinxInitialCompileDone = false;
 // ==================== VERSION / UPDATE ====================
 const packageJson = require('../../package.json');
 const APP_VERSION = packageJson.version;
-const UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/npcww/npc-core/main/incognide/package.json';
+const UPDATE_MANIFEST_URL = 'https://storage.googleapis.com/incognide-executables/manifest.json';
 
 // ==================== HELPER: resolvePythonPath ====================
 // Helper to resolve Python path from config or detect from workspace
@@ -2313,12 +2313,22 @@ function register(ctx) {
 
         log(`[UPDATE] Latest version: ${latestVersion}, Has update: ${hasUpdate}`);
 
+        const platform = process.platform;
+        const arch = process.arch;
+        let platformKey = 'macos-arm64';
+        if (platform === 'win32') platformKey = 'windows-x64';
+        else if (platform === 'linux') platformKey = arch === 'arm64' ? 'linux-arm64' : 'linux-x64';
+        else if (platform === 'darwin') platformKey = arch === 'arm64' ? 'macos-arm64' : 'macos-x64';
+
+        const releaseUrl = manifest.downloads?.[platformKey] || 'https://storage.googleapis.com/incognide-executables/manifest.json';
+
         return {
             success: true,
             currentVersion: APP_VERSION,
             latestVersion,
             hasUpdate,
-            releaseUrl: 'https://github.com/npcww/npc-core/releases'
+            releaseUrl,
+            downloads: manifest.downloads || {},
         };
     } catch (err) {
         log(`[UPDATE] Error checking for updates: ${err.message}`);

@@ -4798,6 +4798,15 @@ const getPlaceholderText = () => {
 
 return (
     <>
+    {sidebarCollapsed && (
+        <div
+            className="w-1 hover:w-4 flex items-center justify-center cursor-pointer theme-sidebar border-r theme-border transition-all group flex-shrink-0"
+            onClick={() => setSidebarCollapsed(false)}
+            title="Show sidebar"
+        >
+            <ChevronRight size={10} className="opacity-0 group-hover:opacity-60" />
+        </div>
+    )}
     <div
         data-tutorial="sidebar"
         className="border-r theme-border flex flex-col flex-shrink-0 theme-sidebar relative"
