@@ -21,6 +21,10 @@ export function useSidebarResize() {
         const saved = localStorage.getItem('npcStudio_topBarCollapsed');
         return saved === 'true';
     });
+    const [bottomBarCollapsed, setBottomBarCollapsed] = useState<boolean>(() => {
+        const saved = localStorage.getItem('npcStudio_bottomBarCollapsed');
+        return saved === 'true';
+    });
 
     // Sidebar resize handler
     const handleSidebarResize = useCallback((e: MouseEvent) => {
@@ -116,6 +120,7 @@ export function useSidebarResize() {
         isResizingTopBar, setIsResizingTopBar,
         isResizingBottomBar, setIsResizingBottomBar,
         topBarCollapsed, setTopBarCollapsed,
+        bottomBarCollapsed, setBottomBarCollapsed,
         handleSidebarResize,
         handleInputResize,
     };

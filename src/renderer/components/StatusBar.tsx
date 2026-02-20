@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
     MessageSquare, Terminal, Globe, FileText, File as FileIcon,
     BrainCircuit, Clock, Bot, Zap, Users, Database, ChevronRight, ChevronDown,
-    GitBranch, Image, Music, Settings, BarChart3
+    GitBranch, Image, BarChart3, AlertCircle, RefreshCw, Check
 } from 'lucide-react';
 import MemoryIcon from './MemoryIcon';
 import { useAiEnabled } from './AiFeatureContext';
@@ -41,6 +41,12 @@ interface StatusBarProps {
     // Top bar collapse (kept for interface but not used in StatusBar anymore)
     topBarCollapsed?: boolean;
     onExpandTopBar?: () => void;
+    // Update checking
+    appVersion?: string;
+    updateAvailable?: { latestVersion: string; releaseUrl: string } | null;
+    onCheckForUpdates?: () => Promise<void>;
+    // Collapse
+    onCollapse?: () => void;
 }
 
 const StatusBar: React.FC<StatusBarProps> = ({
@@ -59,8 +65,24 @@ const StatusBar: React.FC<StatusBarProps> = ({
     onStartResize,
     sidebarCollapsed = false,
     onExpandSidebar,
+    appVersion,
+    updateAvailable,
+    onCheckForUpdates,
+    onCollapse,
 }) => {
     const aiEnabled = useAiEnabled();
+    const [checkingUpdates, setCheckingUpdates] = useState(false);
+
+    const handleCheckUpdates = async () => {
+        if (checkingUpdates) return;
+        if (updateAvailable) {
+            (window as any).api?.browserOpenExternal?.(updateAvailable.releaseUrl);
+            return;
+        }
+        if (!onCheckForUpdates) return;
+        setCheckingUpdates(true);
+        try { await onCheckForUpdates(); } finally { setCheckingUpdates(false); }
+    };
     // Common button style - explicit transparent background, only icon colored
     const btnClass = "p-2 rounded transition-colors hover:opacity-80 bg-transparent";
 
@@ -127,6 +149,17 @@ const StatusBar: React.FC<StatusBarProps> = ({
             </button>
 
             <div className="flex-1" />
+
+            {/* Collapse status bar - left of pane dock */}
+            {onCollapse && (
+                <button
+                    onClick={onCollapse}
+                    className={`${btnClass} text-gray-400 dark:text-gray-500`}
+                    title="Hide status bar"
+                >
+                    <ChevronDown size={16} />
+                </button>
+            )}
 
             {/* Pane Dock - centered */}
             <div className="flex items-center gap-1">
@@ -197,6 +230,28 @@ const StatusBar: React.FC<StatusBarProps> = ({
                     </button>
                 </div>
             )}
+
+            {/* Update check - far right, icon only, version in tooltip above */}
+            <div className="relative group/update">
+                <button
+                    onClick={handleCheckUpdates}
+                    className={`${btnClass} ${updateAvailable ? 'text-amber-500' : 'text-gray-400 dark:text-gray-500'}`}
+                >
+                    {updateAvailable ? (
+                        <AlertCircle size={16} />
+                    ) : checkingUpdates ? (
+                        <RefreshCw size={16} className="animate-spin" />
+                    ) : (
+                        <Check size={16} />
+                    )}
+                </button>
+                <div className="absolute bottom-full right-0 mb-1 px-2 py-1 bg-gray-900 border border-gray-700 rounded text-[10px] text-gray-300 whitespace-nowrap opacity-0 group-hover/update:opacity-100 pointer-events-none transition-opacity z-50">
+                    {updateAvailable
+                        ? `v${appVersion || '?'} → v${updateAvailable.latestVersion} available`
+                        : `v${appVersion || '?'} — up to date`
+                    }
+                </div>
+            </div>
             </div>
         </div>
     );
