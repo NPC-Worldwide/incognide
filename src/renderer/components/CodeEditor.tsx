@@ -503,7 +503,31 @@ const CodeEditorPane = ({
                 )}
 
                 {/* Editor */}
-                <div className="flex-1 overflow-auto min-h-0">
+               <div
+                    className="flex-1 overflow-auto min-h-0"
+                    onDragOver={(e) => {
+                        if (e.dataTransfer.types.includes('Files')) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            e.dataTransfer.dropEffect = 'copy';
+                            }
+                        }}
+                    onDrop={async (e) => {
+                        if (!e.dataTransfer.files?.length) return;
+                            e.preventDefault();
+                            e.stopPropagation();
+
+                        const file = e.dataTransfer.files[0];
+                        const filePath = file.path; // Electron-specific
+
+                       if (filePath) {
+                        const response = await window.api.readFileContent(filePath);
+                        if (!response.error) {
+                            handleFileClick(filePath);
+                        }
+                        }
+                        }}
+                    >
                     <CodeMirrorEditor
                         value={fileContent || ''}
                         onChange={onContentChange}
