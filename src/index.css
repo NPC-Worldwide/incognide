@@ -1472,3 +1472,8 @@ body.layout-dragging .webview-resize-overlay {
     pointer-events: auto;
     cursor: inherit;
 }
+
+body.layout-resizing webview,
+body.layout-dragging webview {
+    pointer-events: none !important;
+}
