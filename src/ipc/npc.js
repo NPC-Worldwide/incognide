@@ -674,7 +674,7 @@ function register(ctx) {
     };
 
     // Auto-discover MCP servers from known team directories
-    const npcshDir = path.join(os.homedir(), '.npcsh');
+    const npcshDir = ctx.NPCSH_BASE || path.join(os.homedir(), '.npcsh');
     const knownTeamDirs = [
       { dir: path.join(npcshDir, 'npc_team'), name: 'npcsh' },
       { dir: path.join(npcshDir, 'incognide', 'npc_team'), name: 'incognide' }
@@ -811,7 +811,7 @@ function register(ctx) {
   ipcMain.handle('mcp:addIntegration', async (event, { integrationId, serverScript, envVars, name } = {}) => {
     try {
       // Destination directory for MCP servers
-      const npcshDir = path.join(os.homedir(), '.npcsh');
+      const npcshDir = ctx.NPCSH_BASE || path.join(os.homedir(), '.npcsh');
       const mcpServersDir = path.join(npcshDir, 'mcp_servers');
 
       // Ensure directories exist

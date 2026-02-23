@@ -345,6 +345,15 @@ const Sidebar = (props: any) => {
         { ext: 'c', label: 'C', icon: '©️' },
         { ext: 'cpp', label: 'C++', icon: '➕' },
         { ext: 'java', label: 'Java', icon: '☕' },
+        { ext: 'tex', label: 'LaTeX', icon: '📐' },
+        { ext: 'r', label: 'R', icon: '📊' },
+        { ext: 'rb', label: 'Ruby', icon: '💎' },
+        { ext: 'swift', label: 'Swift', icon: '🐦' },
+        { ext: 'kt', label: 'Kotlin', icon: '🅺' },
+        { ext: 'toml', label: 'TOML', icon: '⚙️' },
+        { ext: 'ini', label: 'INI', icon: '⚙️' },
+        { ext: 'xml', label: 'XML', icon: '📋' },
+        { ext: 'csv', label: 'CSV', icon: '📊' },
     ];
 
     // Create file with specific extension - just create untitled file directly
@@ -366,6 +375,15 @@ const Sidebar = (props: any) => {
             });
         }
     }, [currentPath, baseDir]);
+
+    // Close all header dropdowns (called when opening one to close others)
+    const closeAllDropdowns = () => {
+        setTerminalDropdownOpen(false);
+        setChatPlusDropdownOpen(false);
+        setCodeFileDropdownOpen(false);
+        setDocDropdownOpen(false);
+        setFolderDropdownOpen(false);
+    };
 
     // Close dropdowns when clicking outside
     useEffect(() => {
@@ -3300,6 +3318,7 @@ const renderFolderList = (structure) => {
                                 const rect = folderButtonRef.current.getBoundingClientRect();
                                 setFolderDropdownPos({ top: rect.bottom + 4, left: rect.left });
                             }
+                            closeAllDropdowns();
                             setFolderDropdownOpen(!folderDropdownOpen);
                         }}
                         className="flex items-center gap-0.5 p-1 theme-hover transition-colors rounded text-gray-400 hover:text-yellow-400"
@@ -4861,7 +4880,7 @@ return (
         )}
 
         {/* Header Actions - hidden when sidebar or top bar is collapsed */}
-        <div className={`border-b theme-border flex-shrink-0 relative group/header overflow-hidden ${sidebarCollapsed || topBarCollapsed ? 'hidden' : ''}`} style={{ height: topBarHeight }}>
+        <div className={`border-b theme-border flex-shrink-0 relative group/header ${sidebarCollapsed || topBarCollapsed ? 'hidden' : ''}`} style={{ height: topBarHeight }}>
             <div className="grid grid-cols-4 divide-x theme-border h-full" data-tutorial="creation-tiles">
                 {/* Terminals dropdown */}
                 <div className="relative" data-dropdown="terminal" data-tutorial="terminal-button">
@@ -4875,7 +4894,7 @@ return (
                         {defaultNewTerminalType === 'guac' && <Code2 size={18} className="text-yellow-400" />}
                     </button>
                     <button
-                        onClick={(e) => { e.stopPropagation(); setTerminalDropdownOpen(!terminalDropdownOpen); }}
+                        onClick={(e) => { e.stopPropagation(); closeAllDropdowns(); setTerminalDropdownOpen(!terminalDropdownOpen); }}
                         className="absolute top-0 right-0 w-1/2 h-1/2 flex items-center justify-center theme-hover rounded-bl transition-colors"
                         title="More terminal options"
                     >
@@ -4925,7 +4944,7 @@ return (
                         {defaultNewNotebookType === 'notebook' ? <FileText size={18} className="text-orange-400" /> : <FlaskConical size={18} className="text-purple-400" />}
                     </button>
                     <button
-                        onClick={(e) => { e.stopPropagation(); setChatPlusDropdownOpen(!chatPlusDropdownOpen); }}
+                        onClick={(e) => { e.stopPropagation(); closeAllDropdowns(); setChatPlusDropdownOpen(!chatPlusDropdownOpen); }}
                         className="absolute top-0 right-0 w-1/2 h-1/2 flex items-center justify-center theme-hover rounded-bl transition-colors"
                         title="More options"
                     >
@@ -4963,7 +4982,7 @@ return (
                         <Code2 size={18} className="text-cyan-400" />
                     </button>
                     <button
-                        onClick={(e) => { e.stopPropagation(); setCodeFileDropdownOpen(!codeFileDropdownOpen); }}
+                        onClick={(e) => { e.stopPropagation(); closeAllDropdowns(); setCodeFileDropdownOpen(!codeFileDropdownOpen); }}
                         className="absolute top-0 right-0 w-1/2 h-1/2 flex items-center justify-center theme-hover rounded-bl transition-colors"
                         title="More file types"
                     >
@@ -4998,7 +5017,7 @@ return (
                         <FileStack size={18} className="text-rose-400" />
                     </button>
                     <button
-                        onClick={(e) => { e.stopPropagation(); setDocDropdownOpen(!docDropdownOpen); }}
+                        onClick={(e) => { e.stopPropagation(); closeAllDropdowns(); setDocDropdownOpen(!docDropdownOpen); }}
                         className="absolute top-0 right-0 w-1/2 h-1/2 flex items-center justify-center theme-hover rounded-bl transition-colors"
                         title="More document types"
                     >

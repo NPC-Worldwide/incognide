@@ -991,6 +991,10 @@ function register(ctx) {
     return os.homedir();
   });
 
+  ipcMain.handle('getNpcshHome', async () => {
+    return ctx.NPCSH_BASE || path.join(os.homedir(), '.npcsh');
+  });
+
   ipcMain.handle('readDirectory', async (_, dir) => {
     try {
       const items = await fsPromises.readdir(dir, { withFileTypes: true });

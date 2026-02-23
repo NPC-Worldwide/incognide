@@ -38,15 +38,31 @@ const FRONTEND_PORT = IS_DEV_MODE ? 7337 : 6337;
 const BACKEND_PORT = IS_DEV_MODE ? 5437 : 5337;
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
 
+// Read INCOGNIDE_HOME from .npcshrc early (before app paths are set)
+let NPCSH_BASE = path.join(os.homedir(), '.npcsh');
+try {
+  const _rcPath = path.join(os.homedir(), '.npcshrc');
+  if (fs.existsSync(_rcPath)) {
+    const _rcContent = fs.readFileSync(_rcPath, 'utf-8');
+    const _match = _rcContent.match(/^(?:export\s+)?INCOGNIDE_HOME=(.*)$/m);
+    if (_match) {
+      let _val = _match[1].trim();
+      if ((_val.startsWith('"') && _val.endsWith('"')) || (_val.startsWith("'") && _val.endsWith("'"))) _val = _val.slice(1, -1);
+      if (_val.startsWith('~')) _val = _val.replace('~', os.homedir());
+      if (_val) NPCSH_BASE = _val;
+    }
+  }
+} catch {}
+
 // Use separate user data paths for dev vs prod to allow running both simultaneously
 if (IS_DEV_MODE) {
-  app.setPath('userData', path.join(os.homedir(), '.npcsh', 'incognide-dev'));
+  app.setPath('userData', path.join(NPCSH_BASE, 'incognide-dev'));
 } else {
-  app.setPath('userData', path.join(os.homedir(), '.npcsh', 'incognide'));
+  app.setPath('userData', path.join(NPCSH_BASE, 'incognide'));
 }
 
-// Centralized logging setup - all logs go to ~/.npcsh/incognide/logs/
-const logsDir = path.join(os.homedir(), '.npcsh', 'incognide', 'logs');
+// Centralized logging setup - all logs go to <NPCSH_BASE>/incognide/logs/
+const logsDir = path.join(NPCSH_BASE, 'incognide', 'logs');
 try {
   fs.mkdirSync(logsDir, { recursive: true });
 } catch (err) {
@@ -2128,6 +2144,7 @@ registerAll({
   backendLogPath,
   ensureTablesExist,
   appDir: __dirname,
+  NPCSH_BASE,
 });
 
 // Handler that needs createWindow from main.js scope

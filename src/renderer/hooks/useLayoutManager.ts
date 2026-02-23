@@ -64,6 +64,10 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
                         fileContent: activePaneData.fileContent,
                         fileChanged: activePaneData.fileChanged,
                         isUntitled: activePaneData.isUntitled,
+                    chatMessages: activePaneData.chatMessages,
+                    executionMode: activePaneData.executionMode,
+                    selectedJinx: activePaneData.selectedJinx,
+                    chatStats: activePaneData.chatStats,
                     }];
                 }
                 // Add new content as a new tab, preserving all relevant properties
@@ -76,6 +80,10 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
                     fileContent: newPaneData.fileContent,
                     fileChanged: newPaneData.fileChanged,
                     isUntitled: newPaneData.isUntitled,
+                    chatMessages: newPaneData.chatMessages,
+                    executionMode: newPaneData.executionMode,
+                    selectedJinx: newPaneData.selectedJinx,
+                    chatStats: newPaneData.chatStats,
                 });
                 activePaneData.activeTabIndex = activePaneData.tabs.length - 1;
                 // Copy all relevant properties to the active pane
@@ -85,6 +93,10 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
                 activePaneData.fileContent = newPaneData.fileContent;
                 activePaneData.fileChanged = newPaneData.fileChanged;
                 activePaneData.isUntitled = newPaneData.isUntitled;
+                activePaneData.chatMessages = newPaneData.chatMessages;
+                activePaneData.executionMode = newPaneData.executionMode;
+                activePaneData.selectedJinx = newPaneData.selectedJinx;
+                activePaneData.chatStats = newPaneData.chatStats;
                 delete contentDataRef.current[newPaneId];
                 setRootLayoutNode((prev: any) => prev ? JSON.parse(JSON.stringify(prev)) : prev);
                 return activeContentPaneIdRef.current;
@@ -383,6 +395,58 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
         if (!contentType) {
             console.error('[createAndAddPaneNodeToLayout] Cannot create pane without contentType!');
             return null;
+        }
+
+        // Singleton pane types — only one instance allowed, refocus if exists
+        const singletonTypes = new Set([
+            'settings', 'npcteam', 'teammanagement', 'jinx', 'library', 'help',
+            'git', 'projectenv', 'diskusage', 'data-labeler', 'graph-viewer',
+            'browsergraph', 'datadash', 'photoviewer', 'scherzo',
+        ]);
+
+        // Check for existing pane to refocus instead of creating duplicate
+        for (const [paneId, data] of Object.entries(contentDataRef.current)) {
+            if (!data?.contentType) continue;
+            // Skip virtual tab panes (they have _tab_ in ID)
+            if (paneId.includes('_tab_')) continue;
+
+            // Singleton: match by contentType only
+            if (singletonTypes.has(contentType) && data.contentType === contentType) {
+                setActiveContentPaneId(paneId);
+                return paneId;
+            }
+
+            // Document/file types: match by contentType + contentId
+            if (finalContentId && data.contentType === contentType && data.contentId === finalContentId) {
+                setActiveContentPaneId(paneId);
+                return paneId;
+            }
+
+            // Also check tabs for matching content
+            if (data.tabs && Array.isArray(data.tabs)) {
+                const tabIndex = data.tabs.findIndex((tab: any) =>
+                    (singletonTypes.has(contentType) && tab.contentType === contentType) ||
+                    (finalContentId && tab.contentType === contentType && tab.contentId === finalContentId)
+                );
+                if (tabIndex >= 0) {
+                    // Switch to the matching tab
+                    data.activeTabIndex = tabIndex;
+                    const tab = data.tabs[tabIndex];
+                    data.contentType = tab.contentType;
+                    data.contentId = tab.contentId;
+                    data.fileContent = tab.fileContent;
+                    data.fileChanged = tab.fileChanged;
+                    data.isUntitled = tab.isUntitled;
+                    if (tab.contentType === 'browser') data.browserUrl = tab.browserUrl;
+                    if (tab.contentType === 'chat') {
+                        data.chatMessages = tab.chatMessages;
+                        data.executionMode = tab.executionMode;
+                    }
+                    setActiveContentPaneId(paneId);
+                    setRootLayoutNode((prev: any) => prev ? ({ ...prev }) : prev);
+                    return paneId;
+                }
+            }
         }
 
         const newPaneId = generateId();

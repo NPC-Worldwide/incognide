@@ -634,6 +634,7 @@ const defaultSettings = {
     embedding_provider: 'ollama',
     search_provider: 'duckduckgo',
     default_folder: HOME_DIR,
+    data_directory: '', // Empty means default (~/.npcsh/incognide/)
     default_to_agent: false, // When true, new chats default to agent mode
     is_predictive_text_enabled: false,
     predictive_text_model: 'llama3.2',
@@ -1682,27 +1683,26 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
 
     const content = (
         <div className={`flex flex-col ${embedded ? 'h-full' : 'max-h-[80vh]'}`}>
-            {/* Scrollable tabs with hidden scrollbar */}
-            <div className="relative">
-                <div className="flex gap-1 px-2 py-1 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                    {tabs.map((tab) => (
-                        <button
-                            key={tab.id}
-                            onClick={() => setActiveTab(tab.id)}
-                            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all whitespace-nowrap flex-shrink-0 ${
-                                activeTab === tab.id
-                                    ? 'bg-blue-600 text-white'
-                                    : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
-                            }`}
-                        >
-                            {tab.name}
-                        </button>
-                    ))}
+            <div className="flex flex-1 min-h-0">
+                <div className="w-40 border-r border-gray-700 overflow-y-auto p-2 flex-shrink-0">
+                    <div className="space-y-0.5">
+                        {tabs.map((tab) => (
+                            <button
+                                key={tab.id}
+                                onClick={() => setActiveTab(tab.id)}
+                                className={`w-full text-left px-3 py-1.5 text-xs font-medium rounded transition-all ${
+                                    activeTab === tab.id
+                                        ? 'bg-blue-600/50 text-white'
+                                        : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
+                                }`}
+                            >
+                                {tab.name}
+                            </button>
+                        ))}
+                    </div>
                 </div>
-                <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-gray-800 to-transparent pointer-events-none" />
-            </div>
 
-            <div className={`${embedded ? 'flex-1' : ''} overflow-y-auto p-6 space-y-4`}>
+                <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 {activeTab === 'account' && (
                     <div className="space-y-4">
                         <h3 className="text-lg font-medium text-white">Account & Sync</h3>
@@ -1762,21 +1762,37 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                             value={globalSettings.default_folder}
                             onChange={(e) => setGlobalSettings({...globalSettings, default_folder: e.target.value})}
                         />
-                        {aiEnabled && (
-                            <>
-                                <Input
-                                    label="Model"
-                                    value={globalSettings.model || ''}
-                                    onChange={(e) => setGlobalSettings({...globalSettings, model: e.target.value})}
+                        <div>
+                            <label className="block text-xs font-medium text-gray-400 mb-1">Data Directory (INCOGNIDE_HOME)</label>
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={globalSettings.data_directory || '~/.npcsh/incognide'}
+                                    onChange={(e) => setGlobalSettings({...globalSettings, data_directory: e.target.value})}
+                                    className="flex-1 px-3 py-1.5 text-sm rounded border border-gray-700 bg-gray-800 text-gray-200"
+                                    placeholder="~/.npcsh/incognide"
                                 />
-                                <Input
-                                    label="Provider"
-                                    value={globalSettings.provider || ''}
-                                    onChange={(e) => setGlobalSettings({...globalSettings, provider: e.target.value})}
-                                />
-                            </>
-                        )}
-
+                                <button
+                                    onClick={async () => {
+                                        try {
+                                            const result = await (window as any).api.showOpenDialog({
+                                                properties: ['openDirectory'],
+                                                title: 'Select Data Directory',
+                                            });
+                                            if (result?.filePaths?.[0]) {
+                                                setGlobalSettings({...globalSettings, data_directory: result.filePaths[0]});
+                                            }
+                                        } catch {}
+                                    }}
+                                    className="px-3 py-1.5 text-xs rounded border border-gray-700 hover:bg-gray-700 text-gray-300"
+                                >
+                                    Browse
+                                </button>
+                            </div>
+                            <p className="text-[10px] text-gray-500 mt-1">
+                                Base directory for Incognide data (teams, models, configs). Saved as INCOGNIDE_HOME in ~/.npcshrc. Requires restart.
+                            </p>
+                        </div>
                         {aiEnabled && (
                             <div className="border border-gray-700 rounded-lg p-3">
                                 <label className="flex items-center gap-2 cursor-pointer">
@@ -2118,6 +2134,7 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                 {activeTab === 'passwords' && <PasswordManager />}
                 {activeTab === 'python' && <PythonEnvSettings currentPath={currentPath} />}
                 {activeTab === 'permissions' && <PermissionsManager />}
+                </div>
             </div>
 
             <div className="border-t border-gray-700 p-4 flex justify-end">

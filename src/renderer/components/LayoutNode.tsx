@@ -708,6 +708,13 @@ export const LayoutNode = memo(({ node, path, component }) => {
                     tabs[currentTabIndex].fileContent = paneData.fileContent;
                     tabs[currentTabIndex].fileChanged = paneData.fileChanged;
                     tabs[currentTabIndex].isUntitled = paneData.isUntitled;
+                    // Save chat state for chat tabs
+                    if (tabs[currentTabIndex].contentType === 'chat') {
+                        tabs[currentTabIndex].chatMessages = paneData.chatMessages;
+                        tabs[currentTabIndex].executionMode = paneData.executionMode;
+                        tabs[currentTabIndex].selectedJinx = paneData.selectedJinx;
+                        tabs[currentTabIndex].chatStats = paneData.chatStats;
+                    }
                     // IMPORTANT: Save browserUrl and browserTitle for browser tabs
                     if (tabs[currentTabIndex].contentType === 'browser') {
                         if (paneData.browserUrl) tabs[currentTabIndex].browserUrl = paneData.browserUrl;
@@ -724,6 +731,13 @@ export const LayoutNode = memo(({ node, path, component }) => {
                 paneData.fileContent = selectedTab.fileContent;
                 paneData.fileChanged = selectedTab.fileChanged || false;
                 paneData.isUntitled = selectedTab.isUntitled || false;
+                // Restore chat state for chat tabs
+                if (selectedTab.contentType === 'chat') {
+                    paneData.chatMessages = selectedTab.chatMessages;
+                    paneData.executionMode = selectedTab.executionMode;
+                    paneData.selectedJinx = selectedTab.selectedJinx;
+                    paneData.chatStats = selectedTab.chatStats;
+                }
                 // Preserve browserUrl and browserTitle for browser tabs
                 if (selectedTab.contentType === 'browser') {
                     paneData.browserUrl = selectedTab.browserUrl || 'about:blank';
@@ -748,6 +762,13 @@ export const LayoutNode = memo(({ node, path, component }) => {
                     if (tabs[currentTabIndex].contentType === 'editor') {
                         tabs[currentTabIndex].fileContent = paneData.fileContent;
                         tabs[currentTabIndex].fileChanged = paneData.fileChanged;
+                    }
+                    // Save chat state for chat tabs
+                    if (tabs[currentTabIndex].contentType === 'chat') {
+                        tabs[currentTabIndex].chatMessages = paneData.chatMessages;
+                        tabs[currentTabIndex].executionMode = paneData.executionMode;
+                        tabs[currentTabIndex].selectedJinx = paneData.selectedJinx;
+                        tabs[currentTabIndex].chatStats = paneData.chatStats;
                     }
                 }
 
@@ -778,6 +799,13 @@ export const LayoutNode = memo(({ node, path, component }) => {
                         paneData.fileContent = newActiveTab.fileContent;
                         paneData.fileChanged = newActiveTab.fileChanged || false;
                     }
+                    // Restore chat state for chat tabs
+                    if (newActiveTab?.contentType === 'chat') {
+                        paneData.chatMessages = newActiveTab.chatMessages;
+                        paneData.executionMode = newActiveTab.executionMode;
+                        paneData.selectedJinx = newActiveTab.selectedJinx;
+                        paneData.chatStats = newActiveTab.chatStats;
+                    }
                     setRootLayoutNode?.(prev => ({ ...prev }));
                 }
             }
@@ -794,6 +822,12 @@ export const LayoutNode = memo(({ node, path, component }) => {
                     if (tabs[currentTabIndex].contentType === 'editor') {
                         tabs[currentTabIndex].fileContent = paneData.fileContent;
                         tabs[currentTabIndex].fileChanged = paneData.fileChanged;
+                    }
+                    if (tabs[currentTabIndex].contentType === 'chat') {
+                        tabs[currentTabIndex].chatMessages = paneData.chatMessages;
+                        tabs[currentTabIndex].executionMode = paneData.executionMode;
+                        tabs[currentTabIndex].selectedJinx = paneData.selectedJinx;
+                        tabs[currentTabIndex].chatStats = paneData.chatStats;
                     }
                 }
 
@@ -837,10 +871,19 @@ export const LayoutNode = memo(({ node, path, component }) => {
                 const newTabId = `tab_${Date.now()}_${paneData.tabs.length}`;
                 let newContentId = null;
                 let title = contentType;
+                let extraChatProps: any = {};
 
                 if (contentType === 'chat') {
                     newContentId = `conv_${Date.now()}`;
                     title = 'New Chat';
+                    // Initialize chat state immediately so it doesn't show "No messages"
+                    const savedMode = localStorage.getItem('incognideExecutionMode');
+                    extraChatProps = {
+                        chatMessages: { messages: [], allMessages: [], displayedMessageCount: 20 },
+                        executionMode: savedMode ? JSON.parse(savedMode) : 'chat',
+                        selectedJinx: null,
+                        chatStats: { messageCount: 0, inputTokens: 0, outputTokens: 0, totalCost: 0, models: new Set(), agents: new Set(), providers: new Set() },
+                    };
                 } else if (contentType === 'terminal') {
                     newContentId = `term_${Date.now()}`;
                     title = 'Terminal';
@@ -862,7 +905,8 @@ export const LayoutNode = memo(({ node, path, component }) => {
                     id: newTabId,
                     contentType,
                     contentId: newContentId,
-                    title
+                    title,
+                    ...extraChatProps,
                 };
 
                 paneData.tabs.push(newTab);
@@ -871,6 +915,13 @@ export const LayoutNode = memo(({ node, path, component }) => {
                 // Also update main paneData to reflect active tab
                 paneData.contentType = contentType;
                 paneData.contentId = newContentId;
+                // Apply chat state to pane data
+                if (extraChatProps.chatMessages) {
+                    paneData.chatMessages = extraChatProps.chatMessages;
+                    paneData.executionMode = extraChatProps.executionMode;
+                    paneData.selectedJinx = extraChatProps.selectedJinx;
+                    paneData.chatStats = extraChatProps.chatStats;
+                }
 
                 setRootLayoutNode?.(prev => ({ ...prev }));
             }
@@ -1106,6 +1157,7 @@ export const LayoutNode = memo(({ node, path, component }) => {
         if (tabs.length > 1) {
             tabs.forEach((tab, index) => {
                 const virtualId = `${node.id}_tab_${index}`;
+                const isActiveTab = index === activeTabIndex;
                 // Create or update virtual pane data for this tab
                 if (!contentDataRef.current[virtualId] || contentDataRef.current[virtualId].contentId !== tab.contentId || contentDataRef.current[virtualId].isUntitled !== tab.isUntitled) {
                     contentDataRef.current[virtualId] = {
@@ -1116,7 +1168,19 @@ export const LayoutNode = memo(({ node, path, component }) => {
                         fileContent: tab.fileContent,
                         fileChanged: tab.fileChanged,
                         isUntitled: tab.isUntitled,
+                        chatMessages: tab.chatMessages,
+                        executionMode: tab.executionMode,
+                        selectedJinx: tab.selectedJinx,
+                        chatStats: tab.chatStats,
                     };
+                }
+                // For the active tab, keep chat state synced from the real pane data
+                // (updateContentPane sets chat props on paneData, not on the tab object)
+                if (isActiveTab && contentDataRef.current[virtualId]) {
+                    contentDataRef.current[virtualId].chatMessages = paneData?.chatMessages;
+                    contentDataRef.current[virtualId].executionMode = paneData?.executionMode;
+                    contentDataRef.current[virtualId].selectedJinx = paneData?.selectedJinx;
+                    contentDataRef.current[virtualId].chatStats = paneData?.chatStats;
                 }
             });
         }
@@ -1125,6 +1189,29 @@ export const LayoutNode = memo(({ node, path, component }) => {
         const renderTabContent = (tab: any, tabIndex: number) => {
             const virtualId = `${node.id}_tab_${tabIndex}`;
             const tabContentType = tab.contentType;
+            const isActiveTab = tabIndex === activeTabIndex;
+
+            // Special case: chat needs ChatInput wrapper and uses real pane ID for active tab
+            if (tabContentType === 'chat') {
+                if (isActiveTab) {
+                    return (
+                        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                            <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto">
+                                {paneRenderers.chat?.({ nodeId: node.id })}
+                            </div>
+                            {chatInputProps && (
+                                <ChatInput
+                                    {...chatInputProps}
+                                    paneId={node.id}
+                                    onFocus={() => setActiveContentPaneId(node.id)}
+                                />
+                            )}
+                        </div>
+                    );
+                }
+                // Inactive chat tab: minimal placeholder (it's hidden anyway)
+                return <div />;
+            }
 
             // Special case: browser needs extra props
             if (tabContentType === 'browser') {
@@ -1244,7 +1331,7 @@ export const LayoutNode = memo(({ node, path, component }) => {
                         fileChanged={paneData?.fileChanged || activeTab?.fileChanged}
                         onSave={() => { if (paneData?.onSave) paneData.onSave(); }}
                         onStartRename={() => {
-                            if (contentId && (contentType === 'editor' || contentType === 'latex' || contentType === 'csv' || contentType === 'docx' || contentType === 'pptx' || contentType === 'pdf' || contentType === 'mindmap' || contentType === 'zip')) {
+                            if (contentId) {
                                 setRenamingPaneId(node.id);
                                 setEditedFileName(getFileName(contentId) || '');
                             }
@@ -1274,6 +1361,25 @@ export const LayoutNode = memo(({ node, path, component }) => {
                     </PaneHeader>
                 )}
                 {/* Browser handles its own header with zen/close buttons inside WebBrowserViewer */}
+
+                {/* Universal rename overlay for panes that skip PaneHeader (docx, pptx, csv, latex) */}
+                {renamingPaneId === node.id && (contentType === 'docx' || contentType === 'pptx' || contentType === 'csv' || contentType === 'latex') && (
+                    <div className="flex items-center gap-1 px-2 py-1 theme-bg-secondary border-b theme-border z-30">
+                        <input
+                            type="text"
+                            value={editedFileName}
+                            onChange={(e) => setEditedFileName(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleConfirmRename?.(node.id, contentId);
+                                if (e.key === 'Escape') setRenamingPaneId(null);
+                            }}
+                            className="flex-1 px-1 py-0.5 text-xs theme-bg-primary theme-text-primary border theme-border rounded focus:outline-none focus:border-blue-500"
+                            autoFocus
+                        />
+                        <button onClick={() => handleConfirmRename?.(node.id, contentId)} className="px-1.5 py-0.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-500">OK</button>
+                        <button onClick={() => setRenamingPaneId(null)} className="px-1.5 py-0.5 text-xs theme-button theme-hover rounded">Cancel</button>
+                    </div>
+                )}
 
                 {draggedItem && !lockedPanes.has(node.id) && (
                     <>

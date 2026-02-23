@@ -24,6 +24,7 @@ readDocxContent: (filePath) =>
     ensureDir: (dirPath) => ipcRenderer.invoke('ensureDirectory', dirPath),
     ensureDirectory: (dirPath) => ipcRenderer.invoke('ensureDirectory', dirPath),
     getHomeDir: () => ipcRenderer.invoke('getHomeDir'),
+    getNpcshHome: () => ipcRenderer.invoke('getNpcshHome'),
     readDirectoryImages: (dirPath) => ipcRenderer.invoke('readDirectoryImages', dirPath),
     open_directory_picker: () => ipcRenderer.invoke('open_directory_picker'),
 

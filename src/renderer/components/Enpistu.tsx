@@ -3590,58 +3590,29 @@ const renderMessageContextMenu = () => null;
 
     // Create a new experiment (.exp)
     const createNewExperiment = useCallback(async () => {
-        // Create a new untitled experiment in the current directory
-        const timestamp = Date.now();
-        const notebookName = `experiment-${timestamp}.exp`;
-        const notebookPath = `${currentPath}/${notebookName}`;
-
-        // Create empty experiment structure with scientific method sections
-        const emptyExp = {
-            exp_version: '1.0',
-            created_at: new Date().toISOString(),
-            modified_at: new Date().toISOString(),
-            hypothesis: '',
-            sections: [
-                { id: 'hypothesis', type: 'hypothesis', title: 'Hypothesis', order: 0, blocks: [] },
-                { id: 'methods', type: 'methods', title: 'Methods', order: 1, blocks: [] },
-                { id: 'data', type: 'data', title: 'Data', order: 2, blocks: [] },
-                { id: 'results', type: 'results', title: 'Results', order: 3, blocks: [] },
-                { id: 'discussion', type: 'discussion', title: 'Discussion', order: 4, blocks: [] },
-                { id: 'conclusion', type: 'conclusion', title: 'Conclusion', order: 5, blocks: [] },
-            ],
-            status: 'draft',
-            conclusion: null,
-            tags: [],
-            session_ids: [],
-            notes: [],
-            artifacts: []
-        };
-
         try {
-            await (window as any).api.writeFileContent(notebookPath, JSON.stringify(emptyExp, null, 2));
-
-            // Check for empty pane to reuse first
-            const emptyPaneId = findEmptyPaneId();
-            if (emptyPaneId) {
-                await updateContentPane(emptyPaneId, 'exp', notebookPath);
-                setActiveContentPaneId(emptyPaneId);
-                setRootLayoutNode(prev => ({ ...prev }));
-                return;
-            }
-
-            const newPaneId = generateId();
-
-            // Set content BEFORE layout to prevent empty pane
-            contentDataRef.current[newPaneId] = { contentType: 'exp', contentId: notebookPath };
-
-            // Use balanced grid layout
-            addPaneOrTab(newPaneId);
-            setActiveConversationId(null);
-            setCurrentFile(notebookPath);
+            const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.npcsh`;
+            const tmpDir = normalizePath(`${npcshHome}/incognide/tmp`);
+            await window.api.ensureDir?.(tmpDir).catch(() => {});
+            const filepath = normalizePath(`${tmpDir}/experiment-${Date.now()}.exp`);
+            const emptyExp = {
+                exp_version: '1.0', created_at: new Date().toISOString(), modified_at: new Date().toISOString(),
+                hypothesis: '', status: 'draft', conclusion: null, tags: [], session_ids: [], notes: [], artifacts: [],
+                sections: [
+                    { id: 'hypothesis', type: 'hypothesis', title: 'Hypothesis', order: 0, blocks: [] },
+                    { id: 'methods', type: 'methods', title: 'Methods', order: 1, blocks: [] },
+                    { id: 'data', type: 'data', title: 'Data', order: 2, blocks: [] },
+                    { id: 'results', type: 'results', title: 'Results', order: 3, blocks: [] },
+                    { id: 'discussion', type: 'discussion', title: 'Discussion', order: 4, blocks: [] },
+                    { id: 'conclusion', type: 'conclusion', title: 'Conclusion', order: 5, blocks: [] },
+                ],
+            };
+            await (window as any).api.writeFileContent(filepath, JSON.stringify(emptyExp, null, 2));
+            createAndAddPaneNodeToLayout({ contentType: 'exp', contentId: filepath, isUntitled: true });
         } catch (err: any) {
-            setError(`Failed to create notebook: ${err.message}`);
+            setError(err.message);
         }
-    }, [currentPath, updateContentPane, findEmptyPaneId]);
+    }, [createAndAddPaneNodeToLayout]);
 
     // Create DataLabeler pane
     const createDataLabelerPane = useCallback(async () => {
@@ -3996,60 +3967,22 @@ const handleBrowserDialogNavigate = (url) => {
 
     // Create a new Jupyter notebook (.ipynb)
     const createNewJupyterNotebook = useCallback(async () => {
-        const timestamp = Date.now();
-        const notebookName = `notebook-${timestamp}.ipynb`;
-        const notebookPath = `${currentPath}/${notebookName}`;
-
-        // Create empty Jupyter notebook structure
-        const emptyNotebook = {
-            nbformat: 4,
-            nbformat_minor: 5,
-            metadata: {
-                kernelspec: {
-                    display_name: 'Python 3',
-                    language: 'python',
-                    name: 'python3'
-                },
-                language_info: {
-                    name: 'python',
-                    version: '3.9.0'
-                }
-            },
-            cells: [
-                {
-                    cell_type: 'code',
-                    execution_count: null,
-                    metadata: {},
-                    outputs: [],
-                    source: ['']
-                }
-            ]
-        };
-
         try {
-            await (window as any).api.writeFileContent(notebookPath, JSON.stringify(emptyNotebook, null, 2));
-
-            // Check for empty pane to reuse first
-            const emptyPaneId = findEmptyPaneId();
-            if (emptyPaneId) {
-                await updateContentPane(emptyPaneId, 'notebook', notebookPath);
-                setActiveContentPaneId(emptyPaneId);
-                setRootLayoutNode(prev => ({ ...prev }));
-                loadDirectoryStructure(currentPath);
-                return;
-            }
-
-            const newPaneId = generateId();
-            contentDataRef.current[newPaneId] = { contentType: 'notebook', contentId: notebookPath };
-            addPaneOrTab(newPaneId);
-            setActiveConversationId(null);
-            setCurrentFile(null);
-            loadDirectoryStructure(currentPath);
+            const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.npcsh`;
+            const tmpDir = normalizePath(`${npcshHome}/incognide/tmp`);
+            await window.api.ensureDir?.(tmpDir).catch(() => {});
+            const filepath = normalizePath(`${tmpDir}/notebook-${Date.now()}.ipynb`);
+            const emptyNotebook = {
+                nbformat: 4, nbformat_minor: 5,
+                metadata: { kernelspec: { display_name: 'Python 3', language: 'python', name: 'python3' }, language_info: { name: 'python', version: '3.9.0' } },
+                cells: [{ cell_type: 'code', execution_count: null, metadata: {}, outputs: [], source: [''] }]
+            };
+            await (window as any).api.writeFileContent(filepath, JSON.stringify(emptyNotebook, null, 2));
+            createAndAddPaneNodeToLayout({ contentType: 'notebook', contentId: filepath, isUntitled: true });
         } catch (err: any) {
-            console.error('Error creating notebook:', err);
             setError(err.message);
         }
-    }, [currentPath, updateContentPane, findEmptyPaneId]);
+    }, [createAndAddPaneNodeToLayout]);
 
     // File drag and drop handler
     const handleDrop = async (e: React.DragEvent) => {
@@ -4999,21 +4932,31 @@ ${contextPrompt}`;
     const createNewDocument = async (docType: 'docx' | 'xlsx' | 'pptx' | 'mapx') => {
         try {
             const ext = docType === 'mapx' ? 'mapx' : docType;
+            const contentType = ext === 'xlsx' ? 'csv' : ext === 'mapx' ? 'mindmap' : ext;
             const filename = `untitled-${Date.now()}.${ext}`;
-            const filepath = normalizePath(`${currentPath}/${filename}`);
-            // Create empty document - the viewer components will handle creating proper structure
-            // For mindmap (.mapx), create initial JSON structure
+            // Use a temp dir so user's directories stay clean
+            const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.npcsh`;
+            const tmpDir = normalizePath(`${npcshHome}/incognide/tmp`);
+            await window.api.ensureDir?.(tmpDir).catch(() => {});
+            // Clean up old temp files before creating new one
+            try {
+                const existing = await window.api.readDirectory?.(tmpDir);
+                if (Array.isArray(existing)) {
+                    for (const f of existing) {
+                        if (f.name?.startsWith('untitled-')) {
+                            await window.api.deleteFile?.(f.path || normalizePath(`${tmpDir}/${f.name}`)).catch(() => {});
+                        }
+                    }
+                }
+            } catch {}
+            const filepath = normalizePath(`${tmpDir}/${filename}`);
             if (docType === 'mapx') {
-                const initialMindMap = {
-                    nodes: [{ id: 'root', label: 'Central Idea', x: 400, y: 300, color: '#3b82f6' }],
-                    links: []
-                };
+                const initialMindMap = { nodes: [{ id: 'root', label: 'Central Idea', x: 400, y: 300, color: '#3b82f6' }], links: [] };
                 await window.api.writeFileContent(filepath, JSON.stringify(initialMindMap, null, 2));
             } else {
                 await window.api.writeFileContent(filepath, '');
             }
-            await loadDirectoryStructure(currentPath);
-            await handleFileClick(filepath);
+            createAndAddPaneNodeToLayout({ contentType, contentId: filepath, isUntitled: true });
         } catch (err) {
             setError(err.message);
         }
@@ -7175,6 +7118,18 @@ const renderPaneContextMenu = () => {
         setPaneContextMenu(null);
     };
 
+    const handleRenamePane = () => {
+        const paneData = contentDataRef.current[nodeId];
+        if (paneData?.contentId) {
+            setRenamingPaneId(nodeId);
+            setEditedFileName(paneData.contentId.split('/').pop() || '');
+        }
+        setPaneContextMenu(null);
+    };
+
+    const paneData = contentDataRef.current[nodeId];
+    const hasFile = paneData?.contentId && typeof paneData.contentId === 'string' && paneData.contentId.includes('/');
+
     return (
         <>
             <div className="fixed inset-0 z-40" onClick={() => setPaneContextMenu(null)} />
@@ -7186,6 +7141,13 @@ const renderPaneContextMenu = () => {
                 <button onClick={closePane} className="block px-4 py-2 w-full text-left theme-hover text-red-400">
                     Close Pane
                 </button>
+
+                {/* Rename option for file-based panes */}
+                {hasFile && (
+                    <button onClick={handleRenamePane} className="flex items-center gap-2 px-4 py-2 w-full text-left theme-hover">
+                        <Edit size={14} className="text-gray-400" /> Rename
+                    </button>
+                )}
 
                 <div className="border-t theme-border my-1" />
 

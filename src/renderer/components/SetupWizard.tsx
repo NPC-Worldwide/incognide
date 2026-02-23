@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Terminal, Package, Check, AlertCircle, RefreshCw, ChevronRight, Sparkles, Cpu, Mic, Zap, Box, Wand2, Bot, ChevronLeft, Info, Server, HardDrive, X, Folder, Cloud, KeyRound } from 'lucide-react';
+import { Terminal, Package, Check, AlertCircle, RefreshCw, ChevronRight, Sparkles, Cpu, Mic, Zap, Box, Wand2, Bot, ChevronLeft, Info, Server, HardDrive, X, Folder, Cloud, KeyRound, Sun, Moon, FolderOpen } from 'lucide-react';
 
 interface PythonInfo {
     name: string;
@@ -61,7 +61,7 @@ const INSTALL_OPTIONS: InstallOption[] = [
     },
 ];
 
-type SetupStep = 'welcome' | 'path' | 'cloud-keys' | 'extras' | 'models' | 'creating' | 'installing' | 'concepts' | 'complete' | 'error';
+type SetupStep = 'welcome' | 'preferences' | 'path' | 'cloud-keys' | 'extras' | 'models' | 'creating' | 'installing' | 'concepts' | 'complete' | 'error';
 
 const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     // Path selection
@@ -88,6 +88,10 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     const [installingXcode, setInstallingXcode] = useState(false);
     const [installError, setInstallError] = useState<string | null>(null);
     const [installMessage, setInstallMessage] = useState<string | null>(null);
+
+    // Preferences state
+    const [isDarkMode, setIsDarkMode] = useState(() => document.body.classList.contains('dark-mode'));
+    const [dataDirectory, setDataDirectory] = useState('~/.npcsh/incognide');
 
     // Cloud API key state
     const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
@@ -389,7 +393,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
             </div>
 
             <button
-                onClick={() => setStep('path')}
+                onClick={() => setStep('preferences')}
                 className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
             >
                 Get Started <ChevronRight size={18} />
@@ -402,6 +406,109 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
             >
                 Skip for now
             </button>
+        </div>
+    );
+
+    const renderPreferences = () => (
+        <div className="space-y-5">
+            <div className="text-center">
+                <h2 className="text-xl font-bold text-white mb-1">Preferences</h2>
+                <p className="text-gray-400 text-sm">You can change these anytime in Settings</p>
+            </div>
+
+            {/* Dark / Light mode */}
+            <div className="space-y-2">
+                <label className="text-xs text-gray-400 font-medium">Theme</label>
+                <div className="flex gap-3">
+                    <button
+                        onClick={() => {
+                            setIsDarkMode(true);
+                            document.body.classList.add('dark-mode');
+                            document.body.classList.remove('light-mode');
+                            localStorage.setItem('incognide_darkMode', 'true');
+                        }}
+                        className={`flex-1 p-3 rounded-lg border text-center transition-all ${
+                            isDarkMode
+                                ? 'border-blue-500/50 bg-blue-600/20'
+                                : 'border-gray-700 bg-gray-800/50 hover:bg-gray-800'
+                        }`}
+                    >
+                        <Moon size={20} className="mx-auto mb-1 text-gray-300" />
+                        <span className="text-sm text-white">Dark</span>
+                    </button>
+                    <button
+                        onClick={() => {
+                            setIsDarkMode(false);
+                            document.body.classList.remove('dark-mode');
+                            document.body.classList.add('light-mode');
+                            localStorage.setItem('incognide_darkMode', 'false');
+                        }}
+                        className={`flex-1 p-3 rounded-lg border text-center transition-all ${
+                            !isDarkMode
+                                ? 'border-blue-500/50 bg-blue-600/20'
+                                : 'border-gray-700 bg-gray-800/50 hover:bg-gray-800'
+                        }`}
+                    >
+                        <Sun size={20} className="mx-auto mb-1 text-yellow-400" />
+                        <span className="text-sm text-white">Light</span>
+                    </button>
+                </div>
+            </div>
+
+            {/* Data directory */}
+            <div className="space-y-2">
+                <label className="text-xs text-gray-400 font-medium">Data Directory</label>
+                <div className="flex gap-2">
+                    <input
+                        type="text"
+                        value={dataDirectory}
+                        onChange={(e) => setDataDirectory(e.target.value)}
+                        className="flex-1 px-3 py-2 text-sm bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none"
+                        placeholder="~/.npcsh"
+                    />
+                    <button
+                        onClick={async () => {
+                            try {
+                                const result = await (window as any).api.showOpenDialog({
+                                    properties: ['openDirectory'],
+                                    title: 'Select Data Directory',
+                                });
+                                if (result?.filePaths?.[0]) {
+                                    setDataDirectory(result.filePaths[0]);
+                                }
+                            } catch {}
+                        }}
+                        className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg"
+                    >
+                        <FolderOpen size={16} />
+                    </button>
+                </div>
+                <p className="text-[10px] text-gray-500">Where Incognide stores teams, models, and configs. Default: ~/.npcsh/incognide</p>
+            </div>
+
+            <div className="flex gap-3">
+                <button
+                    onClick={() => setStep('welcome')}
+                    className="py-2 px-4 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center gap-1"
+                >
+                    <ChevronLeft size={16} /> Back
+                </button>
+                <button
+                    onClick={() => {
+                        // Save data directory if changed from default
+                        if (dataDirectory && dataDirectory !== '~/.npcsh/incognide') {
+                            (window as any).api?.saveGlobalSettings?.({
+                                global_settings: { data_directory: dataDirectory },
+                                global_vars: {}
+                            }).catch(() => {});
+                        }
+                        setStep('path');
+                    }}
+                    className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
+                >
+                    Continue <ChevronRight size={18} />
+                </button>
+            </div>
         </div>
     );
 
@@ -479,7 +586,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
             <div className="flex gap-3">
                 <button
-                    onClick={() => setStep('welcome')}
+                    onClick={() => setStep('preferences')}
                     className="py-2 px-4 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center gap-1"
                 >
                     <ChevronLeft size={16} /> Back
@@ -945,6 +1052,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         <div className="fixed top-0 left-0 right-0 bottom-0 w-screen h-screen bg-gray-900 flex items-center justify-center p-4 z-[9999] overflow-auto">
             <div className="w-full max-w-md bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-2xl my-auto">
                 {step === 'welcome' && renderWelcome()}
+                {step === 'preferences' && renderPreferences()}
                 {step === 'path' && renderPathSelection()}
                 {step === 'cloud-keys' && renderCloudKeys()}
                 {step === 'extras' && renderExtras()}
