@@ -2,7 +2,7 @@ name: Install and Verify Autolinters
 
 on:
   workflow_run:
-    workflows: ["Build and Release"]
+    workflows: ["Build and Release"]  # matches the build file's name exactly
     types: [completed]
     branches-ignore: [main]
 
@@ -10,7 +10,7 @@ on:
 
 jobs:
   # -------------------------------------------
-  # Only proceed if the CI workflow passed
+  # Only proceed if the Build and Release passed
   # -------------------------------------------
   check-build-status:
     name: Check build passed
@@ -47,6 +47,7 @@ jobs:
           # ----------------------------------------
           - os: macos-latest
             platform: macos
+            arch: arm64
             ruff_url: https://github.com/astral-sh/ruff/releases/latest/download/ruff-aarch64-apple-darwin.tar.gz
             ruff_binary: ruff
             biome_url: https://github.com/biomejs/biome/releases/latest/download/biome-darwin-arm64
@@ -59,6 +60,7 @@ jobs:
           # ----------------------------------------
           - os: windows-latest
             platform: windows
+            arch: x64
             ruff_url: https://github.com/astral-sh/ruff/releases/latest/download/ruff-x86_64-pc-windows-msvc.zip
             ruff_binary: ruff.exe
             biome_url: https://github.com/biomejs/biome/releases/latest/download/biome-win32-x64.exe
@@ -69,8 +71,9 @@ jobs:
           # ----------------------------------------
           # Ubuntu (Linux x64)
           # ----------------------------------------
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             platform: linux
+            arch: x64
             ruff_url: https://github.com/astral-sh/ruff/releases/latest/download/ruff-x86_64-unknown-linux-gnu.tar.gz
             ruff_binary: ruff
             biome_url: https://github.com/biomejs/biome/releases/latest/download/biome-linux-x64
@@ -87,6 +90,18 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+
+      # ----------------------------------------
+      # Download the build artifact from the
+      # "Build and Release" workflow so we can
+      # bundle linters into the same installer
+      # ----------------------------------------
+      - name: Download build artifact for this platform
+        uses: actions/download-artifact@v4
+        with:
+          name: incognide-${{ matrix.platform }}-${{ matrix.arch }}
+          path: upload/
+        continue-on-error: true  # non-fatal if artifact not yet available
 
       # ----------------------------------------
       # Create linter output directory
@@ -161,25 +176,89 @@ jobs:
         run: npx eslint --version
 
       # ==========================================
-      # Verify linter config files exist
+      # Verify linter binaries are all present
       # ==========================================
 
       - name: Check linter configs exist
         shell: bash
         run: |
-          echo "Checking for linter config files..."
+          echo "Checking for linter binaries..."
           ls -la linters/bin/
 
       # ==========================================
       # Upload verified linter binaries as artifact
-      # So electron-builder can bundle them
+      # Named to match what electron-builder expects
+      # via extraResources in package.json
       # ==========================================
 
       - name: Upload linter binaries
         uses: actions/upload-artifact@v4
         with:
-          name: linters-${{ matrix.platform }}
+          name: linters-${{ matrix.platform }}-${{ matrix.arch }}
           path: linters/bin/
+          retention-days: 7
+
+  # -------------------------------------------
+  # Bundle linters into the build artifacts
+  # Downloads both the installer and linter
+  # artifacts, injects linters, re-uploads
+  # -------------------------------------------
+  bundle-linters-into-build:
+    name: Bundle linters into ${{ matrix.platform }} installer
+    needs: install-linters
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: macos
+            arch: arm64
+          - os: windows-latest
+            platform: windows
+            arch: x64
+          - os: ubuntu-22.04
+            platform: linux
+            arch: x64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Download the installer produced by Build and Release
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: incognide-${{ matrix.platform }}-${{ matrix.arch }}
+          path: upload/
+
+      # Download the verified linter binaries
+      - name: Download linter binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: linters-${{ matrix.platform }}-${{ matrix.arch }}
+          path: linters/bin/
+
+      # Copy linter binaries into resources so electron-builder
+      # extraResources config picks them up on next build
+      - name: Inject linters into resources folder
+        shell: bash
+        run: |
+          mkdir -p resources/linters
+          cp -r linters/bin/. resources/linters/
+          echo "Linters staged for bundling:"
+          ls -la resources/linters/
+
+      # Re-upload the combined artifact (installer + linters staged)
+      # This artifact is what gets picked up for GCS upload or release
+      - name: Upload combined artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: incognide-with-linters-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            upload/
+            resources/linters/
           retention-days: 7
 
   # -------------------------------------------
@@ -187,7 +266,7 @@ jobs:
   # -------------------------------------------
   linter-summary:
     name: Linter Install Summary
-    needs: install-linters
+    needs: bundle-linters-into-build
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -196,10 +275,10 @@ jobs:
           echo "============================================"
           echo "Linter Installation Summary"
           echo "============================================"
-          echo "macOS ARM:  ${{ needs.install-linters.result }}"
-          echo "Windows:    ${{ needs.install-linters.result }}"
-          echo "Linux:      ${{ needs.install-linters.result }}"
+          echo "macOS ARM64: ${{ needs.bundle-linters-into-build.result }}"
+          echo "Windows x64: ${{ needs.bundle-linters-into-build.result }}"
+          echo "Linux x64:   ${{ needs.bundle-linters-into-build.result }}"
           echo ""
-          echo "Linters installed: Ruff, Biome, ChkTeX, ESLint"
-          echo "Artifacts available for electron-builder bundling"
+          echo "Linters bundled: Ruff, Biome, ChkTeX, ESLint"
+          echo "Combined artifacts ready: incognide-with-linters-{platform}-{arch}"
           echo "============================================"
