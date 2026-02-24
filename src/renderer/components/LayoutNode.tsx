@@ -1225,7 +1225,17 @@ export const LayoutNode = memo(({ node, path, component }) => {
 
             // Use registry for all other tab types
             const renderer = paneRenderers[tabContentType];
-            return renderer ? renderer({ nodeId: virtualId }) : null;
+            return renderer ? renderer({
+                nodeId: virtualId,
+                onToggleZen: toggleZenMode ? () => toggleZenMode(node.id) : undefined,
+                isZenMode: zenModePaneId === node.id,
+                onClose: () => closeContentPane(node.id, path),
+                renamingPaneId,
+                setRenamingPaneId,
+                editedFileName,
+                setEditedFileName,
+                handleConfirmRename,
+            }) : null;
         };
 
         const renderPaneContent = () => {
@@ -1275,12 +1285,28 @@ export const LayoutNode = memo(({ node, path, component }) => {
                     onToggleZen: toggleZenMode ? () => toggleZenMode(node.id) : undefined,
                     isZenMode: zenModePaneId === node.id,
                     onClose: () => closeContentPane(node.id, path),
+                    renamingPaneId,
+                    setRenamingPaneId,
+                    editedFileName,
+                    setEditedFileName,
+                    handleConfirmRename,
                 });
             }
 
             // Registry lookup for all standard pane types
+            // Pass rename + zen props so custom-toolbar panes (docx, csv, pptx) can use them
             const renderer = paneRenderers[contentType];
-            return renderer ? renderer({ nodeId: node.id }) : null;
+            return renderer ? renderer({
+                nodeId: node.id,
+                onToggleZen: toggleZenMode ? () => toggleZenMode(node.id) : undefined,
+                isZenMode: zenModePaneId === node.id,
+                onClose: () => closeContentPane(node.id, path),
+                renamingPaneId,
+                setRenamingPaneId,
+                editedFileName,
+                setEditedFileName,
+                handleConfirmRename,
+            }) : null;
         };
 
         return (
@@ -1331,10 +1357,8 @@ export const LayoutNode = memo(({ node, path, component }) => {
                         fileChanged={paneData?.fileChanged || activeTab?.fileChanged}
                         onSave={() => { if (paneData?.onSave) paneData.onSave(); }}
                         onStartRename={() => {
-                            if (contentId) {
-                                setRenamingPaneId(node.id);
-                                setEditedFileName(getFileName(contentId) || '');
-                            }
+                            setRenamingPaneId(node.id);
+                            setEditedFileName(getFileName(contentId) || headerTitle || '');
                         }}
                         // Renaming props
                         isRenaming={renamingPaneId === node.id}
@@ -1362,24 +1386,6 @@ export const LayoutNode = memo(({ node, path, component }) => {
                 )}
                 {/* Browser handles its own header with zen/close buttons inside WebBrowserViewer */}
 
-                {/* Universal rename overlay for panes that skip PaneHeader (docx, pptx, csv, latex) */}
-                {renamingPaneId === node.id && (contentType === 'docx' || contentType === 'pptx' || contentType === 'csv' || contentType === 'latex') && (
-                    <div className="flex items-center gap-1 px-2 py-1 theme-bg-secondary border-b theme-border z-30">
-                        <input
-                            type="text"
-                            value={editedFileName}
-                            onChange={(e) => setEditedFileName(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleConfirmRename?.(node.id, contentId);
-                                if (e.key === 'Escape') setRenamingPaneId(null);
-                            }}
-                            className="flex-1 px-1 py-0.5 text-xs theme-bg-primary theme-text-primary border theme-border rounded focus:outline-none focus:border-blue-500"
-                            autoFocus
-                        />
-                        <button onClick={() => handleConfirmRename?.(node.id, contentId)} className="px-1.5 py-0.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-500">OK</button>
-                        <button onClick={() => setRenamingPaneId(null)} className="px-1.5 py-0.5 text-xs theme-button theme-hover rounded">Cancel</button>
-                    </div>
-                )}
 
                 {draggedItem && !lockedPanes.has(node.id) && (
                     <>

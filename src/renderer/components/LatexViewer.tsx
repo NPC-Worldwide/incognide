@@ -3,7 +3,7 @@ import React, { useEffect, useState, useCallback, useMemo, memo, useRef } from '
 import {
     Save, Play, ExternalLink, X, SplitSquareHorizontal, Loader, ChevronDown,
     Table, Image, List, Link, FileText, Code, Sigma, Layout, Quote, Hash,
-    AlertCircle, CheckCircle, ZoomIn, ZoomOut, Search, Replace, Undo, Redo,
+    AlertCircle, CheckCircle, Check, Pencil, ZoomIn, ZoomOut, Search, Replace, Undo, Redo,
     AlignLeft, Braces, RefreshCw, Download, Settings, BookOpen, Eye, EyeOff,
     Maximize2, Minimize2, FileCode, Terminal, ChevronRight, ChevronUp,
     Bold, Italic, Underline as UnderlineIcon, Type, MessageSquare, PanelLeft,
@@ -542,6 +542,11 @@ const LatexViewer = ({
     onToggleZen,
     isZenMode,
     onClose,
+    renamingPaneId,
+    setRenamingPaneId,
+    editedFileName,
+    setEditedFileName,
+    handleConfirmRename,
 }: any) => {
     const paneData = contentDataRef.current[nodeId];
     const filePath = paneData?.contentId;
@@ -1377,8 +1382,9 @@ const LatexViewer = ({
             <div
                 className="flex items-center gap-0.5 px-1 h-10 flex-shrink-0 theme-bg-secondary border-b theme-border"
                 style={{ cursor: 'move' }}
-                draggable
+                draggable={renamingPaneId !== nodeId}
                 onDragStart={(e) => {
+                    if (renamingPaneId === nodeId) { e.preventDefault(); return; }
                     const nodePath = findNodePath(rootLayoutNode, nodeId);
                     e.dataTransfer.effectAllowed = 'move';
                     e.dataTransfer.setData('application/json', JSON.stringify({ type: 'pane', id: nodeId, nodePath }));
@@ -1405,9 +1411,44 @@ const LatexViewer = ({
                 )}
 
                 {/* File title */}
-                <span className="text-[11px] font-semibold text-gray-300 truncate max-w-[120px] flex-shrink-0 px-1" title={filePath}>
-                    {getFileName(filePath) || 'LaTeX'}{hasChanges ? ' *' : ''}
-                </span>
+                {renamingPaneId === nodeId ? (
+                    <div
+                        className="flex items-center gap-1 flex-shrink-0 px-1"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                    >
+                        <input
+                            type="text"
+                            value={editedFileName}
+                            onChange={(e) => setEditedFileName(e.target.value)}
+                            onKeyDown={(e) => {
+                                e.stopPropagation();
+                                if (e.key === 'Enter') handleConfirmRename?.(nodeId, filePath);
+                                if (e.key === 'Escape') setRenamingPaneId(null);
+                            }}
+                            className="px-1 py-0.5 text-[11px] theme-bg-primary theme-text-primary border theme-border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            style={{ width: '120px' }}
+                            autoFocus
+                        />
+                        <button onClick={() => handleConfirmRename?.(nodeId, filePath)} className="p-0.5 theme-hover rounded text-green-400"><Check size={10} /></button>
+                        <button onClick={() => setRenamingPaneId(null)} className="p-0.5 theme-hover rounded text-red-400"><X size={10} /></button>
+                    </div>
+                ) : (
+                    <div className="flex items-center gap-0.5 flex-shrink-0 px-1 min-w-0">
+                        <span
+                            className="text-[11px] font-semibold text-gray-300 truncate max-w-[120px] cursor-default"
+                            onDoubleClick={(e) => { e.stopPropagation(); e.preventDefault(); setRenamingPaneId(nodeId); setEditedFileName(getFileName(filePath) || ''); }}
+                        >
+                            {getFileName(filePath) || 'LaTeX'}{hasChanges ? ' *' : ''}
+                        </span>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setRenamingPaneId(nodeId); setEditedFileName(getFileName(filePath) || ''); }}
+                            className="p-0.5 theme-hover rounded opacity-40 hover:opacity-100 flex-shrink-0"
+                            title="Rename file"
+                        ><Pencil size={9} /></button>
+                    </div>
+                )}
 
                 <ToolbarDivider />
 
@@ -1819,6 +1860,8 @@ const LatexViewer = ({
 // Custom comparison to prevent reload on pane resize
 const arePropsEqual = (prevProps: any, nextProps: any) => {
     return prevProps.nodeId === nextProps.nodeId
+        && prevProps.renamingPaneId === nextProps.renamingPaneId
+        && prevProps.editedFileName === nextProps.editedFileName
         && prevProps.isZenMode === nextProps.isZenMode;
 };
 

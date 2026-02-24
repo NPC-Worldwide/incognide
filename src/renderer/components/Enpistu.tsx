@@ -2759,7 +2759,7 @@ const renderPdfViewer = useCallback(({ nodeId }) => {
     );
 }, [currentPath, activeContentPaneId, pdfHighlights, pdfHighlightsTrigger, handleCopyPdfText, handleHighlightPdfSelection, handleApplyPromptToPdfText]);
 
-const renderCsvViewer = useCallback(({ nodeId }) => {
+const renderCsvViewer = useCallback(({ nodeId, onToggleZen, isZenMode, onClose, renamingPaneId, setRenamingPaneId, editedFileName, setEditedFileName, handleConfirmRename }) => {
     return (
         <CsvViewer
             nodeId={nodeId}
@@ -2770,11 +2770,19 @@ const renderCsvViewer = useCallback(({ nodeId }) => {
             setDraggedItem={setDraggedItem}
             setPaneContextMenu={setPaneContextMenu}
             closeContentPane={closeContentPane}
+            onToggleZen={onToggleZen}
+            isZenMode={isZenMode}
+            onClose={onClose}
+            renamingPaneId={renamingPaneId}
+            setRenamingPaneId={setRenamingPaneId}
+            editedFileName={editedFileName}
+            setEditedFileName={setEditedFileName}
+            handleConfirmRename={handleConfirmRename}
         />
     );
 }, [currentPath, rootLayoutNode, closeContentPane]);
 
-const renderDocxViewer = useCallback(({ nodeId }) => {
+const renderDocxViewer = useCallback(({ nodeId, onToggleZen, isZenMode, onClose, renamingPaneId, setRenamingPaneId, editedFileName, setEditedFileName, handleConfirmRename }) => {
     return (
         <DocxViewer
             nodeId={nodeId}
@@ -2784,11 +2792,19 @@ const renderDocxViewer = useCallback(({ nodeId }) => {
             setDraggedItem={setDraggedItem}
             setPaneContextMenu={setPaneContextMenu}
             closeContentPane={closeContentPane}
+            onToggleZen={onToggleZen}
+            isZenMode={isZenMode}
+            onClose={onClose}
+            renamingPaneId={renamingPaneId}
+            setRenamingPaneId={setRenamingPaneId}
+            editedFileName={editedFileName}
+            setEditedFileName={setEditedFileName}
+            handleConfirmRename={handleConfirmRename}
         />
     );
 }, [closeContentPane]);
 
-const renderPptxViewer = useCallback(({ nodeId }) => {
+const renderPptxViewer = useCallback(({ nodeId, onToggleZen, isZenMode, onClose, renamingPaneId, setRenamingPaneId, editedFileName, setEditedFileName, handleConfirmRename }) => {
     return (
         <PptxViewer
             nodeId={nodeId}
@@ -2798,11 +2814,19 @@ const renderPptxViewer = useCallback(({ nodeId }) => {
             setDraggedItem={setDraggedItem}
             setPaneContextMenu={setPaneContextMenu}
             closeContentPane={closeContentPane}
+            onToggleZen={onToggleZen}
+            isZenMode={isZenMode}
+            onClose={onClose}
+            renamingPaneId={renamingPaneId}
+            setRenamingPaneId={setRenamingPaneId}
+            editedFileName={editedFileName}
+            setEditedFileName={setEditedFileName}
+            handleConfirmRename={handleConfirmRename}
         />
     );
 }, [rootLayoutNode, closeContentPane]);
 
-const renderLatexViewer = useCallback(({ nodeId, onToggleZen, isZenMode, onClose }) => {
+const renderLatexViewer = useCallback(({ nodeId, onToggleZen, isZenMode, onClose, renamingPaneId, setRenamingPaneId, editedFileName, setEditedFileName, handleConfirmRename }) => {
     return (
         <LatexViewer
             nodeId={nodeId}
@@ -2816,6 +2840,11 @@ const renderLatexViewer = useCallback(({ nodeId, onToggleZen, isZenMode, onClose
             onToggleZen={onToggleZen}
             isZenMode={isZenMode}
             onClose={onClose}
+            renamingPaneId={renamingPaneId}
+            setRenamingPaneId={setRenamingPaneId}
+            editedFileName={editedFileName}
+            setEditedFileName={setEditedFileName}
+            handleConfirmRename={handleConfirmRename}
         />
     );
 }, [rootLayoutNode, closeContentPane, performSplit]);

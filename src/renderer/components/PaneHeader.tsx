@@ -80,7 +80,7 @@ export const PaneHeader = React.memo(({
         <div style={{ flex: '1 1 0', width: 0, minWidth: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', padding: '4px 8px', gap: '8px' }}>
             <span style={{ flexShrink: 0 }}>{icon}</span>
 
-            {isRenaming && filePath ? (
+            {isRenaming ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <input
                         ref={inputRef}
@@ -111,13 +111,11 @@ export const PaneHeader = React.memo(({
                         whiteSpace: 'nowrap',
                         fontWeight: 600
                     }}
-                    title={filePath ? `Double-click to rename: ${title}` : (onSave ? 'Double-click to save as...' : title)}
+                    title="Double-click to rename"
                     onDoubleClick={(e) => {
                         e.stopPropagation();
-                        if (onStartRename && filePath) {
+                        if (onStartRename) {
                             onStartRename();
-                        } else if (onSave && !filePath) {
-                            onSave();
                         }
                     }}
                 >

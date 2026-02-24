@@ -5,8 +5,8 @@ import {
     Undo, Redo, X, Image, Table, Type, Link, Minus, Search, Strikethrough, Subscript,
     Superscript, Highlighter, Indent, Outdent, FileText, Printer, ChevronDown,
     ZoomIn, ZoomOut, Underline, AlignJustify, Quote, Code, Replace, PaintBucket,
-    Palette, LayoutTemplate, Columns, FileDown, Eye, EyeOff, Maximize2, Grid,
-    MoreHorizontal, Scissors, Clipboard, ClipboardPaste, RotateCcw, Sun, Moon
+    Palette, LayoutTemplate, Columns, FileDown, Eye, EyeOff, Maximize2, Minimize2, Grid,
+    MoreHorizontal, Scissors, Clipboard, ClipboardPaste, RotateCcw, Sun, Moon, Check, Pencil
 } from 'lucide-react';
 
 // Font options - comprehensive list
@@ -98,7 +98,15 @@ const DocxViewer = ({
     rootLayoutNode,
     setDraggedItem,
     setPaneContextMenu,
-    closeContentPane
+    closeContentPane,
+    onToggleZen,
+    isZenMode,
+    onClose,
+    renamingPaneId,
+    setRenamingPaneId,
+    editedFileName,
+    setEditedFileName,
+    handleConfirmRename,
 }) => {
     const paneData = contentDataRef.current[nodeId];
     const filePath = paneData?.contentId;
@@ -752,8 +760,9 @@ ${htmlContent}
         <div className="h-full flex flex-col theme-bg-secondary overflow-hidden">
             {/* Header Bar */}
             <div
-                draggable
+                draggable={renamingPaneId !== nodeId}
                 onDragStart={(e) => {
+                    if (renamingPaneId === nodeId) { e.preventDefault(); return; }
                     e.dataTransfer.effectAllowed = 'move';
                     const nodePath = findNodePath(rootLayoutNode, nodeId);
                     e.dataTransfer.setData('application/json', JSON.stringify({ type: 'pane', id: nodeId, nodePath }));
@@ -766,10 +775,66 @@ ${htmlContent}
                 }}
                 className="px-3 py-2 border-b theme-border theme-bg-secondary cursor-move flex items-center justify-between"
             >
-                <span className="text-sm font-medium truncate">
-                    {getFileName(filePath) || 'Document'}{hasChanges ? ' *' : ''}
-                </span>
+                {renamingPaneId === nodeId ? (
+                    <div
+                        className="flex items-center gap-1"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                    >
+                        <input
+                            type="text"
+                            value={editedFileName}
+                            onChange={(e) => setEditedFileName(e.target.value)}
+                            onKeyDown={(e) => {
+                                e.stopPropagation();
+                                if (e.key === 'Enter') handleConfirmRename?.(nodeId, filePath);
+                                if (e.key === 'Escape') setRenamingPaneId(null);
+                            }}
+                            className="px-1 py-0.5 text-xs theme-bg-primary theme-text-primary border theme-border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            style={{ width: '140px' }}
+                            autoFocus
+                        />
+                        <button
+                            onClick={() => handleConfirmRename?.(nodeId, filePath)}
+                            className="p-0.5 theme-hover rounded text-green-400"
+                        >
+                            <Check size={12} />
+                        </button>
+                        <button
+                            onClick={() => setRenamingPaneId(null)}
+                            className="p-0.5 theme-hover rounded text-red-400"
+                        >
+                            <X size={12} />
+                        </button>
+                    </div>
+                ) : (
+                    <div className="flex items-center gap-1 min-w-0">
+                        <span
+                            className="text-sm font-medium truncate cursor-default"
+                            onDoubleClick={(e) => { e.stopPropagation(); e.preventDefault(); setRenamingPaneId(nodeId); setEditedFileName(getFileName(filePath) || ''); }}
+                        >
+                            {getFileName(filePath) || 'Document'}{hasChanges ? ' *' : ''}
+                        </span>
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setRenamingPaneId(nodeId);
+                                setEditedFileName(getFileName(filePath) || '');
+                            }}
+                            className="p-0.5 theme-hover rounded opacity-40 hover:opacity-100 flex-shrink-0"
+                            title="Rename file"
+                        >
+                            <Pencil size={11} />
+                        </button>
+                    </div>
+                )}
                 <div className="flex items-center gap-1">
+                    {onToggleZen && (
+                        <button onClick={(e) => { e.stopPropagation(); onToggleZen(); }} className={`p-1.5 theme-hover rounded ${isZenMode ? 'text-blue-400' : ''}`} title={isZenMode ? 'Exit zen mode' : 'Zen mode'}>
+                            {isZenMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                        </button>
+                    )}
                     <button onClick={undo} disabled={historyIndex <= 0} className="p-1.5 theme-hover rounded disabled:opacity-30" title="Undo">
                         <Undo size={14} />
                     </button>
@@ -1233,8 +1298,10 @@ ${htmlContent}
 
 // Custom comparison to prevent re-renders when layout changes but pane identity is the same
 const arePropsEqual = (prevProps: any, nextProps: any) => {
-    // Only re-render if the pane identity changes (nodeId) or content changes
-    return prevProps.nodeId === nextProps.nodeId;
+    return prevProps.nodeId === nextProps.nodeId
+        && prevProps.renamingPaneId === nextProps.renamingPaneId
+        && prevProps.editedFileName === nextProps.editedFileName
+        && prevProps.isZenMode === nextProps.isZenMode;
 };
 
 export default memo(DocxViewer, arePropsEqual);

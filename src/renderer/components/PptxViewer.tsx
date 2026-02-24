@@ -6,7 +6,7 @@ import {
   Save, X, ChevronLeft, ChevronRight, Plus, Copy, Trash2, Image as ImageIcon,
   AlignLeft, AlignCenter, AlignRight, Type, Square, Circle, Bold, Italic,
   Underline, Strikethrough, ZoomIn, ZoomOut, Play, ChevronDown, Palette,
-  LayoutGrid, Grid, Maximize2, MousePointer, Move, RotateCcw, Layers,
+  LayoutGrid, Grid, Maximize2, Minimize2, Check, Pencil, MousePointer, Move, RotateCcw, Layers,
   FileDown, Printer, MoreHorizontal, Triangle, Pentagon, Star, Minus,
   ArrowRight, Hexagon, Heart, Diamond, PaintBucket, Sparkles, Layout,
   Undo, Redo, List, ListOrdered, Highlighter, Sun, Moon, Scissors
@@ -603,7 +603,15 @@ const PptxViewer = ({
   rootLayoutNode,
   setDraggedItem,
   setPaneContextMenu,
-  closeContentPane
+  closeContentPane,
+  onToggleZen,
+  isZenMode,
+  onClose,
+  renamingPaneId,
+  setRenamingPaneId,
+  editedFileName,
+  setEditedFileName,
+  handleConfirmRename,
 }: any) => {
   const [zip, setZip] = useState<JSZip | null>(null);
   const [presDoc, setPresDoc] = useState<Document | null>(null);
@@ -2155,8 +2163,9 @@ const PptxViewer = ({
     >
       {/* Header */}
       <div
-        draggable
+        draggable={renamingPaneId !== nodeId}
         onDragStart={(e) => {
+          if (renamingPaneId === nodeId) { e.preventDefault(); return; }
           e.dataTransfer.effectAllowed = 'move';
           const nodePath = findNodePath?.(rootLayoutNode, nodeId) || [];
           e.dataTransfer.setData('application/json', JSON.stringify({ type: 'pane', id: nodeId, nodePath }));
@@ -2169,10 +2178,50 @@ const PptxViewer = ({
         }}
         className="px-3 py-2 border-b theme-border theme-bg-secondary cursor-move flex items-center justify-between"
       >
-        <span className="text-sm font-medium truncate">
-          {getFileName(filePath) || 'Presentation'}{hasChanges ? ' *' : ''}
-        </span>
+        {renamingPaneId === nodeId ? (
+          <div
+            className="flex items-center gap-1"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            <input
+              type="text"
+              value={editedFileName}
+              onChange={(e) => setEditedFileName(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter') handleConfirmRename?.(nodeId, filePath);
+                if (e.key === 'Escape') setRenamingPaneId(null);
+              }}
+              className="px-1 py-0.5 text-xs theme-bg-primary theme-text-primary border theme-border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              style={{ width: '140px' }}
+              autoFocus
+            />
+            <button onClick={() => handleConfirmRename?.(nodeId, filePath)} className="p-0.5 theme-hover rounded text-green-400"><Check size={12} /></button>
+            <button onClick={() => setRenamingPaneId(null)} className="p-0.5 theme-hover rounded text-red-400"><X size={12} /></button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1 min-w-0">
+            <span
+              className="text-sm font-medium truncate cursor-default"
+              onDoubleClick={(e) => { e.stopPropagation(); e.preventDefault(); setRenamingPaneId(nodeId); setEditedFileName(getFileName(filePath) || ''); }}
+            >
+              {getFileName(filePath) || 'Presentation'}{hasChanges ? ' *' : ''}
+            </span>
+            <button
+              onClick={(e) => { e.stopPropagation(); setRenamingPaneId(nodeId); setEditedFileName(getFileName(filePath) || ''); }}
+              className="p-0.5 theme-hover rounded opacity-40 hover:opacity-100 flex-shrink-0"
+              title="Rename file"
+            ><Pencil size={11} /></button>
+          </div>
+        )}
         <div className="flex items-center gap-1">
+          {onToggleZen && (
+            <button onClick={(e) => { e.stopPropagation(); onToggleZen(); }} className={`p-1.5 theme-hover rounded ${isZenMode ? 'text-blue-400' : ''}`} title={isZenMode ? 'Exit zen mode' : 'Zen mode'}>
+              {isZenMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            </button>
+          )}
           <button onClick={addSlide} className="p-1.5 theme-hover rounded" title="Add slide"><Plus size={14} /></button>
           <button onClick={duplicateSlide} className="p-1.5 theme-hover rounded" title="Duplicate"><Copy size={14} /></button>
           <button onClick={deleteSlide} disabled={slides.length <= 1} className="p-1.5 theme-hover rounded disabled:opacity-30" title="Delete"><Trash2 size={14} /></button>
@@ -2624,7 +2673,10 @@ const PptxViewer = ({
 
 // Custom comparison to prevent reload on pane resize
 const arePropsEqual = (prevProps: any, nextProps: any) => {
-    return prevProps.nodeId === nextProps.nodeId;
+    return prevProps.nodeId === nextProps.nodeId
+        && prevProps.renamingPaneId === nextProps.renamingPaneId
+        && prevProps.editedFileName === nextProps.editedFileName
+        && prevProps.isZenMode === nextProps.isZenMode;
 };
 
 export default memo(PptxViewer, arePropsEqual);

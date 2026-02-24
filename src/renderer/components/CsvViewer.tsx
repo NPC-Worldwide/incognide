@@ -37,6 +37,9 @@ import {
     Undo,
     Redo,
     Maximize2,
+    Minimize2,
+    Check,
+    Pencil,
     Pin,
     PieChart,
     LineChart,
@@ -111,14 +114,22 @@ function lettersToCol(letters: string): number {
 }
 
 const CsvViewer = ({
-    nodeId, 
+    nodeId,
     contentDataRef,
     currentPath, // Passed from Enpistu
-    findNodePath, 
-    rootLayoutNode, 
-    setDraggedItem, 
-    setPaneContextMenu, 
-    closeContentPane 
+    findNodePath,
+    rootLayoutNode,
+    setDraggedItem,
+    setPaneContextMenu,
+    closeContentPane,
+    onToggleZen,
+    isZenMode,
+    onClose,
+    renamingPaneId,
+    setRenamingPaneId,
+    editedFileName,
+    setEditedFileName,
+    handleConfirmRename,
 }) => {
     const [data, setData] = useState([]);
     const [headers, setHeaders] = useState([]);
@@ -1519,8 +1530,9 @@ const CsvViewer = ({
         <div className="flex-1 flex flex-col theme-bg-secondary" style={{ overflow: 'hidden', position: 'relative' }}>
             {/* Header bar */}
             <div
-                draggable="true"
+                draggable={renamingPaneId !== nodeId}
                 onDragStart={(e) => {
+                    if (renamingPaneId === nodeId) { e.preventDefault(); return; }
                     e.dataTransfer.effectAllowed = 'move';
                     const nodePath = findNodePath(rootLayoutNode, nodeId);
                     e.dataTransfer.setData('application/json',
@@ -1537,10 +1549,50 @@ const CsvViewer = ({
                 className="p-2 border-b theme-border text-xs theme-text-muted flex-shrink-0 theme-bg-secondary cursor-move"
             >
                 <div className="flex justify-between items-center">
-                    <span className="truncate font-semibold">
-                        {filePath ? getFileName(filePath) : 'Untitled'}{hasChanges ? ' *' : ''}
-                    </span>
+                    {renamingPaneId === nodeId ? (
+                        <div
+                            className="flex items-center gap-1"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => e.stopPropagation()}
+                        >
+                            <input
+                                type="text"
+                                value={editedFileName}
+                                onChange={(e) => setEditedFileName(e.target.value)}
+                                onKeyDown={(e) => {
+                                    e.stopPropagation();
+                                    if (e.key === 'Enter') handleConfirmRename?.(nodeId, filePath);
+                                    if (e.key === 'Escape') setRenamingPaneId(null);
+                                }}
+                                className="px-1 py-0.5 text-xs theme-bg-primary theme-text-primary border theme-border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                style={{ width: '140px' }}
+                                autoFocus
+                            />
+                            <button onClick={() => handleConfirmRename?.(nodeId, filePath)} className="p-0.5 theme-hover rounded text-green-400"><Check size={12} /></button>
+                            <button onClick={() => setRenamingPaneId(null)} className="p-0.5 theme-hover rounded text-red-400"><X size={12} /></button>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-1 min-w-0">
+                            <span
+                                className="truncate font-semibold cursor-default"
+                                onDoubleClick={(e) => { e.stopPropagation(); e.preventDefault(); setRenamingPaneId(nodeId); setEditedFileName(getFileName(filePath) || ''); }}
+                            >
+                                {filePath ? getFileName(filePath) : 'Untitled'}{hasChanges ? ' *' : ''}
+                            </span>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); setRenamingPaneId(nodeId); setEditedFileName(getFileName(filePath) || ''); }}
+                                className="p-0.5 theme-hover rounded opacity-40 hover:opacity-100 flex-shrink-0"
+                                title="Rename file"
+                            ><Pencil size={11} /></button>
+                        </div>
+                    )}
                     <div className="flex items-center gap-1">
+                        {onToggleZen && (
+                            <button onClick={(e) => { e.stopPropagation(); onToggleZen(); }} className={`p-1 theme-hover rounded ${isZenMode ? 'text-blue-400' : ''}`} title={isZenMode ? 'Exit zen mode' : 'Zen mode'}>
+                                {isZenMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                            </button>
+                        )}
                         <button
                             onClick={saveSpreadsheet}
                             disabled={!hasChanges}
@@ -2448,7 +2500,10 @@ const CsvViewer = ({
 
 // Custom comparison to prevent reload on pane resize
 const arePropsEqual = (prevProps: any, nextProps: any) => {
-    return prevProps.nodeId === nextProps.nodeId;
+    return prevProps.nodeId === nextProps.nodeId
+        && prevProps.renamingPaneId === nextProps.renamingPaneId
+        && prevProps.editedFileName === nextProps.editedFileName
+        && prevProps.isZenMode === nextProps.isZenMode;
 };
 
 export default memo(CsvViewer, arePropsEqual);

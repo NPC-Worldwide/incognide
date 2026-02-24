@@ -4641,7 +4641,7 @@ const executeGenerativeFill = async (layerId, prompt) => {
         const imagePath = selectedImage.replace('media://', '');
         console.log('Image path:', imagePath);
         
-        const model = selectedModel || 'gemini-2.5-flash-image-preview';
+        const model = selectedModel || 'gemini-2.5-flash-image';
         const provider = selectedProvider || 'gemini';
         console.log('Using model:', model, 'provider:', provider);
         
