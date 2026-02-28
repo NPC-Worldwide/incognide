@@ -8,7 +8,7 @@ import path from 'path';
 // Prod: 6337 (frontend), 5337 (backend)
 const DEV_PORT = parseInt(process.env.VITE_PORT || '7337');
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [react()],
   base:'./',
   server: {
@@ -16,7 +16,7 @@ export default defineConfig({
     strictPort: true, // Fail if port is already in use instead of trying another
   },
   define: {
-    'import.meta.env.VITE_DEV_MODE': JSON.stringify(true),
+    'import.meta.env.VITE_DEV_MODE': JSON.stringify(command === "serve"), // true when running in dev mode
   },
   build: {
     outDir: 'dist',
@@ -48,4 +48,4 @@ export default defineConfig({
       'react-syntax-highlighter/dist/cjs/styles/prism'
     ]
   }
-});
+}));
