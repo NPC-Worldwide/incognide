@@ -27,7 +27,7 @@ Built for seamless workflows, Incognide eliminates distractions and context swit
 
 ### Highlights
 
-- Write and run code with Vim/Emacs/Nano keybindings, use terminals, build reusable workflows and tools that chain together natural language and templateable code through jinja execution templates.
+- Write and run code, use terminals, build reusable workflows and tools that chain together natural language and templateable code through jinja execution templates.
 - Browse the web, read and annotate PDFs, view 3D STL models, analyze data and create dashboards, compile LaTeX.
 - Edit DOCX, XLSX, PPTX, MAPX.
 - Arrange chats, editors, PDFs, browsers, terminals, 3D viewers as your work evolves — each tab maintains independent state.
@@ -35,6 +35,7 @@ Built for seamless workflows, Incognide eliminates distractions and context swit
 - Schedule automated memory extraction, knowledge graph evolution, and context compression.
 - Fine-tune your own image and text models using curated data from your conversations and memories.
 - Built-in Pomodoro timer with programmable schedules and break enforcement.
+- Specialized tools for image, video, and audio generation. 
 
 ## Demo Video 
 Updated version coming soon....
