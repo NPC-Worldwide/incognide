@@ -10,7 +10,7 @@ import {
     ChevronLeft, ChevronsUpDown
 } from 'lucide-react';
 import CodeMirror from '@uiw/react-codemirror';
-import { EditorView, lineNumbers, highlightActiveLineGutter, highlightActiveLine, drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightSpecialChars } from '@codemirror/view';
+import { EditorView, ViewPlugin, lineNumbers, highlightActiveLineGutter, highlightActiveLine, drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightSpecialChars } from '@codemirror/view';
 import { keymap } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab, undo, redo } from '@codemirror/commands';
@@ -1071,59 +1071,52 @@ const LatexViewer = ({
         EditorView.updateListener.of((update) => {
             if (update.view) editorViewRef.current = update.view;
         }),
-    ], [citationCompletion, latexCommandCompletion, isDarkMode]);
+        // Scroll preservation via ViewPlugin — no race conditions with CM's resize handler
+        ViewPlugin.fromClass(class {
+            savedScrollTop: number;
+            lastHeight: number;
+            pendingRestore: boolean;
+            constructor(view: any) {
+                const initial = paneData?._scrollTopPos ?? 0;
+                this.savedScrollTop = initial;
+                this.lastHeight = 0;
+                this.pendingRestore = initial > 0;
+            }
+            update(update: any) {
+                const scrollDOM = update.view.scrollDOM;
+                const height = scrollDOM?.clientHeight ?? 0;
+                const wasHidden = this.lastHeight === 0 && height > 0;
+                this.lastHeight = height;
+                if (height === 0) return;
 
-    // Track top visible document position for scroll preservation
-    const scrollPosRef = useRef(0);
-    const scrollResizeObserverRef = useRef<ResizeObserver | null>(null);
+                if (wasHidden && this.savedScrollTop > 0) this.pendingRestore = true;
 
-    // Save to paneData on unmount, clean up observer
+                if (this.pendingRestore) {
+                    this.pendingRestore = false;
+                    const st = this.savedScrollTop;
+                    scrollDOM.scrollTop = st;
+                    return;
+                }
+
+                // Track pixel scroll position
+                const currentTop = scrollDOM.scrollTop;
+                if (currentTop !== this.savedScrollTop) {
+                    this.savedScrollTop = currentTop;
+                    if (paneData) paneData._scrollTopPos = currentTop;
+                }
+            }
+        }),
+    ], [citationCompletion, latexCommandCompletion, isDarkMode, paneData]);
+
+    // Save to paneData on unmount
     useEffect(() => {
         return () => {
             const view = editorViewRef.current;
             if (view && paneData) {
-                try { paneData._scrollTopPos = view.viewport.from; } catch (e) {}
+                try { paneData._scrollTopPos = view.scrollDOM.scrollTop; } catch (e) {}
             }
-            scrollResizeObserverRef.current?.disconnect();
         };
     }, [nodeId]);
-
-    const handleCreateEditor = useCallback((view: any) => {
-        editorViewRef.current = view;
-        let restoring = false;
-
-        // Track top visible position continuously (skip during restoration)
-        view.scrollDOM.addEventListener('scroll', () => {
-            if (!restoring) {
-                try { scrollPosRef.current = view.viewport.from; } catch (e) {}
-            }
-        }, { passive: true });
-
-        // Restore scroll on container resize — capture position synchronously
-        const parent = view.dom?.parentElement;
-        if (parent) {
-            const observer = new ResizeObserver(() => {
-                const pos = scrollPosRef.current;
-                if (pos > 0) {
-                    restoring = true;
-                    requestAnimationFrame(() => {
-                        try { view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: 'start', yMargin: 0 }) }); } catch (e) {}
-                        restoring = false;
-                    });
-                }
-            });
-            observer.observe(parent);
-            scrollResizeObserverRef.current = observer;
-        }
-
-        // Restore scroll on remount
-        if (paneData?._scrollTopPos != null && paneData._scrollTopPos > 0) {
-            scrollPosRef.current = paneData._scrollTopPos;
-            requestAnimationFrame(() => {
-                try { view.dispatch({ effects: EditorView.scrollIntoView(paneData._scrollTopPos, { y: 'start', yMargin: 0 }) }); } catch (e) {}
-            });
-        }
-    }, [paneData]);
 
     // Load file — skip if contentDataRef already has content (remount after layout change)
     useEffect(() => {
@@ -1850,7 +1843,6 @@ const LatexViewer = ({
                             basicSetup={false}
                             className="h-full"
                             style={{ height: '100%' }}
-                            onCreateEditor={handleCreateEditor}
                         />
                     </div>
                 </div>

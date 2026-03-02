@@ -25,7 +25,15 @@ export function getConversationStats(messages: any[]) {
 }
 
 export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManagerParams) {
-    const [rootLayoutNode, setRootLayoutNode] = useState<any>(null);
+    const [rootLayoutNode, rawSetRootLayoutNode] = useState<any>(null);
+    const [contentVersion, setContentVersion] = useState(0);
+    // Normal setter — bumps contentVersion so all LayoutNodes re-render
+    const setRootLayoutNode = useCallback((updater: any) => {
+        setContentVersion(v => v + 1);
+        rawSetRootLayoutNode(updater);
+    }, []);
+    // Quiet setter — for resize only, doesn't bump contentVersion
+    const setRootLayoutNodeQuiet = rawSetRootLayoutNode;
     const [activeContentPaneId, setActiveContentPaneId] = useState<string | null>(null);
     const contentDataRef = useRef<Record<string, any>>({});
     const rootLayoutNodeRef = useRef(rootLayoutNode);
@@ -505,7 +513,7 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
             // so LayoutNode memo comparator (prev.node === next.node) skips unchanged panes
             const structuralClone = (node: any): any => {
                 if (!node) return null;
-                if (node.type === 'pane') return node;
+                if (node.type === 'content') return node;
                 return {
                     ...node,
                     children: node.children ? node.children.map(structuralClone) : [],
@@ -646,7 +654,8 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
 
     return {
         // State
-        rootLayoutNode, setRootLayoutNode,
+        rootLayoutNode, setRootLayoutNode, setRootLayoutNodeQuiet,
+        contentVersion,
         activeContentPaneId, setActiveContentPaneId,
         contentDataRef,
         rootLayoutNodeRef,

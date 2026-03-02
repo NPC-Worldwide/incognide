@@ -213,6 +213,7 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
             const virtualData = contentDataRef?.current?.[`${nodeId}_${tab.id}`];
             const latestFileContent = virtualData?.fileContent ?? tab.fileContent;
             const latestFileChanged = virtualData?.fileChanged ?? tab.fileChanged;
+            const latestScrollPos = virtualData?._scrollTopPos ?? tab._scrollTopPos;
             setTimeout(() => {
                 setDraggedItem({
                     type: 'tab',
@@ -224,7 +225,8 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
                     contentId: tab.contentId,
                     browserUrl: browserUrl,
                     fileContent: latestFileContent,
-                    fileChanged: latestFileChanged
+                    fileChanged: latestFileChanged,
+                    _scrollTopPos: latestScrollPos
                 });
             }, 0);
         }

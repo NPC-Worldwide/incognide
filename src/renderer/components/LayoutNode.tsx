@@ -23,6 +23,19 @@ import { ChatHeaderContent } from './pane-headers';
 // Generate a unique ID for layout nodes
 const generateLayoutId = () => `layout-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
+// Deep-clone a layout tree creating new object references for ALL nodes.
+// This forces all memo'd LayoutNodes to re-render (since prev.node !== next.node).
+// Use this for infrequent operations (tab switch, drag-drop, workspace restore).
+// For resize (high-frequency), use structural sharing instead.
+export const forceFullRerender = (root: any): any => {
+    if (!root) return null;
+    return {
+        ...root,
+        children: root.children ? root.children.map(forceFullRerender) : undefined,
+        sizes: root.sizes ? [...root.sizes] : undefined,
+    };
+};
+
 // Collect all pane IDs from a layout node
 export const collectPaneIds = (node: any): string[] => {
     if (!node) return [];
@@ -262,9 +275,10 @@ const renderPaneContextMenu = () => {
 
 // End of commented-out fragments
 
-export const LayoutNode = memo(({ node, path, component: componentRef }) => {
+export const LayoutNode = memo(({ node, path, component: componentRef, contentVersion }) => {
     // component is a ref — always read .current for the latest value.
-    // This lets the memo only check `node`, preventing re-renders when unrelated state changes.
+    // contentVersion bumps on content changes (force re-render).
+    // Resize uses setRootLayoutNodeQuiet which doesn't bump contentVersion.
     const component = componentRef.current;
     if (!node) return null;
 
@@ -327,7 +341,8 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
 
             const onMouseUp = () => {
                 // Commit final sizes to React state (structural sharing — only clone along path)
-                componentRef.current.setRootLayoutNode((currentRoot: any) => {
+                // Use quiet setter so contentVersion doesn't bump — prevents unnecessary child re-renders
+                componentRef.current.setRootLayoutNodeQuiet((currentRoot: any) => {
                     if (path.length === 0) {
                         return { ...currentRoot, sizes: currentSizes };
                     }
@@ -361,7 +376,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                 {node.children.map((child, index) => (
                     <React.Fragment key={child.id}>
                         <div className="flex overflow-hidden" style={{ flexBasis: `${node.sizes[index]}%` }}>
-                            <LayoutNode node={child} path={[...path, index]} component={componentRef} />
+                            <LayoutNode node={child} path={[...path, index]} component={componentRef} contentVersion={contentVersion} />
                         </div>
                         {index < node.children.length - 1 && (
                             <div
@@ -442,9 +457,10 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                                 id: `tab_${Date.now()}_0`,
                                 contentType: targetPaneData.contentType,
                                 contentId: targetPaneData.contentId,
-                                browserUrl: targetPaneData.browserUrl, // Preserve browser URL
-                                fileContent: targetPaneData.fileContent, // Preserve file content
-                                fileChanged: targetPaneData.fileChanged, // Preserve file changed state
+                                browserUrl: targetPaneData.browserUrl,
+                                fileContent: targetPaneData.fileContent,
+                                fileChanged: targetPaneData.fileChanged,
+                                _scrollTopPos: targetPaneData._scrollTopPos,
                                 title: targetTitle
                             }];
                             targetPaneData.activeTabIndex = 0;
@@ -452,6 +468,15 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
 
                         // If source pane has tabs, add all of them
                         if (sourcePaneData.tabs && sourcePaneData.tabs.length > 0) {
+                            // Sync virtual data → tab objects before transfer (editors write to virtual data, not tabs)
+                            sourcePaneData.tabs.forEach((tab: any) => {
+                                const vd = contentDataRef.current[`${comp.draggedItem.id}_${tab.id}`];
+                                if (vd) {
+                                    if (vd.fileContent !== undefined) tab.fileContent = vd.fileContent;
+                                    if (vd.fileChanged !== undefined) tab.fileChanged = vd.fileChanged;
+                                    if (vd._scrollTopPos !== undefined) tab._scrollTopPos = vd._scrollTopPos;
+                                }
+                            });
                             sourcePaneData.tabs.forEach(tab => {
                                 targetPaneData.tabs.push({
                                     ...tab,
@@ -467,9 +492,10 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                                 id: `tab_${Date.now()}_${targetPaneData.tabs.length}`,
                                 contentType: sourcePaneData.contentType,
                                 contentId: sourcePaneData.contentId,
-                                browserUrl: sourcePaneData.browserUrl, // Preserve browser URL
-                                fileContent: sourcePaneData.fileContent, // Preserve file content
-                                fileChanged: sourcePaneData.fileChanged, // Preserve file changed state
+                                browserUrl: sourcePaneData.browserUrl,
+                                fileContent: sourcePaneData.fileContent,
+                                fileChanged: sourcePaneData.fileChanged,
+                                _scrollTopPos: sourcePaneData._scrollTopPos,
                                 title: sourceTitle
                             });
                         }
@@ -484,9 +510,16 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                             targetPaneData.browserUrl = activeTab.browserUrl;
                         }
                         // Preserve fileContent for editor tabs
-                        if (activeTab.contentType === 'editor' && activeTab.fileContent !== undefined) {
+                        if ((activeTab.contentType === 'editor' || activeTab.contentType === 'latex') && activeTab.fileContent !== undefined) {
                             targetPaneData.fileContent = activeTab.fileContent;
                             targetPaneData.fileChanged = activeTab.fileChanged || false;
+                        }
+
+                        // Clean up orphaned virtual data entries from source pane
+                        if (sourcePaneData.tabs) {
+                            sourcePaneData.tabs.forEach((tab: any) => {
+                                delete contentDataRef.current[`${comp.draggedItem.id}_${tab.id}`];
+                            });
                         }
 
                         // Close the source pane
@@ -537,6 +570,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                             browserUrl: targetPaneData.browserUrl,
                             fileContent: targetPaneData.fileContent,
                             fileChanged: targetPaneData.fileChanged,
+                            _scrollTopPos: targetPaneData._scrollTopPos,
                             title: targetTitle
                         }];
                         targetPaneData.activeTabIndex = 0;
@@ -546,6 +580,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                     const newTabTitle = tabContentType === 'browser'
                         ? (browserUrl || tabContentId || 'Browser')
                         : (getFileName(tabContentId) || tabContentType);
+                    const dragScrollPos = sourceVirtualData?._scrollTopPos ?? comp.draggedItem._scrollTopPos;
                     targetPaneData.tabs.push({
                         id: `tab_${Date.now()}_${targetPaneData.tabs.length}`,
                         contentType: tabContentType,
@@ -553,6 +588,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                         browserUrl,
                         fileContent,
                         fileChanged,
+                        _scrollTopPos: dragScrollPos,
                         title: newTabTitle
                     });
                     targetPaneData.activeTabIndex = targetPaneData.tabs.length - 1;
@@ -576,6 +612,11 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                         if (fileContent !== undefined) {
                             contentDataRef.current[newPaneId].fileContent = fileContent;
                             contentDataRef.current[newPaneId].fileChanged = fileChanged || false;
+                        }
+                        // Transfer scroll position so the new pane restores it
+                        const splitScrollPos = sourceVirtualData?._scrollTopPos ?? comp.draggedItem._scrollTopPos;
+                        if (splitScrollPos != null) {
+                            contentDataRef.current[newPaneId]._scrollTopPos = splitScrollPos;
                         }
                     }
                 }
@@ -687,9 +728,13 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                             id: `tab_${Date.now()}_0`,
                             contentType: paneData.contentType,
                             contentId: paneData.contentId,
-                            browserUrl: paneData.browserUrl, // Preserve browser URL
-                            fileContent: paneData.fileContent, // Preserve file content
-                            fileChanged: paneData.fileChanged, // Preserve file changed state
+                            browserUrl: paneData.browserUrl,
+                            fileContent: paneData.fileContent,
+                            fileChanged: paneData.fileChanged,
+                            isUntitled: paneData.isUntitled,
+                            _scrollTopPos: paneData._scrollTopPos,
+                            _editorStateJSON: paneData._editorStateJSON,
+                            _cursorPos: paneData._cursorPos,
                             title: currentTitle
                         }];
                         paneData.activeTabIndex = 0;
@@ -711,8 +756,9 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                     // Save current tab's content before switching to new tab
                     const currentTabIndex = paneData.activeTabIndex || 0;
                     if (paneData.tabs[currentTabIndex]) {
-                        paneData.tabs[currentTabIndex].fileContent = paneData.fileContent;
-                        paneData.tabs[currentTabIndex].fileChanged = paneData.fileChanged;
+                        const curVd = contentDataRef.current[`${node.id}_${paneData.tabs[currentTabIndex].id}`];
+                        paneData.tabs[currentTabIndex].fileContent = curVd?.fileContent ?? paneData.fileContent;
+                        paneData.tabs[currentTabIndex].fileChanged = curVd?.fileChanged ?? paneData.fileChanged;
                     }
 
                     paneData.tabs.push(newTab);
@@ -756,7 +802,8 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                 performSplit(path, side, contentType, comp.draggedItem.id);
                 // For browser splits, we need to set the browserUrl after performSplit creates the pane
                 // performSplit sets contentDataRef synchronously, so we can update it immediately
-                if (contentType === 'browser' && browserUrl) {
+                const splitBrowserUrl = comp.draggedItem.url || comp.draggedItem.browserUrl;
+                if (contentType === 'browser' && splitBrowserUrl) {
                     // Find the newly created pane and set its browserUrl
                     // performSplit creates a new pane ID, but we don't have access to it here
                     // We need to update performSplit to accept additional data, or handle this differently
@@ -764,7 +811,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                     setTimeout(() => {
                         Object.entries(contentDataRef.current).forEach(([id, data]) => {
                             if (data.contentType === 'browser' && data.contentId === comp.draggedItem.id && !data.browserUrl) {
-                                data.browserUrl = browserUrl;
+                                data.browserUrl = splitBrowserUrl;
                             }
                         });
                     }, 0);
@@ -821,19 +868,21 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                 paneData.activeTabIndex = index;
                 // Update paneData with the selected tab's content
                 const selectedTab = tabs[index];
-                paneData.contentType = selectedTab.contentType;
-                paneData.contentId = selectedTab.contentId;
-                // Restore fileContent and fileChanged from the selected tab
-                paneData.fileContent = selectedTab.fileContent;
-                paneData.fileChanged = selectedTab.fileChanged || false;
-                paneData.isUntitled = selectedTab.isUntitled || false;
-                // Restore editor state for editor/latex tabs
                 const selectedVirtualId = `${node.id}_${tabs[index].id}`;
                 const selectedVirtualData = contentDataRef.current[selectedVirtualId];
-                if (selectedVirtualData && selectedTab._editorStateJSON) {
-                    selectedVirtualData._editorStateJSON = selectedTab._editorStateJSON;
-                    selectedVirtualData._cursorPos = selectedTab._cursorPos;
-                    selectedVirtualData._scrollTopPos = selectedTab._scrollTopPos;
+                paneData.contentType = selectedTab.contentType;
+                paneData.contentId = selectedTab.contentId;
+                // Restore fileContent from virtual data (authoritative) or tab object (fallback)
+                paneData.fileContent = selectedVirtualData?.fileContent ?? selectedTab.fileContent;
+                paneData.fileChanged = selectedVirtualData?.fileChanged ?? selectedTab.fileChanged ?? false;
+                paneData.isUntitled = selectedVirtualData?.isUntitled ?? selectedTab.isUntitled ?? false;
+                // Also sync the selected tab's virtual data from tab object if virtual data is stale
+                if (selectedVirtualData) {
+                    if (selectedTab._editorStateJSON) {
+                        selectedVirtualData._editorStateJSON = selectedTab._editorStateJSON;
+                        selectedVirtualData._cursorPos = selectedTab._cursorPos;
+                        selectedVirtualData._scrollTopPos = selectedTab._scrollTopPos;
+                    }
                 }
                 // Restore chat state for chat tabs
                 if (selectedTab.contentType === 'chat') {
@@ -894,21 +943,19 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                     if (paneData.activeTabIndex >= newTabs.length) {
                         paneData.activeTabIndex = newTabs.length - 1;
                     }
-                    // Restore state from new active tab
+                    // Restore state from new active tab (prefer virtual data as authoritative)
                     const newActiveTab = newTabs[paneData.activeTabIndex];
+                    const newActiveVd = newActiveTab ? contentDataRef.current[`${node.id}_${newActiveTab.id}`] : null;
                     if (newActiveTab) {
                         paneData.contentType = newActiveTab.contentType;
                         paneData.contentId = newActiveTab.contentId;
+                        // Always restore fileContent from virtual data (authoritative) or tab object
+                        paneData.fileContent = newActiveVd?.fileContent ?? newActiveTab.fileContent;
+                        paneData.fileChanged = newActiveVd?.fileChanged ?? newActiveTab.fileChanged ?? false;
                     }
                     if (newActiveTab?.contentType === 'browser' && newActiveTab.browserUrl) {
                         paneData.browserUrl = newActiveTab.browserUrl;
                         paneData.browserTitle = newActiveTab.browserTitle || 'Browser';
-                    }
-                    // Restore file content for editor tabs (prefer virtual data)
-                    if (newActiveTab?.contentType === 'editor' || newActiveTab?.contentType === 'latex') {
-                        const activeVd = contentDataRef.current[`${node.id}_${newActiveTab.id}`];
-                        paneData.fileContent = activeVd?.fileContent ?? newActiveTab.fileContent;
-                        paneData.fileChanged = activeVd?.fileChanged ?? newActiveTab.fileChanged ?? false;
                     }
                     // Restore chat state for chat tabs
                     if (newActiveTab?.contentType === 'chat') {
@@ -920,16 +967,21 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                     // If only one tab left, transition back to single-tab mode
                     // Copy virtual data back to real pane so the editor can use node.id
                     if (newTabs.length === 1) {
-                        const lastTabId = newTabs[0].id;
-                        const lastVd = contentDataRef.current[`${node.id}_${lastTabId}`];
+                        const lastTab = newTabs[0];
+                        const lastVd = contentDataRef.current[`${node.id}_${lastTab.id}`];
                         if (lastVd) {
                             if (lastVd.fileContent !== undefined) paneData.fileContent = lastVd.fileContent;
                             if (lastVd.fileChanged !== undefined) paneData.fileChanged = lastVd.fileChanged;
                             if (lastVd._editorStateJSON) paneData._editorStateJSON = lastVd._editorStateJSON;
                             if (lastVd._cursorPos !== undefined) paneData._cursorPos = lastVd._cursorPos;
                             if (lastVd._scrollTopPos !== undefined) paneData._scrollTopPos = lastVd._scrollTopPos;
+                        } else {
+                            // Virtual data missing — sync from tab object
+                            paneData.fileContent = lastTab.fileContent;
+                            paneData.fileChanged = lastTab.fileChanged ?? false;
+                            if (lastTab._scrollTopPos !== undefined) paneData._scrollTopPos = lastTab._scrollTopPos;
                         }
-                        delete contentDataRef.current[`${node.id}_${lastTabId}`];
+                        delete contentDataRef.current[`${node.id}_${lastTab.id}`];
                     }
                     setRootLayoutNode?.(prev => ({ ...prev }));
                 }
@@ -944,9 +996,10 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                     if (tabs[currentTabIndex].contentType === 'browser' && paneData.browserUrl) {
                         tabs[currentTabIndex].browserUrl = paneData.browserUrl;
                     }
-                    if (tabs[currentTabIndex].contentType === 'editor') {
-                        tabs[currentTabIndex].fileContent = paneData.fileContent;
-                        tabs[currentTabIndex].fileChanged = paneData.fileChanged;
+                    if (tabs[currentTabIndex].contentType === 'editor' || tabs[currentTabIndex].contentType === 'latex') {
+                        const reorderVd = contentDataRef.current[`${node.id}_${tabs[currentTabIndex].id}`];
+                        tabs[currentTabIndex].fileContent = reorderVd?.fileContent ?? paneData.fileContent;
+                        tabs[currentTabIndex].fileChanged = reorderVd?.fileChanged ?? paneData.fileChanged;
                     }
                     if (tabs[currentTabIndex].contentType === 'chat') {
                         tabs[currentTabIndex].chatMessages = paneData.chatMessages;
@@ -982,8 +1035,12 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                             id: `tab_${Date.now()}_0`,
                             contentType: paneData.contentType,
                             contentId: paneData.contentId,
-                            fileContent: paneData.fileContent, // Preserve file content
-                            fileChanged: paneData.fileChanged, // Preserve file changed state
+                            fileContent: paneData.fileContent,
+                            fileChanged: paneData.fileChanged,
+                            isUntitled: paneData.isUntitled,
+                            _scrollTopPos: paneData._scrollTopPos,
+                            _editorStateJSON: paneData._editorStateJSON,
+                            _cursorPos: paneData._cursorPos,
                             title: getFileName(paneData.contentId) || paneData.contentType
                         }];
                     } else {
@@ -1345,8 +1402,10 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             tabs.forEach((tab, index) => {
                 const virtualId = `${node.id}_${tab.id}`;
                 const isActiveTab = index === activeTabIndex;
-                // Create or update virtual pane data for this tab
-                if (!contentDataRef.current[virtualId] || contentDataRef.current[virtualId].contentId !== tab.contentId || contentDataRef.current[virtualId].isUntitled !== tab.isUntitled) {
+                const existingVd = contentDataRef.current[virtualId];
+                // Create virtual pane data for this tab if it doesn't exist yet,
+                // or if the contentId changed (e.g., file was renamed/saved-as)
+                if (!existingVd || existingVd.contentId !== tab.contentId || existingVd.isUntitled !== tab.isUntitled) {
                     contentDataRef.current[virtualId] = {
                         contentType: tab.contentType,
                         contentId: tab.contentId,
@@ -1364,20 +1423,30 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                         chatStats: tab.chatStats,
                     };
                 }
+                const vd = contentDataRef.current[virtualId];
                 // Sync file content when virtual data hasn't been populated yet
                 // (handles async file load timing — virtual data created before readFileContent resolves)
-                const vd = contentDataRef.current[virtualId];
                 if (vd && (vd.fileContent === undefined || vd.fileContent === null)) {
                     const src = tab.fileContent ?? (isActiveTab ? paneData?.fileContent : undefined);
                     if (src !== undefined && src !== null) {
                         vd.fileContent = src;
                     }
                 }
+                // Reverse sync: keep tab object updated from virtual data (authoritative)
+                // so handleTabSelect always has fresh content when restoring a tab
+                if (vd && vd.fileContent !== undefined && vd.fileContent !== null) {
+                    tab.fileContent = vd.fileContent;
+                    tab.fileChanged = vd.fileChanged;
+                }
                 // Also sync editor state if not yet set (e.g., transitioning from single to multi-tab)
                 if (vd && vd._editorStateJSON === undefined && tab._editorStateJSON) {
                     vd._editorStateJSON = tab._editorStateJSON;
                     vd._cursorPos = tab._cursorPos;
                     vd._scrollTopPos = tab._scrollTopPos;
+                }
+                // Reverse sync scroll position from virtual data to tab
+                if (vd && vd._scrollTopPos !== undefined) {
+                    tab._scrollTopPos = vd._scrollTopPos;
                 }
                 // For the active tab, keep chat state synced from the real pane data
                 // (updateContentPane sets chat props on paneData, not on the tab object)
@@ -1651,7 +1720,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
         );
     }
     return null;
-}, (prev, next) => prev.node === next.node);
+}, (prev, next) => prev.node === next.node && prev.contentVersion === next.contentVersion);
 
 
 

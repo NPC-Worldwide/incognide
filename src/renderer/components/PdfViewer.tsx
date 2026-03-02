@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { Viewer, Worker, SpecialZoomLevel } from '@react-pdf-viewer/core';
 import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
 import { zoomPlugin } from '@react-pdf-viewer/zoom';
+import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.js?url';
 import {
     Highlighter, MessageSquare, Trash2,
     Eye, EyeOff, Edit2, Save, X, PanelRightClose, PanelRightOpen,
@@ -560,9 +561,7 @@ const PdfViewer = ({
     const [textPlacementMode, setTextPlacementMode] = useState(false);
     const [textInput, setTextInput] = useState<{ pageIndex: number; x: number; y: number; text: string } | null>(null);
 
-    const workerUrl = window.location.protocol === 'file:'
-        ? `${window.location.href.substring(0, window.location.href.lastIndexOf('/'))}/pdf.worker.min.js`
-        : `${window.location.origin}/pdf.worker.min.js`;
+    const workerUrl = pdfjsWorkerUrl;
 
     // Plugin factories are custom hooks internally - must be called unconditionally every render
     const zoomPluginInstance = zoomPlugin();

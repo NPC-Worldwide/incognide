@@ -8,7 +8,7 @@ import { json } from '@codemirror/lang-json';
 import { html } from '@codemirror/lang-html';
 import { css } from '@codemirror/lang-css';
 import { markdown } from '@codemirror/lang-markdown';
-import { EditorView, lineNumbers, highlightActiveLineGutter, highlightActiveLine, drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightSpecialChars } from '@codemirror/view';
+import { EditorView, ViewPlugin, lineNumbers, highlightActiveLineGutter, highlightActiveLine, drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightSpecialChars } from '@codemirror/view';
 import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { keymap } from '@codemirror/view';
 import { defaultKeymap, emacsStyleKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -209,10 +209,12 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
     const onContextMenuRef = useRef(onContextMenu);
     const onSendToTerminalRef = useRef(onSendToTerminal);
     const onSaveRef = useRef(onSave);
+    const onEditorStateChangeRef = useRef(onEditorStateChange);
     onSelectRef.current = onSelect;
     onContextMenuRef.current = onContextMenu;
     onSendToTerminalRef.current = onSendToTerminal;
     onSaveRef.current = onSave;
+    onEditorStateChangeRef.current = onEditorStateChange;
 
     const languageExtension = useMemo(() => {
         const ext = filePath?.split('.').pop()?.toLowerCase();
@@ -368,6 +370,49 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
         return keybindMode === 'vim' ? [vim()] : [];
     }, [keybindMode]);
 
+    // Scroll preservation via CM ViewPlugin — lives inside CM's update cycle, no race conditions.
+    // Tracks the last "genuine" scroll position and restores it on geometry-only changes (resize).
+    // Uses ref for initial position so the plugin is stable (never recreated on re-render).
+    const initialScrollPosRef = useRef(savedEditorState?.scrollTopPos ?? 0);
+    const scrollPreserverPlugin = useMemo(() => {
+        const stateChangeRef = onEditorStateChangeRef;
+        const posRef = initialScrollPosRef;
+        return ViewPlugin.fromClass(class {
+            savedScrollTop: number;
+            lastHeight: number;
+            pendingRestore: boolean;
+            constructor(view: any) {
+                this.savedScrollTop = posRef.current;
+                this.lastHeight = 0;
+                this.pendingRestore = posRef.current > 0;
+            }
+            update(update: any) {
+                const scrollDOM = update.view.scrollDOM;
+                const height = scrollDOM?.clientHeight ?? 0;
+                const wasHidden = this.lastHeight === 0 && height > 0;
+                this.lastHeight = height;
+                if (height === 0) return;
+
+                if (wasHidden && this.savedScrollTop > 0) this.pendingRestore = true;
+
+                if (this.pendingRestore) {
+                    this.pendingRestore = false;
+                    const st = this.savedScrollTop;
+                    // Direct DOM scroll — no CM effects or timing needed
+                    scrollDOM.scrollTop = st;
+                    return;
+                }
+
+                // Track pixel scroll position
+                const currentTop = scrollDOM.scrollTop;
+                if (currentTop !== this.savedScrollTop) {
+                    this.savedScrollTop = currentTop;
+                    stateChangeRef.current?.({ scrollTopPos: currentTop });
+                }
+            }
+        });
+    }, []); // Stable — plugin self-tracks position after mount
+
     const extensions = useMemo(() => [
         // Vim must be first if active
         ...vimExtension,
@@ -411,7 +456,10 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
 
         // Optional line wrapping (comment out for horizontal scroll)
         EditorView.lineWrapping,
-    ], [languageExtension, lintExtension, customKeymap, tabSize, keymapExtensions, vimExtension]);
+
+        // Scroll preservation on resize
+        scrollPreserverPlugin,
+    ], [languageExtension, lintExtension, customKeymap, tabSize, keymapExtensions, vimExtension]); // scrollPreserverPlugin is stable (no dep needed)
 
     const handleUpdate = useCallback((viewUpdate) => {
         if (viewUpdate.selectionSet && onSelectRef.current) {
@@ -467,56 +515,14 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
         return () => editorDOM.removeEventListener('keydown', handleKeyDown, true);
     }, []);
 
-    // Track top visible document position for scroll preservation
-    const scrollPosRef = useRef(0);
-    const resizeObserverRef = useRef<ResizeObserver | null>(null);
-
-    // Save to paneData on unmount, clean up observer
+    // Save to paneData on unmount
     useEffect(() => {
         return () => {
             if (onEditorStateChange && editorRef.current?.view) {
-                try { onEditorStateChange({ scrollTopPos: editorRef.current.view.viewport.from }); } catch (e) {}
+                try { onEditorStateChange({ scrollTopPos: editorRef.current.view.scrollDOM.scrollTop }); } catch (e) {}
             }
-            resizeObserverRef.current?.disconnect();
         };
     }, [onEditorStateChange]);
-
-    const onCreateEditor = useCallback((view: any) => {
-        let restoring = false;
-
-        // Track top visible position continuously (skip during restoration)
-        view.scrollDOM.addEventListener('scroll', () => {
-            if (!restoring) {
-                try { scrollPosRef.current = view.viewport.from; } catch (e) {}
-            }
-        }, { passive: true });
-
-        // Restore scroll on container resize — capture position synchronously
-        // before CodeMirror's internal resize handler can fire scroll events
-        const parent = view.dom?.parentElement;
-        if (parent) {
-            const observer = new ResizeObserver(() => {
-                const pos = scrollPosRef.current;
-                if (pos > 0) {
-                    restoring = true;
-                    requestAnimationFrame(() => {
-                        try { view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: 'start', yMargin: 0 }) }); } catch (e) {}
-                        restoring = false;
-                    });
-                }
-            });
-            observer.observe(parent);
-            resizeObserverRef.current = observer;
-        }
-
-        // Restore scroll on remount
-        if (savedEditorState?.scrollTopPos != null && savedEditorState.scrollTopPos > 0) {
-            scrollPosRef.current = savedEditorState.scrollTopPos;
-            requestAnimationFrame(() => {
-                try { view.dispatch({ effects: EditorView.scrollIntoView(savedEditorState.scrollTopPos, { y: 'start', yMargin: 0 }) }); } catch (e) {}
-            });
-        }
-    }, [savedEditorState]);
 
     return (
         <CodeMirror
@@ -527,7 +533,6 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
             extensions={extensions}
             onChange={onChange}
             onUpdate={handleUpdate}
-            onCreateEditor={onCreateEditor}
         />
     );
 }, (prevProps, nextProps) => {

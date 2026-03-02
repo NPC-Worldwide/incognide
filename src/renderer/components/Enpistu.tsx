@@ -276,7 +276,8 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
 
     // Layout manager from useLayoutManager hook
     const {
-        rootLayoutNode, setRootLayoutNode, activeContentPaneId, setActiveContentPaneId,
+        rootLayoutNode, setRootLayoutNode, setRootLayoutNodeQuiet, contentVersion,
+        activeContentPaneId, setActiveContentPaneId,
         contentDataRef, rootLayoutNodeRef, closedTabsRef,
         zenModePaneId, setZenModePaneId, renamingPaneId, setRenamingPaneId,
         editedFileName, setEditedFileName, paneContextMenu, setPaneContextMenu,
@@ -7140,6 +7141,7 @@ const paneRenderers = useMemo(() => ({
 const layoutComponentApi = useMemo(() => ({
     get rootLayoutNode() { return rootLayoutNodeRef.current; },
     setRootLayoutNode,
+    setRootLayoutNodeQuiet,
     findNodeByPath,
     findNodePath,
     activeContentPaneId, setActiveContentPaneId,
@@ -8392,7 +8394,7 @@ const renderMainContent = () => {
             {topBar}
             <div className="flex-1 flex overflow-hidden" data-tutorial="pane-area">
                 {rootLayoutNode ? (
-                    <LayoutNode node={rootLayoutNode} path={[]} component={layoutComponentRef} />
+                    <LayoutNode node={rootLayoutNode} path={[]} component={layoutComponentRef} contentVersion={contentVersion} />
                 ) : (
                     <div className="flex-1 flex items-center justify-center theme-text-muted">
                         {loading ? "Loading..." : "Drag a conversation or file to start."}
