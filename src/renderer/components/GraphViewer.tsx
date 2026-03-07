@@ -6,14 +6,13 @@ import BrowserHistoryWeb from './BrowserHistoryWeb';
 interface GraphViewerProps {
     isOpen?: boolean;
     onClose?: () => void;
-    isPane?: boolean; // When true, renders as pane content (no modal wrapper)
+    isPane?: boolean;
     currentPath?: string;
 }
 
 const GraphViewer: React.FC<GraphViewerProps> = ({ isOpen = true, onClose, isPane = false, currentPath }) => {
     const [activeTab, setActiveTab] = useState<'knowledge' | 'browser'>('knowledge');
 
-    // Escape key handler - only for modal mode
     useEffect(() => {
         if (isPane || !isOpen) return;
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -27,7 +26,6 @@ const GraphViewer: React.FC<GraphViewerProps> = ({ isOpen = true, onClose, isPan
 
     const content = (
         <div className={`flex flex-col h-full ${isPane ? '' : 'max-h-[90vh]'}`}>
-            {/* Header with tabs */}
             <div className="flex items-center justify-between border-b theme-border flex-shrink-0">
                 <div className="flex">
                     <button
@@ -50,7 +48,6 @@ const GraphViewer: React.FC<GraphViewerProps> = ({ isOpen = true, onClose, isPan
                 )}
             </div>
 
-            {/* Content */}
             <div className="flex-1 overflow-auto">
                 {activeTab === 'knowledge' && (
                     <KnowledgeGraphEditor isModal={false} />
@@ -62,12 +59,10 @@ const GraphViewer: React.FC<GraphViewerProps> = ({ isOpen = true, onClose, isPan
         </div>
     );
 
-    // If pane mode, just return content
     if (isPane) {
         return content;
     }
 
-    // Modal mode
     return (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100]" onClick={onClose}>
             <div

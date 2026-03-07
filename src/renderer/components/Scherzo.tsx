@@ -22,7 +22,6 @@ interface ScherzoProps {
     onClose?: () => void;
 }
 
-// Audio file type
 interface AudioFile {
     id: string;
     name: string;
@@ -33,7 +32,6 @@ interface AudioFile {
     key?: string;
 }
 
-// Track colors for visual organization
 const TRACK_COLORS = [
     { bg: 'from-purple-600 to-purple-800', border: 'border-purple-500', text: 'text-purple-400' },
     { bg: 'from-blue-600 to-blue-800', border: 'border-blue-500', text: 'text-blue-400' },
@@ -45,7 +43,6 @@ const TRACK_COLORS = [
     { bg: 'from-yellow-600 to-yellow-800', border: 'border-yellow-500', text: 'text-yellow-400' },
 ];
 
-// Track in editor
 interface AudioTrack {
     id: string;
     name: string;
@@ -54,8 +51,8 @@ interface AudioTrack {
     pan: number;
     muted: boolean;
     solo: boolean;
-    color: number; // Index into TRACK_COLORS
-    height: number; // Track height in pixels
+    color: number;
+    height: number;
 }
 
 interface AudioClip {
@@ -65,13 +62,12 @@ interface AudioClip {
     duration: number;
     offset: number;
     name: string;
-    gain: number; // Clip-level gain (0-2, 1 = unity)
-    fadeIn: number; // Fade in duration in seconds
-    fadeOut: number; // Fade out duration in seconds
-    color?: number; // Optional override color
+    gain: number;
+    fadeIn: number;
+    fadeOut: number;
+    color?: number;
 }
 
-// Timeline marker
 interface TimelineMarker {
     id: string;
     time: number;
@@ -79,8 +75,7 @@ interface TimelineMarker {
     color: string;
 }
 
-// Standard guitar tuning: string index → open string MIDI note
-const GUITAR_TUNING = [64, 59, 55, 50, 45, 40]; // E4, B3, G3, D3, A2, E2
+const GUITAR_TUNING = [64, 59, 55, 50, 45, 40];
 
 const tabToMidi = (stringIdx: number, fret: number): number => {
     return GUITAR_TUNING[stringIdx] + fret;
@@ -99,11 +94,9 @@ const midiToTab = (midi: number): { string: number; fret: number } | null => {
     return best;
 };
 
-// Map VexFlow staff position (0=top line, each step=one diatonic note down) to MIDI
 const staffPositionToMidi = (pos: number, clef: 'treble' | 'bass'): number => {
-    const diatonic = [0, 2, 4, 5, 7, 9, 11]; // C D E F G A B semitones from C
-    // Treble: top line = F5 (MIDI 77), F is diatonic index 3
-    // Bass: top line = A3 (MIDI 57), A is diatonic index 5
+    const diatonic = [0, 2, 4, 5, 7, 9, 11];
+
     const refIdx = clef === 'bass' ? 5 : 3;
     const refOctave = clef === 'bass' ? 3 : 5;
 
@@ -115,7 +108,6 @@ const staffPositionToMidi = (pos: number, clef: 'treble' | 'bass'): number => {
     return (targetOctave + 1) * 12 + diatonic[targetIdx];
 };
 
-// DJ Deck
 interface DJDeck {
     audioFile: AudioFile | null;
     playing: boolean;
@@ -124,23 +116,22 @@ interface DJDeck {
     speed: number;
     eq: { low: number; mid: number; high: number };
     eqKill: { low: boolean; mid: boolean; high: boolean };
-    hotCues: (number | null)[]; // 8 hot cue positions
+    hotCues: (number | null)[];
     loopIn: number | null;
     loopOut: number | null;
     loopActive: boolean;
-    filter: number; // 0-100, 50 = neutral
+    filter: number;
     effects: { echo: number; flanger: number; reverb: number; roll: number };
     activeEffect: string | null;
-    // Enhanced features
-    beatGrid: number[]; // Array of beat timestamps in seconds
-    beatGridOffset: number; // Manual beat grid adjustment
-    jogOffset: number; // Temporary jog wheel offset (for nudging)
-    keyLock: boolean; // Maintain pitch when changing tempo
-    slip: boolean; // Slip mode - continue playing in background while scratching
-    slipPosition: number; // Background position during slip
+
+    beatGrid: number[];
+    beatGridOffset: number;
+    jogOffset: number;
+    keyLock: boolean;
+    slip: boolean;
+    slipPosition: number;
 }
 
-// Audio Training Dataset
 interface AudioDatasetExample {
     id: string;
     prompt: string;
@@ -166,41 +157,36 @@ interface AudioDataset {
 
 export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
     const aiEnabled = useAiEnabled();
-    // Mode/tab state — persisted so it survives remounts
+
     const [activeMode, _setActiveMode] = useState(() => localStorage.getItem('scherzo_activeMode') || 'library');
     const setActiveMode = useCallback((mode: string) => {
         _setActiveMode(mode);
         localStorage.setItem('scherzo_activeMode', mode);
     }, []);
 
-    // Library state
     const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
     const [selectedAudio, setSelectedAudio] = useState<AudioFile | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [audioSource, setAudioSource] = useState(currentPath || '');
 
-    // Update audio source when currentPath changes
     useEffect(() => {
         if (currentPath && currentPath !== audioSource) {
             setAudioSource(currentPath);
         }
     }, [currentPath]);
 
-    // Playback state
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
     const [volume, setVolume] = useState(1);
     const audioRef = useRef<HTMLAudioElement>(null);
 
-    // Generator state
     const [genPrompt, setGenPrompt] = useState('');
     const [genModel, setGenModel] = useState('');
     const [generating, setGenerating] = useState(false);
     const [genDuration, setGenDuration] = useState(30);
     const [generatedAudio, setGeneratedAudio] = useState<AudioFile[]>([]);
 
-    // Editor state
     const [tracks, setTracks] = useState<AudioTrack[]>([
         { id: 'track-1', name: 'Track 1', clips: [], volume: 1, pan: 0, muted: false, solo: false, color: 0, height: 80 },
         { id: 'track-2', name: 'Track 2', clips: [], volume: 1, pan: 0, muted: false, solo: false, color: 1, height: 80 }
@@ -225,9 +211,9 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
     const [editorTool, setEditorTool] = useState<'select' | 'cut' | 'move'>('select');
     const [showEffectsPanel, setShowEffectsPanel] = useState(false);
     const [trackEffects, setTrackEffects] = useState<Map<string, { gain: number; pan: number; reverb: number; delay: number; eq: { low: number; mid: number; high: number } }>>(new Map());
-    // Professional editor state
+
     const [snapToGrid, setSnapToGrid] = useState(true);
-    const [gridSize, setGridSize] = useState<0.25 | 0.5 | 1 | 2 | 4>(1); // seconds
+    const [gridSize, setGridSize] = useState<0.25 | 0.5 | 1 | 2 | 4>(1);
     const [trackLevels, setTrackLevels] = useState<Map<string, { left: number; right: number }>>(new Map());
     const [armedTracks, setArmedTracks] = useState<Set<string>>(new Set());
     const [lockedTracks, setLockedTracks] = useState<Set<string>>(new Set());
@@ -239,14 +225,14 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
     const [loopEnd, setLoopEnd] = useState(10);
     const editorContainerRef = useRef<HTMLDivElement>(null);
     const levelAnimationRef = useRef<number | null>(null);
-    // Timeline markers
+
     const [markers, setMarkers] = useState<TimelineMarker[]>([]);
-    // Project tempo
+
     const [projectBpm, setProjectBpm] = useState(120);
     const [showBpmGrid, setShowBpmGrid] = useState(false);
-    // Vertical waveform zoom
+
     const [waveformZoom, setWaveformZoom] = useState(1);
-    // Dragging state
+
     const [dragState, setDragState] = useState<{
         type: 'move' | 'resize-left' | 'resize-right' | 'fade-in' | 'fade-out' | 'selection' | null;
         clipId?: string;
@@ -255,12 +241,11 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         startTime: number;
         originalClip?: AudioClip;
     } | null>(null);
-    // Context menu
+
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; clipId?: string; trackId?: string } | null>(null);
-    // High-resolution waveform cache (for continuous waveform)
+
     const [waveformDataCache, setWaveformDataCache] = useState<Map<string, Float32Array>>(new Map());
 
-    // Notation state
     const [notationView, setNotationView] = useState<'piano' | 'sheet' | 'tab'>('sheet');
     const [pianoNotes, setPianoNotes] = useState<Array<{ note: number; start: number; duration: number; velocity: number }>>([]);
     const [tabNotes, setTabNotes] = useState<Array<{ string: number; fret: number; start: number; duration: number }>>([]);
@@ -282,20 +267,31 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
     }>>([]);
     const [notationKeySignature, setNotationKeySignature] = useState('C');
     const [notationClef, setNotationClef] = useState<'treble' | 'bass' | 'grand'>('treble');
-    const [inputNoteDuration, setInputNoteDuration] = useState(1); // beats: 4=whole, 2=half, 1=quarter, 0.5=eighth, 0.25=16th
-    const [inputCursor, setInputCursor] = useState(0); // current beat position for note entry
+    const [inputNoteDuration, setInputNoteDuration] = useState(1);
+    const [inputCursor, setInputCursor] = useState(0);
     const [inputOctave, setInputOctave] = useState(4);
     const [notationInstrument, setNotationInstrument] = useState<'sine' | 'triangle' | 'square' | 'sawtooth'>('triangle');
     const [noteContextMenu, setNoteContextMenu] = useState<{
         x: number; y: number; noteIdx: number | null; beat: number; measureIdx: number;
     } | null>(null);
 
-    // Analysis state (enhanced)
+    const [notationUndoStack, setNotationUndoStack] = useState<Array<{ note: number; start: number; duration: number; velocity: number }[]>>([]);
+    const [notationRedoStack, setNotationRedoStack] = useState<Array<{ note: number; start: number; duration: number; velocity: number }[]>>([]);
+    const [notationClipboard, setNotationClipboard] = useState<Array<{ note: number; start: number; duration: number; velocity: number }>>([]);
+    const [notationMeasures, setNotationMeasures] = useState(16);
+    const pianoRollScrollRef = useRef<HTMLDivElement>(null);
+    const [pianoRollDrag, setPianoRollDrag] = useState<{
+        type: 'move' | 'resize';
+        noteIdx: number;
+        startX: number;
+        startY: number;
+        origNote: { note: number; start: number; duration: number; velocity: number };
+    } | null>(null);
+
     const [analysisAudioBuffer, setAnalysisAudioBuffer] = useState<AudioBuffer | null>(null);
     const [analysisFrequencyData, setAnalysisFrequencyData] = useState<Uint8Array | null>(null);
     const [analysisWaveformData, setAnalysisWaveformData] = useState<number[]>([]);
 
-    // DJ state
     const defaultDeckState: DJDeck = {
         audioFile: null, playing: false, currentTime: 0, volume: 1, speed: 1,
         eq: { low: 0, mid: 0, high: 0 },
@@ -312,9 +308,9 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         slip: false,
         slipPosition: 0
     };
-    // DJ crossfader curve type
+
     const [crossfaderCurve, setCrossfaderCurve] = useState<'linear' | 'cut' | 'smooth'>('smooth');
-    // Active effects for each deck
+
     const [deckAEffects, setDeckAEffects] = useState<{ [key: string]: number }>({});
     const [deckBEffects, setDeckBEffects] = useState<{ [key: string]: number }>({});
     const [deckA, setDeckA] = useState<DJDeck>({ ...defaultDeckState });
@@ -322,17 +318,15 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
     const [crossfader, setCrossfader] = useState(0.5);
     const deckARef = useRef<HTMLAudioElement>(null);
     const deckBRef = useRef<HTMLAudioElement>(null);
-    // DJ effects state
+
     const [djMasterGain, setDjMasterGain] = useState(1);
     const [djBpm, setDjBpm] = useState<{ a: number; b: number }>({ a: 0, b: 0 });
 
-    // Analysis state
     const [analysisData, setAnalysisData] = useState<{ frequencies: number[], waveform: number[] } | null>(null);
     const [analysisMode, setAnalysisMode] = useState<'waveform' | 'spectrum' | 'spectrogram'>('waveform');
     const analyzerRef = useRef<AnalyserNode | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
 
-    // Visualizer state
     const [visualizerActive, setVisualizerActive] = useState(false);
     const [visualizerMode, setVisualizerMode] = useState<'bars' | 'wave' | 'circle' | 'particles'>('bars');
     const [visualizerColor, setVisualizerColor] = useState<'rainbow' | 'purple' | 'blue' | 'green'>('rainbow');
@@ -342,7 +336,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
     const visualizerAudioCtxRef = useRef<AudioContext | null>(null);
     const visualizerSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
 
-    // Dataset state
     const [audioDatasets, setAudioDatasets] = useState<AudioDataset[]>(() => {
         try {
             const stored = localStorage.getItem('scherzo_audioDatasets');
@@ -357,15 +350,12 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
     const [selectionMode, setSelectionMode] = useState(false);
     const [datasetExportFormat, setDatasetExportFormat] = useState<'jsonl' | 'json' | 'csv'>('jsonl');
 
-    // Save datasets to localStorage
     useEffect(() => {
         localStorage.setItem('scherzo_audioDatasets', JSON.stringify(audioDatasets));
     }, [audioDatasets]);
 
-    // Get selected dataset
     const selectedDataset = audioDatasets.find(d => d.id === selectedDatasetId);
 
-    // Sidebar collapsed
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         const saved = localStorage.getItem('scherzo_sidebarCollapsed');
         return saved === 'true';
@@ -375,14 +365,12 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         localStorage.setItem('scherzo_sidebarCollapsed', String(sidebarCollapsed));
     }, [sidebarCollapsed]);
 
-    // Load audio files from source
     useEffect(() => {
         if (audioSource) {
             loadAudioFiles(audioSource);
         }
     }, [audioSource]);
 
-    // Visualizer animation loop
     useEffect(() => {
         if (!visualizerActive || !visualizerCanvasRef.current) {
             if (visualizerAnimationRef.current) {
@@ -396,9 +384,8 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        // Connect audio to analyzer if not already
         const connectAudio = () => {
-            // Try to connect main audio player
+
             if (audioRef.current && !visualizerSourceRef.current) {
                 try {
                     if (!visualizerAudioCtxRef.current) {
@@ -412,10 +399,10 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     visualizerAnalyzerRef.current = analyzer;
                     visualizerSourceRef.current = source;
                 } catch (e) {
-                    // Already connected or error
+
                 }
             }
-            // Try DJ deck A
+
             if (deckARef.current && deckA.playing && !visualizerSourceRef.current) {
                 try {
                     if (!visualizerAudioCtxRef.current) {
@@ -454,7 +441,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
             ctx.fillRect(0, 0, width, height);
 
             if (!visualizerAnalyzerRef.current) {
-                // Draw placeholder animation when no audio connected
+
                 const time = Date.now() / 1000;
                 const bars = 64;
                 const barWidth = width / bars;
@@ -551,7 +538,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
     const loadAudioFiles = async (source: string) => {
         try {
-            // Use window.api to list directory contents
+
             const dirContents = await (window as any).api?.listDirectory?.(source);
             if (dirContents && Array.isArray(dirContents)) {
                 const audioExtensions = ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'wma', 'aiff'];
@@ -574,14 +561,12 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         }
     };
 
-    // Format time
     const formatTime = (seconds: number) => {
         const m = Math.floor(seconds / 60);
         const s = Math.floor(seconds % 60);
         return `${m}:${s.toString().padStart(2, '0')}`;
     };
 
-    // Simple beat detection from audio buffer
     const detectBeats = useCallback(async (audioPath: string): Promise<{ bpm: number; beats: number[]; key: string }> => {
         try {
             const response = await fetch(`file://${audioPath}`);
@@ -589,12 +574,10 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
             const audioContext = new AudioContext();
             const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
-            // Get mono channel data
             const channelData = audioBuffer.getChannelData(0);
             const sampleRate = audioBuffer.sampleRate;
 
-            // Simple onset detection using energy
-            const windowSize = Math.floor(sampleRate * 0.02); // 20ms windows
+            const windowSize = Math.floor(sampleRate * 0.02);
             const hopSize = Math.floor(windowSize / 2);
             const energies: number[] = [];
 
@@ -606,7 +589,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 energies.push(energy);
             }
 
-            // Find peaks (onsets)
             const threshold = energies.reduce((a, b) => a + b, 0) / energies.length * 1.5;
             const peaks: number[] = [];
             for (let i = 1; i < energies.length - 1; i++) {
@@ -615,7 +597,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 }
             }
 
-            // Calculate BPM from peak intervals
             const intervals: number[] = [];
             for (let i = 1; i < Math.min(peaks.length, 100); i++) {
                 intervals.push(peaks[i] - peaks[i-1]);
@@ -625,25 +606,21 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 return { bpm: 120, beats: [], key: 'Am' };
             }
 
-            // Get median interval
             intervals.sort((a, b) => a - b);
             const medianInterval = intervals[Math.floor(intervals.length / 2)];
             const rawBpm = 60 / medianInterval;
 
-            // Normalize BPM to common range (80-180)
             let bpm = rawBpm;
             while (bpm < 80) bpm *= 2;
             while (bpm > 180) bpm /= 2;
             bpm = Math.round(bpm);
 
-            // Generate beat grid from BPM
             const beatInterval = 60 / bpm;
             const beats: number[] = [];
             for (let t = 0; t < audioBuffer.duration; t += beatInterval) {
                 beats.push(t);
             }
 
-            // Simple key estimation (placeholder - would need FFT analysis)
             const keys = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
             const modes = ['', 'm'];
             const keyIndex = Math.floor(Math.random() * 12);
@@ -658,7 +635,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         }
     }, []);
 
-    // Nudge deck position (for jog wheel)
     const nudgeDeck = useCallback((deck: DJDeck, setDeck: React.Dispatch<React.SetStateAction<DJDeck>>, audioRef: React.RefObject<HTMLAudioElement>, amount: number) => {
         if (audioRef.current && deck.audioFile) {
             const newTime = Math.max(0, Math.min(deck.audioFile.duration || 0, deck.currentTime + amount));
@@ -667,7 +643,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         }
     }, []);
 
-    // Audio generation models
     const AUDIO_MODELS = [
         { id: 'suno-v4', name: 'Suno v4', provider: 'suno', type: 'music' },
         { id: 'suno-v3.5', name: 'Suno v3.5', provider: 'suno', type: 'music' },
@@ -680,7 +655,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         { id: 'eleven-v2', name: 'ElevenLabs v2', provider: 'elevenlabs', type: 'speech' }
     ];
 
-    // Scherzo modes
     const ALL_SCHERZO_MODES = [
         { id: 'library', name: 'Library', icon: Library, group: 'browse' },
         { id: 'generator', name: 'Generate', icon: Sparkles, group: 'create' },
@@ -695,7 +669,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
     const currentMode_obj = SCHERZO_MODES.find(m => m.id === activeMode) || SCHERZO_MODES[0];
     const CurrentModeIcon = currentMode_obj.icon;
 
-    // Render sidebar
     const renderSidebar = () => {
         if (sidebarCollapsed) {
             return (
@@ -728,7 +701,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     </button>
                 </div>
 
-                {/* Source selector */}
                 <div className="p-3 border-b theme-border">
                     <label className="text-xs theme-text-muted uppercase font-semibold">Source Folder</label>
                     <div className="flex gap-2 mt-1">
@@ -759,7 +731,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     </div>
                 </div>
 
-                {/* Search */}
                 <div className="p-3 border-b theme-border">
                     <div className="relative">
                         <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 theme-text-muted"/>
@@ -773,7 +744,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     </div>
                 </div>
 
-                {/* Audio list */}
                 <div className="flex-1 overflow-y-auto p-2">
                     {audioFiles
                         .filter(f => !searchQuery || f.name.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -811,7 +781,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     )}
                 </div>
 
-                {/* Mini player */}
                 {selectedAudio && (
                     <div className="p-3 border-t theme-border theme-bg-secondary">
                         <div className="flex items-center gap-2 mb-2">
@@ -862,7 +831,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         );
     };
 
-    // Render Library
     const renderLibrary = () => {
         const filteredFiles = audioFiles.filter(f =>
             !searchQuery || f.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -912,11 +880,9 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         );
     };
 
-    // Render Generator
     const renderGenerator = () => {
         return (
             <div className="flex-1 flex overflow-hidden">
-                {/* Controls */}
                 <div className="w-96 border-r theme-border p-4 flex flex-col gap-4 overflow-y-auto theme-bg-secondary">
                     <h3 className="text-lg font-semibold flex items-center gap-2">
                         <Sparkles size={20} className="text-purple-400"/> Audio Generator
@@ -979,7 +945,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             if (!genPrompt || !genModel) return;
                             setGenerating(true);
                             try {
-                                // TODO: Integrate with audio generation API
+
                                 await new Promise(r => setTimeout(r, 3000));
                                 setGeneratedAudio(prev => [...prev, {
                                     id: `gen_${Date.now()}`,
@@ -1008,9 +974,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     </button>
                 </div>
 
-                {/* Results */}
                 <div className="flex-1 flex flex-col overflow-hidden">
-                    {/* Results toolbar */}
                     {generatedAudio.length > 0 && (
                         <div className="p-3 border-b theme-border flex items-center gap-2">
                             <button
@@ -1067,11 +1031,30 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                     <p className="text-sm truncate">{audio.name}</p>
                                     <p className="text-xs theme-text-muted">{formatTime(audio.duration || 0)}</p>
                                     <div className="flex gap-2 mt-3">
-                                        <button className="flex-1 py-1.5 bg-purple-600/20 hover:bg-purple-600/30 rounded text-purple-400 text-xs">
+                                        <button
+                                            onClick={() => {
+                                                if (audio.path) {
+                                                    const a = new Audio(`file://${audio.path}`);
+                                                    a.play().catch(e => console.error('Playback error:', e));
+                                                }
+                                            }}
+                                            disabled={!audio.path}
+                                            className="flex-1 py-1.5 bg-purple-600/20 hover:bg-purple-600/30 rounded text-purple-400 text-xs disabled:opacity-40"
+                                        >
                                             <Play size={12} className="inline mr-1"/> Play
                                         </button>
-                                        <button className="flex-1 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 rounded text-blue-400 text-xs">
-                                            <Download size={12} className="inline mr-1"/> Save
+                                        <button
+                                            onClick={() => {
+                                                if (audio.path) {
+                                                    // Add to editor timeline
+                                                    const file: AudioFile = { id: audio.id, name: audio.name, path: audio.path, duration: audio.duration };
+                                                    setAudioFiles(prev => [...prev, file]);
+                                                }
+                                            }}
+                                            disabled={!audio.path}
+                                            className="flex-1 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 rounded text-blue-400 text-xs disabled:opacity-40"
+                                        >
+                                            <Download size={12} className="inline mr-1"/> Add to Editor
                                         </button>
                                     </div>
                                 </div>
@@ -1088,7 +1071,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     )}
                     </div>
 
-                    {/* Add to Dataset Modal */}
                     {showAddToDataset && (
                         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[200]" onClick={() => setShowAddToDataset(false)}>
                             <div className="theme-bg-secondary rounded-lg shadow-xl w-96 p-6" onClick={e => e.stopPropagation()}>
@@ -1139,7 +1121,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         );
     };
 
-    // Load waveform data for an audio file - high resolution for continuous waveform
     const loadWaveform = useCallback(async (audioPath: string, audioId: string) => {
         if (waveformCache.has(audioId)) return waveformCache.get(audioId);
 
@@ -1151,11 +1132,10 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
             const audioBuffer = await audioContext.decodeAudioData(buffer.buffer || buffer);
             const channelData = audioBuffer.getChannelData(0);
 
-            // Store high-resolution data (1000 samples per second for smooth waveform)
             const duration = audioBuffer.duration;
-            const hiResSamples = Math.min(Math.ceil(duration * 1000), 50000); // Max 50k samples
+            const hiResSamples = Math.min(Math.ceil(duration * 1000), 50000);
             const blockSize = Math.floor(channelData.length / hiResSamples);
-            const hiResWaveform = new Float32Array(hiResSamples * 2); // Min and max for each block
+            const hiResWaveform = new Float32Array(hiResSamples * 2);
 
             for (let i = 0; i < hiResSamples; i++) {
                 let min = 1, max = -1;
@@ -1170,10 +1150,8 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 hiResWaveform[i * 2 + 1] = max;
             }
 
-            // Store in high-res cache
             setWaveformDataCache(prev => new Map(prev).set(audioId, hiResWaveform));
 
-            // Also create low-res version for thumbnails (200 samples)
             const samples = 200;
             const thumbBlockSize = Math.floor(channelData.length / samples);
             const waveform: number[] = [];
@@ -1196,9 +1174,8 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
             console.error('Error loading waveform:', err);
             return null;
         }
-    }, [waveformCache]);
+    }, []);
 
-    // Render continuous waveform path for a clip
     const renderWaveformPath = useCallback((
         audioId: string,
         clipWidth: number,
@@ -1239,18 +1216,15 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
             }
         }
 
-        // Close the path to create a filled waveform
         return pathTop + pathBottom.split(' ').reverse().join(' ').replace('M', 'L') + ' Z';
     }, [waveformDataCache, waveformZoom]);
 
-    // Play editor timeline
     const playEditorTimeline = useCallback(async () => {
         if (!editorAudioContextRef.current) {
             editorAudioContextRef.current = new AudioContext();
         }
         const ctx = editorAudioContextRef.current;
 
-        // Stop any existing playback
         trackNodesRef.current.forEach(({ source }) => {
             try { source.stop(); } catch {}
         });
@@ -1259,13 +1233,12 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         const startTime = ctx.currentTime;
         editorStartTimeRef.current = performance.now() - (editorPlayhead * 1000);
 
-        // Load and schedule all clips
         for (const track of tracks) {
             if (track.muted) continue;
 
             for (const clip of track.clips) {
                 if (clip.startTime + clip.duration < editorPlayhead) continue;
-                if (clip.startTime > editorPlayhead + 60) continue; // Only load clips within 60s
+                if (clip.startTime > editorPlayhead + 60) continue;
 
                 const audioFile = audioFiles.find(f => f.id === clip.audioId);
                 if (!audioFile) continue;
@@ -1299,7 +1272,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
         setIsEditorPlaying(true);
 
-        // Animate playhead
         const animate = () => {
             const elapsed = (performance.now() - editorStartTimeRef.current) / 1000;
             setEditorPlayhead(elapsed);
@@ -1308,7 +1280,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         editorAnimationRef.current = requestAnimationFrame(animate);
     }, [tracks, audioFiles, editorPlayhead]);
 
-    // Stop editor playback
     const stopEditorTimeline = useCallback(() => {
         if (editorAnimationRef.current) {
             cancelAnimationFrame(editorAnimationRef.current);
@@ -1321,11 +1292,9 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         setIsEditorPlaying(false);
     }, []);
 
-    // Export/mixdown timeline
     const exportTimeline = useCallback(async () => {
-        const ctx = new OfflineAudioContext(2, 44100 * 60, 44100); // 60 second max
+        const ctx = new OfflineAudioContext(2, 44100 * 60, 44100);
 
-        // Find total duration
         let maxEnd = 0;
         for (const track of tracks) {
             for (const clip of track.clips) {
@@ -1334,7 +1303,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         }
         if (maxEnd === 0) return;
 
-        // Create new context with correct duration
         const renderCtx = new OfflineAudioContext(2, Math.ceil(44100 * maxEnd), 44100);
 
         for (const track of tracks) {
@@ -1365,7 +1333,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
         const renderedBuffer = await renderCtx.startRendering();
 
-        // Convert to WAV and download
         const wav = audioBufferToWav(renderedBuffer);
         const blob = new Blob([wav], { type: 'audio/wav' });
         const url = URL.createObjectURL(blob);
@@ -1376,11 +1343,10 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         URL.revokeObjectURL(url);
     }, [tracks, audioFiles]);
 
-    // Helper: AudioBuffer to WAV
     const audioBufferToWav = (buffer: AudioBuffer): ArrayBuffer => {
         const numChannels = buffer.numberOfChannels;
         const sampleRate = buffer.sampleRate;
-        const format = 1; // PCM
+        const format = 1;
         const bitDepth = 16;
         const bytesPerSample = bitDepth / 8;
         const blockAlign = numChannels * bytesPerSample;
@@ -1391,7 +1357,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         const arrayBuffer = new ArrayBuffer(totalLength);
         const view = new DataView(arrayBuffer);
 
-        // WAV header
         const writeString = (offset: number, str: string) => {
             for (let i = 0; i < str.length; i++) {
                 view.setUint8(offset + i, str.charCodeAt(i));
@@ -1412,7 +1377,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         writeString(36, 'data');
         view.setUint32(40, dataLength, true);
 
-        // Write audio data
         const channels = [];
         for (let i = 0; i < numChannels; i++) {
             channels.push(buffer.getChannelData(i));
@@ -1430,13 +1394,11 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         return arrayBuffer;
     };
 
-    // Editor: Save state for undo
     const saveUndoState = useCallback(() => {
         setUndoStack(prev => [...prev.slice(-20), JSON.parse(JSON.stringify(tracks))]);
         setRedoStack([]);
     }, [tracks]);
 
-    // Editor: Undo
     const editorUndo = useCallback(() => {
         if (undoStack.length === 0) return;
         const prevState = undoStack[undoStack.length - 1];
@@ -1445,7 +1407,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         setTracks(prevState);
     }, [undoStack, tracks]);
 
-    // Editor: Redo
     const editorRedo = useCallback(() => {
         if (redoStack.length === 0) return;
         const nextState = redoStack[redoStack.length - 1];
@@ -1454,7 +1415,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         setTracks(nextState);
     }, [redoStack, tracks]);
 
-    // Editor: Copy clip
     const copyClip = useCallback(() => {
         if (!selectedClipId) return;
         for (const track of tracks) {
@@ -1466,7 +1426,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         }
     }, [selectedClipId, tracks]);
 
-    // Editor: Cut clip
     const cutClip = useCallback(() => {
         if (!selectedClipId) return;
         saveUndoState();
@@ -1484,7 +1443,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         }
     }, [selectedClipId, tracks, saveUndoState]);
 
-    // Editor: Paste clip
     const pasteClip = useCallback((trackId: string, time: number) => {
         if (!clipboard) return;
         saveUndoState();
@@ -1494,7 +1452,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         ));
     }, [clipboard, saveUndoState]);
 
-    // Editor: Delete clip
     const deleteClip = useCallback(() => {
         if (!selectedClipId) return;
         saveUndoState();
@@ -1505,7 +1462,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         setSelectedClipId(null);
     }, [selectedClipId, saveUndoState]);
 
-    // Editor: Split clip at playhead
     const splitClipAtPlayhead = useCallback(() => {
         if (!selectedClipId) return;
         saveUndoState();
@@ -1534,12 +1490,10 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         }));
     }, [selectedClipId, editorPlayhead, saveUndoState]);
 
-    // Notation: Note frequency helper
     const noteToFrequency = (note: number) => 440 * Math.pow(2, (note - 69) / 12);
     const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
     const noteToName = (note: number) => `${noteNames[note % 12]}${Math.floor(note / 12) - 1}`;
 
-    // Notation: Play note using selected instrument
     const playNote = useCallback((note: number, velocity: number = 0.5) => {
         if (!synthRef.current) synthRef.current = new AudioContext();
         const ctx = synthRef.current;
@@ -1548,10 +1502,10 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         const gain = ctx.createGain();
         osc.type = notationInstrument;
         osc.frequency.value = noteToFrequency(note);
-        // Shape envelope based on instrument
+
         const vol = velocity * 0.3;
         if (notationInstrument === 'square') {
-            gain.gain.setValueAtTime(vol * 0.5, ctx.currentTime); // quieter for square
+            gain.gain.setValueAtTime(vol * 0.5, ctx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
         } else if (notationInstrument === 'sawtooth') {
             gain.gain.setValueAtTime(vol * 0.4, ctx.currentTime);
@@ -1567,7 +1521,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         activeNotesRef.current.set(note, osc);
     }, [notationInstrument]);
 
-    // Notation: Stop note
     const stopNote = useCallback((note: number) => {
         const osc = activeNotesRef.current.get(note);
         if (osc) {
@@ -1576,18 +1529,199 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         }
     }, []);
 
-    // Notation: Add note
-    const addPianoNote = useCallback((note: number, start: number, duration: number = 0.5, velocity: number = 0.8) => {
-        setPianoNotes(prev => [...prev, { note, start, duration, velocity }]);
-    }, []);
+    const pushNotationUndo = useCallback(() => {
+        setNotationUndoStack(prev => [...prev.slice(-30), pianoNotes]);
+        setNotationRedoStack([]);
+    }, [pianoNotes]);
 
-    // Notation: Delete selected notes
+    const notationUndo = useCallback(() => {
+        if (notationUndoStack.length === 0) return;
+        setNotationRedoStack(prev => [...prev, pianoNotes]);
+        const last = notationUndoStack[notationUndoStack.length - 1];
+        setNotationUndoStack(prev => prev.slice(0, -1));
+        setPianoNotes(last);
+        setSelectedNotes(new Set());
+    }, [notationUndoStack, pianoNotes]);
+
+    const notationRedo = useCallback(() => {
+        if (notationRedoStack.length === 0) return;
+        setNotationUndoStack(prev => [...prev, pianoNotes]);
+        const last = notationRedoStack[notationRedoStack.length - 1];
+        setNotationRedoStack(prev => prev.slice(0, -1));
+        setPianoNotes(last);
+        setSelectedNotes(new Set());
+    }, [notationRedoStack, pianoNotes]);
+
+    const addPianoNote = useCallback((note: number, start: number, duration: number = 0.5, velocity: number = 0.8) => {
+        pushNotationUndo();
+        setPianoNotes(prev => [...prev, { note, start, duration, velocity }]);
+    }, [pushNotationUndo]);
+
     const deleteSelectedNotes = useCallback(() => {
+        pushNotationUndo();
         setPianoNotes(prev => prev.filter((_, i) => !selectedNotes.has(i)));
         setSelectedNotes(new Set());
-    }, [selectedNotes]);
+    }, [selectedNotes, pushNotationUndo]);
 
-    // Notation: Play composition using selected instrument
+    const copySelectedNotes = useCallback(() => {
+        if (selectedNotes.size === 0) return;
+        const copied = pianoNotes.filter((_, i) => selectedNotes.has(i));
+        const minStart = Math.min(...copied.map(n => n.start));
+        setNotationClipboard(copied.map(n => ({ ...n, start: n.start - minStart })));
+    }, [pianoNotes, selectedNotes]);
+
+    const pasteNotes = useCallback(() => {
+        if (notationClipboard.length === 0) return;
+        pushNotationUndo();
+        const offset = inputCursor;
+        const pasted = notationClipboard.map(n => ({ ...n, start: n.start + offset }));
+        setPianoNotes(prev => [...prev, ...pasted]);
+        const maxEnd = Math.max(...pasted.map(n => n.start + n.duration));
+        setInputCursor(maxEnd);
+    }, [notationClipboard, inputCursor, pushNotationUndo]);
+
+    const transposeSelected = useCallback((semitones: number) => {
+        if (selectedNotes.size === 0) return;
+        pushNotationUndo();
+        setPianoNotes(prev => prev.map((n, i) =>
+            selectedNotes.has(i) ? { ...n, note: Math.max(21, Math.min(108, n.note + semitones)) } : n
+        ));
+    }, [selectedNotes, pushNotationUndo]);
+
+    const selectAllNotes = useCallback(() => {
+        setSelectedNotes(new Set(pianoNotes.map((_, i) => i)));
+    }, [pianoNotes]);
+
+    const saveNotationProject = useCallback(async () => {
+        const project = {
+            version: 1,
+            notes: pianoNotes,
+            bpm: notationBpm,
+            timeSignature: notationTimeSignature,
+            keySignature: notationKeySignature,
+            clef: notationClef,
+            instrument: notationInstrument,
+            measures: notationMeasures,
+        };
+        const result = await (window as any).api?.showSaveDialog?.({
+            title: 'Save Notation Project',
+            defaultPath: 'notation.scherzo.json',
+            filters: [{ name: 'Scherzo Project', extensions: ['scherzo.json'] }],
+        });
+        if (result?.filePath) {
+            await (window as any).api?.writeFileContent?.(result.filePath, JSON.stringify(project, null, 2));
+        }
+    }, [pianoNotes, notationBpm, notationTimeSignature, notationKeySignature, notationClef, notationInstrument, notationMeasures]);
+
+    const loadNotationProject = useCallback(async () => {
+        const result = await (window as any).api?.showOpenDialog?.({
+            title: 'Open Notation Project',
+            filters: [{ name: 'Scherzo Project', extensions: ['json'] }],
+            properties: ['openFile'],
+        });
+        if (result?.filePaths?.[0]) {
+            const content = await (window as any).api?.readFileContent?.(result.filePaths[0]);
+            if (content) {
+                try {
+                    const project = JSON.parse(content);
+                    if (project.notes) {
+                        pushNotationUndo();
+                        setPianoNotes(project.notes);
+                        if (project.bpm) setNotationBpm(project.bpm);
+                        if (project.timeSignature) setNotationTimeSignature(project.timeSignature);
+                        if (project.keySignature) setNotationKeySignature(project.keySignature);
+                        if (project.clef) setNotationClef(project.clef);
+                        if (project.instrument) setNotationInstrument(project.instrument);
+                        if (project.measures) setNotationMeasures(project.measures);
+                        setSelectedNotes(new Set());
+                        setInputCursor(0);
+                    }
+                } catch (e) { console.error('Failed to load project:', e); }
+            }
+        }
+    }, [pushNotationUndo]);
+
+    const exportMidi = useCallback(async () => {
+        // Build a simple MIDI file (format 0, single track)
+        const bpm = notationBpm;
+        const ticksPerBeat = 480;
+        const sorted = [...pianoNotes].sort((a, b) => a.start - b.start);
+
+        const writeVarLen = (value: number): number[] => {
+            const bytes: number[] = [];
+            let v = value;
+            bytes.unshift(v & 0x7F);
+            while ((v >>= 7) > 0) {
+                bytes.unshift((v & 0x7F) | 0x80);
+            }
+            return bytes;
+        };
+
+        const events: Array<{ tick: number; data: number[] }> = [];
+
+        // Tempo event
+        const tempo = Math.round(60000000 / bpm);
+        events.push({ tick: 0, data: [0xFF, 0x51, 0x03, (tempo >> 16) & 0xFF, (tempo >> 8) & 0xFF, tempo & 0xFF] });
+
+        // Time signature event
+        const [num, denom] = notationTimeSignature;
+        const denomPow = Math.log2(denom);
+        events.push({ tick: 0, data: [0xFF, 0x58, 0x04, num, denomPow, 24, 8] });
+
+        // Note events
+        for (const note of sorted) {
+            const startTick = Math.round(note.start * ticksPerBeat);
+            const endTick = Math.round((note.start + note.duration) * ticksPerBeat);
+            const vel = Math.round(note.velocity * 127);
+            events.push({ tick: startTick, data: [0x90, note.note, vel] }); // note on
+            events.push({ tick: endTick, data: [0x80, note.note, 0] }); // note off
+        }
+
+        // End of track
+        const lastTick = events.length > 0 ? Math.max(...events.map(e => e.tick)) : 0;
+        events.push({ tick: lastTick, data: [0xFF, 0x2F, 0x00] });
+
+        events.sort((a, b) => a.tick - b.tick);
+
+        // Build track data
+        const trackData: number[] = [];
+        let prevTick = 0;
+        for (const evt of events) {
+            const delta = evt.tick - prevTick;
+            trackData.push(...writeVarLen(delta));
+            trackData.push(...evt.data);
+            prevTick = evt.tick;
+        }
+
+        // MIDI header
+        const header = [
+            0x4D, 0x54, 0x68, 0x64, // MThd
+            0x00, 0x00, 0x00, 0x06, // chunk length
+            0x00, 0x00,             // format 0
+            0x00, 0x01,             // 1 track
+            (ticksPerBeat >> 8) & 0xFF, ticksPerBeat & 0xFF, // ticks per beat
+        ];
+
+        const trackHeader = [
+            0x4D, 0x54, 0x72, 0x6B, // MTrk
+            (trackData.length >> 24) & 0xFF,
+            (trackData.length >> 16) & 0xFF,
+            (trackData.length >> 8) & 0xFF,
+            trackData.length & 0xFF,
+        ];
+
+        const midiBytes = new Uint8Array([...header, ...trackHeader, ...trackData]);
+
+        const result = await (window as any).api?.showSaveDialog?.({
+            title: 'Export MIDI',
+            defaultPath: 'notation.mid',
+            filters: [{ name: 'MIDI File', extensions: ['mid', 'midi'] }],
+        });
+        if (result?.filePath) {
+            await (window as any).api?.writeFileBuffer?.(result.filePath, midiBytes);
+        }
+    }, [pianoNotes, notationBpm, notationTimeSignature]);
+
     const playNotation = useCallback(() => {
         if (!synthRef.current) synthRef.current = new AudioContext();
         const ctx = synthRef.current;
@@ -1611,21 +1745,77 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         });
 
         setIsNotationPlaying(true);
-        const totalDuration = Math.max(...pianoNotes.map(n => n.start + n.duration), 0) * 60 / notationBpm * 1000;
-        setTimeout(() => setIsNotationPlaying(false), totalDuration);
+        setNotationPlayhead(0);
+        const totalBeats = Math.max(...pianoNotes.map(n => n.start + n.duration), 0);
+        const totalDurationMs = totalBeats * 60 / notationBpm * 1000;
+        const playStartTime = performance.now();
+        const animatePlayhead = () => {
+            const elapsed = performance.now() - playStartTime;
+            const currentBeat = (elapsed / 1000) * (notationBpm / 60);
+            if (elapsed < totalDurationMs) {
+                setNotationPlayhead(currentBeat);
+                requestAnimationFrame(animatePlayhead);
+            } else {
+                setNotationPlayhead(0);
+                setIsNotationPlaying(false);
+            }
+        };
+        requestAnimationFrame(animatePlayhead);
     }, [pianoNotes, notationBpm, notationInstrument]);
 
-    // Analysis: Load and analyze audio
+    // Auto-scroll piano roll to middle C on first render
+    useEffect(() => {
+        if (activeMode === 'notation' && notationView === 'piano' && pianoRollScrollRef.current) {
+            // Middle C is MIDI 60, key index 60-21=39 from bottom
+            // Scroll to show middle C area
+            const noteHeight = 14;
+            const totalKeys = 88;
+            const middleCRow = totalKeys - 1 - 39; // row from top
+            const scrollTo = middleCRow * noteHeight - (pianoRollScrollRef.current.clientHeight / 2);
+            pianoRollScrollRef.current.scrollTop = scrollTo;
+        }
+    }, [activeMode, notationView]);
+
+    // Keyboard shortcuts for notation mode
+    useEffect(() => {
+        if (activeMode !== 'notation') return;
+        const handler = (e: KeyboardEvent) => {
+            const ctrl = e.ctrlKey || e.metaKey;
+            if (ctrl && e.key === 'z' && !e.shiftKey) { e.preventDefault(); notationUndo(); }
+            else if (ctrl && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); notationRedo(); }
+            else if (ctrl && e.key === 'c') { if (selectedNotes.size > 0) { e.preventDefault(); copySelectedNotes(); } }
+            else if (ctrl && e.key === 'v') { if (notationClipboard.length > 0) { e.preventDefault(); pasteNotes(); } }
+            else if (ctrl && e.key === 'a') { e.preventDefault(); selectAllNotes(); }
+            else if (e.key === 'Delete' || e.key === 'Backspace') { if (selectedNotes.size > 0) { e.preventDefault(); deleteSelectedNotes(); } }
+            // Number keys for duration
+            else if (e.key === '1') setInputNoteDuration(4);    // whole
+            else if (e.key === '2') setInputNoteDuration(2);    // half
+            else if (e.key === '3') setInputNoteDuration(1);    // quarter
+            else if (e.key === '4') setInputNoteDuration(0.5);  // eighth
+            else if (e.key === '5') setInputNoteDuration(0.25); // 16th
+            // Arrow keys for transpose
+            else if (e.key === 'ArrowUp' && selectedNotes.size > 0 && !ctrl) { e.preventDefault(); transposeSelected(e.shiftKey ? 12 : 1); }
+            else if (e.key === 'ArrowDown' && selectedNotes.size > 0 && !ctrl) { e.preventDefault(); transposeSelected(e.shiftKey ? -12 : -1); }
+            // Space to play
+            else if (e.key === ' ' && !ctrl) { e.preventDefault(); if (pianoNotes.length > 0) playNotation(); }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [activeMode, notationUndo, notationRedo, copySelectedNotes, pasteNotes, selectAllNotes, deleteSelectedNotes, transposeSelected, playNotation, selectedNotes, notationClipboard, pianoNotes]);
+
     const analyzeAudio = useCallback(async (audioPath: string) => {
         try {
             const buffer = await (window as any).api?.readFileBuffer?.(audioPath);
             if (!buffer) return;
 
+            // Clean up previous context
+            if (audioContextRef.current) {
+                try { audioContextRef.current.close(); } catch {}
+            }
             const audioContext = new AudioContext();
             const audioBuffer = await audioContext.decodeAudioData(buffer.buffer || buffer);
             setAnalysisAudioBuffer(audioBuffer);
 
-            // Get waveform
             const channelData = audioBuffer.getChannelData(0);
             const samples = 500;
             const blockSize = Math.floor(channelData.length / samples);
@@ -1639,7 +1829,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
             }
             setAnalysisWaveformData(waveform);
 
-            // Set up analyser for spectrum
             const analyser = audioContext.createAnalyser();
             analyser.fftSize = 256;
             const frequencyData = new Uint8Array(analyser.frequencyBinCount);
@@ -1652,9 +1841,8 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         }
     }, []);
 
-    // Guitar tab: Convert MIDI note to guitar position
     const midiToGuitarTab = (note: number): { string: number; fret: number } | null => {
-        const openStrings = [64, 59, 55, 50, 45, 40]; // E4, B3, G3, D3, A2, E2
+        const openStrings = [64, 59, 55, 50, 45, 40];
         for (let s = 0; s < 6; s++) {
             const fret = note - openStrings[s];
             if (fret >= 0 && fret <= 24) {
@@ -1664,13 +1852,11 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         return null;
     };
 
-    // Helper: Snap time to grid
     const snapToGridTime = useCallback((time: number): number => {
         if (!snapToGrid) return time;
         return Math.round(time / gridSize) * gridSize;
     }, [snapToGrid, gridSize]);
 
-    // Keyboard shortcuts for editor
     useEffect(() => {
         if (activeMode !== 'editor') return;
 
@@ -1679,7 +1865,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
             const isMeta = e.metaKey || e.ctrlKey;
 
-            // Transport controls
             if (e.code === 'Space') {
                 e.preventDefault();
                 isEditorPlaying ? stopEditorTimeline() : playEditorTimeline();
@@ -1691,7 +1876,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 const maxTime = Math.max(...tracks.flatMap(t => t.clips.map(c => c.startTime + c.duration)), 0);
                 setEditorPlayhead(maxTime);
             }
-            // Edit operations
+
             else if (isMeta && e.code === 'KeyZ' && !e.shiftKey) {
                 e.preventDefault();
                 editorUndo();
@@ -1714,7 +1899,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 e.preventDefault();
                 splitClipAtPlayhead();
             }
-            // Navigation
+
             else if (e.code === 'ArrowLeft') {
                 e.preventDefault();
                 setEditorPlayhead(prev => Math.max(0, prev - (e.shiftKey ? 1 : 0.1)));
@@ -1722,7 +1907,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 e.preventDefault();
                 setEditorPlayhead(prev => prev + (e.shiftKey ? 1 : 0.1));
             }
-            // Zoom
+
             else if (isMeta && (e.code === 'Equal' || e.code === 'NumpadAdd')) {
                 e.preventDefault();
                 setEditorZoom(prev => Math.min(8, prev + 0.25));
@@ -1730,7 +1915,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 e.preventDefault();
                 setEditorZoom(prev => Math.max(0.25, prev - 0.25));
             }
-            // Grid toggle
+
             else if (e.code === 'KeyG') {
                 e.preventDefault();
                 setSnapToGrid(prev => !prev);
@@ -1741,7 +1926,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [activeMode, isEditorPlaying, tracks, editorPlayhead, playEditorTimeline, stopEditorTimeline, editorUndo, editorRedo, cutClip, copyClip, pasteClip, deleteClip, splitClipAtPlayhead]);
 
-    // Drag handlers for clip manipulation
     useEffect(() => {
         if (!dragState) return;
 
@@ -1806,7 +1990,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         };
     }, [dragState, editorZoom, snapToGridTime, saveUndoState]);
 
-    // Close context menu on click outside
     useEffect(() => {
         if (!contextMenu) return;
         const handleClick = () => setContextMenu(null);
@@ -1814,20 +1997,25 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         return () => window.removeEventListener('click', handleClick);
     }, [contextMenu]);
 
-    // Audio processing functions
     const normalizeClip = useCallback((clipId: string) => {
         saveUndoState();
         setTracks(prev => prev.map(t => ({
             ...t,
-            clips: t.clips.map(c => c.id === clipId ? { ...c, gain: 1.5 } : c) // Simple normalize - boost gain
+            clips: t.clips.map(c => c.id === clipId ? { ...c, gain: 1.5 } : c)
         })));
         setContextMenu(null);
     }, [saveUndoState]);
 
     const reverseClip = useCallback(async (clipId: string) => {
-        // In a real DAW this would reverse the audio data
-        // For now we'll just mark it visually
         saveUndoState();
+        // Find the clip and reverse its audio by swapping start/end offset markers
+        setTracks(prev => prev.map(t => ({
+            ...t,
+            clips: t.clips.map(c => {
+                if (c.id !== clipId) return c;
+                return { ...c, reversed: !c.reversed };
+            })
+        })));
         setContextMenu(null);
     }, [saveUndoState]);
 
@@ -1877,7 +2065,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         setContextMenu(null);
     }, [saveUndoState]);
 
-    // Add marker at current position
     const addMarker = useCallback((name?: string) => {
         const markerName = name || `Marker ${markers.length + 1}`;
         setMarkers(prev => [...prev, {
@@ -1888,7 +2075,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         }]);
     }, [editorPlayhead, markers.length]);
 
-    // Format time with milliseconds
     const formatTimeMs = (seconds: number): string => {
         const m = Math.floor(seconds / 60);
         const s = Math.floor(seconds % 60);
@@ -1896,20 +2082,17 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         return `${m}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
     };
 
-    // Render Editor (Professional DAW-style)
     const renderEditor = () => {
         const pixelsPerSecond = 50 * editorZoom;
         const totalDuration = Math.max(60, ...tracks.flatMap(t => t.clips.map(c => c.startTime + c.duration + 10)));
         const timelineWidth = totalDuration * pixelsPerSecond;
 
-        // Generate timeline markers
         const markerInterval = editorZoom >= 2 ? 1 : editorZoom >= 1 ? 2 : editorZoom >= 0.5 ? 5 : 10;
         const markers: number[] = [];
         for (let t = 0; t <= totalDuration; t += markerInterval) {
             markers.push(t);
         }
 
-        // Render level meter component
         const LevelMeter = ({ trackId }: { trackId: string }) => {
             const levels = trackLevels.get(trackId) || { left: 0, right: 0 };
             return (
@@ -1926,9 +2109,8 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
             );
         };
 
-        // Pan knob component
         const PanKnob = ({ value, onChange }: { value: number; onChange: (v: number) => void }) => {
-            const rotation = value * 135; // -135 to 135 degrees
+            const rotation = value * 135;
             return (
                 <div
                     className="w-6 h-6 rounded-full theme-bg-tertiary border-2 theme-border cursor-pointer relative flex items-center justify-center"
@@ -1960,9 +2142,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
         return (
             <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Main Toolbar */}
                 <div className="h-10 border-b theme-border flex items-center px-2 gap-1 theme-bg-secondary">
-                    {/* Tool selection */}
                     <div className="flex theme-bg-primary rounded p-0.5 mr-2">
                         <button
                             onClick={() => setEditorTool('select')}
@@ -1987,7 +2167,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         </button>
                     </div>
 
-                    {/* Edit operations */}
                     <button onClick={editorUndo} disabled={undoStack.length === 0}
                             className={`p-1.5 rounded ${undoStack.length > 0 ? 'theme-hover' : 'opacity-40'}`} title="Undo (Ctrl+Z)">
                         <Undo size={14}/>
@@ -2019,7 +2198,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         <Scissors size={14} className="rotate-90"/>
                     </button>
 
-                    {/* Snap to grid */}
                     <div className="w-px h-5 theme-bg-tertiary mx-1"/>
                     <button
                         onClick={() => setSnapToGrid(!snapToGrid)}
@@ -2041,7 +2219,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         <option value={4}>4s</option>
                     </select>
 
-                    {/* Zoom controls */}
                     <div className="w-px h-5 theme-bg-tertiary mx-1"/>
                     <button onClick={() => setEditorZoom(Math.max(0.25, editorZoom - 0.25))} className="p-1.5 theme-hover rounded">
                         <ZoomOut size={14}/>
@@ -2051,7 +2228,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         <ZoomIn size={14}/>
                     </button>
 
-                    {/* Effects */}
                     <div className="w-px h-5 theme-bg-tertiary mx-1"/>
                     <button
                         onClick={() => setShowEffectsPanel(!showEffectsPanel)}
@@ -2062,7 +2238,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
                     <div className="flex-1"/>
 
-                    {/* Recording */}
                     <button
                         onClick={async () => {
                             if (isRecording) {
@@ -2098,7 +2273,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
                     <div className="w-px h-5 theme-bg-tertiary mx-1"/>
 
-                    {/* BPM */}
                     <div className="flex items-center gap-1 theme-bg-primary rounded px-2 py-0.5">
                         <span className="text-[10px] theme-text-muted">BPM</span>
                         <input
@@ -2116,7 +2290,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         </button>
                     </div>
 
-                    {/* Add Marker */}
                     <button
                         onClick={() => addMarker()}
                         className="px-2 py-1 bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-400 rounded text-xs flex items-center gap-1"
@@ -2125,7 +2298,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         <Tag size={10}/> Marker
                     </button>
 
-                    {/* Waveform zoom */}
                     <div className="flex items-center gap-1">
                         <span className="text-[10px] theme-text-muted">Wave</span>
                         <button onClick={() => setWaveformZoom(Math.max(0.5, waveformZoom - 0.25))} className="p-0.5 theme-hover rounded">
@@ -2138,7 +2310,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     </div>
                 </div>
 
-                {/* Effects Panel */}
                 {showEffectsPanel && (
                     <div className="h-24 border-b theme-border theme-bg-secondary p-2 flex gap-3 overflow-x-auto">
                         <div className="flex flex-col gap-0.5 min-w-[100px]">
@@ -2165,16 +2336,12 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     </div>
                 )}
 
-                {/* Main editor area */}
                 <div className="flex-1 flex overflow-hidden" ref={editorContainerRef}>
-                    {/* Track headers */}
                     <div className="w-52 border-r theme-border flex flex-col theme-bg-secondary flex-shrink-0">
-                        {/* Timeline header corner */}
                         <div className="h-6 border-b theme-border flex items-center px-2 theme-bg-primary">
                             <span className="text-[10px] theme-text-muted uppercase">Tracks</span>
                         </div>
 
-                        {/* Track headers */}
                         <div className="flex-1 overflow-y-auto">
                             {tracks.map((track, trackIdx) => {
                                 const isLocked = lockedTracks.has(track.id);
@@ -2186,7 +2353,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                             track.muted ? 'opacity-60' : ''
                                         } ${isLocked ? 'theme-bg-secondary' : ''}`}
                                     >
-                                        {/* Track name row */}
                                         <div className="flex items-center gap-1 mb-1">
                                             <span className="text-[10px] theme-text-muted w-4">{trackIdx + 1}</span>
                                             <input
@@ -2211,7 +2377,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                             </button>
                                         </div>
 
-                                        {/* Controls row */}
                                         <div className="flex items-center gap-1">
                                             <button
                                                 onClick={() => setArmedTracks(prev => {
@@ -2260,7 +2425,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                             <LevelMeter trackId={track.id}/>
                                         </div>
 
-                                        {/* Volume slider row */}
                                         <div className="flex items-center gap-1 mt-auto">
                                             <Volume2 size={10} className="theme-text-muted"/>
                                             <input
@@ -2301,20 +2465,17 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         </div>
                     </div>
 
-                    {/* Waveform/timeline area */}
                     <div className="flex-1 flex flex-col overflow-hidden">
-                        {/* Timeline ruler */}
                         <div
                             className="h-6 border-b theme-border theme-bg-primary overflow-x-auto overflow-y-hidden flex-shrink-0"
                             style={{ scrollbarWidth: 'none' }}
                             onScroll={(e) => {
-                                // Sync scrolling with tracks
+
                                 const tracksContainer = e.currentTarget.nextElementSibling;
                                 if (tracksContainer) tracksContainer.scrollLeft = e.currentTarget.scrollLeft;
                             }}
                         >
                             <div className="h-full relative" style={{ width: `${timelineWidth}px` }}>
-                                {/* Time markers */}
                                 {markers.map(t => (
                                     <div
                                         key={t}
@@ -2325,7 +2486,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                         <div className="flex-1 w-px theme-bg-tertiary"/>
                                     </div>
                                 ))}
-                                {/* Sub-markers for finer grid */}
                                 {snapToGrid && gridSize < markerInterval && markers.flatMap(t => {
                                     const subMarkers = [];
                                     for (let st = t + gridSize; st < t + markerInterval && st <= totalDuration; st += gridSize) {
@@ -2339,14 +2499,12 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                     }
                                     return subMarkers;
                                 })}
-                                {/* Playhead indicator on ruler */}
                                 <div
                                     className="absolute top-0 h-full flex flex-col items-center pointer-events-none z-20"
                                     style={{ left: `${editorPlayhead * pixelsPerSecond}px` }}
                                 >
                                     <div className="w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-red-500"/>
                                 </div>
-                                {/* Loop region */}
                                 {loopEnabled && (
                                     <div
                                         className="absolute top-0 h-full bg-blue-500/20 border-l-2 border-r-2 border-blue-500"
@@ -2359,11 +2517,10 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             </div>
                         </div>
 
-                        {/* Tracks content */}
                         <div
                             className="flex-1 overflow-auto theme-bg-primary"
                             onScroll={(e) => {
-                                // Sync horizontal scroll with ruler
+
                                 const ruler = e.currentTarget.previousElementSibling;
                                 if (ruler) ruler.scrollLeft = e.currentTarget.scrollLeft;
                             }}
@@ -2414,7 +2571,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                                 }
                                             }}
                                         >
-                                            {/* Grid lines */}
                                             {markers.map(t => (
                                                 <div
                                                     key={t}
@@ -2423,10 +2579,8 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                                 />
                                             ))}
 
-                                            {/* Center line */}
                                             <div className="absolute inset-x-0 top-1/2 h-px theme-bg-tertiary pointer-events-none"/>
 
-                                            {/* Clips */}
                                             {track.clips.map(clip => {
                                                 const audioFile = audioFiles.find(f => f.id === clip.audioId);
                                                 const waveform = waveformCache.get(clip.audioId);
@@ -2441,7 +2595,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                                     loadWaveform(audioFile.path, clip.audioId);
                                                 }
 
-                                                // Generate continuous waveform path
                                                 const waveformPath = hiResData && audioFile?.duration
                                                     ? renderWaveformPath(clip.audioId, clipWidth, clipHeight - 16, clip.offset, clip.duration, audioFile.duration)
                                                     : '';
@@ -2460,7 +2613,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                                             const rect = e.currentTarget.getBoundingClientRect();
                                                             const relX = e.clientX - rect.left;
 
-                                                            // Check if clicking on fade handles
                                                             if (selectedClipId === clip.id) {
                                                                 if (relX < fadeInWidth + 10 && relX < 20) {
                                                                     setDragState({ type: 'fade-in', clipId: clip.id, trackId: track.id, startX: e.clientX, startTime: clip.fadeIn || 0, originalClip: {...clip} });
@@ -2472,7 +2624,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                                                     e.preventDefault();
                                                                     return;
                                                                 }
-                                                                // Resize handles
+
                                                                 if (relX < 6) {
                                                                     setDragState({ type: 'resize-left', clipId: clip.id, trackId: track.id, startX: e.clientX, startTime: clip.startTime, originalClip: {...clip} });
                                                                     e.preventDefault();
@@ -2485,7 +2637,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                                                 }
                                                             }
 
-                                                            // Move clip
                                                             if (editorTool === 'move' || e.altKey) {
                                                                 setDragState({ type: 'move', clipId: clip.id, trackId: track.id, startX: e.clientX, startTime: clip.startTime, originalClip: {...clip} });
                                                                 e.preventDefault();
@@ -2505,10 +2656,8 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                                             height: `${clipHeight}px`,
                                                         }}
                                                     >
-                                                        {/* Clip background gradient */}
                                                         <div className={`absolute inset-0 bg-gradient-to-b ${trackColor.bg}`} style={{ opacity: track.solo ? 0.9 : 0.85 }}/>
 
-                                                        {/* Clip header */}
                                                         <div className="relative px-1.5 py-0.5 flex items-center gap-1 bg-black/30">
                                                             <span className="text-[10px] truncate font-medium flex-1">{clip.name}</span>
                                                             {(clip.gain ?? 1) !== 1 && (
@@ -2518,14 +2667,12 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                                             )}
                                                         </div>
 
-                                                        {/* Continuous waveform */}
                                                         <div className="absolute inset-x-0 top-5 bottom-0 overflow-hidden">
                                                             <svg
                                                                 className="w-full h-full"
                                                                 viewBox={`0 0 ${clipWidth} ${clipHeight - 16}`}
                                                                 preserveAspectRatio="none"
                                                             >
-                                                                {/* Waveform fill */}
                                                                 {waveformPath ? (
                                                                     <path
                                                                         d={waveformPath}
@@ -2534,7 +2681,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                                                         strokeWidth="0.5"
                                                                     />
                                                                 ) : waveform ? (
-                                                                    // Fallback to bar visualization while loading hi-res
+
                                                                     waveform.map((v, i) => (
                                                                         <rect
                                                                             key={i}
@@ -2546,11 +2693,10 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                                                         />
                                                                     ))
                                                                 ) : (
-                                                                    // Loading placeholder
+
                                                                     <text x="50%" y="50%" textAnchor="middle" fill="rgba(255,255,255,0.4)" fontSize="10">Loading...</text>
                                                                 )}
 
-                                                                {/* Fade in gradient */}
                                                                 {fadeInWidth > 0 && (
                                                                     <>
                                                                         <defs>
@@ -2564,7 +2710,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                                                     </>
                                                                 )}
 
-                                                                {/* Fade out gradient */}
                                                                 {fadeOutWidth > 0 && (
                                                                     <>
                                                                         <defs>
@@ -2580,21 +2725,17 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                                             </svg>
                                                         </div>
 
-                                                        {/* Selection controls */}
                                                         {selectedClipId === clip.id && !isLocked && (
                                                             <>
-                                                                {/* Resize handles */}
                                                                 <div className="absolute left-0 top-0 bottom-0 w-1.5 cursor-w-resize bg-white/30 hover:bg-white/60 transition-colors"/>
                                                                 <div className="absolute right-0 top-0 bottom-0 w-1.5 cursor-e-resize bg-white/30 hover:bg-white/60 transition-colors"/>
 
-                                                                {/* Fade in handle */}
                                                                 <div
                                                                     className="absolute top-0 w-3 h-3 bg-yellow-400 rounded-full cursor-ew-resize border border-white shadow-md"
                                                                     style={{ left: `${fadeInWidth - 6}px`, transform: 'translateY(-1px)' }}
                                                                     title="Drag to adjust fade in"
                                                                 />
 
-                                                                {/* Fade out handle */}
                                                                 <div
                                                                     className="absolute top-0 w-3 h-3 bg-yellow-400 rounded-full cursor-ew-resize border border-white shadow-md"
                                                                     style={{ right: `${fadeOutWidth - 6}px`, transform: 'translateY(-1px)' }}
@@ -2606,13 +2747,11 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                                 );
                                             })}
 
-                                            {/* Playhead */}
                                             <div
                                                 className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10 pointer-events-none shadow-lg shadow-red-500/50"
                                                 style={{ left: `${editorPlayhead * pixelsPerSecond}px` }}
                                             />
 
-                                            {/* Selection region */}
                                             {selectionRange && (
                                                 <div
                                                     className="absolute top-0 bottom-0 bg-blue-500/20 border-l border-r border-blue-500 pointer-events-none"
@@ -2630,14 +2769,11 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     </div>
                 </div>
 
-                {/* Transport bar */}
                 <div className="h-14 border-t theme-border theme-bg-secondary flex items-center px-4 gap-3">
-                    {/* Time display */}
                     <div className="bg-black rounded px-3 py-1.5 font-mono text-lg text-green-400 tracking-wider w-32 text-center">
                         {formatTimeMs(editorPlayhead)}
                     </div>
 
-                    {/* Transport controls */}
                     <div className="flex items-center gap-1">
                         <button
                             onClick={() => { setEditorPlayhead(0); stopEditorTimeline(); }}
@@ -2686,7 +2822,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         </button>
                     </div>
 
-                    {/* Loop controls */}
                     <div className="w-px h-8 theme-bg-tertiary mx-2"/>
                     <button
                         onClick={() => setLoopEnabled(!loopEnabled)}
@@ -2696,14 +2831,12 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         <Repeat size={16}/>
                     </button>
 
-                    {/* Duration display */}
                     <div className="flex-1 flex items-center justify-center">
                         <span className="text-xs theme-text-muted">
                             Duration: {formatTime(Math.max(...tracks.flatMap(t => t.clips.map(c => c.startTime + c.duration)), 0))}
                         </span>
                     </div>
 
-                    {/* Master volume */}
                     <div className="flex items-center gap-2">
                         <Volume2 size={14} className="theme-text-muted"/>
                         <input
@@ -2718,7 +2851,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         <span className="text-xs theme-text-muted w-8">{Math.round(masterVolume * 100)}%</span>
                     </div>
 
-                    {/* Export */}
                     <div className="w-px h-8 theme-bg-tertiary mx-2"/>
                     <button
                         onClick={exportTimeline}
@@ -2729,7 +2861,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     </button>
                 </div>
 
-                {/* Context Menu for clips */}
                 {contextMenu && (
                     <div
                         className="fixed theme-bg-secondary border theme-border rounded-lg shadow-xl py-1 z-50 min-w-[180px]"
@@ -2807,7 +2938,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     </div>
                 )}
 
-                {/* Markers display (on timeline) */}
                 {markers.length > 0 && (
                     <div className="absolute left-52 right-0 top-10 h-6 pointer-events-none z-20">
                         {markers.map(marker => (
@@ -2827,7 +2957,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         );
     };
 
-    // Render DJ Mixer - Professional DJ interface
     const renderDJMixer = () => {
         const HOT_CUE_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
         const LOOP_SIZES = [0.25, 0.5, 1, 2, 4, 8, 16, 32];
@@ -2840,31 +2969,20 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
             const bgAccent = isLeft ? 'bg-blue-600' : 'bg-orange-600';
             const bgAccentHover = isLeft ? 'hover:bg-blue-700' : 'hover:bg-orange-700';
 
-            // Load waveform when track is loaded
             if (deck.audioFile && !waveform) {
                 loadWaveform(deck.audioFile.path, deck.audioFile.id);
             }
 
-            // Handle loop
-            const handleLoop = () => {
-                if (deck.loopActive && deck.loopIn !== null && deck.loopOut !== null) {
-                    if (audioRef.current && deck.currentTime >= deck.loopOut) {
-                        audioRef.current.currentTime = deck.loopIn;
-                    }
-                }
-            };
-
-            // Set hot cue
             const setHotCue = (index: number) => {
                 if (deck.hotCues[index] === null) {
-                    // Set cue
+
                     setDeck(prev => {
                         const newCues = [...prev.hotCues];
                         newCues[index] = prev.currentTime;
                         return { ...prev, hotCues: newCues };
                     });
                 } else {
-                    // Jump to cue
+
                     if (audioRef.current) {
                         audioRef.current.currentTime = deck.hotCues[index]!;
                     }
@@ -2872,7 +2990,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 }
             };
 
-            // Clear hot cue
             const clearHotCue = (index: number, e: React.MouseEvent) => {
                 e.preventDefault();
                 setDeck(prev => {
@@ -2882,7 +2999,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 });
             };
 
-            // Set loop
             const setLoopPoint = (point: 'in' | 'out') => {
                 setDeck(prev => ({
                     ...prev,
@@ -2891,7 +3007,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 }));
             };
 
-            // Auto loop
             const setAutoLoop = (beats: number) => {
                 const bpm = deck.audioFile?.bpm || 120;
                 const loopDuration = (beats / bpm) * 60;
@@ -2905,7 +3020,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
             return (
                 <div className="flex-1 flex flex-col theme-bg-primary min-w-0">
-                    {/* Deck header */}
                     <div className={`h-8 flex items-center justify-between px-3 ${isLeft ? 'bg-blue-900/40' : 'bg-orange-900/40'} border-b theme-border`}>
                         <div className="flex items-center gap-2">
                             <span className={`text-lg font-bold ${accentClass}`}>{label}</span>
@@ -2914,7 +3028,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         <span className="text-xs theme-text-muted truncate max-w-[150px]">{deck.audioFile?.name || 'No Track'}</span>
                     </div>
 
-                    {/* Overview waveform - full track view */}
                     <div
                         className="h-8 bg-black/50 border-b theme-border relative cursor-pointer"
                         onClick={(e) => {
@@ -2943,14 +3056,12 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                 ))}
                             </svg>
                         )}
-                        {/* Position indicator */}
                         {deck.audioFile?.duration && (
                             <div
                                 className="absolute top-0 bottom-0 w-0.5 bg-white"
                                 style={{ left: `${(deck.currentTime / deck.audioFile.duration) * 100}%` }}
                             />
                         )}
-                        {/* Hot cue markers on overview */}
                         {deck.audioFile?.duration && deck.hotCues.map((cue, i) => {
                             if (cue === null) return null;
                             return (
@@ -2964,7 +3075,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                 />
                             );
                         })}
-                        {/* Loop region on overview */}
                         {deck.audioFile?.duration && deck.loopIn !== null && deck.loopOut !== null && (
                             <div
                                 className="absolute top-0 bottom-0 border-x-2"
@@ -2978,7 +3088,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         )}
                     </div>
 
-                    {/* Scrolling waveform - centered on playhead */}
                     <div className="h-20 bg-black border-b theme-border relative overflow-hidden">
                         {hiResWaveform && deck.audioFile?.duration ? (
                             <div className="absolute inset-0">
@@ -2990,10 +3099,9 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                             <stop offset="100%" stopColor={isLeft ? '#3B82F6' : '#F97316'}/>
                                         </linearGradient>
                                     </defs>
-                                    {/* Render visible portion of waveform centered on playhead */}
                                     {(() => {
                                         const duration = deck.audioFile?.duration || 1;
-                                        const visibleSeconds = 10; // Show 10 seconds of audio
+                                        const visibleSeconds = 10;
                                         const centerTime = deck.currentTime;
                                         const startTime = Math.max(0, centerTime - visibleSeconds / 2);
                                         const endTime = Math.min(duration, centerTime + visibleSeconds / 2);
@@ -3014,7 +3122,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                             const yTop = 50 - max * 45;
                                             const height = (max - min) * 45;
 
-                                            // Color based on position relative to playhead
                                             const sampleTime = i / samplesPerSecond;
                                             const isPast = sampleTime < centerTime;
 
@@ -3033,10 +3140,8 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                         return points;
                                     })()}
 
-                                    {/* Center playhead line */}
                                     <line x1="50%" y1="0" x2="50%" y2="100" stroke="white" strokeWidth="2"/>
 
-                                    {/* Loop region */}
                                     {deck.loopIn !== null && deck.loopOut !== null && (
                                         <rect
                                             x={`${((deck.loopIn - (deck.currentTime - 5)) / 10) * 100}%`}
@@ -3049,7 +3154,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                         />
                                     )}
 
-                                    {/* Hot cue markers */}
                                     {deck.hotCues.map((cue, i) => {
                                         if (cue === null) return null;
                                         const x = ((cue - (deck.currentTime - 5)) / 10) * 100;
@@ -3062,7 +3166,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                         );
                                     })}
 
-                                    {/* Beat grid lines */}
                                     {deck.beatGrid.length > 0 && (() => {
                                         const lines: JSX.Element[] = [];
                                         const visibleSeconds = 10;
@@ -3105,7 +3208,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             </div>
                         )}
 
-                        {/* Time displays */}
                         <div className="absolute bottom-1 left-2 bg-black/70 px-1.5 py-0.5 rounded">
                             <span className="text-sm font-mono text-white">{formatTime(deck.currentTime)}</span>
                         </div>
@@ -3114,10 +3216,8 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         </div>
                     </div>
 
-                    {/* BPM / Key / Pitch / Controls display */}
                     <div className="h-8 flex items-center justify-between px-2 theme-bg-primary border-b theme-border">
                         <div className="flex items-center gap-2">
-                            {/* Nudge buttons */}
                             <button
                                 onClick={() => nudgeDeck(deck, setDeck, audioRef, -0.02)}
                                 className="px-1.5 py-0.5 theme-bg-secondary theme-hover rounded text-[9px] font-bold"
@@ -3150,9 +3250,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         </div>
                     </div>
 
-                    {/* Main controls */}
                     <div className="flex-1 flex min-h-0">
-                        {/* EQ Section */}
                         <div className="w-20 border-r theme-border p-1.5 flex flex-col">
                             <div className="text-[9px] theme-text-muted text-center mb-1">EQ</div>
                             {(['high', 'mid', 'low'] as const).map(band => (
@@ -3195,9 +3293,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             </div>
                         </div>
 
-                        {/* Center section: Transport, Hot Cues, Loops */}
                         <div className="flex-1 flex flex-col p-2 gap-2 min-w-0">
-                            {/* Transport */}
                             <div className="flex items-center justify-center gap-2">
                                 <button
                                     onClick={() => {
@@ -3223,7 +3319,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                 </button>
                                 <button
                                     onClick={() => {
-                                        // Sync to other deck's BPM
+
                                         const otherDeck = isLeft ? deckB : deckA;
                                         if (otherDeck.audioFile?.bpm && deck.audioFile?.bpm) {
                                             const ratio = otherDeck.audioFile.bpm / deck.audioFile.bpm;
@@ -3239,7 +3335,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                 </button>
                             </div>
 
-                            {/* Hot Cues */}
                             <div>
                                 <div className="text-[9px] theme-text-muted text-center mb-1">HOT CUES</div>
                                 <div className="grid grid-cols-4 gap-1">
@@ -3262,7 +3357,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                 </div>
                             </div>
 
-                            {/* Loop controls */}
                             <div>
                                 <div className="text-[9px] theme-text-muted text-center mb-1">LOOP</div>
                                 <div className="flex gap-1 mb-1">
@@ -3312,7 +3406,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             </div>
                         </div>
 
-                        {/* Pitch/Tempo fader */}
                         <div className="w-16 border-l theme-border p-1.5 flex flex-col items-center">
                             <div className="text-[9px] theme-text-muted mb-1">TEMPO</div>
                             <div className="flex-1 flex flex-col items-center justify-center">
@@ -3341,7 +3434,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                 0%
                             </button>
 
-                            {/* Volume */}
                             <div className="border-t theme-border mt-2 pt-2 w-full flex flex-col items-center">
                                 <div className="text-[9px] theme-text-muted mb-1">VOL</div>
                                 <input
@@ -3364,7 +3456,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         </div>
                     </div>
 
-                    {/* Load track bar */}
                     <div className="h-8 border-t theme-border flex items-center px-2 gap-2">
                         <button
                             onClick={() => {
@@ -3396,13 +3487,12 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         </button>
                     </div>
 
-                    {/* Hidden audio element */}
                     <audio
                         ref={audioRef}
                         onTimeUpdate={(e) => {
                             const time = (e.target as HTMLAudioElement).currentTime;
                             setDeck(prev => ({ ...prev, currentTime: time }));
-                            // Check loop
+
                             if (deck.loopActive && deck.loopOut !== null && time >= deck.loopOut && deck.loopIn !== null) {
                                 (e.target as HTMLAudioElement).currentTime = deck.loopIn;
                             }
@@ -3411,13 +3501,12 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         onLoadedMetadata={async (e) => {
                             const audio = e.target as HTMLAudioElement;
                             if (deck.audioFile) {
-                                // Set duration immediately
+
                                 setDeck(prev => ({
                                     ...prev,
                                     audioFile: prev.audioFile ? { ...prev.audioFile, duration: audio.duration } : null
                                 }));
 
-                                // Run beat detection asynchronously
                                 try {
                                     const { bpm, beats, key } = await detectBeats(deck.audioFile.path);
                                     setDeck(prev => ({
@@ -3427,7 +3516,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                     }));
                                 } catch (err) {
                                     console.error('Beat detection failed:', err);
-                                    // Fallback to estimated BPM
+
                                     const estimatedBpm = 120 + Math.floor(Math.random() * 20);
                                     setDeck(prev => ({
                                         ...prev,
@@ -3443,7 +3532,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
         return (
             <div className="flex-1 flex flex-col overflow-hidden theme-bg-primary">
-                {/* Top bar with effects */}
                 <div className="h-10 border-b theme-border flex items-center px-4 gap-4 theme-bg-primary">
                     <div className="flex items-center gap-2">
                         <Disc3 className="text-purple-400" size={18}/>
@@ -3465,17 +3553,13 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     </div>
                 </div>
 
-                {/* Decks */}
                 <div className="flex-1 flex overflow-hidden">
                     {renderDeck(deckA, setDeckA, 'A', deckARef, true)}
 
-                    {/* Center mixer */}
                     <div className="w-36 theme-bg-primary border-x theme-border flex flex-col">
-                        {/* VU Meters */}
                         <div className="h-32 p-2 border-b theme-border">
                             <div className="text-[9px] theme-text-muted text-center mb-1">LEVEL</div>
                             <div className="flex justify-center gap-3 h-full pb-2">
-                                {/* Deck A meter */}
                                 <div className="flex gap-0.5">
                                     <div className="w-2 h-full theme-bg-secondary rounded-sm relative overflow-hidden">
                                         <div
@@ -3496,7 +3580,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                         />
                                     </div>
                                 </div>
-                                {/* Master */}
                                 <div className="flex gap-0.5">
                                     <div className="w-2 h-full theme-bg-secondary rounded-sm relative overflow-hidden">
                                         <div
@@ -3517,7 +3600,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                         />
                                     </div>
                                 </div>
-                                {/* Deck B meter */}
                                 <div className="flex gap-0.5">
                                     <div className="w-2 h-full theme-bg-secondary rounded-sm relative overflow-hidden">
                                         <div
@@ -3546,7 +3628,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             </div>
                         </div>
 
-                        {/* Crossfader */}
                         <div className="flex-1 flex flex-col items-center justify-center p-3">
                             <div className="text-[9px] theme-text-muted mb-2">CROSSFADER</div>
                             <input
@@ -3558,17 +3639,17 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                 onChange={(e) => {
                                     const val = parseFloat(e.target.value);
                                     setCrossfader(val);
-                                    // Apply crossfader curve based on selected type
+
                                     let volA = 1, volB = 1;
                                     if (crossfaderCurve === 'smooth') {
                                         volA = Math.cos(val * Math.PI / 2);
                                         volB = Math.sin(val * Math.PI / 2);
                                     } else if (crossfaderCurve === 'cut') {
-                                        // Hard cut - 10% dead zone on each side
+
                                         volA = val < 0.1 ? 1 : val > 0.9 ? 0 : 1 - ((val - 0.1) / 0.8);
                                         volB = val > 0.9 ? 1 : val < 0.1 ? 0 : (val - 0.1) / 0.8;
                                     } else {
-                                        // Linear
+
                                         volA = 1 - val;
                                         volB = val;
                                     }
@@ -3582,7 +3663,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                 <span className="text-orange-400 font-bold">B</span>
                             </div>
 
-                            {/* Effects with sliders */}
                             <div className="mt-3 w-full">
                                 <div className="text-[9px] theme-text-muted text-center mb-1">MASTER FX</div>
                                 <div className="space-y-1">
@@ -3629,7 +3709,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                 </div>
                             </div>
 
-                            {/* Crossfader curve selector */}
                             <div className="mt-2 flex gap-1 w-full">
                                 {(['linear', 'cut', 'smooth'] as const).map(curve => (
                                     <button
@@ -3644,10 +3723,9 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                 ))}
                             </div>
 
-                            {/* Sync button */}
                             <button
                                 onClick={() => {
-                                    // Sync both decks to average BPM
+
                                     const bpmA = deckA.audioFile?.bpm || 120;
                                     const bpmB = deckB.audioFile?.bpm || 120;
                                     const avgBpm = (bpmA + bpmB) / 2;
@@ -3676,18 +3754,15 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         );
     };
 
-    // Load analysis when audio is selected (moved outside renderAnalysis to follow hooks rules)
     useEffect(() => {
         if (selectedAudio && selectedAudio.path && activeMode === 'analysis') {
             analyzeAudio(selectedAudio.path);
         }
     }, [selectedAudio?.path, activeMode, analyzeAudio]);
 
-    // Render Analysis
     const renderAnalysis = () => {
         return (
             <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Mode selector */}
                 <div className="h-12 border-b theme-border flex items-center px-4 gap-2 theme-bg-secondary">
                     {(['waveform', 'spectrum', 'spectrogram'] as const).map(mode => (
                         <button
@@ -3713,7 +3788,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     )}
                 </div>
 
-                {/* Visualization */}
                 <div className="flex-1 p-4">
                     <div className="w-full h-full theme-bg-primary rounded-lg flex items-center justify-center overflow-hidden">
                         {selectedAudio ? (
@@ -3722,9 +3796,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                     <div className="flex-1 flex items-center">
                                         <div className="w-full h-48 flex items-center justify-center">
                                             <svg className="w-full h-full" viewBox="0 0 500 100" preserveAspectRatio="none">
-                                                {/* Center line */}
                                                 <line x1="0" y1="50" x2="500" y2="50" stroke="#4B5563" strokeWidth="0.5"/>
-                                                {/* Waveform */}
                                                 <path
                                                     d={analysisWaveformData.length > 0
                                                         ? `M 0,50 ${analysisWaveformData.map((v, i) =>
@@ -3736,7 +3808,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                                     stroke="#8B5CF6"
                                                     strokeWidth="1"
                                                 />
-                                                {/* Mirror waveform */}
                                                 <path
                                                     d={analysisWaveformData.length > 0
                                                         ? `M 0,50 ${analysisWaveformData.map((v, i) =>
@@ -3766,7 +3837,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                 )}
                                 {analysisMode === 'spectrogram' && (
                                     <div className="flex-1 overflow-hidden rounded">
-                                        {/* Spectrogram visualization using canvas-like grid */}
                                         <div className="w-full h-full grid grid-rows-32 gap-px">
                                             {Array.from({ length: 32 }).map((_, rowIdx) => (
                                                 <div key={rowIdx} className="flex gap-px">
@@ -3799,7 +3869,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     </div>
                 </div>
 
-                {/* Info panel */}
                 {selectedAudio && (
                     <div className="h-32 border-t theme-border p-4 theme-bg-secondary">
                         <div className="grid grid-cols-5 gap-4">
@@ -3830,28 +3899,79 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         );
     };
 
-    // Render Notation
     const renderNotation = () => {
-        const pianoKeys = Array.from({ length: 88 }, (_, i) => i + 21); // A0 to C8
+        const pianoKeys = Array.from({ length: 88 }, (_, i) => i + 21);
         const guitarStrings = ['E', 'B', 'G', 'D', 'A', 'E'];
-        const measures = 16;
+        const measures = notationMeasures;
         const beatsPerMeasure = notationTimeSignature[0];
         const totalBeats = measures * beatsPerMeasure;
 
-        // Piano Roll View
+        const visibleKeys = pianoKeys; // Full 88 keys
+        const noteHeight = 14;
+        const beatWidth = 40 * notationZoom;
+
+        const handlePianoRollMouseDown = (e: React.MouseEvent, noteIdx: number, type: 'move' | 'resize') => {
+            e.stopPropagation();
+            e.preventDefault();
+            pushNotationUndo();
+            setPianoRollDrag({
+                type,
+                noteIdx,
+                startX: e.clientX,
+                startY: e.clientY,
+                origNote: { ...pianoNotes[noteIdx] },
+            });
+        };
+
+        const handlePianoRollMouseMove = (e: React.MouseEvent) => {
+            if (!pianoRollDrag) return;
+            const dx = e.clientX - pianoRollDrag.startX;
+            const dy = e.clientY - pianoRollDrag.startY;
+            const { type, noteIdx, origNote } = pianoRollDrag;
+
+            if (type === 'resize') {
+                const durationDelta = dx / beatWidth;
+                const newDuration = Math.max(0.125, origNote.duration + durationDelta);
+                const quantized = Math.round(newDuration * 4) / 4;
+                setPianoNotes(prev => prev.map((n, i) => i === noteIdx ? { ...n, duration: Math.max(0.125, quantized) } : n));
+            } else {
+                const beatDelta = Math.round((dx / beatWidth) * 4) / 4;
+                const noteDelta = -Math.round(dy / noteHeight);
+                setPianoNotes(prev => prev.map((n, i) => i === noteIdx ? {
+                    ...n,
+                    start: Math.max(0, origNote.start + beatDelta),
+                    note: Math.max(21, Math.min(108, origNote.note + noteDelta)),
+                } : n));
+            }
+        };
+
+        const handlePianoRollMouseUp = () => {
+            setPianoRollDrag(null);
+        };
+
         const renderPianoRoll = () => (
-            <div className="flex-1 flex overflow-hidden theme-bg-primary">
-                {/* Piano keys sidebar */}
-                <div className="w-16 flex flex-col-reverse border-r theme-border overflow-hidden">
-                    {pianoKeys.slice(36, 72).map(note => {
+            <div
+                className="flex-1 flex overflow-hidden theme-bg-primary"
+                onMouseMove={handlePianoRollMouseMove}
+                onMouseUp={handlePianoRollMouseUp}
+                onMouseLeave={handlePianoRollMouseUp}
+            >
+                <div className="w-14 flex flex-col border-r theme-border overflow-y-auto overflow-x-hidden" ref={pianoRollScrollRef}
+                    onScroll={(e) => {
+                        const gridEl = e.currentTarget.nextElementSibling as HTMLElement;
+                        if (gridEl) gridEl.scrollTop = e.currentTarget.scrollTop;
+                    }}
+                >
+                    {[...visibleKeys].reverse().map(note => {
                         const isBlack = [1, 3, 6, 8, 10].includes(note % 12);
                         return (
                             <div
                                 key={note}
                                 onClick={() => playNote(note)}
-                                className={`h-4 flex items-center justify-end pr-1 text-[8px] cursor-pointer border-b theme-border ${
-                                    isBlack ? 'theme-bg-secondary theme-text-muted' : 'bg-gray-200 theme-text-muted'
-                                } hover:bg-purple-500`}
+                                className={`flex items-center justify-end pr-1 text-[8px] cursor-pointer border-b theme-border shrink-0 ${
+                                    isBlack ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'
+                                } hover:bg-purple-500 hover:text-white`}
+                                style={{ height: `${noteHeight}px` }}
                             >
                                 {note % 12 === 0 ? noteToName(note) : ''}
                             </div>
@@ -3859,74 +3979,141 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     })}
                 </div>
 
-                {/* Grid area */}
-                <div className="flex-1 overflow-auto">
-                    <div className="relative" style={{ width: `${totalBeats * 40 * notationZoom}px`, minWidth: '100%' }}>
-                        {/* Grid */}
-                        {pianoKeys.slice(36, 72).reverse().map((note, rowIdx) => (
-                            <div
-                                key={note}
-                                className={`h-4 flex border-b theme-border ${rowIdx % 12 === 0 ? 'theme-bg-tertiary' : ''}`}
-                                onClick={(e) => {
-                                    const rect = e.currentTarget.getBoundingClientRect();
-                                    const x = (e.clientX - rect.left) / (40 * notationZoom);
-                                    const beat = Math.floor(x * 4) / 4; // Snap to 16th note
-                                    addPianoNote(note, beat, 0.25);
-                                    playNote(note);
-                                }}
-                            >
-                                {Array.from({ length: totalBeats }).map((_, beat) => (
-                                    <div
-                                        key={beat}
-                                        className={`border-r ${beat % beatsPerMeasure === 0 ? 'theme-border' : 'theme-border'}`}
-                                        style={{ width: `${40 * notationZoom}px` }}
-                                    />
-                                ))}
-                            </div>
-                        ))}
-
-                        {/* Notes */}
-                        {pianoNotes.map((note, idx) => {
-                            const rowIdx = 71 - note.note; // Reverse for display
-                            if (rowIdx < 0 || rowIdx >= 36) return null;
+                <div className="flex-1 overflow-auto"
+                    onScroll={(e) => {
+                        if (pianoRollScrollRef.current) pianoRollScrollRef.current.scrollTop = e.currentTarget.scrollTop;
+                    }}
+                >
+                    <div
+                        className="relative"
+                        style={{
+                            width: `${totalBeats * beatWidth}px`,
+                            minWidth: '100%',
+                            height: `${visibleKeys.length * noteHeight}px`,
+                        }}
+                        onClick={(e) => {
+                            if (pianoRollDrag) return;
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const x = (e.clientX - rect.left + (e.currentTarget.parentElement?.scrollLeft || 0));
+                            const y = (e.clientY - rect.top + (e.currentTarget.parentElement?.scrollTop || 0));
+                            const beat = Math.floor((x / beatWidth) * 4) / 4;
+                            const rowIdx = Math.floor(y / noteHeight);
+                            const note = visibleKeys[visibleKeys.length - 1 - rowIdx];
+                            if (note >= 21 && note <= 108) {
+                                addPianoNote(note, beat, inputNoteDuration, 0.8);
+                                playNote(note);
+                            }
+                        }}
+                    >
+                        {/* Grid lines */}
+                        {visibleKeys.map((note, idx) => {
+                            const rowIdx = visibleKeys.length - 1 - idx;
+                            const isBlack = [1, 3, 6, 8, 10].includes(note % 12);
+                            const isC = note % 12 === 0;
                             return (
                                 <div
-                                    key={idx}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSelectedNotes(prev => {
-                                            const next = new Set(prev);
-                                            if (next.has(idx)) next.delete(idx);
-                                            else next.add(idx);
-                                            return next;
-                                        });
-                                    }}
-                                    className={`absolute h-4 rounded cursor-pointer ${
-                                        selectedNotes.has(idx) ? 'bg-yellow-500 ring-2 ring-white' : 'bg-purple-500'
-                                    }`}
+                                    key={note}
+                                    className={`absolute left-0 right-0 border-b ${isC ? 'border-gray-500' : 'border-gray-700/30'}`}
                                     style={{
-                                        top: `${rowIdx * 16}px`,
-                                        left: `${note.start * 40 * notationZoom}px`,
-                                        width: `${Math.max(note.duration * 40 * notationZoom, 8)}px`,
-                                        opacity: note.velocity
+                                        top: `${rowIdx * noteHeight}px`,
+                                        height: `${noteHeight}px`,
+                                        backgroundColor: isBlack ? 'rgba(0,0,0,0.15)' : 'transparent',
                                     }}
                                 />
                             );
                         })}
 
+                        {/* Beat lines */}
+                        {Array.from({ length: totalBeats }).map((_, beat) => (
+                            <div
+                                key={beat}
+                                className="absolute top-0 bottom-0"
+                                style={{
+                                    left: `${beat * beatWidth}px`,
+                                    width: '1px',
+                                    backgroundColor: beat % beatsPerMeasure === 0 ? 'rgba(100,100,100,0.6)' : 'rgba(60,60,60,0.3)',
+                                }}
+                            />
+                        ))}
+
+                        {/* Measure numbers */}
+                        {Array.from({ length: Math.ceil(totalBeats / beatsPerMeasure) }).map((_, m) => (
+                            <div
+                                key={m}
+                                className="absolute text-[9px] text-gray-500 pointer-events-none"
+                                style={{ left: `${m * beatsPerMeasure * beatWidth + 2}px`, top: '1px' }}
+                            >
+                                {m + 1}
+                            </div>
+                        ))}
+
+                        {/* Notes */}
+                        {pianoNotes.map((note, idx) => {
+                            const keyIdx = visibleKeys.indexOf(note.note);
+                            if (keyIdx === -1) return null;
+                            const rowIdx = visibleKeys.length - 1 - keyIdx;
+                            const noteW = Math.max(note.duration * beatWidth, 6);
+                            const isSelected = selectedNotes.has(idx);
+                            return (
+                                <div
+                                    key={idx}
+                                    className={`absolute rounded-sm cursor-grab group ${
+                                        isSelected ? 'ring-2 ring-yellow-400 z-10' : 'z-0'
+                                    }`}
+                                    style={{
+                                        top: `${rowIdx * noteHeight + 1}px`,
+                                        left: `${note.start * beatWidth}px`,
+                                        width: `${noteW}px`,
+                                        height: `${noteHeight - 2}px`,
+                                        backgroundColor: isSelected ? 'rgba(234, 179, 8, 0.9)' : `rgba(147, 51, 234, ${0.4 + note.velocity * 0.6})`,
+                                    }}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedNotes(prev => {
+                                            const next = new Set(prev);
+                                            if (e.shiftKey) {
+                                                if (next.has(idx)) next.delete(idx);
+                                                else next.add(idx);
+                                            } else {
+                                                if (next.has(idx) && next.size === 1) next.delete(idx);
+                                                else { next.clear(); next.add(idx); }
+                                            }
+                                            return next;
+                                        });
+                                    }}
+                                    onMouseDown={(e) => { if (e.button === 0) handlePianoRollMouseDown(e, idx, 'move'); }}
+                                    title={`${noteToName(note.note)} | Beat ${note.start} | Dur ${note.duration} | Vel ${Math.round(note.velocity * 100)}%`}
+                                >
+                                    <span className="text-[7px] text-white/80 pl-0.5 pointer-events-none select-none">
+                                        {noteW > 30 ? noteToName(note.note) : ''}
+                                    </span>
+                                    {/* Resize handle */}
+                                    <div
+                                        className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize opacity-0 group-hover:opacity-100 bg-white/30 rounded-r-sm"
+                                        onMouseDown={(e) => { e.stopPropagation(); handlePianoRollMouseDown(e, idx, 'resize'); }}
+                                    />
+                                </div>
+                            );
+                        })}
+
                         {/* Playhead */}
                         <div
-                            className="absolute top-0 bottom-0 w-px bg-red-500 pointer-events-none"
-                            style={{ left: `${notationPlayhead * 40 * notationZoom}px` }}
+                            className="absolute top-0 bottom-0 w-0.5 bg-red-500 pointer-events-none z-20"
+                            style={{ left: `${notationPlayhead * beatWidth}px` }}
+                        />
+
+                        {/* Input cursor */}
+                        <div
+                            className="absolute top-0 bottom-0 w-0.5 bg-green-400/60 pointer-events-none z-10"
+                            style={{ left: `${inputCursor * beatWidth}px` }}
                         />
                     </div>
                 </div>
             </div>
         );
 
-        // VexFlow Sheet Music View
         const renderSheetMusic = () => {
-            // MIDI note to VexFlow pitch (e.g., 60 -> "C/4", 61 -> "C#/4")
+
             const midiToVexPitch = (midi: number): string => {
                 const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
                 const octave = Math.floor(midi / 12) - 1;
@@ -3934,23 +4121,20 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 return `${name}/${octave}`;
             };
 
-            // Quantize beat duration to nearest VexFlow duration string
             const quantizeDuration = (dur: number): string => {
-                if (dur >= 3.5) return 'w';       // whole
-                if (dur >= 1.75) return 'h';      // half
-                if (dur >= 0.875) return 'q';     // quarter
-                if (dur >= 0.4375) return '8';    // eighth
-                if (dur >= 0.21875) return '16';  // sixteenth
-                return '32';                       // thirty-second
+                if (dur >= 3.5) return 'w';
+                if (dur >= 1.75) return 'h';
+                if (dur >= 0.875) return 'q';
+                if (dur >= 0.4375) return '8';
+                if (dur >= 0.21875) return '16';
+                return '32';
             };
 
-            // Get beat value for VexFlow duration
             const durationBeats = (d: string): number => {
                 const map: Record<string, number> = { 'w': 4, 'h': 2, 'q': 1, '8': 0.5, '16': 0.25, '32': 0.125 };
                 return map[d] || 1;
             };
 
-            // Group pianoNotes into measures
             const groupedMeasures: Array<Array<{ note: number; start: number; duration: number; velocity: number }>> = [];
             for (let m = 0; m < measures; m++) {
                 const measureStart = m * beatsPerMeasure;
@@ -3959,7 +4143,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 groupedMeasures.push(notesInMeasure);
             }
 
-            // Render VexFlow via ref callback - called when the div mounts
             const renderVexFlow = (container: HTMLDivElement | null) => {
                 if (!container) return;
                 container.innerHTML = '';
@@ -3989,7 +4172,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         const isFirstInLine = mInLine === 0;
                         const isFirstMeasure = mIdx === 0;
 
-                        // Create treble stave
                         const trebleStave = new Stave(x, y, staveWidth);
                         if (isFirstInLine) trebleStave.addClef('treble');
                         if (isFirstMeasure) {
@@ -4000,7 +4182,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         }
                         trebleStave.setContext(context).draw();
 
-                        // Create bass stave for grand staff
                         let bassStave: Stave | null = null;
                         if (notationClef === 'grand') {
                             bassStave = new Stave(x, y + 80, staveWidth);
@@ -4013,14 +4194,12 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             }
                             bassStave.setContext(context).draw();
 
-                            // Connect staves
                             if (isFirstInLine) {
                                 new StaveConnector(trebleStave, bassStave).setType('single').setContext(context).draw();
                                 new StaveConnector(trebleStave, bassStave).setType('brace').setContext(context).draw();
                             }
                         }
 
-                        // Store stave layout for double-click note placement
                         try {
                             staveLayoutRef.current.push({
                                 x, y, width: staveWidth, measureIdx: mIdx,
@@ -4038,19 +4217,17 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             }
                         } catch {}
 
-                        // Get notes for this measure
                         const measureNotes = groupedMeasures[mIdx] || [];
 
-                        // Build VexFlow notes for treble clef (MIDI >= 60)
                         const trebleNotes: StaveNote[] = [];
                         const bassNotes: StaveNote[] = [];
 
                         if (measureNotes.length === 0) {
-                            // Add a whole rest
+
                             trebleNotes.push(new StaveNote({
                                 clef: 'treble',
                                 keys: ['B/4'],
-                                duration: 'wr',  // whole rest
+                                duration: 'wr',
                             }));
                             if (notationClef === 'grand') {
                                 bassNotes.push(new StaveNote({
@@ -4060,13 +4237,12 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                 }));
                             }
                         } else {
-                            // Group notes by start time for chord support
+
                             const sorted = [...measureNotes].sort((a, b) => a.start - b.start || a.note - b.note);
                             const measureStart = mIdx * beatsPerMeasure;
                             let trebleBeatsFilled = 0;
                             let bassBeatsFilled = 0;
 
-                            // Group notes at same beat into chords
                             const groups: Array<typeof measureNotes> = [];
                             for (const n of sorted) {
                                 const last = groups[groups.length - 1];
@@ -4078,7 +4254,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             }
 
                             for (const group of groups) {
-                                // Split into treble and bass
+
                                 const trebleGroup = group.filter(n => !(n.note < 60 && notationClef === 'grand'));
                                 const bassGroup = group.filter(n => n.note < 60 && notationClef === 'grand');
 
@@ -4111,7 +4287,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                 }
                             }
 
-                            // Fill remaining beats with rests
                             const fillRests = (notes: StaveNote[], beatsFilled: number, clef: string) => {
                                 let remaining = beatsPerMeasure - beatsFilled;
                                 while (remaining > 0) {
@@ -4147,13 +4322,11 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             }
                         }
 
-                        // Create voice and format
                         try {
                             const trebleVoice = new Voice({ numBeats: beatsPerMeasure, beatValue: notationTimeSignature[1] })
                                 .setMode(Voice.Mode.SOFT);
                             trebleVoice.addTickables(trebleNotes);
 
-                            // Auto-beam eighth notes and shorter
                             const trebleBeamable = trebleNotes.filter(n => {
                                 const dur = n.getDuration();
                                 return !dur.includes('r') && (dur === '8' || dur === '16' || dur === '32');
@@ -4186,13 +4359,12 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
                             trebleBeams.forEach(b => b.setContext(context).draw());
                         } catch (e) {
-                            // Formatting error - skip this measure silently
+
                         }
                     }
                 }
             };
 
-            // Note names for the keyboard input strip
             const sheetNoteNames = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
             const sheetNoteNamesFull = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
@@ -4205,19 +4377,16 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
             };
 
             const addSheetRest = () => {
-                // Just advance the cursor without adding a note
+
                 setInputCursor(prev => prev + inputNoteDuration);
             };
 
-            // Snap mouse coordinates to nearest staff position
-            // Returns null if not over a stave, otherwise snapped info
             const snapToStaff = (container: HTMLDivElement, clientX: number, clientY: number) => {
                 if (staveLayoutRef.current.length === 0) return null;
                 const rect = container.getBoundingClientRect();
                 const svgX = (clientX - rect.left) / notationZoom;
                 const svgY = (clientY - rect.top) / notationZoom;
 
-                // Find stave
                 let closestStave: typeof staveLayoutRef.current[0] | null = null;
                 let minDist = Infinity;
                 for (const stave of staveLayoutRef.current) {
@@ -4231,14 +4400,12 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 }
                 if (!closestStave) return null;
 
-                // Snap Y to nearest staff line/space
                 const lineSpacing = (closestStave.bottomLineY - closestStave.topLineY) / 4;
                 const halfLine = lineSpacing / 2;
                 const staffPos = Math.round((svgY - closestStave.topLineY) / halfLine);
                 const snappedSvgY = closestStave.topLineY + staffPos * halfLine;
                 const midi = staffPositionToMidi(staffPos, closestStave.clef);
 
-                // Snap X to beat grid
                 const xRatio = (svgX - closestStave.x) / closestStave.width;
                 const beatInMeasure = Math.max(0, Math.min(beatsPerMeasure - 0.25, xRatio * beatsPerMeasure));
                 const quantStep = Math.min(inputNoteDuration, 0.5);
@@ -4246,14 +4413,12 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 const snappedSvgX = closestStave.x + (quantizedBeat / beatsPerMeasure) * closestStave.width;
                 const globalBeat = closestStave.measureIdx * beatsPerMeasure + quantizedBeat;
 
-                // Convert snapped SVG coords back to screen coords for ghost positioning
                 const screenX = rect.left + snappedSvgX * notationZoom;
                 const screenY = rect.top + snappedSvgY * notationZoom;
 
                 return { midi, globalBeat, screenX, screenY, staffPos, clef: closestStave.clef };
             };
 
-            // Find existing note near a snapped position (tolerance: same beat, same pitch)
             const findNoteAt = (midi: number, beat: number): number | null => {
                 for (let i = 0; i < pianoNotes.length; i++) {
                     const n = pianoNotes[i];
@@ -4262,7 +4427,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 return null;
             };
 
-            // Position the ghost/drag indicator
             const positionGhost = (scrollContainer: HTMLElement, snap: NonNullable<ReturnType<typeof snapToStaff>>, dragging: boolean) => {
                 const ghost = ghostNoteRef.current;
                 const label = ghostLabelRef.current;
@@ -4292,7 +4456,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 if (ghostLabelRef.current) ghostLabelRef.current.style.display = 'none';
             };
 
-            // Mouse move: show ghost OR drag existing note
             const handleStaffMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
                 const vfContainer = e.currentTarget.querySelector('div[style]') as HTMLDivElement;
                 if (!vfContainer) return;
@@ -4302,11 +4465,11 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 const dragging = dragNoteRef.current !== null;
 
                 if (dragging) {
-                    // Show drag ghost at snapped position
+
                     positionGhost(e.currentTarget, snap, true);
                     e.currentTarget.style.cursor = 'grabbing';
                 } else {
-                    // Check if hovering over an existing note
+
                     const hoverIdx = findNoteAt(snap.midi, snap.globalBeat);
                     if (hoverIdx !== null) {
                         e.currentTarget.style.cursor = 'grab';
@@ -4322,9 +4485,8 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 dragNoteRef.current = null;
             };
 
-            // Mouse down: start dragging if over an existing note
             const handleStaffMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-                if (e.button !== 0) return; // left click only
+                if (e.button !== 0) return;
                 const vfContainer = e.currentTarget.querySelector('div[style]') as HTMLDivElement;
                 if (!vfContainer) return;
                 const snap = snapToStaff(vfContainer, e.clientX, e.clientY);
@@ -4341,7 +4503,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 }
             };
 
-            // Mouse up: finalize drag
             const handleStaffMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
                 const drag = dragNoteRef.current;
                 if (!drag) return;
@@ -4353,8 +4514,9 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 e.currentTarget.style.cursor = 'crosshair';
 
                 if (!snap) return;
-                // Only update if actually moved
+
                 if (snap.midi !== drag.origMidi || Math.abs(snap.globalBeat - drag.origBeat) > 0.01) {
+                    pushNotationUndo();
                     setPianoNotes(prev => prev.map((n, i) =>
                         i === drag.idx ? { ...n, note: snap.midi, start: snap.globalBeat } : n
                     ));
@@ -4362,20 +4524,18 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 }
             };
 
-            // Double-click: place note at snapped position (only if not dragging)
             const handleStaffDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
                 if (dragNoteRef.current) return;
                 const vfContainer = e.currentTarget.querySelector('div[style]') as HTMLDivElement;
                 if (!vfContainer) return;
                 const snap = snapToStaff(vfContainer, e.clientX, e.clientY);
                 if (!snap) return;
-                // Don't place if there's already a note here
+
                 if (findNoteAt(snap.midi, snap.globalBeat) !== null) return;
                 addPianoNote(snap.midi, snap.globalBeat, inputNoteDuration, 0.8);
                 playNote(snap.midi);
             };
 
-            // Right-click on staff to get context menu
             const handleStaffRightClick = (e: React.MouseEvent<HTMLDivElement>) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -4389,7 +4549,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 const clickX = (e.clientX - rect.left) / notationZoom;
                 const clickY = (e.clientY - rect.top) / notationZoom;
 
-                // Find which stave
                 let closestStave: typeof staveLayoutRef.current[0] | null = null;
                 for (const stave of staveLayoutRef.current) {
                     const margin = 25;
@@ -4401,14 +4560,12 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 }
                 if (!closestStave) { setNoteContextMenu(null); return; }
 
-                // Find beat position
                 const xRatio = (clickX - closestStave.x) / closestStave.width;
                 const beatInMeasure = Math.max(0, xRatio * beatsPerMeasure);
                 const globalBeat = closestStave.measureIdx * beatsPerMeasure + beatInMeasure;
 
-                // Check if clicking near an existing note
                 let nearestNoteIdx: number | null = null;
-                let minDist = 0.5; // tolerance in beats
+                let minDist = 0.5;
                 pianoNotes.forEach((n, idx) => {
                     const dist = Math.abs(n.start - globalBeat);
                     if (dist < minDist) { minDist = dist; nearestNoteIdx = idx; }
@@ -4432,7 +4589,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
             return (
                 <div className="flex-1 flex flex-col overflow-hidden bg-white">
-                    {/* Sheet music controls */}
                     <div className="flex items-center gap-3 px-4 py-2 bg-gray-50 border-b border-gray-200 shrink-0">
                         <span className="text-xs theme-text-muted font-medium">Key:</span>
                         <select
@@ -4457,7 +4613,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
                         <div className="w-px h-5 bg-gray-300 mx-1"/>
 
-                        {/* Note duration selector */}
                         <span className="text-xs theme-text-muted font-medium">Duration:</span>
                         <div className="flex gap-0.5">
                             {durationOptions.map(d => (
@@ -4478,7 +4633,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
                         <div className="w-px h-5 bg-gray-300 mx-1"/>
 
-                        {/* Octave selector */}
                         <span className="text-xs theme-text-muted font-medium">Oct:</span>
                         <div className="flex items-center gap-1">
                             <button
@@ -4494,7 +4648,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
                         <div className="w-px h-5 bg-gray-300 mx-1"/>
 
-                        {/* Cursor position */}
                         <span className="text-xs theme-text-muted">Beat: {inputCursor.toFixed(1)}</span>
                         <button
                             onClick={() => setInputCursor(0)}
@@ -4509,7 +4662,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         >Next Beat</button>
                     </div>
 
-                    {/* Note input keyboard */}
                     <div className="flex items-center gap-1 px-4 py-2 bg-gray-100 border-b border-gray-200 shrink-0 flex-wrap">
                         <span className="text-xs theme-text-muted mr-1">Notes:</span>
                         {sheetNoteNames.map(name => {
@@ -4522,7 +4674,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                     >
                                         {name}{inputOctave}
                                     </button>
-                                    {/* Add sharp button between notes that have sharps (no sharp between E-F, B-C) */}
                                     {name !== 'E' && name !== 'B' && (
                                         <button
                                             onClick={() => addSheetNote(name + '#', inputOctave)}
@@ -4557,7 +4708,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         </button>
                     </div>
 
-                    {/* VexFlow score display - click+drag to move notes, double-click to place */}
                     <div
                         className="flex-1 overflow-auto p-6 cursor-crosshair relative"
                         onMouseDown={handleStaffMouseDown}
@@ -4574,7 +4724,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             ref={renderVexFlow}
                             style={{ transform: `scale(${notationZoom})`, transformOrigin: 'top left' }}
                         />
-                        {/* Ghost note indicator */}
                         <div
                             ref={ghostNoteRef}
                             className="absolute pointer-events-none"
@@ -4597,7 +4746,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         />
                     </div>
 
-                    {/* Note context menu */}
                     {noteContextMenu && (
                         <div
                             className="fixed z-50 theme-bg-secondary border theme-border rounded-lg shadow-xl py-1 min-w-[180px]"
@@ -4722,9 +4870,8 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
             );
         };
 
-        // Guitar Tab View - derives display from pianoNotes via MIDI→tab conversion
         const renderGuitarTab = () => {
-            // Convert pianoNotes to tab representation
+
             const derivedTabNotes = pianoNotes.map(n => {
                 const tab = midiToTab(n.note);
                 return tab ? { ...tab, start: n.start, duration: n.duration } : null;
@@ -4750,7 +4897,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             >Reset</button>
                         </div>
 
-                        {/* Tab staff */}
                         <div className="relative font-mono text-sm">
                             {guitarStrings.map((stringName, stringIdx) => (
                                 <div key={stringIdx} className="flex items-center h-6">
@@ -4774,7 +4920,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             ))}
                         </div>
 
-                        {/* Fretboard for input */}
                         <div className="mt-8 border-t pt-4">
                             <h4 className="text-sm font-medium mb-2">Click fretboard to add notes (at beat {inputCursor.toFixed(1)}):</h4>
                             <div className="grid grid-cols-13 gap-px bg-amber-900 p-2 rounded" style={{ gridTemplateColumns: 'auto repeat(12, 1fr)' }}>
@@ -4803,9 +4948,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
         return (
             <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Toolbar */}
                 <div className="h-12 border-b theme-border flex items-center px-4 gap-2 theme-bg-secondary">
-                    {/* View modes */}
                     <button
                         onClick={() => setNotationView('piano')}
                         className={`px-3 py-1.5 rounded text-sm flex items-center gap-1 ${notationView === 'piano' ? 'bg-purple-600' : 'theme-bg-tertiary theme-hover'}`}
@@ -4826,7 +4969,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     </button>
                     <div className="w-px h-6 theme-bg-tertiary mx-2"/>
 
-                    {/* Playback controls */}
                     <button
                         onClick={() => setNotationPlayhead(0)}
                         className="p-2 theme-hover rounded"
@@ -4843,7 +4985,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
                     <div className="w-px h-6 theme-bg-tertiary mx-2"/>
 
-                    {/* BPM */}
                     <span className="text-xs theme-text-muted">BPM:</span>
                     <input
                         type="number"
@@ -4852,7 +4993,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         className="w-16 px-2 py-1 theme-bg-tertiary rounded text-sm"
                     />
 
-                    {/* Time signature */}
                     <span className="text-xs theme-text-muted ml-2">Time:</span>
                     <select
                         value={`${notationTimeSignature[0]}/${notationTimeSignature[1]}`}
@@ -4875,7 +5015,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
                     <div className="w-px h-6 theme-bg-tertiary mx-2"/>
 
-                    {/* Instrument selector */}
                     <span className="text-xs theme-text-muted">Instrument:</span>
                     <select
                         value={notationInstrument}
@@ -4890,25 +5029,80 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
                     <div className="flex-1"/>
 
-                    {/* Delete selected */}
+                    <div className="w-px h-6 theme-bg-tertiary mx-1"/>
+
+                    <button onClick={notationUndo} disabled={notationUndoStack.length === 0}
+                        className={`p-1.5 rounded ${notationUndoStack.length > 0 ? 'theme-hover' : 'opacity-30'}`} title="Undo (Ctrl+Z)">
+                        <Undo size={14}/>
+                    </button>
+                    <button onClick={notationRedo} disabled={notationRedoStack.length === 0}
+                        className={`p-1.5 rounded ${notationRedoStack.length > 0 ? 'theme-hover' : 'opacity-30'}`} title="Redo (Ctrl+Y)">
+                        <Redo size={14}/>
+                    </button>
+
+                    <div className="w-px h-6 theme-bg-tertiary mx-1"/>
+
+                    <button onClick={copySelectedNotes} disabled={selectedNotes.size === 0}
+                        className={`p-1.5 rounded ${selectedNotes.size > 0 ? 'theme-hover' : 'opacity-30'}`} title="Copy (Ctrl+C)">
+                        <Copy size={14}/>
+                    </button>
+                    <button onClick={pasteNotes} disabled={notationClipboard.length === 0}
+                        className={`p-1.5 rounded ${notationClipboard.length > 0 ? 'theme-hover' : 'opacity-30'}`} title="Paste (Ctrl+V)">
+                        <ClipboardPaste size={14}/>
+                    </button>
+
+                    {selectedNotes.size > 0 && (
+                        <>
+                            <div className="w-px h-6 theme-bg-tertiary mx-1"/>
+                            <button onClick={() => transposeSelected(1)} className="px-1.5 py-1 theme-bg-tertiary theme-hover rounded text-[10px]" title="Transpose Up">+1</button>
+                            <button onClick={() => transposeSelected(-1)} className="px-1.5 py-1 theme-bg-tertiary theme-hover rounded text-[10px]" title="Transpose Down">-1</button>
+                            <button onClick={() => transposeSelected(12)} className="px-1.5 py-1 theme-bg-tertiary theme-hover rounded text-[10px]" title="Octave Up">+Oct</button>
+                            <button onClick={() => transposeSelected(-12)} className="px-1.5 py-1 theme-bg-tertiary theme-hover rounded text-[10px]" title="Octave Down">-Oct</button>
+                        </>
+                    )}
+
+                    <div className="flex-1"/>
+
+                    <span className="text-xs theme-text-muted">Meas:</span>
+                    <select
+                        value={notationMeasures}
+                        onChange={(e) => setNotationMeasures(parseInt(e.target.value))}
+                        className="w-14 px-1 py-1 theme-bg-tertiary rounded text-sm"
+                    >
+                        {[4, 8, 16, 24, 32, 48, 64].map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+
+                    <div className="w-px h-6 theme-bg-tertiary mx-1"/>
+
+                    <button onClick={saveNotationProject} className="p-1.5 theme-hover rounded" title="Save Project">
+                        <Save size={14}/>
+                    </button>
+                    <button onClick={loadNotationProject} className="p-1.5 theme-hover rounded" title="Open Project">
+                        <FolderOpen size={14}/>
+                    </button>
+                    <button onClick={exportMidi} disabled={pianoNotes.length === 0}
+                        className={`px-2 py-1 rounded text-xs flex items-center gap-1 ${pianoNotes.length > 0 ? 'theme-bg-tertiary theme-hover' : 'opacity-30'}`} title="Export MIDI">
+                        <Download size={12}/> MIDI
+                    </button>
+
+                    <div className="w-px h-6 theme-bg-tertiary mx-1"/>
+
                     <button
                         onClick={deleteSelectedNotes}
                         disabled={selectedNotes.size === 0}
-                        className={`px-3 py-1.5 rounded text-sm flex items-center gap-1 ${selectedNotes.size > 0 ? 'bg-red-600 hover:bg-red-700' : 'theme-bg-tertiary opacity-50'}`}
+                        className={`px-2 py-1 rounded text-sm flex items-center gap-1 ${selectedNotes.size > 0 ? 'bg-red-600 hover:bg-red-700' : 'theme-bg-tertiary opacity-50'}`}
                     >
-                        <Trash2 size={14}/> Delete ({selectedNotes.size})
+                        <Trash2 size={12}/> {selectedNotes.size > 0 ? selectedNotes.size : ''}
                     </button>
 
-                    {/* Clear all */}
                     <button
-                        onClick={() => { setPianoNotes([]); setSelectedNotes(new Set()); setInputCursor(0); }}
-                        className="px-3 py-1.5 theme-bg-tertiary theme-hover rounded text-sm"
+                        onClick={() => { pushNotationUndo(); setPianoNotes([]); setSelectedNotes(new Set()); setInputCursor(0); }}
+                        className="px-2 py-1 theme-bg-tertiary theme-hover rounded text-xs"
                     >
-                        Clear All
+                        Clear
                     </button>
                 </div>
 
-                {/* Content area */}
                 {notationView === 'piano' && renderPianoRoll()}
                 {notationView === 'sheet' && renderSheetMusic()}
                 {notationView === 'tab' && renderGuitarTab()}
@@ -4916,7 +5110,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         );
     };
 
-    // Dataset management functions
     const createAudioDataset = () => {
         if (!newDatasetName.trim()) return;
         const newDataset: AudioDataset = {
@@ -5031,10 +5224,8 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         });
     };
 
-    // Render Datasets
     const renderDatasets = () => (
         <div className="flex h-full overflow-hidden">
-            {/* Dataset List Sidebar */}
             <div className="w-64 border-r theme-border flex flex-col theme-bg-secondary">
                 <div className="p-3 border-b theme-border">
                     <button
@@ -5075,11 +5266,9 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 </div>
             </div>
 
-            {/* Dataset Content */}
             <div className="flex-1 flex flex-col overflow-hidden">
                 {selectedDataset ? (
                     <>
-                        {/* Dataset Header */}
                         <div className="p-4 border-b theme-border flex items-center justify-between theme-bg-secondary">
                             <div>
                                 <h4 className="font-semibold">{selectedDataset.name}</h4>
@@ -5112,7 +5301,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             </div>
                         </div>
 
-                        {/* Examples List */}
                         <div className="flex-1 overflow-y-auto p-4 space-y-3">
                             {selectedDataset.examples.length === 0 ? (
                                 <div className="text-center py-12 theme-text-muted">
@@ -5176,7 +5364,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 )}
             </div>
 
-            {/* Create Dataset Modal */}
             {showCreateDataset && (
                 <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[200]" onClick={() => setShowCreateDataset(false)}>
                     <div className="theme-bg-secondary rounded-lg shadow-xl w-96 p-6" onClick={e => e.stopPropagation()}>
@@ -5219,7 +5406,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
             <div className="flex-1 flex overflow-hidden">
                 {renderSidebar()}
                 <main className="flex-1 flex flex-col overflow-hidden relative">
-                    {/* Mode Selector - inline bar, not absolute overlay */}
                     <div className="flex items-center h-10 px-2 theme-bg-primary border-b theme-border shrink-0">
                         <div className="relative group">
                             <button className="flex items-center gap-2 px-3 py-1.5 theme-bg-secondary theme-hover rounded-lg border theme-border text-sm backdrop-blur-sm">
@@ -5261,10 +5447,8 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     {activeMode === 'notation' && renderNotation()}
                     {activeMode === 'datasets' && renderDatasets()}
 
-                    {/* Visualizer Overlay */}
                     {visualizerActive && (
                         <div className="absolute inset-0 bg-black/95 z-50 flex flex-col">
-                            {/* Controls */}
                             <div className="flex items-center justify-between p-4 bg-black/50">
                                 <div className="flex items-center gap-4">
                                     <span className="text-sm font-medium text-purple-400">Visualizer</span>
@@ -5307,7 +5491,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                     <X size={20}/>
                                 </button>
                             </div>
-                            {/* Canvas */}
                             <div className="flex-1 relative">
                                 <canvas
                                     ref={visualizerCanvasRef}
@@ -5316,7 +5499,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                     height={600}
                                 />
                             </div>
-                            {/* Now playing info */}
                             {selectedAudio && (
                                 <div className="p-4 bg-black/50 flex items-center gap-4">
                                     <button

@@ -30,7 +30,6 @@ const UserMenu: React.FC<UserMenuProps> = ({ onOpenSettings, compact = false }) 
     const [showPassphrase, setShowPassphrase] = useState(false);
     const [editingDeviceName, setEditingDeviceName] = useState(false);
 
-    // Form state
     const [passphrase, setPassphrase] = useState('');
     const [confirmPassphrase, setConfirmPassphrase] = useState('');
     const [deviceName, setDeviceName] = useState('');
@@ -40,17 +39,15 @@ const UserMenu: React.FC<UserMenuProps> = ({ onOpenSettings, compact = false }) 
     const menuRef = useRef<HTMLDivElement>(null);
     const modalRef = useRef<HTMLDivElement>(null);
 
-    // Initialize device name from device info
     useEffect(() => {
         if (device?.deviceName) {
             setDeviceName(device.deviceName);
         }
     }, [device]);
 
-    // Auto-show passphrase modal if user needs to set up or unlock
     useEffect(() => {
         if (isAuthenticated && !isEncryptionReady && !showPassphraseModal) {
-            // Small delay to let the UI settle
+
             const timer = setTimeout(() => {
                 setShowPassphraseModal(true);
                 setIsSettingUpPassphrase(needsPassphraseSetup);
@@ -59,7 +56,6 @@ const UserMenu: React.FC<UserMenuProps> = ({ onOpenSettings, compact = false }) 
         }
     }, [isAuthenticated, isEncryptionReady, needsPassphraseSetup]);
 
-    // Close menu when clicking outside
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
             if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -76,12 +72,11 @@ const UserMenu: React.FC<UserMenuProps> = ({ onOpenSettings, compact = false }) 
         };
     }, [isOpen]);
 
-    // Close menu on escape
     useEffect(() => {
         const handleEscape = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
                 setIsOpen(false);
-                // Don't close passphrase modal on escape if encryption not ready
+
                 if (isEncryptionReady) {
                     setShowPassphraseModal(false);
                 }
@@ -109,7 +104,7 @@ const UserMenu: React.FC<UserMenuProps> = ({ onOpenSettings, compact = false }) 
         try {
             let result;
             if (isSettingUpPassphrase) {
-                // Setting up new passphrase
+
                 if (passphrase !== confirmPassphrase) {
                     setFormError('Passphrases do not match');
                     setSubmitting(false);
@@ -117,7 +112,7 @@ const UserMenu: React.FC<UserMenuProps> = ({ onOpenSettings, compact = false }) 
                 }
                 result = await setupPassphrase(passphrase);
             } else {
-                // Unlocking with existing passphrase
+
                 result = await unlockWithPassphrase(passphrase);
             }
 
@@ -151,7 +146,6 @@ const UserMenu: React.FC<UserMenuProps> = ({ onOpenSettings, compact = false }) 
         );
     }
 
-    // Passphrase Modal
     const passphraseModalContent = showPassphraseModal && isAuthenticated && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => isEncryptionReady && setShowPassphraseModal(false)}>
             <div
@@ -159,7 +153,6 @@ const UserMenu: React.FC<UserMenuProps> = ({ onOpenSettings, compact = false }) 
                 className="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden"
                 onClick={e => e.stopPropagation()}
             >
-                {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
                     <div className="flex items-center gap-2">
                         <Lock size={20} className="text-blue-400" />
@@ -177,7 +170,6 @@ const UserMenu: React.FC<UserMenuProps> = ({ onOpenSettings, compact = false }) 
                     )}
                 </div>
 
-                {/* Form */}
                 <form onSubmit={handlePassphraseSubmit} className="p-6 space-y-4" onMouseDown={e => e.stopPropagation()}>
                     <p className="text-sm text-gray-400">
                         {isSettingUpPassphrase
@@ -301,7 +293,6 @@ const UserMenu: React.FC<UserMenuProps> = ({ onOpenSettings, compact = false }) 
 
     return (
         <div ref={menuRef} className="relative">
-            {/* User button */}
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 className={`flex items-center gap-2 w-full px-2 py-1.5 rounded-lg hover:bg-gray-700/50 transition-colors ${compact ? '' : 'pr-3'}`}
@@ -335,10 +326,8 @@ const UserMenu: React.FC<UserMenuProps> = ({ onOpenSettings, compact = false }) 
                 )}
             </button>
 
-            {/* Dropdown menu */}
             {isOpen && (
                 <div className="absolute bottom-full left-0 right-0 mb-1 bg-gray-800 border border-gray-700 rounded-lg shadow-lg overflow-hidden z-50">
-                    {/* User info header */}
                     <div className="px-3 py-2 border-b border-gray-700">
                         <div className="flex items-center gap-2">
                             {user?.profilePicture ? (
@@ -366,7 +355,6 @@ const UserMenu: React.FC<UserMenuProps> = ({ onOpenSettings, compact = false }) 
                         </div>
                     </div>
 
-                    {/* Sync/Encryption status */}
                     <div className="px-3 py-2 border-b border-gray-700">
                         {isEncryptionReady ? (
                             <>
@@ -393,7 +381,6 @@ const UserMenu: React.FC<UserMenuProps> = ({ onOpenSettings, compact = false }) 
                         )}
                     </div>
 
-                    {/* Device info - editable */}
                     <div className="px-3 py-2 border-b border-gray-700">
                         {editingDeviceName ? (
                             <div className="flex items-center gap-2">
@@ -420,7 +407,6 @@ const UserMenu: React.FC<UserMenuProps> = ({ onOpenSettings, compact = false }) 
                         )}
                     </div>
 
-                    {/* Actions */}
                     <div className="py-1">
                         {onOpenSettings && (
                             <button
@@ -461,7 +447,6 @@ const UserMenu: React.FC<UserMenuProps> = ({ onOpenSettings, compact = false }) 
                 </div>
             )}
 
-            {/* Error display */}
             {error && (
                 <div className="mt-1 px-2 py-1 bg-red-900/50 border border-red-700 rounded text-xs text-red-400">
                     {error}

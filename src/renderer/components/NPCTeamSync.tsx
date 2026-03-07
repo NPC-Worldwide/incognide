@@ -153,7 +153,6 @@ const NPCTeamSync: React.FC<NPCTeamSyncProps> = ({ compact = false, globalPath }
         }
     };
 
-    // Compact mode: just a status badge + sync button
     if (compact) {
         return (
             <div className="flex items-center gap-2">
@@ -173,10 +172,8 @@ const NPCTeamSync: React.FC<NPCTeamSyncProps> = ({ compact = false, globalPath }
         );
     }
 
-    // Full mode: expandable panel
     return (
         <div className="theme-bg-secondary border theme-border rounded-lg">
-            {/* Header */}
             <button
                 onClick={() => setExpanded(!expanded)}
                 className="w-full flex items-center justify-between px-4 py-3 hover:theme-bg-hover transition-colors rounded-lg"
@@ -194,7 +191,6 @@ const NPCTeamSync: React.FC<NPCTeamSyncProps> = ({ compact = false, globalPath }
 
             {expanded && (
                 <div className="px-4 pb-4 space-y-3 border-t theme-border pt-3">
-                    {/* Actions */}
                     <div className="flex items-center gap-2">
                         {syncStatus.status === 'uninitialized' ? (
                             <button
@@ -225,7 +221,6 @@ const NPCTeamSync: React.FC<NPCTeamSyncProps> = ({ compact = false, globalPath }
                         </button>
                     </div>
 
-                    {/* Sync result message */}
                     {syncResult && (
                         <div className={`text-xs px-3 py-2 rounded flex items-center justify-between ${
                             syncResult.includes('failed') || syncResult.includes('error')
@@ -239,7 +234,6 @@ const NPCTeamSync: React.FC<NPCTeamSyncProps> = ({ compact = false, globalPath }
                         </div>
                     )}
 
-                    {/* Modified files */}
                     {syncStatus.modified && syncStatus.modified.length > 0 && (
                         <div>
                             <h6 className="text-xs font-medium theme-text-muted mb-1">Modified files:</h6>
@@ -253,7 +247,6 @@ const NPCTeamSync: React.FC<NPCTeamSyncProps> = ({ compact = false, globalPath }
                         </div>
                     )}
 
-                    {/* Conflicts */}
                     {syncStatus.conflicts && syncStatus.conflicts.length > 0 && (
                         <div>
                             <h6 className="text-xs font-medium text-red-400 mb-1">Conflicts to resolve:</h6>
@@ -281,7 +274,6 @@ const NPCTeamSync: React.FC<NPCTeamSyncProps> = ({ compact = false, globalPath }
                         </div>
                     )}
 
-                    {/* Bundled vs Local comparison */}
                     <div className="border-t theme-border pt-3">
                         <div className="flex items-center justify-between mb-2">
                             <h6 className="text-xs font-medium theme-text-muted">App vs Local Files</h6>
@@ -326,7 +318,6 @@ const NPCTeamSync: React.FC<NPCTeamSyncProps> = ({ compact = false, globalPath }
                         ) : null}
                     </div>
 
-                    {/* Diff viewer modal */}
                     {diffView && (
                         <>
                             <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setDiffView(null)} />
@@ -349,7 +340,6 @@ const NPCTeamSync: React.FC<NPCTeamSyncProps> = ({ compact = false, globalPath }
                         </>
                     )}
 
-                    {/* Unavailable message */}
                     {syncStatus.status === 'unavailable' && (
                         <p className="text-xs theme-text-muted">
                             Team sync requires the npcpy backend sync service. Make sure npcpy.serve is running with sync support.

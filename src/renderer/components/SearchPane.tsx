@@ -33,7 +33,6 @@ const SearchPane: React.FC<SearchPaneProps> = ({
     const [error, setError] = useState<string | null>(null);
     const [useSemanticSearch, setUseSemanticSearch] = useState(false);
 
-    // Perform search
     const performSearch = useCallback(async () => {
         if (!query.trim()) {
             setResults([]);
@@ -45,13 +44,13 @@ const SearchPane: React.FC<SearchPaneProps> = ({
         const allResults: SearchResult[] = [];
 
         try {
-            // Search files
+
             if (category === 'all' || category === 'files') {
                 try {
                     const fileResults = await (window as any).api?.searchFiles?.({
                         query: query,
                         path: currentPath,
-                        limit: 20
+                        limit: 50
                     });
                     if (fileResults?.files) {
                         allResults.push(...fileResults.files.map((f: any) => ({
@@ -66,7 +65,6 @@ const SearchPane: React.FC<SearchPaneProps> = ({
                 }
             }
 
-            // Search conversations
             if (category === 'all' || category === 'conversations') {
                 try {
                     const convoResults = await (window as any).api?.searchConversations?.({
@@ -87,7 +85,6 @@ const SearchPane: React.FC<SearchPaneProps> = ({
                 }
             }
 
-            // Search memories
             if (category === 'all' || category === 'memories') {
                 try {
                     const memoryResults = await (window as any).api?.memory_search?.({
@@ -109,7 +106,6 @@ const SearchPane: React.FC<SearchPaneProps> = ({
                 }
             }
 
-            // Search KG
             if (category === 'all' || category === 'kg') {
                 try {
                     const searchFn = useSemanticSearch
@@ -151,7 +147,6 @@ const SearchPane: React.FC<SearchPaneProps> = ({
         }
     }, [query, category, currentPath, useSemanticSearch]);
 
-    // Search on Enter or when category changes
     useEffect(() => {
         if (query.trim()) {
             const debounce = setTimeout(() => {
@@ -161,7 +156,6 @@ const SearchPane: React.FC<SearchPaneProps> = ({
         }
     }, [query, category, useSemanticSearch]);
 
-    // Initial search if query provided
     useEffect(() => {
         if (initialQuery) {
             performSearch();
@@ -206,14 +200,12 @@ const SearchPane: React.FC<SearchPaneProps> = ({
 
     return (
         <div className="flex-1 flex flex-col overflow-hidden theme-bg-secondary">
-            {/* Header */}
             <div className="p-4 border-b theme-border space-y-3">
                 <div className="flex items-center gap-2">
                     <Search size={20} className="text-blue-400" />
                     <h3 className="text-lg font-semibold">Search</h3>
                 </div>
 
-                {/* Search input */}
                 <div className="relative">
                     <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
@@ -235,7 +227,6 @@ const SearchPane: React.FC<SearchPaneProps> = ({
                     )}
                 </div>
 
-                {/* Category tabs */}
                 <div className="flex flex-wrap gap-1">
                     {categories.map((cat) => (
                         <button
@@ -253,7 +244,6 @@ const SearchPane: React.FC<SearchPaneProps> = ({
                     ))}
                 </div>
 
-                {/* Options */}
                 {category === 'kg' && (
                     <label className="flex items-center gap-2 text-xs text-gray-400">
                         <input
@@ -267,7 +257,6 @@ const SearchPane: React.FC<SearchPaneProps> = ({
                 )}
             </div>
 
-            {/* Results */}
             <div className="flex-1 overflow-y-auto p-4">
                 {error && (
                     <div className="mb-4 p-3 bg-red-900/30 border border-red-700 rounded text-red-300 text-sm">
@@ -335,7 +324,6 @@ const SearchPane: React.FC<SearchPaneProps> = ({
                 )}
             </div>
 
-            {/* Footer */}
             <div className="p-3 border-t theme-border text-xs text-gray-500">
                 Press Enter to search • Click result to open
             </div>

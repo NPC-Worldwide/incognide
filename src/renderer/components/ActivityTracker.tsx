@@ -5,7 +5,6 @@ import {
     ChevronRight, BarChart3, Zap
 } from 'lucide-react';
 
-// Activity types we track
 export type ActivityType =
     | 'pane_open'
     | 'pane_close'
@@ -61,7 +60,6 @@ export interface ActivityStats {
     peakHours: number[];
 }
 
-// Hook for tracking activities from any component
 export const useActivityTracker = () => {
     const sessionIdRef = useRef<string>(`session_${Date.now()}`);
 
@@ -76,7 +74,6 @@ export const useActivityTracker = () => {
             sessionId: sessionIdRef.current
         };
 
-        // Send to backend for storage and RNN processing
         try {
             await (window as any).api?.trackActivity?.(activity);
         } catch (err) {
@@ -89,7 +86,6 @@ export const useActivityTracker = () => {
     return { trackActivity, sessionId: sessionIdRef.current };
 };
 
-// Activity Tracker Dashboard Component
 const ActivityTrackerDashboard = ({
     isOpen,
     onClose
@@ -104,7 +100,6 @@ const ActivityTrackerDashboard = ({
     const [isTraining, setIsTraining] = useState(false);
     const [activeTab, setActiveTab] = useState<'predictions' | 'history' | 'patterns' | 'settings'>('predictions');
 
-    // Load data on open
     useEffect(() => {
         if (!isOpen) return;
         loadData();
@@ -113,7 +108,7 @@ const ActivityTrackerDashboard = ({
     const loadData = async () => {
         setIsLoading(true);
         try {
-            // Get predictions from RNN model
+
             const predResponse = await (window as any).api?.getActivityPredictions?.();
             if (predResponse && !predResponse.error) {
                 setPredictions(predResponse.predictions || []);
@@ -130,7 +125,7 @@ const ActivityTrackerDashboard = ({
         setIsTraining(true);
         try {
             await (window as any).api?.trainActivityModel?.();
-            await loadData(); // Refresh after training
+            await loadData();
         } catch (err) {
             console.error('Failed to train model:', err);
         }
@@ -164,7 +159,6 @@ const ActivityTrackerDashboard = ({
                 className="bg-gray-900 rounded-lg shadow-xl w-full max-w-4xl h-[80vh] flex flex-col border border-gray-700"
                 onClick={e => e.stopPropagation()}
             >
-                {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-gray-700">
                     <div className="flex items-center gap-3">
                         <Brain className="text-purple-400" size={24} />
@@ -197,7 +191,6 @@ const ActivityTrackerDashboard = ({
                     </div>
                 </div>
 
-                {/* Tabs */}
                 <div className="flex border-b border-gray-700">
                     {(['predictions', 'history', 'patterns', 'settings'] as const).map(tab => (
                         <button
@@ -214,7 +207,6 @@ const ActivityTrackerDashboard = ({
                     ))}
                 </div>
 
-                {/* Content */}
                 <div className="flex-1 overflow-y-auto p-4">
                     {isLoading ? (
                         <div className="flex items-center justify-center h-full">
@@ -222,7 +214,6 @@ const ActivityTrackerDashboard = ({
                         </div>
                     ) : (
                         <>
-                            {/* Predictions Tab */}
                             {activeTab === 'predictions' && (
                                 <div className="space-y-4">
                                     {predictions.length > 0 ? (
@@ -274,7 +265,6 @@ const ActivityTrackerDashboard = ({
                                 </div>
                             )}
 
-                            {/* History Tab */}
                             {activeTab === 'history' && (
                                 <div className="space-y-2">
                                     {activities.length > 0 ? (
@@ -303,10 +293,8 @@ const ActivityTrackerDashboard = ({
                                 </div>
                             )}
 
-                            {/* Patterns Tab */}
                             {activeTab === 'patterns' && stats && (
                                 <div className="space-y-6">
-                                    {/* Activity by Type */}
                                     <div>
                                         <h4 className="text-sm font-medium text-gray-400 mb-3">Activity Distribution</h4>
                                         <div className="grid grid-cols-2 gap-2">
@@ -319,7 +307,6 @@ const ActivityTrackerDashboard = ({
                                         </div>
                                     </div>
 
-                                    {/* Common Patterns */}
                                     {stats.mostCommonPatterns && stats.mostCommonPatterns.length > 0 && (
                                         <div>
                                             <h4 className="text-sm font-medium text-gray-400 mb-3">Common Patterns</h4>
@@ -349,7 +336,6 @@ const ActivityTrackerDashboard = ({
                                 </div>
                             )}
 
-                            {/* Settings Tab */}
                             {activeTab === 'settings' && (
                                 <div className="space-y-4">
                                     <div className="p-4 bg-gray-800 rounded-lg">
@@ -401,7 +387,6 @@ const ActivityTrackerDashboard = ({
                     )}
                 </div>
 
-                {/* Footer with stats */}
                 {stats && (
                     <div className="flex items-center justify-between p-3 border-t border-gray-700 bg-gray-800/50 text-xs text-gray-400">
                         <span>{stats.totalActivities} total activities tracked</span>

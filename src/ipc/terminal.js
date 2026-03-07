@@ -23,7 +23,6 @@ function register(ctx) {
       return { success: false, error: ptyLoadError?.message || 'Terminal functionality not available (node-pty not loaded)' };
     }
 
-    // Store the sender's webContents for multi-window support
     const senderWebContents = event.sender;
 
     if (ptyKillTimers.has(id)) {
@@ -39,17 +38,16 @@ function register(ctx) {
     let shell, args;
     let actualShellType = shellType || 'system';
 
-    // If shellType is explicitly set, use that
     if (shellType === 'npcsh') {
       shell = 'npcsh';
       args = [];
     } else if (shellType === 'guac' || shellType === 'ipython') {
-      // guac is IPython-based - try guac first, fall back to ipython
+
       shell = 'guac';
       args = [];
-      // We'll try guac, and if it fails, we'll handle it below
+
     } else if (shellType === 'python3' || shellType === 'python') {
-      // Python REPL - resolve user's selected venv
+
       try {
         const config = await readPythonEnvConfig();
         const envConfig = config.workspaces[workingDir];
@@ -78,14 +76,13 @@ function register(ctx) {
       } catch (e) {
         shell = process.platform === 'win32' ? 'python' : 'python3';
       }
-      args = ['-i'];  // Interactive mode
+      args = ['-i'];
       actualShellType = 'python3';
     } else if (shellType === 'system' || !shellType) {
-      // Check for npcsh switch in workspace or global .ctx files for auto-detection
+
       let useNpcsh = false;
       const yaml = require('js-yaml');
 
-      // Check workspace .ctx first
       const npcTeamDir = path.join(workingDir, 'npc_team');
       try {
         if (fs.existsSync(npcTeamDir)) {
@@ -97,9 +94,8 @@ function register(ctx) {
             }
           }
         }
-      } catch (e) { /* ignore */ }
+      } catch (e) {  }
 
-      // Fall back to global .ctx
       if (!useNpcsh) {
         const globalCtx = path.join(os.homedir(), '.npcsh', 'npc_team', 'npcsh.ctx');
         try {
@@ -109,7 +105,7 @@ function register(ctx) {
               useNpcsh = true;
             }
           }
-        } catch (e) { /* ignore */ }
+        } catch (e) {  }
       }
 
       if (useNpcsh) {
@@ -123,25 +119,19 @@ function register(ctx) {
       }
     }
 
-    // Create clean env without VS Code artifacts
     const cleanEnv = { ...process.env };
-    delete cleanEnv.PYTHONSTARTUP;  // Remove VS Code Python extension startup
+    delete cleanEnv.PYTHONSTARTUP;
     delete cleanEnv.VSCODE_PID;
     delete cleanEnv.VSCODE_CWD;
     delete cleanEnv.VSCODE_NLS_CONFIG;
 
-    // Force unbuffered stdout for Python so output isn't lost after terminal resize (SIGWINCH)
     cleanEnv.PYTHONUNBUFFERED = '1';
 
-    // Set BROWSER to incognide so URLs opened from terminal (like gcloud auth login)
-    // open in incognide's browser pane instead of the system browser
-    // This works because incognide's second-instance handler catches URL arguments
-    // In dev mode, we need to pass the app path to electron
     if (IS_DEV_MODE) {
-      // In development, create a command that runs: electron /path/to/app <url>
+
       cleanEnv.BROWSER = `${process.execPath} ${app.getAppPath()}`;
     } else {
-      // In production, the executable directly handles URL arguments
+
       cleanEnv.BROWSER = process.execPath;
     }
 
@@ -154,11 +144,10 @@ function register(ctx) {
         env: cleanEnv
       });
 
-      // Store both the ptyProcess and the webContents that created it
       ptySessions.set(id, { ptyProcess, webContents: senderWebContents, shellType: actualShellType });
 
       ptyProcess.onData(data => {
-        // Send to the window that created this terminal session
+
         if (senderWebContents && !senderWebContents.isDestroyed()) {
           senderWebContents.send('terminal-data', { id, data });
         }
@@ -166,7 +155,7 @@ function register(ctx) {
 
       ptyProcess.onExit(({ exitCode, signal }) => {
         ptySessions.delete(id);
-        // Send to the window that created this terminal session
+
         if (senderWebContents && !senderWebContents.isDestroyed()) {
           senderWebContents.send('terminal-closed', { id });
         }
@@ -175,7 +164,7 @@ function register(ctx) {
       return { success: true, shell: actualShellType };
 
     } catch (error) {
-      // If guac failed, try ipython
+
       if (shellType === 'guac' || shellType === 'ipython') {
         try {
           const ptyProcess = pty.spawn('ipython', [], {
@@ -281,7 +270,6 @@ function register(ctx) {
               console.log(`[TERMINAL DEBUG] STDOUT: "${stdout}"`);
               console.log(`[TERMINAL DEBUG] STDERR: "${stderr}"`);
               console.log(`[TERMINAL DEBUG] ERROR: ${error}`);
-
 
               const normalizedStdout = stdout.replace(/\n/g, '\r\n');
               const normalizedStderr = stderr.replace(/\n/g, '\r\n');

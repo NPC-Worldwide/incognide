@@ -94,7 +94,6 @@ const PicViewer: React.FC<PicViewerProps> = ({ nodeId, contentDataRef }) => {
         setPosition({ x: 0, y: 0 });
     }, []);
 
-    // Auto-fit to width when image loads
     const handleImageLoad = useCallback(() => {
         setImageLoaded(true);
         if (containerRef.current && imageRef.current) {
@@ -106,7 +105,6 @@ const PicViewer: React.FC<PicViewerProps> = ({ nodeId, contentDataRef }) => {
         }
     }, []);
 
-    // Expose control methods on paneData for the pane header buttons
     useEffect(() => {
         if (paneData) {
             paneData.zoomIn = handleZoomIn;
@@ -139,7 +137,6 @@ const PicViewer: React.FC<PicViewerProps> = ({ nodeId, contentDataRef }) => {
 
     return (
         <div className="flex-1 flex flex-col overflow-hidden theme-bg-primary">
-            {/* Image Container */}
             <div
                 ref={containerRef}
                 className="flex-1 overflow-hidden flex items-center justify-center cursor-grab active:cursor-grabbing"
@@ -180,7 +177,6 @@ const PicViewer: React.FC<PicViewerProps> = ({ nodeId, contentDataRef }) => {
                 )}
             </div>
 
-            {/* Status Bar */}
             <div className="px-3 py-1 text-xs theme-bg-secondary border-t theme-border theme-text-muted flex items-center gap-4">
                 <span>{getFileName(filePath)}</span>
                 {imageLoaded && imageRef.current && (
@@ -192,7 +188,6 @@ const PicViewer: React.FC<PicViewerProps> = ({ nodeId, contentDataRef }) => {
     );
 };
 
-// Custom comparison to prevent reload on pane resize
 const arePropsEqual = (prevProps: any, nextProps: any) => {
     return prevProps.nodeId === nextProps.nodeId;
 };

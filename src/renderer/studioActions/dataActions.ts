@@ -1,15 +1,6 @@
-/**
- * Data Actions
- *
- * Actions for manipulating data viewers (CSV/XLSX, DOCX, PPTX):
- * - Spreadsheet: read, eval, update cells, add/delete rows/columns, sort, filter, stats, save, export
- * - Document: read, eval, write, insert, format, find/replace, table, save, export, stats
- * - Presentation: read, read slide, eval, navigate, update text, add/delete/duplicate slide, background, shape, save
- */
+
 
 import { registerAction, StudioContext, StudioActionResult } from './index';
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function resolvePane(
   args: { paneId?: string },
@@ -36,10 +27,6 @@ function resolvePane(
 function isError(result: any): result is StudioActionResult {
   return 'success' in result && result.success === false;
 }
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// SPREADSHEET ACTIONS (csv/xlsx)
-// ═══════════════════════════════════════════════════════════════════════════════
 
 async function spreadsheet_read(
   args: { paneId?: string; maxRows?: number; includeStats?: boolean },
@@ -306,10 +293,6 @@ async function spreadsheet_switch_sheet(
   return { ...result, paneId };
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// DOCUMENT ACTIONS (docx)
-// ═══════════════════════════════════════════════════════════════════════════════
-
 async function document_read(
   args: { paneId?: string; format?: 'text' | 'html' },
   ctx: StudioContext
@@ -479,10 +462,6 @@ async function document_export(
   const result = await data.exportDocumentAs(args.format || 'html');
   return { ...result, paneId };
 }
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// PRESENTATION ACTIONS (pptx)
-// ═══════════════════════════════════════════════════════════════════════════════
 
 async function presentation_read(
   args: { paneId?: string },
@@ -668,11 +647,6 @@ async function presentation_save(
   return { ...result, paneId };
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Register all data actions
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// Spreadsheet
 registerAction('spreadsheet_read', spreadsheet_read);
 registerAction('spreadsheet_eval', spreadsheet_eval);
 registerAction('spreadsheet_update_cell', spreadsheet_update_cell);
@@ -690,7 +664,6 @@ registerAction('spreadsheet_save', spreadsheet_save);
 registerAction('spreadsheet_export', spreadsheet_export);
 registerAction('spreadsheet_switch_sheet', spreadsheet_switch_sheet);
 
-// Document
 registerAction('document_read', document_read);
 registerAction('document_eval', document_eval);
 registerAction('document_write', document_write);
@@ -701,7 +674,6 @@ registerAction('document_save', document_save);
 registerAction('document_stats', document_stats);
 registerAction('document_export', document_export);
 
-// Presentation
 registerAction('presentation_read', presentation_read);
 registerAction('presentation_read_slide', presentation_read_slide);
 registerAction('presentation_eval', presentation_eval);

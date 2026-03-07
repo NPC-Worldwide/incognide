@@ -3,9 +3,8 @@ import React from "react";
 const Message = ({ message, isSelected, onSelect, isDarkMode }) => {
     const isHuman = message.role === 'human' || message.role === 'user';
 
-   
     const renderContent = () => {
-       
+
         if (message.content?.startsWith('data:image')) {
             return (
                 <img
@@ -16,7 +15,6 @@ const Message = ({ message, isSelected, onSelect, isDarkMode }) => {
             );
         }
 
-       
         if (message.content?.includes('<img') || message.content?.includes('<p')) {
             return (
                 <div
@@ -26,7 +24,6 @@ const Message = ({ message, isSelected, onSelect, isDarkMode }) => {
             );
         }
 
-       
         return (
             <div className="whitespace-pre-wrap text-base leading-relaxed">
                 {message.content}
@@ -81,7 +78,6 @@ const Message = ({ message, isSelected, onSelect, isDarkMode }) => {
                     )}
                 </div>
 
-                {/* If there are attachments, render them */}
                 {message.attachments && message.attachments.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-2">
                         {message.attachments.map((attachment, index) => (

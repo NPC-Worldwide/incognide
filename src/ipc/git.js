@@ -15,8 +15,7 @@ function register(ctx) {
       const untrackedFiles = [];
 
       for (const f of status.files) {
-        // A file can be both staged AND have unstaged changes (e.g. "MM")
-        // Handle staged status (index column)
+
         if (f.index === 'M') {
           stagedFiles.push({ path: f.path, status: 'Modified', statusCode: 'M', isStaged: true, isUntracked: false });
         } else if (f.index === 'A') {
@@ -29,7 +28,6 @@ function register(ctx) {
           stagedFiles.push({ path: f.path, status: 'Copied', statusCode: 'C', isStaged: true, isUntracked: false });
         }
 
-        // Handle unstaged status (working_dir column)
         if (f.working_dir === 'M') {
           unstagedFiles.push({ path: f.path, status: 'Modified', statusCode: 'M', isStaged: false, isUntracked: false });
         } else if (f.working_dir === 'D') {
@@ -71,7 +69,7 @@ function register(ctx) {
     log(`[Git] Unstaging file: ${file} in ${repoPath}`);
     try {
       const git = simpleGit(repoPath);
-      await git.reset([file]); // 'git reset <file>' unstages it
+      await git.reset([file]);
       return { success: true };
     } catch (err) {
       console.error(`[Git] Error unstaging file ${file} in ${repoPath}:`, err);
@@ -112,10 +110,10 @@ function register(ctx) {
     } catch (err) {
       console.error(`[Git] Error pushing in ${repoPath}:`, err);
       const msg = err.message || '';
-      // Check if it's the "no upstream branch" error
+
       const isNoUpstream = msg.includes('has no upstream branch');
       if (isNoUpstream) {
-        // Get current branch name
+
         const git = simpleGit(repoPath);
         const branchResult = await git.branch();
         const currentBranch = branchResult.current;
@@ -127,7 +125,7 @@ function register(ctx) {
           suggestedCommand: `git push --set-upstream origin ${currentBranch}`
         };
       }
-      // Check if push was rejected because remote has new commits
+
       const isRejected = msg.includes('rejected') || msg.includes('fetch first') || msg.includes('non-fast-forward');
       if (isRejected) {
         return {
@@ -163,7 +161,6 @@ function register(ctx) {
     }
   });
 
-  // Git diff for a file
   ipcMain.handle('gitDiff', async (event, repoPath, filePath, staged = false) => {
     log(`[Git] Getting diff for: ${filePath} in ${repoPath} (staged: ${staged})`);
     try {
@@ -183,7 +180,6 @@ function register(ctx) {
     }
   });
 
-  // Git diff for all changes
   ipcMain.handle('gitDiffAll', async (event, repoPath) => {
     log(`[Git] Getting all diffs for: ${repoPath}`);
     try {
@@ -197,15 +193,13 @@ function register(ctx) {
     }
   });
 
-  // Git blame for a file
   ipcMain.handle('gitBlame', async (event, repoPath, filePath) => {
     log(`[Git] Getting blame for: ${filePath} in ${repoPath}`);
     try {
       const git = simpleGit(repoPath);
-      // Use raw to get blame output
+
       const blameOutput = await git.raw(['blame', '--line-porcelain', filePath]);
 
-      // Parse the porcelain output
       const lines = blameOutput.split('\n');
       const blameData = [];
       let currentEntry = {};
@@ -243,7 +237,6 @@ function register(ctx) {
     }
   });
 
-  // Git branches
   ipcMain.handle('gitBranches', async (event, repoPath) => {
     log(`[Git] Getting branches for: ${repoPath}`);
     try {
@@ -262,7 +255,6 @@ function register(ctx) {
     }
   });
 
-  // Git create branch
   ipcMain.handle('gitCreateBranch', async (event, repoPath, branchName) => {
     log(`[Git] Creating branch: ${branchName} in ${repoPath}`);
     try {
@@ -275,7 +267,6 @@ function register(ctx) {
     }
   });
 
-  // Git switch branch
   ipcMain.handle('gitCheckout', async (event, repoPath, branchName) => {
     log(`[Git] Switching to branch: ${branchName} in ${repoPath}`);
     try {
@@ -288,7 +279,6 @@ function register(ctx) {
     }
   });
 
-  // Git delete branch
   ipcMain.handle('gitDeleteBranch', async (event, repoPath, branchName, force = false) => {
     log(`[Git] Deleting branch: ${branchName} in ${repoPath} (force: ${force})`);
     try {
@@ -301,7 +291,6 @@ function register(ctx) {
     }
   });
 
-  // Git commit history
   ipcMain.handle('gitLog', async (event, repoPath, options = {}) => {
     log(`[Git] Getting commit history for: ${repoPath}`);
     try {
@@ -318,12 +307,11 @@ function register(ctx) {
     }
   });
 
-  // Git show commit details
   ipcMain.handle('gitShowCommit', async (event, repoPath, commitHash) => {
     log(`[Git] Showing commit: ${commitHash} in ${repoPath}`);
     try {
       const git = simpleGit(repoPath);
-      // Use raw to avoid pager issues
+
       const show = await git.raw(['show', commitHash, '--stat', '--format=fuller', '--no-color']);
       const diff = await git.raw(['show', commitHash, '--format=', '--no-color']);
       return { success: true, details: show, diff };
@@ -333,7 +321,6 @@ function register(ctx) {
     }
   });
 
-  // Git stash
   ipcMain.handle('gitStash', async (event, repoPath, action = 'push', message = '') => {
     log(`[Git] Stash ${action} in ${repoPath}`);
     try {
@@ -369,7 +356,7 @@ function register(ctx) {
       const content = await git.show([`${ref}:${filePath}`]);
       return { success: true, content };
     } catch (err) {
-      // File might not exist at that ref (new file)
+
       if (err.message.includes('does not exist') || err.message.includes('fatal:')) {
         return { success: true, content: '' };
       }
@@ -440,7 +427,6 @@ function register(ctx) {
     }
   });
 
-  // Cherry-pick a commit onto current branch
   ipcMain.handle('gitCherryPick', async (event, repoPath, commitHash) => {
     log(`[Git] Cherry-pick ${commitHash} in ${repoPath}`);
     try {
@@ -457,7 +443,6 @@ function register(ctx) {
     }
   });
 
-  // Abort cherry-pick in progress
   ipcMain.handle('gitCherryPickAbort', async (event, repoPath) => {
     log(`[Git] Abort cherry-pick in ${repoPath}`);
     try {
@@ -470,7 +455,6 @@ function register(ctx) {
     }
   });
 
-  // Continue cherry-pick after resolving conflicts
   ipcMain.handle('gitCherryPickContinue', async (event, repoPath) => {
     log(`[Git] Continue cherry-pick in ${repoPath}`);
     try {
@@ -483,7 +467,6 @@ function register(ctx) {
     }
   });
 
-  // Revert a commit (creates a new commit undoing the target)
   ipcMain.handle('gitRevert', async (event, repoPath, commitHash) => {
     log(`[Git] Revert ${commitHash} in ${repoPath}`);
     try {
@@ -500,7 +483,6 @@ function register(ctx) {
     }
   });
 
-  // Reset to a specific commit (soft keeps changes staged, mixed unstages, hard discards)
   ipcMain.handle('gitResetToCommit', async (event, repoPath, commitHash, mode = 'mixed') => {
     log(`[Git] Reset --${mode} to ${commitHash} in ${repoPath}`);
     try {
@@ -517,7 +499,6 @@ function register(ctx) {
     }
   });
 
-  // Get log for a specific branch (for cherry-pick source selection)
   ipcMain.handle('gitLogBranch', async (event, repoPath, branchName, options = {}) => {
     log(`[Git] Log for branch ${branchName} in ${repoPath}`);
     try {

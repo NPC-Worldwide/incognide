@@ -2,29 +2,27 @@ import { getFileName } from './utils';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { BACKEND_URL } from '../config';
 import {
-    Send, Paperclip, Maximize2, ChevronDown, Star, ListFilter, FolderTree, Minimize2, Mic, MicOff, Volume2, GitBranch, SlidersHorizontal, Save, Trash2, Zap, X,
+    Send, Paperclip, Maximize2, ChevronDown, Star, ListFilter, FolderTree, Minimize2, Mic, MicOff, Volume2, GitBranch, SlidersHorizontal, Save, Trash2, Zap, X, RefreshCw,
     FileCode, Globe, FileText, Terminal as TerminalIcon, Eye, EyeOff, ToggleLeft, ToggleRight,
     Database, BarChart3, BrainCircuit, Image, Bot, Users, Music, Search, BookOpen, Folder, HardDrive, HelpCircle, Clock, Settings, MessageSquare, Tag
 } from 'lucide-react';
 import MemoryIcon from './MemoryIcon';
 import ContextFilesPanel from './ContextFilesPanel';
 
-// Blue-white-red color interpolation based on relative value position
 const getParamColor = (value: number, min: number, max: number): string => {
-    // Normalize value to 0-1 range
+
     const t = Math.max(0, Math.min(1, (value - min) / (max - min)));
 
-    // Blue (low) -> White (mid) -> Red (high)
     if (t <= 0.5) {
-        // Blue to White: interpolate from blue (59, 130, 246) to white (255, 255, 255)
-        const factor = t * 2; // 0 to 1 for first half
+
+        const factor = t * 2;
         const r = Math.round(59 + (255 - 59) * factor);
         const g = Math.round(130 + (255 - 130) * factor);
         const b = Math.round(246 + (255 - 246) * factor);
         return `rgb(${r}, ${g}, ${b})`;
     } else {
-        // White to Red: interpolate from white (255, 255, 255) to red (239, 68, 68)
-        const factor = (t - 0.5) * 2; // 0 to 1 for second half
+
+        const factor = (t - 0.5) * 2;
         const r = Math.round(255 + (239 - 255) * factor);
         const g = Math.round(255 + (68 - 255) * factor);
         const b = Math.round(255 + (68 - 255) * factor);
@@ -34,37 +32,24 @@ const getParamColor = (value: number, min: number, max: number): string => {
 
 interface ChatInputProps {
     paneId: string;
-    // Input state
-    input: string;
-    setInput: (val: string) => void;
+
     inputHeight: number;
     setInputHeight: (val: number) => void;
-    isInputMinimized: boolean;
-    setIsInputMinimized: (val: boolean) => void;
-    isInputExpanded: boolean;
-    setIsInputExpanded: (val: boolean) => void;
     isResizingInput: boolean;
     setIsResizingInput: (val: boolean) => void;
-    // Streaming
+
     isStreaming: boolean;
-    handleInputSubmit: (e: any, options?: { voiceInput?: boolean; genParams?: { temperature: number; top_p: number; top_k: number; max_tokens: number } }) => void;
+    handleInputSubmit: (e: any, options?: { voiceInput?: boolean; disableThinking?: boolean; genParams?: { temperature: number; top_p: number; top_k: number; max_tokens: number }; inputText?: string; uploadedFiles?: any[]; mcpServerPath?: string; selectedMcpTools?: string[]; contextFiles?: any[]; paneId?: string }) => void;
     handleInterruptStream: () => void;
-    // Files
-    uploadedFiles: any[];
-    setUploadedFiles: (fn: any) => void;
-    contextFiles: any[];
-    setContextFiles: (fn: any) => void;
-    contextFilesCollapsed: boolean;
-    setContextFilesCollapsed: (val: boolean) => void;
     currentPath: string;
-    // Pane context auto-include
+
     autoIncludeContext: boolean;
     setAutoIncludeContext: (val: boolean) => void;
     contextPaneOverrides: Record<string, boolean>;
     setContextPaneOverrides: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
     contentDataRef: React.MutableRefObject<any>;
     paneVersion?: number;
-    // Execution mode
+
     executionMode: string;
     setExecutionMode: (val: string) => void;
     selectedJinx: any;
@@ -74,7 +59,7 @@ interface ChatInputProps {
     jinxsToDisplay: any[];
     showJinxDropdown: boolean;
     setShowJinxDropdown: (val: boolean) => void;
-    // Models
+
     availableModels: any[];
     modelsLoading: boolean;
     modelsError: any;
@@ -89,53 +74,39 @@ interface ChatInputProps {
     modelsToDisplay: any[];
     ollamaToolModels: Set<string>;
     setError: (val: string) => void;
-    // NPCs
+
     availableNPCs: any[];
     npcsLoading: boolean;
     npcsError: any;
     currentNPC: string;
     setCurrentNPC: (val: string) => void;
-    // Multi-select for broadcast
+
     selectedModels: string[];
     setSelectedModels: React.Dispatch<React.SetStateAction<string[]>>;
     selectedNPCs: string[];
     setSelectedNPCs: React.Dispatch<React.SetStateAction<string[]>>;
-    // Broadcast mode toggle
+
     broadcastMode: boolean;
     setBroadcastMode: (val: boolean) => void;
-    // MCP
+
     availableMcpServers: any[];
-    mcpServerPath: string;
-    setMcpServerPath: (val: string) => void;
-    selectedMcpTools: string[];
-    setSelectedMcpTools: (fn: any) => void;
-    availableMcpTools: any[];
-    setAvailableMcpTools: (val: any[]) => void;
-    mcpToolsLoading: boolean;
-    setMcpToolsLoading: (val: boolean) => void;
-    mcpToolsError: any;
-    setMcpToolsError: (val: any) => void;
-    showMcpServersDropdown: boolean;
-    setShowMcpServersDropdown: (fn: any) => void;
-    // Conversation
+
     activeConversationId: string | null;
-    // Pane activation
+
     onFocus?: () => void;
-    // Open file in pane
+
     onOpenFile?: (path: string) => void;
-    // Multi-model broadcast
-    onBroadcast?: (models: string[], npcs: string[]) => void;
+
+    onBroadcast?: (models: string[], npcs: string[], inputText?: string, files?: any[]) => void;
 }
 
 const ChatInput: React.FC<ChatInputProps> = (props) => {
     const {
         paneId,
-        input, setInput, inputHeight, setInputHeight,
-        isInputMinimized, setIsInputMinimized, isInputExpanded, setIsInputExpanded,
+        inputHeight, setInputHeight,
         isResizingInput, setIsResizingInput,
         isStreaming, handleInputSubmit, handleInterruptStream,
-        uploadedFiles, setUploadedFiles, contextFiles, setContextFiles,
-        contextFilesCollapsed, setContextFilesCollapsed, currentPath,
+        currentPath,
         autoIncludeContext, setAutoIncludeContext,
         contextPaneOverrides, setContextPaneOverrides, contentDataRef, paneVersion,
         executionMode, setExecutionMode, selectedJinx, setSelectedJinx,
@@ -147,10 +118,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         availableNPCs, npcsLoading, npcsError, currentNPC, setCurrentNPC,
         selectedModels, setSelectedModels, selectedNPCs, setSelectedNPCs,
         broadcastMode, setBroadcastMode,
-        availableMcpServers, mcpServerPath, setMcpServerPath,
-        selectedMcpTools, setSelectedMcpTools, availableMcpTools, setAvailableMcpTools,
-        mcpToolsLoading, setMcpToolsLoading, mcpToolsError, setMcpToolsError,
-        showMcpServersDropdown, setShowMcpServersDropdown,
+        availableMcpServers,
         activeConversationId, onFocus, onOpenFile, onBroadcast
     } = props;
 
@@ -163,12 +131,72 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const mcpDropdownRef = useRef<HTMLDivElement>(null);
 
-    // Multi-select dropdowns for broadcasting to multiple models/NPCs
-    // selectedModels and selectedNPCs now come from props (persisted at Enpistu level)
+    const [localInput, setLocalInput] = useState('');
+    const [isInputMinimized, setIsInputMinimized] = useState(false);
+    const [isInputExpanded, setIsInputExpanded] = useState(false);
+    const [uploadedFiles, setUploadedFiles] = useState<any[]>([]);
+    const [contextFiles, setContextFiles] = useState<any[]>([]);
+    const [contextFilesCollapsed, setContextFilesCollapsed] = useState(true);
+    const [mcpServerPath, setMcpServerPath] = useState('');
+    const [selectedMcpTools, setSelectedMcpTools] = useState<string[]>([]);
+    const [availableMcpTools, setAvailableMcpTools] = useState<any[]>([]);
+    const [mcpToolsLoading, setMcpToolsLoading] = useState(false);
+    const [mcpToolsError, setMcpToolsError] = useState<any>(null);
+    const [showMcpServersDropdown, setShowMcpServersDropdown] = useState(false);
+    const [localMcpServers, setLocalMcpServers] = useState<any[]>([]);
+
+    const loadToolsForServer = async (serverPath: string) => {
+        setMcpToolsLoading(true);
+        setMcpToolsError(null);
+        try {
+            const res = await (window as any).api.listMcpTools({ serverPath, currentPath });
+            if (res.error) {
+                setMcpToolsError(res.error);
+                setAvailableMcpTools([]);
+                setSelectedMcpTools([]);
+            } else {
+                const tools = res.tools || [];
+                setAvailableMcpTools(tools);
+                setSelectedMcpTools(tools.map((t: any) => t.function?.name).filter(Boolean));
+            }
+        } catch (err: any) {
+            setMcpToolsError(err.message);
+            setAvailableMcpTools([]);
+        } finally {
+            setMcpToolsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (availableMcpServers.length > 0) {
+            setLocalMcpServers(availableMcpServers);
+        }
+    }, [availableMcpServers]);
+
+    useEffect(() => {
+        if (executionMode !== 'tool_agent' || !currentPath) return;
+        (async () => {
+            try {
+                const res = await (window as any).api.getMcpServers(currentPath);
+                if (res?.servers?.length) {
+                    setLocalMcpServers(res.servers);
+
+                    if (!mcpServerPath) {
+                        const firstPath = res.servers[0].serverPath;
+                        setMcpServerPath(firstPath);
+                        loadToolsForServer(firstPath);
+                    }
+                }
+            } catch (err) {
+                console.error('[MCP] Failed to auto-load servers:', err);
+            }
+        })();
+    }, [executionMode, currentPath]);
+
     const [showModelsDropdown, setShowModelsDropdown] = useState(false);
     const [showNpcsDropdown, setShowNpcsDropdown] = useState(false);
     const modelsDropdownRef = useRef<HTMLDivElement>(null);
-    // Search filters for dropdowns
+
     const [modelSearch, setModelSearch] = useState('');
     const [npcSearch, setNpcSearch] = useState('');
     const [jinxSearch, setJinxSearch] = useState('');
@@ -176,7 +204,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     const npcSearchRef = useRef<HTMLInputElement>(null);
     const jinxSearchRef = useRef<HTMLInputElement>(null);
 
-    // KG/Memory search toggles
     const [disableThinking, setDisableThinking] = useState(() => {
         try { return localStorage.getItem('incognide-disable-thinking') === 'true'; } catch { return false; }
     });
@@ -191,7 +218,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         try { return localStorage.getItem('incognide-use-memory-search') === 'true'; } catch { return false; }
     });
 
-    // Persist KG/Memory toggles
     useEffect(() => {
         try { localStorage.setItem('incognide-use-kg-search', String(useKgSearch)); } catch {}
     }, [useKgSearch]);
@@ -199,7 +225,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         try { localStorage.setItem('incognide-use-memory-search', String(useMemorySearch)); } catch {}
     }, [useMemorySearch]);
 
-    // Generation parameters
     const [genParams, setGenParams] = useState({
         temperature: 0.7,
         top_p: 0.9,
@@ -219,25 +244,22 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     const [newPresetName, setNewPresetName] = useState('');
     const npcsDropdownRef = useRef<HTMLDivElement>(null);
 
-    // Jinx auto-detection when typing /jinxname
     const [detectedJinxes, setDetectedJinxes] = useState<any[]>([]);
     const [showJinxSuggestion, setShowJinxSuggestion] = useState(false);
     const firstJinxInputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
-    // Detect /jinxname pattern in input and suggest loading it
     useEffect(() => {
         const isCurrentlyJinxMode = executionMode !== 'chat' && executionMode !== 'tool_agent' && selectedJinx;
-        if (!input || isCurrentlyJinxMode) {
+        if (!localInput || isCurrentlyJinxMode) {
             setDetectedJinxes([]);
             setShowJinxSuggestion(false);
             return;
         }
 
-        // Check if input starts with /something
-        const match = input.match(/^\/(\S+)/);
+        const match = localInput.match(/^\/(\S+)/);
         if (match) {
             const jinxName = match[1].toLowerCase();
-            // Find ALL matching jinxs
+
             const matches = jinxsToDisplay.filter((j: any) =>
                 j.name.toLowerCase() === jinxName ||
                 j.name.toLowerCase().startsWith(jinxName)
@@ -253,13 +275,12 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
             setDetectedJinxes([]);
             setShowJinxSuggestion(false);
         }
-    }, [input, jinxsToDisplay, executionMode, selectedJinx]);
+    }, [localInput, jinxsToDisplay, executionMode, selectedJinx]);
 
-    // Focus first jinx input after loading a jinx
     useEffect(() => {
         const isCurrentlyJinxMode = executionMode !== 'chat' && executionMode !== 'tool_agent' && selectedJinx;
         if (isCurrentlyJinxMode) {
-            // Wait for DOM to render the inputs, then focus
+
             const timer = setTimeout(() => {
                 if (firstJinxInputRef.current) {
                     firstJinxInputRef.current.focus();
@@ -269,9 +290,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         }
     }, [executionMode, selectedJinx]);
 
-    // Note: selectedModels/selectedNPCs sync is now handled at Enpistu level
-
-    // Close MCP dropdown on ESC or click outside
     useEffect(() => {
         if (!showMcpServersDropdown) return;
 
@@ -295,7 +313,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         };
     }, [showMcpServersDropdown, setShowMcpServersDropdown]);
 
-    // Close model/NPC dropdowns on ESC or click outside
     useEffect(() => {
         if (!showModelsDropdown && !showNpcsDropdown && !showParamsDropdown && !showJinxConfigDropdown) return;
 
@@ -335,7 +352,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     const jinxInputsForSelected = isJinxMode ? (jinxInputValues[selectedJinx.name] || {}) : {};
     const hasJinxContent = isJinxMode && Object.values(jinxInputsForSelected).some((val: any) => val !== null && String(val).trim());
 
-    // Filtered lists for searchable dropdowns
     const filteredModels = useMemo(() => {
         if (!modelSearch.trim()) return modelsToDisplay;
         const q = modelSearch.toLowerCase();
@@ -360,7 +376,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         );
     }, [jinxsToDisplay, jinxSearch]);
 
-    // Auto-focus search inputs when dropdowns open
     useEffect(() => {
         if (showModelsDropdown) {
             setModelSearch('');
@@ -382,7 +397,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         }
     }, [showJinxDropdown]);
 
-    // Parse jinx inputs and separate into config (has defaults) vs required (no defaults)
     const { jinxConfigInputs, jinxRequiredInputs } = useMemo(() => {
         if (!isJinxMode || !selectedJinx?.inputs) return { jinxConfigInputs: [], jinxRequiredInputs: [] };
 
@@ -399,7 +413,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
             } else {
                 name = Object.keys(rawDef)[0] || `input_${idx}`;
                 const rawVal = rawDef[name];
-                // Convert to string safely - handles numbers, objects, etc.
+
                 defaultVal = rawVal != null ? String(rawVal) : '';
             }
 
@@ -414,7 +428,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         return { jinxConfigInputs: config, jinxRequiredInputs: required };
     }, [isJinxMode, selectedJinx]);
 
-    // Helper to get placeholder hints for jinx inputs
     const getInputPlaceholder = (name: string): string => {
         const n = name.toLowerCase();
         if (n.includes('path') || n.includes('file') || n.includes('dir')) return `e.g. ~/documents/file.txt`;
@@ -439,36 +452,33 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         return `Enter ${name}`;
     };
 
-    // Calculate minimum height for jinx inputs - use 2 cols max, scrollable for many inputs
     const jinxMinHeight = useMemo(() => {
-        if (!isJinxMode) return 140; // Chat mode base
-        if (jinxRequiredInputs.length === 0) return 140; // No required inputs
+        if (!isJinxMode) return 140;
+        if (jinxRequiredInputs.length === 0) return 140;
         const hasTextArea = jinxRequiredInputs.some((inp: any) =>
             ['code', 'prompt', 'query', 'content', 'text', 'command', 'description'].includes(inp.name.toLowerCase())
         );
         const inputCount = jinxRequiredInputs.length;
-        // Max 2 columns for readability
+
         const cols = inputCount <= 3 ? 1 : 2;
         const rows = Math.ceil(inputCount / cols);
-        // 90px per input row (label + input + gap), 120px for textarea
+
         const inputsHeight = (rows * 90) + (hasTextArea ? 120 : 0);
-        // 100px base for selector rows + padding
+
         return Math.min(100 + inputsHeight, 550);
     }, [isJinxMode, jinxRequiredInputs]);
 
-    // Auto-adjust height when jinx mode changes or inputs change
     useEffect(() => {
         if (jinxMinHeight > inputHeight) {
             setInputHeight(jinxMinHeight);
         }
     }, [jinxMinHeight]);
 
-    const inputStr = typeof input === 'string' ? input : '';
+    const inputStr = typeof localInput === 'string' ? localInput : '';
     const hasContextFiles = contextFiles.length > 0;
     const hasInputContent = inputStr.trim() || uploadedFiles.length > 0 || hasJinxContent || hasContextFiles;
     const canSend = !isStreaming && hasInputContent && (activeConversationId || isJinxMode);
 
-    // Auto-clear recording error after 3 seconds
     useEffect(() => {
         if (recordingError) {
             const timer = setTimeout(() => setRecordingError(null), 3000);
@@ -476,7 +486,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         }
     }, [recordingError]);
 
-    // Start voice recording
     const startRecording = async () => {
         try {
             setRecordingError(null);
@@ -492,20 +501,19 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
             };
 
             mediaRecorder.onstop = async () => {
-                // Stop all tracks
+
                 stream.getTracks().forEach(track => track.stop());
 
                 if (audioChunksRef.current.length === 0) return;
 
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
 
-                // Convert to base64
                 const reader = new FileReader();
                 reader.onloadend = async () => {
                     const base64Audio = (reader.result as string).split(',')[1];
 
                     try {
-                        // Send to STT API
+
                         const response = await fetch(`${BACKEND_URL}/api/audio/stt`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -520,10 +528,10 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
 
                         const result = await response.json();
                         if (result.text) {
-                            // Append transcribed text to input
-                            const newText = input ? `${input} ${result.text}` : result.text;
-                            setInput(newText);
-                            // Mark that voice input was used
+
+                            const newText = localInput ? `${localInput} ${result.text}` : result.text;
+                            setLocalInput(newText);
+
                             setUsedVoiceInput(true);
                         }
                     } catch (err: any) {
@@ -533,14 +541,13 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                 reader.readAsDataURL(audioBlob);
             };
 
-            mediaRecorder.start(100); // Collect data every 100ms
+            mediaRecorder.start(100);
             setIsRecording(true);
         } catch (err: any) {
             setRecordingError(err.message || 'Microphone access denied');
         }
     };
 
-    // Stop voice recording
     const stopRecording = () => {
         if (mediaRecorderRef.current && isRecording) {
             mediaRecorderRef.current.stop();
@@ -548,7 +555,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         }
     };
 
-    // Toggle recording
     const toggleRecording = () => {
         if (isRecording) {
             stopRecording();
@@ -557,7 +563,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         }
     };
 
-    // Resizing handler for input height within pane
     useEffect(() => {
         if (!isResizingInput) return;
 
@@ -588,7 +593,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         e.stopPropagation();
         setIsHovering(false);
 
-        // Check for sidebar file drag
         const sidebarData = e.dataTransfer.getData('application/x-sidebar-file') || e.dataTransfer.getData('application/json');
         if (sidebarData) {
             try {
@@ -611,7 +615,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
             } catch (err) {}
         }
 
-        // Regular file drops - include path like paperclip does
         const files = Array.from(e.dataTransfer.files);
         const existingNames = new Set(uploadedFiles.map((f: any) => f.name));
         const newFiles = files.filter(f => !existingNames.has(f.name));
@@ -630,12 +633,10 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         }
     };
 
-    // Handle paste - images and large text become file attachments
     const handlePaste = async (e: React.ClipboardEvent) => {
         const clipboardData = e.clipboardData;
         if (!clipboardData) return;
 
-        // Check for images in clipboard
         const items = Array.from(clipboardData.items);
         const imageItem = items.find(item => item.type.startsWith('image/'));
 
@@ -647,10 +648,8 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                 const ext = imageItem.type.split('/')[1] || 'png';
                 const fileName = `pasted-image-${timestamp}.${ext}`;
 
-                // Create object URL for preview
                 const preview = URL.createObjectURL(blob);
 
-                // Save to temp file via API and get path
                 const reader = new FileReader();
                 reader.onloadend = async () => {
                     const base64 = (reader.result as string).split(',')[1];
@@ -671,7 +670,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                         }]);
                     } catch (err) {
                         console.error('Failed to save pasted image:', err);
-                        // Still add with blob URL even if temp save fails
+
                         setUploadedFiles((prev: any[]) => [...prev, {
                             id: Math.random().toString(36).substr(2, 9),
                             name: fileName,
@@ -715,7 +714,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                 }]);
             } catch (err) {
                 console.error('Failed to save pasted text:', err);
-                setInput(input + text);
+                setLocalInput(localInput + text);
             }
             return;
         }
@@ -746,8 +745,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         }
     };
 
-    // Context pane chips - inline display of open panes with toggle
-    // Recompute whenever paneVersion changes (triggered by layout changes)
     const openPanes = useMemo(() => {
         if (!contentDataRef?.current) return [];
         const panes: Array<{ id: string; type: string; label: string }> = [];
@@ -917,17 +914,19 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                     </div>
                     <div className="flex-1 p-2 flex">
                         <textarea
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
+                            value={localInput}
+                            onChange={(e) => setLocalInput(e.target.value)}
                             onKeyDown={(e) => {
                                 if (!isStreaming && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                                     e.preventDefault();
-                                    // Auto-broadcast if multiple models/NPCs selected
+
                                     const shouldBroadcast = broadcastMode && onBroadcast && selectedModels.length > 0 && selectedNPCs.length > 0 && (selectedModels.length > 1 || selectedNPCs.length > 1);
                                     if (shouldBroadcast) {
-                                        onBroadcast(selectedModels, selectedNPCs);
+                                        onBroadcast(selectedModels, selectedNPCs, localInput, uploadedFiles); setLocalInput(''); setUploadedFiles([]);
                                     } else {
-                                        handleInputSubmit(e, { voiceInput: usedVoiceInput, useKgSearch, useMemorySearch, disableThinking, genParams });
+                                        handleInputSubmit(e, { voiceInput: usedVoiceInput, useKgSearch, useMemorySearch, disableThinking, genParams, inputText: localInput, uploadedFiles, mcpServerPath, selectedMcpTools, contextFiles, paneId });
+                                        setLocalInput('');
+                                        setUploadedFiles([]);
                                         setUsedVoiceInput(false);
                                     }
                                     setIsInputExpanded(false);
@@ -949,9 +948,11 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                             <button onClick={(e) => {
                                 const shouldBroadcast = broadcastMode && onBroadcast && selectedModels.length > 0 && selectedNPCs.length > 0 && (selectedModels.length > 1 || selectedNPCs.length > 1);
                                 if (shouldBroadcast) {
-                                    onBroadcast(selectedModels, selectedNPCs);
+                                    onBroadcast(selectedModels, selectedNPCs, localInput, uploadedFiles); setLocalInput(''); setUploadedFiles([]);
                                 } else {
-                                    handleInputSubmit(e, { voiceInput: usedVoiceInput, useKgSearch, useMemorySearch, disableThinking, genParams });
+                                    handleInputSubmit(e, { voiceInput: usedVoiceInput, useKgSearch, useMemorySearch, disableThinking, genParams, inputText: localInput, uploadedFiles, mcpServerPath, selectedMcpTools, contextFiles, paneId });
+                                    setLocalInput('');
+                                    setUploadedFiles([]);
                                     setUsedVoiceInput(false);
                                 }
                                 setIsInputExpanded(false);
@@ -972,7 +973,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
             style={{ height: `${inputHeight}px`, minHeight: isJinxMode ? `${jinxMinHeight}px` : '200px', maxHeight: '600px' }}
             onFocus={onFocus}
         >
-            {/* Resize handle */}
             <div
                 className="absolute top-0 left-0 right-0 h-1 cursor-row-resize hover:bg-blue-500 transition-colors z-10"
                 onMouseDown={(e) => { e.preventDefault(); setIsResizingInput(true); }}
@@ -992,7 +992,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                     </div>
                 )}
 
-                {/* Input area - moved above selectors */}
                 <div className="flex-1 overflow-visible flex flex-col">
                     <div className="relative">
                         <ContextFilesPanel
@@ -1009,7 +1008,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                         <div className="flex-grow relative h-full">
                             {isJinxMode ? (
                                 <div className="flex flex-col h-full">
-                                    {/* Required inputs only (no defaults) - config inputs are in the settings dropdown */}
                                     <div className="flex-1 p-2 overflow-y-auto">
                                         {jinxRequiredInputs.length > 0 ? (
                                             <div className={`grid gap-4 ${
@@ -1066,32 +1064,34 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                             ) : (
                                 <div className="relative h-full">
                                     <textarea
-                                        value={input}
-                                        onChange={(e) => setInput(e.target.value)}
+                                        value={localInput}
+                                        onChange={(e) => setLocalInput(e.target.value)}
                                         onKeyDown={(e) => {
-                                            // Handle Enter to load suggested jinx
+
                                             if (showJinxSuggestion && detectedJinxes.length > 0 && e.key === 'Enter' && !e.shiftKey) {
                                                 e.preventDefault();
                                                 const jinx = detectedJinxes[0];
                                                 setExecutionMode(jinx.name);
                                                 setSelectedJinx(jinx);
-                                                setInput('');
+                                                setLocalInput('');
                                                 setShowJinxSuggestion(false);
                                                 setDetectedJinxes([]);
                                                 return;
                                             }
                                             if (!isStreaming && e.key === 'Enter' && !e.shiftKey) {
                                                 e.preventDefault();
-                                                // Auto-broadcast if multiple models/NPCs selected
+
                                                 const shouldBroadcast = broadcastMode && onBroadcast && selectedModels.length > 0 && selectedNPCs.length > 0 && (selectedModels.length > 1 || selectedNPCs.length > 1);
                                                 if (shouldBroadcast) {
-                                                    onBroadcast(selectedModels, selectedNPCs);
+                                                    onBroadcast(selectedModels, selectedNPCs, localInput, uploadedFiles); setLocalInput(''); setUploadedFiles([]);
                                                 } else {
-                                                    handleInputSubmit(e, { voiceInput: usedVoiceInput, useKgSearch, useMemorySearch, disableThinking, genParams });
+                                                    handleInputSubmit(e, { voiceInput: usedVoiceInput, useKgSearch, useMemorySearch, disableThinking, genParams, inputText: localInput, uploadedFiles, mcpServerPath, selectedMcpTools, contextFiles, paneId });
+                                                    setLocalInput('');
+                                                    setUploadedFiles([]);
                                                     setUsedVoiceInput(false);
                                                 }
                                             }
-                                            // Escape to dismiss suggestion
+
                                             if (e.key === 'Escape' && showJinxSuggestion) {
                                                 setShowJinxSuggestion(false);
                                                 setDetectedJinxes([]);
@@ -1101,7 +1101,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                         placeholder="Type a message... (use /jinx to run a jinx)"
                                         className="w-full h-full theme-input text-sm rounded-lg pl-3 pr-16 py-2 focus:outline-none border-0 resize-none"
                                     />
-                                    {/* Jinx suggestion popup */}
                                     {showJinxSuggestion && detectedJinxes.length > 0 && (
                                         <div className="absolute bottom-full left-0 right-0 mb-1 bg-gradient-to-r from-purple-900/95 to-pink-900/95 backdrop-blur-xl border border-purple-500/30 rounded-lg shadow-2xl overflow-hidden z-[100] max-h-48 overflow-y-auto">
                                             {detectedJinxes.map((jinx: any) => (
@@ -1110,7 +1109,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                                     onClick={() => {
                                                         setExecutionMode(jinx.name);
                                                         setSelectedJinx(jinx);
-                                                        setInput('');
+                                                        setLocalInput('');
                                                         setShowJinxSuggestion(false);
                                                         setDetectedJinxes([]);
                                                     }}
@@ -1146,7 +1145,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                 </button>
                             </div>
                             <div className="absolute bottom-1 right-1 flex items-center gap-1">
-                                {/* Auto-include toggle */}
                                 {openPanes.length > 0 && (
                                     <button
                                         onClick={() => setAutoIncludeContext?.(!autoIncludeContext)}
@@ -1156,7 +1154,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                         {autoIncludeContext ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
                                     </button>
                                 )}
-                                {/* Pane context chips */}
                                 {openPanes.map(pane => {
                                     const included = isPaneIncluded(pane.id);
                                     return (
@@ -1175,7 +1172,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                         </button>
                                     );
                                 })}
-                                {/* Mic */}
                                 <button
                                     onClick={toggleRecording}
                                     disabled={isStreaming}
@@ -1184,7 +1180,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                 >
                                     {isRecording ? <MicOff size={16} /> : <Mic size={16} />}
                                 </button>
-                                {/* Attach */}
                                 <button onClick={handleAttachFileClick} disabled={isStreaming} className={`p-1 theme-text-muted hover:theme-text-primary rounded theme-hover opacity-50 group-hover:opacity-100 ${isStreaming ? 'opacity-30' : ''}`} title="Attach file">
                                     <Paperclip size={16} />
                                 </button>
@@ -1203,12 +1198,14 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                         ) : (
                             <button
                                 onClick={(e) => {
-                                    // Auto-broadcast if multiple models/NPCs selected
+
                                     const shouldBroadcast = broadcastMode && onBroadcast && selectedModels.length > 0 && selectedNPCs.length > 0 && (selectedModels.length > 1 || selectedNPCs.length > 1);
                                     if (shouldBroadcast && canSend) {
-                                        onBroadcast(selectedModels, selectedNPCs);
+                                        onBroadcast(selectedModels, selectedNPCs, localInput, uploadedFiles); setLocalInput(''); setUploadedFiles([]);
                                     } else {
-                                        handleInputSubmit(e, { voiceInput: usedVoiceInput, useKgSearch, useMemorySearch, disableThinking, genParams });
+                                        handleInputSubmit(e, { voiceInput: usedVoiceInput, useKgSearch, useMemorySearch, disableThinking, genParams, inputText: localInput, uploadedFiles, mcpServerPath, selectedMcpTools, contextFiles, paneId });
+                                        setLocalInput('');
+                                        setUploadedFiles([]);
                                         setUsedVoiceInput(false);
                                     }
                                 }}
@@ -1235,24 +1232,48 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                     </div>
                 </div>
 
-                {/* MCP tools for tool_agent mode */}
                 {executionMode === 'tool_agent' && (
                     <div className="px-2 pt-1 border-b theme-border overflow-visible">
-                        <div className="relative w-1/2" ref={mcpDropdownRef}>
+                        <div className="relative w-1/2 flex items-center gap-1" ref={mcpDropdownRef}>
                             <button
                                 type="button"
-                                className="theme-input text-xs w-full text-left px-2 py-1 flex items-center justify-between rounded border"
+                                className="theme-input text-xs flex-1 text-left px-2 py-1 flex items-center justify-between gap-1 rounded border"
                                 onMouseDown={(e) => e.stopPropagation()}
                                 onClick={() => setShowMcpServersDropdown((p: boolean) => !p)}
                             >
                                 <span className="truncate">
-                                    {`MCP Servers (${availableMcpServers.length})`}
+                                    {mcpServerPath
+                                        ? getFileName(mcpServerPath)?.replace(/\.py$/, '') || mcpServerPath
+                                        : `Select MCP Server (${localMcpServers.length})`}
                                 </span>
-                                <ChevronDown size={12} />
+                                {selectedMcpTools.length > 0 && (
+                                    <span className="text-[10px] bg-blue-500/30 text-blue-300 px-1.5 rounded-full">
+                                        {selectedMcpTools.length}
+                                    </span>
+                                )}
+                                <ChevronDown size={12} className="flex-shrink-0" />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={async (e) => {
+                                    e.stopPropagation();
+                                    try {
+                                        const res = await (window as any).api.getMcpServers(currentPath);
+                                        if (res?.servers) {
+                                            setLocalMcpServers(res.servers);
+                                        }
+                                    } catch (err) {
+                                        console.error('[MCP] Refresh failed:', err);
+                                    }
+                                }}
+                                className="p-1 theme-hover rounded flex-shrink-0"
+                                title="Refresh servers"
+                            >
+                                <RefreshCw size={12} />
                             </button>
                             {showMcpServersDropdown && (
                                 <div
-                                    className="absolute z-[100] w-full top-full mt-1 bg-black/90 border theme-border rounded shadow-lg max-h-56 overflow-y-auto"
+                                    className="absolute z-[100] w-full bottom-full mb-1 bg-black/90 border theme-border rounded shadow-lg max-h-64 overflow-y-auto"
                                     onKeyDown={(e) => {
                                         if (e.key === 'Escape') {
                                             setShowMcpServersDropdown(false);
@@ -1260,14 +1281,13 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                     }}
                                     tabIndex={-1}
                                 >
-                                    {availableMcpServers.length === 0 && (
-                                        <div className="px-2 py-1 text-xs theme-text-muted">No MCP servers in ctx</div>
+                                    {localMcpServers.length === 0 && (
+                                        <div className="px-2 py-1 text-xs theme-text-muted">No MCP servers found</div>
                                     )}
-                                    {/* Group by origin */}
-                                    {[...new Set(availableMcpServers.map((s: any) => s.origin))].map(origin => {
-                                        const serversForOrigin = availableMcpServers.filter((s: any) => s.origin === origin);
+                                    {[...new Set(localMcpServers.map((s: any) => s.origin))].map(origin => {
+                                        const serversForOrigin = localMcpServers.filter((s: any) => s.origin === origin);
                                         if (serversForOrigin.length === 0) return null;
-                                        const originLabel = origin?.startsWith('auto:') ? `🔄 ${origin.slice(5)}` : origin === 'global' ? '🌐 Global' : origin === 'project' ? '📁 Project' : origin;
+                                        const originLabel = origin?.startsWith('auto:') ? origin.slice(5) : origin === 'global' ? 'Global' : origin === 'project' ? 'Project' : origin;
                                         return (
                                             <div key={origin}>
                                                 <div className="px-2 py-1 text-[10px] uppercase theme-text-muted border-b theme-border">
@@ -1276,35 +1296,35 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                                 {serversForOrigin.map((srv: any) => (
                                                     <div key={srv.serverPath} className="border-b theme-border last:border-b-0">
                                                         <div
-                                                            className={`px-2 py-1 text-xs theme-hover cursor-pointer flex items-center justify-between ${srv.serverPath === mcpServerPath ? 'bg-blue-500/20' : ''}`}
+                                                            className={`px-2 py-1 text-xs theme-hover cursor-pointer flex items-center gap-2 ${srv.serverPath === mcpServerPath ? 'bg-blue-500/20' : ''}`}
                                                             onClick={() => {
                                                                 setMcpServerPath(srv.serverPath);
-                                                                setMcpToolsLoading(true);
-                                                                (window as any).api.listMcpTools({ serverPath: srv.serverPath, currentPath }).then((res: any) => {
-                                                                    setMcpToolsLoading(false);
-                                                                    if (res.error) {
-                                                                        setMcpToolsError(res.error);
-                                                                        setAvailableMcpTools([]);
-                                                                        setSelectedMcpTools([]);
-                                                                    } else {
-                                                                        setMcpToolsError(null);
-                                                                        const tools = res.tools || [];
-                                                                        setAvailableMcpTools(tools);
-                                                                        // Default: ALL tools selected
-                                                                        const allNames = tools.map((t: any) => t.function?.name).filter(Boolean);
-                                                                        setSelectedMcpTools(allNames);
-                                                                    }
-                                                                });
+                                                                loadToolsForServer(srv.serverPath);
                                                             }}
                                                         >
+                                                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                                                                srv.status === 'running' ? 'bg-green-400' :
+                                                                srv.status === 'error' ? 'bg-red-400' : 'bg-yellow-400'
+                                                            }`} />
                                                             <span className="truncate">{getFileName(srv.serverPath)?.replace(/\.py$/, '') || srv.serverPath}</span>
                                                         </div>
                                                         {srv.serverPath === mcpServerPath && (
                                                             <div className="px-3 py-1 space-y-1">
-                                                                {mcpToolsLoading && <div className="text-xs theme-text-muted">Loading MCP tools…</div>}
+                                                                {mcpToolsLoading && <div className="text-xs theme-text-muted">Loading MCP tools...</div>}
                                                                 {mcpToolsError && <div className="text-xs text-red-400">Error: {mcpToolsError}</div>}
                                                                 {!mcpToolsLoading && !mcpToolsError && (
                                                                     <div className="flex flex-col gap-1">
+                                                                        {availableMcpTools.length > 0 && (
+                                                                            <div className="flex gap-2 px-1 py-0.5 border-b theme-border">
+                                                                                <button onClick={() => setSelectedMcpTools(availableMcpTools.map((t: any) => t.function?.name).filter(Boolean))}
+                                                                                    className="text-[10px] text-blue-400 hover:underline">All</button>
+                                                                                <button onClick={() => setSelectedMcpTools([])}
+                                                                                    className="text-[10px] text-blue-400 hover:underline">None</button>
+                                                                                <span className="text-[10px] theme-text-muted ml-auto">
+                                                                                    {selectedMcpTools.length}/{availableMcpTools.length}
+                                                                                </span>
+                                                                            </div>
+                                                                        )}
                                                                         {availableMcpTools.length === 0 && (
                                                                             <div className="text-xs theme-text-muted">No tools available.</div>
                                                                         )}
@@ -1353,10 +1373,8 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                     </div>
                 )}
 
-                {/* Compact selector strip - now below input */}
                 <div className={`px-1.5 py-1 relative z-50 ${isStreaming ? 'opacity-50 pointer-events-none' : ''}`}>
                 <div className="flex items-center gap-1">
-                    {/* Mode tile */}
                     <div className="relative flex-1">
                         <button
                             className={`w-full h-9 flex items-center justify-center gap-2 rounded-lg text-xs font-medium transition-all duration-200 ${
@@ -1435,7 +1453,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                         )}
                     </div>
 
-                    {/* Model tile - multi-select */}
                     <div className="relative flex-1" ref={modelsDropdownRef}>
                         <button
                             className={`w-full h-9 flex items-center justify-center gap-2 rounded-lg text-xs font-medium transition-all duration-200 ${
@@ -1490,10 +1507,10 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                             <div key={`${m.value}-${idx}`} className={`px-2 py-1.5 text-xs rounded cursor-pointer flex items-center gap-2 transition-all ${checked ? 'bg-blue-500/20 text-blue-200' : 'hover:bg-white/5'}`}
                                                 onClick={() => {
                                                     if (broadcastMode) {
-                                                        // Multi-select: toggle
+
                                                         setSelectedModels(prev => prev.includes(m.value) ? (prev.length === 1 ? prev : prev.filter(x => x !== m.value)) : [...prev, m.value]);
                                                     } else {
-                                                        // Single-select: replace
+
                                                         setSelectedModels([m.value]);
                                                     }
                                                     if (!checked) { setCurrentModel(m.value); if (m.provider) setCurrentProvider(m.provider); }
@@ -1515,7 +1532,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                         )}
                     </div>
 
-                    {/* NPC tile - multi-select */}
                     <div className="relative flex-1" ref={npcsDropdownRef}>
                         <button
                             className={`w-full h-9 flex items-center justify-center gap-2 rounded-lg text-xs font-medium transition-all duration-200 ${
@@ -1570,10 +1586,10 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                             <div key={`${npc.source}-${npc.value}`} className={`px-2 py-1.5 text-xs rounded cursor-pointer flex items-center gap-2 transition-all ${checked ? 'bg-green-500/20 text-green-200' : 'hover:bg-white/5'}`}
                                                 onClick={() => {
                                                     if (broadcastMode) {
-                                                        // Multi-select: toggle
+
                                                         setSelectedNPCs(prev => prev.includes(npcKey) ? (prev.length === 1 ? prev : prev.filter(x => x !== npcKey)) : [...prev, npcKey]);
                                                     } else {
-                                                        // Single-select: replace
+
                                                         setSelectedNPCs([npcKey]);
                                                     }
                                                     if (!checked) setCurrentNPC(npc.value);
@@ -1594,7 +1610,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                         )}
                     </div>
 
-                    {/* Params tile OR Jinx Config tile when in jinx mode */}
                     {isJinxMode ? (
                         <div className="relative flex-1" ref={jinxConfigDropdownRef}>
                             <button
@@ -1664,7 +1679,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                         <span className="text-[9px] theme-text-muted">T:{genParams.temperature} P:{genParams.top_p} K:{genParams.top_k}</span>
                                     </div>
                                     <div className="p-3 space-y-3">
-                                        {/* Temperature */}
                                         <div>
                                             <div className="flex items-center justify-between mb-1">
                                                 <label className="text-[10px] theme-text-muted">Temperature</label>
@@ -1681,7 +1695,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                             <div className="flex justify-between text-[9px] theme-text-muted mt-0.5"><span>Precise</span><span>Creative</span></div>
                                         </div>
 
-                                        {/* Top P */}
                                         <div>
                                             <div className="flex items-center justify-between mb-1">
                                                 <label className="text-[10px] theme-text-muted">Top P (nucleus)</label>
@@ -1692,7 +1705,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                                 className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-blue-500" min="0" max="1" step="0.05" />
                                         </div>
 
-                                        {/* Top K */}
                                         <div>
                                             <div className="flex items-center justify-between mb-1">
                                                 <label className="text-[10px] theme-text-muted">Top K</label>
@@ -1703,7 +1715,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                                 className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-green-500" min="1" max="100" step="1" />
                                         </div>
 
-                                        {/* Max Tokens */}
                                         <div>
                                             <div className="flex items-center justify-between mb-1">
                                                 <label className="text-[10px] theme-text-muted">Max Tokens</label>
@@ -1714,7 +1725,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                                 className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-purple-500" min="256" max="32000" step="256" />
                                         </div>
 
-                                        {/* Built-in Presets */}
                                         <div className="pt-2 border-t theme-border">
                                             <div className="text-[10px] theme-text-muted uppercase mb-2">Presets</div>
                                             <div className="flex flex-wrap gap-1 mb-2">
@@ -1724,7 +1734,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                                 <button onClick={() => setGenParams({ temperature: 1.5, top_p: 1.0, top_k: 80, max_tokens: 8192 })} className="px-2 py-1 text-[10px] bg-pink-500/20 text-pink-300 rounded hover:bg-pink-500/30">Wild</button>
                                             </div>
 
-                                            {/* Custom Presets */}
                                             {customPresets.length > 0 && (
                                                 <div className="flex flex-wrap gap-1 mb-2">
                                                     {customPresets.map((preset, i) => (
@@ -1742,7 +1751,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                                 </div>
                                             )}
 
-                                            {/* Save new preset */}
                                             <div className="flex gap-1 mt-2">
                                                 <input
                                                     type="text"
@@ -1781,9 +1789,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                         </div>
                     )}
 
-                    {/* Thinking / KG / Memory toggles */}
                     <div className="flex items-center gap-0.5 pl-1 border-l theme-border ml-1">
-                        {/* Thinking toggle - only for models that support it */}
                         {(() => {
                             const m = currentModel?.toLowerCase() || '';
                             const supportsThinking = m.includes('claude') || m.includes('deepseek-r1') || m.includes('o1') || m.includes('o3') || m.includes('qwq') || m.includes('gemini');

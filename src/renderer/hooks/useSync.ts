@@ -8,22 +8,19 @@ import {
     EncryptedEntityType
 } from '../utils/encryption';
 
-// API base URL for incognide backend
 const API_BASE_URL = 'https://api.incognide.com';
 
-// Local storage keys
 const LAST_SYNC_KEY = 'incognide-last-sync';
 const PENDING_CHANGES_KEY = 'incognide-pending-changes';
 const SYNC_FREQUENCY_KEY = 'incognide-sync-frequency';
 
-// Sync frequency options (in milliseconds)
 export const SYNC_FREQUENCIES = {
     '1m': 60000,
     '10m': 600000,
     '30m': 1800000,
     '1h': 3600000,
     '24h': 86400000,
-    'manual': 0,  // No auto-sync
+    'manual': 0,
 } as const;
 
 export type SyncFrequency = keyof typeof SYNC_FREQUENCIES;
@@ -93,7 +90,6 @@ export const useSync = (): UseSyncReturn => {
     const syncInProgressRef = useRef(false);
     const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-    // Track online/offline status
     useEffect(() => {
         const handleOnline = () => setIsOnline(true);
         const handleOffline = () => setIsOnline(false);
@@ -107,7 +103,6 @@ export const useSync = (): UseSyncReturn => {
         };
     }, []);
 
-    // Persist pending changes to localStorage
     useEffect(() => {
         localStorage.setItem(PENDING_CHANGES_KEY, JSON.stringify(pendingChanges));
         if (pendingChanges.length > 0) {
@@ -115,7 +110,6 @@ export const useSync = (): UseSyncReturn => {
         }
     }, [pendingChanges]);
 
-    // Add a pending change
     const addPendingChange = useCallback((change: Omit<PendingChange, 'id' | 'timestamp'>) => {
         const newChange: PendingChange = {
             ...change,
@@ -125,20 +119,17 @@ export const useSync = (): UseSyncReturn => {
         setPendingChanges(prev => [...prev, newChange]);
     }, []);
 
-    // Clear all pending changes
     const clearPendingChanges = useCallback(() => {
         setPendingChanges([]);
         localStorage.removeItem(PENDING_CHANGES_KEY);
     }, []);
 
-    // Set sync frequency (persisted to localStorage)
     const setSyncFrequency = useCallback((frequency: SyncFrequency) => {
         setSyncFrequencyState(frequency);
         localStorage.setItem(SYNC_FREQUENCY_KEY, frequency);
         console.log(`[SYNC] Sync frequency changed to: ${frequency}`);
     }, []);
 
-    // Encrypt pending changes for push
     const encryptChanges = useCallback(async (changes: PendingChange[]): Promise<EncryptedChange[]> => {
         const key = getEncryptionKey();
         if (!key) {
@@ -166,7 +157,6 @@ export const useSync = (): UseSyncReturn => {
         return encryptedChanges;
     }, []);
 
-    // Push encrypted changes to server
     const pushChanges = useCallback(async (): Promise<boolean> => {
         if (pendingChanges.length === 0) return true;
 
@@ -185,7 +175,6 @@ export const useSync = (): UseSyncReturn => {
         try {
             const deviceId = await (window as any).api?.getDeviceId?.();
 
-            // Encrypt all pending changes
             const encryptedChanges = await encryptChanges(pendingChanges);
 
             const response = await fetch(`${API_BASE_URL}/api/sync/e2e/push`, {
@@ -207,7 +196,6 @@ export const useSync = (): UseSyncReturn => {
             const result = await response.json();
             console.log(`[SYNC] Pushed ${result.processed} encrypted changes`);
 
-            // Clear pending changes on success
             clearPendingChanges();
             return true;
         } catch (e: any) {
@@ -216,7 +204,6 @@ export const useSync = (): UseSyncReturn => {
         }
     }, [pendingChanges, clearPendingChanges, encryptChanges, getToken]);
 
-    // Pull and decrypt changes from server
     const pullChanges = useCallback(async (): Promise<boolean> => {
         const token = await getToken();
         if (!token) {
@@ -258,11 +245,10 @@ export const useSync = (): UseSyncReturn => {
 
             console.log(`[SYNC] Pulling ${changes.length} encrypted changes`);
 
-            // Decrypt and apply changes
             for (const change of changes) {
                 try {
                     if (change.action === 'delete') {
-                        // Handle delete - decrypt to get entity info for local delete
+
                         const decryptedData = await decryptObject<Record<string, unknown>>(
                             change.encrypted_data,
                             change.iv,
@@ -270,7 +256,7 @@ export const useSync = (): UseSyncReturn => {
                         );
                         await applyDeleteChange(change.entity_type, change.entity_id, decryptedData);
                     } else {
-                        // Decrypt and apply upsert
+
                         const decryptedData = await decryptObject<Record<string, unknown>>(
                             change.encrypted_data,
                             change.iv,
@@ -280,7 +266,7 @@ export const useSync = (): UseSyncReturn => {
                     }
                 } catch (decryptErr) {
                     console.error(`[SYNC] Failed to decrypt change ${change.entity_id}:`, decryptErr);
-                    // Continue with other changes
+
                 }
             }
 
@@ -291,13 +277,12 @@ export const useSync = (): UseSyncReturn => {
         }
     }, [lastSyncTime, getToken]);
 
-    // Apply an upserted (created/updated) change to local storage
     const applyUpsertChange = async (
         entityType: string,
         entityId: string,
         decryptedData: Record<string, unknown>
     ) => {
-        // Merge entity_id into the decrypted data
+
         const fullData = { ...decryptedData, id: entityId };
 
         switch (entityType) {
@@ -315,7 +300,7 @@ export const useSync = (): UseSyncReturn => {
                     if (!existingMessages[conversationId]) {
                         existingMessages[conversationId] = [];
                     }
-                    // Find and update or add message
+
                     const idx = existingMessages[conversationId].findIndex((m: Record<string, unknown>) => m.id === entityId);
                     if (idx >= 0) {
                         existingMessages[conversationId][idx] = fullData;
@@ -353,7 +338,6 @@ export const useSync = (): UseSyncReturn => {
         }
     };
 
-    // Apply a delete change to local storage
     const applyDeleteChange = async (
         entityType: string,
         entityId: string,
@@ -368,7 +352,7 @@ export const useSync = (): UseSyncReturn => {
                 break;
             }
             case 'message': {
-                // Messages need special handling - iterate through all conversations
+
                 const existingMessages = JSON.parse(localStorage.getItem('synced-messages') || '{}');
                 for (const convId of Object.keys(existingMessages)) {
                     existingMessages[convId] = existingMessages[convId].filter(
@@ -405,7 +389,6 @@ export const useSync = (): UseSyncReturn => {
         }
     };
 
-    // Main sync function
     const triggerSync = useCallback(async () => {
         if (syncInProgressRef.current) {
             console.log('[SYNC] Sync already in progress');
@@ -435,13 +418,11 @@ export const useSync = (): UseSyncReturn => {
         setSyncError(null);
 
         try {
-            // Push local changes first (encrypted)
+
             await pushChanges();
 
-            // Then pull remote changes (decrypt on receive)
             await pullChanges();
 
-            // Update last sync time
             const now = new Date();
             setLastSyncTime(now);
             localStorage.setItem(LAST_SYNC_KEY, now.toISOString());
@@ -457,27 +438,20 @@ export const useSync = (): UseSyncReturn => {
         }
     }, [isOnline, isAuthenticated, isEncryptionReady, pushChanges, pullChanges]);
 
-    // Auto-sync based on configured frequency when online, authenticated, and have encryption key
     useEffect(() => {
         const intervalMs = SYNC_FREQUENCIES[syncFrequency];
 
-        // Clear existing interval
         if (syncIntervalRef.current) {
             clearInterval(syncIntervalRef.current);
             syncIntervalRef.current = null;
         }
 
-        // Don't set up auto-sync if:
-        // - Not authenticated or offline or encryption not ready
-        // - Manual sync mode (frequency = 0)
         if (!isAuthenticated || !isOnline || !isEncryptionReady || intervalMs === 0) {
             return;
         }
 
-        // Initial sync
         triggerSync();
 
-        // Set up interval with configured frequency
         syncIntervalRef.current = setInterval(() => {
             triggerSync();
         }, intervalMs);
@@ -492,7 +466,6 @@ export const useSync = (): UseSyncReturn => {
         };
     }, [isOnline, isAuthenticated, isEncryptionReady, syncFrequency, triggerSync]);
 
-    // Trigger sync when coming back online
     useEffect(() => {
         if (isOnline && isAuthenticated && isEncryptionReady && pendingChanges.length > 0) {
             triggerSync();

@@ -19,26 +19,19 @@ try {
 
 const cron = require('node-cron');
 
-
-const cronJobs = new Map();  // id => {id, schedule, command, npc, jinx, task}
-const daemons = new Map();   // id => {id, name, command, npc, jinx, process}
-
-
+const cronJobs = new Map();
+const daemons = new Map();
 
 const sqlite3 = require('sqlite3');
 const dbPath = path.join(os.homedir(), 'npcsh_history.db');
 const fetch = require('node-fetch');
 const crypto = require('crypto');
 
-// Port configuration - use different ports for dev vs prod to allow running both simultaneously
-// Dev mode: 7337 (frontend), 5437 (backend)
-// Prod mode: 6337 (frontend), 5337 (backend)
 const IS_DEV_MODE = process.env.NODE_ENV === 'development' || process.argv.includes('--dev');
 const FRONTEND_PORT = IS_DEV_MODE ? 7337 : 6337;
 const BACKEND_PORT = IS_DEV_MODE ? 5437 : 5337;
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
 
-// Read INCOGNIDE_HOME from .npcshrc early (before app paths are set)
 let NPCSH_BASE = path.join(os.homedir(), '.npcsh');
 try {
   const _rcPath = path.join(os.homedir(), '.npcshrc');
@@ -54,14 +47,12 @@ try {
   }
 } catch {}
 
-// Use separate user data paths for dev vs prod to allow running both simultaneously
 if (IS_DEV_MODE) {
   app.setPath('userData', path.join(NPCSH_BASE, 'incognide-dev'));
 } else {
   app.setPath('userData', path.join(NPCSH_BASE, 'incognide'));
 }
 
-// Centralized logging setup - all logs go to <NPCSH_BASE>/incognide/logs/
 const logsDir = path.join(NPCSH_BASE, 'incognide', 'logs');
 try {
   fs.mkdirSync(logsDir, { recursive: true });
@@ -69,12 +60,10 @@ try {
   console.error('Failed to create logs directory:', err);
 }
 
-// Create timestamped log files for this session
 const sessionTimestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 const electronLogPath = path.join(logsDir, 'electron.log');
 const backendLogPath = path.join(logsDir, 'backend.log');
 
-// Rotate logs if they get too large (>5MB)
 const rotateLogIfNeeded = (logPath) => {
   try {
     if (fs.existsSync(logPath)) {
@@ -96,11 +85,11 @@ const electronLogStream = fs.createWriteStream(electronLogPath, { flags: 'a' });
 const backendLogStream = fs.createWriteStream(backendLogPath, { flags: 'a' });
 
 let mainWindow = null;
-let pdfView = null; 
-// Update your ensureTablesExist function:
+let pdfView = null;
+
 const ensureTablesExist = async () => {
   console.log('[DB] Ensuring all tables exist...');
-  
+
   const createHighlightsTable = `
       CREATE TABLE IF NOT EXISTS pdf_highlights (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -112,7 +101,7 @@ const ensureTablesExist = async () => {
           timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
       );
   `;
-  
+
   const createBookmarksTable = `
       CREATE TABLE IF NOT EXISTS bookmarks (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -144,7 +133,7 @@ const ensureTablesExist = async () => {
           UNIQUE(domain, folder_path)
       );
   `;
-  
+
   const createBrowserHistoryTable = `
       CREATE TABLE IF NOT EXISTS browser_history (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -225,7 +214,6 @@ const ensureTablesExist = async () => {
       await dbQuery(createJinxExecutionLogTable);
       await dbQuery(createIndexes);
 
-      // Helper to add column only if it doesn't exist
       const addColumnIfMissing = async (table, column, definition) => {
           const cols = await dbQuery(`PRAGMA table_info(${table})`);
           if (!cols.find(c => c.name === column)) {
@@ -247,7 +235,7 @@ const ensureTablesExist = async () => {
 app.setAppUserModelId('com.incognide.chat');
 app.name = 'incognide';
 app.setName('incognide');
-// Unified logging functions
+
 const formatLogMessage = (prefix, messages) => {
     const timestamp = new Date().toISOString();
     return `[${timestamp}] ${prefix} ${messages.join(' ')}`;
@@ -264,14 +252,13 @@ const logBackend = (...messages) => {
     console.log(msg);
     backendLogStream.write(`${msg}\n`);
 };
-// Use Option+Space on macOS, Command/Control+Space elsewhere
+
 const DEFAULT_SHORTCUT = process.platform === 'darwin' ? 'Alt+Space' : 'CommandOrControl+Space';
 const ptySessions = new Map();
 const ptyKillTimers = new Map();
 
-// In main.js
 const dbQuery = (query, params = []) => {
- 
+
   const isReadQuery = query.trim().toUpperCase().startsWith('SELECT') || query.trim().toUpperCase().startsWith('PRAGMA');
   console.log(`[DB] EXECUTING: ${query.substring(0, 100).replace(/\s+/g, ' ')}...`, params);
 
@@ -284,7 +271,7 @@ const dbQuery = (query, params = []) => {
       });
 
       if (isReadQuery) {
-         
+
           db.all(query, params, (err, rows) => {
               db.close();
               if (err) {
@@ -294,7 +281,7 @@ const dbQuery = (query, params = []) => {
               resolve(rows);
           });
       } else {
-         
+
           db.run(query, params, function(err) {
               db.close();
               if (err) {
@@ -307,8 +294,6 @@ const dbQuery = (query, params = []) => {
   });
 };
 
-
-// Parse .npcshrc file for environment variables
 function parseNpcshrc() {
   const rcPath = path.join(os.homedir(), '.npcshrc');
   const result = {};
@@ -317,11 +302,11 @@ function parseNpcshrc() {
       const content = fs.readFileSync(rcPath, 'utf-8');
       const lines = content.split('\n');
       for (const line of lines) {
-        // Match export VAR=value or VAR=value
+
         const match = line.match(/^(?:export\s+)?(\w+)=(.*)$/);
         if (match) {
           let value = match[2].trim();
-          // Remove quotes if present
+
           if ((value.startsWith('"') && value.endsWith('"')) ||
               (value.startsWith("'") && value.endsWith("'"))) {
             value = value.slice(1, -1);
@@ -336,17 +321,14 @@ function parseNpcshrc() {
   return result;
 }
 
-// Read model/provider from environment or ctx file
 function getDefaultModelConfig() {
   const yaml = require('js-yaml');
   let model = 'llama3.2';
   let provider = 'ollama';
   let npc = 'sibiji';
 
-  // Read .npcshrc for env vars (since Electron doesn't source shell configs)
   const npcshrcEnv = parseNpcshrc();
 
-  // Priority 1: Environment variables (from process.env or .npcshrc)
   const chatModel = process.env.NPCSH_CHAT_MODEL || npcshrcEnv.NPCSH_CHAT_MODEL;
   const chatProvider = process.env.NPCSH_CHAT_PROVIDER || npcshrcEnv.NPCSH_CHAT_PROVIDER;
   const defaultNpc = process.env.NPCSH_DEFAULT_NPC || npcshrcEnv.NPCSH_DEFAULT_NPC;
@@ -361,7 +343,6 @@ function getDefaultModelConfig() {
     npc = defaultNpc;
   }
 
-  // Priority 2: Read from global npcsh.ctx if env vars not set
   if (!chatModel) {
     try {
       const globalCtx = path.join(os.homedir(), '.npcsh', 'npc_team', 'npcsh.ctx');
@@ -390,18 +371,16 @@ const DEFAULT_CONFIG = {
   npc: defaultModelConfig.npc,
 };
 
-// Device ID and configuration for multi-device sync
 const DEVICE_CONFIG_PATH = path.join(os.homedir(), '.npcsh', 'incognide', 'device.json');
 
 function getOrCreateDeviceId() {
   try {
-    // Ensure directory exists
+
     const dir = path.dirname(DEVICE_CONFIG_PATH);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
 
-    // Try to read existing device config
     if (fs.existsSync(DEVICE_CONFIG_PATH)) {
       const config = JSON.parse(fs.readFileSync(DEVICE_CONFIG_PATH, 'utf-8'));
       if (config.deviceId) {
@@ -410,7 +389,6 @@ function getOrCreateDeviceId() {
       }
     }
 
-    // Generate new device ID and config
     const newConfig = {
       deviceId: crypto.randomUUID(),
       deviceName: os.hostname() || 'My Device',
@@ -446,7 +424,6 @@ function updateDeviceConfig(updates) {
   }
 }
 
-// Initialize device config on startup
 const deviceConfig = getOrCreateDeviceId();
 log(`[DEVICE] Initialized with device ID: ${deviceConfig.deviceId}, name: ${deviceConfig.deviceName}`);
 
@@ -455,7 +432,6 @@ function generateId() {
 }
 
 const activeStreams = new Map();
-
 
 let isCapturingScreenshot = false;
 
@@ -522,12 +498,11 @@ function spawnBackendProcess(bPath, bArgs, label, env) {
   return proc;
 }
 
-
 async function waitForServer(maxAttempts = 120, delay = 1000) {
   log('Waiting for backend server to start...');
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    // If the backend process has already exited, stop waiting
+
     if (backendProcess && backendProcess.exitCode !== null) {
       log(`Backend process already exited with code ${backendProcess.exitCode}, stopping wait`);
       return false;
@@ -543,7 +518,6 @@ async function waitForServer(maxAttempts = 120, delay = 1000) {
       log(`Waiting for server... attempt ${attempt}/${maxAttempts}`);
     }
 
-
     await new Promise(resolve => setTimeout(resolve, delay));
   }
 
@@ -553,16 +527,15 @@ async function waitForServer(maxAttempts = 120, delay = 1000) {
 function scheduleCronJob(job) {
   if (job.task) job.task.stop();
   job.task = cron.schedule(job.schedule, () => {
-    // Here you can execute the command, maybe via npc/jinx logic or shell exec
+
     console.log(`Executing cron job ${job.id}: ${job.command}`);
-    // Example: spawn a shell command
+
     const child = spawn(job.command, { shell: true });
     child.stdout.on('data', data => console.log(`Cron job output: ${data}`));
     child.stderr.on('data', data => console.error(`Cron job error: ${data}`));
   }, { scheduled: true });
   return job.task;
 }
-
 
 async function ensureBaseDir() {
   try {
@@ -576,12 +549,8 @@ async function ensureBaseDir() {
   }
 }
 
-
-
-// Track sessions we've set up download handlers for
 const sessionsWithDownloadHandler = new WeakSet();
 
-// Terminal shortcut relay handlers (Ctrl+N and Ctrl+T from terminal)
 ipcMain.on('trigger-new-text-file', (event) => {
   event.sender.send('menu-new-text-file');
 });
@@ -590,7 +559,6 @@ ipcMain.on('trigger-browser-new-tab', (event) => {
   event.sender.send('browser-new-tab');
 });
 
-// Track workspace path per window (webContents ID -> path)
 const workspacePathByWindow = new Map();
 
 ipcMain.on('set-workspace-path', (event, workspacePath) => {
@@ -601,34 +569,31 @@ ipcMain.on('set-workspace-path', (event, workspacePath) => {
   }
 });
 
-// Helper to get workspace path for a webContents (checks parent windows too)
 function getWorkspacePathForWebContents(webContents) {
-  // Try direct ID first
+
   if (workspacePathByWindow.has(webContents.id)) {
     return workspacePathByWindow.get(webContents.id);
   }
-  // Try to find parent window
+
   const allWindows = BrowserWindow.getAllWindows();
   for (const win of allWindows) {
     if (win.webContents && workspacePathByWindow.has(win.webContents.id)) {
-      // Check if this webContents belongs to this window
+
       if (win.webContents.id === webContents.hostWebContents?.id ||
           win.webContents === webContents.hostWebContents) {
         return workspacePathByWindow.get(win.webContents.id);
       }
     }
   }
-  // Fallback: return most recently set path or downloads folder
+
   const paths = Array.from(workspacePathByWindow.values());
   return paths.length > 0 ? paths[paths.length - 1] : app.getPath('downloads');
 }
 
-// Handle web contents created (for webviews and all web contents)
-// This sets up download and context menu handling for all web contents including webviews
 app.on('web-contents-created', (event, contents) => {
-  // Handle context menu for webviews
+
   contents.on('context-menu', async (e, params) => {
-    // For main renderer: show native edit menu on editable fields (inputs, textareas)
+
     if (contents.getType() !== 'webview' && params.isEditable) {
       const menu = Menu.buildFromTemplate([
         { role: 'cut' },
@@ -641,11 +606,9 @@ app.on('web-contents-created', (event, contents) => {
       return;
     }
 
-    // Only handle for webviews (type 'webview')
     if (contents.getType() === 'webview') {
       e.preventDefault();
 
-      // Get selected text
       const selectedText = params.selectionText || '';
       const linkURL = params.linkURL || '';
       const srcURL = params.srcURL || '';
@@ -655,12 +618,11 @@ app.on('web-contents-created', (event, contents) => {
 
       log(`[CONTEXT MENU] Webview context menu: selectedText="${selectedText.substring(0, 50)}...", linkURL="${linkURL}", mediaType="${mediaType}"`);
 
-      // Send context menu event to renderer — route to the correct parent window
       const ctxParentWin = BrowserWindow.fromWebContents(contents.hostWebContents || contents)
         || BrowserWindow.getFocusedWindow()
         || BrowserWindow.getAllWindows()[0];
       if (ctxParentWin && !ctxParentWin.isDestroyed()) {
-        // Get exact cursor position from screen
+
         const cursorPos = screen.getCursorScreenPoint();
         const windowBounds = ctxParentWin.getBounds();
 
@@ -682,19 +644,18 @@ app.on('web-contents-created', (event, contents) => {
     }
   });
 
-  // Handle permissions for webviews (camera, microphone, screen sharing, etc.)
   if (contents.getType() === 'webview') {
     contents.session.setPermissionRequestHandler((webContents, permission, callback, details) => {
       const allowedPermissions = [
-        'media',           // camera, microphone
-        'mediaKeySystem',  // encrypted media
+        'media',
+        'mediaKeySystem',
         'geolocation',
         'notifications',
         'clipboard-read',
         'clipboard-write',
-        'display-capture', // screen sharing
-        'video-capture',   // video capture
-        'audio-capture',   // audio capture
+        'display-capture',
+        'video-capture',
+        'audio-capture',
       ];
       if (allowedPermissions.includes(permission)) {
         log(`[Permissions] Granting ${permission} for webview`);
@@ -721,18 +682,14 @@ app.on('web-contents-created', (event, contents) => {
     });
   }
 
-  // Handle new window requests from webviews (ctrl+click, middle-click, target="_blank")
-  // Send to renderer to open in new tab instead of new window
   if (contents.getType() === 'webview') {
     contents.setWindowOpenHandler(({ url, disposition }) => {
-      // For about:blank popups (e.g. Google Drive opening Colab), allow the popup
-      // so the opener script can navigate it. We'll capture the real URL in did-create-window.
+
       if (!url || url === 'about:blank') {
         log(`[WebView] Allowing about:blank popup (disposition: ${disposition}) - will capture navigation`);
         return { action: 'allow' };
       }
 
-      // SSO/OAuth auth flows — allow as popup so tokens stay in the webview's session
       const AUTH_PATTERNS = [
         'accounts.google.com', 'accounts.youtube.com', 'myaccount.google.com',
         'login.microsoftonline.com', 'login.live.com', 'login.windows.net',
@@ -751,7 +708,6 @@ app.on('web-contents-created', (event, contents) => {
         return { action: 'allow' };
       }
 
-      // For real URLs, deny the popup and open in our tab system
       log(`[WebView] Intercepting window.open: ${url} (disposition: ${disposition})`);
       const parentWin = BrowserWindow.fromWebContents(contents.hostWebContents || contents)
         || BrowserWindow.getFocusedWindow()
@@ -759,13 +715,12 @@ app.on('web-contents-created', (event, contents) => {
       if (parentWin && !parentWin.isDestroyed()) {
         parentWin.webContents.send('browser-open-in-new-tab', {
           url,
-          disposition // 'background-tab', 'foreground-tab', 'new-window', etc.
+          disposition
         });
       }
       return { action: 'deny' };
     });
 
-    // Capture navigation from allowed about:blank popups
     contents.on('did-create-window', (newWindow) => {
       const checkAndRedirect = (realUrl) => {
         if (realUrl && realUrl !== 'about:blank') {
@@ -783,7 +738,6 @@ app.on('web-contents-created', (event, contents) => {
         }
       };
 
-      // Check if the popup already has a real URL
       try {
         const currentUrl = newWindow.webContents.getURL();
         if (currentUrl && currentUrl !== 'about:blank') {
@@ -792,19 +746,16 @@ app.on('web-contents-created', (event, contents) => {
         }
       } catch (e) {}
 
-      // Listen for the popup to navigate to a real URL
       newWindow.webContents.on('did-navigate', (event, url) => {
         checkAndRedirect(url);
       });
       newWindow.webContents.on('will-navigate', (event, url) => {
         if (url && url !== 'about:blank') {
-          // Don't call event.preventDefault() - that blocks popups like Google Drive→Colab
-          // Instead, let the navigation happen and capture it via did-navigate
+
           checkAndRedirect(url);
         }
       });
 
-      // Fallback: if popup doesn't navigate within 5s, close it
       setTimeout(() => {
         try {
           if (!newWindow.isDestroyed()) {
@@ -819,7 +770,6 @@ app.on('web-contents-created', (event, contents) => {
     });
   }
 
-  // Handle downloads from webviews - send to renderer's download manager
   if (contents.getType() === 'webview') {
     const session = contents.session;
     if (session && !sessionsWithDownloadHandler.has(session)) {
@@ -831,10 +781,8 @@ app.on('web-contents-created', (event, contents) => {
 
         log(`[DOWNLOAD] Intercepted download: ${filename} from ${url}`);
 
-        // Cancel immediately - renderer will handle via download manager
         item.cancel();
 
-        // Send to renderer's download manager — route to the correct parent window
         const dlParentWin = BrowserWindow.fromWebContents(contents.hostWebContents || contents)
           || BrowserWindow.getFocusedWindow()
           || BrowserWindow.getAllWindows()[0];
@@ -878,7 +826,6 @@ app.whenReady().then(async () => {
     log('Starting backend server...');
     log(`Data directory: ${dataPath}`);
 
-    // Ensure the data directory and npcsh directories exist before starting backend
     try {
       fs.mkdirSync(dataPath, { recursive: true });
       fs.mkdirSync(path.join(os.homedir(), '.npcsh', 'npc_team'), { recursive: true });
@@ -888,7 +835,6 @@ app.whenReady().then(async () => {
       log(`Warning: Could not create directories: ${dirErr.message}`);
     }
 
-    // Check if user has configured a custom Python path for the backend
     const customPythonPath = getBackendPythonPath();
 
     if (customPythonPath) {
@@ -931,7 +877,6 @@ app.whenReady().then(async () => {
 
     let serverReady = await waitForServer();
 
-    // If bundled backend failed, fall back to system Python
     if (!serverReady && backendProcess.exitCode !== null && backendProcess.exitCode !== 0) {
       log('Bundled backend failed to start — attempting fallback to system Python...');
       const pythonPaths = ['python3', 'python'];
@@ -952,7 +897,7 @@ app.whenReady().then(async () => {
 
     if (!serverReady) {
       log('Backend server failed to start - check backend.log for details');
-      // Try to initialize npcsh directly if backend failed
+
       try {
         log('Attempting direct npcsh initialization...');
         execSync(`python3 -c "from npcsh._state import initialize_base_npcs_if_needed; import os; initialize_base_npcs_if_needed(os.path.expanduser('~/.npcsh/npcsh_history.db'))"`, {
@@ -969,10 +914,8 @@ app.whenReady().then(async () => {
     console.error('Error spawning backend server:', err);
   }
 
- 
   await ensureBaseDir();
 
-  // Parse CLI arguments for workspace mode
   const cliArgs = {
     folder: null,
     bookmarks: []
@@ -981,13 +924,10 @@ app.whenReady().then(async () => {
   const folderArg = process.argv.find(arg => arg.startsWith('--folder='));
   const bookmarksArg = process.argv.find(arg => arg.startsWith('--bookmarks='));
 
-  // Check for URL arguments (from xdg-open or when set as default browser)
   const urlArg = process.argv.slice(2).find(arg =>
     arg.startsWith('http://') || arg.startsWith('https://') || arg.startsWith('file://')
   );
 
-  // Support bare path argument: incognide /path/to/folder
-  // Look for arguments that look like paths (start with / or ~ or .)
   const barePathArg = process.argv.slice(2).find(arg =>
     !arg.startsWith('--') &&
     !arg.startsWith('-') &&
@@ -1036,7 +976,7 @@ async function callBackendApi(url, options = {}) {
     return await response.json();
   } catch (err) {
     console.error(`API call failed to ${url}:`, err);
-   
+
     return { error: err.message, success: false };
   }
 }
@@ -1055,7 +995,7 @@ function ensureUserDataDirectory() {
 }
 
 function getBackendPythonPath() {
-  // Check .npcshrc for BACKEND_PYTHON_PATH setting
+
   const rcPath = path.join(os.homedir(), '.npcshrc');
   try {
     if (fs.existsSync(rcPath)) {
@@ -1063,7 +1003,7 @@ function getBackendPythonPath() {
       const match = rcContent.match(/BACKEND_PYTHON_PATH=["']?([^"'\n]+)["']?/);
       if (match && match[1] && match[1].trim()) {
         const pythonPath = match[1].trim().replace(/^~/, os.homedir());
-        // Verify the path exists
+
         if (fs.existsSync(pythonPath)) {
           log(`Found backend Python path: ${pythonPath}`);
           return pythonPath;
@@ -1078,35 +1018,31 @@ function getBackendPythonPath() {
   return null;
 }
 
-// Check if first-run setup is needed
 function needsFirstRunSetup() {
-  // Check if BACKEND_PYTHON_PATH is configured
+
   const customPythonPath = getBackendPythonPath();
   if (customPythonPath) {
-    return false; // Already configured
+    return false;
   }
 
-  // Check if bundled backend exists
   const executableName = process.platform === 'win32' ? 'incognide_serve.exe' : 'incognide_serve';
   const bundledPath = app.isPackaged
     ? path.join(process.resourcesPath, 'backend', executableName)
     : path.join(app.getAppPath(), 'dist', 'resources', 'backend', executableName);
 
   if (fs.existsSync(bundledPath)) {
-    return false; // Bundled backend exists
+    return false;
   }
 
-  // Check for setup complete marker
   const setupMarkerPath = path.join(os.homedir(), '.npcsh', 'incognide', '.setup_complete');
   if (fs.existsSync(setupMarkerPath)) {
-    return false; // Setup was completed before
+    return false;
   }
 
   log('First-run setup needed: no BACKEND_PYTHON_PATH and no bundled backend');
   return true;
 }
 
-// Save BACKEND_PYTHON_PATH to .npcshrc
 function saveBackendPythonPath(pythonPath) {
   const rcPath = path.join(os.homedir(), '.npcshrc');
   let rcContent = '';
@@ -1119,10 +1055,8 @@ function saveBackendPythonPath(pythonPath) {
     log('Error reading .npcshrc:', err);
   }
 
-  // Remove existing BACKEND_PYTHON_PATH if present
   rcContent = rcContent.replace(/^BACKEND_PYTHON_PATH=.*$/gm, '').trim();
 
-  // Add new BACKEND_PYTHON_PATH
   rcContent = `${rcContent}\nBACKEND_PYTHON_PATH="${pythonPath}"\n`.trim() + '\n';
 
   try {
@@ -1135,7 +1069,6 @@ function saveBackendPythonPath(pythonPath) {
   }
 }
 
-// Mark setup as complete
 function markSetupComplete() {
   const setupMarkerPath = path.join(os.homedir(), '.npcsh', 'incognide', '.setup_complete');
   try {
@@ -1148,7 +1081,6 @@ function markSetupComplete() {
   }
 }
 
-// ==================== USER PROFILE ====================
 const userProfilePath = path.join(os.homedir(), '.npcsh', 'incognide', 'user_profile.json');
 
 const defaultUserProfile = {
@@ -1184,7 +1116,6 @@ function saveUserProfile(profile) {
   }
 }
 
-
 function registerGlobalShortcut(win) {
   if (!win) {
     console.warn('No window provided to registerGlobalShortcut');
@@ -1205,14 +1136,13 @@ function registerGlobalShortcut(win) {
       }
     }
 
-   
     const macroSuccess = globalShortcut.register(shortcut, () => {
       if (win.isMinimized()) win.restore();
       win.focus();
       win.webContents.send('show-macro-input');
     });
     console.log('Macro shortcut registered:', macroSuccess);
-    
+
     const screenshotSuccess = globalShortcut.register('Ctrl+Alt+4', async () => {
       const now = Date.now();
       if (isCapturingScreenshot || (now - lastScreenshotTime) < SCREENSHOT_COOLDOWN) {
@@ -1229,7 +1159,6 @@ function registerGlobalShortcut(win) {
       const primaryDisplay = displays[0];
       const scaleFactor = primaryDisplay.scaleFactor;
 
-      // First capture the full screen
       try {
         const sources = await desktopCapturer.getSources({
           types: ['screen'],
@@ -1248,7 +1177,6 @@ function registerGlobalShortcut(win) {
         const fullScreenImage = sources[0].thumbnail;
         const fullScreenDataUrl = fullScreenImage.toDataURL();
 
-        // Create transparent selection overlay window
         const selectionWindow = new BrowserWindow({
           x: primaryDisplay.bounds.x,
           y: primaryDisplay.bounds.y,
@@ -1271,7 +1199,7 @@ function registerGlobalShortcut(win) {
 
         const handleScreenshot = async (event, bounds) => {
           try {
-            // Crop the already-captured full screen image
+
             const cropBounds = {
               x: Math.round(bounds.x * scaleFactor),
               y: Math.round(bounds.y * scaleFactor),
@@ -1282,7 +1210,6 @@ function registerGlobalShortcut(win) {
             const croppedImage = fullScreenImage.crop(cropBounds);
             const screenshotsDir = path.join(DEFAULT_CONFIG.baseDir, 'screenshots');
 
-            // Ensure screenshots directory exists
             if (!fs.existsSync(screenshotsDir)) {
               fs.mkdirSync(screenshotsDir, { recursive: true });
             }
@@ -1293,7 +1220,6 @@ function registerGlobalShortcut(win) {
             console.log('Screenshot saved to:', screenshotPath);
             win.webContents.send('screenshot-captured', screenshotPath);
 
-            // Bring window to foreground after screenshot capture
             if (win.isMinimized()) win.restore();
             win.show();
             win.focus();
@@ -1315,7 +1241,6 @@ function registerGlobalShortcut(win) {
           isCapturingScreenshot = false;
         });
 
-        // Load selection HTML - minimal transparent overlay, no background image flash
         const selectionHtml = `
           <!DOCTYPE html>
           <html>
@@ -1435,15 +1360,10 @@ function registerGlobalShortcut(win) {
       }
     });
 
-    // Ctrl+T handled via window input event instead of global shortcut
-    // to avoid interfering with other applications
-
   } catch (error) {
     console.error('Failed to register global shortcut:', error);
   }
 }
-
-
 
 const gotTheLock = app.requestSingleInstanceLock();
 
@@ -1452,22 +1372,18 @@ if (!gotTheLock) {
   app.quit();
 } else {
 
-  // Register incognide:// protocol handler so browser-interceptor.sh deep links work
   if (process.defaultApp) {
-    // Dev mode: register with path to electron + script
+
     app.setAsDefaultProtocolClient('incognide', process.execPath, [path.resolve(process.argv[1])]);
   } else {
     app.setAsDefaultProtocolClient('incognide');
   }
 
-  // Queue for URLs received before the main window is ready
   let pendingDeepLinkUrl = null;
 
-  // Track last active window so URLs route to the right place
   let lastActiveWindow = null;
   app.on('browser-window-focus', (_, window) => { lastActiveWindow = window; });
 
-  // Helper to open a URL in the app's browser pane
   const openUrlInBrowserPane = (targetUrl) => {
     const windows = BrowserWindow.getAllWindows();
     if (windows.length) {
@@ -1479,27 +1395,25 @@ if (!gotTheLock) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
     } else {
-      // Window not ready yet, queue it
+
       pendingDeepLinkUrl = targetUrl;
     }
   };
 
-  // Handle incognide:// deep links (macOS open-url event)
   app.on('open-url', (event, url) => {
     event.preventDefault();
     log(`[DEEP-LINK] Received open-url: ${url}`);
 
-    // Parse incognide://open-url?url=<encoded-url>
     if (url.startsWith('incognide://open-url')) {
       const prefix = 'incognide://open-url?url=';
       if (url.startsWith(prefix)) {
         let targetUrl = url.substring(prefix.length);
-        // Decode %26 back to & (browser-interceptor.sh encodes & for shell safety)
+
         targetUrl = decodeURIComponent(targetUrl);
         openUrlInBrowserPane(targetUrl);
       }
     } else if (url.startsWith('incognide://')) {
-      // Other incognide:// schemes - try to extract a URL
+
       const match = url.match(/url=(.+)/);
       if (match) {
         openUrlInBrowserPane(decodeURIComponent(match[1]));
@@ -1507,21 +1421,19 @@ if (!gotTheLock) {
     }
   });
 
-  // Watch browser_intercept.txt for URLs written by browser-interceptor.sh (fallback)
   const interceptFilePath = path.join(os.homedir(), '.npcsh', 'incognide', 'browser_intercept.txt');
   let interceptWatcher = null;
   const startInterceptFileWatcher = () => {
     try {
-      // Ensure the directory exists
+
       const interceptDir = path.dirname(interceptFilePath);
       fs.mkdirSync(interceptDir, { recursive: true });
 
-      // Track file size to only read new lines
       let lastSize = 0;
       try {
         lastSize = fs.statSync(interceptFilePath).size;
       } catch (e) {
-        // File doesn't exist yet, that's fine
+
       }
 
       interceptWatcher = fs.watch(interceptDir, (eventType, filename) => {
@@ -1529,7 +1441,7 @@ if (!gotTheLock) {
         try {
           const stat = fs.statSync(interceptFilePath);
           if (stat.size > lastSize) {
-            // Read only the new content
+
             const fd = fs.openSync(interceptFilePath, 'r');
             const buf = Buffer.alloc(stat.size - lastSize);
             fs.readSync(fd, buf, 0, buf.length, lastSize);
@@ -1538,7 +1450,7 @@ if (!gotTheLock) {
 
             const newContent = buf.toString('utf8').trim();
             if (newContent) {
-              // Each line is a URL
+
               const urls = newContent.split('\n').filter(u => u.trim());
               for (const url of urls) {
                 const trimmed = url.trim();
@@ -1559,7 +1471,6 @@ if (!gotTheLock) {
     }
   };
 
-  // Export pending URL getter for use after window creation
   const getPendingDeepLinkUrl = () => {
     const url = pendingDeepLinkUrl;
     pendingDeepLinkUrl = null;
@@ -1573,23 +1484,20 @@ if (!gotTheLock) {
     return filepath;
   };
 
-
   app.on('second-instance', (event, commandLine, workingDirectory) => {
     const windows = BrowserWindow.getAllWindows();
     if (windows.length) {
-      // Use focused window, then last active, then first window
+
       const mainWindow = BrowserWindow.getFocusedWindow() ||
         (lastActiveWindow && !lastActiveWindow.isDestroyed() ? lastActiveWindow : null) ||
         windows[0];
 
-      // Parse CLI args from second instance
       const folderArg = commandLine.find(arg => arg.startsWith('--folder='));
       const barePathArg = commandLine.slice(1).find(arg =>
         !arg.startsWith('-') && (arg.startsWith('/') || arg.startsWith('~') || arg.startsWith('.'))
       );
       const actionArg = commandLine.find(arg => arg.startsWith('--action='));
 
-      // Check for URL arguments (from xdg-open or similar)
       const urlArg = commandLine.slice(1).find(arg =>
         arg.startsWith('http://') || arg.startsWith('https://') || arg.startsWith('file://')
       );
@@ -1602,7 +1510,6 @@ if (!gotTheLock) {
         return;
       }
 
-      // Send workspace change
       let folder = null;
       if (folderArg) {
         folder = folderArg.split('=')[1].replace(/^"|"$/g, '');
@@ -1620,7 +1527,6 @@ if (!gotTheLock) {
         mainWindow.webContents.send('cli-open-workspace', { folder });
       }
 
-      // Send action (JSON encoded)
       if (actionArg) {
         try {
           const actionJson = actionArg.split('=').slice(1).join('=');
@@ -1658,7 +1564,6 @@ if (!gotTheLock) {
     }
     await window.api.get_attachment_response(attachmentData);
   };
- 
 
   protocol.registerSchemesAsPrivileged([{
     scheme: 'media',
@@ -1670,7 +1575,6 @@ if (!gotTheLock) {
       corsEnabled: true
     }
   }]);
-
 
   async function getConversationsFromDb(dirPath) {
     return new Promise((resolve, reject) => {
@@ -1706,50 +1610,40 @@ if (!gotTheLock) {
       createWindow();
     }
 
-   
     const { screen } = require('electron');
     const primaryDisplay = screen.getPrimaryDisplay();
     const { width, height } = primaryDisplay.workAreaSize;
 
-   
     mainWindow.setPosition(
       Math.round(width / 2 - 600),
-      Math.round(height / 2 - 400) 
+      Math.round(height / 2 - 400)
     );
 
     mainWindow.show();
     mainWindow.focus();
 
-   
     mainWindow.webContents.send('show-macro-input');
   }
 
-  
- 
-
-
 function createWindow(cliArgs = {}) {
-    const { folder, bookmarks, openUrl } = cliArgs;
+    const { folder, bookmarks, openUrl, blank } = cliArgs;
 
-    // Try multiple icon paths for dev vs production
     const possibleIconPaths = [
-        path.resolve(__dirname, '..', 'assets', 'icon.png'),  // dev mode
-        path.join(process.resourcesPath || '', 'assets', 'icon.png'),  // production (extraResources)
-        path.join(app.getAppPath(), 'assets', 'icon.png'),  // alternative production
+        path.resolve(__dirname, '..', 'assets', 'icon.png'),
+        path.join(process.resourcesPath || '', 'assets', 'icon.png'),
+        path.join(app.getAppPath(), 'assets', 'icon.png'),
     ];
     const iconPath = possibleIconPaths.find(p => fs.existsSync(p)) || possibleIconPaths[0];
     console.log(`[ICON DEBUG] Using icon path: ${iconPath}, exists: ${fs.existsSync(iconPath)}`);
 
-    // Create nativeImage for better Linux support
     let appIcon = null;
     if (fs.existsSync(iconPath)) {
         appIcon = nativeImage.createFromPath(iconPath);
         console.log(`[ICON DEBUG] Created nativeImage, isEmpty: ${appIcon.isEmpty()}`);
     }
-  
+
     console.log('Creating window');
 
-    // Set app name for Linux dock
     app.setName('Incognide');
 
     mainWindow = new BrowserWindow({
@@ -1761,13 +1655,13 @@ function createWindow(cliArgs = {}) {
         nodeIntegration: true,
         contextIsolation: true,
         webSecurity: false,
-        webviewTag: true, 
-        plugins: true, 
+        webviewTag: true,
+        plugins: true,
         enableRemoteModule: true,
         nodeIntegrationInSubFrames: true,
         allowRunningInsecureContent: true,
       contentSecurityPolicy: `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ${BACKEND_URL};`,
-        
+
         experimentalFeatures: true,
         preload: path.join(__dirname, 'preload.js')
       }
@@ -1775,11 +1669,11 @@ function createWindow(cliArgs = {}) {
     mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
       callback(true);
     });
-    
+
     mainWindow.webContents.session.protocol.registerFileProtocol('file', (request, callback) => {
       const pathname = decodeURI(request.url.replace('file:///', ''));
       callback(pathname);
-    });    
+    });
     setTimeout(() => {
       if (appIcon && !appIcon.isEmpty()) {
         mainWindow.setIcon(appIcon);
@@ -1789,13 +1683,12 @@ function createWindow(cliArgs = {}) {
         console.log(`Warning: Icon file not found at ${iconPath}`);
       }
     }, 100);
-  
+
     registerGlobalShortcut(mainWindow);
 
-    // Set up application menu
     const isMac = process.platform === 'darwin';
     const menuTemplate = [
-      // App menu (macOS only)
+
       ...(isMac ? [{
         label: app.name,
         submenu: [
@@ -1816,13 +1709,13 @@ function createWindow(cliArgs = {}) {
           { role: 'quit' }
         ]
       }] : []),
-      // File menu
+
       {
         label: 'File',
         submenu: [
           {
             label: 'New Chat',
-            // Note: No accelerator here - handled in renderer to allow terminal Ctrl+Shift+C for copy
+
             click: () => mainWindow.webContents.send('menu-new-chat')
           },
           {
@@ -1875,7 +1768,7 @@ function createWindow(cliArgs = {}) {
           ])
         ]
       },
-      // Edit menu
+
       {
         label: 'Edit',
         submenu: [
@@ -1901,7 +1794,7 @@ function createWindow(cliArgs = {}) {
           }
         ]
       },
-      // View menu
+
       {
         label: 'View',
         submenu: [
@@ -1946,7 +1839,7 @@ function createWindow(cliArgs = {}) {
           { role: 'togglefullscreen' }
         ]
       },
-      // Window menu
+
       {
         label: 'Window',
         submenu: [
@@ -1977,7 +1870,7 @@ function createWindow(cliArgs = {}) {
           }
         ]
       },
-      // Help menu
+
       {
         label: 'Help',
         submenu: [
@@ -2038,29 +1931,28 @@ function createWindow(cliArgs = {}) {
         },
       });
     });
-    
+
     const isDev = process.env.NODE_ENV === 'development' || process.argv.includes('--dev');
-    
+
     if (isDev) {
       mainWindow.loadURL(`http://localhost:${FRONTEND_PORT}`);
     } else {
       const htmlPath = path.join(app.getAppPath(), 'dist', 'index.html');
       mainWindow.loadFile(htmlPath);
     }
-  
+
     mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
       console.error('Failed to load:', errorCode, errorDescription);
     });
 
-    // Handle keyboard shortcuts at window level (not global) to avoid interfering with other apps
     mainWindow.webContents.on('before-input-event', (event, input) => {
       if (input.type === 'keyDown') {
-        // Ctrl+T - new browser tab (only when window is focused)
+
         if (input.control && !input.shift && !input.alt && input.key.toLowerCase() === 't') {
           event.preventDefault();
           mainWindow.webContents.send('browser-new-tab');
         }
-        // Ctrl+Shift+O - open folder picker
+
         if (input.control && input.shift && !input.alt && input.key.toLowerCase() === 'o') {
           event.preventDefault();
           mainWindow.webContents.send('open-folder-picker');
@@ -2068,27 +1960,26 @@ function createWindow(cliArgs = {}) {
       }
     });
 
-    // Store CLI args for retrieval by renderer (in case it misses the initial message)
     const cliWorkspaceArgs = { folder, bookmarks, openUrl };
 
-    // Send CLI arguments to renderer when ready (with delay to ensure React is mounted)
     mainWindow.webContents.on('did-finish-load', async () => {
+      if (blank) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        mainWindow.webContents.send('blank-window');
+      }
       if (folder || (bookmarks && bookmarks.length > 0) || openUrl) {
         log(`[CLI] Sending workspace args to renderer: folder=${folder}, bookmarks=${bookmarks?.length || 0}, openUrl=${openUrl}`);
 
-        // Small delay to ensure React components are mounted and listeners are registered
         await new Promise(resolve => setTimeout(resolve, 100));
 
-        // If folder is specified, set it as the current working directory for the workspace
         if (folder) {
           mainWindow.webContents.send('cli-open-workspace', { folder });
         }
 
-        // Add bookmarks to the workspace
         if (bookmarks && bookmarks.length > 0 && folder) {
           for (const url of bookmarks) {
             try {
-              // Use the existing bookmark handler
+
               await dbQuery(
                 'INSERT OR IGNORE INTO bookmarks (url, title, folder_path, is_global) VALUES (?, ?, ?, ?)',
                 [url, url, folder, 0]
@@ -2101,29 +1992,22 @@ function createWindow(cliArgs = {}) {
           mainWindow.webContents.send('cli-bookmarks-added', { bookmarks, folder });
         }
 
-        // If URL is specified (from xdg-open or similar), open it in a browser pane
         if (openUrl) {
           log(`[CLI] Opening URL in browser pane: ${openUrl}`);
           mainWindow.webContents.send('open-url-in-browser', { url: openUrl });
         }
       }
 
-      // Check for any deep link URLs that arrived before the window was ready
       const pendingUrl = getPendingDeepLinkUrl();
       if (pendingUrl) {
         log(`[DEEP-LINK] Opening pending deep link URL: ${pendingUrl}`);
         mainWindow.webContents.send('open-url-in-browser', { url: pendingUrl });
       }
 
-      // Start watching the intercept file for URLs from browser-interceptor.sh
       startInterceptFileWatcher();
     });
 }
 
-
-// ================================================================
-// Register all IPC handlers from sub-modules
-// ================================================================
 const { registerAll } = require('./ipc');
 registerAll({
   ipcMain,
@@ -2164,12 +2048,14 @@ registerAll({
   NPCSH_BASE,
 });
 
-// Handler that needs createWindow from main.js scope
 ipcMain.handle('open-new-window', async (event, initialPath) => {
-  createWindow(initialPath);
+  createWindow(initialPath ? { folder: initialPath } : { blank: true });
 });
 
-// Backend health check — renderer polls this
+ipcMain.handle('get-window-count', async () => {
+  return BrowserWindow.getAllWindows().length;
+});
+
 ipcMain.handle('backend:health', async () => {
   try {
     const controller = new AbortController();
@@ -2186,12 +2072,11 @@ ipcMain.handle('backend:health', async () => {
   }
 });
 
-// Backend restart — kills current process and respawns
 ipcMain.handle('backend:restart', async () => {
   try {
     log('Backend restart requested by renderer');
     killBackendProcess();
-    // Brief pause to let port free up
+
     await new Promise(resolve => setTimeout(resolve, 1000));
     if (!_backendPath || !_backendEnv) {
       return { success: false, error: 'Backend spawn config not available' };
@@ -2211,7 +2096,6 @@ ipcMain.handle('backend:restart', async () => {
   }
 });
 
-// Kill backend on quit (all platforms including macOS)
 app.on('before-quit', () => {
   if (backendProcess) {
     log('Killing backend process (before-quit)');

@@ -8,14 +8,13 @@ import {
   Legend
 } from 'chart.js';
 
-// Register chart.js components
 ChartJS.register(ArcElement, Tooltip, Legend);
 
 interface DiskUsageAnalyzerProps {
   path?: string;
   currentPath?: string;
   isDarkMode?: boolean;
-  isPane?: boolean; // When true, renders as pane content (fills container)
+  isPane?: boolean;
 }
 
 const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath, isDarkMode = false, isPane = false }) => {
@@ -24,14 +23,13 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedPath, setSelectedPath] = useState(null);
-  const [drillPath, setDrillPath] = useState<string | null>(null); // For drilling into subfolders
-  const [previewItem, setPreviewItem] = useState<any>(null); // For popup preview on single click
+  const [drillPath, setDrillPath] = useState<string | null>(null);
+  const [previewItem, setPreviewItem] = useState<any>(null);
 
-  // Use home directory as fallback if no path provided
   const [homePath, setHomePath] = useState<string | null>(null);
 
   useEffect(() => {
-    // Get home directory from electron - with fallback
+
     const getHome = async () => {
       try {
         if (window.api?.getHomeDir) {
@@ -53,7 +51,6 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
     getHome();
   }, []);
 
-  // Priority: drillPath > path prop > currentPath prop > homePath > /Users fallback
   const basePath = (path && path.trim()) ? path : ((currentPath && currentPath.trim()) ? currentPath : (homePath || '/Users'));
   const effectivePath = drillPath || basePath;
 
@@ -119,22 +116,19 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
     }));
   };
 
-  // Pie chart colors
   const pieColors = [
-    '#8b5cf6', // purple
-    '#3b82f6', // blue
-    '#facc15', // yellow
-    '#ef4444', // red
-    '#22c55e', // green
-    '#f97316', // orange
-    '#06b6d4', // cyan
-    '#ec4899', // pink
-    '#84cc16', // lime
-    '#a855f7', // violet
+    '#8b5cf6',
+    '#3b82f6',
+    '#facc15',
+    '#ef4444',
+    '#22c55e',
+    '#f97316',
+    '#06b6d4',
+    '#ec4899',
+    '#84cc16',
+    '#a855f7',
   ];
 
-  // Prepare pie chart data from top-level children
-  // Store sorted children for click handling
   const topItemsRef = useMemo(() => {
     if (!folderTree || !folderTree.children || folderTree.children.length === 0) {
       return [];
@@ -147,7 +141,6 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
       return null;
     }
 
-    // Sort children by size and take top 8, group rest as "Other"
     const sortedChildren = [...folderTree.children].sort((a, b) => b.size - a.size);
     const topItems = sortedChildren.slice(0, 8);
     const otherItems = sortedChildren.slice(8);
@@ -160,7 +153,7 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
     if (otherSize > 0) {
       labels.push('Other');
       data.push(otherSize);
-      backgroundColors.push('#6b7280'); // gray
+      backgroundColors.push('#6b7280');
     }
 
     return {
@@ -174,7 +167,6 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
     };
   }, [folderTree, isDarkMode]);
 
-  // Handle pie slice click - single click shows preview, double click drills down
   const lastClickRef = React.useRef<{ time: number; index: number }>({ time: 0, index: -1 });
 
   const handlePieClick = (event: any, elements: any[]) => {
@@ -188,11 +180,11 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
       lastClickRef.current = { time: now, index };
 
       if (isDoubleClick && item.type === 'folder') {
-        // Double click - drill down
+
         setPreviewItem(null);
         setDrillPath(item.path);
       } else {
-        // Single click - show preview popup
+
         setPreviewItem(item);
       }
     }
@@ -242,7 +234,6 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
           onMouseEnter={() => setSelectedPath(item.path)}
           onMouseLeave={() => setSelectedPath(null)}
         >
-          {/* Expand/Collapse Icon */}
           <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
             {!isFile ? (
               isExpanded ? (
@@ -255,7 +246,6 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
             )}
           </div>
 
-          {/* Folder/File Icon and Name */}
           <div className="flex items-center gap-2 ml-2 flex-1 min-w-0">
             {!isFile && (
               <Folder size={16} className="text-yellow-500 flex-shrink-0" />
@@ -269,7 +259,6 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
             </span>
           </div>
 
-          {/* Size Info */}
           <div className="flex items-center gap-3 ml-4 flex-shrink-0">
             <div className="text-right">
               <div
@@ -288,7 +277,6 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
               </div>
             </div>
 
-            {/* Progress Bar */}
             <div
               className="w-24 h-5 bg-gray-300 rounded overflow-hidden flex-shrink-0"
               title={`${formatBytes(item.size)} (${percentage}%)`}
@@ -301,7 +289,6 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
           </div>
         </div>
 
-        {/* Render Children */}
         {!isFile && isExpanded && item.children && item.children.length > 0 && (
           <div>
             {item.children
@@ -317,7 +304,6 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
           </div>
         )}
 
-        {/* Empty Folder Message */}
         {!isFile &&
           isExpanded &&
           (!item.children || item.children.length === 0) && (
@@ -399,7 +385,6 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
           : 'bg-white border-gray-200'
       }`}
     >
-      {/* Header */}
       <div
         className={`p-4 border-b ${
           isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-gray-50'
@@ -440,7 +425,6 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
           </div>
         </div>
 
-        {/* Summary Stats */}
         <div className="mt-4 grid grid-cols-3 gap-3">
           <div
             className={`p-3 rounded ${
@@ -506,7 +490,6 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
           </div>
         </div>
 
-        {/* Pie Chart */}
         {pieChartData && (
           <div className="mt-4 relative">
             <div
@@ -520,7 +503,6 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
               <Pie data={pieChartData} options={pieChartOptions} />
             </div>
 
-            {/* Preview Popup */}
             {previewItem && (
               <div
                 className={`absolute z-50 p-3 rounded-lg shadow-xl border ${
@@ -536,7 +518,6 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
                   maxWidth: '280px'
                 }}
               >
-                {/* Close button */}
                 <button
                   onClick={() => setPreviewItem(null)}
                   className={`absolute top-2 right-2 p-1 rounded hover:bg-opacity-20 ${
@@ -546,7 +527,6 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
                   <X size={14} />
                 </button>
 
-                {/* Item info */}
                 <div className="flex items-center gap-2 mb-2 pr-6">
                   {previewItem.type === 'folder' ? (
                     <Folder size={18} className="text-yellow-500 flex-shrink-0" />
@@ -563,14 +543,12 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
                   </span>
                 </div>
 
-                {/* Size info */}
                 <div className={`text-xs mb-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                   <span className="font-medium">{formatBytes(previewItem.size)}</span>
                   <span className="mx-1">•</span>
                   <span>{getPercentage(previewItem.size, folderTree?.size)}% of total</span>
                 </div>
 
-                {/* Children preview for folders */}
                 {previewItem.type === 'folder' && previewItem.children && previewItem.children.length > 0 && (
                   <div className={`text-xs border-t pt-2 mt-2 ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
                     <div className={`font-medium mb-1 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
@@ -593,7 +571,6 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
                   </div>
                 )}
 
-                {/* Drill down button for folders */}
                 {previewItem.type === 'folder' && (
                   <button
                     onClick={() => {
@@ -615,7 +592,6 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
         )}
       </div>
 
-      {/* Tree View */}
       <div
         className={`overflow-auto ${isPane ? 'flex-1' : 'max-h-96'} ${
           isDarkMode ? 'bg-gray-800' : 'bg-white'
@@ -624,7 +600,6 @@ const DiskUsageAnalyzer: React.FC<DiskUsageAnalyzerProps> = ({ path, currentPath
         <FolderItem item={folderTree} level={0} parentSize={folderTree.size} />
       </div>
 
-      {/* Legend */}
       <div
         className={`p-4 border-t text-xs ${
           isDarkMode

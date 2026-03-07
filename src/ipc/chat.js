@@ -10,9 +10,6 @@ const sqlite3 = require('sqlite3');
 
 const dbPath = path.join(os.homedir(), 'npcsh_history.db');
 
-// ---------------------------------------------------------------------------
-// Helper: parse ~/.npcshrc for env vars (since Electron doesn't source shell)
-// ---------------------------------------------------------------------------
 function parseNpcshrc() {
   const rcPath = path.join(os.homedir(), '.npcshrc');
   const result = {};
@@ -21,11 +18,11 @@ function parseNpcshrc() {
       const content = fs.readFileSync(rcPath, 'utf-8');
       const lines = content.split('\n');
       for (const line of lines) {
-        // Match export VAR=value or VAR=value
+
         const match = line.match(/^(?:export\s+)?(\w+)=(.*)$/);
         if (match) {
           let value = match[2].trim();
-          // Remove quotes if present
+
           if ((value.startsWith('"') && value.endsWith('"')) ||
               (value.startsWith("'") && value.endsWith("'"))) {
             value = value.slice(1, -1);
@@ -40,9 +37,6 @@ function parseNpcshrc() {
   return result;
 }
 
-// ---------------------------------------------------------------------------
-// Helper: resolve the Python path configured for the backend
-// ---------------------------------------------------------------------------
 function getBackendPythonPath() {
   const rcPath = path.join(os.homedir(), '.npcshrc');
   try {
@@ -51,7 +45,7 @@ function getBackendPythonPath() {
       const match = rcContent.match(/BACKEND_PYTHON_PATH=["']?([^"'\n]+)["']?/);
       if (match && match[1] && match[1].trim()) {
         const pythonPath = match[1].trim().replace(/^~/, os.homedir());
-        // Verify the path exists
+
         if (fs.existsSync(pythonPath)) {
           return pythonPath;
         }
@@ -77,9 +71,6 @@ function register(ctx) {
     DEFAULT_CONFIG,
   } = ctx;
 
-  // ===================================================================
-  // getAvailableModels  (also scans local GGUF files)
-  // ===================================================================
   ipcMain.handle('getAvailableModels', async (event, currentPath) => {
 
     if (!currentPath) {
@@ -90,7 +81,6 @@ function register(ctx) {
     let backendModels = [];
     let backendError = null;
 
-    // Try to fetch from backend first
     try {
         const url = `${BACKEND_URL}/api/models?currentPath=${encodeURIComponent(currentPath)}`;
         log('Fetching models from:', url);
@@ -111,7 +101,6 @@ function register(ctx) {
         backendError = err.message;
     }
 
-    // Always scan for local GGUF models (even if backend failed)
     const ggufModels = [];
     try {
         const homeDir = os.homedir();
@@ -134,7 +123,7 @@ function register(ctx) {
                 const entries = await fsPromises.readdir(dir, { withFileTypes: true });
                 for (const entry of entries) {
                     const fullPath = path.join(dir, entry.name);
-                    // Use stat to follow symlinks
+
                     try {
                         const stats = await fsPromises.stat(fullPath);
                         if (stats.isDirectory() && !entry.name.startsWith('.git') && entry.name !== 'node_modules') {
@@ -143,7 +132,7 @@ function register(ctx) {
                             const ext = path.extname(entry.name).toLowerCase();
                             if (ext === '.gguf' && !seenPaths.has(fullPath)) {
                                 seenPaths.add(fullPath);
-                                if (stats.size > 50 * 1024 * 1024) { // Files > 50MB
+                                if (stats.size > 50 * 1024 * 1024) {
                                     ggufModels.push({
                                         value: fullPath,
                                         display_name: `[GGUF] ${entry.name}`,
@@ -154,9 +143,9 @@ function register(ctx) {
                                 }
                             }
                         }
-                    } catch (statErr) { /* skip broken symlinks */ }
+                    } catch (statErr) {  }
                 }
-            } catch (e) { /* directory doesn't exist */ }
+            } catch (e) {  }
         };
 
         for (const dir of ggufDirs) {
@@ -177,9 +166,6 @@ function register(ctx) {
     return { models: allModels };
   });
 
-  // ===================================================================
-  // getAvailableImageModels
-  // ===================================================================
   ipcMain.handle('getAvailableImageModels', async (event, currentPath) => {
     log('[Main Process] getAvailableImageModels called for path:', currentPath);
     if (!currentPath) {
@@ -199,7 +185,7 @@ function register(ctx) {
         }
 
         const data = await response.json();
-        // <--- CRITICAL FIX: Ensure data.models is an array before attempting to push
+
         if (!Array.isArray(data.models)) {
             log('Warning: Backend /api/image_models did not return an array for data.models. Initializing as empty array.');
             data.models = [];
@@ -207,17 +193,13 @@ function register(ctx) {
 
         log('Received image models:', data.models?.length);
 
-
-        return data; // This `data` object now contains the combined list from Python
+        return data;
     } catch (err) {
         log('Error in getAvailableImageModels handler:', err);
         return { models: [], error: err.message || 'Failed to fetch image models from backend' };
     }
   });
 
-  // ===================================================================
-  // generate_images
-  // ===================================================================
   ipcMain.handle('generate_images', async (event, { prompt, n, model, provider, attachments, baseFilename='vixynt_gen_', currentPath='~/.npcsh/images' }) => {
     log(`[Main Process] Received request to generate ${n} image(s) with prompt: "${prompt}" using model: "${model}" (${provider})`);
 
@@ -265,14 +247,10 @@ function register(ctx) {
     }
   });
 
-  // ===================================================================
-  // deleteMessage
-  // ===================================================================
   ipcMain.handle('deleteMessage', async (_, { conversationId, messageId }) => {
     try {
       const db = new sqlite3.Database(dbPath);
 
-      // Delete by message_id column (which is what the backend actually uses)
       const deleteMessageQuery = `
         DELETE FROM conversation_history
         WHERE conversation_id = ?
@@ -292,7 +270,6 @@ function register(ctx) {
         });
       });
 
-      // Also delete associated attachments
       if (rowsAffected > 0) {
         const deleteAttachmentsQuery = 'DELETE FROM message_attachments WHERE message_id = ?';
         await new Promise((resolve) => {
@@ -314,9 +291,6 @@ function register(ctx) {
     }
   });
 
-  // ===================================================================
-  // generative-fill
-  // ===================================================================
   ipcMain.handle('generative-fill', async (event, params) => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/generative_fill`, {
@@ -337,9 +311,6 @@ function register(ctx) {
     }
   });
 
-  // ===================================================================
-  // interruptStream  (uses activeStreams to kill streams)
-  // ===================================================================
   ipcMain.handle('interruptStream', async (event, streamIdToInterrupt) => {
     log(`[Main Process] Received request to interrupt stream: ${streamIdToInterrupt}`);
 
@@ -360,8 +331,6 @@ function register(ctx) {
       const result = await response.json();
       log(`[Main Process] Backend response to interruption:`, result.message);
 
-
-
       if (activeStreams.has(streamIdToInterrupt)) {
           const { stream } = activeStreams.get(streamIdToInterrupt);
           if (stream && typeof stream.destroy === 'function') {
@@ -378,9 +347,6 @@ function register(ctx) {
     }
   });
 
-  // ===================================================================
-  // wait-for-screenshot
-  // ===================================================================
   ipcMain.handle('wait-for-screenshot', async (event, screenshotPath) => {
     const maxAttempts = 20;
     const delay = 500;
@@ -400,9 +366,6 @@ function register(ctx) {
     return false;
   });
 
-  // ===================================================================
-  // get_attachment_response
-  // ===================================================================
   ipcMain.handle('get_attachment_response', async (_, attachmentData, messages) => {
     try {
       const response = await fetch(`${BACKEND_URL}/api/get_attachment_response`, {
@@ -427,9 +390,6 @@ function register(ctx) {
     }
   });
 
-  // ===================================================================
-  // executeCommandStream  (streaming command execution to backend)
-  // ===================================================================
   ipcMain.handle('executeCommandStream', async (event, data) => {
 
     const currentStreamId = data.streamId || generateId();
@@ -437,7 +397,6 @@ function register(ctx) {
 
     try {
       const apiUrl = `${BACKEND_URL}/api/stream`;
-
 
       const payload = {
         streamId: currentStreamId,
@@ -455,17 +414,17 @@ function register(ctx) {
         isResend: data.isRerun || false,
         jinxs: data.jinxs || [],
         tools: data.tools || [],
-        // Pass frontend-generated message IDs so backend uses the same IDs
+
         userMessageId: data.userMessageId,
         assistantMessageId: data.assistantMessageId,
-        // For sub-branches: the parent of the user message (points to an assistant message)
+
         userParentMessageId: data.userParentMessageId,
-        // Generation parameters
+
         temperature: data.temperature,
         top_p: data.top_p,
         top_k: data.top_k,
         max_tokens: data.max_tokens,
-        // Thinking control
+
         disableThinking: data.disableThinking || false,
       };
 
@@ -487,9 +446,7 @@ function register(ctx) {
         return { error: 'Backend returned no stream data.', streamId: currentStreamId };
       }
 
-
       activeStreams.set(currentStreamId, { stream, eventSender: event.sender });
-
 
       (function(capturedStreamId) {
         stream.on('data', (chunk) => {
@@ -538,9 +495,6 @@ function register(ctx) {
     }
   });
 
-  // ===================================================================
-  // executeCommand  (non-streaming variant, still uses stream under the hood)
-  // ===================================================================
   ipcMain.handle('executeCommand', async (event, data) => {
     const currentStreamId = generateId();
     log(`[Main Process] executeCommand: Starting. streamId: ${currentStreamId}`);
@@ -571,7 +525,6 @@ function register(ctx) {
         if (!stream) {
             throw new Error('Backend returned no stream data.');
         }
-
 
         activeStreams.set(currentStreamId, { stream, eventSender: event.sender });
 
@@ -617,9 +570,6 @@ function register(ctx) {
     }
   });
 
-  // ===================================================================
-  // get-attachment / get-message-attachments
-  // ===================================================================
   ipcMain.handle('get-attachment', async (event, attachmentId) => {
     const response = await fetch(`${BACKEND_URL}/api/attachment/${attachmentId}`);
     return response.json();
@@ -630,9 +580,6 @@ function register(ctx) {
     return response.json();
   });
 
-  // ===================================================================
-  // get-usage-stats
-  // ===================================================================
   ipcMain.handle('get-usage-stats', async () => {
     console.log('[IPC] get-usage-stats handler STARTED');
     try {
@@ -668,9 +615,6 @@ function register(ctx) {
     }
   });
 
-  // ===================================================================
-  // getActivityData
-  // ===================================================================
   ipcMain.handle('getActivityData', async (event, { period }) => {
     try {
       let dateModifier = '-30 days';
@@ -694,9 +638,6 @@ function register(ctx) {
     }
   });
 
-  // ===================================================================
-  // getHistogramData
-  // ===================================================================
   ipcMain.handle('getHistogramData', async () => {
     try {
       const query = `
@@ -721,23 +662,17 @@ function register(ctx) {
     }
   });
 
-  // ===================================================================
-  // getConversations
-  // ===================================================================
   ipcMain.handle('getConversations', async (_, path_) => {
     try {
 
-
       try {
         await fsPromises.access(path_);
-        console.log('Directory exists and is accessible');
       } catch (err) {
         console.error('Directory does not exist or is not accessible:', path_);
         return { conversations: [], error: 'Directory not accessible' };
       }
 
       const apiUrl = `${BACKEND_URL}/api/conversations?path=${encodeURIComponent(path_)}`;
-      console.log('Calling API with URL:', apiUrl);
 
       const response = await fetch(apiUrl);
 
@@ -748,7 +683,6 @@ function register(ctx) {
 
       const responseText = await response.text();
 
-
       let data;
       try {
         data = JSON.parse(responseText);
@@ -756,9 +690,6 @@ function register(ctx) {
         console.error('Error parsing JSON response:', err);
         return { conversations: [], error: 'Invalid JSON response' };
       }
-
-
-
 
       return {
         conversations: data.conversations || []
@@ -772,9 +703,6 @@ function register(ctx) {
     }
   });
 
-  // ===================================================================
-  // checkServerConnection
-  // ===================================================================
   ipcMain.handle('checkServerConnection', async () => {
     try {
       const response = await fetch(`${BACKEND_URL}/api/status`);
@@ -785,9 +713,6 @@ function register(ctx) {
     }
   });
 
-  // ===================================================================
-  // getConversationsInDirectory
-  // ===================================================================
   ipcMain.handle('getConversationsInDirectory', async (_, directoryPath) => {
     return new Promise((resolve, reject) => {
       const db = new sqlite3.Database(dbPath);
@@ -808,9 +733,6 @@ function register(ctx) {
     });
   });
 
-  // ===================================================================
-  // getConversationMessages
-  // ===================================================================
   ipcMain.handle('getConversationMessages', async (_, conversationId) => {
     return new Promise((resolve, reject) => {
       const db = new sqlite3.Database(dbPath, (dbErr) => {
@@ -861,7 +783,6 @@ function register(ctx) {
             ch.timestamp ASC, ch.id ASC;
       `;
 
-
       db.all(query, [conversationId], (err, rows) => {
         db.close();
         if (err) {
@@ -888,7 +809,6 @@ function register(ctx) {
                 }
             }
 
-            // Parse tool_calls and tool_results JSON
             let toolCalls = null;
             let toolResults = null;
             if (row.tool_calls) {
@@ -928,9 +848,6 @@ function register(ctx) {
   });
   });
 
-  // ===================================================================
-  // getDefaultConfig
-  // ===================================================================
   ipcMain.handle('getDefaultConfig', () => {
 
     console.log('CONFIG:', DEFAULT_CONFIG);
@@ -938,17 +855,12 @@ function register(ctx) {
 
   });
 
-  // ===================================================================
-  // getProjectCtx  (reads .ctx YAML files and .npcshrc)
-  // ===================================================================
   ipcMain.handle('getProjectCtx', async (_, currentPath) => {
     const yaml = require('js-yaml');
     let result = { model: null, provider: null, npc: null };
 
-    // Read .npcshrc for env vars
     const npcshrcEnv = parseNpcshrc();
 
-    // Check project npc_team folder first
     try {
       const npcTeamDir = path.join(currentPath, 'npc_team');
       if (fs.existsSync(npcTeamDir)) {
@@ -964,7 +876,6 @@ function register(ctx) {
       console.log('Error reading project ctx:', e.message);
     }
 
-    // Fall back to global ctx if project doesn't have settings
     if (!result.model) {
       try {
         const globalCtx = path.join(os.homedir(), '.npcsh', 'npc_team', 'npcsh.ctx');
@@ -979,7 +890,6 @@ function register(ctx) {
       }
     }
 
-    // Fall back to env variables from process.env or .npcshrc
     if (!result.model) {
       result.model = process.env.NPCSH_CHAT_MODEL || npcshrcEnv.NPCSH_CHAT_MODEL;
     }
@@ -991,9 +901,6 @@ function register(ctx) {
     return result;
   });
 
-  // ===================================================================
-  // getWorkingDirectory / setWorkingDirectory
-  // ===================================================================
   ipcMain.handle('getWorkingDirectory', () => {
 
     return DEFAULT_CONFIG.baseDir;
@@ -1016,9 +923,6 @@ function register(ctx) {
     }
   });
 
-  // ===================================================================
-  // text-predict  (streaming text prediction)
-  // ===================================================================
   ipcMain.handle('text-predict', async (event, data) => {
     const currentStreamId = data.streamId || generateId();
     log(`[Main] text-predict: Starting stream ${currentStreamId}`);
@@ -1028,7 +932,7 @@ function register(ctx) {
 
       const payload = {
         streamId: currentStreamId,
-        text_content: data.text_content,        // FIXED
+        text_content: data.text_content,
         cursor_position: data.cursor_position,
         currentPath: data.currentPath,
         model: data.model,
@@ -1108,9 +1012,6 @@ function register(ctx) {
     }
   });
 
-  // ===================================================================
-  // deleteConversation
-  // ===================================================================
   ipcMain.handle('deleteConversation', async (_, conversationId) => {
     try {
       const db = new sqlite3.Database(dbPath);
@@ -1132,9 +1033,6 @@ function register(ctx) {
     }
   });
 
-  // ===================================================================
-  // createConversation
-  // ===================================================================
   ipcMain.handle('createConversation', async (_, { title, model, provider, directory }) => {
     try {
       const conversationId = Date.now().toString();
@@ -1157,9 +1055,6 @@ function register(ctx) {
     }
   });
 
-  // ===================================================================
-  // openExternal
-  // ===================================================================
   ipcMain.handle('openExternal', async (_, url) => {
     try {
       await shell.openExternal(url);
@@ -1170,9 +1065,6 @@ function register(ctx) {
     }
   });
 
-  // ===================================================================
-  // executeCode  (Python code execution)
-  // ===================================================================
   ipcMain.handle('executeCode', async (_, { code, workingDir }) => {
     try {
       const pythonPath = getBackendPythonPath();
@@ -1213,9 +1105,6 @@ function register(ctx) {
     }
   });
 
-  // ===================================================================
-  // get-last-used-in-directory / get-last-used-in-conversation
-  // ===================================================================
   ipcMain.handle('get-last-used-in-directory', async (event, path_) => {
     if (!path_) return { model: null, npc: null, error: 'Path is required' };
     const url = `${BACKEND_URL}/api/last_used_in_directory?path=${encodeURIComponent(path_)}`;
@@ -1226,6 +1115,18 @@ function register(ctx) {
     if (!conversationId) return { model: null, npc: null, error: 'Conversation ID is required' };
     const url = `${BACKEND_URL}/api/last_used_in_conversation?conversationId=${encodeURIComponent(conversationId)}`;
     return await callBackendApi(url);
+  });
+
+  ipcMain.handle('search-conversations', async (event, { query, limit = 20 }) => {
+    if (!query) return { conversations: [] };
+    try {
+      const url = `${BACKEND_URL}/api/search_conversations?q=${encodeURIComponent(query)}&limit=${limit}`;
+      const result = await callBackendApi(url);
+      return result;
+    } catch (err) {
+      console.error('[SearchConversations] Error:', err);
+      return { conversations: [], error: err.message };
+    }
   });
 }
 

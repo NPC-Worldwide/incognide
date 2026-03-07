@@ -1,5 +1,5 @@
-// Backend URL configuration
-// Dev mode: 5437, Prod mode: 5337
+
+
 const IS_DEV = import.meta.env.VITE_DEV_MODE === true;
 const BACKEND_PORT = IS_DEV ? 5437 : 5337;
 

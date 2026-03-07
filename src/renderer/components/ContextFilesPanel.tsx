@@ -100,7 +100,6 @@ export const ContextFilesPanel: React.FC<ContextFilesPanelProps> = ({
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
         >
-            {/* Toggle button — always in flow, never moves */}
             <div className="border-b theme-border">
                 <button
                     onClick={onToggleCollapse}
@@ -130,7 +129,6 @@ export const ContextFilesPanel: React.FC<ContextFilesPanelProps> = ({
                 </button>
             </div>
 
-            {/* Expanded content — floats upward, does not affect layout */}
             {!isCollapsed && (
                 <div
                     className={`absolute bottom-full left-0 right-0 border theme-border rounded-t-lg shadow-2xl z-50 theme-bg-primary ${

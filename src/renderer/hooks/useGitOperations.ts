@@ -385,7 +385,7 @@ export function useGitOperations({ currentPath }: UseGitOperationsParams) {
     };
 
     return {
-        // State
+
         gitStatus,
         setGitStatus,
         gitCommitMessage,
@@ -408,7 +408,7 @@ export function useGitOperations({ currentPath }: UseGitOperationsParams) {
         gitSelectedCommit,
         gitFileDiff,
         setGitFileDiff,
-        // Handlers
+
         loadGitStatus,
         gitStageFile,
         gitDiscardFile,

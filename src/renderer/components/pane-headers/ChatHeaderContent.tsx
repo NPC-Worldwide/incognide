@@ -63,7 +63,6 @@ const ChatHeaderContent: React.FC<ChatHeaderContentProps> = ({
                 {title}
             </span>
 
-            {/* Expand top bar button - right after title */}
             {topBarCollapsed && onExpandTopBar && (
                 <button
                     onClick={(e) => { e.stopPropagation(); onExpandTopBar(); }}
@@ -75,9 +74,7 @@ const ChatHeaderContent: React.FC<ChatHeaderContentProps> = ({
                 </button>
             )}
 
-            {/* Buttons area */}
             <div style={{ flex: '1 1 0', width: 0, minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end', overflow: 'hidden', flexWrap: 'nowrap' }}>
-                {/* Stats dropdown */}
                 <div className="flex-shrink-0">
                     <button
                         ref={statsButtonRef}
@@ -127,7 +124,6 @@ const ChatHeaderContent: React.FC<ChatHeaderContentProps> = ({
                     })()}
                 </div>
 
-                {/* Auto-scroll toggle */}
                 <button
                     onClick={(e) => { e.stopPropagation(); setAutoScrollEnabled(!autoScrollEnabled); }}
                     className={`p-1 rounded text-xs transition-all flex items-center gap-0.5 flex-shrink-0 ${
@@ -140,7 +136,6 @@ const ChatHeaderContent: React.FC<ChatHeaderContentProps> = ({
                     </svg>
                 </button>
 
-                {/* Selection mode toggle */}
                 <button
                     onClick={(e) => { e.stopPropagation(); toggleMessageSelectionMode(); }}
                     className={`p-1 rounded text-xs transition-all flex items-center gap-0.5 flex-shrink-0 ${messageSelectionMode ? 'theme-button-primary' : 'theme-button theme-hover'}`}
@@ -150,7 +145,6 @@ const ChatHeaderContent: React.FC<ChatHeaderContentProps> = ({
                     {messageSelectionMode && selectedMessages.size > 0 && <span className="text-[10px]">{selectedMessages.size}</span>}
                 </button>
 
-                {/* Branching UI toggle */}
                 <button
                     onClick={(e) => { e.stopPropagation(); setShowBranchingUI(!showBranchingUI); }}
                     className={`p-1 rounded text-xs transition-all flex items-center gap-0.5 flex-shrink-0 ${

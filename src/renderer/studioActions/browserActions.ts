@@ -1,15 +1,7 @@
-/**
- * Browser Actions
- *
- * Actions for controlling browser panes:
- * - navigate, browser_back, browser_forward, get_browser_info
- */
+
 
 import { registerAction, StudioContext, StudioActionResult } from './index';
 
-/**
- * Navigate a browser pane to a URL
- */
 async function navigate(
   args: { paneId?: string; url: string },
   ctx: StudioContext
@@ -34,14 +26,12 @@ async function navigate(
     return { success: false, error: `Pane is not a browser: ${data.contentType}` };
   }
 
-  // Update the browser URL
   ctx.contentDataRef.current[paneId] = {
     ...data,
     browserUrl: url,
     contentId: url
   };
 
-  // Trigger re-render
   ctx.updateContentPane(paneId, 'browser', url);
 
   return {
@@ -51,9 +41,6 @@ async function navigate(
   };
 }
 
-/**
- * Navigate browser back
- */
 async function browser_back(
   args: { paneId?: string },
   ctx: StudioContext
@@ -72,9 +59,6 @@ async function browser_back(
     return { success: false, error: `Pane is not a browser: ${data.contentType}` };
   }
 
-  // Browser back would need to be implemented via webview API
-  // This is a placeholder that would trigger the actual navigation
-
   return {
     success: true,
     paneId,
@@ -82,9 +66,6 @@ async function browser_back(
   };
 }
 
-/**
- * Navigate browser forward
- */
 async function browser_forward(
   args: { paneId?: string },
   ctx: StudioContext
@@ -103,8 +84,6 @@ async function browser_forward(
     return { success: false, error: `Pane is not a browser: ${data.contentType}` };
   }
 
-  // Browser forward would need to be implemented via webview API
-
   return {
     success: true,
     paneId,
@@ -112,9 +91,6 @@ async function browser_forward(
   };
 }
 
-/**
- * Get browser pane info
- */
 async function get_browser_info(
   args: { paneId?: string },
   ctx: StudioContext
@@ -141,9 +117,6 @@ async function get_browser_info(
   };
 }
 
-/**
- * Click on an element in a browser pane
- */
 async function browser_click(
   args: { paneId?: string; selector?: string; text?: string; index?: number },
   ctx: StudioContext
@@ -176,9 +149,6 @@ async function browser_click(
   return { ...result, paneId };
 }
 
-/**
- * Type text into an input element in a browser pane
- */
 async function browser_type(
   args: { paneId?: string; selector: string; text: string; clear?: boolean; submit?: boolean },
   ctx: StudioContext
@@ -215,9 +185,6 @@ async function browser_type(
   return { ...result, paneId };
 }
 
-/**
- * Get page content from a browser pane
- */
 async function get_browser_content(
   args: { paneId?: string },
   ctx: StudioContext
@@ -244,9 +211,6 @@ async function get_browser_content(
   return { ...result, paneId };
 }
 
-/**
- * Take a screenshot of a browser pane
- */
 async function browser_screenshot(
   args: { paneId?: string },
   ctx: StudioContext
@@ -273,9 +237,6 @@ async function browser_screenshot(
   return { ...result, paneId };
 }
 
-/**
- * Execute JavaScript in a browser pane
- */
 async function browser_eval(
   args: { paneId?: string; code: string },
   ctx: StudioContext
@@ -308,7 +269,6 @@ async function browser_eval(
   return { ...result, paneId };
 }
 
-// Register all browser actions
 registerAction('navigate', navigate);
 registerAction('browser_back', browser_back);
 registerAction('browser_forward', browser_forward);

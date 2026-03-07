@@ -15,7 +15,6 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 
-// Types
 interface ExpFile {
     exp_version: string;
     created_at: string;
@@ -148,7 +147,6 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
     const streamingReasoningRef = useRef<string>('');
     const streamingToolCallsRef = useRef<any[]>([]);
 
-    // Load experiment file
     useEffect(() => {
         const loadExp = async () => {
             setLoading(true);
@@ -161,7 +159,7 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                 }
             } catch (err) {
                 console.error('[ExpViewer] Error loading exp file:', err);
-                // Create new exp structure if file is empty or invalid
+
                 const newExp = createEmptyExp();
                 setExpData(newExp);
                 setHypothesisInput('');
@@ -186,7 +184,6 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
         artifacts: [],
     });
 
-    // Auto-save with debounce
     const saveExp = useCallback(async (data: ExpFile) => {
         if (saveTimeoutRef.current) {
             clearTimeout(saveTimeoutRef.current);
@@ -298,7 +295,7 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
         const startTime = Date.now();
 
         if (block.block_type === 'code') {
-            // Execute Python code via IPC
+
             try {
                 const result = await (window as any).api?.executeCode?.({
                     code: block.source,
@@ -324,7 +321,7 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                 });
             }
         } else if (block.block_type === 'chat') {
-            // Execute chat via streaming API - set up listeners at call time like chat view
+
             const streamId = generateId();
             const model = block.chat_config?.model || modelsToDisplay[0]?.value || 'gpt-4';
             const selectedModelObj = modelsToDisplay.find((m: any) => m.value === model);
@@ -340,7 +337,6 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
             streamingReasoningRef.current = '';
             streamingToolCallsRef.current = [];
 
-            // Helper to process a parsed event (matches utils.tsx pattern)
             const processEvent = (parsed: any) => {
                 let content = '', reasoningContent = '', toolCalls: any[] | null = null;
 
@@ -372,7 +368,6 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                 return { content, reasoningContent, toolCalls };
             };
 
-            // Set up stream listeners
             const cleanupData = (window as any).api?.onStreamData?.((_: any, data: any) => {
                 if (data.streamId === streamId && data.chunk) {
                     try {
@@ -380,7 +375,7 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                         let content = '', reasoningContent = '', toolCalls: any[] | null = null;
 
                         if (typeof chunk === 'string') {
-                            // Handle SSE format - may contain multiple events
+
                             const events = chunk.split(/\n\n/).filter((e: string) => e.trim());
                             for (const event of events) {
                                 const trimmedEvent = event.trim();
@@ -397,7 +392,7 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                                             reasoningContent += result.reasoningContent;
                                             if (result.toolCalls) toolCalls = result.toolCalls;
                                         } catch {
-                                            // Plain text fallback
+
                                             content += dataContent;
                                         }
                                     }
@@ -416,19 +411,16 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                             toolCalls = result.toolCalls;
                         }
 
-                        // Update content
                         if (content) {
                             streamingContentRef.current += content;
                             setStreamingContent(streamingContentRef.current);
                         }
 
-                        // Update reasoning
                         if (reasoningContent) {
                             streamingReasoningRef.current += reasoningContent;
                             setStreamingReasoningContent(streamingReasoningRef.current);
                         }
 
-                        // Update tool calls
                         if (toolCalls) {
                             const normalizedCalls = toolCalls.map((tc: any) => ({
                                 id: tc.id || '',
@@ -443,7 +435,6 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                                 result_preview: tc.result_preview || ''
                             }));
 
-                            // Merge with existing
                             const existing = [...streamingToolCallsRef.current];
                             normalizedCalls.forEach((tc: any) => {
                                 const idx = existing.findIndex((mtc: any) => mtc.id === tc.id || mtc.function.name === tc.function.name);
@@ -457,7 +448,7 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                             setStreamingToolCalls([...existing]);
                         }
                     } catch {
-                        // Partial chunk, ignore
+
                     }
                 }
             });
@@ -525,7 +516,6 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                 }
             });
 
-            // Execute the stream
             (window as any).api?.executeCommandStream?.({
                 streamId,
                 commandstr: block.source,
@@ -536,7 +526,7 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                 npc: npc || null,
             });
         } else if (block.block_type === 'jinx') {
-            // Execute jinx via backend API
+
             try {
                 const response = await fetch(`${BACKEND_URL}/api/jinx/execute`, {
                     method: 'POST',
@@ -759,7 +749,6 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
             <div className="mt-2 border-t border-white/10 pt-2 space-y-2">
                 {isStreaming ? (
                     <div className="text-sm space-y-2">
-                        {/* Streaming reasoning content */}
                         {streamingReasoningContent && (
                             <div className="px-3 py-2 bg-white/5 rounded-md border-l-2 border-yellow-500">
                                 <div className="text-xs text-yellow-400 mb-1 font-semibold">Thinking Process:</div>
@@ -769,10 +758,8 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                             </div>
                         )}
 
-                        {/* Streaming tool calls */}
                         {streamingToolCalls.map((tool, i) => renderToolCall(tool, i))}
 
-                        {/* Streaming content */}
                         {streamingContent && (
                             <div className="prose prose-invert prose-sm max-w-none bg-white/5 p-2 rounded">
                                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamingContent}</ReactMarkdown>
@@ -787,7 +774,6 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                                 <pre className="text-red-400 bg-red-900/20 p-2 rounded overflow-x-auto">{output.text}</pre>
                             ) : output.output_type === 'chat_response' ? (
                                 <>
-                                    {/* Saved reasoning content */}
                                     {output.reasoningContent && (
                                         <div className="px-3 py-2 bg-white/5 rounded-md border-l-2 border-yellow-500">
                                             <div className="text-xs text-yellow-400 mb-1 font-semibold">Thinking Process:</div>
@@ -797,10 +783,8 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                                         </div>
                                     )}
 
-                                    {/* Saved tool calls */}
                                     {output.toolCalls?.map((tool: any, ti: number) => renderToolCall(tool, ti))}
 
-                                    {/* Main content */}
                                     <div className="prose prose-invert prose-sm max-w-none bg-white/5 p-2 rounded">
                                         <ReactMarkdown remarkPlugins={[remarkGfm]}>{output.text}</ReactMarkdown>
                                     </div>
@@ -829,7 +813,6 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                     block.in_paper ? 'border-green-500/30 bg-green-900/10' : 'border-white/10 bg-white/5'
                 } ${isExecuting ? 'border-purple-500/50' : ''}`}
             >
-                {/* Block header */}
                 <div className="flex items-center justify-between px-3 py-2 bg-white/5">
                     <div className="flex items-center gap-2">
                         <button
@@ -897,7 +880,6 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                     </div>
                 </div>
 
-                {/* Block content */}
                 {isExpanded && (
                     <div className="px-3 py-2">
                         {renderBlockContent(block, sectionId)}
@@ -911,7 +893,6 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
     const renderSection = (section: ExpSection) => {
         return (
             <div className="space-y-3">
-                {/* Add block buttons */}
                 <div className="flex flex-wrap gap-1">
                     {(['markdown', 'code', 'latex', 'chat', 'jinx', 'data', 'figure'] as const).map(type => (
                         <button
@@ -925,7 +906,6 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                     ))}
                 </div>
 
-                {/* Blocks */}
                 <div className="space-y-2">
                     {section.blocks.map((block, i) => renderBlock(block, section.id, i))}
                 </div>
@@ -959,7 +939,6 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
 
     return (
         <div className="flex flex-col h-full bg-gradient-to-b from-gray-900 to-gray-950">
-            {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
                 <div className="flex items-center gap-3">
                     <FlaskConical className="text-purple-400" size={20} />
@@ -991,7 +970,6 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                 </div>
             </div>
 
-            {/* Hypothesis bar */}
             <div className="px-4 py-3 bg-gradient-to-r from-purple-900/30 to-pink-900/30 border-b border-white/10">
                 <div className="flex items-start gap-3">
                     <Lightbulb className="text-yellow-400 mt-0.5" size={16} />
@@ -1024,7 +1002,6 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                 </div>
             </div>
 
-            {/* Section tabs */}
             <div className="flex items-center gap-1 px-4 py-2 bg-white/5 border-b border-white/10 overflow-x-auto">
                 {expData.sections.sort((a, b) => a.order - b.order).map(section => (
                     <button
@@ -1047,12 +1024,10 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                 ))}
             </div>
 
-            {/* Main content */}
             <div className="flex-1 overflow-y-auto p-4">
                 {currentSection && renderSection(currentSection)}
             </div>
 
-            {/* Footer with activity/notes tabs */}
             <div className="border-t border-white/10 bg-white/5">
                 <div className="flex items-center gap-4 px-4 py-2 text-xs text-gray-400">
                     <span className="flex items-center gap-1">

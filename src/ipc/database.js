@@ -4,7 +4,6 @@ const os = require('os');
 const { dialog, shell } = require('electron');
 const sqlite3 = require('sqlite3');
 
-// Parse connection string to determine database type and connection params
 const parseConnectionString = (connString) => {
   if (!connString) {
     return { type: 'sqlite', path: path.join(os.homedir(), 'npcsh_history.db') };
@@ -12,10 +11,8 @@ const parseConnectionString = (connString) => {
 
   const str = connString.trim();
 
-  // Handle ~ for home directory in paths
   const expandHome = (p) => p.startsWith('~') ? p.replace('~', os.homedir()) : p;
 
-  // SQLite: file path, sqlite:path, or sqlite://path
   if (str.match(/\.(db|sqlite|sqlite3)$/i) || str.startsWith('sqlite:') || str.startsWith('~') || str.startsWith('/') || str.startsWith('.')) {
     let dbPath = str;
     if (dbPath.startsWith('sqlite://')) {
@@ -27,31 +24,25 @@ const parseConnectionString = (connString) => {
     return { type: 'sqlite', path: path.resolve(dbPath) };
   }
 
-  // PostgreSQL: postgres:// or postgresql://
   if (str.startsWith('postgres://') || str.startsWith('postgresql://')) {
     return { type: 'postgresql', connectionString: str };
   }
 
-  // MySQL: mysql://
   if (str.startsWith('mysql://')) {
     return { type: 'mysql', connectionString: str };
   }
 
-  // MSSQL: mssql:// or sqlserver://
   if (str.startsWith('mssql://') || str.startsWith('sqlserver://')) {
     return { type: 'mssql', connectionString: str };
   }
 
-  // Snowflake: snowflake://
   if (str.startsWith('snowflake://')) {
     return { type: 'snowflake', connectionString: str };
   }
 
-  // Default: assume SQLite file path
   return { type: 'sqlite', path: path.resolve(expandHome(str)) };
 };
 
-// Get database-specific SQL for listing tables
 const getListTablesSQL = (dbType) => {
   switch (dbType) {
     case 'postgresql':
@@ -68,7 +59,6 @@ const getListTablesSQL = (dbType) => {
   }
 };
 
-// Get database-specific SQL for table schema
 const getTableSchemaSQL = (dbType, tableName) => {
   switch (dbType) {
     case 'postgresql':
@@ -94,7 +84,6 @@ const getTableSchemaSQL = (dbType, tableName) => {
   }
 };
 
-// Try to load optional database drivers
 const tryRequire = (moduleName) => {
   try {
     return require(moduleName);
@@ -103,7 +92,6 @@ const tryRequire = (moduleName) => {
   }
 };
 
-// Execute query on any supported database
 const executeOnDatabase = async (connConfig, query, params = []) => {
   const { type } = connConfig;
 
@@ -138,7 +126,6 @@ const executeOnDatabase = async (connConfig, query, params = []) => {
     });
   }
 
-  // PostgreSQL
   if (type === 'postgresql') {
     const pg = tryRequire('pg');
     if (!pg) {
@@ -154,7 +141,6 @@ const executeOnDatabase = async (connConfig, query, params = []) => {
     }
   }
 
-  // MySQL
   if (type === 'mysql') {
     const mysql = tryRequire('mysql2/promise');
     if (!mysql) {
@@ -169,7 +155,6 @@ const executeOnDatabase = async (connConfig, query, params = []) => {
     }
   }
 
-  // MSSQL
   if (type === 'mssql') {
     const mssql = tryRequire('mssql');
     if (!mssql) {
@@ -184,13 +169,12 @@ const executeOnDatabase = async (connConfig, query, params = []) => {
     }
   }
 
-  // Snowflake
   if (type === 'snowflake') {
     const snowflake = tryRequire('snowflake-sdk');
     if (!snowflake) {
       throw new Error('Snowflake driver not installed. Run: npm install snowflake-sdk');
     }
-    // Parse snowflake connection string: snowflake://user:pass@account/database/schema?warehouse=WH
+
     const url = new URL(connConfig.connectionString);
     const connection = snowflake.createConnection({
       account: url.hostname,
@@ -219,7 +203,6 @@ const executeOnDatabase = async (connConfig, query, params = []) => {
   throw new Error(`Unsupported database type: ${type}`);
 };
 
-// Helper to get models directory path
 const getModelsDir = (basePath, isGlobal) => {
     if (isGlobal) {
         return path.join(os.homedir(), '.npcsh', 'npc_team', 'models');
@@ -227,18 +210,15 @@ const getModelsDir = (basePath, isGlobal) => {
     return path.join(basePath, 'npc_team', 'models');
 };
 
-// Helper to get metadata file path
 const getModelsMetaPath = (basePath, isGlobal) => {
     const modelsDir = getModelsDir(basePath, isGlobal);
     return path.join(modelsDir, 'models_meta.json');
 };
 
-// Helper to load models from directory
 const loadModelsFromDir = (modelsDir) => {
     const models = [];
     if (!fs.existsSync(modelsDir)) return models;
 
-    // Load metadata
     const metaPath = path.join(modelsDir, 'models_meta.json');
     let metadata = {};
     if (fs.existsSync(metaPath)) {
@@ -249,7 +229,6 @@ const loadModelsFromDir = (modelsDir) => {
         }
     }
 
-    // Discover .sql files
     const sqlFiles = fs.readdirSync(modelsDir).filter(f => f.endsWith('.sql'));
     for (const file of sqlFiles) {
         const name = file.replace('.sql', '');
@@ -258,7 +237,7 @@ const loadModelsFromDir = (modelsDir) => {
         const meta = metadata[name] || {};
 
         models.push({
-            id: name, // Use filename as ID
+            id: name,
             name,
             sql,
             description: meta.description || '',
@@ -275,7 +254,6 @@ const loadModelsFromDir = (modelsDir) => {
     return models;
 };
 
-// Helper to save model metadata
 const saveModelMeta = (modelsDir, name, meta) => {
     const metaPath = path.join(modelsDir, 'models_meta.json');
     let metadata = {};
@@ -290,8 +268,6 @@ const saveModelMeta = (modelsDir, name, meta) => {
 
 function register(ctx) {
   const { ipcMain, dbQuery, ensureTablesExist, BACKEND_URL, log } = ctx;
-
-  // ─── PDF Highlights CRUD ───────────────────────────────────────────
 
   ipcMain.handle('db:addPdfHighlight', async (event, { filePath, text, position, annotation = '', color = 'yellow' }) => {
     console.log('[DB_ADD_HIGHLIGHT] Received request:', {
@@ -394,8 +370,6 @@ function register(ctx) {
     }
   });
 
-  // ─── PDF Drawings CRUD ─────────────────────────────────────────────
-
   ipcMain.handle('db:addPdfDrawing', async (event, { filePath, pageIndex, drawingType, svgPath, strokeColor, strokeWidth, positionX, positionY, width, height }) => {
     try {
       await ensureTablesExist();
@@ -440,8 +414,6 @@ function register(ctx) {
     }
   });
 
-  // ─── Basic DB introspection (app's own SQLite) ────────────────────
-
   ipcMain.handle('db:listTables', async () => {
     try {
       const rows = await dbQuery("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';");
@@ -476,9 +448,6 @@ function register(ctx) {
       }
   });
 
-  // ─── Multi-DB support ─────────────────────────────────────────────
-
-  // Test database connection and return basic info
   ipcMain.handle('db:testConnection', async (event, { connectionString }) => {
     try {
       const connConfig = parseConnectionString(connectionString);
@@ -494,7 +463,6 @@ function register(ctx) {
         tables: tableNames
       };
 
-      // Add file info for SQLite
       if (connConfig.type === 'sqlite' && connConfig.path) {
         result.resolvedPath = connConfig.path;
         if (fs.existsSync(connConfig.path)) {
@@ -516,7 +484,6 @@ function register(ctx) {
     }
   });
 
-  // List tables for a database
   ipcMain.handle('db:listTablesForPath', async (event, { connectionString }) => {
     try {
       const connConfig = parseConnectionString(connectionString);
@@ -529,9 +496,8 @@ function register(ctx) {
     }
   });
 
-  // Get table schema for a database
   ipcMain.handle('db:getTableSchemaForPath', async (event, { connectionString, tableName }) => {
-    // Validate table name (allow dots for schema.table notation)
+
     if (!/^[a-zA-Z0-9_.]+$/.test(tableName)) {
       return { error: 'Invalid table name provided.' };
     }
@@ -541,7 +507,6 @@ function register(ctx) {
       const schemaSQL = getTableSchemaSQL(connConfig.type, tableName);
       const schemaRows = await executeOnDatabase(connConfig, schemaSQL);
 
-      // Normalize schema response across database types
       const schema = schemaRows.map(r => ({
         name: r.name || r.column_name || r.COLUMN_NAME || r.Field,
         type: r.type || r.data_type || r.DATA_TYPE || r.Type,
@@ -549,13 +514,12 @@ function register(ctx) {
         pk: r.pk || (r.Key === 'PRI') ? 1 : 0
       }));
 
-      // Try to get row count
       let rowCount = null;
       try {
         const countResult = await executeOnDatabase(connConfig, `SELECT COUNT(*) as count FROM ${tableName}`);
         rowCount = countResult[0]?.count || countResult[0]?.COUNT || null;
       } catch (e) {
-        // Ignore count errors
+
       }
 
       return { schema, rowCount, dbType: connConfig.type };
@@ -564,24 +528,21 @@ function register(ctx) {
     }
   });
 
-  // Execute SQL on a database
   ipcMain.handle('db:executeSQLForPath', async (event, { connectionString, query, params = [] }) => {
     try {
       const connConfig = parseConnectionString(connectionString);
       const result = await executeOnDatabase(connConfig, query, params);
 
-      // If it's an array, it's rows from a SELECT
       if (Array.isArray(result)) {
         return { rows: result, dbType: connConfig.type };
       }
-      // Otherwise it's a write result
+
       return { ...result, dbType: connConfig.type };
     } catch (err) {
       return { error: err.message };
     }
   });
 
-  // Browse for database file (SQLite only)
   ipcMain.handle('db:browseForDatabase', async () => {
     const { filePaths } = await dialog.showOpenDialog({
       title: 'Select Database File',
@@ -598,13 +559,11 @@ function register(ctx) {
     return { path: null };
   });
 
-  // Get supported database types
   ipcMain.handle('db:getSupportedTypes', async () => {
     const types = [
       { type: 'sqlite', name: 'SQLite', installed: true, example: '~/database.db or sqlite:~/database.db' }
     ];
 
-    // Check which drivers are installed
     if (tryRequire('pg')) {
       types.push({ type: 'postgresql', name: 'PostgreSQL', installed: true, example: 'postgresql://user:pass@host:5432/database' });
     } else {
@@ -667,9 +626,6 @@ function register(ctx) {
       }
   });
 
-  // ─── SQL Models ────────────────────────────────────────────────────
-
-  // Get global SQL models
   ipcMain.handle('getSqlModelsGlobal', async () => {
       try {
           const modelsDir = getModelsDir(null, true);
@@ -681,7 +637,6 @@ function register(ctx) {
       }
   });
 
-  // Get project SQL models
   ipcMain.handle('getSqlModelsProject', async (event, currentPath) => {
       try {
           if (!currentPath) return { models: [], error: 'No project path provided' };
@@ -694,7 +649,6 @@ function register(ctx) {
       }
   });
 
-  // Save global SQL model (as .sql file)
   ipcMain.handle('saveSqlModelGlobal', async (event, modelData) => {
       try {
           const modelsDir = getModelsDir(null, true);
@@ -702,14 +656,11 @@ function register(ctx) {
               fs.mkdirSync(modelsDir, { recursive: true });
           }
 
-          // Sanitize model name for filename
           const safeName = modelData.name.replace(/[^a-zA-Z0-9_-]/g, '_');
           const sqlFilePath = path.join(modelsDir, `${safeName}.sql`);
 
-          // Write the SQL file
           fs.writeFileSync(sqlFilePath, modelData.sql);
 
-          // Save metadata
           const meta = {
               description: modelData.description || '',
               schedule: modelData.schedule || '',
@@ -729,7 +680,6 @@ function register(ctx) {
       }
   });
 
-  // Save project SQL model (as .sql file)
   ipcMain.handle('saveSqlModelProject', async (event, { path: projectPath, model: modelData }) => {
       try {
           if (!projectPath) return { success: false, error: 'No project path provided' };
@@ -739,14 +689,11 @@ function register(ctx) {
               fs.mkdirSync(modelsDir, { recursive: true });
           }
 
-          // Sanitize model name for filename
           const safeName = modelData.name.replace(/[^a-zA-Z0-9_-]/g, '_');
           const sqlFilePath = path.join(modelsDir, `${safeName}.sql`);
 
-          // Write the SQL file
           fs.writeFileSync(sqlFilePath, modelData.sql);
 
-          // Save metadata
           const meta = {
               description: modelData.description || '',
               schedule: modelData.schedule || '',
@@ -766,18 +713,15 @@ function register(ctx) {
       }
   });
 
-  // Delete global SQL model
   ipcMain.handle('deleteSqlModelGlobal', async (event, modelId) => {
       try {
           const modelsDir = getModelsDir(null, true);
           const sqlFilePath = path.join(modelsDir, `${modelId}.sql`);
 
-          // Delete the .sql file
           if (fs.existsSync(sqlFilePath)) {
               fs.unlinkSync(sqlFilePath);
           }
 
-          // Update metadata
           const metaPath = path.join(modelsDir, 'models_meta.json');
           if (fs.existsSync(metaPath)) {
               try {
@@ -794,7 +738,6 @@ function register(ctx) {
       }
   });
 
-  // Delete project SQL model
   ipcMain.handle('deleteSqlModelProject', async (event, { path: projectPath, modelId }) => {
       try {
           if (!projectPath) return { success: false, error: 'No project path provided' };
@@ -802,12 +745,10 @@ function register(ctx) {
           const modelsDir = getModelsDir(projectPath, false);
           const sqlFilePath = path.join(modelsDir, `${modelId}.sql`);
 
-          // Delete the .sql file
           if (fs.existsSync(sqlFilePath)) {
               fs.unlinkSync(sqlFilePath);
           }
 
-          // Update metadata
           const metaPath = path.join(modelsDir, 'models_meta.json');
           if (fs.existsSync(metaPath)) {
               try {
@@ -824,7 +765,6 @@ function register(ctx) {
       }
   });
 
-  // Run SQL model (execute via npcpy backend API)
   ipcMain.handle('runSqlModel', async (event, { path: projectPath, modelId, isGlobal, targetDb: userTargetDb }) => {
       try {
           const modelsDir = getModelsDir(isGlobal ? null : projectPath, isGlobal);
@@ -834,7 +774,6 @@ function register(ctx) {
               return { success: false, error: `Model file not found: ${sqlFilePath}` };
           }
 
-          // Load metadata for NPC context
           const metaPath = path.join(modelsDir, 'models_meta.json');
           let meta = {};
           if (fs.existsSync(metaPath)) {
@@ -848,14 +787,12 @@ function register(ctx) {
               ? path.join(os.homedir(), '.npcsh', 'npc_team')
               : path.join(projectPath, 'npc_team');
 
-          // Use user-selected database or default to npcsh_history.db
           let targetDb = userTargetDb || '~/npcsh_history.db';
-          // Expand ~ to home directory
+
           if (targetDb.startsWith('~')) {
               targetDb = path.join(os.homedir(), targetDb.slice(1));
           }
 
-          // Call the npcpy backend API
           const response = await fetch(`${BACKEND_URL}/api/npcsql/run_model`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -879,7 +816,6 @@ function register(ctx) {
               result = await response.json();
           }
 
-          // Update last run timestamp in metadata
           meta.lastRunAt = new Date().toISOString();
           meta.lastRunResult = result.success ? 'success' : 'error';
           saveModelMeta(modelsDir, modelId, meta);
@@ -890,8 +826,6 @@ function register(ctx) {
           return { success: false, error: err.message };
       }
   });
-
-  // ─── Generic SQL execution (app's own SQLite) ─────────────────────
 
   ipcMain.handle('executeSQL', async (event, { query }) => {
     try {

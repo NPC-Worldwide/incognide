@@ -5,13 +5,11 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Copy, Check, Maximize2, Minimize2, Table, ChevronDown, ChevronUp, Download } from 'lucide-react';
 
-// Utility to detect if content looks like tabular data (JSON array, CSV-like)
 const detectTabularData = (content: string): { isTabular: boolean; data: any[] | null; type: 'json' | 'csv' | null } => {
     if (!content || typeof content !== 'string') return { isTabular: false, data: null, type: null };
 
     const trimmed = content.trim();
 
-    // Try to parse as JSON array
     if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
         try {
             const parsed = JSON.parse(trimmed);
@@ -19,19 +17,18 @@ const detectTabularData = (content: string): { isTabular: boolean; data: any[] |
                 return { isTabular: true, data: parsed, type: 'json' };
             }
         } catch (e) {
-            // Not valid JSON
+
         }
     }
 
-    // Detect CSV-like content (lines with consistent delimiters)
     const lines = trimmed.split('\n').filter(l => l.trim());
     if (lines.length >= 2) {
-        // Check for common delimiters: comma, tab, pipe
+
         const delimiters = [',', '\t', '|'];
         for (const delimiter of delimiters) {
             const counts = lines.map(line => (line.match(new RegExp(`\\${delimiter}`, 'g')) || []).length);
             const firstCount = counts[0];
-            // If all lines have the same number of delimiters (and > 0), it's likely tabular
+
             if (firstCount > 0 && counts.every(c => c === firstCount)) {
                 const headers = lines[0].split(delimiter).map(h => h.trim());
                 const rows = lines.slice(1).map(line => {
@@ -50,7 +47,6 @@ const detectTabularData = (content: string): { isTabular: boolean; data: any[] |
     return { isTabular: false, data: null, type: null };
 };
 
-// Interactive data table component
 const DataTableComponent = memo(({ data, title }: { data: any[]; title?: string }) => {
     const [expanded, setExpanded] = useState(data.length <= 10);
     const [sortColumn, setSortColumn] = useState<string | null>(null);
@@ -167,7 +163,6 @@ const DataTableComponent = memo(({ data, title }: { data: any[]; title?: string 
     );
 });
 
-// Export the detection function for use in other components
 export { detectTabularData, DataTableComponent };
 const customLightStyle = {
   'code[class*="language-"]': {
@@ -214,7 +209,7 @@ const CodeBlock = memo(({ node, inline, className, children, ...props }) => {
   const [showFloatingButton, setShowFloatingButton] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const scrollContainerRef = useRef(null);
-  const expandedScrollContainerRef = useRef(null); 
+  const expandedScrollContainerRef = useRef(null);
 
   const match = /language-(\w+)/.exec(className || '');
   const codeString = String(children).replace(/\n$/, '');
@@ -245,7 +240,7 @@ const CodeBlock = memo(({ node, inline, className, children, ...props }) => {
       const { scrollHeight } = expandedScrollContainerRef.current;
       expandedScrollContainerRef.current.scrollTop = scrollHeight;
     }
-  }, [isExpanded, codeString]); 
+  }, [isExpanded, codeString]);
 
   const isDarkMode = document.body.classList.contains('dark-mode');
 
@@ -260,10 +255,8 @@ const CodeBlock = memo(({ node, inline, className, children, ...props }) => {
 
   return (
     <>
-      {/* Expanded overlay */}
       {isExpanded && (
         <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          {/* Added h-full here to ensure the inner container takes full height */}
           <div className="w-full max-w-6xl h-full max-h-[calc(100vh-2rem)] theme-bg-tertiary rounded-md overflow-hidden theme-border border">
             <div className="flex items-center justify-between px-4 py-2 theme-bg-secondary text-sm theme-text-muted">
               <span>{match?.[1] || 'code'}</span>
@@ -301,7 +294,6 @@ const CodeBlock = memo(({ node, inline, className, children, ...props }) => {
         </div>
       )}
 
-      {/* Regular code block */}
       <div className="relative group my-2 theme-bg-tertiary rounded-md overflow-hidden theme-border border">
         <div className="flex items-center justify-between px-4 py-1 theme-bg-secondary text-xs theme-text-muted">
           <span>{match?.[1] || 'code'}</span>
@@ -421,21 +413,18 @@ const ImageComponent = memo(({ src, alt, title }) => {
   );
 });
 
-
-// Custom component to parse and render HTML img tags manually
 const ContentWithImages = memo(({ content, onOpenFile }: { content: string; onOpenFile?: (path: string) => void }) => {
   if (!content || typeof content !== 'string') {
     return null;
   }
 
-  // Split content by <img> tags and process each part
   const parts = [];
   let lastIndex = 0;
   const imgRegex = /<img\s+[^>]*src=["']([^"']+)["'][^>]*alt=["']([^"']*)["'][^>]*>/gi;
-  
+
   let match;
   while ((match = imgRegex.exec(content)) !== null) {
-    // Add markdown content before the image
+
     if (match.index > lastIndex) {
       const markdownPart = content.substring(lastIndex, match.index);
       parts.push({
@@ -444,19 +433,17 @@ const ContentWithImages = memo(({ content, onOpenFile }: { content: string; onOp
         key: `md-${lastIndex}`
       });
     }
-    
-    // Add the image
+
     parts.push({
       type: 'image',
       src: match[1],
       alt: match[2],
       key: `img-${match.index}`
     });
-    
+
     lastIndex = imgRegex.lastIndex;
   }
-  
-  // Add remaining markdown content
+
   if (lastIndex < content.length) {
     parts.push({
       type: 'markdown',
@@ -464,8 +451,7 @@ const ContentWithImages = memo(({ content, onOpenFile }: { content: string; onOp
       key: `md-${lastIndex}`
     });
   }
-  
-  // If no images found, return plain markdown
+
   if (parts.length === 0) {
     parts.push({
       type: 'markdown',
@@ -486,11 +472,11 @@ const ContentWithImages = memo(({ content, onOpenFile }: { content: string; onOp
               remarkPlugins={[remarkGfm]}
               components={{
                 code: ({ node, inline, className, children, ...props }: any) => {
-                  // For inline code that looks like a file path, make it clickable
+
                   const text = String(children).replace(/\n$/, '');
-                  // In react-markdown v9, detect inline by: no className AND no newlines in content
+
                   const isInline = inline !== false && !className && !text.includes('\n');
-                  // More permissive file path regex - allows common path characters
+
                   const isFilePath = /^(\/[^\s<>"'`]+|~\/[^\s<>"'`]+|[A-Za-z]:\\[^\s<>"'`]+)$/.test(text) && text.length > 2;
 
                   if (isInline && isFilePath && onOpenFile) {
@@ -510,12 +496,11 @@ const ContentWithImages = memo(({ content, onOpenFile }: { content: string; onOp
                     );
                   }
 
-                  // Use the regular CodeBlock for non-path code
                   return <CodeBlock node={node} inline={isInline} className={className} {...props}>{children}</CodeBlock>;
                 },
                 img: ImageComponent,
                 p: ({ node, children, ...props }) => {
-                  // Process children to make file paths clickable
+
                   const processChildren = (child: any): any => {
                     if (typeof child === 'string') {
                       return <TextWithPaths text={child} onOpenFile={onOpenFile} />;
@@ -561,11 +546,8 @@ const ContentWithImages = memo(({ content, onOpenFile }: { content: string; onOp
   );
 });
 
-
-// Regex to detect file paths (Unix and Windows styles) - more permissive
 const FILE_PATH_REGEX = /(?:^|[\s`'"({\[])((?:\/[^\s<>"'`()\[\]{}]+)+|(?:[A-Za-z]:\\[^\s<>"'`()\[\]{}]+)+|~\/[^\s<>"'`()\[\]{}]+)/g;
 
-// Component to render text with clickable file paths
 const TextWithPaths = memo(({ text, onOpenFile }: { text: string; onOpenFile?: (path: string) => void }) => {
   if (!onOpenFile || !text) return <>{text}</>;
 
@@ -573,7 +555,6 @@ const TextWithPaths = memo(({ text, onOpenFile }: { text: string; onOpenFile?: (
   let lastIndex = 0;
   let match;
 
-  // Reset regex
   FILE_PATH_REGEX.lastIndex = 0;
 
   while ((match = FILE_PATH_REGEX.exec(text)) !== null) {
@@ -581,12 +562,10 @@ const TextWithPaths = memo(({ text, onOpenFile }: { text: string; onOpenFile?: (
     const path = match[1];
     const matchStart = match.index + (fullMatch.length - path.length);
 
-    // Add text before the path
     if (matchStart > lastIndex) {
       parts.push(text.slice(lastIndex, matchStart));
     }
 
-    // Add clickable path
     parts.push(
       <span
         key={matchStart}
@@ -605,7 +584,6 @@ const TextWithPaths = memo(({ text, onOpenFile }: { text: string; onOpenFile?: (
     lastIndex = matchStart + path.length;
   }
 
-  // Add remaining text
   if (lastIndex < text.length) {
     parts.push(text.slice(lastIndex));
   }
@@ -614,7 +592,7 @@ const TextWithPaths = memo(({ text, onOpenFile }: { text: string; onOpenFile?: (
 });
 
 const MarkdownRenderer = ({ content, onOpenFile }: { content: string; onOpenFile?: (path: string) => void }) => {
-  // Check for tabular data first
+
   const { isTabular, data } = detectTabularData(content || '');
 
   if (isTabular && data) {

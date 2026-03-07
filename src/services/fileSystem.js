@@ -1,4 +1,4 @@
-// src/services/fileSystem.js
+
 export const loadDirectoryStructure = async (api, dirPath) => {
   if (!dirPath) {
     throw new Error('No directory path provided');

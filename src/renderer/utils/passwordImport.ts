@@ -1,7 +1,4 @@
-/**
- * Password Import Utility
- * Supports importing from various password managers
- */
+
 
 export interface PasswordEntry {
     id: string;
@@ -35,12 +32,10 @@ interface ImportResult {
     skipped: number;
 }
 
-// Generate unique ID
 const generateId = (): string => {
     return `pwd_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 };
 
-// Parse CSV with proper handling of quoted fields
 const parseCSV = (content: string): string[][] => {
     const lines: string[][] = [];
     let currentLine: string[] = [];
@@ -54,7 +49,7 @@ const parseCSV = (content: string): string[][] => {
         if (inQuotes) {
             if (char === '"' && nextChar === '"') {
                 currentField += '"';
-                i++; // Skip next quote
+                i++;
             } else if (char === '"') {
                 inQuotes = false;
             } else {
@@ -73,14 +68,13 @@ const parseCSV = (content: string): string[][] => {
                 }
                 currentLine = [];
                 currentField = '';
-                if (char === '\r') i++; // Skip \n after \r
+                if (char === '\r') i++;
             } else if (char !== '\r') {
                 currentField += char;
             }
         }
     }
 
-    // Handle last line
     if (currentField || currentLine.length > 0) {
         currentLine.push(currentField);
         if (currentLine.some(f => f.trim())) {
@@ -91,7 +85,6 @@ const parseCSV = (content: string): string[][] => {
     return lines;
 };
 
-// Get column index by possible header names
 const getColumnIndex = (headers: string[], possibleNames: string[]): number => {
     const normalizedHeaders = headers.map(h => h.toLowerCase().trim());
     for (const name of possibleNames) {
@@ -101,7 +94,6 @@ const getColumnIndex = (headers: string[], possibleNames: string[]): number => {
     return -1;
 };
 
-// Bitwarden JSON import
 const importBitwardenJSON = (content: string): ImportResult => {
     const errors: string[] = [];
     const entries: PasswordEntry[] = [];
@@ -113,7 +105,7 @@ const importBitwardenJSON = (content: string): ImportResult => {
 
         for (const item of items) {
             if (item.type !== 1 && item.type !== undefined) {
-                // Type 1 is login, skip other types (cards, identities, notes)
+
                 skipped++;
                 continue;
             }
@@ -145,7 +137,6 @@ const importBitwardenJSON = (content: string): ImportResult => {
     return { success: errors.length === 0, entries, errors, skipped };
 };
 
-// Bitwarden CSV import
 const importBitwardenCSV = (content: string): ImportResult => {
     const errors: string[] = [];
     const entries: PasswordEntry[] = [];
@@ -197,7 +188,6 @@ const importBitwardenCSV = (content: string): ImportResult => {
     return { success: errors.length === 0, entries, errors, skipped };
 };
 
-// LastPass CSV import
 const importLastPassCSV = (content: string): ImportResult => {
     const errors: string[] = [];
     const entries: PasswordEntry[] = [];
@@ -229,7 +219,6 @@ const importLastPassCSV = (content: string): ImportResult => {
                 continue;
             }
 
-            // LastPass uses URL as name if name is empty
             let name = nameIdx >= 0 ? row[nameIdx] : '';
             if (!name && urlIdx >= 0) {
                 try {
@@ -260,7 +249,6 @@ const importLastPassCSV = (content: string): ImportResult => {
     return { success: errors.length === 0, entries, errors, skipped };
 };
 
-// Chrome CSV import (also works for Vivaldi, Edge, Brave)
 const importChromeCSV = (content: string): ImportResult => {
     const errors: string[] = [];
     const entries: PasswordEntry[] = [];
@@ -290,7 +278,6 @@ const importChromeCSV = (content: string): ImportResult => {
                 continue;
             }
 
-            // Chrome uses name field, fallback to extracting from URL
             let name = nameIdx >= 0 ? row[nameIdx] : '';
             if (!name && urlIdx >= 0 && row[urlIdx]) {
                 try {
@@ -321,7 +308,6 @@ const importChromeCSV = (content: string): ImportResult => {
     return { success: errors.length === 0, entries, errors, skipped };
 };
 
-// Firefox CSV import
 const importFirefoxCSV = (content: string): ImportResult => {
     const errors: string[] = [];
     const entries: PasswordEntry[] = [];
@@ -365,7 +351,6 @@ const importFirefoxCSV = (content: string): ImportResult => {
                 }
             }
 
-            // Firefox stores timestamps as Unix milliseconds
             let createdAt = new Date().toISOString();
             let updatedAt = new Date().toISOString();
 
@@ -400,7 +385,6 @@ const importFirefoxCSV = (content: string): ImportResult => {
     return { success: errors.length === 0, entries, errors, skipped };
 };
 
-// Apple Keychain CSV import (from Passwords app or Keychain Access export)
 const importAppleCSV = (content: string): ImportResult => {
     const errors: string[] = [];
     const entries: PasswordEntry[] = [];
@@ -461,7 +445,6 @@ const importAppleCSV = (content: string): ImportResult => {
     return { success: errors.length === 0, entries, errors, skipped };
 };
 
-// 1Password CSV import
 const import1PasswordCSV = (content: string): ImportResult => {
     const errors: string[] = [];
     const entries: PasswordEntry[] = [];
@@ -513,7 +496,6 @@ const import1PasswordCSV = (content: string): ImportResult => {
     return { success: errors.length === 0, entries, errors, skipped };
 };
 
-// Dashlane CSV import
 const importDashlaneCSV = (content: string): ImportResult => {
     const errors: string[] = [];
     const entries: PasswordEntry[] = [];
@@ -565,7 +547,6 @@ const importDashlaneCSV = (content: string): ImportResult => {
     return { success: errors.length === 0, entries, errors, skipped };
 };
 
-// KeePass CSV import
 const importKeePassCSV = (content: string): ImportResult => {
     const errors: string[] = [];
     const entries: PasswordEntry[] = [];
@@ -616,7 +597,6 @@ const importKeePassCSV = (content: string): ImportResult => {
     return { success: errors.length === 0, entries, errors, skipped };
 };
 
-// Generic CSV import (auto-detect columns)
 const importGenericCSV = (content: string): ImportResult => {
     const errors: string[] = [];
     const entries: PasswordEntry[] = [];
@@ -631,7 +611,6 @@ const importGenericCSV = (content: string): ImportResult => {
 
         const headers = lines[0];
 
-        // Try to find relevant columns
         const nameIdx = getColumnIndex(headers, ['name', 'title', 'site', 'website', 'service', 'account']);
         const urlIdx = getColumnIndex(headers, ['url', 'uri', 'website', 'site', 'domain', 'link', 'address']);
         const usernameIdx = getColumnIndex(headers, ['username', 'user', 'login', 'email', 'account', 'id']);
@@ -684,12 +663,10 @@ const importGenericCSV = (content: string): ImportResult => {
     return { success: errors.length === 0, entries, errors, skipped };
 };
 
-// Auto-detect format from file content
 export const detectFormat = (content: string, filename: string): PasswordManagerType | null => {
     const lowerFilename = filename.toLowerCase();
     const trimmedContent = content.trim();
 
-    // Check for JSON (Bitwarden)
     if (trimmedContent.startsWith('{') || trimmedContent.startsWith('[')) {
         try {
             const data = JSON.parse(trimmedContent);
@@ -699,7 +676,6 @@ export const detectFormat = (content: string, filename: string): PasswordManager
         } catch {}
     }
 
-    // Check filename hints
     if (lowerFilename.includes('bitwarden')) return 'bitwarden-csv';
     if (lowerFilename.includes('lastpass')) return 'lastpass-csv';
     if (lowerFilename.includes('chrome') || lowerFilename.includes('chromium')) return 'chrome-csv';
@@ -710,7 +686,6 @@ export const detectFormat = (content: string, filename: string): PasswordManager
     if (lowerFilename.includes('keepass')) return 'keepass-csv';
     if (lowerFilename.includes('vivaldi') || lowerFilename.includes('edge') || lowerFilename.includes('brave')) return 'chrome-csv';
 
-    // Check CSV headers for hints
     const lines = parseCSV(trimmedContent);
     if (lines.length > 0) {
         const headerLine = lines[0].join(',').toLowerCase();
@@ -721,11 +696,9 @@ export const detectFormat = (content: string, filename: string): PasswordManager
         if (headerLine.includes('otpauth')) return 'apple-csv';
     }
 
-    // Default to generic CSV
     return 'generic-csv';
 };
 
-// Main import function
 export const importPasswords = (content: string, format: PasswordManagerType): ImportResult => {
     switch (format) {
         case 'bitwarden-json':
@@ -752,7 +725,6 @@ export const importPasswords = (content: string, format: PasswordManagerType): I
     }
 };
 
-// Export passwords to CSV
 export const exportPasswordsToCSV = (entries: PasswordEntry[]): string => {
     const headers = ['name', 'url', 'username', 'password', 'notes', 'folder', 'totp'];
     const escapeCSV = (value: string): string => {
@@ -775,7 +747,6 @@ export const exportPasswordsToCSV = (entries: PasswordEntry[]): string => {
     return [headers.join(','), ...rows].join('\n');
 };
 
-// Format display name for password manager type
 export const getPasswordManagerDisplayName = (type: PasswordManagerType): string => {
     const names: Record<PasswordManagerType, string> = {
         'bitwarden-json': 'Bitwarden (JSON)',

@@ -13,13 +13,12 @@ interface BranchingUIProps {
     contentDataRef: React.MutableRefObject<any>;
     setRootLayoutNode: (fn: (prev: any) => any) => void;
     onOpenVisualizer?: () => void;
-    // Expanded branch path support
+
     expandedBranchPath?: { [paneId: string]: string[] };
     onCollapseBranch?: (paneId: string) => void;
     onExpandBranch?: (paneId: string, path: string[]) => void;
 }
 
-// Add UI component for branching visualization
 export const BranchingUI: React.FC<BranchingUIProps> = ({
     showBranchingUI,
     setShowBranchingUI,
@@ -35,16 +34,13 @@ export const BranchingUI: React.FC<BranchingUIProps> = ({
     onCollapseBranch,
     onExpandBranch
 }) => {
-    // Check if currently viewing an expanded branch (linear view)
+
     const isInExpandedBranch = activeContentPaneId && expandedBranchPath?.[activeContentPaneId]?.length > 0;
     const currentPath = (activeContentPaneId && expandedBranchPath?.[activeContentPaneId]) || [];
 
-    // Get allMessages from contentDataRef to find actual branch options
     const activePaneData = activeContentPaneId ? contentDataRef.current[activeContentPaneId] : null;
     const allMessages = activePaneData?.chatMessages?.allMessages || [];
 
-    // Find broadcast points (multiple assistant responses to same user message)
-    // Group by parentMessageId OR cellId (for freshly created messages)
     const broadcastGroups: { userMsgId: string; userContent: string; responses: any[] }[] = [];
     const siblingRunsMap: { [key: string]: any[] } = {};
 
@@ -60,7 +56,6 @@ export const BranchingUI: React.FC<BranchingUIProps> = ({
         }
     });
 
-    // Only show groups with multiple responses (actual branches)
     Object.entries(siblingRunsMap).forEach(([groupKey, responses]) => {
         if (responses.length > 1) {
             const userMsg = allMessages.find((m: any) => m.id === groupKey || m.cellId === groupKey);
@@ -72,7 +67,6 @@ export const BranchingUI: React.FC<BranchingUIProps> = ({
         }
     });
 
-    // Add function to switch branches
     const switchToBranch = useCallback((branchId: string) => {
         const activePaneData = contentDataRef.current[activeContentPaneId!];
         if (!activePaneData || !activePaneData.chatMessages) return;
@@ -80,7 +74,6 @@ export const BranchingUI: React.FC<BranchingUIProps> = ({
         const branch = conversationBranches.get(branchId);
         if (!branch && branchId !== 'main') return;
 
-        // If switching to main, use mainBranchMessages if available
         if (branchId === 'main') {
             const mainBranch = conversationBranches.get('main');
             if (mainBranch) {
@@ -89,7 +82,7 @@ export const BranchingUI: React.FC<BranchingUIProps> = ({
                 activePaneData.chatMessages.messages = mainBranch.messages.slice(-(activePaneData.chatMessages.displayedMessageCount || 50));
                 setRootLayoutNode(prev => ({ ...prev }));
             } else {
-                // Main not stored yet - just switch the branch ID
+
                 setCurrentBranchId('main');
                 setRootLayoutNode(prev => ({ ...prev }));
             }
@@ -127,7 +120,6 @@ export const BranchingUI: React.FC<BranchingUIProps> = ({
             </div>
 
             <div className="space-y-3 max-h-96 overflow-y-auto">
-                {/* Tree View option - always show if there are branches */}
                 {broadcastGroups.length > 0 && (
                     <button
                         onClick={() => {
@@ -148,8 +140,6 @@ export const BranchingUI: React.FC<BranchingUIProps> = ({
                     </button>
                 )}
 
-                {/* Show actual broadcast branches from message tree */}
-                {/* Debug info */}
                 <div className="text-[9px] text-gray-500 mb-2">
                     msgs: {allMessages.length} | asst: {allMessages.filter((m:any) => m.role === 'assistant').length} | groups: {broadcastGroups.length} | pane: {activeContentPaneId?.slice(0,8) || 'none'}
                     {allMessages.filter((m:any) => m.role === 'assistant').slice(0,3).map((m:any,i:number) => (
@@ -172,7 +162,7 @@ export const BranchingUI: React.FC<BranchingUIProps> = ({
                                             key={resp.id}
                                             onClick={() => {
                                                 if (onExpandBranch && activeContentPaneId) {
-                                                    // Build path to this response
+
                                                     const msgById = new Map(allMessages.map((m: any) => [m.id, m]));
                                                     const path: string[] = [];
                                                     let cur = resp;
@@ -202,7 +192,6 @@ export const BranchingUI: React.FC<BranchingUIProps> = ({
                     </div>
                 )}
 
-                {/* Legacy branches from conversationBranches Map */}
                 {branches.length > 0 && (
                     <div className="border-t border-gray-700 pt-2 mt-2">
                         <div className="text-[10px] text-gray-500 mb-1">Saved Branches</div>
@@ -252,7 +241,6 @@ export const BranchingUI: React.FC<BranchingUIProps> = ({
     );
 };
 
-// Export helper function for creating branch points
 export const createBranchPoint = (
     fromMessageIndex: number,
     activeContentPaneId: string | null,
@@ -268,8 +256,6 @@ export const createBranchPoint = (
 
     const branchId = generateId();
 
-    // First, save the current branch state (especially important for main branch)
-    // This ensures we can switch back and see all messages
     const currentMessages = [...activePaneData.chatMessages.allMessages];
 
     const branchPoint = {
@@ -283,7 +269,7 @@ export const createBranchPoint = (
 
     setConversationBranches(prev => {
         const newMap = new Map(prev);
-        // Save the current branch state before switching (preserve full conversation)
+
         if (currentBranchId === 'main' && !newMap.has('main')) {
             newMap.set('main', {
                 id: 'main',
@@ -292,7 +278,7 @@ export const createBranchPoint = (
                 name: 'Main Branch'
             });
         } else if (currentBranchId !== 'main' && newMap.has(currentBranchId)) {
-            // Update existing branch with current messages
+
             const existing = newMap.get(currentBranchId);
             newMap.set(currentBranchId, { ...existing, messages: currentMessages });
         }

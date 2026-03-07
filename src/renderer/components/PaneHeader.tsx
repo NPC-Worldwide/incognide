@@ -1,7 +1,6 @@
 import React, { useCallback, useRef, useEffect } from 'react';
 import { Check, Play, X, Maximize2, Minimize2, ChevronDown } from 'lucide-react';
 
-// Common props interface for custom header content components
 export interface HeaderContentProps {
     icon?: React.ReactNode;
     title?: string;
@@ -22,9 +21,9 @@ export const PaneHeader = React.memo(({
     icon,
     title,
     children,
-    // Custom header content - when provided, replaces the default icon+title+children
+
     headerContent,
-    // Height override for custom headers (e.g., browser toolbar needs more space)
+
     headerHeight,
     findNodePath,
     rootLayoutNode,
@@ -44,13 +43,13 @@ export const PaneHeader = React.memo(({
     onClose,
     onToggleZen,
     isZenMode,
-    // Option to hide zen/close buttons (for panes that render their own)
+
     hideZenButton,
     hideCloseButton,
-    // Top bar collapse
+
     topBarCollapsed,
     onExpandTopBar,
-    // Pane locking
+
     panesLocked,
     onTogglePanesLocked
 }) => {
@@ -75,7 +74,6 @@ export const PaneHeader = React.memo(({
         }
     }, [onConfirmRename, onCancelRename]);
 
-    // Default content when no headerContent is provided
     const defaultContent = (
         <div style={{ flex: '1 1 0', width: 0, minWidth: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', padding: '4px 8px', gap: '8px' }}>
             <span style={{ flexShrink: 0 }}>{icon}</span>
@@ -123,7 +121,6 @@ export const PaneHeader = React.memo(({
                 </span>
             )}
 
-            {/* Buttons area - can shrink and hide */}
             <div style={{ flex: '1 1 0', width: 0, minWidth: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
                 {children}
 
@@ -183,7 +180,6 @@ export const PaneHeader = React.memo(({
             }}
             className="theme-bg-secondary theme-border theme-text-muted"
         >
-            {/* Expand/Zen button - left side */}
             {!hideZenButton && (
                 <button
                     onClick={(e) => { e.stopPropagation(); onToggleZen?.(); }}
@@ -195,10 +191,8 @@ export const PaneHeader = React.memo(({
                 </button>
             )}
 
-            {/* Content - either custom headerContent or default */}
             {headerContent || defaultContent}
 
-            {/* Expand top bar button - only for simple panes without custom headerContent */}
             {!headerContent && topBarCollapsed && onExpandTopBar && (
                 <button
                     onClick={(e) => { e.stopPropagation(); onExpandTopBar(); }}
@@ -210,7 +204,6 @@ export const PaneHeader = React.memo(({
                 </button>
             )}
 
-            {/* Lock toggle - before close */}
             {onTogglePanesLocked && (
                 <button
                     onClick={(e) => { e.stopPropagation(); onTogglePanesLocked(); }}
@@ -228,7 +221,6 @@ export const PaneHeader = React.memo(({
                 </button>
             )}
 
-            {/* Close button - right side (hidden when locked) */}
             {!hideCloseButton && !panesLocked && (
                 <button
                     onClick={(e) => { e.stopPropagation(); onClose?.(); }}

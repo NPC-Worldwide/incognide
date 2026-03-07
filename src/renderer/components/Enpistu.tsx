@@ -6,8 +6,8 @@ import {
     Terminal, Image, Music, Trash, Users, Plus, ArrowUp, Camera, MessageSquare,
     ListFilter, ArrowDown,X, Wrench, FileText, Code2, FileJson, Paperclip,
     Send, BarChart3,Minimize2,  Maximize2, MessageCircle, BrainCircuit, Star, Origami, ChevronDown, ChevronUp,
-    Clock, FolderTree, Search, HardDrive, Brain, GitBranch, Activity, Tag, Sparkles, Code, BookOpen, User,
-    RefreshCw, RotateCcw, Check, KeyRound, Bot, Zap, HelpCircle, AlertCircle, MoreVertical
+    Clock, FolderTree, Search, HardDrive, Brain, GitBranch, Activity, Tag, Sparkles, Code, BookOpen, User, FolderOpen,
+    RefreshCw, RotateCcw, Check, KeyRound, Bot, Zap, HelpCircle, AlertCircle, MoreVertical, LayoutGrid
 } from 'lucide-react';
 
 import { Icon } from 'lucide-react';
@@ -33,6 +33,8 @@ import JinxMenu from './JinxMenu';
 import '../../index.css';
 import CtxEditor from './CtxEditor';
 import TeamManagement from './TeamManagement';
+import McpManager from './McpManager';
+import SkillsManager from './SkillsManager';
 import MarkdownRenderer from './MarkdownRenderer';
 import DataDash from './DataDash';
 import CodeEditor from './CodeEditor';
@@ -250,6 +252,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const aiEnabled = useAiEnabled();
     const [gitPanelCollapsed, setGitPanelCollapsed] = useState(true);
     const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+    const [layoutPresetModalOpen, setLayoutPresetModalOpen] = useState(false);
     const [pdfHighlightsTrigger, setPdfHighlightsTrigger] = useState(0);
     const [conversationBranches, setConversationBranches] = useState(new Map());
     const [currentBranchId, setCurrentBranchId] = useState('main');
@@ -686,9 +689,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         if (saved !== null) {
             const parsed = JSON.parse(saved);
             // Ensure 'git' is in the order if it's missing (backwards compat)
-            if (!parsed.includes('git')) {
-                parsed.push('git');
-            }
+            if (!parsed.includes('git')) parsed.push('git');
             return parsed;
         }
         return ['websites', 'files', 'conversations', 'git'];
@@ -1027,7 +1028,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         // Window menu handlers
         if (api.api?.onMenuNewWindow) {
             cleanups.push(api.api.onMenuNewWindow(() => {
-                api.api.openNewWindow?.(currentPathRef.current);
+                api.api.openNewWindow?.('');
             }));
         }
 
@@ -5093,6 +5094,37 @@ ${contextPrompt}`;
         addPaneOrTab(newPaneId);
     }, []);
 
+    const renderMcpManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
+        return (
+            <McpManager
+                currentPath={currentPath}
+                embedded={true}
+            />
+        );
+    }, [currentPath]);
+
+    const createMcpManagerPane = useCallback(async () => {
+        const newPaneId = generateId();
+        contentDataRef.current[newPaneId] = { contentType: 'mcp-manager', contentId: 'mcp-manager' };
+        addPaneOrTab(newPaneId);
+    }, []);
+
+    const renderSkillsManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
+        return (
+            <SkillsManager
+                currentPath={currentPath}
+                embedded={true}
+                onOpenJinxEditor={() => createJinxPane?.()}
+            />
+        );
+    }, [currentPath, createJinxPane]);
+
+    const createSkillsManagerPane = useCallback(async () => {
+        const newPaneId = generateId();
+        contentDataRef.current[newPaneId] = { contentType: 'skills-manager', contentId: 'skills-manager' };
+        addPaneOrTab(newPaneId);
+    }, []);
+
     // Keep menu handler refs updated
     useEffect(() => {
         createSettingsPaneRef.current = createSettingsPane;
@@ -5345,6 +5377,14 @@ ${contextPrompt}`;
             // - sessionStorage: for window-specific isolation during hot-reload
             localStorage.setItem(LAST_ACTIVE_PATH_KEY, currentPath);
             sessionStorage.setItem(LAST_ACTIVE_PATH_KEY, currentPath);
+            // Track recent paths for welcome screen
+            try {
+                const stored = localStorage.getItem('incognide-recent-paths');
+                const recent: string[] = stored ? JSON.parse(stored) : [];
+                const filtered = recent.filter(p => p !== currentPath);
+                filtered.unshift(currentPath);
+                localStorage.setItem('incognide-recent-paths', JSON.stringify(filtered.slice(0, 20)));
+            } catch (e) {}
         }
     }, [currentPath]);
 
@@ -5568,24 +5608,26 @@ ${contextPrompt}`;
 
             // Only determine initial path on first load (when currentPath is empty)
             if (!currentPath) {
-                let initialPathToLoad = config.baseDir;
-                // Check sessionStorage first (for hot-reload within same window),
-                // then localStorage (for persistence across app restarts)
-                const storedPath = sessionStorage.getItem(LAST_ACTIVE_PATH_KEY) || localStorage.getItem(LAST_ACTIVE_PATH_KEY);
+                let storedPath = sessionStorage.getItem(LAST_ACTIVE_PATH_KEY);
+                if (!storedPath) {
+                    try {
+                        const activeWindows = JSON.parse(localStorage.getItem(ACTIVE_WINDOWS_KEY) || '{}');
+                        const otherWindowCount = Object.keys(activeWindows).filter(id => id !== windowId).length;
+                        if (otherWindowCount === 0) {
+                            storedPath = localStorage.getItem(LAST_ACTIVE_PATH_KEY);
+                        }
+                    } catch (e) {}
+                }
                 if (storedPath) {
                     const pathExistsResponse = await window.api.readDirectoryStructure(storedPath);
                     if (!pathExistsResponse?.error) {
-                        initialPathToLoad = storedPath;
+                        setCurrentPath(storedPath);
                     } else {
-                        console.warn(`Stored path "${storedPath}" is invalid or inaccessible. Falling back to default.`);
                         sessionStorage.removeItem(LAST_ACTIVE_PATH_KEY);
                         localStorage.removeItem(LAST_ACTIVE_PATH_KEY);
                     }
-                } else if (config.default_folder) {
-                    initialPathToLoad = config.default_folder;
                 }
-
-                setCurrentPath(initialPathToLoad);
+                setLoading(false);
                 return;
             }
 
@@ -5878,7 +5920,164 @@ ${contextPrompt}`;
 
 
 
-    const renderModals = () => 
+    const applyLayoutPreset = useCallback(async (presetId: string) => {
+        const gid = () => generateId();
+        const panes: Record<string, { id: string; type: string; data: any }> = {};
+        const postSetup: Array<{ paneId: string; type: string }> = [];
+        const mkPane = (contentType: string, extra: any = {}) => {
+            const id = gid();
+            let contentId: string | null = null;
+            if (contentType === 'terminal' || contentType === 'python') {
+                contentId = `term_${gid()}`;
+                extra.shellType = extra.shellType || (contentType === 'python' ? 'python3' : 'system');
+            } else if (contentType === 'browser') {
+                contentId = `browser_${gid()}`;
+                postSetup.push({ paneId: id, type: 'browser' });
+            } else if (contentType === 'chat') {
+                extra.chatMessages = { messages: [], allMessages: [], displayedMessageCount: 20 };
+                postSetup.push({ paneId: id, type: 'chat' });
+            }
+            panes[id] = { id, type: contentType, data: { contentType, contentId, ...extra } };
+            return { id, type: 'content' as const };
+        };
+        const mkSplit = (dir: 'horizontal' | 'vertical', sizes: number[], children: any[]) => ({
+            id: gid(), type: 'split' as const, direction: dir, sizes, children,
+        });
+        let layout: any;
+        let activeId: string | undefined;
+        switch (presetId) {
+            case 'vscode': {
+                const e1 = mkPane('editor', { isUntitled: true });
+                const e2 = mkPane('editor', { isUntitled: true });
+                const term = mkPane('terminal');
+                activeId = e1.id;
+                layout = mkSplit('vertical', [70, 30], [
+                    mkSplit('horizontal', [50, 50], [e1, e2]),
+                    term,
+                ]);
+                break;
+            }
+            case 'pycharm': {
+                const editor = mkPane('editor', { isUntitled: true });
+                const chat = mkPane('chat', { executionMode: 'chat' });
+                const term = mkPane('terminal');
+                activeId = editor.id;
+                layout = mkSplit('horizontal', [60, 40], [
+                    editor,
+                    mkSplit('vertical', [60, 40], [chat, term]),
+                ]);
+                break;
+            }
+            case 'spyder': {
+                const editor = mkPane('editor', { isUntitled: true });
+                const help = mkPane('help');
+                const term = mkPane('terminal');
+                activeId = editor.id;
+                layout = mkSplit('horizontal', [55, 45], [
+                    editor,
+                    mkSplit('vertical', [50, 50], [help, term]),
+                ]);
+                break;
+            }
+            case 'matlab': {
+                const editor = mkPane('editor', { isUntitled: true });
+                const term = mkPane('terminal');
+                const chat = mkPane('chat', { executionMode: 'chat' });
+                activeId = editor.id;
+                layout = mkSplit('horizontal', [70, 30], [
+                    mkSplit('vertical', [65, 35], [editor, term]),
+                    chat,
+                ]);
+                break;
+            }
+            case 'jetbrains': {
+                const editor = mkPane('editor', { isUntitled: true });
+                const term = mkPane('terminal');
+                const git = mkPane('git');
+                activeId = editor.id;
+                layout = mkSplit('vertical', [70, 30], [
+                    mkSplit('horizontal', [75, 25], [editor, git]),
+                    term,
+                ]);
+                break;
+            }
+            case 'cursor': {
+                const editor = mkPane('editor', { isUntitled: true });
+                const chat = mkPane('chat', { executionMode: 'chat' });
+                activeId = editor.id;
+                layout = mkSplit('horizontal', [60, 40], [editor, chat]);
+                break;
+            }
+            case 'claude-code': {
+                const t1 = mkPane('terminal');
+                const t2 = mkPane('terminal');
+                const t3 = mkPane('terminal');
+                const t4 = mkPane('terminal');
+                const t5 = mkPane('terminal');
+                const t6 = mkPane('terminal');
+                activeId = t1.id;
+                layout = mkSplit('vertical', [50, 50], [
+                    mkSplit('horizontal', [33, 34, 33], [t1, t2, t3]),
+                    mkSplit('horizontal', [33, 34, 33], [t4, t5, t6]),
+                ]);
+                break;
+            }
+            case 'writer': {
+                const doc = mkPane('docx');
+                activeId = doc.id;
+                layout = doc;
+                break;
+            }
+            case 'research': {
+                const browser = mkPane('browser');
+                const chat = mkPane('chat', { executionMode: 'chat' });
+                const term = mkPane('terminal');
+                activeId = browser.id;
+                layout = mkSplit('vertical', [70, 30], [
+                    mkSplit('horizontal', [55, 45], [browser, chat]),
+                    term,
+                ]);
+                break;
+            }
+            case 'data-science': {
+                const editor = mkPane('editor', { isUntitled: true });
+                const term = mkPane('terminal');
+                const chat = mkPane('chat', { executionMode: 'chat' });
+                activeId = editor.id;
+                layout = mkSplit('vertical', [60, 40], [
+                    mkSplit('horizontal', [50, 50], [editor, term]),
+                    chat,
+                ]);
+                break;
+            }
+            default:
+                return;
+        }
+        const existingIds = Object.keys(contentDataRef.current);
+        existingIds.forEach(id => delete contentDataRef.current[id]);
+        Object.values(panes).forEach(p => {
+            contentDataRef.current[p.id] = p.data;
+        });
+        setRootLayoutNode(layout);
+        if (activeId) setActiveContentPaneId(activeId);
+        setLayoutPresetModalOpen(false);
+        for (const { paneId, type } of postSetup) {
+            if (type === 'chat') {
+                try {
+                    const conversation = await window.api.createConversation({ directory_path: currentPath });
+                    if (conversation?.id && contentDataRef.current[paneId]) {
+                        contentDataRef.current[paneId].contentId = conversation.id;
+                        contentDataRef.current[paneId].conversationId = conversation.id;
+                        setRootLayoutNode(prev => ({ ...prev }));
+                    }
+                } catch (e) {
+                    console.error('Failed to create conversation for preset chat pane:', e);
+                }
+            }
+        }
+    }, [setRootLayoutNode, setActiveContentPaneId, contentDataRef, currentPath]);
+
+    const renderModals = () =>
     {
         
     return     (
@@ -6792,6 +6991,81 @@ ${contextPrompt}`;
                 />
             )}
 
+            {layoutPresetModalOpen && (
+                <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setLayoutPresetModalOpen(false)}>
+                    <div className="w-full max-w-3xl theme-bg-primary rounded-lg border theme-border flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between p-4 border-b theme-border">
+                            <div className="flex items-center gap-3">
+                                <LayoutGrid size={20} className="text-blue-400" />
+                                <h2 className="text-lg font-semibold theme-text-primary">Layout Presets</h2>
+                            </div>
+                            <button onClick={() => setLayoutPresetModalOpen(false)} className="p-2 theme-hover rounded-lg">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-auto p-4">
+                            {currentPath && (
+                                <div className="flex gap-2 mb-4">
+                                    <button
+                                        onClick={() => {
+                                            if (!rootLayoutNode) return;
+                                            const data = serializeWorkspace(rootLayoutNode, currentPath, contentDataRef.current, activeContentPaneId);
+                                            localStorage.setItem(`incognide-default-layout:${currentPath}`, JSON.stringify(data));
+                                            setLayoutPresetModalOpen(false);
+                                        }}
+                                        disabled={!rootLayoutNode}
+                                        className="flex-1 px-3 py-2 text-sm theme-bg-secondary theme-hover rounded-lg border theme-border disabled:opacity-40"
+                                    >
+                                        Save Current as Default
+                                    </button>
+                                    <button
+                                        onClick={async () => {
+                                            const saved = localStorage.getItem(`incognide-default-layout:${currentPath}`);
+                                            if (!saved) return;
+                                            try {
+                                                const data = JSON.parse(saved);
+                                                const restored = await deserializeWorkspace(data, contentDataRef, setRootLayoutNode, setActiveContentPaneId, setIsLoadingWorkspace, generateId, getConversationStats);
+                                                if (restored) setLayoutPresetModalOpen(false);
+                                            } catch (e) { console.error('Failed to load default layout:', e); }
+                                        }}
+                                        disabled={!localStorage.getItem(`incognide-default-layout:${currentPath}`)}
+                                        className="flex-1 px-3 py-2 text-sm theme-bg-secondary theme-hover rounded-lg border theme-border disabled:opacity-40"
+                                    >
+                                        Load Default
+                                    </button>
+                                </div>
+                            )}
+                            <div className="grid grid-cols-2 gap-3">
+                                {[
+                                    { id: 'vscode', name: 'VS Code', desc: '2 editors + terminal', ascii: '┌──────┬──────┐\n│editor│editor│\n├──────┴──────┤\n│  terminal   │\n└─────────────┘' },
+                                    { id: 'cursor', name: 'Cursor', desc: 'Editor + agent chat', ascii: '┌────────┬─────┐\n│ editor │chat │\n│        │     │\n└────────┴─────┘' },
+                                    { id: 'claude-code', name: 'Claude Code', desc: '6 terminals (3x2)', ascii: '┌────┬────┬────┐\n│term│term│term│\n├────┼────┼────┤\n│term│term│term│\n└────┴────┴────┘' },
+                                    { id: 'pycharm', name: 'PyCharm', desc: 'Editor + chat + terminal', ascii: '┌────────┬─────┐\n│ editor │chat │\n│        ├─────┤\n│        │term │\n└────────┴─────┘' },
+                                    { id: 'jetbrains', name: 'JetBrains', desc: 'Editor + git + terminal', ascii: '┌──────────┬───┐\n│  editor  │git│\n├──────────┴───┤\n│   terminal   │\n└──────────────┘' },
+                                    { id: 'spyder', name: 'Spyder', desc: 'Editor + help + terminal', ascii: '┌────────┬─────┐\n│ editor │help │\n│        ├─────┤\n│        │term │\n└────────┴─────┘' },
+                                    { id: 'matlab', name: 'MATLAB', desc: 'Editor + terminal + chat', ascii: '┌──────────┬────┐\n│  editor  │    │\n├──────────┤chat│\n│ terminal │    │\n└──────────┴────┘' },
+                                    { id: 'research', name: 'Research', desc: 'Browser + chat + terminal', ascii: '┌───────┬──────┐\n│browser│ chat │\n├───────┴──────┤\n│   terminal   │\n└──────────────┘' },
+                                    { id: 'data-science', name: 'Data Science', desc: 'Editor + terminal + chat', ascii: '┌───────┬──────┐\n│editor │ term │\n├───────┴──────┤\n│     chat     │\n└──────────────┘' },
+                                    { id: 'writer', name: 'Writer', desc: 'Full document editor', ascii: '┌──────────────┐\n│              │\n│     docx     │\n│              │\n└──────────────┘' },
+                                ].map(preset => (
+                                    <button
+                                        key={preset.id}
+                                        onClick={() => applyLayoutPreset(preset.id)}
+                                        className="flex gap-3 p-3 theme-bg-secondary rounded-lg theme-hover text-left group"
+                                    >
+                                        <pre className="text-[9px] leading-[1.2] theme-text-muted group-hover:text-blue-400 transition-colors flex-shrink-0">{preset.ascii}</pre>
+                                        <div className="flex flex-col justify-center min-w-0">
+                                            <div className="text-sm font-medium theme-text-primary">{preset.name}</div>
+                                            <div className="text-xs theme-text-muted">{preset.desc}</div>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
         </>
 
     );
@@ -7109,6 +7383,8 @@ const paneRenderers = useMemo(() => ({
     jinx: renderJinxPane,
     teammanagement: renderTeamManagementPane,
     settings: renderSettingsPane,
+    'mcp-manager': renderMcpManagerPane,
+    'skills-manager': renderSkillsManagerPane,
     photoviewer: renderPhotoViewerPane,
     scherzo: renderScherzoPane,
     library: renderLibraryViewerPane,
@@ -7131,7 +7407,7 @@ const paneRenderers = useMemo(() => ({
     renderLatexViewer, renderNotebookViewer, renderExpViewer, renderPicViewer, renderStlViewer,
     renderMindMapViewer, renderZipViewer, renderDataLabelerPane, renderGraphViewerPane,
     renderBrowserGraphPane, renderDataDashPane, renderDBToolPane, renderNPCTeamPane,
-    renderJinxPane, renderTeamManagementPane, renderSettingsPane, renderPhotoViewerPane,
+    renderJinxPane, renderTeamManagementPane, renderMcpManagerPane, renderSkillsManagerPane, renderSettingsPane, renderPhotoViewerPane,
     renderScherzoPane, renderLibraryViewerPane, renderHelpPane, renderGitPane,
     renderFolderViewerPane, renderProjectEnvPane, renderDiskUsagePane, renderMemoryManagerPane,
     renderCronDaemonPane, renderSearchPane, renderMarkdownPreviewPane, renderHtmlPreviewPane,
@@ -7806,6 +8082,14 @@ const renderMainContent = () => {
                 <HardDrive size={18} />
             </button>
 
+            <button
+                onClick={() => setLayoutPresetModalOpen(true)}
+                className="p-2 theme-hover rounded theme-text-muted"
+                title="Layout Presets"
+            >
+                <LayoutGrid size={18} />
+            </button>
+
             <div className="flex-1" />
 
             {/* Collapse top bar */}
@@ -8057,7 +8341,7 @@ const renderMainContent = () => {
             <div className="flex items-center gap-2">
                 {topBarWidth >= 650 ? (
                     <>
-                        <button onClick={() => createLibraryViewerPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Library"><BookOpen size={18} /></button>
+                        <button onClick={() => createLibraryViewerPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Grimoire"><BookOpen size={18} /></button>
                         <button onClick={() => createPhotoViewerPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Vixynt" data-tutorial="vixynt-button"><Image size={18} /></button>
                         <button onClick={() => createScherzoPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Scherzo" data-tutorial="scherzo-button"><Music size={18} /></button>
                         <button onClick={() => createCronDaemonPane()} className="p-2 theme-hover rounded theme-text-muted" title="Assembly Line (Cron, Daemons, SQL Models)" data-tutorial="cron-button">
@@ -8083,7 +8367,7 @@ const renderMainContent = () => {
                             <>
                                 <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setTopBarMenuOpen(false)} />
                                 <div className="absolute right-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-50 py-1 min-w-[160px]">
-                                    <button onClick={() => { createLibraryViewerPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><BookOpen size={14} /> Library</button>
+                                    <button onClick={() => { createLibraryViewerPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><BookOpen size={14} /> Grimoire</button>
                                     <button onClick={() => { createPhotoViewerPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><Image size={14} /> Vixynt</button>
                                     <button onClick={() => { startPomodoro(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><Clock size={14} /> {pomodoroActive ? `Pomodoro ${formatPomodoroTime(pomodoroSecondsLeft)}` : 'Pomodoro'}</button>
                                     <button onClick={() => { createScherzoPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><Music size={14} /> Scherzo</button>
@@ -8202,6 +8486,49 @@ const renderMainContent = () => {
                         setDraggedItem(null);
                     }}  >
                     <div className="text-center text-gray-400 max-w-lg mx-auto">
+                        {!currentPath && (
+                            <div className="mb-8 flex flex-col items-center gap-4">
+                                <FolderOpen size={32} className="opacity-30" />
+                                <p className="text-sm font-medium theme-text-primary">Open a folder to get started</p>
+                                <button
+                                    onClick={async () => {
+                                        const result = await window.api.showOpenDialog({ properties: ['openDirectory'] });
+                                        if (result?.[0]?.path) {
+                                            setCurrentPath(result[0].path);
+                                        }
+                                    }}
+                                    className="px-6 py-2.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-medium transition-colors"
+                                >
+                                    Browse...
+                                </button>
+                                {(() => {
+                                    try {
+                                        const stored = localStorage.getItem('incognide-recent-paths');
+                                        const recentPaths: string[] = stored ? JSON.parse(stored) : [];
+                                        if (recentPaths.length === 0) return null;
+                                        return (
+                                            <div className="w-full mt-2 text-left">
+                                                <p className="text-xs uppercase tracking-wider opacity-50 mb-3">Recent Folders</p>
+                                                <div className="grid grid-cols-2 gap-1">
+                                                    {recentPaths.slice(0, 10).map(p => (
+                                                        <button
+                                                            key={p}
+                                                            onClick={() => setCurrentPath(p)}
+                                                            className="flex items-center gap-2 px-3 py-2 rounded theme-hover text-left"
+                                                        >
+                                                            <Folder size={14} className="text-purple-400 flex-shrink-0" />
+                                                            <span className="text-sm font-mono truncate theme-text-primary">
+                                                                {p.split('/').slice(-2).join('/')}
+                                                            </span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    } catch { return null; }
+                                })()}
+                            </div>
+                        )}
                         <div className="mb-8">
                             {(() => {
                                 const mod = navigator.platform?.toLowerCase().includes('mac') ? '⌘' : 'Ctrl+';
@@ -8333,6 +8660,7 @@ const renderMainContent = () => {
                     <StatusBar
                         createDBToolPane={createDBToolPane}
                         createTeamManagementPane={createTeamManagementPane}
+                        createMcpManagerPane={createMcpManagerPane}
                         paneItems={[]}
                         setActiveContentPaneId={setActiveContentPaneId}
                         pendingMemoryCount={pendingMemoryCount}
@@ -8413,6 +8741,7 @@ const renderMainContent = () => {
                 <StatusBar
                     createDBToolPane={createDBToolPane}
                     createTeamManagementPane={createTeamManagementPane}
+                    createMcpManagerPane={createMcpManagerPane}
                     paneItems={paneItems}
                     setActiveContentPaneId={setActiveContentPaneId}
                     pendingMemoryCount={pendingMemoryCount}
@@ -8593,6 +8922,8 @@ const renderMainContent = () => {
         createNPCTeamPane={createNPCTeamPane}
         createJinxPane={createJinxPane}
         createTeamManagementPane={createTeamManagementPane}
+        createMcpManagerPane={createMcpManagerPane}
+        createSkillsManagerPane={createSkillsManagerPane}
         createSettingsPane={createSettingsPane}
         createPhotoViewerPane={createPhotoViewerPane}
         createScherzoPane={createScherzoPane}
@@ -8603,6 +8934,7 @@ const renderMainContent = () => {
         createTileJinxPane={createTileJinxPane}
         createGitPane={createGitPane}
         createAndAddPaneNodeToLayout={createAndAddPaneNodeToLayout}
+        closeContentPane={closeContentPane}
         createNewConversation={createNewConversation}
         generateId={generateId}
         streamToPaneRef={streamToPaneRef}
@@ -8671,8 +9003,8 @@ const renderMainContent = () => {
             {/* Zen Mode Overlay */}
             {zenModePaneId && contentDataRef.current[zenModePaneId] && (
                 <div className="fixed inset-0 z-[200] theme-bg-primary flex flex-col">
-                    {/* Zen mode header with minimize/close */}
-                    <div className="p-2 border-b theme-border text-xs theme-text-muted flex-shrink-0 theme-bg-secondary flex justify-between items-center">
+                    <div className="absolute top-0 left-0 right-0 h-8 z-[201] group/zentrig">
+                    <div className="absolute top-0 left-0 right-0 z-[202] p-2 border-b theme-border text-xs theme-text-muted theme-bg-secondary flex justify-between items-center opacity-0 -translate-y-full group-hover/zentrig:opacity-100 group-hover/zentrig:translate-y-0 transition-all duration-200 pointer-events-none group-hover/zentrig:pointer-events-auto">
                         <div className="flex items-center gap-2">
                             <span className="font-semibold">Zen Mode</span>
                             <span className="text-gray-500">-</span>
@@ -8685,6 +9017,7 @@ const renderMainContent = () => {
                         >
                             <X size={16} />
                         </button>
+                    </div>
                     </div>
                     {/* Zen mode content */}
                     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">

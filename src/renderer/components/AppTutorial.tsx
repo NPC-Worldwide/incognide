@@ -13,7 +13,7 @@ interface TutorialStep {
 }
 
 const TUTORIAL_STEPS: TutorialStep[] = [
-    // === Core Layout ===
+
     {
         selector: '[data-tutorial="sidebar"]',
         title: 'Sidebar',
@@ -29,7 +29,6 @@ const TUTORIAL_STEPS: TutorialStep[] = [
         position: 'bottom',
     },
 
-    // === Creation Tiles ===
     {
         selector: '[data-tutorial="creation-tiles"]',
         title: 'Quick Create',
@@ -66,7 +65,6 @@ const TUTORIAL_STEPS: TutorialStep[] = [
         position: 'bottom',
     },
 
-    // === Sidebar Sections ===
     {
         selector: '[data-tutorial="file-browser"]',
         title: 'File Browser',
@@ -96,7 +94,6 @@ const TUTORIAL_STEPS: TutorialStep[] = [
         position: 'right',
     },
 
-    // === Upper Right Tools ===
     {
         selector: '[data-tutorial="vixynt-button"]',
         title: 'Vixynt — Image Studio',
@@ -126,7 +123,6 @@ const TUTORIAL_STEPS: TutorialStep[] = [
         position: 'bottom',
     },
 
-    // === Bottom Bar (left) ===
     {
         selector: '[data-tutorial="kg-button"]',
         title: 'Knowledge Graph',
@@ -170,7 +166,6 @@ const TUTORIAL_STEPS: TutorialStep[] = [
         position: 'bottom',
     },
 
-    // === AI Features ===
     {
         selector: '[data-tutorial="conversations"]',
         title: 'Chat with AI Models',
@@ -218,7 +213,6 @@ function computeTooltipPosition(
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
-    // For very large targets (e.g. pane area), use the visible center rather than edges
     const centerY = Math.max(padding, Math.min(targetRect.top + targetRect.height / 2, vh - padding));
     const centerX = Math.max(padding, Math.min(targetRect.left + targetRect.width / 2, vw - padding));
 
@@ -252,7 +246,6 @@ function computeTooltipPosition(
         }
     }
 
-    // Auto: try bottom, right, top, left
     for (const dir of ['bottom', 'right', 'top', 'left'] as const) {
         const pos = positions[dir];
         if (pos.top >= padding && pos.top + tooltipHeight <= vh - padding && pos.left >= padding && pos.left + tooltipWidth <= vw - padding) {
@@ -260,7 +253,6 @@ function computeTooltipPosition(
         }
     }
 
-    // Fallback: center of viewport
     return {
         top: Math.max(padding, vh / 2 - tooltipHeight / 2),
         left: Math.max(padding, vw / 2 - tooltipWidth / 2),
@@ -281,13 +273,11 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ onComplete }) => {
     const tooltipRef = useRef<HTMLDivElement>(null);
     const [isAnimating, setIsAnimating] = useState(false);
 
-    // Filter steps based on user path
     const steps = TUTORIAL_STEPS.filter((step) => step.paths.includes(userPath));
 
     const totalSteps = steps.length;
     const step = steps[currentStep];
 
-    // Update target element rect
     const updateTarget = useCallback(() => {
         if (!step) return;
         const el = document.querySelector(step.selector);
@@ -310,7 +300,6 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ onComplete }) => {
         };
     }, [updateTarget, currentStep]);
 
-    // Compute tooltip position after it renders
     useEffect(() => {
         if (!targetRect || !tooltipRef.current) return;
         const tooltipRect = tooltipRef.current.getBoundingClientRect();
@@ -340,7 +329,6 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ onComplete }) => {
         }
     }, [currentStep]);
 
-    // Keyboard navigation
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
@@ -360,7 +348,6 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ onComplete }) => {
         return null;
     }
 
-    // Spotlight cutout dimensions
     const spotPad = 8;
     const spotRadius = 8;
     const spot = targetRect
@@ -374,7 +361,6 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ onComplete }) => {
 
     return (
         <div className="fixed inset-0 z-[9999]" style={{ pointerEvents: 'auto' }}>
-            {/* SVG overlay with cutout */}
             <svg className="absolute inset-0 w-full h-full" style={{ pointerEvents: 'none' }}>
                 <defs>
                     <mask id="tutorial-mask">
@@ -403,7 +389,6 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ onComplete }) => {
                 />
             </svg>
 
-            {/* Spotlight ring */}
             {spot && (
                 <div
                     className="absolute border-2 border-blue-400 rounded-lg transition-all duration-300 ease-out"
@@ -418,7 +403,6 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ onComplete }) => {
                 />
             )}
 
-            {/* Tooltip */}
             <div
                 ref={tooltipRef}
                 className={`absolute bg-gray-800 border border-gray-600 rounded-xl shadow-2xl p-4 max-w-xs transition-opacity duration-150 ${isAnimating ? 'opacity-0' : 'opacity-100'}`}
@@ -429,7 +413,6 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ onComplete }) => {
                     minWidth: 280,
                 }}
             >
-                {/* Step counter */}
                 <div className="flex items-center justify-between mb-2">
                     <span className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">
                         Step {currentStep + 1} of {totalSteps}
@@ -443,13 +426,10 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ onComplete }) => {
                     </button>
                 </div>
 
-                {/* Title */}
                 <h3 className="text-sm font-semibold text-white mb-1">{step.title}</h3>
 
-                {/* Description */}
                 <p className="text-xs text-gray-300 leading-relaxed mb-4">{step.description}</p>
 
-                {/* Progress dots */}
                 <div className="flex items-center gap-1 mb-3">
                     {steps.map((_, i) => (
                         <div
@@ -465,7 +445,6 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ onComplete }) => {
                     ))}
                 </div>
 
-                {/* Navigation buttons */}
                 <div className="flex items-center justify-between">
                     <button
                         onClick={goPrev}

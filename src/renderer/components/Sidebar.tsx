@@ -23,7 +23,7 @@ import { Modal, Tabs, Card, Button, Input, Select } from 'npcts';
 import DiskUsageAnalyzer from './DiskUsageAnalyzer';
 import AutosizeTextarea from './AutosizeTextarea';
 import ForceGraph2D from 'react-force-graph-2d';
-// ALL components used by tile jinxes - for REAL live preview
+
 import ActivityIntelligence from './ActivityIntelligence';
 import BrowserHistoryWeb from './BrowserHistoryWeb';
 import CtxEditor from './CtxEditor';
@@ -45,9 +45,9 @@ import SettingsMenu from './SettingsMenu';
 import npcLogo from '../../assets/icon.png';
 
 const Sidebar = (props: any) => {
-    // Destructure all props from Enpistu
+
     const {
-        // State
+
         sidebarCollapsed, sidebarWidth, isResizingSidebar, contentDataRef, isDarkMode,
         currentPath, baseDir, selectedFiles, selectedConvos, windowId, activeWindowsExpanded,
         workspaceIndicatorExpanded, expandedFolders, renamingPath, editedSidebarItemName,
@@ -58,7 +58,7 @@ const Sidebar = (props: any) => {
         isGlobalSearch, searchTerm, searchInputRef, loading, isSearching,
         contextMenuPos, sidebarItemContextMenuPos, fileContextMenuPos,
         isEditingPath, editedPath, isLoadingWorkspace, activeConversationId,
-        // Setters
+
         setSidebarWidth, setIsResizingSidebar, setSelectedFiles, setFileContextMenuPos,
         setError, setIsStreaming, setRootLayoutNode, setActiveWindowsExpanded,
         setWorkspaceIndicatorExpanded, setGitPanelCollapsed, setExpandedFolders,
@@ -73,8 +73,8 @@ const Sidebar = (props: any) => {
         setPhotoViewerOpen, setDashboardMenuOpen, setJinxMenuOpen,
         setCtxEditorOpen, setTeamManagementOpen, setNpcTeamMenuOpen, setSidebarCollapsed,
         createGraphViewerPane, createBrowserGraphPane, createDataLabelerPane,
-        createDataDashPane, createDBToolPane, createNPCTeamPane, createJinxPane, createTeamManagementPane, createSettingsPane, createPhotoViewerPane, createScherzoPane, createProjectEnvPane, createDiskUsagePane, createLibraryViewerPane, createHelpPane, createTileJinxPane, createGitPane,
-        // Functions from Enpistu
+        createDataDashPane, createDBToolPane, createNPCTeamPane, createJinxPane, createTeamManagementPane, createMcpManagerPane, createSkillsManagerPane, createSettingsPane, createPhotoViewerPane, createScherzoPane, createProjectEnvPane, createDiskUsagePane, createLibraryViewerPane, createHelpPane, createTileJinxPane, createGitPane,
+
         createNewConversation, generateId, streamToPaneRef, availableNPCs, currentNPC, currentModel,
         currentProvider, executionMode, mcpServerPath, selectedMcpTools, updateContentPane,
         loadDirectoryStructure, loadWebsiteHistory, createNewBrowser,
@@ -83,7 +83,7 @@ const Sidebar = (props: any) => {
         handleInputSubmit, toggleTheme, goUpDirectory, switchToPath,
         handleCreateNewFolder, createNewTextFile, createUntitledTextFile, createNewTerminal, createNewNotebook, createNewExperiment, createNewDocument,
         handleOpenNpcTeamMenu, renderSearchResults,
-        createAndAddPaneNodeToLayout, findNodePath, findNodeByPath,
+        createAndAddPaneNodeToLayout, closeContentPane, findNodePath, findNodeByPath,
         isPredictiveTextEnabled, setIsPredictiveTextEnabled,
         topBarHeight = 48, bottomBarHeight = 48, topBarCollapsed = false,
         onExpandTopBar, onCollapseTopBar, setDownloadManagerOpen
@@ -93,28 +93,24 @@ const Sidebar = (props: any) => {
     const WINDOW_WORKSPACES_KEY = 'incognideWorkspaces';
     const ACTIVE_WINDOWS_KEY = 'incognideActiveWindows';
 
-    // Local state for disk usage panel
     const [diskUsageCollapsed, setDiskUsageCollapsed] = useState(true);
-    // State for bottom grid collapse
     const [bottomGridCollapsed, setBottomGridCollapsed] = useState<boolean>(() => {
         const stored = localStorage.getItem('incognide_bottomGridCollapsed');
         return stored === 'true';
     });
-    // Search state for sidebar sections
+
     const [convoSearch, setConvoSearch] = useState('');
     const [fileSearch, setFileSearch] = useState('');
     const [fileTypeFilter, setFileTypeFilter] = useState<string>(() => localStorage.getItem('incognide_fileTypeFilter') || '');
 
-    // Drag state for section reordering
     const [draggedSection, setDraggedSection] = useState<string | null>(null);
     const [dropTargetSection, setDropTargetSection] = useState<string | null>(null);
 
-    // Section drag handlers
     const handleSectionDragStart = (sectionId: string) => (e: React.DragEvent) => {
         setDraggedSection(sectionId);
         e.dataTransfer.setData('text/plain', sectionId);
         e.dataTransfer.effectAllowed = 'move';
-        // Set drag image
+
         if (e.currentTarget.parentElement) {
             e.dataTransfer.setDragImage(e.currentTarget.parentElement, 0, 0);
         }
@@ -157,58 +153,65 @@ const Sidebar = (props: any) => {
     const [showFileTypeFilter, setShowFileTypeFilter] = useState(false);
     const [websiteSearch, setWebsiteSearch] = useState('');
 
-    // Section settings panels
     const [showFilesSettings, setShowFilesSettings] = useState(false);
     const [showWebsitesSettings, setShowWebsitesSettings] = useState(false);
     const [showConversationsSettings, setShowConversationsSettings] = useState(false);
 
-    // Files settings
     const [filesSettings, setFilesSettings] = useState(() => {
         const saved = localStorage.getItem('incognide_filesSettings');
         return saved ? JSON.parse(saved) : {
             showHidden: false,
-            allowedExtensions: '',  // comma-separated, empty = all
+            allowedExtensions: '',
             excludedExtensions: '.pyc,.pyo,.git,.DS_Store,__pycache__',
             excludedFolders: 'node_modules,.git,__pycache__,.venv,venv',
             maxDepth: 10
         };
     });
 
-    // Websites settings
     const [websitesSettings, setWebsitesSettings] = useState(() => {
         const saved = localStorage.getItem('incognide_websitesSettings');
         return saved ? JSON.parse(saved) : {
             groupByDomain: true,
             maxHistory: 100,
-            excludedDomains: '',  // comma-separated
-            timeRangeDays: 30  // 0 = all time
+            excludedDomains: '',
+            timeRangeDays: 30,
+            groupBy: 'type',
         };
     });
 
-    // Conversation filters
+    const [browserSessionMode, setBrowserSessionMode] = useState<'global' | 'project'>(() => {
+        const perPath = localStorage.getItem(`npc-browser-session-mode-${currentPath}`);
+        if (perPath) return perPath as 'global' | 'project';
+        return (localStorage.getItem('npc-browser-session-mode') as 'global' | 'project') || 'global';
+    });
+
+    useEffect(() => {
+        const perPath = localStorage.getItem(`npc-browser-session-mode-${currentPath}`);
+        if (perPath) setBrowserSessionMode(perPath as 'global' | 'project');
+        else setBrowserSessionMode((localStorage.getItem('npc-browser-session-mode') as 'global' | 'project') || 'global');
+    }, [currentPath]);
+
     const [showConvoFilters, setShowConvoFilters] = useState(false);
     const [convoNpcFilter, setConvoNpcFilter] = useState<string>(() => localStorage.getItem('incognide_convoNpcFilter') || '');
     const [convoModelFilter, setConvoModelFilter] = useState<string>(() => localStorage.getItem('incognide_convoModelFilter') || '');
     const [convoDateFrom, setConvoDateFrom] = useState<string>(() => localStorage.getItem('incognide_convoDateFrom') || '');
     const [convoDateTo, setConvoDateTo] = useState<string>(() => localStorage.getItem('incognide_convoDateTo') || '');
 
-    // Conversations settings
     const [conversationsSettings, setConversationsSettings] = useState(() => {
         const saved = localStorage.getItem('incognide_conversationsSettings');
         return saved ? JSON.parse(saved) : {
-            sortBy: 'date',  // date, title, npc, model
+            sortBy: 'date',
             sortOrder: 'desc',
             showEmpty: true,
-            maxDisplay: 100
+            maxDisplay: 100,
+            groupBy: 'time',
         };
     });
 
-    // Persist file type filter to localStorage
     useEffect(() => {
         localStorage.setItem('incognide_fileTypeFilter', fileTypeFilter);
     }, [fileTypeFilter]);
 
-    // Persist section settings
     useEffect(() => {
         localStorage.setItem('incognide_filesSettings', JSON.stringify(filesSettings));
     }, [filesSettings]);
@@ -219,7 +222,6 @@ const Sidebar = (props: any) => {
         localStorage.setItem('incognide_conversationsSettings', JSON.stringify(conversationsSettings));
     }, [conversationsSettings]);
 
-    // Persist conversation filters to localStorage
     useEffect(() => {
         localStorage.setItem('incognide_convoNpcFilter', convoNpcFilter);
     }, [convoNpcFilter]);
@@ -232,12 +234,11 @@ const Sidebar = (props: any) => {
     useEffect(() => {
         localStorage.setItem('incognide_convoDateTo', convoDateTo);
     }, [convoDateTo]);
-    // Persist bottom grid collapsed state
+
     useEffect(() => {
         localStorage.setItem('incognide_bottomGridCollapsed', String(bottomGridCollapsed));
     }, [bottomGridCollapsed]);
 
-    // Load git status for current path
     const loadGitStatus = useCallback(async () => {
         if (!currentPath) return;
         setGitLoading(true);
@@ -257,28 +258,28 @@ const Sidebar = (props: any) => {
         if (currentPath) {
             loadGitStatus();
         }
-        // Set up periodic refresh for git status (every 10 seconds)
+
         const gitRefreshInterval = setInterval(() => {
+            if (document.hidden) return;
             if (currentPath && !gitPanelCollapsed) {
                 loadGitStatus();
             }
-        }, 10000);
+        }, 30000);
 
         return () => clearInterval(gitRefreshInterval);
     }, [currentPath, loadGitStatus, gitPanelCollapsed]);
 
-    // Periodic refresh for website history (every 15 seconds)
     useEffect(() => {
         const websiteRefreshInterval = setInterval(() => {
+            if (document.hidden) return;
             if (!websitesCollapsed) {
                 loadWebsiteHistory?.();
             }
-        }, 15000);
+        }, 30000);
 
         return () => clearInterval(websiteRefreshInterval);
     }, [websitesCollapsed, loadWebsiteHistory]);
 
-    // Memory and Knowledge Graph sections
     const [memoriesCollapsed, setMemoriesCollapsed] = useState(true);
     const [knowledgeCollapsed, setKnowledgeCollapsed] = useState(true);
     const [memorySearch, setMemorySearch] = useState('');
@@ -287,29 +288,41 @@ const Sidebar = (props: any) => {
     const [knowledgeEntities, setKnowledgeEntities] = useState<any[]>([]);
     const [loadingMemories, setLoadingMemories] = useState(false);
     const [loadingKnowledge, setLoadingKnowledge] = useState(false);
-    // Local state for header actions expanded/collapsed (persisted)
+
     const [headerActionsExpanded, setHeaderActionsExpanded] = useState(() => {
         const saved = localStorage.getItem('incognide_headerActionsExpanded');
         return saved !== null ? JSON.parse(saved) : true;
     });
-    // Persist headerActionsExpanded to localStorage
+
     useEffect(() => {
         localStorage.setItem('incognide_headerActionsExpanded', JSON.stringify(headerActionsExpanded));
     }, [headerActionsExpanded]);
 
-    // Doc dropdown state (click-based instead of hover)
     const [docDropdownOpen, setDocDropdownOpen] = useState(false);
-    // Terminal dropdown state (click-based)
+
     const [terminalDropdownOpen, setTerminalDropdownOpen] = useState(false);
-    // Chat+ dropdown state (click-based)
+
     const [chatPlusDropdownOpen, setChatPlusDropdownOpen] = useState(false);
-    // Code file dropdown state
+
+    const [mcpPanelOpen, setMcpPanelOpen] = useState(false);
+    const [mcpSidebarServers, setMcpSidebarServers] = useState<any[]>([]);
+    const [mcpSidebarLoading, setMcpSidebarLoading] = useState(false);
+
+    const [skillsPanelOpen, setSkillsPanelOpen] = useState(false);
+    const [sidebarJinxes, setSidebarJinxes] = useState<any[]>([]);
+    const [sidebarJinxesLoading, setSidebarJinxesLoading] = useState(false);
+    const [skillIngestUrl, setSkillIngestUrl] = useState('');
+    const [skillIngestLoading, setSkillIngestLoading] = useState(false);
+    const [skillIngestError, setSkillIngestError] = useState<string | null>(null);
+    const [showSkillIngest, setShowSkillIngest] = useState(false);
+    const [sidebarSkillsExpanded, setSidebarSkillsExpanded] = useState<Set<string>>(new Set(['project', 'incognide', 'npcsh']));
+
     const [codeFileDropdownOpen, setCodeFileDropdownOpen] = useState(false);
-    // Folder dropdown state
+
     const [folderDropdownOpen, setFolderDropdownOpen] = useState(false);
     const [folderDropdownPos, setFolderDropdownPos] = useState({ top: 0, left: 0 });
     const folderButtonRef = React.useRef<HTMLButtonElement>(null);
-    // Recent paths for folder dropdown
+
     const [recentPaths, setRecentPaths] = useState<string[]>(() => {
         try {
             const stored = localStorage.getItem('incognide-recent-paths');
@@ -319,13 +332,11 @@ const Sidebar = (props: any) => {
     const [defaultCodeFileType, setDefaultCodeFileType] = useState<string>(() =>
         localStorage.getItem('incognide_defaultCodeFileType') || 'py'
     );
-    
-    // Persist default code file type
+
     useEffect(() => {
         localStorage.setItem('incognide_defaultCodeFileType', defaultCodeFileType);
     }, [defaultCodeFileType]);
 
-    // Common file types for quick access
     const commonFileTypes = [
         { ext: 'py', label: 'Python', icon: '🐍' },
         { ext: 'js', label: 'JavaScript', icon: '📜' },
@@ -356,7 +367,35 @@ const Sidebar = (props: any) => {
         { ext: 'csv', label: 'CSV', icon: '📊' },
     ];
 
-    // Create file with specific extension - just create untitled file directly
+    // Smart filetype sense: count extensions in folder structure, sort by frequency
+    const sortedFileTypes = useMemo(() => {
+        const extCounts: Record<string, number> = {};
+        const countExts = (struct: any) => {
+            if (!struct) return;
+            Object.entries(struct).forEach(([name, item]: [string, any]) => {
+                if (item?.type === 'file') {
+                    const dot = name.lastIndexOf('.');
+                    if (dot > 0) {
+                        const ext = name.slice(dot + 1).toLowerCase();
+                        extCounts[ext] = (extCounts[ext] || 0) + 1;
+                    }
+                } else if (item?.type === 'directory' && item?.children) {
+                    countExts(item.children);
+                }
+            });
+        };
+        countExts(folderStructure);
+
+        if (Object.keys(extCounts).length === 0) return commonFileTypes;
+
+        return [...commonFileTypes].sort((a, b) => {
+            const countA = extCounts[a.ext] || 0;
+            const countB = extCounts[b.ext] || 0;
+            if (countB !== countA) return countB - countA;
+            return 0; // preserve original order for ties
+        });
+    }, [folderStructure]);
+
     const createFileWithExtension = (ext: string) => {
         setCodeFileDropdownOpen(false);
         if (createUntitledTextFile) {
@@ -364,7 +403,6 @@ const Sidebar = (props: any) => {
         }
     };
 
-    // Save to recent paths when currentPath changes
     useEffect(() => {
         if (currentPath && currentPath !== baseDir) {
             setRecentPaths(prev => {
@@ -376,7 +414,6 @@ const Sidebar = (props: any) => {
         }
     }, [currentPath, baseDir]);
 
-    // Close all header dropdowns (called when opening one to close others)
     const closeAllDropdowns = () => {
         setTerminalDropdownOpen(false);
         setChatPlusDropdownOpen(false);
@@ -385,23 +422,22 @@ const Sidebar = (props: any) => {
         setFolderDropdownOpen(false);
     };
 
-    // Close dropdowns when clicking outside
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
             const target = e.target as HTMLElement;
-            // Close code file dropdown if clicking outside
+
             if (codeFileDropdownOpen && !target.closest('[data-dropdown="code-file"]')) {
                 setCodeFileDropdownOpen(false);
             }
-            // Close doc dropdown if clicking outside
+
             if (docDropdownOpen && !target.closest('[data-dropdown="doc"]')) {
                 setDocDropdownOpen(false);
             }
-            // Close terminal dropdown if clicking outside
+
             if (terminalDropdownOpen && !target.closest('[data-dropdown="terminal"]')) {
                 setTerminalDropdownOpen(false);
             }
-            // Close folder dropdown if clicking outside
+
             if (folderDropdownOpen && !target.closest('[data-dropdown="folder"]')) {
                 setFolderDropdownOpen(false);
             }
@@ -409,29 +445,28 @@ const Sidebar = (props: any) => {
         document.addEventListener('click', handleClickOutside);
         return () => document.removeEventListener('click', handleClickOutside);
     }, [codeFileDropdownOpen, docDropdownOpen, terminalDropdownOpen, folderDropdownOpen]);
-    // Website context menu state
+
     const [websiteContextMenu, setWebsiteContextMenu] = useState<{ x: number; y: number; url: string; title: string } | null>(null);
-    // Zip modal state
+
     const [zipModal, setZipModal] = useState<{ items: string[]; defaultName: string } | null>(null);
     const [zipName, setZipName] = useState('');
     const [isZipping, setIsZipping] = useState(false);
-    // Bookmarks state (from database, path-specific)
+
     const [bookmarks, setBookmarks] = useState<Array<{ id: number; url: string; title: string; folder_path: string; is_global: number }>>([]);
-    // Default new pane type from global settings
+
     const [defaultNewPaneType, setDefaultNewPaneType] = useState<string>('chat');
-    // Default new terminal type (system/bash, npcsh, guac)
+
     const [defaultNewTerminalType, setDefaultNewTerminalType] = useState<string>(() =>
         localStorage.getItem('incognide_defaultNewTerminalType') || 'system'
     );
     const [defaultNewNotebookType, setDefaultNewNotebookType] = useState<string>(() =>
         localStorage.getItem('incognide_defaultNewNotebookType') || 'notebook'
     );
-    // Default new document type (docx, xlsx, pptx, mapx)
+
     const [defaultNewDocumentType, setDefaultNewDocumentType] = useState<string>(() =>
         localStorage.getItem('incognide_defaultNewDocumentType') || 'docx'
     );
 
-    // Load default terminal/document types from global settings and listen for changes
     useEffect(() => {
         const loadDefaults = async () => {
             try {
@@ -464,7 +499,6 @@ const Sidebar = (props: any) => {
         };
     }, []);
 
-    // Load bookmarks from database
     const loadBookmarks = useCallback(async () => {
         if (!currentPath) return;
         try {
@@ -481,28 +515,57 @@ const Sidebar = (props: any) => {
         loadBookmarks();
     }, [loadBookmarks]);
 
-    // Website subsection collapse states (persisted to localStorage)
     const [bookmarksCollapsed, setBookmarksCollapsed] = useState(() => localStorage.getItem('sidebar_bookmarksCollapsed') === 'true');
     const [openBrowsersCollapsed, setOpenBrowsersCollapsed] = useState(() => localStorage.getItem('sidebar_openBrowsersCollapsed') === 'true');
     const [commonSitesCollapsed, setCommonSitesCollapsed] = useState(() => localStorage.getItem('sidebar_commonSitesCollapsed') === 'true');
     const [recentHistoryCollapsed, setRecentHistoryCollapsed] = useState(() => localStorage.getItem('sidebar_recentHistoryCollapsed') === 'true');
     const [expandedDomains, setExpandedDomains] = useState<Set<string>>(new Set());
+    const [openFilesCollapsed, setOpenFilesCollapsed] = useState(() => localStorage.getItem('sidebar_openFilesCollapsed') === 'true');
+    const [openConvosCollapsed, setOpenConvosCollapsed] = useState(() => localStorage.getItem('sidebar_openConvosCollapsed') === 'true');
 
-    // Persist collapse states
+    const FILE_CONTENT_TYPES = new Set(['editor', 'pdf', 'csv', 'docx', 'pptx', 'latex', 'notebook', 'image', 'mindmap', 'zip', 'exp']);
+    const openFiles = useMemo(() => {
+        if (!contentDataRef?.current || !rootLayoutNode) return [];
+        const files: { paneId: string; path: string; type: string }[] = [];
+        for (const [paneId, data] of Object.entries(contentDataRef.current)) {
+            const d = data as any;
+            if (FILE_CONTENT_TYPES.has(d?.contentType) && d?.contentId && typeof d.contentId === 'string' && d.contentId.includes('/')) {
+                files.push({ paneId, path: d.contentId, type: d.contentType });
+            }
+        }
+        return files;
+    }, [rootLayoutNode]);
+
+    const openConversationPanes = useMemo(() => {
+        if (!contentDataRef?.current || !rootLayoutNode) return [];
+        const convos: { paneId: string; conversationId: string }[] = [];
+        for (const [paneId, data] of Object.entries(contentDataRef.current)) {
+            const d = data as any;
+            if (d?.contentType === 'chat' && d?.conversationId) {
+                convos.push({ paneId, conversationId: d.conversationId });
+            }
+        }
+        return convos;
+    }, [rootLayoutNode]);
+
+    const [convoGroupExpanded, setConvoGroupExpanded] = useState<Set<string>>(() => new Set(['Today', 'This Week']));
+    const [historyGroupExpanded, setHistoryGroupExpanded] = useState<Set<string>>(new Set());
+
     useEffect(() => { localStorage.setItem('sidebar_bookmarksCollapsed', String(bookmarksCollapsed)); }, [bookmarksCollapsed]);
     useEffect(() => { localStorage.setItem('sidebar_openBrowsersCollapsed', String(openBrowsersCollapsed)); }, [openBrowsersCollapsed]);
     useEffect(() => { localStorage.setItem('sidebar_commonSitesCollapsed', String(commonSitesCollapsed)); }, [commonSitesCollapsed]);
     useEffect(() => { localStorage.setItem('sidebar_recentHistoryCollapsed', String(recentHistoryCollapsed)); }, [recentHistoryCollapsed]);
+    useEffect(() => { localStorage.setItem('sidebar_openFilesCollapsed', String(openFilesCollapsed)); }, [openFilesCollapsed]);
+    useEffect(() => { localStorage.setItem('sidebar_openConvosCollapsed', String(openConvosCollapsed)); }, [openConvosCollapsed]);
 
-    // Load default new pane type from global settings
     useEffect(() => {
         const loadDefaultPaneType = async () => {
-            // First check localStorage for immediate value
+
             const cached = localStorage.getItem('incognide_defaultNewPaneType');
             if (cached) {
                 setDefaultNewPaneType(cached);
             }
-            // Then load from settings file
+
             try {
                 const data = await (window as any).api.loadGlobalSettings();
                 if (data?.global_settings?.default_new_pane_type) {
@@ -515,13 +578,12 @@ const Sidebar = (props: any) => {
         };
         loadDefaultPaneType();
 
-        // Listen for storage changes (when settings are saved from other tabs)
         const handleStorageChange = (e: StorageEvent) => {
             if (e.key === 'incognide_defaultNewPaneType' && e.newValue) {
                 setDefaultNewPaneType(e.newValue);
             }
         };
-        // Listen for custom event (same window updates)
+
         const handleCustomEvent = (e: CustomEvent) => {
             if (e.detail) {
                 setDefaultNewPaneType(e.detail);
@@ -535,13 +597,10 @@ const Sidebar = (props: any) => {
         };
     }, []);
 
-    // Limit input dialog state
     const [limitDialog, setLimitDialog] = useState<{ domain: string; hourlyTime: string; dailyTime: string; hourlyVisits: string; dailyVisits: string } | null>(null);
 
-    // Permission dialog state (chmod/chown)
     const [permissionDialog, setPermissionDialog] = useState<{ path: string; type: 'chmod' | 'chown'; mode?: string; owner?: string; group?: string; recursive?: boolean; useSudo?: boolean } | null>(null);
 
-    // Tile configuration state
     interface TileConfig {
         id: string;
         label: string;
@@ -778,15 +837,14 @@ const Sidebar = (props: any) => {
             compiled = compiled.replace(/Object\.defineProperty\(exports[\s\S]*?\);/g, '');
             compiled = compiled.replace(/exports\.\w+\s*=\s*/g, '');
             compiled = compiled.replace(/exports\.default\s*=\s*\w+;?/g, '');
-            // Remove require() calls - dependencies come from scope
+
             compiled = compiled.replace(/(?:var|const|let)\s+\w+\s*=\s*require\([^)]+\);?\n?/g, '');
             compiled = compiled.replace(/require\([^)]+\)/g, '{}');
-            // Replace module prefixes like lucide_react_1.Play with just Play
+
             compiled = compiled.replace(/\w+_\d+\.(\w+)/g, '$1');
-            // Also handle react_1.useState etc
+
             compiled = compiled.replace(/react_1\.(\w+)/g, '$1');
 
-            // Add render call with realistic props - embedded:true to prevent modal wrapper
             const mockProps = `{
                 onClose: () => console.log('Preview: onClose called'),
                 isPane: true,
@@ -805,7 +863,6 @@ const Sidebar = (props: any) => {
         }
     }, []);
 
-    // Toggle live preview
     const toggleLivePreview = useCallback(async () => {
         if (!showLivePreview) {
             setLivePreviewCode('render(<div className="p-4 text-gray-400">Compiling...</div>)');
@@ -817,20 +874,18 @@ const Sidebar = (props: any) => {
         }
     }, [showLivePreview, tileJinxEditContent, compileForPreview]);
 
-    // Update preview when code changes (debounced)
     useEffect(() => {
         if (showLivePreview && tileJinxEditContent) {
             const timeoutId = setTimeout(async () => {
                 const compiled = await compileForPreview(tileJinxEditContent);
                 setLivePreviewCode(compiled);
-            }, 800); // debounce
+            }, 800);
             return () => clearTimeout(timeoutId);
         }
     }, [tileJinxEditContent, showLivePreview, compileForPreview]);
 
-    // Live preview scope - REAL components and REAL window.api
     const liveScope = useMemo(() => ({
-        // React
+
         React,
         useState,
         useEffect,
@@ -843,9 +898,9 @@ const Sidebar = (props: any) => {
         forwardRef: React.forwardRef,
         memo: React.memo,
         Fragment: React.Fragment,
-        // REAL npcts components
+
         Modal, Tabs, Card, Button, Input, Select,
-        // ALL REAL tile components - exactly what gets rendered
+
         DiskUsageAnalyzer,
         AutosizeTextarea,
         ForceGraph2D,
@@ -866,8 +921,8 @@ const Sidebar = (props: any) => {
         GraphViewer,
         PhotoViewer,
         SettingsMenu,
-        SettingsPanel: SettingsMenu, // alias
-        // ALL lucide icons
+        SettingsPanel: SettingsMenu,
+
         Database, Image, BookOpen, BarChart3, GitBranch, Network, Users, Bot, Zap,
         Settings, KeyRound, HardDrive, Box, Folder, File, Globe, ChevronRight, Edit,
         Terminal, Trash, Plus, X, Star, Clock, Activity, Lock, Archive, Sparkles,
@@ -878,15 +933,14 @@ const Sidebar = (props: any) => {
         List, Maximize2, Minimize2, Move, RotateCcw, ZoomIn, ZoomOut, Layers, Layout,
         Pause, Server, Mail, Cpu, Wifi, WifiOff, Power, PowerOff, Hash, AtSign,
         FileJson, Wrench, Code2, FileStack, Share2, Tag, MessageSquare, ArrowUp,
-        // Icon aliases
+
         DownloadCloud: Download, Trash2: Trash, Square: Box, Volume2: Activity, Mic: Activity, Keyboard: Settings,
-        // REAL window with REAL api
+
         window,
-        // Console
+
         console,
     }), []);
 
-    // Save tile configuration
     const saveTilesConfig = useCallback(async (newConfig: typeof tilesConfig) => {
         try {
             await (window as any).api?.tilesConfigSave?.(newConfig);
@@ -896,7 +950,6 @@ const Sidebar = (props: any) => {
         }
     }, []);
 
-    // Toggle tile enabled/disabled
     const toggleTileEnabled = useCallback((tileId: string) => {
         const newConfig = { ...tilesConfig };
         const tile = newConfig.tiles.find(t => t.id === tileId);
@@ -906,7 +959,6 @@ const Sidebar = (props: any) => {
         }
     }, [tilesConfig, saveTilesConfig]);
 
-    // Reorder tiles via drag and drop
     const handleTileDragStart = useCallback((e: React.DragEvent, tileId: string) => {
         setDraggedTileId(tileId);
         e.dataTransfer.effectAllowed = 'move';
@@ -929,7 +981,7 @@ const Sidebar = (props: any) => {
         if (draggedIndex !== -1 && targetIndex !== -1) {
             const [draggedTile] = allTiles.splice(draggedIndex, 1);
             allTiles.splice(targetIndex, 0, draggedTile);
-            // Update order values
+
             allTiles.forEach((tile, idx) => { tile.order = idx; });
             newConfig.tiles = allTiles;
             saveTilesConfig(newConfig);
@@ -937,20 +989,17 @@ const Sidebar = (props: any) => {
         setDraggedTileId(null);
     }, [draggedTileId, tilesConfig, saveTilesConfig]);
 
-    // Get sorted enabled tiles
     const enabledTiles = useMemo(() => {
         return [...tilesConfig.tiles, ...tilesConfig.customTiles]
             .filter(t => t.enabled)
             .sort((a, b) => a.order - b.order);
     }, [tilesConfig]);
 
-// ===== ALL THE SIDEBAR FUNCTIONS BELOW =====
-
 const handleSidebarResize = useCallback((e) => {
     if (!isResizingSidebar) return;
 
     const newWidth = e.clientX;
-    // Constrain between 150px and 500px
+
     if (newWidth >= 150 && newWidth <= 500) {
         setSidebarWidth(newWidth);
     }
@@ -961,7 +1010,7 @@ const handleApplyPromptToFiles = async (operationType, customPrompt = '') => {
     if (selectedFilePaths.length === 0) return;
 
     try {
-       
+
         const filesContentPromises = selectedFilePaths.map(async (filePath) => {
             const response = await window.api.readFileContent(filePath);
             if (response.error) {
@@ -978,7 +1027,7 @@ const handleApplyPromptToFiles = async (operationType, customPrompt = '') => {
             case 'summarize':
                 prompt = `Summarize the content of these ${selectedFilePaths.length} file(s):\n\n`;
                 break;
-           
+
             default:
                  prompt = customPrompt + `\n\nApply this to these ${selectedFilePaths.length} file(s):\n\n`;
                  break;
@@ -1009,7 +1058,6 @@ const handleApplyPromptToFiles = async (operationType, customPrompt = '') => {
 
         setRootLayoutNode(prev => ({ ...prev }));
 
-
         await window.api.executeCommandStream({
             commandstr: fullPrompt,
             currentPath,
@@ -1038,7 +1086,7 @@ const handleApplyPromptToFiles = async (operationType, customPrompt = '') => {
 const handleApplyPromptToFilesInInput = async (operationType, customPrompt = '') => {
     const selectedFilePaths = Array.from(selectedFiles);
     if (selectedFilePaths.length === 0) return;
-    
+
     try {
         const filesContentPromises = selectedFilePaths.map(async (filePath, index) => {
             const response = await window.api.readFileContent(filePath);
@@ -1050,7 +1098,7 @@ const handleApplyPromptToFilesInInput = async (operationType, customPrompt = '')
             return `File ${index + 1} (${fileName}):\n---\n${response.content}\n---`;
         });
         const filesContent = await Promise.all(filesContentPromises);
-        
+
         let prompt = '';
         switch (operationType) {
             case 'summarize':
@@ -1077,7 +1125,7 @@ const handleApplyPromptToFilesInInput = async (operationType, customPrompt = '')
         }
 
         setInput(fullPrompt);
-        
+
     } catch (err) {
         console.error('Error preparing file prompt for input field:', err);
         setError(err.message);
@@ -1104,7 +1152,7 @@ const handleOpenFolderAsWorkspace = useCallback(async (folderPath) => {
         setSidebarItemContextMenuPos(null);
         return;
     }
-    // If folderPath doesn't start with /, it's a relative path - make it absolute
+
     let fullPath = folderPath;
     if (!folderPath.startsWith('/') && currentPath) {
         fullPath = `${currentPath}/${folderPath}`;
@@ -1256,8 +1304,7 @@ const handleSummarizeAndPrompt = async () => {
 const handleSidebarItemDelete = async () => {
     if (!sidebarItemContextMenuPos) return;
     const { path, type } = sidebarItemContextMenuPos;
-    
-   
+
     const confirmation = window.confirm(`Are you sure you want to delete this ${type}? This action cannot be undone.`);
     if (!confirmation) {
         setSidebarItemContextMenuPos(null);
@@ -1273,7 +1320,7 @@ const handleSidebarItemDelete = async () => {
         }
 
         if (response?.error) throw new Error(response.error);
-        
+
         await loadDirectoryStructure(currentPath);
 
     } catch (err) {
@@ -1297,16 +1344,13 @@ const handleZipItems = () => {
     if (!sidebarItemContextMenuPos) return;
     const { path: itemPath } = sidebarItemContextMenuPos;
 
-    // Get all selected items or just the right-clicked one
     const selectedFilePaths = Array.from(selectedFiles);
     const itemsToZip = selectedFilePaths.length > 0 ? selectedFilePaths : [itemPath];
 
-    // Generate default name
     const defaultName = itemsToZip.length === 1
         ? getFileName(itemsToZip[0])?.replace(/\.[^/.]+$/, '') || 'archive'
         : 'archive';
 
-    // Show modal
     setZipName(defaultName);
     setZipModal({ items: itemsToZip, defaultName });
     setSidebarItemContextMenuPos(null);
@@ -1324,7 +1368,6 @@ const executeZip = async () => {
         const response = await (window as any).api.zipItems(itemsToZip, name);
         if (response?.error) throw new Error(response.error);
 
-        // Refresh to show the new zip file
         await refreshDirectoryStructureOnly();
     } catch (err: any) {
         setError(`Failed to create zip: ${err.message}`);
@@ -1341,7 +1384,7 @@ const handleFolderOverview = async () => {
     setSidebarItemContextMenuPos(null);
 
     try {
-       
+
         const response = await window.api.getDirectoryContentsRecursive(path);
         if (response.error) throw new Error(response.error);
         if (response.files.length === 0) {
@@ -1349,22 +1392,20 @@ const handleFolderOverview = async () => {
             return;
         }
 
-       
         const filesContentPromises = response.files.map(async (filePath) => {
             const fileResponse = await window.api.readFileContent(filePath);
             const fileName = getFileName(filePath);
-            return fileResponse.error 
+            return fileResponse.error
                 ? `File (${fileName}): [Error reading content]`
                 : `File (${fileName}):\n---\n${fileResponse.content}\n---`;
         });
         const filesContent = await Promise.all(filesContentPromises);
-        
+
         const fullPrompt = `Provide a high-level overview of the following ${response.files.length} file(s) from the '${getFileName(path)}' folder:\n\n` + filesContent.join('\n\n');
 
         const { conversation, paneId } = await createNewConversation();
         if (!conversation) throw new Error("Failed to create conversation for overview.");
 
-       
         handleInputSubmit(new Event('submit'), fullPrompt, paneId, conversation.id);
 
     } catch (err) {
@@ -1374,16 +1415,16 @@ const handleFolderOverview = async () => {
 
 const renderActiveWindowsIndicator = () => {
     const [otherWindows, setOtherWindows] = useState([]);
-    
+
     useEffect(() => {
         const checkOtherWindows = () => {
             try {
                 const activeWindows = JSON.parse(localStorage.getItem(ACTIVE_WINDOWS_KEY) || '{}');
                 const now = Date.now();
                 const others = Object.entries(activeWindows)
-                    .filter(([wId]) => wId !== windowId) // Not this window
-                    .filter(([, data]) => !data.closing) // Not marked as closing
-                    .filter(([, data]) => (now - data.lastActive) < 30000) // Active in last 30 seconds
+                    .filter(([wId]) => wId !== windowId)
+                    .filter(([, data]) => !data.closing)
+                    .filter(([, data]) => (now - data.lastActive) < 30000)
                     .map(([wId, data]) => ({
                         id: wId,
                         path: data.currentPath,
@@ -1395,30 +1436,29 @@ const renderActiveWindowsIndicator = () => {
                 setOtherWindows([]);
             }
         };
-        
+
         checkOtherWindows();
-        const interval = setInterval(checkOtherWindows, 5000); // Check every 5 seconds
+        const interval = setInterval(checkOtherWindows, 5000);
         return () => clearInterval(interval);
     }, [windowId]);
-    
-    // Don't render if no other windows - this prevents the "Other Windows (1)" issue
+
     if (otherWindows.length === 0) return null;
-    
+
     return (
         <div className="px-4 py-1 border-b theme-border">
-            <div 
+            <div
                 className="flex items-center justify-between cursor-pointer"
                 onClick={() => setActiveWindowsExpanded(!activeWindowsExpanded)}
             >
                 <div className="text-xs theme-text-muted">
                     Other Windows ({otherWindows.length})
                 </div>
-                <ChevronRight 
-                    size={12} 
-                    className={`transform transition-transform ${activeWindowsExpanded ? 'rotate-90' : ''}`} 
+                <ChevronRight
+                    size={12}
+                    className={`transform transition-transform ${activeWindowsExpanded ? 'rotate-90' : ''}`}
                 />
             </div>
-            
+
             {activeWindowsExpanded && (
                 <div className="mt-1 pl-2 space-y-1">
                     {otherWindows.map(window => (
@@ -1435,15 +1475,13 @@ const renderActiveWindowsIndicator = () => {
     );
 };
 const renderWorkspaceIndicator = () => {
-    // Check if current path has a saved workspace
+
     const allWorkspaces = JSON.parse(localStorage.getItem(WINDOW_WORKSPACES_KEY) || '{}');
     const windowWorkspaces = allWorkspaces[windowId] || {};
     const hasWorkspace = !!windowWorkspaces[currentPath];
-    
-    // Count ONLY currently active panes
+
     const activePaneCount = Object.keys(contentDataRef.current).length;
-    
-    // Let's also count from the layout tree to double-check
+
     const countPanesInLayout = (node) => {
         if (!node) return 0;
         if (node.type === 'content') return 1;
@@ -1456,15 +1494,15 @@ const renderWorkspaceIndicator = () => {
 
     const workspaceData = windowWorkspaces[currentPath];
     const workspaceInfo = workspaceData ? {
-        paneCount: layoutPaneCount, // Use the layout count instead
+        paneCount: layoutPaneCount,
         lastSaved: new Date(workspaceData.lastAccessed).toLocaleTimeString(),
         timestamp: workspaceData.timestamp
     } : null;
-    
+
     return (
         <div className="px-4 py-1 border-b theme-border">
-            <div 
-                className="flex items-center justify-between cursor-pointer" 
+            <div
+                className="flex items-center justify-between cursor-pointer"
                 onClick={() => setWorkspaceIndicatorExpanded(!workspaceIndicatorExpanded)}
             >
                 <div className="flex items-center gap-2">
@@ -1473,12 +1511,12 @@ const renderWorkspaceIndicator = () => {
                         {hasWorkspace ? `Workspace (${layoutPaneCount} panes)` : 'No Workspace'}
                     </span>
                 </div>
-                <ChevronRight 
-                    size={12} 
-                    className={`transform transition-transform ${workspaceIndicatorExpanded ? 'rotate-90' : ''}`} 
+                <ChevronRight
+                    size={12}
+                    className={`transform transition-transform ${workspaceIndicatorExpanded ? 'rotate-90' : ''}`}
                 />
             </div>
-            
+
             {workspaceIndicatorExpanded && (
                 <div className="mt-2 pl-4 space-y-2">
                     <div className="text-xs theme-text-muted">
@@ -1507,14 +1545,13 @@ const renderWorkspaceIndicator = () => {
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        // Clear workspace AND clean up contentDataRef
+
                                         const stored = JSON.parse(localStorage.getItem(WINDOW_WORKSPACES_KEY) || '{}');
                                         if (stored[windowId] && stored[windowId][currentPath]) {
                                             delete stored[windowId][currentPath];
                                             localStorage.setItem(WINDOW_WORKSPACES_KEY, JSON.stringify(stored));
                                         }
-                                        
-                                        // Clean up phantom panes in contentDataRef
+
                                         const validPaneIds = new Set();
                                         const collectPaneIds = (node) => {
                                             if (!node) return;
@@ -1524,14 +1561,13 @@ const renderWorkspaceIndicator = () => {
                                             }
                                         };
                                         collectPaneIds(rootLayoutNode);
-                                        
-                                        // Remove any contentDataRef entries that don't exist in the layout
+
                                         Object.keys(contentDataRef.current).forEach(paneId => {
                                             if (!validPaneIds.has(paneId)) {
                                                 delete contentDataRef.current[paneId];
                                             }
                                         });
-                                        
+
                                         setRootLayoutNode(p => ({ ...p }));
                                     }}
                                     className="text-xs theme-text-muted hover:text-red-400 transition-colors px-2 py-1 rounded"
@@ -1565,11 +1601,11 @@ const renderWorkspaceIndicator = () => {
     const deleteSelectedConversations = async () => {
     const selectedConversationIds = Array.from(selectedConvos);
     const selectedFilePaths = Array.from(selectedFiles);
-    
+
     if (selectedConversationIds.length === 0 && selectedFilePaths.length === 0) {
         return;
     }
-    
+
     try {
         if (selectedConversationIds.length > 0) {
             await Promise.all(selectedConversationIds.map(id => window.api.deleteConversation(id)));
@@ -1579,14 +1615,13 @@ const renderWorkspaceIndicator = () => {
             await Promise.all(selectedFilePaths.map(filePath => window.api.deleteFile(filePath)));
         }
 
-        
         await loadDirectoryStructure(currentPath);
 
     } catch (err) {
         console.error('Error deleting items:', err);
         setError(err.message);
     } finally {
-        
+
         setSelectedConvos(new Set());
         setSelectedFiles(new Set());
     }
@@ -1611,8 +1646,7 @@ const refreshDirectoryStructureOnly = async () => {
             console.error('Error loading structure:', structureResult?.error);
             setFolderStructure({ error: structureResult?.error || 'Failed' });
         }
-        
-        // DON'T load conversations - just refresh the file structure
+
         return structureResult;
     } catch (err) {
         console.error('Error loading structure:', err);
@@ -1635,8 +1669,11 @@ const refreshConversations = async () => {
                     timestamp: conv.timestamp || Date.now(),
                     last_message_timestamp: conv.last_message_timestamp || conv.timestamp || Date.now(),
                     npc: conv.npc || conv.assistant_name || conv.npc_name || '',
+                    npcs: conv.npcs || (conv.npc ? [conv.npc] : []),
                     model: conv.model || conv.model_name || '',
+                    models: conv.models || (conv.model ? [conv.model] : []),
                     provider: conv.provider || '',
+                    providers: conv.providers || (conv.provider ? [conv.provider] : []),
                 }));
 
                 formattedConversations.sort((a, b) =>
@@ -1654,9 +1691,384 @@ const refreshConversations = async () => {
     }
 };
 
+const loadMcpSidebarServers = async () => {
+    setMcpSidebarLoading(true);
+    try {
+        const response = await (window as any).api.getMcpServers(currentPath);
+        setMcpSidebarServers(response?.servers || []);
+    } catch {  }
+    finally { setMcpSidebarLoading(false); }
+};
+
+const handleMcpSidebarToggle = async (server: any, action: 'start' | 'stop') => {
+    try {
+        if (action === 'start') {
+            await (window as any).api.startMcpServer({ serverPath: server.serverPath, currentPath, envVars: server.env });
+        } else {
+            await (window as any).api.stopMcpServer({ serverPath: server.serverPath });
+        }
+        await loadMcpSidebarServers();
+    } catch (err) {
+        console.error('MCP action error:', err);
+    }
+};
+
+const renderMcpSidebarPanel = () => {
+    const runningCount = mcpSidebarServers.filter(s => s.status === 'running').length;
+
+    return (
+        <div className="border-b theme-border bg-cyan-900/10">
+            <div
+                onClick={() => {
+                    const newState = !mcpPanelOpen;
+                    setMcpPanelOpen(newState);
+                    if (newState && mcpSidebarServers.length === 0) loadMcpSidebarServers();
+                }}
+                className="flex items-center px-2 py-1.5 cursor-pointer hover:bg-cyan-500/10 transition-colors"
+            >
+                <ChevronRight size={10} className={`theme-text-muted mr-1 transition-transform ${mcpPanelOpen ? 'rotate-90' : ''}`} />
+                <Server size={12} className="text-cyan-400 mr-1.5" />
+                <span className="text-[10px] font-medium text-cyan-300">MCP Servers</span>
+                {runningCount > 0 && (
+                    <span className="ml-1.5 text-[9px] bg-green-500/20 text-green-400 px-1 rounded-full">
+                        {runningCount}
+                    </span>
+                )}
+                <div className="ml-auto flex items-center gap-1">
+                    <button
+                        onClick={(e) => { e.stopPropagation(); loadMcpSidebarServers(); }}
+                        className="p-0.5 hover:bg-cyan-500/20 rounded"
+                        title="Refresh"
+                    >
+                        <RefreshCw size={9} className={`text-gray-500 hover:text-cyan-400 ${mcpSidebarLoading ? 'animate-spin' : ''}`} />
+                    </button>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); createMcpManagerPane?.(); }}
+                        className="p-0.5 hover:bg-cyan-500/20 rounded"
+                        title="Open full MCP Manager"
+                    >
+                        <ExternalLink size={9} className="text-gray-500 hover:text-cyan-400" />
+                    </button>
+                </div>
+            </div>
+
+            {mcpPanelOpen && (
+                <div className="px-1 pb-1.5 space-y-0.5">
+                    {mcpSidebarLoading && mcpSidebarServers.length === 0 ? (
+                        <div className="flex items-center justify-center py-2">
+                            <Loader2 size={12} className="animate-spin text-gray-500" />
+                        </div>
+                    ) : mcpSidebarServers.length === 0 ? (
+                        <div className="text-center py-2">
+                            <div className="text-[9px] text-gray-500">No MCP servers configured</div>
+                            <button
+                                onClick={() => createMcpManagerPane?.()}
+                                className="text-[9px] text-cyan-400 hover:underline mt-0.5"
+                            >
+                                Add servers
+                            </button>
+                        </div>
+                    ) : (
+                        mcpSidebarServers.map((server: any, idx: number) => {
+                            const status = server.status || 'unknown';
+                            const isRunning = status === 'running';
+                            const fileName = getFileName(server.serverPath) || server.serverPath;
+                            const displayName = fileName.replace(/_mcp_server\.py$/, '').replace(/_/g, ' ');
+
+                            return (
+                                <div
+                                    key={server.serverPath + idx}
+                                    className="flex items-center gap-1.5 px-1.5 py-1 rounded hover:theme-bg-secondary group text-[10px]"
+                                >
+                                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                                        isRunning ? 'bg-green-400' : status === 'error' ? 'bg-red-400' : 'bg-gray-500'
+                                    }`} />
+                                    <span className="theme-text-primary truncate flex-1 capitalize" title={server.serverPath}>
+                                        {displayName}
+                                    </span>
+                                    <button
+                                        onClick={() => handleMcpSidebarToggle(server, isRunning ? 'stop' : 'start')}
+                                        className={`p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity ${
+                                            isRunning ? 'hover:bg-red-500/20 text-red-400' : 'hover:bg-green-500/20 text-green-400'
+                                        }`}
+                                        title={isRunning ? 'Stop' : 'Start'}
+                                    >
+                                        {isRunning ? <Square size={9} /> : <Play size={9} />}
+                                    </button>
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const loadSidebarJinxes = async () => {
+    setSidebarJinxesLoading(true);
+    try {
+        const [npcshRes, incognideRes, projectRes] = await Promise.all([
+            (window as any).api.getJinxsGlobal('npcsh'),
+            (window as any).api.getJinxsGlobal(),
+            currentPath ? (window as any).api.getJinxsProject(currentPath) : Promise.resolve({ jinxs: [] }),
+        ]);
+        const npcsh = (npcshRes?.jinxs || []).map((j: any) => ({ ...j, team: 'npcsh', scope: 'global' }));
+        const incognide = (incognideRes?.jinxs || []).map((j: any) => ({ ...j, team: 'incognide', scope: 'global' }));
+        const project = (projectRes?.jinxs || []).map((j: any) => ({ ...j, team: 'project', scope: 'project' }));
+        setSidebarJinxes([...project, ...incognide, ...npcsh]);
+    } catch {  }
+    finally { setSidebarJinxesLoading(false); }
+};
+
+const handleSkillIngest = async () => {
+    if (!skillIngestUrl.trim()) return;
+    setSkillIngestLoading(true);
+    setSkillIngestError(null);
+    try {
+        const result = await (window as any).api.ingestJinx({
+            url: skillIngestUrl.trim(),
+            scope: 'project',
+            currentPath,
+        });
+        if (result?.error) {
+            setSkillIngestError(result.error);
+        } else {
+            setSkillIngestUrl('');
+            setShowSkillIngest(false);
+            await loadSidebarJinxes();
+        }
+    } catch (err: any) {
+        setSkillIngestError(err.message);
+    } finally {
+        setSkillIngestLoading(false);
+    }
+};
+
+const toggleSidebarSkillNode = (path: string) => {
+    setSidebarSkillsExpanded(prev => {
+        const next = new Set(prev);
+        if (next.has(path)) next.delete(path);
+        else next.add(path);
+        return next;
+    });
+};
+
+const buildSidebarSkillTree = (jinxes: any[], teamKey: string): any[] => {
+    const folders: Record<string, any[]> = {};
+    const files: any[] = [];
+    for (const j of jinxes) {
+        const parts = (j.path || j.jinx_name || j.name || 'unnamed').split('/');
+        if (parts.length > 1) {
+            const folder = parts[0];
+            if (!folders[folder]) folders[folder] = [];
+            folders[folder].push({ ...j, _subpath: parts.slice(1).join('/') });
+        } else {
+            files.push(j);
+        }
+    }
+    const nodes: any[] = [];
+
+    for (const folder of Object.keys(folders).sort()) {
+        nodes.push({ type: 'folder', name: folder, path: `${teamKey}/${folder}`, children: folders[folder] });
+    }
+
+    for (const f of files.sort((a: any, b: any) => (a.jinx_name || a.name || '').localeCompare(b.jinx_name || b.name || ''))) {
+        nodes.push({ type: 'file', jinx: f });
+    }
+    return nodes;
+};
+
+const renderSidebarSkillNodes = (nodes: any[], teamKey: string, depth: number): React.ReactNode[] => {
+    return nodes.map((node: any, idx: number) => {
+        if (node.type === 'file') {
+            const jinx = node.jinx;
+            const name = jinx.jinx_name || jinx.name || 'unnamed';
+            const isSkill = jinx.steps?.some((s: any) => s.engine === 'skill');
+            return (
+                <div
+                    key={`${teamKey}-${name}-${idx}`}
+                    className="flex items-center gap-1 py-0.5 rounded hover:theme-bg-secondary text-[10px]"
+                    style={{ paddingLeft: `${depth * 10 + 6}px` }}
+                    title={jinx.description || name}
+                >
+                    {isSkill
+                        ? <BookOpen size={9} className="text-purple-400 flex-shrink-0" />
+                        : <Zap size={9} className="text-yellow-400 flex-shrink-0" />
+                    }
+                    <span className="theme-text-primary truncate">{name}</span>
+                </div>
+            );
+        }
+
+        const isExpanded = sidebarSkillsExpanded.has(node.path);
+
+        const childNodes = buildSidebarSkillTree(
+            node.children.map((c: any) => ({ ...c, path: c._subpath || c.path, jinx_name: c.jinx_name || c.name })),
+            node.path
+        );
+        return (
+            <div key={node.path}>
+                <div
+                    onClick={() => toggleSidebarSkillNode(node.path)}
+                    className="flex items-center gap-1 py-0.5 rounded hover:theme-bg-secondary cursor-pointer text-[10px]"
+                    style={{ paddingLeft: `${depth * 10 + 2}px` }}
+                >
+                    <ChevronRight size={8} className={`theme-text-muted transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                    <FolderOpen size={9} className="theme-text-muted flex-shrink-0" />
+                    <span className="theme-text-secondary truncate">{node.name}</span>
+                    <span className="text-[8px] theme-text-muted">({node.children.length})</span>
+                </div>
+                {isExpanded && (
+                    <div>{renderSidebarSkillNodes(childNodes, node.path, depth + 1)}</div>
+                )}
+            </div>
+        );
+    });
+};
+
+const renderSkillsSidebarPanel = () => {
+
+    const teamGroups: Record<string, any[]> = { project: [], incognide: [], npcsh: [] };
+    sidebarJinxes.forEach((j: any) => {
+        const team = j.team || (j.scope === 'project' ? 'project' : 'npcsh');
+        if (!teamGroups[team]) teamGroups[team] = [];
+        teamGroups[team].push(j);
+    });
+
+    const teamConfigs = [
+        { key: 'project', label: 'Project', color: 'text-purple-400', badge: 'bg-purple-500/20 text-purple-400', hover: 'hover:bg-purple-500/10' },
+        { key: 'incognide', label: 'Incognide', color: 'text-green-400', badge: 'bg-green-500/20 text-green-400', hover: 'hover:bg-green-500/10' },
+        { key: 'npcsh', label: 'npcsh', color: 'text-blue-400', badge: 'bg-blue-500/20 text-blue-400', hover: 'hover:bg-blue-500/10' },
+    ];
+
+    return (
+        <div className="border-b theme-border bg-purple-900/10">
+            <div
+                onClick={() => {
+                    const newState = !skillsPanelOpen;
+                    setSkillsPanelOpen(newState);
+                    if (newState && sidebarJinxes.length === 0) loadSidebarJinxes();
+                }}
+                className="flex items-center px-2 py-1.5 cursor-pointer hover:bg-purple-500/10 transition-colors"
+            >
+                <ChevronRight size={10} className={`theme-text-muted mr-1 transition-transform ${skillsPanelOpen ? 'rotate-90' : ''}`} />
+                <Zap size={12} className="text-purple-400 mr-1.5" />
+                <span className="text-[10px] font-medium text-purple-300">Skills & Jinxes</span>
+                {sidebarJinxes.length > 0 && (
+                    <span className="ml-1.5 text-[9px] bg-purple-500/20 text-purple-400 px-1 rounded-full">
+                        {sidebarJinxes.length}
+                    </span>
+                )}
+                <div className="ml-auto flex items-center gap-1">
+                    <button
+                        onClick={(e) => { e.stopPropagation(); setShowSkillIngest(!showSkillIngest); setSkillsPanelOpen(true); }}
+                        className="p-0.5 hover:bg-purple-500/20 rounded"
+                        title="Ingest skill from URL"
+                    >
+                        <Plus size={9} className="text-gray-500 hover:text-purple-400" />
+                    </button>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); loadSidebarJinxes(); }}
+                        className="p-0.5 hover:bg-purple-500/20 rounded"
+                        title="Refresh skills"
+                    >
+                        <RefreshCw size={9} className={`text-gray-500 hover:text-purple-400 ${sidebarJinxesLoading ? 'animate-spin' : ''}`} />
+                    </button>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); createSkillsManagerPane?.(); }}
+                        className="p-0.5 hover:bg-purple-500/20 rounded"
+                        title="Open Skills Manager"
+                    >
+                        <ExternalLink size={9} className="text-gray-500 hover:text-purple-400" />
+                    </button>
+                </div>
+            </div>
+
+            {skillsPanelOpen && (
+                <div className="px-1 pb-1.5 space-y-0.5">
+                    {showSkillIngest && (
+                        <div className="px-1.5 py-1.5 mb-1 rounded theme-bg-secondary space-y-1">
+                            <div className="text-[9px] text-purple-300 font-medium">Ingest skill from URL</div>
+                            <input
+                                type="text"
+                                value={skillIngestUrl}
+                                onChange={(e) => setSkillIngestUrl(e.target.value)}
+                                placeholder="Paste .jinx or SKILL.md URL..."
+                                className="w-full theme-input text-[10px] font-mono px-1.5 py-1 rounded"
+                                onKeyDown={(e) => e.key === 'Enter' && handleSkillIngest()}
+                                autoFocus
+                            />
+                            {skillIngestError && (
+                                <div className="text-[9px] text-red-400">{skillIngestError}</div>
+                            )}
+                            <div className="flex gap-1">
+                                <button
+                                    onClick={handleSkillIngest}
+                                    disabled={!skillIngestUrl.trim() || skillIngestLoading}
+                                    className="text-[9px] bg-purple-500/30 text-purple-300 px-2 py-0.5 rounded hover:bg-purple-500/40 disabled:opacity-50"
+                                >
+                                    {skillIngestLoading ? 'Ingesting...' : 'Ingest'}
+                                </button>
+                                <button
+                                    onClick={() => { setShowSkillIngest(false); setSkillIngestUrl(''); setSkillIngestError(null); }}
+                                    className="text-[9px] theme-text-muted hover:theme-text-secondary px-1"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {sidebarJinxesLoading && sidebarJinxes.length === 0 ? (
+                        <div className="flex items-center justify-center py-2">
+                            <Loader2 size={12} className="animate-spin text-gray-500" />
+                        </div>
+                    ) : sidebarJinxes.length === 0 && !showSkillIngest ? (
+                        <div className="text-center py-2">
+                            <div className="text-[9px] text-gray-500">No skills or jinxes found</div>
+                            <button
+                                onClick={() => setShowSkillIngest(true)}
+                                className="text-[9px] text-purple-400 hover:underline mt-0.5"
+                            >
+                                Ingest from URL
+                            </button>
+                        </div>
+                    ) : (
+                        teamConfigs.map(tc => {
+                            const jinxes = teamGroups[tc.key] || [];
+                            if (jinxes.length === 0) return null;
+                            const isExpanded = sidebarSkillsExpanded.has(tc.key);
+                            const treeNodes = buildSidebarSkillTree(jinxes, tc.key);
+                            return (
+                                <div key={tc.key}>
+                                    <div
+                                        onClick={() => toggleSidebarSkillNode(tc.key)}
+                                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded cursor-pointer ${tc.hover} text-[10px]`}
+                                    >
+                                        <ChevronRight size={8} className={`theme-text-muted transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                        <span className={`font-medium ${tc.color}`}>{tc.label}</span>
+                                        <span className={`text-[8px] px-1 rounded-full ${tc.badge}`}>
+                                            {jinxes.length}
+                                        </span>
+                                    </div>
+                                    {isExpanded && (
+                                        <div className="ml-1">
+                                            {renderSidebarSkillNodes(treeNodes, tc.key, 1)}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
 
 const renderWebsiteList = () => {
-    // Filter websites by search
+
     const allWebsites = [...(websiteHistory || []), ...(bookmarks || [])];
     const filteredWebsites = websiteSearch.trim()
         ? allWebsites.filter(site =>
@@ -1680,7 +2092,6 @@ const renderWebsiteList = () => {
                 className="flex items-stretch w-full py-4 bg-gradient-to-r from-purple-800/40 to-indigo-700/35 cursor-pointer theme-hover"
                 data-tutorial="browser-section"
             >
-                {/* Left: chevron, then conditional controls */}
                 <div className="flex items-center pl-1 gap-0">
                     <ChevronRight size={14} className={`transform transition-transform theme-text-muted dark:text-gray-400 ${websitesCollapsed ? "" : "rotate-90"}`} />
                     {!websitesCollapsed && (
@@ -1709,7 +2120,6 @@ const renderWebsiteList = () => {
                         </>
                     )}
                 </div>
-                {/* Right: main icon - full height clickable area */}
                 <button
                     onClick={(e) => { e.stopPropagation(); createNewBrowser?.(); setWebsitesCollapsed(false); }}
                     className="ml-auto flex items-center justify-center w-1/4 py-4 -my-4 hover:bg-purple-500/20 transition-all"
@@ -1718,9 +2128,39 @@ const renderWebsiteList = () => {
                     <Globe size={12} className="text-purple-300" />
                 </button>
             </div>
-            {/* Websites Settings Panel */}
             {showWebsitesSettings && (
                 <div className="p-2 bg-purple-900/20 border-y border-purple-500/30 text-[10px] space-y-2">
+                    <div>
+                        <label className="text-gray-400 block mb-1">Browser Cookies & Logins</label>
+                        <div className="flex gap-1">
+                            <button
+                                onClick={() => {
+                                    setBrowserSessionMode('global');
+                                    localStorage.setItem('npc-browser-session-mode', 'global');
+                                    localStorage.removeItem(`npc-browser-session-mode-${currentPath}`);
+                                    window.dispatchEvent(new Event('browser-session-mode-changed'));
+                                }}
+                                className={`flex-1 px-2 py-1 rounded text-[10px] transition-colors ${browserSessionMode === 'global' ? 'bg-purple-600 text-white' : 'theme-bg-tertiary theme-text-muted hover:text-white'}`}
+                            >
+                                Global (shared)
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setBrowserSessionMode('project');
+                                    localStorage.setItem(`npc-browser-session-mode-${currentPath}`, 'project');
+                                    window.dispatchEvent(new Event('browser-session-mode-changed'));
+                                }}
+                                className={`flex-1 px-2 py-1 rounded text-[10px] transition-colors ${browserSessionMode === 'project' ? 'bg-purple-600 text-white' : 'theme-bg-tertiary theme-text-muted hover:text-white'}`}
+                            >
+                                Project only
+                            </button>
+                        </div>
+                        <div className="text-[9px] text-gray-500 mt-1">
+                            {browserSessionMode === 'global'
+                                ? 'Logins shared across all folders. Re-open browser tabs to apply.'
+                                : `Logins isolated to this folder. Re-open browser tabs to apply.`}
+                        </div>
+                    </div>
                     <div className="flex items-center justify-between">
                         <label className="theme-text-primary">Group by domain</label>
                         <input
@@ -1788,275 +2228,289 @@ const renderWebsiteList = () => {
         return <div>{header}</div>;
     }
 
+    const renderWebsiteItem = (item: any, opts: { indent?: boolean; showDomain?: boolean; showTime?: boolean; showType?: boolean } = {}) => {
+        const { indent = false, showDomain = false, showTime = false, showType = false } = opts;
+        const isBookmark = item._type === 'bookmark';
+        const isOpen = item._type === 'open';
+        const isActive = isOpen && activeContentPaneId === item.paneId;
+        let hostname = '';
+        try { hostname = new URL(item.url).hostname; } catch {}
+
+        return (
+            <div
+                key={`${item._type}-${item.url}-${item.paneId || ''}-${item.timestamp || ''}`}
+                className={`flex items-center gap-1.5 ${indent ? 'pl-8' : 'pl-3'} pr-1.5 py-1 w-full transition-all group ${
+                    isActive ? 'bg-purple-500/15 border-l-2 border-purple-400' : 'hover:bg-white/5 border-l-2 border-transparent'
+                }`}
+            >
+                <button
+                    className="flex items-center gap-1.5 flex-1 min-w-0"
+                    draggable={!isOpen ? "true" : undefined}
+                    onDragStart={!isOpen ? (e) => {
+                        e.dataTransfer.effectAllowed = 'copyMove';
+                        handleGlobalDragStart(e, { type: 'browser', id: `browser_${generateId()}`, url: item.url });
+                    } : undefined}
+                    onDragEnd={!isOpen ? handleGlobalDragEnd : undefined}
+                    onClick={() => isOpen ? setActiveContentPaneId(item.paneId) : createNewBrowser(item.url)}
+                    onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setWebsiteContextMenu({ x: e.clientX, y: e.clientY, url: item.url, title: item.title || hostname });
+                    }}
+                >
+                    <img
+                        src={`https://www.google.com/s2/favicons?domain=${hostname}&sz=32`}
+                        alt=""
+                        className="w-3.5 h-3.5 flex-shrink-0 rounded"
+                        onError={(e: any) => { e.target.style.display = 'none'; }}
+                    />
+                    <div className="flex flex-col overflow-hidden min-w-0 flex-1">
+                        <span className={`text-[11px] truncate ${isActive ? 'text-purple-200' : 'theme-text-primary'}`}>
+                            {item.title || hostname || item.url}
+                        </span>
+                        <span className="text-[9px] text-gray-600 truncate">
+                            {showDomain ? hostname : ''}
+                            {showTime && item.timestamp ? (showDomain ? ' · ' : '') + (() => { const d = new Date(item.timestamp); const now = new Date(); const diffH = (now.getTime() - d.getTime()) / 3600000; return diffH < 1 ? `${Math.max(1, Math.round(diffH * 60))}m ago` : diffH < 24 ? `${Math.round(diffH)}h ago` : `${Math.round(diffH / 24)}d ago`; })() : ''}
+                            {showType ? (showDomain || showTime ? ' · ' : '') + (isBookmark ? 'Bookmark' : isOpen ? 'Open' : 'History') : ''}
+                            {!showDomain && !showTime && !showType ? hostname : ''}
+                        </span>
+                    </div>
+                </button>
+                {isOpen ? (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            const nodePath = findNodePath(rootLayoutNode, item.paneId);
+                            if (nodePath) closeContentPane(item.paneId, nodePath);
+                        }}
+                        className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/20 transition-all"
+                        title="Close"
+                    >
+                        <X size={9} className="text-gray-500 hover:text-red-400" />
+                    </button>
+                ) : (
+                    <ExternalLink size={8} className="text-gray-600 opacity-0 group-hover:opacity-100 flex-shrink-0 transition-opacity" />
+                )}
+                {isBookmark && <Star size={8} className="text-yellow-500/60 flex-shrink-0" />}
+            </div>
+        );
+    };
+
+    const renderWebsiteGroupHeader = (label: string, count: number, isExpanded: boolean, onToggle: () => void, color: string, icon?: React.ReactNode) => (
+        <button
+            onClick={onToggle}
+            className={`flex items-center gap-1.5 px-2 py-1 w-full text-left hover:bg-white/5 transition-all ${isExpanded ? 'bg-white/[0.03]' : ''}`}
+        >
+            <ChevronRight size={10} className={`text-gray-400 flex-shrink-0 transform transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+            {icon}
+            <span className={`text-[10px] font-medium ${color} truncate`}>{label}</span>
+            <span className="text-[9px] text-gray-500 ml-auto flex-shrink-0 tabular-nums">{count}</span>
+        </button>
+    );
+
     return (
         <div className="flex flex-col h-full">
             {header}
 
-            {!websitesCollapsed && (
+            {!websitesCollapsed && (() => {
+
+                const q = websiteSearch.trim().toLowerCase();
+                const filteredBookmarks = (q ? bookmarks.filter((b: any) => (b.title || '').toLowerCase().includes(q) || (b.url || '').toLowerCase().includes(q)) : bookmarks).map((b: any) => ({ ...b, _type: 'bookmark' }));
+                const filteredHistory = (q ? websiteHistory.filter((h: any) => (h.title || '').toLowerCase().includes(q) || (h.url || '').toLowerCase().includes(q)) : websiteHistory).map((h: any) => ({ ...h, _type: 'history' }));
+                const filteredCommon = q ? commonSites.filter((g: any) => g.rootDomain.toLowerCase().includes(q) || g.subdomains?.some((s: any) => s.hostname.toLowerCase().includes(q))) : commonSites;
+                const filteredBrowsers = (q ? openBrowsers.filter((b: any) => (b.title || '').toLowerCase().includes(q) || (b.url || '').toLowerCase().includes(q)) : openBrowsers).map((b: any) => ({ ...b, _type: 'open' }));
+                const allItems = [...filteredBrowsers, ...filteredBookmarks, ...filteredHistory];
+                const groupBy = websitesSettings.groupBy || 'type';
+
+                const getDomain = (url: string) => {
+                    try {
+                        const hostname = new URL(url).hostname;
+                        const parts = hostname.split('.');
+                        return parts.length >= 2 ? parts.slice(-2).join('.') : hostname;
+                    } catch { return 'other'; }
+                };
+
+                const getTimeGroup = (item: any) => {
+                    const ts = new Date(item.timestamp || item.lastVisited || Date.now()).getTime();
+                    const now = new Date();
+                    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                    const weekStart = todayStart - (now.getDay() * 86400000);
+                    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+                    if (ts >= todayStart) return 'Today';
+                    if (ts >= weekStart) return 'This Week';
+                    if (ts >= monthStart) return 'This Month';
+                    const d = new Date(ts);
+                    return `${d.toLocaleString('default', { month: 'short' })} ${d.getFullYear()}`;
+                };
+
+                return (
                 <div className="theme-bg-secondary flex-1 min-h-0 overflow-y-auto">
-                    {/* Currently Open Browsers */}
-                    {openBrowsers.length > 0 && (
-                        <div className="border-b theme-border">
-                            <div
-                                className="text-[10px] text-gray-500 px-2 py-1 font-medium flex items-center justify-between cursor-pointer theme-hover"
-                                onClick={() => setOpenBrowsersCollapsed(!openBrowsersCollapsed)}
+                    <div className="flex items-center gap-1 px-1.5 py-1 border-b theme-border">
+                        <span className="text-[9px] text-gray-500">Group:</span>
+                        {(['type', 'domain', 'time', 'none'] as const).map(mode => (
+                            <button
+                                key={mode}
+                                onClick={() => setWebsitesSettings((s: any) => ({ ...s, groupBy: mode }))}
+                                className={`px-1.5 py-0.5 text-[9px] rounded transition-colors ${
+                                    groupBy === mode
+                                        ? 'bg-purple-500/20 text-purple-400'
+                                        : 'text-gray-500 hover:text-gray-300 hover:bg-gray-700/30'
+                                }`}
                             >
-                                <span className="flex items-center gap-1"><Globe size={10} className="text-blue-400" /> Open ({openBrowsers.length})</span>
-                                <ChevronRight size={10} className={`transform transition-transform ${openBrowsersCollapsed ? '' : 'rotate-90'}`} />
-                            </div>
-                            {!openBrowsersCollapsed && openBrowsers.map(browser => (
-                                <button
-                                    key={browser.paneId}
-                                    onClick={() => setActiveContentPaneId(browser.paneId)}
-                                    onContextMenu={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        setWebsiteContextMenu({
-                                            x: e.clientX,
-                                            y: e.clientY,
-                                            url: browser.url,
-                                            title: browser.title || new URL(browser.url).hostname
-                                        });
-                                    }}
-                                    className={`flex items-center gap-2 px-2 py-1.5 w-full text-left transition-all group ${
-                                        activeContentPaneId === browser.paneId
-                                            ? 'bg-teal-500/20 border-l-2 border-teal-500'
-                                            : 'theme-hover border-l-2 border-transparent'
-                                    }`}
-                                >
-                                    <Globe size={13} className="text-blue-400 flex-shrink-0" />
-                                    <div className="flex flex-col overflow-hidden min-w-0 flex-1">
-                                        <span className="text-[11px] truncate theme-text-primary">{browser.title}</span>
-                                        <span className="text-[9px] theme-text-muted truncate">{browser.url}</span>
-                                    </div>
-                                </button>
-                            ))}
-                        </div>
-                    )}
+                                {mode === 'type' ? 'Type' : mode === 'domain' ? 'Domain' : mode === 'time' ? 'Time' : 'None'}
+                            </button>
+                        ))}
+                    </div>
 
-                    {/* Bookmarks */}
-                    {bookmarks.length > 0 && (
-                        <div className="border-b theme-border">
-                            <div
-                                className="text-[10px] text-gray-500 px-2 py-1.5 font-medium flex items-center justify-between cursor-pointer theme-hover transition-colors"
-                                onClick={() => setBookmarksCollapsed(!bookmarksCollapsed)}
-                            >
-                                <span className="flex items-center gap-1.5">
-                                    <Star size={10} className="text-yellow-400" />
-                                    Bookmarks ({bookmarks.length})
-                                </span>
-                                <ChevronRight size={10} className={`transform transition-transform theme-text-muted ${bookmarksCollapsed ? '' : 'rotate-90'}`} />
-                            </div>
-                            {!bookmarksCollapsed && bookmarks.map((bookmark, idx) => (
-                                <button
-                                    key={`${bookmark.url}-${idx}`}
-                                    onClick={() => createNewBrowser(bookmark.url)}
-                                    onContextMenu={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        setWebsiteContextMenu({
-                                            x: e.clientX,
-                                            y: e.clientY,
-                                            url: bookmark.url,
-                                            title: bookmark.title
-                                        });
-                                    }}
-                                    className="flex items-center gap-2 px-2 py-1.5 w-full text-left theme-hover transition-all group border-l-2 border-transparent hover:border-yellow-500/50"
-                                >
-                                    <Star size={12} className="text-yellow-400 flex-shrink-0" />
-                                    <div className="flex flex-col overflow-hidden min-w-0 flex-1">
-                                        <span className="text-[11px] truncate theme-text-primary">{bookmark.title}</span>
-                                        <span className="text-[9px] theme-text-muted truncate">{bookmark.url}</span>
-                                    </div>
-                                </button>
-                            ))}
-                        </div>
-                    )}
-
-                    {/* Frequent Sites — grouped by root domain */}
-                    {commonSites.length > 0 && (
-                        <div className="border-b theme-border">
-                            <div
-                                className="text-[10px] text-gray-500 px-2 py-1.5 font-medium flex items-center justify-between cursor-pointer theme-hover transition-colors"
-                                onClick={() => setCommonSitesCollapsed(!commonSitesCollapsed)}
-                            >
-                                <span className="flex items-center gap-1.5">
-                                    <Globe size={10} className="text-green-400" />
-                                    Frequent ({commonSites.length})
-                                </span>
-                                <ChevronRight size={10} className={`transform transition-transform theme-text-muted ${commonSitesCollapsed ? '' : 'rotate-90'}`} />
-                            </div>
-                            {!commonSitesCollapsed && commonSites.map((group: any) => {
-                                const isExpanded = expandedDomains.has(group.rootDomain);
-                                const hasMultipleSubdomains = group.subdomains && group.subdomains.length > 1;
-                                return (
-                                    <div key={group.rootDomain}>
-                                        {/* Root domain row */}
-                                        <button
-                                            draggable="true"
-                                            onDragStart={(e) => {
-                                                e.dataTransfer.effectAllowed = 'copyMove';
-                                                handleGlobalDragStart(e, {
-                                                    type: 'browser',
-                                                    id: `browser_${generateId()}`,
-                                                    url: `https://${group.rootDomain}`
-                                                });
-                                            }}
-                                            onDragEnd={handleGlobalDragEnd}
-                                            onClick={() => {
-                                                if (hasMultipleSubdomains) {
-                                                    setExpandedDomains(prev => {
-                                                        const next = new Set(prev);
-                                                        if (next.has(group.rootDomain)) next.delete(group.rootDomain);
-                                                        else next.add(group.rootDomain);
-                                                        return next;
-                                                    });
-                                                } else {
-                                                    const hostname = group.subdomains?.[0]?.hostname || group.rootDomain;
-                                                    createNewBrowser(`https://${hostname}`);
-                                                }
-                                            }}
-                                            onContextMenu={(e) => {
-                                                e.preventDefault();
-                                                e.stopPropagation();
-                                                setWebsiteContextMenu({
-                                                    x: e.clientX,
-                                                    y: e.clientY,
-                                                    url: `https://${group.rootDomain}`,
-                                                    title: group.rootDomain
-                                                });
-                                            }}
-                                            className="flex items-center gap-2 px-2 py-1.5 w-full text-left theme-hover transition-all group border-l-2 border-transparent hover:border-green-500/50"
-                                        >
-                                            {hasMultipleSubdomains && (
-                                                <ChevronRight size={8} className={`text-gray-600 flex-shrink-0 transform transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                                            )}
-                                            <img
-                                                src={group.favicon}
-                                                alt=""
-                                                className="w-3.5 h-3.5 flex-shrink-0 rounded"
-                                                onError={(e: any) => {
-                                                    e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="gray" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>';
-                                                }}
-                                            />
-                                            <div className="flex flex-col overflow-hidden min-w-0 flex-1">
-                                                <span className="text-[11px] truncate theme-text-primary">{group.rootDomain}</span>
-                                                <span className="text-[9px] text-gray-600">
-                                                    {group.totalCount} visit{group.totalCount !== 1 ? 's' : ''}{hasMultipleSubdomains ? ` · ${group.subdomains.length} sites` : ''}
-                                                </span>
-                                            </div>
-                                        </button>
-                                        {/* Subdomain entries */}
-                                        {isExpanded && group.subdomains?.map((sub: any) => (
-                                            <button
-                                                key={sub.hostname}
-                                                draggable="true"
-                                                onDragStart={(e) => {
-                                                    e.dataTransfer.effectAllowed = 'copyMove';
-                                                    handleGlobalDragStart(e, {
-                                                        type: 'browser',
-                                                        id: `browser_${generateId()}`,
-                                                        url: `https://${sub.hostname}`
-                                                    });
-                                                }}
-                                                onDragEnd={handleGlobalDragEnd}
-                                                onClick={() => createNewBrowser(`https://${sub.hostname}`)}
-                                                onContextMenu={(e) => {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
-                                                    setWebsiteContextMenu({
-                                                        x: e.clientX,
-                                                        y: e.clientY,
-                                                        url: `https://${sub.hostname}`,
-                                                        title: sub.hostname
-                                                    });
-                                                }}
-                                                className="flex items-center gap-2 pl-6 pr-2 py-1 w-full text-left theme-hover transition-all group border-l-2 border-transparent hover:border-green-500/30"
-                                            >
-                                                <img
-                                                    src={sub.favicon}
-                                                    alt=""
-                                                    className="w-3 h-3 flex-shrink-0 rounded"
-                                                    onError={(e: any) => {
-                                                        e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="gray" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>';
+                    {groupBy === 'type' && (
+                        <>
+                            {filteredBrowsers.length > 0 && (
+                                <div className="border-b theme-border">
+                                    {renderWebsiteGroupHeader('Open', filteredBrowsers.length, !openBrowsersCollapsed, () => setOpenBrowsersCollapsed(!openBrowsersCollapsed), 'text-blue-400', <Globe size={10} className="text-blue-400" />)}
+                                    {!openBrowsersCollapsed && filteredBrowsers.map(b => renderWebsiteItem(b, { showDomain: true }))}
+                                </div>
+                            )}
+                            {filteredBookmarks.length > 0 && (
+                                <div className="border-b theme-border">
+                                    {renderWebsiteGroupHeader('Bookmarks', filteredBookmarks.length, !bookmarksCollapsed, () => setBookmarksCollapsed(!bookmarksCollapsed), 'text-yellow-400', <Star size={10} className="text-yellow-400" />)}
+                                    {!bookmarksCollapsed && filteredBookmarks.map(b => renderWebsiteItem(b, { showDomain: true }))}
+                                </div>
+                            )}
+                            {filteredCommon.length > 0 && (
+                                <div className="border-b theme-border">
+                                    {renderWebsiteGroupHeader('Frequent', filteredCommon.length, !commonSitesCollapsed, () => setCommonSitesCollapsed(!commonSitesCollapsed), 'text-green-400', <Activity size={10} className="text-green-400" />)}
+                                    {!commonSitesCollapsed && filteredCommon.map((group: any) => {
+                                        const isExpanded = expandedDomains.has(group.rootDomain);
+                                        const hasMultipleSubdomains = group.subdomains && group.subdomains.length > 1;
+                                        return (
+                                            <div key={group.rootDomain}>
+                                                <button
+                                                    draggable="true"
+                                                    onDragStart={(e) => { e.dataTransfer.effectAllowed = 'copyMove'; handleGlobalDragStart(e, { type: 'browser', id: `browser_${generateId()}`, url: `https://${group.rootDomain}` }); }}
+                                                    onDragEnd={handleGlobalDragEnd}
+                                                    onClick={() => {
+                                                        if (hasMultipleSubdomains) {
+                                                            setExpandedDomains(prev => { const next = new Set(prev); if (next.has(group.rootDomain)) next.delete(group.rootDomain); else next.add(group.rootDomain); return next; });
+                                                        } else {
+                                                            createNewBrowser(`https://${group.subdomains?.[0]?.hostname || group.rootDomain}`);
+                                                        }
                                                     }}
-                                                />
-                                                <span className="text-[10px] truncate text-gray-400 flex-1 min-w-0">{sub.hostname}</span>
-                                                <span className="text-[9px] text-gray-600 flex-shrink-0">{sub.count}</span>
-                                            </button>
-                                        ))}
+                                                    onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setWebsiteContextMenu({ x: e.clientX, y: e.clientY, url: `https://${group.rootDomain}`, title: group.rootDomain }); }}
+                                                    className={`flex items-center gap-1.5 pl-5 pr-1.5 py-1 w-full text-left hover:bg-white/5 transition-all group ${isExpanded ? 'bg-white/[0.03]' : ''}`}
+                                                >
+                                                    {hasMultipleSubdomains ? (
+                                                        <ChevronRight size={9} className={`text-gray-400 flex-shrink-0 transform transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                                    ) : (
+                                                        <ExternalLink size={9} className="text-gray-600 opacity-0 group-hover:opacity-100 flex-shrink-0 transition-opacity" />
+                                                    )}
+                                                    <img src={group.favicon} alt="" className="w-3.5 h-3.5 flex-shrink-0 rounded" onError={(e: any) => { e.target.style.display = 'none'; }} />
+                                                    <span className="text-[11px] truncate theme-text-primary flex-1 min-w-0">{group.rootDomain}</span>
+                                                    <span className="text-[9px] text-gray-500 flex-shrink-0 tabular-nums">{group.totalCount}</span>
+                                                </button>
+                                                {isExpanded && group.subdomains?.map((sub: any) => (
+                                                    <button
+                                                        key={sub.hostname}
+                                                        draggable="true"
+                                                        onDragStart={(e) => { e.dataTransfer.effectAllowed = 'copyMove'; handleGlobalDragStart(e, { type: 'browser', id: `browser_${generateId()}`, url: `https://${sub.hostname}` }); }}
+                                                        onDragEnd={handleGlobalDragEnd}
+                                                        onClick={() => createNewBrowser(`https://${sub.hostname}`)}
+                                                        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setWebsiteContextMenu({ x: e.clientX, y: e.clientY, url: `https://${sub.hostname}`, title: sub.hostname }); }}
+                                                        className="flex items-center gap-1.5 pl-10 pr-1.5 py-0.5 w-full text-left hover:bg-white/5 transition-all group"
+                                                    >
+                                                        <img src={sub.favicon} alt="" className="w-3 h-3 flex-shrink-0 rounded" onError={(e: any) => { e.target.style.display = 'none'; }} />
+                                                        <span className="text-[10px] truncate text-gray-400 flex-1 min-w-0">{sub.hostname}</span>
+                                                        <span className="text-[9px] text-gray-600 flex-shrink-0 tabular-nums">{sub.count}</span>
+                                                        <ExternalLink size={8} className="text-gray-600 opacity-0 group-hover:opacity-100 flex-shrink-0 transition-opacity" />
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                            {filteredHistory.length > 0 && (
+                                <div className="border-b theme-border">
+                                    {renderWebsiteGroupHeader('History', filteredHistory.length, !recentHistoryCollapsed, () => setRecentHistoryCollapsed(!recentHistoryCollapsed), 'text-cyan-400', <Clock size={10} className="text-cyan-400" />)}
+                                    {!recentHistoryCollapsed && filteredHistory.map(h => renderWebsiteItem(h, { showDomain: true, showTime: true }))}
+                                </div>
+                            )}
+                        </>
+                    )}
+
+                    {groupBy === 'domain' && (() => {
+                        const domainGroups = new Map<string, any[]>();
+                        allItems.forEach(item => {
+                            const domain = getDomain(item.url);
+                            if (!domainGroups.has(domain)) domainGroups.set(domain, []);
+                            domainGroups.get(domain)!.push(item);
+                        });
+                        return Array.from(domainGroups.entries())
+                            .sort((a, b) => b[1].length - a[1].length)
+                            .map(([domain, items]) => {
+                                const isExpanded = historyGroupExpanded.has(domain);
+                                return (
+                                    <div key={domain} className="border-b theme-border/50">
+                                        {renderWebsiteGroupHeader(
+                                            domain, items.length, isExpanded,
+                                            () => setHistoryGroupExpanded(prev => { const next = new Set(prev); if (next.has(domain)) next.delete(domain); else next.add(domain); return next; }),
+                                            'text-purple-300',
+                                            <img src={`https://www.google.com/s2/favicons?domain=${domain}&sz=32`} alt="" className="w-3.5 h-3.5 flex-shrink-0 rounded" onError={(e: any) => { e.target.style.display = 'none'; }} />
+                                        )}
+                                        {isExpanded && items.map(item => renderWebsiteItem(item, { indent: true, showTime: true, showType: true }))}
                                     </div>
                                 );
-                            })}
-                        </div>
-                    )}
+                            });
+                    })()}
 
-                    {/* Recent History */}
-                    {websiteHistory.length > 0 && (
-                        <div>
-                            <div
-                                className="text-[10px] text-gray-500 px-2 py-1.5 font-medium flex items-center justify-between cursor-pointer theme-hover transition-colors"
-                                onClick={() => setRecentHistoryCollapsed(!recentHistoryCollapsed)}
-                            >
-                                <span className="flex items-center gap-1.5">
-                                    <Clock size={10} className="text-cyan-400" />
-                                    History ({websiteHistory.length})
-                                </span>
-                                <ChevronRight size={10} className={`transform transition-transform theme-text-muted ${recentHistoryCollapsed ? '' : 'rotate-90'}`} />
-                            </div>
-                            {!recentHistoryCollapsed && <div>
-                                {websiteHistory.slice(0, 30).map((item, idx) => (
-                                    <button
-                                        key={`${item.url}-${idx}`}
-                                        draggable="true"
-                                        onDragStart={(e) => {
-                                            e.dataTransfer.effectAllowed = 'copyMove';
-                                            handleGlobalDragStart(e, {
-                                                type: 'browser',
-                                                id: `browser_${generateId()}`,
-                                                url: item.url
-                                            });
-                                        }}
-                                        onDragEnd={handleGlobalDragEnd}
-                                        onClick={() => createNewBrowser(item.url)}
-                                        onContextMenu={(e) => {
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                            setWebsiteContextMenu({
-                                                x: e.clientX,
-                                                y: e.clientY,
-                                                url: item.url,
-                                                title: item.title || new URL(item.url).hostname
-                                            });
-                                        }}
-                                        className="flex items-center gap-2 px-2 py-1.5 w-full text-left theme-hover transition-all group border-l-2 border-transparent hover:border-cyan-500/50"
-                                    >
-                                        <Globe size={11} className="text-gray-500 flex-shrink-0" />
-                                        <div className="flex flex-col overflow-hidden min-w-0 flex-1">
-                                            <span className="text-[11px] truncate text-gray-300">
-                                                {item.title || new URL(item.url).hostname}
-                                            </span>
-                                            <span className="text-[9px] text-gray-600 truncate">
-                                                {new Date(item.timestamp).toLocaleString()}
-                                            </span>
-                                        </div>
-                                    </button>
-                                ))}
-                            </div>}
-                        </div>
+                    {groupBy === 'time' && (() => {
+                        const timeGroups = new Map<string, any[]>();
+
+                        if (filteredBrowsers.length > 0) timeGroups.set('Open Now', [...filteredBrowsers]);
+
+                        const restItems = [...filteredBookmarks, ...filteredHistory].sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+                        restItems.forEach(item => {
+                            const group = getTimeGroup(item);
+                            if (!timeGroups.has(group)) timeGroups.set(group, []);
+                            timeGroups.get(group)!.push(item);
+                        });
+                        return Array.from(timeGroups.entries()).map(([groupName, items]) => {
+                            const isExpanded = convoGroupExpanded.has(`web_${groupName}`) || groupName === 'Open Now' || groupName === 'Today';
+                            return (
+                                <div key={groupName} className="border-b theme-border/50">
+                                    {renderWebsiteGroupHeader(
+                                        groupName, items.length, isExpanded,
+                                        () => {
+                                            const key = `web_${groupName}`;
+                                            setConvoGroupExpanded(prev => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; });
+                                        },
+                                        groupName === 'Open Now' ? 'text-blue-400' : 'text-purple-300'
+                                    )}
+                                    {isExpanded && items.map(item => renderWebsiteItem(item, { showDomain: true, showType: true }))}
+                                </div>
+                            );
+                        });
+                    })()}
+
+                    {groupBy === 'none' && (() => {
+                        const sorted = [...allItems].sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+                        return sorted.map(item => renderWebsiteItem(item, { showDomain: true, showTime: true, showType: true }));
+                    })()}
+
+                    {q && allItems.length === 0 && (
+                        <div className="px-3 py-3 text-[11px] text-gray-500 text-center">No matches for "{websiteSearch}"</div>
                     )}
                 </div>
-            )}
+                );
+            })()}
         </div>
     );
 };
 
-    // Load memories for the current path
     const loadMemories = useCallback(async () => {
         if (!currentPath) return;
         setLoadingMemories(true);
         try {
-            // Try to fetch memories from the API
+
             const response = await window.api.getMemories?.({ path: currentPath, limit: 50 });
             if (response?.memories) {
                 setMemories(response.memories);
@@ -2068,12 +2522,11 @@ const renderWebsiteList = () => {
         }
     }, [currentPath]);
 
-    // Load knowledge graph entities for the current path
     const loadKnowledgeEntities = useCallback(async () => {
         if (!currentPath) return;
         setLoadingKnowledge(true);
         try {
-            // Try to fetch knowledge graph from the API
+
             const response = await window.api.getKnowledgeGraph?.({ path: currentPath, limit: 50 });
             if (response?.entities) {
                 setKnowledgeEntities(response.entities);
@@ -2085,7 +2538,6 @@ const renderWebsiteList = () => {
         }
     }, [currentPath]);
 
-    // Load memories and knowledge when path changes or sections expand
     useEffect(() => {
         if (!memoriesCollapsed && currentPath) {
             loadMemories();
@@ -2098,7 +2550,6 @@ const renderWebsiteList = () => {
         }
     }, [knowledgeCollapsed, currentPath, loadKnowledgeEntities]);
 
-    // Render Memory section
     const renderMemorySection = () => {
         const filteredMemories = memorySearch.trim()
             ? memories.filter(m =>
@@ -2110,7 +2561,6 @@ const renderWebsiteList = () => {
         return (
             <div className="mt-3">
                 <div className="flex w-full bg-gradient-to-r from-purple-900/20 to-pink-900/20 border-b border-purple-500/20">
-                    {/* Left side: Icon + action buttons */}
                     <div className="flex items-center gap-0.5 px-2">
                         <MemoryIcon size={12} className="text-purple-400 mr-1" />
                         <button
@@ -2121,7 +2571,6 @@ const renderWebsiteList = () => {
                             <RefreshCw size={12} />
                         </button>
                     </div>
-                    {/* Right side: Clickable dropdown area */}
                     <div
                         onClick={() => setMemoriesCollapsed(!memoriesCollapsed)}
                         className="flex-1 flex items-center justify-end gap-1.5 px-2 py-4 cursor-pointer theme-hover"
@@ -2132,7 +2581,6 @@ const renderWebsiteList = () => {
 
                 {!memoriesCollapsed && (
                     <>
-                        {/* Search */}
                         <div className="px-1 py-1 theme-bg-secondary border-b theme-border">
                             <div className="relative">
                                 <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
@@ -2151,7 +2599,6 @@ const renderWebsiteList = () => {
                             </div>
                         </div>
 
-                        {/* Memory list */}
                         <div className="theme-bg-secondary max-h-[200px] overflow-y-auto">
                             {loadingMemories ? (
                                 <div className="px-3 py-3 text-[11px] text-gray-500 text-center">Loading...</div>
@@ -2165,7 +2612,7 @@ const renderWebsiteList = () => {
                                         key={memory.id || index}
                                         className="px-2 py-1.5 theme-hover border-l-2 border-transparent hover:border-purple-500/50 cursor-pointer"
                                         onClick={() => {
-                                            // Could open memory in a viewer pane
+
                                             console.log('Memory clicked:', memory);
                                         }}
                                     >
@@ -2184,7 +2631,6 @@ const renderWebsiteList = () => {
         );
     };
 
-    // Render Knowledge Graph section
     const renderKnowledgeSection = () => {
         const filteredEntities = knowledgeSearch.trim()
             ? knowledgeEntities.filter(e =>
@@ -2196,7 +2642,6 @@ const renderWebsiteList = () => {
         return (
             <div className="mt-3">
                 <div className="flex w-full bg-gradient-to-r from-cyan-900/20 to-blue-900/20 border-b border-cyan-500/20">
-                    {/* Left side: Icon + action buttons */}
                     <div className="flex items-center gap-0.5 px-2">
                         <Network size={12} className="text-cyan-400 mr-1" />
                         <button
@@ -2207,7 +2652,6 @@ const renderWebsiteList = () => {
                             <RefreshCw size={12} />
                         </button>
                     </div>
-                    {/* Right side: Clickable dropdown area */}
                     <div
                         onClick={() => setKnowledgeCollapsed(!knowledgeCollapsed)}
                         className="flex-1 flex items-center justify-end gap-1.5 px-2 py-4 cursor-pointer theme-hover"
@@ -2218,7 +2662,6 @@ const renderWebsiteList = () => {
 
                 {!knowledgeCollapsed && (
                     <>
-                        {/* Search */}
                         <div className="px-1 py-1 theme-bg-secondary border-b theme-border">
                             <div className="relative">
                                 <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
@@ -2237,7 +2680,6 @@ const renderWebsiteList = () => {
                             </div>
                         </div>
 
-                        {/* Entity list */}
                         <div className="theme-bg-secondary max-h-[200px] overflow-y-auto">
                             {loadingKnowledge ? (
                                 <div className="px-3 py-3 text-[11px] text-gray-500 text-center">Loading...</div>
@@ -2251,7 +2693,7 @@ const renderWebsiteList = () => {
                                         key={entity.id || index}
                                         className="px-2 py-1.5 theme-hover border-l-2 border-transparent hover:border-cyan-500/50 cursor-pointer"
                                         onClick={() => {
-                                            // Could open entity in knowledge graph viewer
+
                                             createGraphViewerPane?.();
                                         }}
                                     >
@@ -2282,19 +2724,18 @@ const renderWebsiteList = () => {
 
         return (
             <div className="border-b theme-border pb-1 flex-shrink-0">
-                {/* Header with collapse toggle */}
-                <div className="flex items-center justify-between px-4 py-1" data-tutorial="disk-usage">
-                    <div className="text-xs text-gray-500 font-medium flex items-center gap-2">
-                        <HardDrive size={14} />
+                <div className="flex items-center justify-between px-2 py-1" data-tutorial="disk-usage">
+                    <div className="text-[11px] text-gray-500 font-medium flex items-center gap-1.5">
+                        <HardDrive size={11} />
                         Disk Usage
                     </div>
                     <button
                         onClick={() => setDiskUsageCollapsed(!diskUsageCollapsed)}
-                        className="p-1 theme-hover rounded"
+                        className="p-0.5 theme-hover rounded"
                         title={diskUsageCollapsed ? "Expand disk usage" : "Collapse disk usage"}
                     >
                         <ChevronRight
-                            size={14}
+                            size={10}
                             className={`transform transition-transform ${diskUsageCollapsed ? "" : "rotate-90"}`}
                         />
                     </button>
@@ -2309,14 +2750,13 @@ const renderWebsiteList = () => {
     };
 
     const renderGitPanel = () => {
-        // Only render the panel if gitStatus is available
+
         if (!gitStatus) return null;
 
         const staged = Array.isArray(gitStatus.staged) ? gitStatus.staged : [];
         const unstaged = Array.isArray(gitStatus.unstaged) ? gitStatus.unstaged : [];
         const untracked = Array.isArray(gitStatus.untracked) ? gitStatus.untracked : [];
 
-        // Helper to open diff viewer for a file
         const openFileDiff = (filePath: string, status: string) => {
             const paneId = generateId();
             const fullPath = filePath.startsWith('/') ? filePath : `${currentPath}/${filePath}`;
@@ -2332,12 +2772,10 @@ const renderWebsiteList = () => {
 
         return (
             <div className="p-4 border-t theme-border text-xs theme-text-muted">
-                {/* Header for the Git Panel with a toggle */}
                 <div
                     className="flex items-center w-full cursor-pointer py-1"
                     onClick={() => setGitPanelCollapsed(!gitPanelCollapsed)}
                 >
-                    {/* Left: chevron, then conditional controls */}
                     <div className="flex items-center pl-1 gap-0">
                         <ChevronRight
                             size={14}
@@ -2353,9 +2791,7 @@ const renderWebsiteList = () => {
                             </button>
                         )}
                     </div>
-                    {/* Spacer */}
                     <div className="flex-1" />
-                    {/* Right: main icon */}
                     <div className="flex items-center gap-0 pr-1">
                         <button
                             onClick={(e) => {
@@ -2374,11 +2810,9 @@ const renderWebsiteList = () => {
                         </button>
                     </div>
                 </div>
-    
-                {/* Conditional rendering of the Git panel content */}
+
                 {!gitPanelCollapsed && (
                     <div className="overflow-auto max-h-64 mt-2">
-                        {/* Open Full Git Pane button */}
                         <button
                             onClick={() => createGitPane?.()}
                             className="w-full mb-2 px-2 py-1.5 rounded bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium flex items-center justify-center gap-2"
@@ -2389,7 +2823,7 @@ const renderWebsiteList = () => {
                         <div className="mb-2 font-semibold">
                             Git Branch: {gitStatus.branch} {gitStatus.ahead > 0 && <span>↑{gitStatus.ahead}</span>} {gitStatus.behind > 0 && <span>↓{gitStatus.behind}</span>}
                         </div>
-        
+
                         <div>
                             <div className="mb-1 font-semibold">Unstaged / Untracked Files</div>
                             {(unstaged.length + untracked.length === 0) ? <div className="text-gray-600">No unstaged or untracked files</div> :
@@ -2435,7 +2869,7 @@ const renderWebsiteList = () => {
                             ))
                             }
                         </div>
-        
+
                         <div className="mt-4">
                             <input
                                 type="text"
@@ -2535,7 +2969,7 @@ const renderWebsiteList = () => {
           setGitLoading(false);
         }
       };
-      
+
       const gitUnstageFile = async (file) => {
         setGitLoading(true);
         setGitError(null);
@@ -2548,7 +2982,7 @@ const renderWebsiteList = () => {
           setGitLoading(false);
         }
       };
-      
+
       const gitCommitChanges = async () => {
         if (!gitCommitMessage.trim()) return;
         setGitLoading(true);
@@ -2563,7 +2997,7 @@ const renderWebsiteList = () => {
           setGitLoading(false);
         }
       };
-      
+
       const gitPullChanges = async () => {
         setGitLoading(true);
         setGitError(null);
@@ -2576,7 +3010,7 @@ const renderWebsiteList = () => {
           setGitLoading(false);
         }
       };
-      
+
       const [noUpstreamPrompt, setNoUpstreamPrompt] = useState<{ branch: string; command: string } | null>(null);
       const [pushRejectedPrompt, setPushRejectedPrompt] = useState(false);
 
@@ -2656,9 +3090,6 @@ const renderWebsiteList = () => {
         }
       };
 
-
-
-      
       const loadDirectoryStructureWithoutConversationLoad = async (dirPath) => {
           try {
               if (!dirPath) {
@@ -2672,8 +3103,7 @@ const renderWebsiteList = () => {
                   console.error('Error loading structure:', structureResult?.error);
                   setFolderStructure({ error: structureResult?.error || 'Failed' });
               }
-              
-              // Load conversations but DON'T auto-select any
+
               await loadConversationsWithoutAutoSelect(dirPath);
               return structureResult;
           } catch (err) {
@@ -2695,19 +3125,21 @@ const renderWebsiteList = () => {
                   timestamp: conv.timestamp || Date.now(),
                   last_message_timestamp: conv.last_message_timestamp || conv.timestamp || Date.now(),
                   npc: conv.npc || conv.assistant_name || conv.npc_name || '',
+                  npcs: conv.npcs || (conv.npc ? [conv.npc] : []),
                   model: conv.model || conv.model_name || '',
+                  models: conv.models || (conv.model ? [conv.model] : []),
                   provider: conv.provider || '',
+                  providers: conv.providers || (conv.provider ? [conv.provider] : []),
               })) || [];
-      
-              formattedConversations.sort((a, b) => 
+
+              formattedConversations.sort((a, b) =>
                   new Date(b.last_message_timestamp).getTime() - new Date(a.last_message_timestamp).getTime()
               );
-              
+
               setDirectoryConversations(formattedConversations);
-              
-              // DON'T auto-select any conversations
+
               console.log('[loadConversationsWithoutAutoSelect] Loaded conversations without selecting');
-      
+
           } catch (err) {
               console.error('Error loading conversations:', err);
               setError(err.message);
@@ -2725,7 +3157,7 @@ const renderWebsiteList = () => {
               setIsSearching(true);
               setDeepSearchResults([]);
               setError(null);
-          
+
               try {
                   console.log("Performing GLOBAL search for:", searchTerm);
                   const backendResults = await window.api.performSearch({
@@ -2733,7 +3165,7 @@ const renderWebsiteList = () => {
                       path: currentPath,
                       global: true,
                   });
-                  
+
                   if (backendResults && !backendResults.error) {
                       const sortedResults = (backendResults || []).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
                       setDeepSearchResults(sortedResults);
@@ -2748,56 +3180,49 @@ const renderWebsiteList = () => {
                   setIsSearching(false);
               }
           };
-      
+
               const handleSearchChange = (e) => {
                   const searchValue = e.target.value;
                   setSearchTerm(searchValue);
-          
-                 
+
                   if (!searchValue.trim()) {
                       setIsSearching(false);
                       setDeepSearchResults([]);
                       setMessageSearchResults([]);
                   }
-                 
+
               };
-          
-          
 
-
-
-              // Update handleSidebarRenameSubmit for sidebar file renaming
               const handleSidebarRenameSubmit = async () => {
                   if (!renamingPath || !editedSidebarItemName.trim()) {
                       setRenamingPath(null);
                       setEditedSidebarItemName('');
                       return;
                   }
-                  
+
                   const oldName = getFileName(renamingPath);
                   if (editedSidebarItemName === oldName) {
                       setRenamingPath(null);
                       setEditedSidebarItemName('');
                       return;
                   }
-                  
+
                   const dir = renamingPath.substring(0, renamingPath.lastIndexOf('/'));
                   const newPath = `${dir}/${editedSidebarItemName}`;
-              
+
                   try {
                       const response = await window.api.renameFile(renamingPath, newPath);
                       if (response?.error) throw new Error(response.error);
-              
-                      // Update any open panes with this file
+
                       Object.entries(contentDataRef.current).forEach(([paneId, paneData]) => {
                           if (paneData.contentType === 'editor' && paneData.contentId === renamingPath) {
                               paneData.contentId = newPath;
                           }
                       });
-              
+
                       await loadDirectoryStructure(currentPath);
                       setRootLayoutNode(p => ({ ...p }));
-              
+
                   } catch (err) {
                       setError(`Failed to rename: ${err.message}`);
                   } finally {
@@ -2805,7 +3230,6 @@ const renderWebsiteList = () => {
                       setEditedSidebarItemName('');
                   }
               };
-              
 
               const renderSidebarItemContextMenu = () => {
     if (!sidebarItemContextMenuPos) return null;
@@ -2815,9 +3239,8 @@ const renderWebsiteList = () => {
     const fileName = getFileName(path);
     const ext = fileName?.includes('.') ? fileName.split('.').pop()?.toLowerCase() : '';
 
-    // Helper to send a command to the first open terminal (or create one)
     const runInTerminal = async (command: string) => {
-        // Find existing terminal
+
         const terminalPaneId = Object.keys(contentDataRef.current).find(
             id => contentDataRef.current[id]?.contentType === 'terminal'
         );
@@ -2827,7 +3250,7 @@ const renderWebsiteList = () => {
                 (window as any).api?.writeToTerminal?.({ id: sessionId, data: command + '\n' });
             }
         } else {
-            // Create a new terminal, then send command after a short delay
+
             createNewTerminal?.('system');
             setTimeout(() => {
                 const newTermPaneId = Object.keys(contentDataRef.current).find(
@@ -2844,12 +3267,10 @@ const renderWebsiteList = () => {
         setSidebarItemContextMenuPos(null);
     };
 
-    // Determine file-type-specific actions
     const getFileTypeActions = () => {
         if (type !== 'file' || !ext) return null;
         const actions: { label: string; icon: any; onClick: () => void }[] = [];
 
-        // Runnable scripts
         if (ext === 'py') {
             actions.push({ label: 'Run (python3)', icon: Play, onClick: () => runInTerminal(`python3 "${path}"`) });
         } else if (['js', 'mjs'].includes(ext)) {
@@ -2862,7 +3283,6 @@ const renderWebsiteList = () => {
             actions.push({ label: 'Run (ruby)', icon: Play, onClick: () => runInTerminal(`ruby "${path}"`) });
         }
 
-        // Compilable
         if (ext === 'tex') {
             actions.push({ label: 'Compile (pdflatex)', icon: Zap, onClick: () => runInTerminal(`pdflatex -output-directory="${path.substring(0, path.lastIndexOf('/'))}" "${path}"`) });
         } else if (ext === 'c') {
@@ -2877,7 +3297,6 @@ const renderWebsiteList = () => {
             actions.push({ label: 'Run (java)', icon: Play, onClick: () => runInTerminal(`java "${path}"`) });
         }
 
-        // Open as specific content type
         if (ext === 'ipynb') {
             actions.push({ label: 'Open as Notebook', icon: BookOpen, onClick: () => { handleFileClick(path); setSidebarItemContextMenuPos(null); } });
         }
@@ -2905,7 +3324,6 @@ const renderWebsiteList = () => {
 
     const fileTypeActions = type === 'file' ? getFileTypeActions() : null;
 
-    // Menu button styling
     const menuBtnClass = "flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-xs";
 
     return (
@@ -2914,7 +3332,7 @@ const renderWebsiteList = () => {
                 className="fixed inset-0 z-40 bg-transparent"
                 onMouseDown={() => setSidebarItemContextMenuPos(null)}
                 onContextMenu={(e) => {
-                    // Allow right-click to pass through — close this menu so the new one can open
+
                     setSidebarItemContextMenuPos(null);
                 }}
                 onKeyDown={(e) => {
@@ -2930,7 +3348,6 @@ const renderWebsiteList = () => {
                     if (e.key === 'Escape') setSidebarItemContextMenuPos(null);
                 }}
             >
-                {/* ===== FILE-SPECIFIC: Chat actions ===== */}
                 {type === 'file' && !isInaccessible && (
                     <>
                         <button
@@ -2958,7 +3375,6 @@ const renderWebsiteList = () => {
                     </>
                 )}
 
-                {/* ===== FILE-TYPE-SPECIFIC ACTIONS ===== */}
                 {fileTypeActions && (
                     <>
                         {fileTypeActions.map((action, i) => (
@@ -2975,7 +3391,6 @@ const renderWebsiteList = () => {
                     </>
                 )}
 
-                {/* ===== DIRECTORY-SPECIFIC ACTIONS ===== */}
                 {type === 'directory' && !isInaccessible && (
                     <>
                         <button
@@ -3026,7 +3441,7 @@ const renderWebsiteList = () => {
                         <button
                             onClick={() => {
                                 createNewTerminal?.('system');
-                                // Set cwd by sending cd command after terminal opens
+
                                 setTimeout(() => {
                                     const termPaneId = Object.keys(contentDataRef.current).find(
                                         id => contentDataRef.current[id]?.contentType === 'terminal'
@@ -3049,7 +3464,6 @@ const renderWebsiteList = () => {
                     </>
                 )}
 
-                {/* ===== COMMON ACTIONS (all items) ===== */}
                 <button
                     onClick={() => {
                         navigator.clipboard.writeText(path);
@@ -3071,7 +3485,6 @@ const renderWebsiteList = () => {
                     <span>Show in Finder</span>
                 </button>
 
-                {/* Duplicate (files only) */}
                 {type === 'file' && !isInaccessible && (
                     <button
                         onClick={async () => {
@@ -3096,7 +3509,6 @@ const renderWebsiteList = () => {
 
                 <div className="border-t theme-border my-1"></div>
 
-                {/* ===== PERMISSIONS ===== */}
                 <button
                     onClick={() => {
                         setPermissionDialog({ path, type: 'chmod' });
@@ -3119,7 +3531,6 @@ const renderWebsiteList = () => {
                 </button>
                 <div className="border-t theme-border my-1"></div>
 
-                {/* ===== RENAME, ZIP ===== */}
                 {!isInaccessible && (
                     <>
                         <button
@@ -3142,7 +3553,6 @@ const renderWebsiteList = () => {
                     </>
                 )}
 
-                {/* ===== DELETE ===== */}
                 <button
                     onClick={handleSidebarItemDelete}
                     className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left text-red-400 text-xs"
@@ -3159,7 +3569,6 @@ const renderFolderList = (structure) => {
         return <div className="p-2 text-xs text-red-500">Error: {structure?.error || 'Failed to load'}</div>;
     }
 
-    // Count files for display
     const countItems = (struct) => {
         let count = 0;
         Object.values(struct).forEach((item: any) => {
@@ -3170,7 +3579,6 @@ const renderFolderList = (structure) => {
     };
     const fileCount = countItems(structure);
 
-    // Parse file type filter into array of extensions
     const parseFileTypeFilter = (filter: string): string[] => {
         if (!filter.trim()) return [];
         return filter.split(/[,\s]+/)
@@ -3180,14 +3588,12 @@ const renderFolderList = (structure) => {
     };
     const activeTypeFilters = parseFileTypeFilter(fileTypeFilter);
 
-    // Check if a file matches the type filter
     const matchesTypeFilter = (name: string): boolean => {
         if (activeTypeFilters.length === 0) return true;
         const lowerName = name.toLowerCase();
         return activeTypeFilters.some(ext => lowerName.endsWith(ext));
     };
 
-    // Filter files by search and type
     const filterStructure = (struct, query) => {
         const q = query.toLowerCase().trim();
         const hasQuery = q.length > 0;
@@ -3201,17 +3607,17 @@ const renderFolderList = (structure) => {
             const isFile = item?.type === 'file';
 
             if (isDirectory && item?.children) {
-                // For directories, recursively filter children
+
                 const filteredChildren = filterStructure(item.children, query);
                 if (Object.keys(filteredChildren).length > 0) {
                     filtered[name] = { ...item, children: filteredChildren };
                 }
-                // Also include directory if name matches search query (even if empty after filter)
+
                 else if (hasQuery && name.toLowerCase().includes(q)) {
                     filtered[name] = item;
                 }
             } else if (isFile) {
-                // For files, check both search query and type filter
+
                 const matchesQuery = !hasQuery || name.toLowerCase().includes(q);
                 const matchesType = matchesTypeFilter(name);
                 if (matchesQuery && matchesType) {
@@ -3239,7 +3645,6 @@ const renderFolderList = (structure) => {
                 onClick={() => setFilesCollapsed(!filesCollapsed)}
                 className="flex items-stretch w-full py-4 bg-gradient-to-r from-yellow-800/40 to-amber-700/35 cursor-pointer theme-hover"
             >
-                {/* Left: chevron, then conditional controls */}
                 <div className="flex items-center gap-0 pl-1">
                     <ChevronRight size={14} className={`transform transition-transform theme-text-muted dark:text-gray-400 ${filesCollapsed ? "" : "rotate-90"}`} />
                     {!filesCollapsed && (
@@ -3268,7 +3673,6 @@ const renderFolderList = (structure) => {
                         </>
                     )}
                 </div>
-                {/* Right: browse, up, current path (full height), folder pane */}
                 <div className="flex-1 flex items-stretch justify-end" style={{ position: 'relative', overflow: 'visible' }}>
                     <button
                         onClick={async (e) => {
@@ -3337,7 +3741,7 @@ const renderFolderList = (structure) => {
                         className="flex items-center gap-0.5 px-1 py-4 -my-4 hover:bg-yellow-500/20 transition-colors text-gray-400 hover:text-yellow-400"
                         title={currentPath}
                     >
-                        <span className="text-[9px] font-medium truncate max-w-[100px]">{(() => { const name = getFileName(currentPath) || 'Root'; return name.length > 7 ? name.slice(0, 7) + '…' : name; })()}</span>
+                        <span className="text-[9px] font-medium truncate max-w-[100px]">{(() => { const name = getFileName(currentPath) || 'No Folder'; return name.length > 7 ? name.slice(0, 7) + '…' : name; })()}</span>
                         <ChevronDown size={8} className={`flex-shrink-0 transition-transform text-gray-600 dark:text-gray-400 ${folderDropdownOpen ? 'rotate-180' : ''}`} />
                     </button>
                 </div>
@@ -3348,9 +3752,7 @@ const renderFolderList = (structure) => {
                 >
                     <FolderOpen size={12} className="text-yellow-300" />
                 </button>
-                {/* Folder dropdown container */}
                 <div style={{ position: 'relative', overflow: 'visible' }}>
-                    {/* Folder dropdown - fixed positioning to show over pane content */}
                     {folderDropdownOpen && (
                         <div
                             className="fixed theme-bg-secondary theme-border border rounded shadow-xl py-1 min-w-[220px]"
@@ -3359,8 +3761,31 @@ const renderFolderList = (structure) => {
                             <div className="px-2 py-1 border-b theme-border">
                                 <div className="text-[9px] text-gray-500 truncate" title={currentPath}>{currentPath}</div>
                             </div>
-                            {/* Action buttons - Key and Native Explorer only */}
-                            <div className="flex gap-1 p-1.5 border-b theme-border">
+                            <div className="flex gap-1 p-1.5 border-b theme-border flex-wrap">
+                                <button
+                                    onClick={async () => {
+                                        try {
+                                            const result = await (window as any).api.open_directory_picker();
+                                            if (result) { switchToPath(result); }
+                                        } catch {}
+                                        setFolderDropdownOpen(false);
+                                    }}
+                                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] bg-blue-600/20 text-blue-400 rounded hover:bg-blue-600/30"
+                                    title="Browse for folder"
+                                >
+                                    <FolderPlus size={10} /> Open
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (currentPath !== baseDir) goUpDirectory(currentPath, baseDir, switchToPath, setError);
+                                        setFolderDropdownOpen(false);
+                                    }}
+                                    disabled={currentPath === baseDir}
+                                    className={`flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] rounded ${currentPath === baseDir ? 'opacity-40 bg-gray-600/20 text-gray-500' : 'bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/30'}`}
+                                    title="Go up one folder"
+                                >
+                                    <ArrowUp size={10} /> Up
+                                </button>
                                 <button
                                     onClick={() => { createProjectEnvPane?.(); setFolderDropdownOpen(false); }}
                                     className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] bg-amber-600/20 text-amber-400 rounded hover:bg-amber-600/30"
@@ -3376,7 +3801,6 @@ const renderFolderList = (structure) => {
                                     <ExternalLink size={10} /> Native
                                 </button>
                             </div>
-                            {/* Recent paths */}
                             {recentPaths.filter(p => p !== currentPath).length > 0 && (
                                 <>
                                     <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Recent</div>
@@ -3404,7 +3828,6 @@ const renderFolderList = (structure) => {
                     )}
                 </div>
             </div>
-            {/* Files Settings Panel */}
             {showFilesSettings && (
                 <div className="p-2 bg-yellow-900/20 border-y border-yellow-500/30 text-[10px] space-y-2">
                     <div className="flex items-center justify-between">
@@ -3461,7 +3884,6 @@ const renderFolderList = (structure) => {
             )}
             {!filesCollapsed && (
                 <div className="theme-bg-secondary border-b theme-border">
-                    {/* Search input */}
                     {fileCount > 5 && (
                         <div className="px-1 py-1">
                             <div className="relative">
@@ -3481,7 +3903,6 @@ const renderFolderList = (structure) => {
                             </div>
                         </div>
                     )}
-                    {/* File type filter */}
                     {showFileTypeFilter && (
                         <div className="px-1 py-1 border-t theme-border">
                             <div className="relative">
@@ -3499,7 +3920,6 @@ const renderFolderList = (structure) => {
                                     </button>
                                 )}
                             </div>
-                            {/* Quick filter presets */}
                             <div className="flex flex-wrap gap-1 mt-1.5 px-1">
                                 {[
                                     { label: 'Python', ext: '.py' },
@@ -3574,7 +3994,7 @@ const renderFolderList = (structure) => {
         }
 
         items = items.filter(Boolean).sort((a, b) => {
-            // Extract name from path if name property doesn't exist
+
             const aName = a.name || getFileName(a.path) || '';
             const bName = b.name || getFileName(b.path) || '';
             const aHidden = aName.startsWith('.');
@@ -3582,13 +4002,10 @@ const renderFolderList = (structure) => {
             const aIsDir = a.type === 'directory';
             const bIsDir = b.type === 'directory';
 
-            // Hidden items always last
             if (aHidden !== bHidden) return aHidden ? 1 : -1;
 
-            // Folders before files
             if (aIsDir !== bIsDir) return aIsDir ? -1 : 1;
 
-            // Alphabetical within same type
             return aName.localeCompare(bName);
         });
 
@@ -3604,7 +4021,7 @@ const renderFolderList = (structure) => {
                 return (
                     <div
                         key={fullPath}
-                        className="pl-4 border-l border-gray-700/30 ml-2"
+                        className="pl-3 border-l border-gray-700/30 ml-1"
                         onDragOver={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -3636,28 +4053,27 @@ const renderFolderList = (structure) => {
                     >
                         <button
                             draggable={!isInaccessible}
-                            
+
 onDragStart={(e) => {
     if (isInaccessible) { e.preventDefault(); return; }
     e.dataTransfer.effectAllowed = 'copyMove';
-    
-    // Ensure we always use the absolute path
+
     const absolutePath = fullPath.startsWith('/') ? fullPath : `${currentPath}/${fullPath}`;
-    
-    e.dataTransfer.setData('application/json', JSON.stringify({ 
-        type: 'folder', 
-        id: absolutePath  // ← was: fullPath
+
+    e.dataTransfer.setData('application/json', JSON.stringify({
+        type: 'folder',
+        id: absolutePath
     }));
-    handleGlobalDragStart(e, { 
-        type: 'folder', 
-        id: absolutePath  // ← was: fullPath
+    handleGlobalDragStart(e, {
+        type: 'folder',
+        id: absolutePath
     });
 }}
-                            
+
                             onDragEnd={handleGlobalDragEnd}
                             onClick={(e) => {
-                                if (isInaccessible) return; // Don't allow expanding inaccessible folders
-                                // Check for Ctrl or Meta key (Command on Mac)
+                                if (isInaccessible) return;
+
                                 if (e.ctrlKey || e.metaKey) {
                                     handleOpenFolderAsWorkspace(fullPath);
                                 } else {
@@ -3671,16 +4087,16 @@ onDragStart={(e) => {
                             }}
                             onDoubleClick={() => !isInaccessible && handleOpenFolderAsWorkspace(fullPath)}
                             onContextMenu={(e) => handleSidebarItemContextMenu(e, fullPath, 'directory', isInaccessible)}
-                            className={`flex items-center gap-2 px-2 py-1 w-full hover:bg-gray-800 text-left rounded ${isInaccessible ? 'opacity-60' : ''}`}
+                            className={`flex items-center gap-1.5 px-1.5 py-0.5 w-full hover:bg-gray-800 text-left rounded text-[11px] ${isInaccessible ? 'opacity-60' : ''}`}
                             title={isInaccessible ? `Permission denied: ${fullPath}` : `Drag to open as folder viewer, Click to expand, Ctrl+Click to open as workspace`}
                         >
                             {isInaccessible ? (
                                 <div className="relative flex-shrink-0">
-                                    <Folder size={16} className="text-gray-500" />
-                                    <Lock size={8} className="absolute -bottom-0.5 -right-0.5 text-red-400" />
+                                    <Folder size={12} className="text-gray-500" />
+                                    <Lock size={7} className="absolute -bottom-0.5 -right-0.5 text-red-400" />
                                 </div>
                             ) : (
-                                <Folder size={16} className="text-blue-400 flex-shrink-0" />
+                                <Folder size={12} className="text-blue-400 flex-shrink-0" />
                             )}
                             {isRenaming ? (
                                 <input
@@ -3704,7 +4120,7 @@ onDragStart={(e) => {
                                 <span className="text-gray-300 truncate">{name}</span>
                             )}
                             <ChevronRight
-                                size={14}
+                                size={10}
                                 className={`ml-auto transition-transform ${expandedFolders.has(fullPath) ? 'rotate-90' : ''}`}
                             />
                         </button>
@@ -3745,8 +4161,8 @@ onDragStart={(e) => {
                             }
                         }}
                         onContextMenu={(e) => handleSidebarItemContextMenu(e, fullPath, 'file')}
-                        className={`flex items-center gap-2 px-2 py-1 w-full text-left rounded transition-all duration-200
-                            ${isActiveFile ? 'conversation-selected border-l-2 border-teal-500' : 
+                        className={`flex items-center gap-1.5 px-1.5 py-0.5 w-full text-left rounded transition-all duration-200 text-[11px]
+                            ${isActiveFile ? 'conversation-selected border-l-2 border-teal-500' :
                               isSelected ? 'conversation-selected' : 'hover:bg-gray-800'}`}
                         title={`Edit ${name}`}
                     >
@@ -3786,12 +4202,12 @@ onDragStart={(e) => {
                 <div
                     className="theme-bg-secondary flex-1 min-h-0 overflow-y-auto"
                     onContextMenu={(e) => {
-                        // Right-click on empty space shows folder operations for current workspace
+
                         if ((e.target as HTMLElement).closest('button, [draggable]')) return;
                         handleSidebarItemContextMenu(e, currentPath, 'directory');
                     }}
                     onDragOver={(e) => {
-                        // Accept file/folder drops onto the root workspace area
+
                         const types = e.dataTransfer.types;
                         if (types.includes('application/json')) {
                             e.preventDefault();
@@ -3818,6 +4234,48 @@ onDragStart={(e) => {
                         }
                     }}
                 >
+                    {openFiles.length > 0 && (
+                        <div className="border-b theme-border">
+                            <div
+                                className="text-[10px] text-gray-500 px-2 py-1 font-medium flex items-center justify-between cursor-pointer theme-hover"
+                                onClick={() => setOpenFilesCollapsed(!openFilesCollapsed)}
+                            >
+                                <span className="flex items-center gap-1"><File size={10} className="text-teal-400" /> Open ({openFiles.length})</span>
+                                <ChevronRight size={10} className={`transform transition-transform ${openFilesCollapsed ? '' : 'rotate-90'}`} />
+                            </div>
+                            {!openFilesCollapsed && openFiles.map(file => {
+                                const fileName = getFileName(file.path);
+                                const isActive = activeContentPaneId === file.paneId;
+                                return (
+                                    <div
+                                        key={file.paneId}
+                                        className={`flex items-center gap-1.5 px-1.5 py-0.5 w-full text-left transition-all group text-[11px] ${
+                                            isActive ? 'bg-teal-500/20 border-l-2 border-teal-500' : 'theme-hover border-l-2 border-transparent'
+                                        }`}
+                                    >
+                                        <button
+                                            className="flex items-center gap-1.5 flex-1 min-w-0"
+                                            onClick={() => setActiveContentPaneId(file.paneId)}
+                                        >
+                                            {getFileIcon(fileName)}
+                                            <span className="theme-text-primary truncate">{fileName}</span>
+                                        </button>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                const nodePath = findNodePath(rootLayoutNode, file.paneId);
+                                                if (nodePath) closeContentPane(file.paneId, nodePath);
+                                            }}
+                                            className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/20 transition-opacity"
+                                            title="Close"
+                                        >
+                                            <X size={9} className="text-gray-500 hover:text-red-400" />
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                     {isEmpty ? (
                         <div className="px-3 py-3 text-[11px] text-gray-500 text-center">Empty directory</div>
                     ) : fileSearch.trim() && Object.keys(filteredStructure).length === 0 ? (
@@ -3840,13 +4298,10 @@ onDragStart={(e) => {
             })
             : [];
 
-        // Count active filters
         const activeFilterCount = [convoNpcFilter, convoModelFilter, convoDateFrom, convoDateTo].filter(f => f.trim()).length;
 
-        // Apply all filters
         let filteredConversations = sortedConversations;
 
-        // Text search filter
         if (convoSearch.trim()) {
             const q = convoSearch.toLowerCase();
             filteredConversations = filteredConversations.filter(conv =>
@@ -3857,7 +4312,6 @@ onDragStart={(e) => {
             );
         }
 
-        // NPC filter
         if (convoNpcFilter.trim()) {
             const npcFilters = convoNpcFilter.toLowerCase().split(/[,\s]+/).filter(f => f);
             filteredConversations = filteredConversations.filter(conv =>
@@ -3865,7 +4319,6 @@ onDragStart={(e) => {
             );
         }
 
-        // Model/Provider filter
         if (convoModelFilter.trim()) {
             const modelFilters = convoModelFilter.toLowerCase().split(/[,\s]+/).filter(f => f);
             filteredConversations = filteredConversations.filter(conv =>
@@ -3873,7 +4326,6 @@ onDragStart={(e) => {
             );
         }
 
-        // Date range filter
         if (convoDateFrom) {
             const fromDate = new Date(convoDateFrom).getTime();
             filteredConversations = filteredConversations.filter(conv => {
@@ -3889,7 +4341,6 @@ onDragStart={(e) => {
             });
         }
 
-        // Get unique NPCs and models for filter dropdowns
         const uniqueNpcs = [...new Set(sortedConversations.map(c => c.npc).filter(Boolean))];
         const uniqueModels = [...new Set(sortedConversations.map(c => c.model || c.provider).filter(Boolean))];
 
@@ -3907,7 +4358,6 @@ onDragStart={(e) => {
                     onClick={() => setConversationsCollapsed(!conversationsCollapsed)}
                     className="flex items-stretch w-full py-4 bg-gradient-to-r from-green-800/40 to-emerald-700/35 cursor-pointer theme-hover"
                 >
-                    {/* Left: chevron, then conditional controls */}
                     <div className="flex items-center pl-1 gap-0">
                         <ChevronRight size={14} className={`transform transition-transform theme-text-muted dark:text-gray-400 ${conversationsCollapsed ? "" : "rotate-90"}`} />
                         {!conversationsCollapsed && (
@@ -3945,7 +4395,6 @@ onDragStart={(e) => {
                             </>
                         )}
                     </div>
-                    {/* Right: main icon - full height clickable area */}
                     <button
                         onClick={(e) => { e.stopPropagation(); createNewConversation?.(); setConversationsCollapsed(false); }}
                         className="ml-auto flex items-center justify-center w-1/4 py-4 -my-4 hover:bg-green-500/20 transition-all"
@@ -3954,7 +4403,6 @@ onDragStart={(e) => {
                         <MessageSquare size={12} className="text-green-300" />
                     </button>
                 </div>
-                {/* Conversations Settings Panel */}
                 {showConversationsSettings && (
                     <div className="p-2 bg-green-900/20 border-y border-green-500/30 text-[10px] space-y-2">
                         <div>
@@ -4002,9 +4450,10 @@ onDragStart={(e) => {
                         </div>
                     </div>
                 )}
+                {!conversationsCollapsed && renderMcpSidebarPanel()}
+                {!conversationsCollapsed && renderSkillsSidebarPanel()}
                 {!conversationsCollapsed && (
                     <div className="theme-bg-secondary border-b theme-border">
-                        {/* Search input */}
                         {sortedConversations.length > 0 && (
                             <div className="px-1 py-1">
                                 <div className="relative">
@@ -4024,10 +4473,8 @@ onDragStart={(e) => {
                                 </div>
                             </div>
                         )}
-                        {/* Advanced filters */}
                         {showConvoFilters && (
                             <div className="px-1 py-1 border-t theme-border space-y-1.5">
-                                {/* NPC filter */}
                                 <div className="relative">
                                     <Bot size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
                                     <input
@@ -4049,7 +4496,6 @@ onDragStart={(e) => {
                                         </button>
                                     )}
                                 </div>
-                                {/* Model/Provider filter */}
                                 <div className="relative">
                                     <Cpu size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
                                     <input
@@ -4071,7 +4517,6 @@ onDragStart={(e) => {
                                         </button>
                                     )}
                                 </div>
-                                {/* Date range */}
                                 <div className="flex gap-1">
                                     <div className="relative flex-1">
                                         <Clock size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
@@ -4094,7 +4539,6 @@ onDragStart={(e) => {
                                         />
                                     </div>
                                 </div>
-                                {/* Quick date presets + clear */}
                                 <div className="flex flex-wrap gap-1 px-1">
                                     {[
                                         { label: 'Today', days: 0 },
@@ -4133,12 +4577,10 @@ onDragStart={(e) => {
             </div>
         );
 
-        // Always show the header, even when empty
         if (!sortedConversations.length) {
             return (
                 <div>
                     {header}
-                    {/* Empty state - no message needed */}
                 </div>
             );
         }
@@ -4170,66 +4612,189 @@ onDragStart={(e) => {
                 {header}
                 {!conversationsCollapsed && (
                     <div className="theme-bg-secondary flex-1 min-h-0 overflow-y-auto">
+                        {openConversationPanes.length > 0 && (
+                            <div className="border-b theme-border">
+                                <div
+                                    className="text-[10px] text-gray-500 px-2 py-1 font-medium flex items-center justify-between cursor-pointer theme-hover"
+                                    onClick={() => setOpenConvosCollapsed(!openConvosCollapsed)}
+                                >
+                                    <span className="flex items-center gap-1"><MessageSquare size={10} className="text-teal-400" /> Open ({openConversationPanes.length})</span>
+                                    <ChevronRight size={10} className={`transform transition-transform ${openConvosCollapsed ? '' : 'rotate-90'}`} />
+                                </div>
+                                {!openConvosCollapsed && openConversationPanes.map(cp => {
+                                    const conv = directoryConversations?.find((c: any) => c.id === cp.conversationId);
+                                    const isActive = activeContentPaneId === cp.paneId;
+                                    return (
+                                        <div
+                                            key={cp.paneId}
+                                            className={`flex items-center gap-1.5 px-1.5 py-0.5 w-full text-left transition-all group text-[11px] ${
+                                                isActive ? 'bg-teal-500/20 border-l-2 border-teal-500' : 'theme-hover border-l-2 border-transparent'
+                                            }`}
+                                        >
+                                            <button
+                                                className="flex items-center gap-1.5 flex-1 min-w-0"
+                                                onClick={() => setActiveContentPaneId(cp.paneId)}
+                                            >
+                                                <MessageSquare size={10} className={isActive ? 'text-green-400' : 'text-gray-500'} />
+                                                <span className="theme-text-primary truncate">{conv?.title || 'Chat'}</span>
+                                            </button>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const nodePath = findNodePath(rootLayoutNode, cp.paneId);
+                                                    if (nodePath) closeContentPane(cp.paneId, nodePath);
+                                                }}
+                                                className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/20 transition-opacity"
+                                                title="Close"
+                                            >
+                                                <X size={9} className="text-gray-500 hover:text-red-400" />
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                        <div className="flex items-center gap-1 px-1.5 py-1 border-b theme-border">
+                            <span className="text-[9px] text-gray-500">Group:</span>
+                            {(['time', 'npc', 'model', 'none'] as const).map(mode => (
+                                <button
+                                    key={mode}
+                                    onClick={() => setConversationsSettings((s: any) => ({ ...s, groupBy: mode }))}
+                                    className={`px-1.5 py-0.5 text-[9px] rounded transition-colors ${
+                                        (conversationsSettings.groupBy || 'time') === mode
+                                            ? 'bg-green-500/20 text-green-400'
+                                            : 'text-gray-500 hover:text-gray-300 hover:bg-gray-700/30'
+                                    }`}
+                                >
+                                    {mode === 'time' ? 'Time' : mode === 'npc' ? 'NPC' : mode === 'model' ? 'Model' : 'None'}
+                                </button>
+                            ))}
+                        </div>
                         {filteredConversations.length === 0 ? (
                             <div className="px-3 py-3 text-[11px] text-gray-500 text-center">No matches for "{convoSearch}"</div>
-                        ) : (
-                            filteredConversations.map((conv, index) => {
-                            const isSelected = selectedConvos?.has(conv.id);
-                            const isActive = conv.id === activeConversationId && !currentFile;
-                            return (
-                                <button
-                                    key={conv.id}
-                                    draggable="true"
-                                    onDragStart={(e) => { e.dataTransfer.effectAllowed = 'copyMove'; handleGlobalDragStart(e, { type: 'conversation', id: conv.id }); }}
-                                    onDragEnd={handleGlobalDragEnd}
-                                    onClick={(e) => {
-                                        if (e.ctrlKey || e.metaKey) {
-                                            const newSelected = new Set(selectedConvos || new Set());
-                                            if (newSelected.has(conv.id)) newSelected.delete(conv.id);
-                                            else newSelected.add(conv.id);
-                                            setSelectedConvos(newSelected);
-                                            setLastClickedIndex(index);
-                                        } else if (e.shiftKey && lastClickedIndex !== null) {
-                                            const newSelected = new Set();
-                                            const start = Math.min(lastClickedIndex, index);
-                                            const end = Math.max(lastClickedIndex, index);
-                                            for (let i = start; i <= end; i++) {
-                                                if (filteredConversations[i]) newSelected.add(filteredConversations[i].id);
+                        ) : (() => {
+
+                            const groupBy = conversationsSettings.groupBy || 'time';
+                            const now = new Date();
+                            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                            const weekStart = todayStart - (now.getDay() * 86400000);
+                            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+                            const getTimeGroup = (conv: any) => {
+                                const ts = new Date(conv.last_message_timestamp || conv.timestamp).getTime();
+                                if (ts >= todayStart) return 'Today';
+                                if (ts >= weekStart) return 'This Week';
+                                if (ts >= monthStart) return 'This Month';
+                                const d = new Date(ts);
+                                return `${d.toLocaleString('default', { month: 'short' })} ${d.getFullYear()}`;
+                            };
+
+                            const getGroups = (conv: any): string[] => {
+                                if (groupBy === 'npc') {
+                                    const npcs = conv.npcs?.length ? conv.npcs : (conv.npc ? [conv.npc] : []);
+                                    return npcs.length > 0 ? npcs : ['No NPC'];
+                                }
+                                if (groupBy === 'model') {
+                                    const models = conv.models?.length ? conv.models : (conv.model ? [conv.model] : []);
+                                    return models.length > 0 ? models : ['Unknown'];
+                                }
+                                if (groupBy === 'time') return [getTimeGroup(conv)];
+                                return ['__flat__'];
+                            };
+
+                            const groups = new Map<string, any[]>();
+                            filteredConversations.forEach((conv: any) => {
+                                for (const g of getGroups(conv)) {
+                                    if (!groups.has(g)) groups.set(g, []);
+                                    groups.get(g)!.push(conv);
+                                }
+                            });
+
+                            const renderConvItem = (conv: any, index: number) => {
+                                const isSelected = selectedConvos?.has(conv.id);
+                                const isActive = conv.id === activeConversationId && !currentFile;
+                                return (
+                                    <button
+                                        key={conv.id}
+                                        draggable="true"
+                                        onDragStart={(e) => { e.dataTransfer.effectAllowed = 'copyMove'; handleGlobalDragStart(e, { type: 'conversation', id: conv.id }); }}
+                                        onDragEnd={handleGlobalDragEnd}
+                                        onClick={(e) => {
+                                            if (e.ctrlKey || e.metaKey) {
+                                                const newSelected = new Set(selectedConvos || new Set());
+                                                if (newSelected.has(conv.id)) newSelected.delete(conv.id);
+                                                else newSelected.add(conv.id);
+                                                setSelectedConvos(newSelected);
+                                                setLastClickedIndex(index);
+                                            } else if (e.shiftKey && lastClickedIndex !== null) {
+                                                const newSelected = new Set();
+                                                const start = Math.min(lastClickedIndex, index);
+                                                const end = Math.max(lastClickedIndex, index);
+                                                for (let i = start; i <= end; i++) {
+                                                    if (filteredConversations[i]) newSelected.add(filteredConversations[i].id);
+                                                }
+                                                setSelectedConvos(newSelected);
+                                            } else {
+                                                setSelectedConvos(new Set([conv.id]));
+                                                handleConversationSelect(conv.id);
+                                                setLastClickedIndex(index);
                                             }
-                                            setSelectedConvos(newSelected);
-                                        } else {
-                                            setSelectedConvos(new Set([conv.id]));
-                                            handleConversationSelect(conv.id);
-                                            setLastClickedIndex(index);
-                                        }
-                                    }}
-                                    onContextMenu={(e) => {
-                                        e.preventDefault();
-                                        if (!selectedConvos?.has(conv.id)) setSelectedConvos(new Set([conv.id]));
-                                        setContextMenuPos({ x: e.clientX, y: e.clientY });
-                                    }}
-                                    className={`flex items-center gap-2 px-2 py-1.5 w-full text-left transition-all group
-                                        ${isActive ? 'bg-green-500/20 border-l-2 border-green-500' : 'theme-hover border-l-2 border-transparent'}
-                                        ${isSelected ? 'bg-teal-500/10' : ''}`}
-                                >
-                                    <MessageSquare size={13} className={`flex-shrink-0 ${isActive ? 'text-green-400' : 'text-gray-500 group-hover:text-gray-400'}`} />
-                                    <div className="flex flex-col overflow-hidden min-w-0 flex-1">
-                                        <span className={`text-[11px] truncate ${isActive ? 'text-green-200' : 'text-gray-300'}`}>{conv.title || 'Untitled'}</span>
-                                        <span className="text-[9px] text-gray-600 truncate">{conv.preview?.substring(0, 40) || new Date(conv.timestamp).toLocaleDateString()}</span>
+                                        }}
+                                        onContextMenu={(e) => {
+                                            e.preventDefault();
+                                            if (!selectedConvos?.has(conv.id)) setSelectedConvos(new Set([conv.id]));
+                                            setContextMenuPos({ x: e.clientX, y: e.clientY });
+                                        }}
+                                        className={`flex items-center gap-1.5 px-1.5 py-1 w-full text-left transition-all group
+                                            ${isActive ? 'bg-green-500/20 border-l-2 border-green-500' : 'theme-hover border-l-2 border-transparent'}
+                                            ${isSelected ? 'bg-teal-500/10' : ''}`}
+                                    >
+                                        <MessageSquare size={11} className={`flex-shrink-0 ${isActive ? 'text-green-400' : 'text-gray-500 group-hover:text-gray-400'}`} />
+                                        <div className="flex flex-col overflow-hidden min-w-0 flex-1">
+                                            <span className={`text-[11px] truncate ${isActive ? 'text-green-200' : 'text-gray-300'}`}>{conv.title || 'Untitled'}</span>
+                                            <span className="text-[9px] text-gray-600 truncate">{conv.preview?.substring(0, 40) || new Date(conv.timestamp).toLocaleDateString()}</span>
+                                        </div>
+                                    </button>
+                                );
+                            };
+
+                            if (groupBy === 'none') {
+                                return filteredConversations.map((conv: any, i: number) => renderConvItem(conv, i));
+                            }
+
+                            let globalIdx = 0;
+                            return Array.from(groups.entries()).map(([groupName, convs]) => {
+                                const isExpanded = convoGroupExpanded.has(groupName);
+                                const startIdx = globalIdx;
+                                globalIdx += convs.length;
+                                return (
+                                    <div key={groupName} className="border-b theme-border/50">
+                                        <button
+                                            onClick={() => setConvoGroupExpanded(prev => {
+                                                const next = new Set(prev);
+                                                if (next.has(groupName)) next.delete(groupName);
+                                                else next.add(groupName);
+                                                return next;
+                                            })}
+                                            className="flex items-center gap-1.5 px-2 py-1 w-full text-left hover:bg-white/5 transition-all"
+                                        >
+                                            <ChevronRight size={10} className={`text-gray-400 flex-shrink-0 transform transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                            <span className="text-[10px] font-medium text-green-400 truncate">{groupName}</span>
+                                            <span className="text-[9px] text-gray-500 ml-auto flex-shrink-0 tabular-nums">{convs.length}</span>
+                                        </button>
+                                        {isExpanded && convs.map((conv: any, i: number) => renderConvItem(conv, startIdx + i))}
                                     </div>
-                                </button>
-                            );
-                        })
-                    )}
+                                );
+                            });
+                        })()}
                     </div>
                 )}
             </div>
         );
     };
 
-    // Git section - only shows when git is detected
     const renderGitSection = () => {
-        // Show loading state while checking for git
+
         if (!gitStatus) {
             return (
                 <div>
@@ -4249,7 +4814,6 @@ onDragStart={(e) => {
             );
         }
 
-        // If gitStatus is an error or not a git repo, don't show the section
         if (gitStatus.success === false) return null;
 
         const staged = Array.isArray(gitStatus.staged) ? gitStatus.staged : [];
@@ -4263,7 +4827,6 @@ onDragStart={(e) => {
             const fullPath = filePath.startsWith('/') ? filePath : `${currentPath}/${filePath}`;
             const ext = filePath.split('.').pop()?.toLowerCase() || '';
 
-            // Binary files can't be diffed meaningfully - open directly in appropriate viewer
             const binaryExtensions = ['pdf', 'docx', 'doc', 'pptx', 'xlsx', 'xls', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'mp3', 'mp4', 'wav', 'zip', 'tar', 'gz', 'dmg', 'exe'];
             if (binaryExtensions.includes(ext)) {
                 let contentType = 'editor';
@@ -4284,7 +4847,6 @@ onDragStart={(e) => {
                 diffStatus: status
             };
 
-            // Add pane to layout
             if (createAndAddPaneNodeToLayout) {
                 createAndAddPaneNodeToLayout(newPane);
             }
@@ -4304,7 +4866,6 @@ onDragStart={(e) => {
                     onClick={() => setGitPanelCollapsed(!gitPanelCollapsed)}
                     className="flex items-stretch w-full py-4 bg-gradient-to-r from-orange-900/20 to-amber-900/20 cursor-pointer theme-hover"
                 >
-                    {/* Left: chevron, then conditional controls */}
                     <div className="flex items-center pl-1 gap-0">
                         <ChevronRight size={14} className={`transform transition-transform theme-text-muted dark:text-gray-400 ${!gitPanelCollapsed ? 'rotate-90' : ''}`} />
                         {!gitPanelCollapsed && (
@@ -4317,7 +4878,6 @@ onDragStart={(e) => {
                             </button>
                         )}
                     </div>
-                    {/* Right: main icon - full height clickable area */}
                     <button
                         onClick={(e) => { e.stopPropagation(); createGitPane?.(); }}
                         className="ml-auto flex items-center justify-center w-1/4 py-4 -my-4 hover:bg-orange-500/20 transition-all"
@@ -4334,17 +4894,15 @@ onDragStart={(e) => {
                 {header}
                 {!gitPanelCollapsed && (
                     <div className="theme-bg-secondary overflow-hidden flex-1 min-h-0">
-                        <div className="overflow-auto h-full p-2 space-y-2">
-                            {/* Open Full Git Pane button */}
+                        <div className="overflow-auto h-full p-1.5 space-y-1.5">
                             <button
                                 onClick={() => createGitPane?.()}
-                                className="w-full px-2 py-1.5 rounded bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-medium flex items-center justify-center gap-2"
+                                className="w-full px-2 py-1 rounded bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-medium flex items-center justify-center gap-1.5"
                             >
-                                <Maximize2 size={12} />
+                                <Maximize2 size={10} />
                                 Open Full Git View
                             </button>
 
-                            {/* Stage All / Unstage All buttons - moved above file list */}
                             {(unstaged.length > 0 || untracked.length > 0 || staged.length > 0) && (
                                 <div className="flex gap-1">
                                     {(unstaged.length > 0 || untracked.length > 0) && (
@@ -4380,7 +4938,6 @@ onDragStart={(e) => {
                                 </div>
                             )}
 
-                            {/* Commit input and button */}
                             <div className="flex gap-1">
                                 <input
                                     type="text"
@@ -4399,7 +4956,6 @@ onDragStart={(e) => {
                                 </button>
                             </div>
 
-                            {/* Pull/Push buttons */}
                             <div className="flex gap-1">
                                 <button
                                     disabled={gitLoading}
@@ -4440,10 +4996,8 @@ onDragStart={(e) => {
                                 </div>
                             )}
 
-                            {/* Separator before file list */}
                             {totalChanges > 0 && <div className="border-t theme-border/50" />}
 
-                            {/* Merge conflicts */}
                             {conflicted.length > 0 && (
                                 <div className="bg-pink-900/20 rounded p-1.5 border border-pink-500/30">
                                     <div className="text-[10px] font-medium text-pink-400 mb-1 flex items-center justify-between">
@@ -4493,7 +5047,6 @@ onDragStart={(e) => {
                                 </div>
                             )}
 
-                            {/* Unstaged files */}
                             {unstaged.length > 0 && (
                                 <div>
                                     <div className="text-[10px] font-medium text-yellow-400 mb-1 flex items-center gap-1">
@@ -4549,7 +5102,6 @@ onDragStart={(e) => {
                                 </div>
                             )}
 
-                            {/* Staged files */}
                             {staged.length > 0 && (
                                 <div>
                                     <div className="text-[10px] font-medium text-teal-400 mb-1 flex items-center gap-1">
@@ -4585,7 +5137,6 @@ onDragStart={(e) => {
                                 </div>
                             )}
 
-                            {/* Untracked files */}
                             {untracked.length > 0 && (
                                 <div>
                                     <div className="text-[10px] font-medium text-gray-400 mb-1 flex items-center gap-1">
@@ -4636,7 +5187,6 @@ onDragStart={(e) => {
         const renderContextMenu = () => (
         contextMenuPos && (
             <>
-                {/* Backdrop to catch outside clicks */}
                 <div
                     className="fixed inset-0 z-40 bg-transparent"
                     onMouseDown={() => setContextMenuPos(null)}
@@ -4683,7 +5233,6 @@ onDragStart={(e) => {
     const renderFileContextMenu = () => (
         fileContextMenuPos && (
             <>
-                {/* Backdrop to catch outside clicks */}
                 <div
                     className="fixed inset-0 z-40 bg-transparent"
                     onMouseDown={() => setFileContextMenuPos(null)}
@@ -4832,7 +5381,6 @@ onDragStart={(e) => {
         )
     );
 
-// Main Sidebar render
 const getPlaceholderText = () => {
     if (isGlobalSearch) {
         return "Global search (Ctrl+Shift+F)...";
@@ -4884,7 +5432,6 @@ return (
             />
         )}
 
-        {/* Expand top bar hover button - shows when top bar is collapsed */}
         {topBarCollapsed && !sidebarCollapsed && (
             <div
                 className="group h-6 flex items-center justify-center border-b theme-border hover:bg-blue-500/20 cursor-pointer transition-all"
@@ -4895,10 +5442,8 @@ return (
             </div>
         )}
 
-        {/* Header Actions - hidden when sidebar or top bar is collapsed */}
         <div className={`border-b theme-border flex-shrink-0 relative group/header ${sidebarCollapsed || topBarCollapsed ? 'hidden' : ''}`} style={{ height: topBarHeight }}>
             <div className="grid grid-cols-4 divide-x theme-border h-full" data-tutorial="creation-tiles">
-                {/* Terminals dropdown */}
                 <div className="relative" data-dropdown="terminal" data-tutorial="terminal-button">
                     <button
                         onClick={() => createNewTerminal?.(defaultNewTerminalType)}
@@ -4950,7 +5495,6 @@ return (
                         </div>
                     )}
                 </div>
-                {/* Notebooks/Experiments dropdown */}
                 <div className="relative" data-dropdown="notebook" data-tutorial="notebook-button">
                     <button
                         onClick={() => defaultNewNotebookType === 'notebook' ? createNewNotebook?.() : createNewExperiment?.()}
@@ -4988,7 +5532,6 @@ return (
                         </div>
                     )}
                 </div>
-                {/* Code Files dropdown */}
                 <div className="relative" data-dropdown="code-file" data-tutorial="code-file-button">
                     <button
                         onClick={() => createFileWithExtension(defaultCodeFileType)}
@@ -5007,7 +5550,7 @@ return (
                     {codeFileDropdownOpen && (
                         <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[9999] py-1 min-w-[150px] max-h-60 overflow-y-auto">
                             <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Right-click to set default</div>
-                            {commonFileTypes.map(type => (
+                            {sortedFileTypes.map(type => (
                                 <button
                                     key={type.ext}
                                     onClick={() => { createFileWithExtension(type.ext); setCodeFileDropdownOpen(false); }}
@@ -5023,7 +5566,6 @@ return (
                         </div>
                     )}
                 </div>
-                {/* Business Documents dropdown */}
                 <div className="relative" data-dropdown="doc" data-tutorial="document-button">
                     <button
                         onClick={() => createNewDocument?.(defaultNewDocumentType)}
@@ -5078,7 +5620,6 @@ return (
                     )}
                 </div>
             </div>
-            {/* Tile edit mode panel */}
             {tileEditMode && (
                 <div className="mt-2 p-2 bg-gray-800/50 rounded-lg border border-gray-700">
                     <div className="text-[10px] text-gray-400 mb-2">Drag to reorder • Click eye to toggle</div>
@@ -5117,7 +5658,6 @@ return (
                     </button>
                 </div>
             )}
-            {/* Hover zone at bottom of header to collapse top bar */}
             <div
                 className="absolute bottom-0 left-0 right-0 h-3 flex items-center justify-center opacity-0 group-hover/header:opacity-100 hover:bg-blue-500/30 cursor-pointer transition-all z-10"
                 onClick={onCollapseTopBar}
@@ -5130,7 +5670,6 @@ return (
         <div className={`flex-1 flex flex-col overflow-hidden ${sidebarCollapsed ? 'hidden' : ''}`}>
             {loading ? (
                 <div className="flex flex-col flex-1 min-h-0 overflow-y-auto">
-                    {/* Show files section header with folder dropdown even during loading */}
                     <div data-section-id="files" className="flex-shrink-0">
                         {renderFolderList(folderStructure || {})}
                     </div>
@@ -5145,7 +5684,7 @@ return (
                         if (!draggedSection) return;
                         e.preventDefault();
                         e.dataTransfer.dropEffect = 'move';
-                        // Find which section we're over based on Y position
+
                         const container = e.currentTarget;
                         const sections = container.querySelectorAll('[data-section-id]');
                         const y = e.clientY;
@@ -5156,7 +5695,7 @@ return (
                                 targetSection = section.getAttribute('data-section-id');
                             }
                         });
-                        // If we're below all sections, target the last one
+
                         if (!targetSection && sections.length > 0) {
                             const lastRect = sections[sections.length - 1].getBoundingClientRect();
                             if (y > lastRect.bottom) {
@@ -5192,8 +5731,7 @@ return (
                         setDropTargetSection(null);
                     }}
                 >
-                    {/* Render sections in user-defined order */}
-                    {(sidebarSectionOrder || ['websites', 'files', 'conversations', 'git']).map((sectionId: string) => {
+                    {(sidebarSectionOrder || ['websites', 'files', 'conversations', 'git']).filter((s: string) => ['websites', 'files', 'conversations', 'git'].includes(s)).map((sectionId: string) => {
                         const sectionColors: Record<string, string> = {
                             websites: 'ring-purple-500',
                             files: 'ring-yellow-500',
@@ -5224,7 +5762,6 @@ return (
             {sidebarItemContextMenuPos && renderSidebarItemContextMenu()}
             {fileContextMenuPos && renderFileContextMenu()}
             {websiteContextMenu && renderWebsiteContextMenu()}
-            {/* Limit Input Dialog */}
             {limitDialog && (
                 <>
                     <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setLimitDialog(null)} />
@@ -5320,7 +5857,6 @@ return (
                     </div>
                 </>
             )}
-            {/* Permission Dialog (chmod/chown) */}
             {permissionDialog && (
                 <>
                     <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setPermissionDialog(null)} />
@@ -5462,7 +5998,7 @@ return (
                                             if (result?.error) throw new Error(result.error);
                                         }
                                         setPermissionDialog(null);
-                                        // Refresh directory to see updated permissions
+
                                         await loadDirectoryStructure(currentPath);
                                     } catch (err: any) {
                                         setError(err.message || 'Failed to change permissions');
@@ -5476,7 +6012,6 @@ return (
                     </div>
                 </>
             )}
-            {/* Zip Name Modal */}
             {zipModal && (
                 <>
                     <div className="fixed inset-0 bg-black/50 z-50" onClick={() => { if (!isZipping) { setZipModal(null); setZipName(''); } }} />
@@ -5529,7 +6064,6 @@ return (
 
         {sidebarCollapsed && <div className="flex-1"></div>}
 
-        {/* Collapse controls row: Down arrow (left) | Sidebar collapse (right) */}
         {!sidebarCollapsed && (
         <div className="flex items-center border-t theme-border" style={{ height: bottomBarHeight }}>
             <button
@@ -5553,7 +6087,6 @@ return (
         </div>
         )}
 
-        {/* Download + Theme + Predictive Text + Delete + Incognide buttons - at very bottom when expanded */}
         {!bottomGridCollapsed && !sidebarCollapsed && (
         <div className="flex justify-center items-center gap-2 border-t theme-border" style={{ height: bottomBarHeight }}>
             <button
@@ -5588,7 +6121,7 @@ return (
                 <Trash size={18} />
             </button>
             <button
-                onClick={() => { if ((window as any).api?.openNewWindow) (window as any).api.openNewWindow(currentPath); else window.open(window.location.href, '_blank'); }}
+                onClick={() => { if ((window as any).api?.openNewWindow) (window as any).api.openNewWindow(''); else window.open(window.location.href, '_blank'); }}
                 className="p-2 rounded-full hover:bg-teal-500/20 text-gray-400 hover:text-white transition-all"
                 title="New Incognide Window (Alt+N)"
             >
@@ -5598,7 +6131,6 @@ return (
         )}
 
     </div>
-
 
 </>
 );

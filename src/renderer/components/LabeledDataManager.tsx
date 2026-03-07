@@ -5,7 +5,7 @@ import { MessageLabelStorage, MessageLabel, ConversationLabel, ConversationLabel
 interface LabeledDataManagerProps {
     isOpen: boolean;
     onClose: () => void;
-    isEmbedded?: boolean; // When true, renders inline without modal wrapper
+    isEmbedded?: boolean;
     messageLabels: { [key: string]: MessageLabel };
     setMessageLabels: React.Dispatch<React.SetStateAction<{ [key: string]: MessageLabel }>>;
     conversationLabels?: { [key: string]: ConversationLabel };
@@ -31,7 +31,6 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
 
     const labels = useMemo(() => Object.values(messageLabels), [messageLabels]);
 
-    // Get unique categories from all labels
     const allCategories = useMemo(() => {
         const cats = new Set<string>();
         labels.forEach(label => {
@@ -40,7 +39,6 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
         return Array.from(cats).sort();
     }, [labels]);
 
-    // Group labels by conversation
     const labelsByConversation = useMemo(() => {
         const grouped: { [key: string]: MessageLabel[] } = {};
         labels.forEach(label => {
@@ -50,17 +48,16 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
             }
             grouped[convId].push(label);
         });
-        // Sort within each conversation by timestamp
+
         Object.values(grouped).forEach(convLabels => {
             convLabels.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
         });
         return grouped;
     }, [labels]);
 
-    // Filter labels based on search and filters
     const filteredLabels = useMemo(() => {
         return labels.filter(label => {
-            // Search filter
+
             if (searchTerm) {
                 const search = searchTerm.toLowerCase();
                 const matchesContent = label.content?.toLowerCase().includes(search);
@@ -71,12 +68,10 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
                 }
             }
 
-            // Category filter
             if (filterCategory && !label.categories?.includes(filterCategory)) {
                 return false;
             }
 
-            // Role filter
             if (filterRole !== 'all' && label.role !== filterRole) {
                 return false;
             }
@@ -147,7 +142,7 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
                 mimeType = 'application/json';
                 break;
             case 'finetune':
-                // Export in OpenAI fine-tuning format
+
                 const conversationGroups: { [key: string]: MessageLabel[] } = {};
                 labelsToExport.forEach(label => {
                     const key = label.conversationId;
@@ -158,7 +153,7 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
                 });
 
                 const trainingData = Object.values(conversationGroups)
-                    .filter(convLabels => convLabels.length >= 2) // Need at least 2 messages for a valid training example
+                    .filter(convLabels => convLabels.length >= 2)
                     .map(convLabels => {
                         const sortedLabels = convLabels.sort((a, b) =>
                             new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
@@ -237,10 +232,8 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
         setExpandedConversations(newExpanded);
     };
 
-    // Conversation labels data
     const convLabels = useMemo(() => Object.values(conversationLabels), [conversationLabels]);
 
-    // Stats
     const stats = useMemo(() => {
         const totalLabels = labels.length;
         const userMessages = labels.filter(l => l.role === 'user').length;
@@ -258,7 +251,6 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
 
     const content = (
         <>
-            {/* View mode toggle */}
             <div className={`px-4 py-2 border-b border-gray-700 flex items-center gap-2 ${isEmbedded ? '' : ''}`}>
                 <button
                     className={`px-3 py-1 rounded text-xs ${viewMode === 'messages' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'}`}
@@ -279,7 +271,6 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
                 )}
             </div>
 
-            {/* Stats bar */}
             <div className="px-4 py-2 border-b border-gray-700 bg-gray-800/50 flex items-center gap-4 text-xs">
                 <span className="text-gray-400">
                     <span className="text-blue-400 font-medium">{stats.conversations}</span> conversations
@@ -298,9 +289,7 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
                 </span>
             </div>
 
-            {/* Toolbar */}
             <div className="p-3 border-b border-gray-700 flex flex-wrap items-center gap-3">
-                {/* Search */}
                 <div className="relative flex-1 min-w-[200px] max-w-[300px]">
                     <Search size={14} className="absolute left-2.5 top-2.5 text-gray-500" />
                     <input
@@ -312,7 +301,6 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
                     />
                 </div>
 
-                {/* Category filter */}
                 <select
                     value={filterCategory}
                     onChange={(e) => setFilterCategory(e.target.value)}
@@ -324,7 +312,6 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
                     ))}
                 </select>
 
-                {/* Role filter */}
                 <select
                     value={filterRole}
                     onChange={(e) => setFilterRole(e.target.value as any)}
@@ -337,7 +324,6 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
 
                 <div className="flex-1" />
 
-                {/* Selection actions */}
                 {selectedLabels.size > 0 && (
                     <span className="text-xs text-gray-400">
                         {selectedLabels.size} selected
@@ -360,7 +346,6 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
                 )}
             </div>
 
-            {/* Labels list */}
             <div className="flex-1 overflow-y-auto p-4">
                 {filteredLabels.length === 0 ? (
                     <div className="text-center text-gray-500 py-8">
@@ -458,7 +443,6 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
                 )}
             </div>
 
-            {/* Footer */}
             <div className="p-4 border-t border-gray-700 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                     <select
@@ -498,7 +482,6 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
         </>
     );
 
-    // If embedded mode, just return content without modal wrapper
     if (isEmbedded) {
         return (
             <div className="flex flex-col h-full">
@@ -507,11 +490,9 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
         );
     }
 
-    // Modal mode
     return (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
             <div className="bg-gray-900 rounded-lg border border-gray-700 w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
-                {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-gray-700">
                     <div className="flex items-center gap-3">
                         <Tag size={20} className="text-blue-400" />

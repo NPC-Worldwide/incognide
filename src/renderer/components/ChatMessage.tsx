@@ -9,17 +9,15 @@ const highlightSearchTerm = (content: string, searchTerm: string): string => {
     return content.replace(regex, '**$1**');
 };
 
-// Strip source prefixes like "project:" or "global:" from NPC names
 const stripSourcePrefix = (name: string): string => {
     if (!name) return name;
     return name.replace(/^(project:|global:)/, '');
 };
 
-// Count approximate lines in content (rough estimate based on newlines and length)
 const countLines = (content: string): number => {
     if (!content) return 0;
     const newlineCount = (content.match(/\n/g) || []).length;
-    const estimatedWrappedLines = Math.ceil(content.length / 80); // ~80 chars per line
+    const estimatedWrappedLines = Math.ceil(content.length / 80);
     return Math.max(newlineCount + 1, estimatedWrappedLines);
 };
 
@@ -73,21 +71,17 @@ export const ChatMessage = memo(({
     const showStreamingIndicators = !!message.isStreaming;
     const messageId = message.id || message.timestamp;
 
-    // Collapsible state for long user messages
     const isLongMessage = message.role === 'user' && countLines(message.content) > MAX_COLLAPSED_LINES;
     const [isExpanded, setIsExpanded] = useState(false);
 
-    // TTS state
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isLoadingTTS, setIsLoadingTTS] = useState(false);
     const audioRef = useRef<HTMLAudioElement | null>(null);
 
-    // Broadcast/branch UI state
     const [showBroadcastPanel, setShowBroadcastPanel] = useState(false);
     const [selectedModels, setSelectedModels] = useState<string[]>([]);
     const [selectedNPCs, setSelectedNPCs] = useState<string[]>([]);
 
-    // Get saved TTS settings
     const getTTSSettings = () => {
         try {
             const stored = localStorage.getItem('incognide_ttsSettings');
@@ -98,7 +92,6 @@ export const ChatMessage = memo(({
         return { engine: 'kokoro', voice: 'af_heart' };
     };
 
-    // Play TTS for this message
     const playTTS = async () => {
         if (isSpeaking && audioRef.current) {
             audioRef.current.pause();
@@ -107,7 +100,6 @@ export const ChatMessage = memo(({
             return;
         }
 
-        // Extract text content from message
         let textContent = message.content || '';
         if (message.contentParts) {
             textContent = message.contentParts
@@ -176,8 +168,7 @@ export const ChatMessage = memo(({
             onClick={() => messageSelectionMode && toggleMessageSelection(messageId)}
             onContextMenu={(e) => handleMessageContextMenu(e, messageId)}
         >
-            
-            {/* Branch button */}
+
             {message.role === 'user' && !messageSelectionMode && onCreateBranch && (
                 <div className="absolute -top-2 -left-2 opacity-0 group-hover:opacity-100 transition-opacity z-20">
                     <button
@@ -197,7 +188,7 @@ export const ChatMessage = memo(({
                     </button>
                 </div>
             )}
-            
+
             {message.role === 'user' && !messageSelectionMode && onResendMessage && (
                 <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                     <button
@@ -216,7 +207,6 @@ export const ChatMessage = memo(({
                 </div>
             )}
 
-            {/* Label button - shown for all messages */}
             {!messageSelectionMode && onLabelMessage && (
                 <div className={`absolute ${message.role === 'user' ? 'bottom-2 right-8' : 'bottom-2 right-2'} opacity-0 group-hover:opacity-100 transition-opacity z-10 flex items-center gap-1`}>
                     {messageLabel && (
@@ -245,7 +235,6 @@ export const ChatMessage = memo(({
                 </div>
             )}
 
-            {/* TTS button - shown for assistant messages */}
             {message.role === 'assistant' && !messageSelectionMode && !showStreamingIndicators && message.content && (
                 <div className="absolute bottom-2 right-8 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                     <button
@@ -271,7 +260,6 @@ export const ChatMessage = memo(({
             <div className="flex justify-between items-center text-xs theme-text-muted mb-1 opacity-80">
                 <div className="flex items-center gap-1.5">
                     <span className="font-semibold">{message.role === 'user' ? 'You' : (stripSourcePrefix(message.npc) || 'Agent')}</span>
-                    {/* Params icon next to agent name - shows values on hover */}
                     {message.role !== 'user' && (message.temperature !== undefined || message.top_p !== undefined || message.top_k !== undefined || message.max_tokens !== undefined) && (
                         <span className="relative group/params">
                             <SlidersHorizontal size={10} className="text-gray-500 hover:text-gray-300 cursor-help" />
@@ -298,7 +286,6 @@ export const ChatMessage = memo(({
                 </div>
             </div>
 
-            {/* Rest of message content... */}
             <div className="relative message-content-area">
                 {showStreamingIndicators && (
                     <div className="absolute top-0 left-0 -translate-y-full flex space-x-1 mb-1">
@@ -315,7 +302,6 @@ export const ChatMessage = memo(({
                         </div>
                     </div>
                 )}
-                {/* Render content parts interleaved if available, otherwise fall back to legacy rendering */}
                 {message.contentParts && message.contentParts.length > 0 ? (
                     <>
                         {message.contentParts.map((part, partIdx) => {
@@ -380,12 +366,10 @@ export const ChatMessage = memo(({
                             {showStreamingIndicators && message.type !== 'error' && (
                                 <span className="ml-1 inline-block w-0.5 h-4 theme-text-primary animate-pulse stream-cursor"></span>
                             )}
-                            {/* Fade overlay for collapsed messages */}
                             {isLongMessage && !isExpanded && (
                                 <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-inherit to-transparent pointer-events-none" />
                             )}
                         </div>
-                        {/* Expand/Collapse button for long user messages */}
                         {isLongMessage && (
                             <button
                                 onClick={(e) => {
@@ -407,7 +391,6 @@ export const ChatMessage = memo(({
                                 )}
                             </button>
                         )}
-                        {/* Legacy tool calls rendering for messages without contentParts */}
                         {message.toolCalls && message.toolCalls.length > 0 && (
                             <div className="mt-3 px-3 py-2 theme-bg-tertiary rounded-md border-l-2 border-blue-500">
                                 <div className="text-xs text-blue-400 mb-1 font-semibold">Function Calls:</div>
@@ -474,10 +457,8 @@ export const ChatMessage = memo(({
                     </div>
                 )}
 
-                {/* Execution Config & Actions - shown for assistant messages */}
                 {message.role === 'assistant' && !showStreamingIndicators && (
                     <div className="mt-2 pt-2 border-t border-gray-700/50">
-                        {/* Branch Navigator - shown when there are sibling runs */}
                         {siblingRuns && siblingRuns.length > 1 && (
                             <div className="mb-3 p-2 bg-gray-800/50 rounded-lg border border-gray-700/50">
                                 <div className="flex items-center justify-between mb-2">
@@ -488,7 +469,6 @@ export const ChatMessage = memo(({
                                         </span>
                                     </div>
                                     <div className="flex items-center gap-1">
-                                        {/* Navigation arrows */}
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation();
@@ -518,7 +498,6 @@ export const ChatMessage = memo(({
                                         >
                                             <ChevronRight size={14} />
                                         </button>
-                                        {/* Expand to tiles button */}
                                         {onExpandBranches && (
                                             <button
                                                 onClick={(e) => {
@@ -533,7 +512,6 @@ export const ChatMessage = memo(({
                                         )}
                                     </div>
                                 </div>
-                                {/* Branch tabs */}
                                 <div className="flex flex-wrap gap-1">
                                     {siblingRuns.map((run, idx) => (
                                         <button
@@ -561,7 +539,6 @@ export const ChatMessage = memo(({
                             </div>
                         )}
 
-                        {/* Config chips row */}
                         <div className="flex flex-wrap items-center gap-1.5 mb-2">
                             {message.model && (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-600/20 text-blue-300 border border-blue-600/30" title={`Model: ${message.model}`}>
@@ -592,7 +569,6 @@ export const ChatMessage = memo(({
                                     {message.runCount} runs
                                 </span>
                             )}
-                            {/* Model parameters - hover tooltip */}
                             {(message.temperature !== undefined || message.top_k !== undefined || message.top_p !== undefined || message.max_tokens !== undefined) && (
                                 <span className="relative group/params">
                                     <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] bg-gray-700/40 text-gray-500 hover:text-gray-300 hover:bg-gray-600/50 cursor-help transition-colors">
@@ -608,7 +584,6 @@ export const ChatMessage = memo(({
                             )}
                         </div>
 
-                        {/* Action buttons row */}
                         <div className="flex items-center gap-2 opacity-60 group-hover:opacity-100 transition-opacity">
                             {onResendMessage && (
                                 <button
@@ -646,12 +621,10 @@ export const ChatMessage = memo(({
                             )}
                         </div>
 
-                        {/* Broadcast Panel - inline multi-select */}
                         {showBroadcastPanel && availableModels && availableNPCs && (
                             <div className="mt-2 p-2 bg-gray-800/80 rounded-lg border border-gray-700">
                                 <div className="text-[10px] text-gray-400 mb-2">Select models & NPCs to branch to:</div>
 
-                                {/* Models multi-select */}
                                 <div className="mb-2">
                                     <div className="text-[9px] text-gray-500 mb-1 uppercase">Models</div>
                                     <div className="flex flex-wrap gap-1">
@@ -678,7 +651,6 @@ export const ChatMessage = memo(({
                                     </div>
                                 </div>
 
-                                {/* NPCs multi-select */}
                                 <div className="mb-2">
                                     <div className="text-[9px] text-gray-500 mb-1 uppercase">NPCs</div>
                                     <div className="flex flex-wrap gap-1">
@@ -705,7 +677,6 @@ export const ChatMessage = memo(({
                                     </div>
                                 </div>
 
-                                {/* Broadcast button */}
                                 <div className="flex items-center justify-between">
                                     <span className="text-[10px] text-gray-500">
                                         {selectedModels.length} model{selectedModels.length !== 1 ? 's' : ''} × {selectedNPCs.length} NPC{selectedNPCs.length !== 1 ? 's' : ''} = {selectedModels.length * selectedNPCs.length} branch{selectedModels.length * selectedNPCs.length !== 1 ? 'es' : ''}

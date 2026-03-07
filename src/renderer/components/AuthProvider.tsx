@@ -2,10 +2,8 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 import { useUser, useAuth as useClerkAuth, useClerk } from '@clerk/clerk-react';
 import { deriveKey, setEncryptionKey, clearEncryptionKey, hasEncryptionKey } from '../utils/encryption';
 
-// API base URL for incognide backend
 const API_BASE_URL = 'https://api.incognide.com';
 
-// Auth types
 interface User {
     id: string;
     clerkId: string;
@@ -64,7 +62,6 @@ interface AuthProviderProps {
     children: ReactNode;
 }
 
-// Local storage keys
 const USER_DATA_KEY = 'incognide-user-data';
 const ENCRYPTION_SALT_KEY = 'incognide-encryption-salt';
 const HAS_PASSPHRASE_KEY = 'incognide-has-passphrase';
@@ -81,13 +78,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [hasPassphrase, setHasPassphrase] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Check if user has set up a passphrase before
     useEffect(() => {
         const stored = localStorage.getItem(HAS_PASSPHRASE_KEY);
         setHasPassphrase(stored === 'true');
     }, []);
 
-    // Sync Clerk user to our backend when signed in
     useEffect(() => {
         const syncUserToBackend = async () => {
             if (!clerkLoaded) return;
@@ -101,16 +96,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             setIsLoading(true);
 
             try {
-                // Get Clerk token
+
                 const token = await getClerkToken();
                 if (!token) {
                     throw new Error('Failed to get auth token');
                 }
 
-                // Get device info
                 const deviceInfo = await (window as any).api?.getDeviceInfo?.();
 
-                // Sync user to our backend (creates if not exists)
                 const response = await fetch(`${API_BASE_URL}/api/auth/clerk-sync`, {
                     method: 'POST',
                     headers: {
@@ -138,19 +131,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                         profilePicture: userData.profilePicture || clerkUser.imageUrl,
                         isPremium: userData.isPremium || false,
                         storageUsedBytes: userData.storageUsedBytes || 0,
-                        storageLimitBytes: userData.storageLimitBytes || 209715200, // 200MB default
+                        storageLimitBytes: userData.storageLimitBytes || 209715200,
                     };
                     setUser(mappedUser);
                     localStorage.setItem(USER_DATA_KEY, JSON.stringify(mappedUser));
 
-                    // Check if user has encryption salt (meaning they've set up passphrase)
                     if (userData.encryptionSalt) {
                         localStorage.setItem(ENCRYPTION_SALT_KEY, userData.encryptionSalt);
                         localStorage.setItem(HAS_PASSPHRASE_KEY, 'true');
                         setHasPassphrase(true);
                     }
                 } else {
-                    // Fallback to Clerk user data if backend sync fails
+
                     console.warn('[AUTH] Backend sync failed, using Clerk data');
                     const fallbackUser: User = {
                         id: clerkUser.id,
@@ -165,7 +157,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                     setUser(fallbackUser);
                 }
 
-                // Set device info
                 if (deviceInfo) {
                     setDevice({
                         id: deviceInfo.deviceId,
@@ -180,7 +171,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 console.error('[AUTH] Error syncing user:', e);
                 setError('Failed to sync user data');
 
-                // Still set user from Clerk data
                 if (clerkUser) {
                     const fallbackUser: User = {
                         id: clerkUser.id,
@@ -202,7 +192,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         syncUserToBackend();
     }, [clerkLoaded, isSignedIn, clerkUser, getClerkToken]);
 
-    // Set up a new passphrase (first time setup)
     const setupPassphrase = useCallback(async (passphrase: string): Promise<{ success: boolean; error?: string }> => {
         if (!user) {
             return { success: false, error: 'Not signed in' };
@@ -213,21 +202,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
 
         try {
-            // Generate a new salt
+
             const saltBytes = crypto.getRandomValues(new Uint8Array(16));
             const salt = btoa(String.fromCharCode(...saltBytes));
 
-            // Derive encryption key
             const encryptionKey = await deriveKey(passphrase, salt);
             setEncryptionKey(encryptionKey);
 
-            // Store salt locally and sync to backend
             localStorage.setItem(ENCRYPTION_SALT_KEY, salt);
             localStorage.setItem(HAS_PASSPHRASE_KEY, 'true');
             setHasPassphrase(true);
             setIsEncryptionReady(true);
 
-            // Sync salt to backend
             const token = await getClerkToken();
             if (token) {
                 await fetch(`${API_BASE_URL}/api/auth/set-encryption-salt`, {
@@ -248,17 +234,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
     }, [user, getClerkToken]);
 
-    // Unlock with existing passphrase
     const unlockWithPassphrase = useCallback(async (passphrase: string): Promise<{ success: boolean; error?: string }> => {
         if (!user) {
             return { success: false, error: 'Not signed in' };
         }
 
         try {
-            // Get stored salt
+
             let salt = localStorage.getItem(ENCRYPTION_SALT_KEY);
 
-            // If no local salt, try to fetch from backend
             if (!salt) {
                 const token = await getClerkToken();
                 if (token) {
@@ -279,7 +263,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 return { success: false, error: 'No encryption data found. Please set up a new passphrase.' };
             }
 
-            // Derive key and test it
             const encryptionKey = await deriveKey(passphrase, salt);
             setEncryptionKey(encryptionKey);
             setIsEncryptionReady(true);
@@ -292,22 +275,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
     }, [user, getClerkToken]);
 
-    // Sign out
     const signOut = useCallback(async () => {
         setIsLoading(true);
 
         try {
-            // Clear local storage
+
             localStorage.removeItem(USER_DATA_KEY);
             localStorage.removeItem(ENCRYPTION_SALT_KEY);
-            // Note: Keep HAS_PASSPHRASE_KEY so user knows they have a passphrase set
+
             setUser(null);
             setIsEncryptionReady(false);
 
-            // Clear encryption key from memory
             clearEncryptionKey();
 
-            // Sign out from Clerk
             await clerkSignOut();
         } catch (e: any) {
             setError(e.message || 'Failed to sign out');
@@ -316,7 +296,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
     }, [clerkSignOut]);
 
-    // Refresh user data
     const refreshUser = useCallback(async () => {
         const token = await getClerkToken();
         if (!token) return;
@@ -338,12 +317,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
     }, [getClerkToken]);
 
-    // Get auth token for API requests
     const getToken = useCallback(async (): Promise<string | null> => {
         return await getClerkToken();
     }, [getClerkToken]);
 
-    // Determine if user needs to set up passphrase
     const needsPassphraseSetup = !!user && !hasPassphrase;
 
     return (

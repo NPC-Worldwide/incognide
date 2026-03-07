@@ -33,7 +33,6 @@ const appHighlightStyle = HighlightStyle.define([
     { tag: t.invalid, color: '#ff5555' },
 ]);
 
-// Custom theme for the editor
 const editorTheme = EditorView.theme({
     '&': {
         height: '100%',
@@ -96,7 +95,7 @@ const editorTheme = EditorView.theme({
     '.cm-searchMatch.cm-searchMatch-selected': {
         backgroundColor: 'rgba(166, 227, 161, 0.4)',
     },
-    // Lint gutter & diagnostics
+
     '.cm-lint-marker-error': {
         content: '"!"',
         color: '#f38ba8',
@@ -175,7 +174,7 @@ const editorTheme = EditorView.theme({
         width: '1em',
         marginRight: '0.5em',
     },
-    // Vim mode status bar and command line
+
     '.cm-vim-panel': {
         backgroundColor: '#181825',
         color: '#cdd6f4',
@@ -190,7 +189,7 @@ const editorTheme = EditorView.theme({
         outline: 'none',
         fontFamily: '"Fira Code", monospace',
     },
-    // Fat cursor for vim normal mode
+
     '&.cm-focused .cm-fat-cursor': {
         background: '#89b4fa !important',
         color: '#1e1e2e !important',
@@ -204,7 +203,7 @@ const editorTheme = EditorView.theme({
 
 const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMenu, onSelect, onSendToTerminal, savedEditorState, onEditorStateChange, keybindMode }) => {
     const editorRef = useRef(null);
-    // Store callback refs so we don't re-render when parent passes new function instances
+
     const onSelectRef = useRef(onSelect);
     const onContextMenuRef = useRef(onContextMenu);
     const onSendToTerminalRef = useRef(onSendToTerminal);
@@ -268,7 +267,6 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
         return saved ? parseInt(saved) : 4;
     }, []);
 
-    // Lint extension: runs linter via IPC, debounced
     const lintExtension = useMemo(() => {
         const ext = filePath?.split('.').pop()?.toLowerCase();
         let language: string | null = null;
@@ -307,7 +305,6 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
         ];
     }, [filePath]);
 
-    // Build keymap extensions based on keybind mode
     const keymapExtensions = useMemo(() => {
         const base = [
             ...closeBracketsKeymap,
@@ -325,7 +322,7 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
                 const nanoKeymap = [
                     { key: 'Ctrl-o', run: () => { if (onSave) onSave(); return true; } },
                     { key: 'Ctrl-k', run: (view) => {
-                        // Cut current line
+
                         const line = view.state.doc.lineAt(view.state.selection.main.head);
                         const text = view.state.sliceDoc(line.from, line.to + 1);
                         navigator.clipboard.writeText(text);
@@ -333,26 +330,26 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
                         return true;
                     }},
                     { key: 'Ctrl-u', run: (view) => {
-                        // Paste from clipboard
+
                         navigator.clipboard.readText().then(text => {
                             view.dispatch({ changes: { from: view.state.selection.main.head, insert: text } });
                         });
                         return true;
                     }},
                     { key: 'Ctrl-w', run: (view) => {
-                        // Open search
+
                         const searchCmd = searchKeymap.find(k => k.key === 'Mod-f');
                         if (searchCmd?.run) return searchCmd.run(view);
                         return false;
                     }},
                     { key: 'Ctrl-a', run: (view) => {
-                        // Go to beginning of line
+
                         const line = view.state.doc.lineAt(view.state.selection.main.head);
                         view.dispatch({ selection: { anchor: line.from } });
                         return true;
                     }},
                     { key: 'Ctrl-e', run: (view) => {
-                        // Go to end of line
+
                         const line = view.state.doc.lineAt(view.state.selection.main.head);
                         view.dispatch({ selection: { anchor: line.to } });
                         return true;
@@ -365,14 +362,10 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
         }
     }, [keybindMode, onSave]);
 
-    // Vim mode is a standalone extension, not just a keymap
     const vimExtension = useMemo(() => {
         return keybindMode === 'vim' ? [vim()] : [];
     }, [keybindMode]);
 
-    // Scroll preservation via CM ViewPlugin — lives inside CM's update cycle, no race conditions.
-    // Tracks the last "genuine" scroll position and restores it on geometry-only changes (resize).
-    // Uses ref for initial position so the plugin is stable (never recreated on re-render).
     const initialScrollPosRef = useRef(savedEditorState?.scrollTopPos ?? 0);
     const scrollPreserverPlugin = useMemo(() => {
         const stateChangeRef = onEditorStateChangeRef;
@@ -398,12 +391,11 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
                 if (this.pendingRestore) {
                     this.pendingRestore = false;
                     const st = this.savedScrollTop;
-                    // Direct DOM scroll — no CM effects or timing needed
+
                     scrollDOM.scrollTop = st;
                     return;
                 }
 
-                // Track pixel scroll position
                 const currentTop = scrollDOM.scrollTop;
                 if (currentTop !== this.savedScrollTop) {
                     this.savedScrollTop = currentTop;
@@ -411,13 +403,12 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
                 }
             }
         });
-    }, []); // Stable — plugin self-tracks position after mount
+    }, []);
 
     const extensions = useMemo(() => [
-        // Vim must be first if active
+
         ...vimExtension,
 
-        // Core editor features
         lineNumbers(),
         highlightActiveLineGutter(),
         highlightSpecialChars(),
@@ -433,33 +424,25 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
         highlightActiveLine(),
         highlightSelectionMatches(),
 
-        // Indentation settings
         indentUnit.of(' '.repeat(tabSize)),
         EditorState.tabSize.of(tabSize),
 
-        // Language support
         languageExtension,
 
-        // Lint support
         ...lintExtension,
 
-        // Search with styled panel
         search({ top: true }),
 
-        // Keymaps
         ...keymapExtensions,
         customKeymap,
 
-        // Styling
         editorTheme,
         syntaxHighlighting(appHighlightStyle),
 
-        // Optional line wrapping (comment out for horizontal scroll)
         EditorView.lineWrapping,
 
-        // Scroll preservation on resize
         scrollPreserverPlugin,
-    ], [languageExtension, lintExtension, customKeymap, tabSize, keymapExtensions, vimExtension]); // scrollPreserverPlugin is stable (no dep needed)
+    ], [languageExtension, lintExtension, customKeymap, tabSize, keymapExtensions, vimExtension]);
 
     const handleUpdate = useCallback((viewUpdate) => {
         if (viewUpdate.selectionSet && onSelectRef.current) {
@@ -489,7 +472,6 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
         }
     }, []);
 
-    // Direct keydown handler for Ctrl+Enter (or Shift+Enter) to send selection to terminal
     useEffect(() => {
         const editorDOM = editorRef.current?.editor;
         if (!editorDOM) return;
@@ -515,7 +497,6 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
         return () => editorDOM.removeEventListener('keydown', handleKeyDown, true);
     }, []);
 
-    // Save to paneData on unmount
     useEffect(() => {
         return () => {
             if (onEditorStateChange && editorRef.current?.view) {
@@ -536,13 +517,11 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
         />
     );
 }, (prevProps, nextProps) => {
-    // Only re-render on value, filePath, or keybindMode changes
-    // Callback refs handle the rest without re-rendering
+
     return prevProps.value === nextProps.value
         && prevProps.filePath === nextProps.filePath
         && prevProps.keybindMode === nextProps.keybindMode;
 });
-
 
 const KbRow = ({ keys, desc }: { keys: string; desc: string }) => (
     <div className="flex justify-between gap-2">
@@ -590,7 +569,6 @@ const CodeEditorPane = ({
     });
     const [showKeybindGuide, setShowKeybindGuide] = useState(false);
 
-    // Ctrl+Shift+Space cycles through enabled editor modes
     useEffect(() => {
         const handleCycleMode = (e: KeyboardEvent) => {
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'Space') {
@@ -618,7 +596,7 @@ const CodeEditorPane = ({
         if (!currentPath || !filePath) return;
         setBlameLoading(true);
         try {
-            // Get relative path from currentPath
+
             const relativePath = filePath.startsWith(currentPath)
                 ? filePath.slice(currentPath.length + 1)
                 : filePath;
@@ -652,7 +630,6 @@ const CodeEditorPane = ({
         const currentPaneData = contentDataRef.current[nodeId];
         if (!currentPaneData) return;
 
-        // If untitled file, prompt for filename
         if (!currentPaneData.contentId && currentPaneData.isUntitled) {
             setPromptModal({
                 isOpen: true,
@@ -664,7 +641,7 @@ const CodeEditorPane = ({
                     const cleanName = inputFilename.trim();
                     const filepath = `${currentPath}/${cleanName}`;
                     await window.api.writeFileContent(filepath, currentPaneData.fileContent || '');
-                    // Update pane data with the new file path
+
                     currentPaneData.contentId = filepath;
                     currentPaneData.isUntitled = false;
                     currentPaneData.fileChanged = false;
@@ -674,7 +651,6 @@ const CodeEditorPane = ({
             return;
         }
 
-        // Normal save for existing files
         if (currentPaneData.contentId && currentPaneData.fileChanged) {
             await window.api.writeFileContent(currentPaneData.contentId, currentPaneData.fileContent);
             currentPaneData.fileChanged = false;
@@ -682,14 +658,12 @@ const CodeEditorPane = ({
         }
     }, [nodeId, contentDataRef, setRootLayoutNode, setPromptModal, currentPath]);
 
-    // Expose save function on paneData so the header save button can call it
     useEffect(() => {
         const paneData = contentDataRef.current[nodeId];
         if (paneData) paneData.onSave = onSave;
         return () => { if (paneData) delete paneData.onSave; };
     }, [nodeId, onSave, contentDataRef]);
 
-    // Autosave: debounced write to disk 3 seconds after last edit
     useEffect(() => {
         const currentPaneData = contentDataRef.current[nodeId];
         if (!currentPaneData?.fileChanged || !currentPaneData?.contentId || currentPaneData?.isUntitled) return;
@@ -699,11 +673,41 @@ const CodeEditorPane = ({
                 currentPaneData.fileChanged = false;
                 setRootLayoutNode(p => ({ ...p }));
             } catch (e) {
-                // Silent fail for autosave
+
             }
         }, 3000);
         return () => clearTimeout(timer);
     }, [fileContent, fileChanged, nodeId, contentDataRef, setRootLayoutNode]);
+
+    useEffect(() => {
+        const currentPaneData = contentDataRef.current[nodeId];
+        const fp = currentPaneData?.contentId;
+        if (!fp || currentPaneData?.isUntitled) return;
+        (window as any).api.watchFile(fp);
+        const removeListener = (window as any).api.onFileChanged(async (changedPath: string) => {
+            const pd = contentDataRef.current[nodeId];
+            if (!pd || pd.contentId !== changedPath) return;
+            try {
+                const result = await (window as any).api.readFileContent(changedPath);
+                const diskContent = typeof result === 'string' ? result : result?.content;
+                if (diskContent == null || diskContent === pd.fileContent) return;
+                if (pd.fileChanged) {
+
+                    const reload = window.confirm('This file has been changed on disk. Reload and lose your changes?');
+                    if (!reload) return;
+                }
+                pd.fileContent = diskContent;
+                pd.fileChanged = false;
+                setRootLayoutNode(p => ({ ...p }));
+            } catch (e) {
+                console.error('[FILE-WATCH] Error reloading:', e);
+            }
+        });
+        return () => {
+            removeListener();
+            (window as any).api.unwatchFile(fp);
+        };
+    }, [nodeId, contentDataRef, setRootLayoutNode]);
 
     const onEditorContextMenu = useCallback((e, selection) => {
         e.preventDefault();
@@ -722,7 +726,6 @@ const CodeEditorPane = ({
     return (
         <div className="flex-1 flex flex-col min-h-0 theme-bg-secondary relative">
             <div className="flex-1 flex min-h-0">
-                {/* Git Blame Panel */}
                 {showBlame && Array.isArray(blameData) && (
                     <div className="w-64 border-r theme-border flex flex-col bg-black/20 overflow-hidden">
                         <div className="flex items-center justify-between px-2 py-1 border-b theme-border bg-black/20">
@@ -750,7 +753,6 @@ const CodeEditorPane = ({
                     </div>
                 )}
 
-                {/* Editor */}
                 <div className="flex-1 overflow-hidden min-h-0 relative">
                     <CodeMirrorEditor
                         value={fileContent || ''}
@@ -764,9 +766,7 @@ const CodeEditorPane = ({
                         savedEditorState={paneData?._scrollTopPos != null ? { scrollTopPos: paneData._scrollTopPos } : undefined}
                         onEditorStateChange={(state) => { if (paneData) { paneData._scrollTopPos = state.scrollTopPos; } }}
                     />
-                    {/* Keybinding mode selector + cycle toggles + guide */}
                     <div className="absolute bottom-1 right-2 z-10 flex items-center gap-1">
-                        {/* Mode cycle toggles */}
                         {(['default', 'vim', 'emacs', 'nano'] as const).map(mode => {
                             const isEnabled = enabledModes.includes(mode);
                             const isActive = keybindMode === mode;
@@ -775,10 +775,10 @@ const CodeEditorPane = ({
                                 <button
                                     key={mode}
                                     onClick={() => {
-                                        // Click = switch to this mode
+
                                         setKeybindMode(mode);
                                         localStorage.setItem('incognide_editorKeybindMode', mode);
-                                        // Also enable it if not already
+
                                         if (!isEnabled) {
                                             const next = [...enabledModes, mode];
                                             setEnabledModes(next);
@@ -787,12 +787,12 @@ const CodeEditorPane = ({
                                     }}
                                     onContextMenu={(e) => {
                                         e.preventDefault();
-                                        // Right-click = toggle inclusion in cycle
+
                                         if (isEnabled && enabledModes.length > 1) {
                                             const next = enabledModes.filter(m => m !== mode);
                                             setEnabledModes(next);
                                             localStorage.setItem('incognide_editorEnabledModes', JSON.stringify(next));
-                                            // If we disabled the current mode, switch to first enabled
+
                                             if (keybindMode === mode) {
                                                 setKeybindMode(next[0]);
                                                 localStorage.setItem('incognide_editorKeybindMode', next[0]);
@@ -1077,13 +1077,9 @@ const CodeEditorPane = ({
 
 export default CodeEditorPane;
 
-
-
-
     const renderFileContextMenu = () => (
         fileContextMenuPos && (
             <>
-                {/* Backdrop to catch outside clicks */}
                 <div
                     className="fixed inset-0 z-40 bg-transparent"
                     onMouseDown={() => setFileContextMenuPos(null)}

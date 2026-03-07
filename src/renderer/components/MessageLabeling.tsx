@@ -1,7 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { X, Tag, Star, Download, Upload, Plus, Trash2, Save, Check, ChevronDown, ChevronRight } from 'lucide-react';
 
-// Types for message labels
 export interface TextSpanLabel {
     id: string;
     startOffset: number;
@@ -19,27 +18,26 @@ export interface MessageLabel {
     role: 'user' | 'assistant';
     content: string;
     timestamp: string;
-    // Whole-message labels
+
     categories: string[];
-    qualityScore?: number; // 1-5 rating
-    relevanceScore?: number; // 1-5 rating
-    accuracyScore?: number; // 1-5 rating
-    helpfulnessScore?: number; // 1-5 rating
+    qualityScore?: number;
+    relevanceScore?: number;
+    accuracyScore?: number;
+    helpfulnessScore?: number;
     tags: string[];
     notes?: string;
-    // Text span labels within the message
+
     textSpans: TextSpanLabel[];
-    // Metadata
+
     labeledAt: string;
     labeledBy?: string;
 }
 
-// Types for conversation labels
 export interface ConversationLabel {
     id: string;
     conversationId: string;
     title?: string;
-    // Whole-conversation labels
+
     categories: string[];
     qualityScore?: number;
     relevanceScore?: number;
@@ -47,18 +45,17 @@ export interface ConversationLabel {
     usefulnessScore?: number;
     tags: string[];
     notes?: string;
-    // Summary of what the conversation is about
+
     summary?: string;
-    // Fine-tuning metadata
+
     includeInTraining: boolean;
-    trainingWeight?: number; // 0.1 - 2.0, default 1.0
-    // Metadata
+    trainingWeight?: number;
+
     messageCount: number;
     labeledAt: string;
     labeledBy?: string;
 }
 
-// Types for context files
 export interface ContextFile {
     id: string;
     path: string;
@@ -69,7 +66,6 @@ export interface ContextFile {
     source: 'sidebar' | 'external' | 'open-pane';
 }
 
-// Predefined categories for labeling
 const DEFAULT_CATEGORIES = [
     'high-quality',
     'low-quality',
@@ -225,7 +221,7 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
     categories = DEFAULT_CATEGORIES,
     spanCategories = DEFAULT_SPAN_CATEGORIES,
 }) => {
-    // State for whole-message labels
+
     const [selectedCategories, setSelectedCategories] = useState<string[]>(
         existingLabel?.categories || []
     );
@@ -236,7 +232,6 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
     const [tags, setTags] = useState<string[]>(existingLabel?.tags || []);
     const [notes, setNotes] = useState(existingLabel?.notes || '');
 
-    // State for text span labels
     const [textSpans, setTextSpans] = useState<TextSpanLabel[]>(existingLabel?.textSpans || []);
     const [selectedText, setSelectedText] = useState<{ text: string; start: number; end: number } | null>(null);
     const [spanCategory, setSpanCategory] = useState(spanCategories[0]);
@@ -246,7 +241,6 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
     const contentRef = useRef<HTMLDivElement>(null);
     const [expandedSection, setExpandedSection] = useState<'categories' | 'scores' | 'spans' | 'notes' | null>('categories');
 
-    // Handle text selection in the message content
     const handleTextSelection = useCallback(() => {
         const selection = window.getSelection();
         if (!selection || selection.isCollapsed || !contentRef.current) {
@@ -256,7 +250,6 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
         const selectedStr = selection.toString().trim();
         if (!selectedStr) return;
 
-        // Calculate offsets relative to the message content
         const range = selection.getRangeAt(0);
         const preSelectionRange = range.cloneRange();
         preSelectionRange.selectNodeContents(contentRef.current);
@@ -326,24 +319,21 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
         onSave(label);
     };
 
-    // Render content with highlighted spans
     const renderHighlightedContent = () => {
         if (textSpans.length === 0) {
             return message.content;
         }
 
-        // Sort spans by start offset
         const sortedSpans = [...textSpans].sort((a, b) => a.startOffset - b.startOffset);
         const parts: React.ReactNode[] = [];
         let lastEnd = 0;
 
         sortedSpans.forEach((span, idx) => {
-            // Add text before this span
+
             if (span.startOffset > lastEnd) {
                 parts.push(message.content.slice(lastEnd, span.startOffset));
             }
 
-            // Add highlighted span
             parts.push(
                 <span
                     key={span.id}
@@ -360,7 +350,6 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
             lastEnd = span.endOffset;
         });
 
-        // Add remaining text
         if (lastEnd < message.content.length) {
             parts.push(message.content.slice(lastEnd));
         }
@@ -383,7 +372,6 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
     return (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
             <div className="bg-gray-900 rounded-lg border border-gray-700 w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-                {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-gray-700">
                     <div className="flex items-center gap-2">
                         <Tag size={20} className="text-blue-400" />
@@ -400,7 +388,6 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
                 </div>
 
                 <div className="flex-1 overflow-hidden flex">
-                    {/* Left panel - Message content */}
                     <div className="flex-1 p-4 overflow-y-auto border-r border-gray-700">
                         <div className="mb-2 text-xs text-gray-400">
                             Select text to add span labels. Highlighted text shows existing labels.
@@ -413,7 +400,6 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
                             {renderHighlightedContent()}
                         </div>
 
-                        {/* Selected text panel */}
                         {selectedText && (
                             <div className="mt-4 p-3 bg-gray-800 rounded border border-blue-500">
                                 <div className="text-xs text-blue-400 mb-2">Selected Text:</div>
@@ -475,9 +461,7 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
                         )}
                     </div>
 
-                    {/* Right panel - Label controls */}
                     <div className="w-80 p-4 overflow-y-auto space-y-2">
-                        {/* Categories section */}
                         <div className="border-b border-gray-700 pb-2">
                             <SectionHeader title="Categories" section="categories" icon={Tag} />
                             {expandedSection === 'categories' && (
@@ -500,7 +484,6 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
                             )}
                         </div>
 
-                        {/* Scores section */}
                         <div className="border-b border-gray-700 pb-2">
                             <SectionHeader title="Scores" section="scores" icon={Star} />
                             {expandedSection === 'scores' && (
@@ -513,7 +496,6 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
                             )}
                         </div>
 
-                        {/* Text spans section */}
                         <div className="border-b border-gray-700 pb-2">
                             <SectionHeader title={`Text Spans (${textSpans.length})`} section="spans" icon={Tag} />
                             {expandedSection === 'spans' && (
@@ -550,7 +532,6 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
                             )}
                         </div>
 
-                        {/* Tags & Notes section */}
                         <div className="pb-2">
                             <SectionHeader title="Tags & Notes" section="notes" icon={Tag} />
                             {expandedSection === 'notes' && (
@@ -579,7 +560,6 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
                     </div>
                 </div>
 
-                {/* Footer */}
                 <div className="flex items-center justify-between p-4 border-t border-gray-700">
                     <div className="text-xs text-gray-500">
                         {selectedCategories.length} categories, {textSpans.length} spans
@@ -606,7 +586,6 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
     );
 };
 
-// Export utility for managing labels
 export const MessageLabelStorage = {
     storageKey: 'incognide_messageLabels',
 
@@ -652,7 +631,7 @@ export const MessageLabelStorage = {
     },
 
     exportForFineTuning(): string {
-        // Export in OpenAI fine-tuning format
+
         const labels = this.getAll();
         const conversationGroups: { [key: string]: MessageLabel[] } = {};
 
@@ -672,7 +651,7 @@ export const MessageLabelStorage = {
             const messages = sortedLabels.map(label => ({
                 role: label.role,
                 content: label.content,
-                // Include label metadata
+
                 _labels: {
                     categories: label.categories,
                     scores: {
@@ -708,7 +687,6 @@ export const MessageLabelStorage = {
     }
 };
 
-// Storage utility for conversation labels
 export const ConversationLabelStorage = {
     storageKey: 'incognide_conversationLabels',
 
@@ -765,7 +743,6 @@ export const ConversationLabelStorage = {
     }
 };
 
-// Storage utility for context files
 export const ContextFileStorage = {
     storageKey: 'incognide_contextFiles',
 
@@ -780,7 +757,7 @@ export const ContextFileStorage = {
 
     add(file: ContextFile): void {
         const files = this.getAll();
-        // Don't add duplicates
+
         if (!files.find(f => f.path === file.path)) {
             files.push(file);
             localStorage.setItem(this.storageKey, JSON.stringify(files));

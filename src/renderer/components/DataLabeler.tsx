@@ -8,7 +8,7 @@ import LabeledDataManager from './LabeledDataManager';
 interface DataLabelerProps {
     isOpen?: boolean;
     onClose?: () => void;
-    isPane?: boolean; // When true, renders as pane content (no modal wrapper)
+    isPane?: boolean;
     messageLabels: { [key: string]: MessageLabel };
     setMessageLabels: React.Dispatch<React.SetStateAction<{ [key: string]: MessageLabel }>>;
     conversationLabels: { [key: string]: ConversationLabel };
@@ -26,7 +26,6 @@ const DataLabeler: React.FC<DataLabelerProps> = ({
 }) => {
     const [activeTab, setActiveTab] = useState<'memory' | 'labeled' | 'activity'>('memory');
 
-    // Escape key handler - only for modal mode
     useEffect(() => {
         if (isPane || !isOpen) return;
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -40,7 +39,6 @@ const DataLabeler: React.FC<DataLabelerProps> = ({
 
     const content = (
         <div className={`flex flex-col h-full ${isPane ? '' : 'max-h-[90vh]'}`}>
-            {/* Header with tabs */}
             <div className="flex items-center justify-between border-b theme-border flex-shrink-0">
                 <div className="flex">
                     <button
@@ -84,7 +82,6 @@ const DataLabeler: React.FC<DataLabelerProps> = ({
                 )}
             </div>
 
-            {/* Content */}
             <div className="flex-1 overflow-auto">
                 {activeTab === 'memory' && (
                     <MemoryManagement isModal={false} />
@@ -106,12 +103,10 @@ const DataLabeler: React.FC<DataLabelerProps> = ({
         </div>
     );
 
-    // If pane mode, just return content
     if (isPane) {
         return content;
     }
 
-    // Modal mode
     return (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100]" onClick={onClose}>
             <div
@@ -124,7 +119,6 @@ const DataLabeler: React.FC<DataLabelerProps> = ({
     );
 };
 
-// Inline labeled data content (simplified version of LabeledDataManager)
 const LabeledDataContent: React.FC<{
     messageLabels: { [key: string]: MessageLabel };
     setMessageLabels: React.Dispatch<React.SetStateAction<{ [key: string]: MessageLabel }>>;

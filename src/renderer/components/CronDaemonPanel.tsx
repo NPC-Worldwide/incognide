@@ -7,7 +7,6 @@ import {
     Table, Activity, Cpu, Search, Square,
 } from 'lucide-react';
 
-// ─── Types ───────────────────────────────────────────────────────────
 interface SqlModel {
     id: string;
     name: string;
@@ -22,7 +21,6 @@ interface SqlModel {
     isGlobal?: boolean;
 }
 
-// ─── NQL Functions reference ─────────────────────────────────────────
 const NQL_FUNCTIONS = [
     { name: 'get_llm_response', category: 'llm', description: 'Get LLM response for text', color: 'text-blue-400' },
     { name: 'extract_facts', category: 'llm', description: 'Extract facts from text', color: 'text-blue-400' },
@@ -40,7 +38,6 @@ const NQL_FUNCTIONS = [
 
 const NQL_CATEGORIES = [...new Set(NQL_FUNCTIONS.map(f => f.category))];
 
-// ─── Schedule presets ────────────────────────────────────────────────
 const SCHEDULE_PRESETS = [
     { label: 'Every minute', value: '* * * * *' },
     { label: 'Every 5 min', value: '*/5 * * * *' },
@@ -57,9 +54,6 @@ const SCHEDULE_PRESETS = [
 ];
 const humanSchedule = (s: string) => SCHEDULE_PRESETS.find(p => p.value === s)?.label || s;
 
-// ─── Example templates ───────────────────────────────────────────────
-// Jobs: scheduleJob → compile_job_script → `npc <command>` in crontab.
-// Commands: run:<model>, jinx names, natural language tasks for the npc CLI.
 const EXAMPLE_JOBS: { name: string; schedule: string; command: string; desc: string; npc?: string }[] = [
     { name: 'memory_extract', schedule: '0 */6 * * *', command: 'extract_memories limit=50', desc: 'Extract memories from recent conversations every 6h' },
     { name: 'kg_sleep', schedule: '0 3 * * *', command: 'sleep backfill=true', desc: 'Nightly KG evolution with memory backfill' },
@@ -67,7 +61,6 @@ const EXAMPLE_JOBS: { name: string; schedule: string; command: string; desc: str
     { name: 'context_compress', schedule: '0 */12 * * *', command: 'compress', desc: 'Compress conversation context every 12h' },
 ];
 
-// Daemons: addDaemon → spawn() — raw shell processes (listeners, watchers, monitors).
 const EXAMPLE_DAEMONS: { name: string; command: string; desc: string; npc?: string }[] = [
     { name: 'downloads-watcher', command: 'inotifywait -m -e create ~/Downloads --format "%f" | while read f; do echo "New: $f"; done', desc: 'Watch ~/Downloads for new files' },
     { name: 'log-monitor', command: 'tail -F /var/log/syslog | grep --line-buffered -iE "error|warn|critical"', desc: 'Stream syslog errors in real time' },
@@ -163,7 +156,6 @@ ORDER BY runs DESC`,
     },
 ];
 
-// ─── Parsers for system data ─────────────────────────────────────────
 type ServiceInfo = { unit: string; load: string; active: string; sub: string; description: string };
 type TimerInfo = { unit: string; next: string; left: string; passed: string };
 type CronEntry = { schedule: string; command: string };
@@ -197,7 +189,6 @@ const parseCrontab = (raw: string): CronEntry[] => {
         .filter(Boolean) as CronEntry[];
 };
 
-// ─── Reusable UI ─────────────────────────────────────────────────────
 const ExpandRow = ({ header, children, defaultOpen = false }: { header: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean }) => {
     const [open, setOpen] = useState(defaultOpen);
     return (
@@ -240,7 +231,6 @@ const Field = ({ label, children }: { label: string; children: React.ReactNode }
 
 const inputCls = "w-full px-2 py-1.5 text-xs theme-bg-primary border theme-border rounded font-mono focus:border-blue-500 focus:outline-none";
 
-// ─── Main Component ──────────────────────────────────────────────────
 const CronDaemonPanel = ({
     isOpen = true, onClose, currentPath, npcList = [], jinxList = [],
     isPane = false, isGlobal = false,
@@ -254,7 +244,6 @@ const CronDaemonPanel = ({
     const [error, setError] = useState<string | null>(null);
     const [filter, setFilter] = useState('');
 
-    // ── Jobs state ──
     const [jobs, setJobs] = useState<{ name: string; active: boolean }[]>([]);
     const [jobStatuses, setJobStatuses] = useState<Record<string, any>>({});
     const [showAddJob, setShowAddJob] = useState(false);
@@ -264,7 +253,6 @@ const CronDaemonPanel = ({
     const [newJobNpc, setNewJobNpc] = useState('');
     const [newJobJinx, setNewJobJinx] = useState('');
 
-    // ── Daemons state ──
     const [appDaemons, setAppDaemons] = useState<any[]>([]);
     const [systemData, setSystemData] = useState<any>(null);
     const [systemDaemons, setSystemDaemons] = useState<any>(null);
@@ -273,19 +261,14 @@ const CronDaemonPanel = ({
     const [newDaemonCommand, setNewDaemonCommand] = useState('');
     const [newDaemonNpc, setNewDaemonNpc] = useState('');
 
-    // ── NQL state ──
     const [sqlModels, setSqlModels] = useState<SqlModel[]>([]);
     const [showNewModel, setShowNewModel] = useState(false);
     const [editModel, setEditModel] = useState<SqlModel | null>(null);
     const [modelForm, setModelForm] = useState({ name: '', sql: '', description: '', materialization: 'table' as string, npc: '' });
     const [modelRunResult, setModelRunResult] = useState<Record<string, string>>({});
 
-    // ── Service inspection state ──
     const [serviceInfo, setServiceInfo] = useState<Record<string, { unit_file?: string; journal?: string; loading?: boolean }>>({});
 
-    // ═══════════════════════════════════════════════════════════════════
-    // DATA FETCHING — all real APIs
-    // ═══════════════════════════════════════════════════════════════════
     const fetchJobs = useCallback(async () => {
         try {
             const r = await api?.getCronJobs?.();
@@ -335,11 +318,11 @@ const CronDaemonPanel = ({
     useEffect(() => { if (isOpen) fetchAll(); }, [isOpen, fetchAll]);
 
     const fetchServiceInfo = useCallback(async (unit: string) => {
-        // key = what we use for serviceInfo[key] lookup — must match ExpandRow's serviceInfo[s.unit]
+
         const key = unit.replace(/\.(service|timer)$/, '');
         setServiceInfo(prev => ({ ...prev, [key]: { ...prev[key], loading: true } }));
         try {
-            // Try the unit as-is first (might be foo.timer), fallback to foo.service
+
             const unitArg = unit.includes('.') ? unit : `${unit}.service`;
             const r = await api?.getServiceInfo?.(unitArg);
             if (r && !r.error) {
@@ -362,11 +345,6 @@ const CronDaemonPanel = ({
         }
     }, []);
 
-    // ═══════════════════════════════════════════════════════════════════
-    // ACTIONS — all real APIs
-    // ═══════════════════════════════════════════════════════════════════
-
-    // Jobs
     const scheduleJob = async (name: string, schedule: string, command: string) => {
         if (!name || !schedule || !command) return;
         setLoading(true); setError(null);
@@ -389,7 +367,6 @@ const CronDaemonPanel = ({
         finally { setLoading(false); }
     };
 
-    // Daemons
     const startDaemon = async (name: string, command: string, npc?: string) => {
         if (!name || !command) return;
         setLoading(true);
@@ -408,7 +385,7 @@ const CronDaemonPanel = ({
     };
 
     const editDaemon = async (d: any) => {
-        // Kill the old one, pre-fill form for restart
+
         try { await api?.removeDaemon?.(d.id); await fetchDaemons(); } catch {}
         setNewDaemonName(d.name || '');
         setNewDaemonCommand(d.command || '');
@@ -416,7 +393,6 @@ const CronDaemonPanel = ({
         setShowAddDaemon(true);
     };
 
-    // SQL Models
     const saveModel = async () => {
         const { name, sql, description, materialization, npc } = modelForm;
         if (!name || !sql) return;
@@ -459,7 +435,6 @@ const CronDaemonPanel = ({
         } catch (e: any) { setError(e.message); }
     };
 
-    // ── Parsed system data ──
     const parsedUserCron = useMemo(() => parseCrontab(systemData?.user_crontab || ''), [systemData]);
     const parsedSysCron = useMemo(() => parseCrontab(systemData?.system_crontab || ''), [systemData]);
     const parsedTimers = useMemo(() => parseTimers(systemData?.timers || ''), [systemData]);
@@ -469,12 +444,8 @@ const CronDaemonPanel = ({
 
     if (!isOpen && !isPane) return null;
 
-    // ═══════════════════════════════════════════════════════════════════
-    // RENDER
-    // ═══════════════════════════════════════════════════════════════════
     const content = (
         <div className="flex flex-col h-full">
-            {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b theme-border flex-shrink-0">
                 <div className="flex items-center gap-2.5">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400">
@@ -494,7 +465,6 @@ const CronDaemonPanel = ({
                 </div>
             </div>
 
-            {/* Tabs */}
             <div className="flex border-b theme-border flex-shrink-0">
                 {([
                     { id: 'jobs' as const, label: 'Jobs', icon: Zap },
@@ -519,7 +489,6 @@ const CronDaemonPanel = ({
 
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
 
-                {/* ═══════════════════ JOBS TAB ═══════════════════ */}
                 {activeTab === 'jobs' && (<>
                     <div className="flex items-center gap-2">
                         <div className="relative flex-1">
@@ -533,7 +502,6 @@ const CronDaemonPanel = ({
                         </button>
                     </div>
 
-                    {/* Add job form */}
                     {showAddJob && (
                         <div className="p-3 bg-blue-900/15 border border-blue-500/30 rounded-lg space-y-2">
                             <div className="grid grid-cols-2 gap-2">
@@ -614,7 +582,6 @@ const CronDaemonPanel = ({
                         </div>
                     )}
 
-                    {/* Active jobs */}
                     {jobs.length > 0 && (
                         <Section title="Scheduled Jobs" count={jobs.length} icon={Clock}>
                             {jobs.filter(j => !filter || j.name.toLowerCase().includes(filter.toLowerCase())).map(job => (
@@ -654,7 +621,6 @@ const CronDaemonPanel = ({
                         </div>
                     )}
 
-                    {/* Example templates — one-click enable */}
                     <Section title="Quick Enable" count={EXAMPLE_JOBS.filter(e => !jobs.some(j => j.name === e.name)).length} icon={Sparkles} defaultOpen={jobs.length === 0}>
                         {EXAMPLE_JOBS.filter(e => !jobs.some(j => j.name === e.name)).map(ex => (
                             <ExpandRow key={ex.name} header={<>
@@ -676,7 +642,6 @@ const CronDaemonPanel = ({
                     </Section>
                 </>)}
 
-                {/* ═══════════════════ DAEMONS & SYSTEM TAB ═══════════════════ */}
                 {activeTab === 'daemons' && (<>
                     <div className="flex items-center gap-2">
                         <div className="relative flex-1">
@@ -690,7 +655,6 @@ const CronDaemonPanel = ({
                         </button>
                     </div>
 
-                    {/* Add daemon form */}
                     {showAddDaemon && (
                         <div className="p-3 bg-purple-900/15 border border-purple-500/30 rounded-lg space-y-2">
                             <div className="grid grid-cols-2 gap-2">
@@ -725,7 +689,6 @@ const CronDaemonPanel = ({
                         </div>
                     )}
 
-                    {/* App-spawned daemons */}
                     {appDaemons.length > 0 && (
                         <Section title="Running (app-spawned)" count={appDaemons.length} icon={Play}>
                             {appDaemons.map(d => (
@@ -748,7 +711,6 @@ const CronDaemonPanel = ({
                         </Section>
                     )}
 
-                    {/* Daemon examples */}
                     {appDaemons.length === 0 && !showAddDaemon && (
                         <Section title="Quick Start" icon={Sparkles} defaultOpen={true}>
                             {EXAMPLE_DAEMONS.filter(e => !appDaemons.some((d: any) => d.name === e.name)).map(ex => (
@@ -769,7 +731,6 @@ const CronDaemonPanel = ({
                         </Section>
                     )}
 
-                    {/* npcsh triggers */}
                     {systemDaemons?.npcsh_services?.length > 0 && (
                         <Section title="NPC Triggers" count={systemDaemons.npcsh_services.length} icon={Zap}>
                             {systemDaemons.npcsh_services.map((s: string, i: number) => (
@@ -780,7 +741,6 @@ const CronDaemonPanel = ({
                         </Section>
                     )}
 
-                    {/* User crontab */}
                     {parsedUserCron.length > 0 && (
                         <Section title="User Crontab" count={parsedUserCron.length} icon={Clock}>
                             {parsedUserCron.filter(c => !filter || c.command.toLowerCase().includes(filter.toLowerCase())).map((c, i) => (
@@ -797,7 +757,6 @@ const CronDaemonPanel = ({
                         </Section>
                     )}
 
-                    {/* System crontab */}
                     {parsedSysCron.length > 0 && (
                         <Section title="/etc/crontab" count={parsedSysCron.length} icon={Cpu} defaultOpen={false}>
                             {parsedSysCron.filter(c => !filter || c.command.toLowerCase().includes(filter.toLowerCase())).map((c, i) => (
@@ -812,7 +771,6 @@ const CronDaemonPanel = ({
                         </Section>
                     )}
 
-                    {/* /etc/cron.d */}
                     {systemData?.cron_d?.length > 0 && (
                         <Section title="/etc/cron.d/" count={systemData.cron_d.length} defaultOpen={false}>
                             {systemData.cron_d.map((f: any, i: number) => (
@@ -823,7 +781,6 @@ const CronDaemonPanel = ({
                         </Section>
                     )}
 
-                    {/* Systemd timers */}
                     {parsedTimers.length > 0 && (
                         <Section title="Systemd Timers" count={parsedTimers.length} icon={Clock}>
                             {parsedTimers.filter(t => !filter || t.unit.toLowerCase().includes(filter.toLowerCase())).map((t, i) => {
@@ -858,7 +815,6 @@ const CronDaemonPanel = ({
                         </Section>
                     )}
 
-                    {/* Running system services */}
                     {parsedRunningSvcs.length > 0 && (
                         <Section title="System Services (running)" count={parsedRunningSvcs.length} icon={Cpu}>
                             <div className="max-h-[400px] overflow-y-auto space-y-1">
@@ -897,7 +853,6 @@ const CronDaemonPanel = ({
                         </Section>
                     )}
 
-                    {/* User services */}
                     {(parsedUserSvcs.length > 0 || parsedDaemonUserSvcs.length > 0) && (
                         <Section title="User Services" count={parsedUserSvcs.length + parsedDaemonUserSvcs.length} icon={Activity}>
                             <div className="max-h-[400px] overflow-y-auto space-y-1">
@@ -936,9 +891,7 @@ const CronDaemonPanel = ({
                     )}
                 </>)}
 
-                {/* ═══════════════════ NQL TAB ═══════════════════ */}
                 {activeTab === 'nql' && (<>
-                    {/* Your SQL Models — fetched from real API */}
                     <Section title="Your SQL Models" count={sqlModels.length} icon={Table}
                         actions={
                             <button onClick={() => { setShowNewModel(!showNewModel); setEditModel(null); setModelForm({ name: '', sql: '', description: '', materialization: 'table', npc: '' }); }}
@@ -947,7 +900,6 @@ const CronDaemonPanel = ({
                             </button>
                         }>
 
-                        {/* New / Edit model form */}
                         {(showNewModel || editModel) && (
                             <div className="p-3 bg-emerald-900/15 border border-emerald-500/30 rounded-lg space-y-2 mb-2">
                                 <div className="grid grid-cols-3 gap-2">
@@ -1034,7 +986,6 @@ const CronDaemonPanel = ({
                         )}
                     </Section>
 
-                    {/* Example templates — save to real models */}
                     <Section title="Model Templates" count={EXAMPLE_SQL_MODELS.filter(e => !sqlModels.some(m => m.name === e.name)).length} icon={Sparkles} defaultOpen={sqlModels.length === 0}>
                         {EXAMPLE_SQL_MODELS.filter(e => !sqlModels.some(m => m.name === e.name)).map(ex => (
                             <ExpandRow key={ex.id} header={<>
@@ -1060,7 +1011,6 @@ const CronDaemonPanel = ({
                         ))}
                     </Section>
 
-                    {/* NQL Functions Reference */}
                     <Section title="NQL Functions Reference" icon={Code} defaultOpen={false}>
                         {NQL_CATEGORIES.map(cat => (
                             <div key={cat} className="mb-2">
@@ -1078,7 +1028,6 @@ const CronDaemonPanel = ({
                             </div>
                         ))}
 
-                        {/* Example query */}
                         <div className="mt-3 p-3 bg-gray-800/50 border theme-border rounded-lg">
                             <div className="text-[10px] font-semibold text-gray-400 mb-2 flex items-center gap-1"><Sparkles size={10} /> Example NQL Query</div>
                             <pre className="text-[10px] font-mono text-gray-400 bg-black/20 p-2 rounded select-all whitespace-pre-wrap">{`SELECT
@@ -1093,7 +1042,6 @@ LIMIT 100;`}</pre>
                 </>)}
             </div>
 
-            {/* Footer */}
             <div className="px-4 py-2 border-t theme-border text-[10px] text-gray-500 flex items-center justify-between flex-shrink-0">
                 <span className="truncate">{currentPath || '~'}</span>
                 <span>{jobs.length} jobs, {appDaemons.length} daemons, {sqlModels.length} models</span>

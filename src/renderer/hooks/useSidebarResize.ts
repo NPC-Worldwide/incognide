@@ -26,7 +26,6 @@ export function useSidebarResize() {
         return saved === 'true';
     });
 
-    // Sidebar resize handler
     const handleSidebarResize = useCallback((e: MouseEvent) => {
         if (!isResizingSidebar) return;
         const newWidth = e.clientX;
@@ -35,7 +34,6 @@ export function useSidebarResize() {
         }
     }, [isResizingSidebar]);
 
-    // Input area resize handler
     const handleInputResize = useCallback((e: MouseEvent) => {
         if (!isResizingInput) return;
         const newHeight = window.innerHeight - e.clientY;
@@ -44,7 +42,6 @@ export function useSidebarResize() {
         }
     }, [isResizingInput]);
 
-    // Sidebar/input resize mouse event listeners with body class management
     useEffect(() => {
         const handleMouseUp = () => {
             setIsResizingSidebar(false);
@@ -75,7 +72,6 @@ export function useSidebarResize() {
         }
     }, [isResizingSidebar, isResizingInput, handleSidebarResize, handleInputResize]);
 
-    // Top/bottom bar resize handlers
     useEffect(() => {
         const handleTopBarResize = (e: MouseEvent) => {
             const newHeight = Math.max(32, Math.min(80, e.clientY));

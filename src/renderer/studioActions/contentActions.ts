@@ -1,15 +1,7 @@
-/**
- * Content Actions
- *
- * Actions for reading/writing pane contents:
- * - read_pane, write_file, get_selection, run_terminal
- */
+
 
 import { registerAction, StudioContext, StudioActionResult } from './index';
 
-/**
- * Read the contents of a pane
- */
 async function read_pane(
   args: { paneId?: string },
   ctx: StudioContext
@@ -28,7 +20,6 @@ async function read_pane(
 
   let content: any = null;
 
-  // File-content pane types that store their content in fileContent
   const fileContentTypes = ['editor', 'markdown-preview', 'latex', 'notebook', 'exp', 'mindmap'];
 
   if (fileContentTypes.includes(contentType)) {
@@ -126,9 +117,6 @@ async function read_pane(
   };
 }
 
-/**
- * Write content to an editor pane
- */
 async function write_file(
   args: { paneId?: string; content: string; path?: string },
   ctx: StudioContext
@@ -147,14 +135,12 @@ async function write_file(
     return { success: false, error: `Pane is not an editor: ${data.contentType}` };
   }
 
-  // Update the file content in the pane data
   ctx.contentDataRef.current[paneId] = {
     ...data,
     fileContent: args.content,
     fileChanged: true
   };
 
-  // If path provided and different, update the content ID
   if (args.path && args.path !== data.contentId) {
     ctx.updateContentPane(paneId, 'editor', args.path);
   }
@@ -167,9 +153,6 @@ async function write_file(
   };
 }
 
-/**
- * Get currently selected text in an editor pane
- */
 async function get_selection(
   args: { paneId?: string },
   ctx: StudioContext
@@ -184,7 +167,6 @@ async function get_selection(
     return { success: false, error: `Pane not found: ${paneId}` };
   }
 
-  // Selection would need to be tracked by the editor component
   const selection = data.selection || null;
 
   return {
@@ -195,9 +177,6 @@ async function get_selection(
   };
 }
 
-/**
- * Run a command in a terminal pane
- */
 async function run_terminal(
   args: { paneId?: string; command: string },
   ctx: StudioContext
@@ -222,7 +201,6 @@ async function run_terminal(
     return { success: false, error: `Pane is not a terminal: ${data.contentType}` };
   }
 
-  // Get the terminal ID from the pane's contentId
   const terminalId = data.contentId;
 
   if (!terminalId) {
@@ -230,8 +208,7 @@ async function run_terminal(
   }
 
   try {
-    // Send the command to the terminal via IPC
-    // Append newline to execute the command
+
     await (window as any).api?.writeToTerminal?.({
       id: terminalId,
       data: command + '\n'
@@ -252,7 +229,6 @@ async function run_terminal(
   }
 }
 
-// Register all content actions
 registerAction('read_pane', read_pane);
 registerAction('write_file', write_file);
 registerAction('get_selection', get_selection);

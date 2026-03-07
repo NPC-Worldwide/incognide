@@ -80,7 +80,6 @@ const PasswordImport: React.FC<PasswordImportProps> = ({ isOpen, onClose, onImpo
         setFileName(name);
         setFileContent(content);
 
-        // Auto-detect format
         const detected = detectFormat(content, name);
         setDetectedFormat(detected);
         setSelectedFormat(detected);
@@ -169,7 +168,6 @@ const PasswordImport: React.FC<PasswordImportProps> = ({ isOpen, onClose, onImpo
                 className="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
                 onClick={e => e.stopPropagation()}
             >
-                {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
@@ -192,11 +190,9 @@ const PasswordImport: React.FC<PasswordImportProps> = ({ isOpen, onClose, onImpo
                     </button>
                 </div>
 
-                {/* Content */}
                 <div className="flex-1 overflow-y-auto p-6">
                     {step === 'select' && (
                         <div className="space-y-6">
-                            {/* Drop zone */}
                             <div
                                 onDrop={handleDrop}
                                 onDragOver={handleDragOver}
@@ -226,7 +222,6 @@ const PasswordImport: React.FC<PasswordImportProps> = ({ isOpen, onClose, onImpo
                                 </p>
                             </div>
 
-                            {/* Supported formats */}
                             <div>
                                 <h3 className="text-sm font-medium text-gray-300 mb-3">Supported Password Managers</h3>
                                 <div className="grid grid-cols-2 gap-2">
@@ -244,7 +239,6 @@ const PasswordImport: React.FC<PasswordImportProps> = ({ isOpen, onClose, onImpo
                                 </div>
                             </div>
 
-                            {/* Export instructions */}
                             <div className="bg-blue-900/20 border border-blue-800/50 rounded-lg p-4">
                                 <div className="flex gap-3">
                                     <Shield size={20} className="text-blue-400 flex-shrink-0 mt-0.5" />
@@ -265,7 +259,6 @@ const PasswordImport: React.FC<PasswordImportProps> = ({ isOpen, onClose, onImpo
 
                     {step === 'preview' && (
                         <div className="space-y-4">
-                            {/* File info & format selector */}
                             <div className="flex items-center justify-between bg-gray-700/50 rounded-lg p-3">
                                 <div className="flex items-center gap-3">
                                     <FileText size={20} className="text-gray-400" />
@@ -278,7 +271,6 @@ const PasswordImport: React.FC<PasswordImportProps> = ({ isOpen, onClose, onImpo
                                     </div>
                                 </div>
 
-                                {/* Format dropdown */}
                                 <div className="relative">
                                     <button
                                         onClick={() => setShowFormatDropdown(!showFormatDropdown)}
@@ -312,7 +304,6 @@ const PasswordImport: React.FC<PasswordImportProps> = ({ isOpen, onClose, onImpo
                                 </div>
                             </div>
 
-                            {/* Errors */}
                             {errors.length > 0 && (
                                 <div className="bg-red-900/30 border border-red-800 rounded-lg p-3">
                                     <div className="flex items-start gap-2">
@@ -329,7 +320,6 @@ const PasswordImport: React.FC<PasswordImportProps> = ({ isOpen, onClose, onImpo
                                 </div>
                             )}
 
-                            {/* Password list */}
                             <div className="border border-gray-700 rounded-lg overflow-hidden">
                                 <div className="bg-gray-700/50 px-4 py-2 text-xs font-medium text-gray-400 grid grid-cols-12 gap-2">
                                     <span className="col-span-3">Name</span>
@@ -405,7 +395,6 @@ const PasswordImport: React.FC<PasswordImportProps> = ({ isOpen, onClose, onImpo
                     )}
                 </div>
 
-                {/* Footer */}
                 <div className="flex items-center justify-between px-6 py-4 border-t border-gray-700 bg-gray-800/50">
                     <div className="text-xs text-gray-500 flex items-center gap-1">
                         <Shield size={12} />

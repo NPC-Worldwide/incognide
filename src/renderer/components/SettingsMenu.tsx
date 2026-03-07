@@ -8,7 +8,6 @@ import UserMenu from './UserMenu';
 import PasswordImport from './PasswordImport';
 import { PasswordEntry } from '../utils/passwordImport';
 
-// Password Manager Component
 const PasswordManager = () => {
     const [credentials, setCredentials] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -115,14 +114,13 @@ const PasswordManager = () => {
         }
     };
 
-    // Handle importing passwords from external password managers
     const handleImport = useCallback(async (importedPasswords: PasswordEntry[]) => {
         setImportProgress({ current: 0, total: importedPasswords.length });
 
         let imported = 0;
         for (const entry of importedPasswords) {
             try {
-                // Convert to the format expected by the existing API
+
                 const result = await (window as any).api.passwordSave({
                     site: entry.url || entry.name,
                     username: entry.username || '',
@@ -144,7 +142,6 @@ const PasswordManager = () => {
             setImportProgress({ current: imported, total: importedPasswords.length });
         }
 
-        // Reload credentials after import
         await loadCredentials();
         setImportProgress(null);
         setShowImportModal(false);
@@ -156,7 +153,6 @@ const PasswordManager = () => {
 
     return (
         <div className="space-y-4">
-            {/* Encryption status */}
             {encryptionStatus && (
                 <div className={`p-3 rounded-lg text-sm ${encryptionStatus.available ? 'bg-green-900/30 text-green-400' : 'bg-yellow-900/30 text-yellow-400'}`}>
                     <KeyRound size={16} className="inline mr-2" />
@@ -164,7 +160,6 @@ const PasswordManager = () => {
                 </div>
             )}
 
-            {/* Add/Edit form */}
             {showAddForm ? (
                 <Card title={editingId ? 'Edit Credential' : 'Add New Credential'}>
                     <div className="space-y-3">
@@ -227,14 +222,12 @@ const PasswordManager = () => {
                 </div>
             )}
 
-            {/* Import progress */}
             {importProgress && (
                 <div className="bg-blue-900/30 rounded-lg p-3 text-sm text-blue-400">
                     Importing passwords... {importProgress.current} / {importProgress.total}
                 </div>
             )}
 
-            {/* Credentials list */}
             <div className="space-y-2">
                 {credentials.length === 0 ? (
                     <div className="text-center py-8 text-gray-400">
@@ -300,7 +293,6 @@ const PasswordManager = () => {
                 )}
             </div>
 
-            {/* Import Modal */}
             <PasswordImport
                 isOpen={showImportModal}
                 onClose={() => setShowImportModal(false)}
@@ -310,7 +302,6 @@ const PasswordManager = () => {
     );
 };
 
-// Voice/TTS Manager Component
 const VoiceManager = () => {
     const [engines, setEngines] = useState<any>({});
     const [loading, setLoading] = useState(true);
@@ -322,7 +313,6 @@ const VoiceManager = () => {
     const [audioRef, setAudioRef] = useState<HTMLAudioElement | null>(null);
     const [savedSettings, setSavedSettings] = useState<any>({});
 
-    // Load available voices from API
     const loadVoices = useCallback(async () => {
         setLoading(true);
         setError(null);
@@ -332,7 +322,7 @@ const VoiceManager = () => {
             const data = await response.json();
             if (data.success && data.engines) {
                 setEngines(data.engines);
-                // Set default engine to first available one
+
                 const availableEngines = Object.entries(data.engines)
                     .filter(([_, e]: [string, any]) => e.available)
                     .sort(([_, a]: [string, any], [__, b]: [string, any]) => (b.default ? 1 : 0) - (a.default ? 1 : 0));
@@ -351,7 +341,6 @@ const VoiceManager = () => {
         }
     }, []);
 
-    // Load saved TTS settings
     const loadSettings = useCallback(async () => {
         try {
             const stored = localStorage.getItem('incognide_ttsSettings');
@@ -371,7 +360,6 @@ const VoiceManager = () => {
         loadSettings();
     }, [loadVoices, loadSettings]);
 
-    // Save settings
     const saveSettings = () => {
         const settings = {
             engine: selectedEngine,
@@ -379,11 +367,10 @@ const VoiceManager = () => {
         };
         localStorage.setItem('incognide_ttsSettings', JSON.stringify(settings));
         setSavedSettings(settings);
-        // Dispatch event for other components to pick up
+
         window.dispatchEvent(new CustomEvent('ttsSettingsChanged', { detail: settings }));
     };
 
-    // Test the selected voice
     const testVoice = async () => {
         if (isPlaying && audioRef) {
             audioRef.pause();
@@ -403,12 +390,10 @@ const VoiceManager = () => {
                 voice: selectedVoice
             };
 
-            // Add lang_code for Kokoro
             if (selectedEngine === 'kokoro' && voice?.lang) {
                 requestBody.lang_code = voice.lang;
             }
 
-            // Add voice_id for ElevenLabs
             if (selectedEngine === 'elevenlabs') {
                 requestBody.voice_id = selectedVoice;
             }
@@ -466,7 +451,6 @@ const VoiceManager = () => {
                 </div>
             )}
 
-            {/* Engine Selection */}
             <Card title="TTS Engine">
                 <div className="space-y-3">
                     <div className="flex flex-wrap gap-2">
@@ -508,7 +492,6 @@ const VoiceManager = () => {
                 </div>
             </Card>
 
-            {/* Voice Selection */}
             {currentEngine?.available && availableVoices.length > 0 && (
                 <Card title="Voice">
                     <div className="space-y-3">
@@ -545,7 +528,6 @@ const VoiceManager = () => {
                 </Card>
             )}
 
-            {/* Test Voice */}
             <Card title="Test Voice">
                 <div className="space-y-3">
                     <textarea
@@ -574,7 +556,6 @@ const VoiceManager = () => {
                 </div>
             </Card>
 
-            {/* STT Settings */}
             <Card title="Speech-to-Text (STT)">
                 <div className="space-y-3">
                     <div className="flex items-center gap-3 p-3 bg-gray-800/50 rounded-lg">
@@ -593,7 +574,6 @@ const VoiceManager = () => {
                 </div>
             </Card>
 
-            {/* Save Settings */}
             <div className="flex justify-between items-center pt-4 border-t border-gray-700">
                 <div className="text-sm text-gray-400">
                     {savedSettings.engine && (
@@ -634,13 +614,13 @@ const defaultSettings = {
     embedding_provider: 'ollama',
     search_provider: 'duckduckgo',
     default_folder: HOME_DIR,
-    data_directory: '', // Empty means default (~/.npcsh/incognide/)
-    default_to_agent: false, // When true, new chats default to agent mode
+    data_directory: '',
+    default_to_agent: false,
     is_predictive_text_enabled: false,
     predictive_text_model: 'llama3.2',
     predictive_text_provider: 'ollama',
     keyboard_shortcuts: defaultKeyboardShortcuts,
-    backend_python_path: '', // Empty means use bundled backend
+    backend_python_path: '',
     default_new_pane_type: 'chat',
     default_new_terminal_type: 'system',
     default_new_document_type: 'docx',
@@ -655,7 +635,6 @@ const defaultSettings = {
     theme_brightness: 100,
 };
 
-// Local provider configuration
 const LOCAL_PROVIDERS = {
     ollama: {
         name: 'Ollama',
@@ -712,11 +691,11 @@ const ModelManager = () => {
     const [isPulling, setIsPulling] = useState(false);
     const [isDeleting, setIsDeleting] = useState(null);
     const [isScanning, setIsScanning] = useState(false);
-    // HuggingFace model download state
+
     const [hfModelUrl, setHfModelUrl] = useState('');
     const [hfDownloadProgress, setHfDownloadProgress] = useState(null);
     const [isDownloadingHf, setIsDownloadingHf] = useState(false);
-    // HuggingFace browser state
+
     const [hfSearchQuery, setHfSearchQuery] = useState('');
     const [hfSearchResults, setHfSearchResults] = useState([]);
     const [isSearchingHf, setIsSearchingHf] = useState(false);
@@ -724,7 +703,6 @@ const ModelManager = () => {
     const [hfRepoFiles, setHfRepoFiles] = useState([]);
     const [isLoadingFiles, setIsLoadingFiles] = useState(false);
 
-    // Fetch models for a specific provider
     const fetchModelsForProvider = async (provider) => {
         if (provider === 'ollama') {
             const models = await window.api.getLocalOllamaModels();
@@ -732,7 +710,7 @@ const ModelManager = () => {
                 setProviderModels(prev => ({ ...prev, ollama: models }));
             }
         } else if (provider === 'gguf') {
-            // Scan for GGUF/GGML files
+
             const result = await window.api.scanGgufModels?.(ggufDirectory || null);
             if (result && !result.error) {
                 setProviderModels(prev => ({ ...prev, gguf: result.models || [] }));
@@ -741,7 +719,7 @@ const ModelManager = () => {
                 }
             }
         } else {
-            // Use the new scan API for LM Studio and llama.cpp
+
             const result = await window.api.scanLocalModels?.(provider);
             if (result && !result.error) {
                 setProviderModels(prev => ({ ...prev, [provider]: result.models || [] }));
@@ -749,14 +727,12 @@ const ModelManager = () => {
         }
     };
 
-    // Check status for all providers
     const checkAllStatuses = async () => {
-        // Check Ollama
+
         const ollamaStatus = await window.api.checkOllamaStatus();
         setProviderStatuses(prev => ({ ...prev, ollama: ollamaStatus.status }));
         if (ollamaStatus.status === 'running') fetchModelsForProvider('ollama');
 
-        // Check LM Studio and llama.cpp via new API
         for (const provider of ['lmstudio', 'llamacpp']) {
             try {
                 const status = await window.api.getLocalModelStatus?.(provider);
@@ -771,7 +747,6 @@ const ModelManager = () => {
         }
     };
 
-    // Scan for models on selected provider
     const handleScanModels = async () => {
         setIsScanning(true);
         await fetchModelsForProvider(activeProvider);
@@ -843,7 +818,6 @@ const ModelManager = () => {
         }
     };
 
-    // Search HuggingFace for GGUF models
     const handleSearchHf = async () => {
         if (!hfSearchQuery.trim() || isSearchingHf) return;
         setIsSearchingHf(true);
@@ -865,7 +839,6 @@ const ModelManager = () => {
         }
     };
 
-    // List files in a HuggingFace repo
     const handleSelectHfRepo = async (repoId) => {
         setSelectedHfRepo(repoId);
         setIsLoadingFiles(true);
@@ -885,7 +858,6 @@ const ModelManager = () => {
         }
     };
 
-    // Download a specific file from HuggingFace
     const handleDownloadHfFile = async (filename) => {
         if (!selectedHfRepo || isDownloadingHf) return;
         setIsDownloadingHf(true);
@@ -919,7 +891,6 @@ const ModelManager = () => {
 
     return (
         <div className="space-y-4">
-            {/* Provider Tabs */}
             <div className="flex gap-2 border-b border-gray-700 pb-2">
                 {Object.entries(LOCAL_PROVIDERS).map(([key, info]) => (
                     <button
@@ -943,7 +914,6 @@ const ModelManager = () => {
                 ))}
             </div>
 
-            {/* Provider Info */}
             <Card>
                 <div className="p-3">
                     <div className="flex items-center justify-between">
@@ -981,7 +951,6 @@ const ModelManager = () => {
                 </div>
             </Card>
 
-            {/* Ollama-specific: Pull model */}
             {activeProvider === 'ollama' && currentStatus === 'running' && (
                 <div>
                     <label className="block text-sm text-gray-400 mb-2">Pull Model from Ollama Hub</label>
@@ -1001,7 +970,6 @@ const ModelManager = () => {
                 </div>
             )}
 
-            {/* Pull Progress */}
             {isPulling && pullProgress && (
                 <Card>
                     <div className="p-3">
@@ -1016,7 +984,6 @@ const ModelManager = () => {
                 </Card>
             )}
 
-            {/* Not Found / Not Running States */}
             {currentStatus === 'not_found' && activeProvider === 'ollama' && (
                 <Card>
                     <div className="text-center p-4">
@@ -1059,10 +1026,8 @@ const ModelManager = () => {
                 </Card>
             )}
 
-            {/* GGUF/GGML Directory Configuration */}
             {activeProvider === 'gguf' && (
                 <div className="space-y-3">
-                    {/* Browse for individual file */}
                     <div>
                         <label className="block text-sm text-gray-400 mb-2">Add Model File</label>
                         <Button
@@ -1103,7 +1068,6 @@ const ModelManager = () => {
                         </p>
                     </div>
 
-                    {/* Show scanned directories */}
                     {scannedDirectories.length > 0 && (
                         <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
                             <p className="text-xs text-gray-400 mb-2">Scanned locations ({scannedDirectories.length} found):</p>
@@ -1117,7 +1081,6 @@ const ModelManager = () => {
                         </div>
                     )}
 
-                    {/* HuggingFace Model Browser */}
                     <div className="space-y-3">
                         <label className="block text-sm text-gray-400">Search HuggingFace for GGUF Models</label>
                         <div className="flex gap-2">
@@ -1133,7 +1096,6 @@ const ModelManager = () => {
                             </Button>
                         </div>
 
-                        {/* Search Results */}
                         {hfSearchResults.length > 0 && (
                             <div className="max-h-40 overflow-y-auto space-y-1 border border-gray-700 rounded p-2">
                                 {hfSearchResults.map((repo: any) => (
@@ -1155,7 +1117,6 @@ const ModelManager = () => {
                             </div>
                         )}
 
-                        {/* File Selection */}
                         {selectedHfRepo && (
                             <div className="border border-gray-700 rounded p-2">
                                 <div className="flex justify-between items-center mb-2">
@@ -1192,7 +1153,6 @@ const ModelManager = () => {
                             </div>
                         )}
 
-                        {/* Direct URL fallback */}
                         <details className="text-xs">
                             <summary className="text-gray-500 cursor-pointer hover:text-gray-300">Or enter direct URL/model ID</summary>
                             <div className="flex gap-2 mt-2">
@@ -1209,7 +1169,6 @@ const ModelManager = () => {
                         </details>
                     </div>
 
-                    {/* HF Download Progress */}
                     {hfDownloadProgress && (
                         <div className="bg-gray-800 border border-gray-700 rounded p-3">
                             <p className="text-sm font-semibold text-white">{hfDownloadProgress.status}</p>
@@ -1241,7 +1200,6 @@ const ModelManager = () => {
                 </div>
             )}
 
-            {/* Model List */}
             {(currentStatus === 'running' || activeProvider === 'gguf') && (
                 <div>
                     <div className="flex items-center justify-between mb-2">
@@ -1307,7 +1265,6 @@ const ModelManager = () => {
     );
 };
 
-// Permissions Manager Component (macOS)
 const PermissionsManager = () => {
     const [permissions, setPermissions] = useState<any>({
         camera: false,
@@ -1343,7 +1300,7 @@ const PermissionsManager = () => {
         try {
             const result = await (window as any).api.requestMediaPermissions();
             setPermissions((prev: any) => ({ ...prev, camera: result.camera, microphone: result.microphone }));
-            // Re-check after a moment since the dialog may have changed things
+
             setTimeout(checkPermissions, 1000);
         } catch (err) {
             console.error('Failed to request permissions:', err);
@@ -1396,7 +1353,6 @@ const PermissionsManager = () => {
                 <p className="text-sm text-gray-500">Checking permissions...</p>
             ) : (
                 <div className="space-y-3">
-                    {/* Camera */}
                     <div className="flex items-center justify-between p-3 bg-gray-800/50 rounded-lg">
                         <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center">
@@ -1418,7 +1374,6 @@ const PermissionsManager = () => {
                         </div>
                     </div>
 
-                    {/* Microphone */}
                     <div className="flex items-center justify-between p-3 bg-gray-800/50 rounded-lg">
                         <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center">
@@ -1440,7 +1395,6 @@ const PermissionsManager = () => {
                         </div>
                     </div>
 
-                    {/* Screen Recording */}
                     <div className="flex items-center justify-between p-3 bg-gray-800/50 rounded-lg">
                         <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center">
@@ -1462,7 +1416,6 @@ const PermissionsManager = () => {
                         </div>
                     </div>
 
-                    {/* Accessibility */}
                     <div className="flex items-center justify-between p-3 bg-gray-800/50 rounded-lg">
                         <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center">
@@ -1514,7 +1467,6 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
     const [customProviders, setCustomProviders] = useState([{ name: '', baseUrl: '', apiKeyVar: '', headers: '' }]);
     const [visibleFields, setVisibleFields] = useState({});
 
-    // Update active tab when initialTab prop changes
     useEffect(() => {
         if (initialTab && initialTab !== activeTab) {
             setActiveTab(initialTab);
@@ -1524,15 +1476,15 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
     const loadGlobalSettings = async () => {
         const data = await window.api.loadGlobalSettings();
         if (data.error) return;
-        // Merge with defaults to ensure new settings have default values
+
         setGlobalSettings({ ...defaultSettings, ...(data.global_settings || {}) });
-        
+
         if (data.global_vars && Object.keys(data.global_vars).length > 0) {
             const parsedCustomVars = Object.entries(data.global_vars)
                 .filter(([key]) => !key.startsWith('CUSTOM_PROVIDER_'))
                 .map(([key, value]) => ({ key, value }));
             setCustomGlobalVars(parsedCustomVars.length > 0 ? parsedCustomVars : [{ key: '', value: '' }]);
-            
+
             const providers = Object.keys(data.global_vars)
                 .filter(key => key.startsWith('CUSTOM_PROVIDER_'))
                 .map(key => {
@@ -1549,7 +1501,7 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                         return null;
                     }
                 }).filter(Boolean);
-            
+
             if (providers.length > 0) setCustomProviders(providers);
         }
     };
@@ -1596,10 +1548,9 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
             global_vars: globalVars
         });
 
-        // Also save to localStorage for immediate pickup by other components
         if (globalSettings.default_new_pane_type) {
             localStorage.setItem('incognide_defaultNewPaneType', globalSettings.default_new_pane_type);
-            // Dispatch custom event for same-window updates
+
             window.dispatchEvent(new CustomEvent('defaultPaneTypeChanged', { detail: globalSettings.default_new_pane_type }));
         }
         if (globalSettings.default_new_terminal_type) {
@@ -1611,8 +1562,6 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
             window.dispatchEvent(new CustomEvent('defaultDocumentTypeChanged', { detail: globalSettings.default_new_document_type }));
         }
 
-        // Save theme colors to localStorage and apply them
-        // Dark mode colors
         if (globalSettings.theme_dark_primary) {
             localStorage.setItem('incognide_themeDarkPrimary', globalSettings.theme_dark_primary);
             document.documentElement.style.setProperty('--theme-primary-dark', globalSettings.theme_dark_primary);
@@ -1625,7 +1574,7 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
             localStorage.setItem('incognide_themeDarkText', globalSettings.theme_dark_text);
             document.documentElement.style.setProperty('--theme-text-dark', globalSettings.theme_dark_text);
         }
-        // Light mode colors
+
         if (globalSettings.theme_light_primary) {
             localStorage.setItem('incognide_themeLightPrimary', globalSettings.theme_light_primary);
             document.documentElement.style.setProperty('--theme-primary-light', globalSettings.theme_light_primary);
@@ -1638,7 +1587,7 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
             localStorage.setItem('incognide_themeLightText', globalSettings.theme_light_text);
             document.documentElement.style.setProperty('--theme-text-light', globalSettings.theme_light_text);
         }
-        // HSB adjustments
+
         localStorage.setItem('incognide_themeHueShift', String(globalSettings.theme_hue_shift ?? 0));
         localStorage.setItem('incognide_themeSaturation', String(globalSettings.theme_saturation ?? 100));
         localStorage.setItem('incognide_themeBrightness', String(globalSettings.theme_brightness ?? 100));

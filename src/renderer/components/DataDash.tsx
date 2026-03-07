@@ -12,9 +12,8 @@ import {
 import { MessageLabelStorage, MessageLabel, ConversationLabel, ConversationLabelStorage } from './MessageLabeling';
 import ForceGraph2D from 'react-force-graph-2d';
 import * as d3 from 'd3';
-import 'chartjs-adapter-date-fns'; // Required for time scale support in charts
+import 'chartjs-adapter-date-fns';
 
-// Import from npcts
 import {
     createWindowApiDatabaseClient,
     QueryWidget,
@@ -41,7 +40,6 @@ const handleAnalyzeInDashboard = () => {
     setContextMenuPos(null);
 };
 
-
 const WidgetContextMenu = ({ x, y, onSelect, onClose }) => {
     return (
         <>
@@ -54,9 +52,6 @@ const WidgetContextMenu = ({ x, y, onSelect, onClose }) => {
         </>
     );
 };
-
-// DEPRECATED: AddCustomWidgetModal and EditWidgetModal below have been replaced by npcts WidgetBuilder
-// These can be removed in a future cleanup pass
 
 const AddCustomWidgetModal = ({ isOpen, onClose, context, onAddWidget, dbTables, fetchSchema }) => {
     const [title, setTitle] = useState('');
@@ -91,7 +86,7 @@ const AddCustomWidgetModal = ({ isOpen, onClose, context, onAddWidget, dbTables,
 
     const handleAdd = () => {
         let finalQuery = query;
-        
+
         if (!query && selectedTable) {
             finalQuery = `SELECT * FROM ${selectedTable} LIMIT 100`;
         }
@@ -113,7 +108,7 @@ const AddCustomWidgetModal = ({ isOpen, onClose, context, onAddWidget, dbTables,
 
         onAddWidget(newWidget);
         onClose();
-        
+
         setTitle('');
         setQuery('');
         setSelectedTable('');
@@ -134,15 +129,15 @@ const AddCustomWidgetModal = ({ isOpen, onClose, context, onAddWidget, dbTables,
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60]">
             <div className="theme-bg-secondary p-6 rounded-lg shadow-xl w-full max-w-md max-h-[80vh] overflow-y-auto">
                 <h3 className="text-lg font-semibold mb-4">Create New Widget</h3>
-                
+
                 <div className="space-y-4">
                     <div>
                         <label className="text-sm theme-text-secondary">Widget Title</label>
-                        <input 
-                            type="text" 
-                            value={title} 
-                            onChange={e => setTitle(e.target.value)} 
-                            className="w-full theme-input mt-1" 
+                        <input
+                            type="text"
+                            value={title}
+                            onChange={e => setTitle(e.target.value)}
+                            className="w-full theme-input mt-1"
                             placeholder="e.g., Daily Active Users"
                         />
                     </div>
@@ -160,14 +155,14 @@ const AddCustomWidgetModal = ({ isOpen, onClose, context, onAddWidget, dbTables,
                     {!context?.result && (
                         <div>
                             <label className="text-sm theme-text-secondary">Quick Start - Select Table</label>
-                            <select 
-                                value={selectedTable} 
+                            <select
+                                value={selectedTable}
                                 onChange={e => {
                                     setSelectedTable(e.target.value);
                                     if (e.target.value) {
                                         setQuery(`SELECT * FROM ${e.target.value} LIMIT 100`);
                                     }
-                                }} 
+                                }}
                                 className="w-full theme-input mt-1"
                             >
                                 <option value="">Choose a table...</option>
@@ -178,11 +173,11 @@ const AddCustomWidgetModal = ({ isOpen, onClose, context, onAddWidget, dbTables,
 
                     <div>
                         <label className="text-sm theme-text-secondary">SQL Query</label>
-                        <textarea 
-                            value={query} 
-                            onChange={e => setQuery(e.target.value)} 
-                            rows={4} 
-                            className="w-full theme-input mt-1 font-mono text-sm" 
+                        <textarea
+                            value={query}
+                            onChange={e => setQuery(e.target.value)}
+                            rows={4}
+                            className="w-full theme-input mt-1 font-mono text-sm"
                             placeholder="SELECT * FROM table_name LIMIT 100"
                         />
                     </div>
@@ -224,54 +219,49 @@ const AddCustomWidgetModal = ({ isOpen, onClose, context, onAddWidget, dbTables,
     );
 };
 const EditWidgetModal = ({ isOpen, onClose, widget, onSave, dbTables, tableSchemaCache, fetchSchema }) => {
-   
+
     const parseQueryForBuilder = (query) => {
         if (!query) {
             return { isComplex: false, builderConfig: {} };
         }
 
-       
         const complexityPattern = /\bJOIN\b|\bUNION\b|\bWITH\b/i;
         const isComplex = complexityPattern.test(query);
-        
+
         if (isComplex) {
             return { isComplex: true, builderConfig: {} };
         }
 
-       
         const fromMatch = query.match(/\bFROM\s+([a-zA-Z0-9_]+)/i);
         if (!fromMatch) {
             return { isComplex: true, builderConfig: {} };
         }
         const table = fromMatch[1];
-        
-       
-        const selectMatch = query.match(/\bSELECT\s+(.*?)(?=\bFROM)/is);
-        let selectExpressions = selectMatch ? 
-            selectMatch[1].split(',').map(s => s.trim()) : 
-            ['*']; 
 
-       
+        const selectMatch = query.match(/\bSELECT\s+(.*?)(?=\bFROM)/is);
+        let selectExpressions = selectMatch ?
+            selectMatch[1].split(',').map(s => s.trim()) :
+            ['*'];
+
         const groupByMatch = query.match(/\bGROUP BY\s+(.*?)(?:\bHAVING|\bORDER BY|\bLIMIT|$)/is);
         const groupByExpression = groupByMatch ? groupByMatch[1].trim() : '';
 
-       
         const extractedBaseColumns = new Set();
         selectExpressions.forEach(expr => {
             const columnCandidates = expr.matchAll(/\b([a-zA-Z0-9_]+)\b/g);
             for (const match of columnCandidates) {
-               
+
                 const keywordBlacklist = new Set(['COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'DISTINCT', 'FROM', 'WHERE', 'GROUP', 'ORDER', 'BY', 'LIMIT', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'AS', 'IN', 'LIKE', 'IS', 'BETWEEN', 'AND', 'OR', 'NOT', 'NULL', 'STRFTIME', 'LENGTH']);
                 if (match[1] && !keywordBlacklist.has(match[1].toUpperCase())) {
                     extractedBaseColumns.add(match[1]);
                 }
             }
         });
-       
+
         const whereMatch = query.match(/\bWHERE\s+(.*?)(?:\bGROUP BY\b|\bORDER BY\b|\bLIMIT\b|$)/is);
         if (whereMatch) {
             const whereClause = whereMatch[1];
-           
+
             const columnInWhere = whereClause.match(/\b[a-zA-Z0-9_]+\b/g);
             if(columnInWhere) {
                 columnInWhere.forEach(col => {
@@ -282,28 +272,25 @@ const EditWidgetModal = ({ isOpen, onClose, widget, onSave, dbTables, tableSchem
                 });
             }
         }
-        
 
-        return { 
-            isComplex: isComplex, 
-            builderConfig: { 
-                table, 
+        return {
+            isComplex: isComplex,
+            builderConfig: {
+                table,
                 selectExpressions,
                 groupByExpression,
                 selectedBaseColumns: Array.from(extractedBaseColumns)
-            } 
+            }
         };
     };
 
     const parsedData = parseQueryForBuilder(widget.query);
-    
-   
+
     const [isComplexQuery, setIsComplexQuery] = useState(parsedData.isComplex);
     const [mode, setMode] = useState(parsedData.isComplex ? 'advanced' : 'builder');
 
-   
-    const [config, setConfig] = useState({ 
-        ...widget, 
+    const [config, setConfig] = useState({
+        ...widget,
         builder: {
             table: parsedData.builderConfig.table || '',
             selectedColumns: parsedData.builderConfig.selectedBaseColumns || [],
@@ -326,47 +313,47 @@ const EditWidgetModal = ({ isOpen, onClose, widget, onSave, dbTables, tableSchem
         if (!query) { setSelectableOutputExpressions([]); return; }
         setTestQueryStatus({ loading: true, error: null });
         try {
-           
+
             const response = await window.api.executeSQL({ query: `${query.replace(/;$/, '')} LIMIT 1` });
             if (response.error) throw new Error(response.error);
             if (response.result && response.result.length > 0) {
                 const newCols = Object.keys(response.result[0]);
-               
+
                 setSelectableOutputExpressions(newCols.map(c => ({ name: c, type: 'RESULT_COL' })));
-            } else { 
-                setSelectableOutputExpressions([]); 
+            } else {
+                setSelectableOutputExpressions([]);
             }
         } catch (err) { setTestQueryStatus({ loading: false, error: err.message }); } finally { setTestQueryStatus({ loading: false, error: null }); }
     }, []);
 
     useEffect(() => {
-       
+
         if (mode === 'builder' && !config.type.includes('chart')) {
             const { table, selectedColumns = [] } = config.builder || {};
             if (table) {
-                const newQuery = selectedColumns.length > 0 ? 
-                                 `SELECT ${selectedColumns.join(', ')} FROM ${table}` : 
+                const newQuery = selectedColumns.length > 0 ?
+                                 `SELECT ${selectedColumns.join(', ')} FROM ${table}` :
                                  `SELECT * FROM ${table}`;
-                if (newQuery !== config.query) { 
-                    setConfig(c => ({ ...c, query: newQuery })); 
+                if (newQuery !== config.query) {
+                    setConfig(c => ({ ...c, query: newQuery }));
                 }
             }
         }
-       
+
     }, [config.builder?.table, config.builder?.selectedColumns, config.type, mode]);
 
     useEffect(() => {
         const table = config.builder?.table;
         if (mode === 'builder' && table) {
-           
+
             fetchSchema(table).then(schema => {
                 setAvailableSchemaColumns(schema || []);
-               
+
                 if (config.type.includes('chart')) {
-                   
+
                     const initialChartOptions = new Set();
                     (config.builder.selectExpressions || []).forEach(expr => {
-                       
+
                         const baseColMatch = expr.match(/\b([a-zA-Z0-9_]+)\b(?:\s+AS\s+|$)/i);
                         initialChartOptions.add(baseColMatch ? baseColMatch[1] : expr);
                     });
@@ -377,11 +364,11 @@ const EditWidgetModal = ({ isOpen, onClose, widget, onSave, dbTables, tableSchem
                 }
             });
         } else if (mode === 'advanced' && config.query) {
-           
+
             updateColumnsFromQuery(config.query);
         }
     }, [mode, config.builder?.table, config.query, config.type, fetchSchema, updateColumnsFromQuery, config.builder.selectExpressions]);
-    
+
     if (!isOpen) return null;
 
     const handleSave = () => {
@@ -390,46 +377,46 @@ const EditWidgetModal = ({ isOpen, onClose, widget, onSave, dbTables, tableSchem
 
         if (mode === 'builder') {
             const { table, selectedColumns = [] } = config.builder || {};
-            
+
             if (newConfig.type.includes('chart')) {
-               
+
                 let selectParts = [];
                 if (newConfig.chartConfig.x) selectParts.push(newConfig.chartConfig.x);
-               
+
                 if (newConfig.chartConfig.y) {
                     newConfig.chartConfig.y.split(',').forEach(yExpr => {
                         yExpr = yExpr.trim();
                         if (yExpr && !selectParts.includes(yExpr)) selectParts.push(yExpr);
                     });
                 }
-                
+
                 if (table && selectParts.length > 0) {
                     finalQuery = `SELECT ${selectParts.join(', ')} FROM ${table}`;
                     if (newConfig.chartConfig.groupBy) {
                         finalQuery += ` GROUP BY ${newConfig.chartConfig.groupBy}`;
                     } else if (newConfig.chartConfig.x && selectParts.length > 1) {
-                       
+
                         const xBaseForGroupBy = newConfig.chartConfig.x.split(/\s+AS\s+/i)[0].trim();
                         finalQuery += ` GROUP BY ${xBaseForGroupBy}`;
                     }
                     if (newConfig.chartConfig.x) {
-                        
+
                          const xBaseForOrderBy = newConfig.chartConfig.x.split(/\s+AS\s+/i)[0].trim();
                          finalQuery += ` ORDER BY ${xBaseForOrderBy}`;
                     }
                 } else if (table) {
                     finalQuery = `SELECT * FROM ${table}`;
                 }
-                
+
             } else {
                 if (table) {
-                    finalQuery = selectedColumns.length > 0 ? 
-                                 `SELECT ${selectedColumns.join(', ')} FROM ${table}` : 
+                    finalQuery = selectedColumns.length > 0 ?
+                                 `SELECT ${selectedColumns.join(', ')} FROM ${table}` :
                                  `SELECT * FROM ${table}`;
                 }
             }
         }
-        
+
         if (finalQuery) {
             newConfig.query = finalQuery;
             delete newConfig.apiFn;
@@ -438,13 +425,13 @@ const EditWidgetModal = ({ isOpen, onClose, widget, onSave, dbTables, tableSchem
         onSave(newConfig);
         onClose();
     };
-    
-    const handleToggleChange = (index, field, value) => { 
-        const newToggles = [...(config.toggleOptions || [])]; 
-        newToggles[index][field] = value; 
-        setConfig({...config, toggleOptions: newToggles}); 
+
+    const handleToggleChange = (index, field, value) => {
+        const newToggles = [...(config.toggleOptions || [])];
+        newToggles[index][field] = value;
+        setConfig({...config, toggleOptions: newToggles});
     };
-    
+
     const addToggle = () => setConfig({...config, toggleOptions: [...(config.toggleOptions || []), {label: 'New', modifier: ''}]});
     const removeToggle = (index) => setConfig({...config, toggleOptions: (config.toggleOptions || []).filter((_, i) => i !== index)});
 
@@ -455,32 +442,32 @@ const EditWidgetModal = ({ isOpen, onClose, widget, onSave, dbTables, tableSchem
                     <h3 className="text-lg font-semibold">{widget.id ? 'Edit Widget' : 'Create Widget'}</h3>
                     <button onClick={onClose} className="p-1 rounded-full theme-hover"><X size={20}/></button>
                 </div>
-                
+
                 <div className="flex border-b theme-border mb-4 flex-shrink-0">
-                    <button 
-                        onClick={() => { if (!isComplexQuery) setMode('builder') }} 
-                        className={`px-4 py-2 text-sm ${mode === 'builder' ? 'border-b-2 border-blue-500' : 'theme-text-secondary'} ${isComplexQuery ? 'opacity-50 cursor-not-allowed' : ''}`} 
+                    <button
+                        onClick={() => { if (!isComplexQuery) setMode('builder') }}
+                        className={`px-4 py-2 text-sm ${mode === 'builder' ? 'border-b-2 border-blue-500' : 'theme-text-secondary'} ${isComplexQuery ? 'opacity-50 cursor-not-allowed' : ''}`}
                         title={isComplexQuery ? "Cannot use builder for complex queries" : ""}
                     >
                         Builder
                     </button>
-                    <button 
-                        onClick={() => setMode('advanced')} 
+                    <button
+                        onClick={() => setMode('advanced')}
                         className={`px-4 py-2 text-sm ${mode === 'advanced' ? 'border-b-2 border-blue-500' : 'theme-text-secondary'}`}
                     >
                         Advanced SQL
                     </button>
                 </div>
-                                
+
                 <div className="flex-1 overflow-y-auto space-y-4 pr-2">
                     <div className="p-3 border theme-border rounded-lg theme-bg-tertiary space-y-3">
                         <h4 className="text-sm font-semibold theme-text-primary">General</h4>
                         <div>
                             <label className="text-xs font-semibold theme-text-secondary uppercase tracking-wider">Title</label>
-                            <input 
-                                type="text" 
-                                value={config.title} 
-                                onChange={e => setConfig({...config, title: e.target.value})} 
+                            <input
+                                type="text"
+                                value={config.title}
+                                onChange={e => setConfig({...config, title: e.target.value})}
                                 className="w-full theme-input mt-1"
                             />
                         </div>
@@ -492,9 +479,9 @@ const EditWidgetModal = ({ isOpen, onClose, widget, onSave, dbTables, tableSchem
                             <>
                                 <div>
                                     <label className="text-xs font-semibold theme-text-secondary uppercase tracking-wider">Table</label>
-                                    <select 
-                                        value={config.builder?.table || ''} 
-                                        onChange={e => setConfig({...config, builder: {...config.builder, table: e.target.value, selectedColumns: []}})} 
+                                    <select
+                                        value={config.builder?.table || ''}
+                                        onChange={e => setConfig({...config, builder: {...config.builder, table: e.target.value, selectedColumns: []}})}
                                         className="w-full theme-input mt-1"
                                     >
                                         <option value="">Select a table...</option>
@@ -507,12 +494,12 @@ const EditWidgetModal = ({ isOpen, onClose, widget, onSave, dbTables, tableSchem
                                         <div className="max-h-32 overflow-y-auto theme-bg-primary p-2 rounded mt-1">
                                             {availableSchemaColumns.map(col => (
                                                 <div key={col.name} className="flex items-center">
-                                                    <input 
-                                                        type="checkbox" 
+                                                    <input
+                                                        type="checkbox"
                                                         id={col.name}
                                                         checked={config.builder?.selectedColumns?.includes(col.name) || false}
                                                         onChange={e => {
-                                                            const newCols = e.target.checked 
+                                                            const newCols = e.target.checked
                                                                 ? [...(config.builder?.selectedColumns || []), col.name]
                                                                 : (config.builder?.selectedColumns || []).filter(c => c !== col.name);
                                                             setConfig({...config, builder: {...config.builder, selectedColumns: newCols}});
@@ -531,15 +518,15 @@ const EditWidgetModal = ({ isOpen, onClose, widget, onSave, dbTables, tableSchem
                         ) : (
                             <div>
                                 <label className="text-xs font-semibold theme-text-secondary uppercase tracking-wider">SQL Query</label>
-                                <textarea 
-                                    value={config.query || ''} 
-                                    onChange={e => setConfig({...config, query: e.target.value})} 
-                                    rows={6} 
+                                <textarea
+                                    value={config.query || ''}
+                                    onChange={e => setConfig({...config, query: e.target.value})}
+                                    rows={6}
                                     className="w-full theme-input mt-1 font-mono text-sm"
                                 />
-                                <button 
-                                    onClick={() => updateColumnsFromQuery(config.query)} 
-                                    className="text-xs theme-button-subtle mt-2" 
+                                <button
+                                    onClick={() => updateColumnsFromQuery(config.query)}
+                                    className="text-xs theme-button-subtle mt-2"
                                     disabled={testQueryStatus.loading}
                                 >
                                     {testQueryStatus.loading ? 'Testing...' : 'Test Query & Get Columns'}
@@ -553,9 +540,9 @@ const EditWidgetModal = ({ isOpen, onClose, widget, onSave, dbTables, tableSchem
                         <h4 className="text-sm font-semibold theme-text-primary">Visualization</h4>
                         <div>
                             <label className="text-xs font-semibold theme-text-secondary uppercase tracking-wider">Display As</label>
-                            <select 
-                                value={config.type} 
-                                onChange={e => setConfig({...config, type: e.target.value})} 
+                            <select
+                                value={config.type}
+                                onChange={e => setConfig({...config, type: e.target.value})}
                                 className="w-full theme-input mt-1"
                             >
                                 <option value="table">Table</option>
@@ -569,9 +556,9 @@ const EditWidgetModal = ({ isOpen, onClose, widget, onSave, dbTables, tableSchem
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
                                         <label className="text-xs font-semibold theme-text-secondary uppercase tracking-wider">X-Axis Expression</label>
-                                        <textarea 
-                                            value={config.chartConfig?.x || ''} 
-                                            onChange={e => setConfig({...config, chartConfig: {...config.chartConfig, x: e.target.value}})} 
+                                        <textarea
+                                            value={config.chartConfig?.x || ''}
+                                            onChange={e => setConfig({...config, chartConfig: {...config.chartConfig, x: e.target.value}})}
                                             className="w-full theme-input mt-1 font-mono text-sm"
                                             rows={2}
                                             placeholder="e.g., strftime('%Y-%m-%d', timestamp) as date"
@@ -582,9 +569,9 @@ const EditWidgetModal = ({ isOpen, onClose, widget, onSave, dbTables, tableSchem
                                     </div>
                                     <div>
                                         <label className="text-xs font-semibold theme-text-secondary uppercase tracking-wider">Y-Axis Expression(s)</label>
-                                        <textarea 
-                                            value={config.chartConfig?.y || ''} 
-                                            onChange={e => setConfig({...config, chartConfig: {...config.chartConfig, y: e.target.value}})} 
+                                        <textarea
+                                            value={config.chartConfig?.y || ''}
+                                            onChange={e => setConfig({...config, chartConfig: {...config.chartConfig, y: e.target.value}})}
                                             className="w-full theme-input mt-1 font-mono text-sm"
                                             rows={2}
                                             placeholder="e.g., COUNT(*) as count, AVG(cost) as avg_cost (comma separated for multi-series)"
@@ -594,13 +581,13 @@ const EditWidgetModal = ({ isOpen, onClose, widget, onSave, dbTables, tableSchem
                                         </div>
                                     </div>
                                 </div>
-                                
+
                                 <div>
                                     <label className="text-xs font-semibold theme-text-secondary uppercase tracking-wider">GROUP BY (optional, use for aggregations)</label>
-                                    <input 
+                                    <input
                                         type="text"
-                                        value={config.chartConfig?.groupBy || ''} 
-                                        onChange={e => setConfig({...config, chartConfig: {...config.chartConfig, groupBy: e.target.value}})} 
+                                        value={config.chartConfig?.groupBy || ''}
+                                        onChange={e => setConfig({...config, chartConfig: {...config.chartConfig, groupBy: e.target.value}})}
                                         className="w-full theme-input mt-1 font-mono text-sm"
                                         placeholder="e.g., strftime('%Y-%m-%d', timestamp) or column_name"
                                     />
@@ -617,22 +604,22 @@ const EditWidgetModal = ({ isOpen, onClose, widget, onSave, dbTables, tableSchem
                         <div className="space-y-2 mt-1">
                             {(config.toggleOptions || []).map((toggle, index) => (
                                 <div key={index} className="flex items-center gap-2">
-                                    <input 
-                                        type="text" 
-                                        placeholder="Label (e.g., 7d)" 
-                                        value={toggle.label} 
-                                        onChange={e => handleToggleChange(index, 'label', e.target.value)} 
+                                    <input
+                                        type="text"
+                                        placeholder="Label (e.g., 7d)"
+                                        value={toggle.label}
+                                        onChange={e => handleToggleChange(index, 'label', e.target.value)}
                                         className="theme-input text-sm p-1 w-24 flex-shrink-0"
                                     />
-                                    <textarea 
-                                        placeholder="WHERE clause modifier (e.g., WHERE timestamp >= date('now', '-7 days'))" 
-                                        value={toggle.modifier} 
-                                        onChange={e => handleToggleChange(index, 'modifier', e.target.value)} 
+                                    <textarea
+                                        placeholder="WHERE clause modifier (e.g., WHERE timestamp >= date('now', '-7 days'))"
+                                        value={toggle.modifier}
+                                        onChange={e => handleToggleChange(index, 'modifier', e.target.value)}
                                         className="theme-input text-sm p-1 flex-1 font-mono"
                                         rows={1}
                                     />
-                                    <button 
-                                        onClick={() => removeToggle(index)} 
+                                    <button
+                                        onClick={() => removeToggle(index)}
                                         className="p-1 theme-button-danger-subtle rounded flex-shrink-0"
                                     >
                                         <X size={14}/>
@@ -656,7 +643,6 @@ const EditWidgetModal = ({ isOpen, onClose, widget, onSave, dbTables, tableSchem
     );
 };
 
-// Stat drill-down modal for viewing trends
 const StatDrillDownModal = ({ isOpen, onClose, stat, title }) => {
     const [trendData, setTrendData] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -714,7 +700,6 @@ const StatDrillDownModal = ({ isOpen, onClose, stat, title }) => {
     );
 };
 
-// Stats grid component - must be outside DashboardWidget to use hooks properly
 const StatsGridContent = ({ stats, onStatClick, timePeriod = 'all' }: { stats: any[], onStatClick?: (stat: any) => void, timePeriod?: '7d' | '30d' | '90d' | 'all' }) => {
     const [gridData, setGridData] = useState<Record<string, any>>({});
     const [gridLoading, setGridLoading] = useState(true);
@@ -724,7 +709,6 @@ const StatsGridContent = ({ stats, onStatClick, timePeriod = 'all' }: { stats: a
             setGridLoading(true);
             const results: Record<string, any> = {};
 
-            // Build time filter based on period
             const getTimeFilter = (table: string) => {
                 if (timePeriod === 'all') return '';
                 const days = timePeriod === '7d' ? 7 : timePeriod === '30d' ? 30 : 90;
@@ -735,7 +719,6 @@ const StatsGridContent = ({ stats, onStatClick, timePeriod = 'all' }: { stats: a
                 try {
                     let query = stat.query;
 
-                    // Apply time filter if not "all" and query targets a table with timestamps
                     if (timePeriod !== 'all' && (query.includes('conversation_history') || query.includes('command_history') || query.includes('browser_history'))) {
                         const baseQuery = query.replace(/;$/, '');
                         const hasWhere = baseQuery.toLowerCase().includes('where');
@@ -789,7 +772,6 @@ const StatsGridContent = ({ stats, onStatClick, timePeriod = 'all' }: { stats: a
     );
 };
 
-// Expandable list modal for stat_list widgets
 const StatListModal = ({ isOpen, onClose, title, query, iconName }) => {
     const [listData, setListData] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -801,7 +783,7 @@ const StatListModal = ({ isOpen, onClose, title, query, iconName }) => {
         const fetchData = async () => {
             setLoading(true);
             try {
-                // Modify query to get more results
+
                 const expandedQuery = query.replace(/LIMIT \d+/i, `LIMIT ${limit}`);
                 const response = await (window as any).api?.executeSQL?.({ query: expandedQuery });
                 setListData(response?.result || []);
@@ -881,7 +863,7 @@ const DashboardWidget = ({ config, onContextMenu, timePeriod = 'all' }: { config
 
     useEffect(() => {
         const fetchData = async () => {
-            // Skip fetching for stats_grid - it fetches its own data
+
             if (config.type === 'stats_grid') {
                 setLoading(false);
                 return;
@@ -890,8 +872,7 @@ const DashboardWidget = ({ config, onContextMenu, timePeriod = 'all' }: { config
             setLoading(true); setError(null);
             try {
                 let finalQuery = config.query;
-                
-               
+
                 if (activeToggle && activeToggle.modifier) {
                     const baseQuery = config.query.replace(/;$/, '');
                     let parts = {
@@ -903,7 +884,6 @@ const DashboardWidget = ({ config, onContextMenu, timePeriod = 'all' }: { config
                         limit: ''
                     };
 
-                   
                     const regex = /SELECT\s+(.*?)\s+FROM\s+([a-zA-Z0-9_]+)\s*(?:WHERE\s+(.*?))?\s*(?:GROUP BY\s+(.*?))?\s*(?:ORDER BY\s+(.*?))?\s*(?:LIMIT\s+(.*?))?$/is;
                     const match = baseQuery.match(regex);
 
@@ -915,29 +895,28 @@ const DashboardWidget = ({ config, onContextMenu, timePeriod = 'all' }: { config
                         parts.orderBy = match[5] ? `ORDER BY ${match[5]}` : '';
                         parts.limit = match[6] ? `LIMIT ${match[6]}` : '';
                     } else {
-                       
+
                         console.warn("Could not fully parse base query for modifier insertion. Appending modifier.");
                         finalQuery = `${baseQuery} ${activeToggle.modifier}`;
                     }
 
                     if (match) {
-                       
+
                         finalQuery = `SELECT ${parts.select} FROM ${parts.from}`;
-                        
-                       
+
                         if (parts.where) {
                             finalQuery += ` ${parts.where} AND (${activeToggle.modifier.replace(/^\s*WHERE\s*/i, '')})`;
                         } else {
                             finalQuery += ` ${activeToggle.modifier}`;
                         }
-                        
+
                         finalQuery += ` ${parts.groupBy}`;
                         finalQuery += ` ${parts.orderBy}`;
                         finalQuery += ` ${parts.limit}`;
                         finalQuery = finalQuery.replace(/\s+/g, ' ').trim();
                     }
                 }
-                
+
                 const response = config.apiFn ? await window.api[config.apiFn]() : await window.api.executeSQL({ query: finalQuery });
                 const resultData = response.data || response.stats || response.result;
                 if (response.error) throw new Error(response.error);
@@ -989,15 +968,15 @@ const DashboardWidget = ({ config, onContextMenu, timePeriod = 'all' }: { config
                 if (!Array.isArray(data) || data.length === 0 || !config.chartConfig) {
                     return <div className="theme-text-secondary text-sm">Not enough data or chart is misconfigured.</div>;
                 }
-                // Use the npcts QueryChart component - disable date parsing for non-date x values
+
                 const xExpr = config.chartConfig?.x || '';
                 const xParts = xExpr.split(' as ');
                 const xKey = (xParts.length > 1 ? xParts[xParts.length - 1] : xParts[0] || '').trim();
-                // Filter out rows with null/invalid x values
+
                 const filteredData = data.filter(row => {
                     const xVal = row[xKey];
                     if (xVal === null || xVal === undefined || xVal === '') return false;
-                    // Check if date string is valid
+
                     if (typeof xVal === 'string' && xVal.includes('-')) {
                         const d = new Date(xVal);
                         if (isNaN(d.getTime())) return false;
@@ -1061,7 +1040,7 @@ const DashboardWidget = ({ config, onContextMenu, timePeriod = 'all' }: { config
 };
 
 const DataDash = ({ initialAnalysisContext, currentPath, currentModel, currentProvider, currentNPC, messageLabels = {}, setMessageLabels, conversationLabels = {}, setConversationLabels }) => {
-    // Create a database client from window.api - this can be configured for different backends
+
     const dbClient = useMemo<DatabaseClient>(() =>
         createWindowApiDatabaseClient(window.api as any),
     []);
@@ -1073,7 +1052,7 @@ const DataDash = ({ initialAnalysisContext, currentPath, currentModel, currentPr
         showChart: false
     });
     const defaultWidgets = [
-        // Core conversation metrics
+
         {
             id: 'core_stats',
             type: 'stats_grid',
@@ -1090,7 +1069,7 @@ const DataDash = ({ initialAnalysisContext, currentPath, currentModel, currentPr
                 { label: 'Active Days', query: "SELECT COUNT(DISTINCT DATE(timestamp)) as value FROM conversation_history;", icon: 'Clock', color: 'text-orange-400' },
             ]
         },
-        // Token & cost metrics
+
         {
             id: 'cost_stats',
             type: 'stats_grid',
@@ -1107,7 +1086,7 @@ const DataDash = ({ initialAnalysisContext, currentPath, currentModel, currentPr
                 { label: 'Avg Response', query: "SELECT ROUND(AVG(LENGTH(content))) as value FROM conversation_history WHERE role = 'assistant';", icon: 'Bot', color: 'text-purple-400' },
             ]
         },
-        // Provider & model breakdown
+
         {
             id: 'provider_stats',
             type: 'stats_grid',
@@ -1124,7 +1103,7 @@ const DataDash = ({ initialAnalysisContext, currentPath, currentModel, currentPr
                 { label: 'Branches', query: "SELECT COUNT(DISTINCT branch_id) as value FROM conversation_history WHERE branch_id IS NOT NULL;", icon: 'GitBranch', color: 'text-pink-400' },
             ]
         },
-        // Command & browser stats
+
         {
             id: 'activity_stats',
             type: 'stats_grid',
@@ -1231,7 +1210,7 @@ const DataDash = ({ initialAnalysisContext, currentPath, currentModel, currentPr
             ]
         },
     ];
-    
+
     const [widgets, setWidgets] = useState([]);
     const [isMemoryPanelOpen, setIsMemoryPanelOpen] = useState(false);
     const [isAddCustomWidgetModalOpen, setIsAddCustomWidgetModalOpen] = useState(false);
@@ -1240,7 +1219,6 @@ const DataDash = ({ initialAnalysisContext, currentPath, currentModel, currentPr
     const [isEditWidgetModalOpen, setIsEditWidgetModalOpen] = useState(false);
     const [widgetToEdit, setWidgetToEdit] = useState(null);
 
-    // Collapsible sections state - default all open
     const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => {
         const saved = localStorage.getItem('dataDashCollapsedSections');
         return saved ? JSON.parse(saved) : {};
@@ -1253,13 +1231,11 @@ const DataDash = ({ initialAnalysisContext, currentPath, currentModel, currentPr
         });
     };
 
-    // Stats time period filter
     const [statsTimePeriod, setStatsTimePeriod] = useState<'7d' | '30d' | '90d' | 'all'>('all');
 
     const [tableSchemaCache, setTableSchemaCache] = useState({});
     const [isMlPanelOpen, setIsMlPanelOpen] = useState(false);
 
-   
     const [sqlQuery, setSqlQuery] = useState('SELECT * FROM conversation_history LIMIT 10;');
     const [queryResult, setQueryResult] = useState(null);
     const [loadingQuery, setLoadingQuery] = useState(false);
@@ -1293,7 +1269,6 @@ const DataDash = ({ initialAnalysisContext, currentPath, currentModel, currentPr
     const [cooccurrenceData, setCooccurrenceData] = useState(null);
     const [centralityData, setCentralityData] = useState(null);
 
-    // Browser History Graph state
     const [historyGraphData, setHistoryGraphData] = useState<{ nodes: any[], links: any[] }>({ nodes: [], links: [] });
     const [historyGraphStats, setHistoryGraphStats] = useState<any>(null);
     const [historyGraphLoading, setHistoryGraphLoading] = useState(false);
@@ -1303,18 +1278,15 @@ const DataDash = ({ initialAnalysisContext, currentPath, currentModel, currentPr
     const [selectedHistoryNode, setSelectedHistoryNode] = useState<any>(null);
     const historyGraphRef = useRef<any>();
 
-    // KG Editing state
     const [selectedKgNode, setSelectedKgNode] = useState<any>(null);
     const [kgEditMode, setKgEditMode] = useState<'view' | 'edit'>('view');
     const [newNodeName, setNewNodeName] = useState('');
     const [newEdgeSource, setNewEdgeSource] = useState('');
     const [newEdgeTarget, setNewEdgeTarget] = useState('');
 
-    // Database selector state
     const [availableDatabases, setAvailableDatabases] = useState<{ name: string; path: string; type: 'global' | 'project' }[]>([]);
     const [selectedDatabase, setSelectedDatabase] = useState<string>('~/npcsh_history.db');
 
-    // Database connection state
     const [dbConnectionStatus, setDbConnectionStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
     const [dbConnectionInfo, setDbConnectionInfo] = useState<{
         resolvedPath?: string;
@@ -1326,7 +1298,6 @@ const DataDash = ({ initialAnalysisContext, currentPath, currentModel, currentPr
     } | null>(null);
     const [supportedDbTypes, setSupportedDbTypes] = useState<any[]>([]);
 
-    // Activity Intelligence state
     const [isActivityPanelOpen, setIsActivityPanelOpen] = useState(false);
     const [activityData, setActivityData] = useState<any[]>([]);
     const [activityPredictions, setActivityPredictions] = useState<any[]>([]);
@@ -1335,7 +1306,6 @@ const DataDash = ({ initialAnalysisContext, currentPath, currentModel, currentPr
     const [activityTraining, setActivityTraining] = useState(false);
     const [activityTab, setActivityTab] = useState<'predictions' | 'history' | 'patterns'>('predictions');
 
-    // Labeled Data state
     const [isLabeledDataPanelOpen, setIsLabeledDataPanelOpen] = useState(false);
     const [labelSearchTerm, setLabelSearchTerm] = useState('');
     const [selectedLabels, setSelectedLabels] = useState<Set<string>>(new Set());
@@ -1363,7 +1333,6 @@ const DataDash = ({ initialAnalysisContext, currentPath, currentModel, currentPr
     const saveWidgets = (newWidgets) => { setWidgets(newWidgets); localStorage.setItem('dataDashWidgets', JSON.stringify(newWidgets)); };
     const handleAddWidget = (widgetConfig) => saveWidgets([...widgets, widgetConfig]);
     const handleRemoveWidget = (idToRemove) => saveWidgets(widgets.filter(w => w.id !== idToRemove));
-    
 
     const [memories, setMemories] = useState([]);
     const [memoryLoading, setMemoryLoading] = useState(false);
@@ -1374,10 +1343,10 @@ const DataDash = ({ initialAnalysisContext, currentPath, currentModel, currentPr
         try {
             const response = await window.api.executeSQL({
                 query: `
-                    SELECT id, message_id, conversation_id, npc, team, directory_path, 
+                    SELECT id, message_id, conversation_id, npc, team, directory_path,
                            initial_memory, final_memory, status, timestamp, model, provider
-                    FROM memory_lifecycle 
-                    ORDER BY timestamp DESC 
+                    FROM memory_lifecycle
+                    ORDER BY timestamp DESC
                     LIMIT 500
                 `
             });
@@ -1392,15 +1361,12 @@ const DataDash = ({ initialAnalysisContext, currentPath, currentModel, currentPr
         }
     };
 
-    
-    // Load memories when panel opens
     useEffect(() => {
         if (isMemoryPanelOpen && memories.length === 0) {
             loadMemories();
         }
     }, [isMemoryPanelOpen]);
 
-    // Fetch browser history graph data
     const fetchHistoryGraph = useCallback(async () => {
         if (!currentPath) return;
         setHistoryGraphLoading(true);
@@ -1424,22 +1390,20 @@ const DataDash = ({ initialAnalysisContext, currentPath, currentModel, currentPr
         }
     }, [currentPath, historyMinVisits]);
 
-    // Load history graph when DataDash opens
     useEffect(() => {
         if (currentPath) {
             fetchHistoryGraph();
         }
     }, [currentPath, fetchHistoryGraph]);
 
-    // Filter memories based on search and status
     const filteredMemories = memories.filter(memory => {
         const matchesStatus = memoryFilter === 'all' || memory.status === memoryFilter;
-        const matchesSearch = !memorySearchTerm || 
+        const matchesSearch = !memorySearchTerm ||
             memory.initial_memory?.toLowerCase().includes(memorySearchTerm.toLowerCase()) ||
             memory.final_memory?.toLowerCase().includes(memorySearchTerm.toLowerCase());
         return matchesStatus && matchesSearch;
     });
-      
+
     const handleEditWidgetSave = (updatedWidget) => {
         console.log("[DataDash] Saving updated widget:", updatedWidget);
         saveWidgets(widgets.map(w => w.id === updatedWidget.id ? updatedWidget : w));
@@ -1460,9 +1424,9 @@ const DataDash = ({ initialAnalysisContext, currentPath, currentModel, currentPr
 
 const ModelBuilderModal = () => {
     if (!showModelBuilder || !queryResult) return null;
-    
+
     const columns = queryResult.length > 0 ? Object.keys(queryResult[0]) : [];
-    
+
     const modelTypes = [
         { value: 'linear_regression', label: 'Linear Regression' },
         { value: 'logistic_regression', label: 'Logistic Regression' },
@@ -1472,21 +1436,21 @@ const ModelBuilderModal = () => {
         { value: 'decision_tree', label: 'Decision Tree' },
         { value: 'gradient_boost', label: 'Gradient Boosting' }
     ];
-    
+
     return (
-        <div className="fixed inset-0 bg-black/70 flex items-center 
+        <div className="fixed inset-0 bg-black/70 flex items-center
             justify-center z-[60]">
-            <div className="theme-bg-secondary p-6 rounded-lg 
+            <div className="theme-bg-secondary p-6 rounded-lg
                 shadow-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-                <h3 className="text-lg font-semibold mb-4 
+                <h3 className="text-lg font-semibold mb-4
                     flex items-center gap-2">
                     <BrainCircuit className="text-purple-400" />
                     Create ML Model
                 </h3>
-                
+
                 <div className="space-y-4">
                     <div>
-                        <label className="text-sm theme-text-secondary 
+                        <label className="text-sm theme-text-secondary
                             block mb-1">
                             Model Name
                         </label>
@@ -1494,7 +1458,7 @@ const ModelBuilderModal = () => {
                             type="text"
                             value={modelConfig.name}
                             onChange={(e) => setModelConfig({
-                                ...modelConfig, 
+                                ...modelConfig,
                                 name: e.target.value
                             })}
                             placeholder="my_prediction_model"
@@ -1503,14 +1467,14 @@ const ModelBuilderModal = () => {
                     </div>
 
                     <div>
-                        <label className="text-sm theme-text-secondary 
+                        <label className="text-sm theme-text-secondary
                             block mb-1">
                             Model Type
                         </label>
                         <select
                             value={modelConfig.type}
                             onChange={(e) => setModelConfig({
-                                ...modelConfig, 
+                                ...modelConfig,
                                 type: e.target.value
                             })}
                             className="w-full theme-input p-2 text-sm"
@@ -1525,14 +1489,14 @@ const ModelBuilderModal = () => {
 
                     {modelConfig.type !== 'clustering' && (
                         <div>
-                            <label className="text-sm theme-text-secondary 
+                            <label className="text-sm theme-text-secondary
                                 block mb-1">
                                 Target Column (what to predict)
                             </label>
                             <select
                                 value={modelConfig.targetColumn}
                                 onChange={(e) => setModelConfig({
-                                    ...modelConfig, 
+                                    ...modelConfig,
                                     targetColumn: e.target.value
                                 })}
                                 className="w-full theme-input p-2 text-sm"
@@ -1546,11 +1510,11 @@ const ModelBuilderModal = () => {
                     )}
 
                     <div>
-                        <label className="text-sm theme-text-secondary 
+                        <label className="text-sm theme-text-secondary
                             block mb-1">
                             Feature Columns (inputs)
                         </label>
-                        <div className="max-h-40 overflow-y-auto 
+                        <div className="max-h-40 overflow-y-auto
                             theme-bg-primary p-2 rounded">
                             {columns.map(col => (
                                 <div key={col} className="flex items-center">
@@ -1571,7 +1535,7 @@ const ModelBuilderModal = () => {
                                         className="w-4 h-4"
                                         disabled={col === modelConfig.targetColumn}
                                     />
-                                    <label htmlFor={`feat_${col}`} 
+                                    <label htmlFor={`feat_${col}`}
                                         className="ml-2 text-sm">
                                         {col}
                                     </label>
@@ -1583,7 +1547,7 @@ const ModelBuilderModal = () => {
                     {modelConfig.type === 'time_series' && (
                         <div className="grid grid-cols-2 gap-3">
                             <div>
-                                <label className="text-xs 
+                                <label className="text-xs
                                     theme-text-secondary">
                                     Forecast Periods
                                 </label>
@@ -1601,7 +1565,7 @@ const ModelBuilderModal = () => {
                                 />
                             </div>
                             <div>
-                                <label className="text-xs 
+                                <label className="text-xs
                                     theme-text-secondary">
                                     Seasonality
                                 </label>
@@ -1648,7 +1612,7 @@ const ModelBuilderModal = () => {
                         </div>
                     )}
 
-                    <div className="text-sm theme-text-secondary 
+                    <div className="text-sm theme-text-secondary
                         bg-gray-900/50 p-3 rounded">
                         <div className="font-semibold mb-1">Training Data:</div>
                         <div>{queryResult.length} rows</div>
@@ -1665,11 +1629,11 @@ const ModelBuilderModal = () => {
                     </button>
                     <button
                         onClick={trainModel}
-                        disabled={modelTraining || 
+                        disabled={modelTraining ||
                             (modelConfig.type !== 'clustering' && !modelConfig.targetColumn) ||
                             modelConfig.featureColumns.length === 0}
-                        className="theme-button-primary px-4 py-2 
-                            text-sm rounded flex items-center gap-2 
+                        className="theme-button-primary px-4 py-2
+                            text-sm rounded flex items-center gap-2
                             disabled:opacity-50"
                     >
                         {modelTraining ? (
@@ -1692,13 +1656,13 @@ const ModelBuilderModal = () => {
     const handleContextMenuSelect = async (action) => {
         console.log(`[DataDash] handleContextMenuSelect: Action received: '${action}' for widget ID ${contextMenu.widgetId}`);
         const selectedWidget = widgets.find(w => w.id === contextMenu.widgetId);
-        
+
         if (selectedWidget) {
             if (action === 'delete') {
                 handleRemoveWidget(contextMenu.widgetId);
                 console.log(`[DataDash] Deleted widget with ID: ${contextMenu.widgetId}`);
             } else if (action === 'edit') {
-               
+
                 if (dbTables.length === 0) {
                     try {
                         console.log("[DataDash] Edit clicked, fetching DB tables for the first time...");
@@ -1727,7 +1691,6 @@ const ModelBuilderModal = () => {
         } catch (err) { console.error(`Failed to get schema for ${tableName}:`, err); return null; }
     }, [tableSchemaCache]);
 
-    // Database connection functions
     const testDbConnection = useCallback(async (connectionString: string) => {
         setDbConnectionStatus('connecting');
         setDbConnectionInfo(null);
@@ -1758,13 +1721,12 @@ const ModelBuilderModal = () => {
     const connectToDatabase = useCallback(async (connectionString: string) => {
         const testResult = await testDbConnection(connectionString);
         if (testResult.success) {
-            // Clear existing data
+
             setDbTables([]);
             setTableSchema(null);
             setSelectedTable(null);
             setTableSchemaCache({});
 
-            // Load tables for the new database
             try {
                 const res = await (window as any).api.listTablesForPath({ connectionString });
                 if (res.error) throw new Error(res.error);
@@ -1822,14 +1784,13 @@ const ModelBuilderModal = () => {
         return labels[dbType] || dbType;
     };
 
-    // Load supported database types on mount
     useEffect(() => {
         const loadSupportedTypes = async () => {
             try {
                 const types = await (window as any).api.getSupportedDbTypes?.();
                 if (types) setSupportedDbTypes(types);
             } catch (e) {
-                // Ignore
+
             }
         };
         loadSupportedTypes();
@@ -1842,7 +1803,7 @@ const ModelBuilderModal = () => {
                     const res = await (window as any).api.listTablesForPath({ connectionString: selectedDatabase });
                     if (res.error) throw new Error(res.error);
                     setDbTables(res.tables || []);
-                    // Also test connection to get status
+
                     await testDbConnection(selectedDatabase);
                 } catch (err) {
                     setQueryError("Could not fetch database tables.");
@@ -1852,8 +1813,6 @@ const ModelBuilderModal = () => {
         fetchTables();
     }, [isQueryPanelOpen, dbTables.length, selectedDatabase, testDbConnection]);
 
-   
-    // Activity Intelligence functions
     const loadActivityData = useCallback(async () => {
         setActivityLoading(true);
         try {
@@ -1899,7 +1858,6 @@ const ModelBuilderModal = () => {
         }
     };
 
-    // Load activity data when panel opens
     useEffect(() => {
         if (isActivityPanelOpen) {
             loadActivityData();
@@ -1908,9 +1866,9 @@ const ModelBuilderModal = () => {
 
     const fetchKgData = useCallback(async (generation) => {
         setKgLoading(true); setKgError(null);
-       
+
         const genToFetch = generation !== undefined ? generation : (currentKgGeneration !== null ? currentKgGeneration : null);
-        
+
         try {
             const [generationsRes, graphDataRes, statsRes, cooccurRes, centralityRes] = await Promise.all([
                 window.api.kg_listGenerations(),
@@ -1923,7 +1881,7 @@ const ModelBuilderModal = () => {
             if (generationsRes.error) throw new Error(`Generations Error: ${generationsRes.error}`);
             setKgGenerations(generationsRes.generations || []);
             const gens = generationsRes.generations || [];
-           
+
             if (currentKgGeneration === null && gens.length > 0) {
                 setCurrentKgGeneration(Math.max(...gens));
             }
@@ -1946,28 +1904,27 @@ const ModelBuilderModal = () => {
 
    const generateCSVFilename = (query) => {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    
+
     let description = 'query_results';
     if (query) {
         const tableMatch = query.match(/FROM\s+([a-zA-Z0-9_]+)/i);
         if (tableMatch) {
             description = tableMatch[1];
         }
-        
+
         if (query.toLowerCase().includes('count')) description += '_counts';
         if (query.toLowerCase().includes('group by')) description += '_grouped';
         if (query.toLowerCase().includes('where')) description += '_filtered';
     }
-    
+
     return `${description}_${timestamp}.csv`;
 };
 
-
     const exportToCSV = (data, query) => {
     if (!data || data.length === 0) return;
-    
+
     const suggestedFilename = generateCSVFilename(query);
-    
+
     if (csvExportSettings.alwaysPrompt) {
         const modal = document.createElement('div');
         modal.className = 'fixed inset-0 bg-black/70 flex items-center justify-center z-[80]';
@@ -1990,29 +1947,29 @@ const ModelBuilderModal = () => {
                 </div>
             </div>
         `;
-        
+
         document.body.appendChild(modal);
-        
+
         const filenameInput = modal.querySelector('#csv-filename');
         const dontAskAgain = modal.querySelector('#dont-ask-again');
         const cancelBtn = modal.querySelector('#csv-cancel');
         const saveBtn = modal.querySelector('#csv-save');
-        
+
         const cleanup = () => document.body.removeChild(modal);
-        
+
         cancelBtn.onclick = cleanup;
-        
+
         saveBtn.onclick = () => {
             const filename = filenameInput.value || suggestedFilename;
-            
+
             if (dontAskAgain.checked) {
                 setCsvExportSettings({ alwaysPrompt: false });
             }
-            
+
             downloadCSV(data, filename);
             cleanup();
         };
-        
+
         modal.onclick = (e) => {
             if (e.target === modal) cleanup();
         };
@@ -2025,17 +1982,17 @@ const ModelBuilderModal = () => {
         const headers = Object.keys(data[0]);
         const csvContent = [
             headers.join(','),
-            ...data.map(row => 
+            ...data.map(row =>
                 headers.map(header => {
                     const value = row[header];
                     const stringValue = String(value || '');
-                    return stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n') 
-                        ? `"${stringValue.replace(/"/g, '""')}"` 
+                    return stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')
+                        ? `"${stringValue.replace(/"/g, '""')}"`
                         : stringValue;
                 }).join(',')
             )
         ].join('\n');
-        
+
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         const url = URL.createObjectURL(blob);
@@ -2071,7 +2028,6 @@ const [modelTraining, setModelTraining] = useState(false);
 const [selectedNpcForSql, setSelectedNpcForSql] = useState(null);
 const [availableNpcs, setAvailableNpcs] = useState([]);
 
-// Load NPCs and models on mount
 useEffect(() => {
     const loadNpcs = async () => {
         const npcResponse = await window.api.getNPCTeamGlobal();
@@ -2085,11 +2041,10 @@ useEffect(() => {
     }
 }, []);
 
-// Model training function
 const trainModel = async () => {
     if (!queryResult || queryResult.length === 0) return;
     setModelTraining(true);
-    
+
     const trainingData = {
         name: modelConfig.name || `model_${Date.now()}`,
         type: modelConfig.type,
@@ -2098,15 +2053,15 @@ const trainModel = async () => {
         data: queryResult,
         hyperparameters: modelConfig.hyperparameters
     };
-    
+
     const response = await fetch(`${BACKEND_URL}/api/ml/train`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(trainingData)
     });
-    
+
     const result = await response.json();
-    
+
     if (!result.error) {
         const newModel = {
             id: result.model_id,
@@ -2117,34 +2072,33 @@ const trainModel = async () => {
             metrics: result.metrics,
             created: new Date().toISOString()
         };
-        
+
         const updatedModels = [...mlModels, newModel];
         setMlModels(updatedModels);
         localStorage.setItem('dataDashMLModels', JSON.stringify(updatedModels));
         setShowModelBuilder(false);
     }
-    
+
     setModelTraining(false);
 };
 
-// NPC-enhanced SQL generation
 const handleGenerateSqlWithNpc = async () => {
     if (!nlQuery.trim()) return;
     setGeneratingSql(true);
     setGeneratedSql('');
     setQueryError(null);
-    
+
     const schemaInfo = await Promise.all(
         dbTables.map(async (table) => {
             const schemaRes = await window.api.getTableSchema({ tableName: table });
-            if (schemaRes.error) return `/* Could not load schema for ${table} */`;
+            if (schemaRes.error) return ``;
             const columns = schemaRes.schema
                 .map(col => `  ${col.name} ${col.type}`)
                 .join(',\n');
             return `TABLE ${table}(\n${columns}\n);`;
         })
     );
-    
+
     let npcContext = '';
     if (selectedNpcForSql) {
         npcContext = `
@@ -2154,12 +2108,12 @@ ${selectedNpcForSql.primary_directive || ''}
 Use your expertise to generate the most appropriate SQL query.
 `;
     }
-    
+
     const modelInfo = mlModels.length > 0 ? `
 Available ML Models (can be called via ML_PREDICT function):
 ${mlModels.map(m => `- ${m.name}: ${m.type} (features: ${m.features.join(', ')}, target: ${m.target})`).join('\n')}
 ` : '';
-    
+
     const prompt = `${npcContext}
 Given this database schema:
 
@@ -2175,7 +2129,7 @@ Return only the SQL query without markdown formatting.`;
 
     const newStreamId = generateId();
     setNlToSqlStreamId(newStreamId);
-    
+
     const result = await window.api.executeCommandStream({
         commandstr: prompt,
         currentPath: '/',
@@ -2186,7 +2140,7 @@ Return only the SQL query without markdown formatting.`;
         streamId: newStreamId,
         attachments: []
     });
-    
+
     if (result?.error) {
         setQueryError(result.error);
         setGeneratingSql(false);
@@ -2204,8 +2158,8 @@ const handleGenerateSql = async () => {
                 const schemaRes = await window.api.getTableSchema(
                     { tableName: table }
                 );
-                if (schemaRes.error) 
-                    return `/* Could not load schema for ${table} */`;
+                if (schemaRes.error)
+                    return ``;
                 const columns = schemaRes.schema
                     .map(col => `  ${col.name} ${col.type}`)
                     .join(',\n');
@@ -2277,7 +2231,7 @@ const handleAcceptGeneratedSql = () => {
             }
         } catch (err) {
             console.error(
-                'DataDash NL-to-SQL stream error:', 
+                'DataDash NL-to-SQL stream error:',
                 err
             );
         }
@@ -2285,7 +2239,7 @@ const handleAcceptGeneratedSql = () => {
     const handleStreamComplete = (_, { streamId }) => {
         if (streamId !== nlToSqlStreamId) return;
         setGeneratingSql(false);
-        setGeneratedSql(prev => 
+        setGeneratedSql(prev =>
             prev.replace(/```sql|```/g, '').trim()
         );
         setNlToSqlStreamId(null);
@@ -2329,10 +2283,10 @@ const handleAcceptGeneratedSql = () => {
           const filteredLinks = sourceLinks.filter(l => filteredNodeIds.has(l.source?.id || l.source) && filteredNodeIds.has(l.target?.id || l.target));
           return { nodes: filteredNodes, links: filteredLinks };
         }
-        
+
         return { nodes: sourceNodes, links: sourceLinks };
     }, [kgData, kgViewMode, kgNodeFilter, networkStats, cooccurrenceData]);
-    
+
     const getNodeColor = React.useCallback((node) => {
         if (kgViewMode === 'cooccurrence') {
           const community = node.community || 0;
@@ -2353,11 +2307,9 @@ const handleAcceptGeneratedSql = () => {
 
     const getLinkWidth = React.useCallback((link) => (link.weight ? Math.min(5, link.weight / 2) : 1), []);
 
-    // History Graph processing and styling
     const processedHistoryGraphData = React.useMemo(() => {
         let filteredLinks = historyGraphData.links;
 
-        // Filter links by navigation type
         if (historyEdgeFilter !== 'all') {
             filteredLinks = historyGraphData.links.filter(link => {
                 if (historyEdgeFilter === 'click') return link.clickWeight > 0;
@@ -2366,14 +2318,12 @@ const handleAcceptGeneratedSql = () => {
             });
         }
 
-        // Filter nodes to only include those that are connected
         const connectedNodeIds = new Set<string>();
         filteredLinks.forEach(link => {
             connectedNodeIds.add(typeof link.source === 'string' ? link.source : link.source?.id);
             connectedNodeIds.add(typeof link.target === 'string' ? link.target : link.target?.id);
         });
 
-        // Include all nodes if no links exist, otherwise only connected ones
         const filteredNodes = filteredLinks.length > 0
             ? historyGraphData.nodes.filter(n => connectedNodeIds.has(n.id))
             : historyGraphData.nodes;
@@ -2382,26 +2332,26 @@ const handleAcceptGeneratedSql = () => {
     }, [historyGraphData, historyEdgeFilter]);
 
     const getHistoryNodeColor = React.useCallback((node: any) => {
-        // Color based on visit count intensity
+
         const maxVisits = Math.max(1, ...historyGraphData.nodes.map(n => n.visitCount || 1));
         const intensity = (node.visitCount || 1) / maxVisits;
-        // Gradient from blue (low) to purple (mid) to red (high)
-        if (intensity < 0.33) return '#3b82f6'; // blue
-        if (intensity < 0.66) return '#8b5cf6'; // purple
-        return '#ef4444'; // red
+
+        if (intensity < 0.33) return '#3b82f6';
+        if (intensity < 0.66) return '#8b5cf6';
+        return '#ef4444';
     }, [historyGraphData.nodes]);
 
     const getHistoryNodeSize = React.useCallback((node: any) => {
         const maxVisits = Math.max(1, ...historyGraphData.nodes.map(n => n.visitCount || 1));
         const normalized = (node.visitCount || 1) / maxVisits;
-        return 4 + normalized * 16; // Size range: 4 to 20
+        return 4 + normalized * 16;
     }, [historyGraphData.nodes]);
 
     const getHistoryLinkColor = React.useCallback((link: any) => {
-        // Green for click links, orange for manual, gray for mixed
-        if (link.clickWeight > 0 && link.manualWeight === 0) return 'rgba(34, 197, 94, 0.6)'; // green
-        if (link.manualWeight > 0 && link.clickWeight === 0) return 'rgba(249, 115, 22, 0.6)'; // orange
-        return 'rgba(156, 163, 175, 0.4)'; // gray for mixed
+
+        if (link.clickWeight > 0 && link.manualWeight === 0) return 'rgba(34, 197, 94, 0.6)';
+        if (link.manualWeight > 0 && link.clickWeight === 0) return 'rgba(249, 115, 22, 0.6)';
+        return 'rgba(156, 163, 175, 0.4)';
     }, []);
 
     const getHistoryLinkWidth = React.useCallback((link: any) => {
@@ -2423,7 +2373,6 @@ const handleAcceptGeneratedSql = () => {
         }
     };
 
-    // KG Editing functions
     const handleAddKgNode = async () => {
         if (!newNodeName.trim()) return;
         setKgLoading(true);
@@ -2480,7 +2429,6 @@ const handleAcceptGeneratedSql = () => {
         }
     };
 
-    // Memory approval/rejection functions
     const handleApproveMemory = async (memoryId: number) => {
         try {
             await (window as any).api?.executeSQL?.({
@@ -2505,27 +2453,24 @@ const handleAcceptGeneratedSql = () => {
         }
     };
 
-    // Load available databases
     const loadAvailableDatabases = useCallback(async () => {
         const databases: { name: string; path: string; type: 'global' | 'project' }[] = [
             { name: 'npcsh_history.db', path: '~/npcsh_history.db', type: 'global' }
         ];
 
-        // Try to get project-specific databases from currentPath
         if (currentPath) {
             try {
                 const projectDb = `${currentPath}/.npcsh/project.db`;
                 databases.push({ name: `Project DB (${getFileName(currentPath)})`, path: projectDb, type: 'project' });
             } catch (e) {
-                // Ignore if project db doesn't exist
+
             }
         }
 
-        // Add global .npcsh databases
         try {
             databases.push({ name: 'Global NPC Config', path: '~/.npcsh/npc_config.db', type: 'global' });
         } catch (e) {
-            // Ignore
+
         }
 
         setAvailableDatabases(databases);
@@ -2537,10 +2482,8 @@ const handleAcceptGeneratedSql = () => {
 
     const filteredWidgets = widgets.filter(widget => widget && widget.id);
 
-        
     return (
         <div className="flex flex-col h-full overflow-hidden">
-            {/* Unified Widget Builder for both Add and Edit */}
             <WidgetBuilder
                 isOpen={isAddCustomWidgetModalOpen || isEditWidgetModalOpen}
                 onClose={() => {
@@ -2569,7 +2512,6 @@ const handleAcceptGeneratedSql = () => {
 
             {contextMenu.visible && <WidgetContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu({visible: false})} onSelect={handleContextMenuSelect} />}
 
-            {/* Header */}
             <div className="flex items-center justify-between border-b theme-border px-2 py-1.5 flex-shrink-0">
                 <h3 className="text-xs font-semibold flex items-center gap-1.5">
                     <BarChart3 size={14} className="text-blue-400" />
@@ -2580,9 +2522,7 @@ const handleAcceptGeneratedSql = () => {
                 </button>
             </div>
 
-            {/* Main content */}
             <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-                {/* Stats Grid Widgets - Collapsible */}
                 {(() => {
                     const statsGridWidgets = filteredWidgets.filter(w => w.type === 'stats_grid');
                     if (statsGridWidgets.length === 0) return null;
@@ -2624,7 +2564,6 @@ const handleAcceptGeneratedSql = () => {
                     );
                 })()}
 
-                {/* Stat List Widgets - Collapsible */}
                 {(() => {
                     const statListWidgets = filteredWidgets.filter(w => w.type === 'stat_list');
                     if (statListWidgets.length === 0) return null;
@@ -2653,7 +2592,6 @@ const handleAcceptGeneratedSql = () => {
                     );
                 })()}
 
-                {/* Chart Widgets - Collapsible */}
                 {(() => {
                     const chartWidgets = filteredWidgets.filter(w => w.type === 'line_chart' || w.type === 'bar_chart' || w.type === 'chart');
                     if (chartWidgets.length === 0) return null;
@@ -2682,7 +2620,6 @@ const handleAcceptGeneratedSql = () => {
                     );
                 })()}
 
-                {/* Table/Other Widgets - Collapsible */}
                 {(() => {
                     const otherWidgets = filteredWidgets.filter(w => !['stats_grid', 'stat_list', 'line_chart', 'bar_chart', 'chart'].includes(w.type));
                     if (otherWidgets.length === 0) return null;
@@ -2711,7 +2648,6 @@ const handleAcceptGeneratedSql = () => {
                     );
                 })()}
 
-                {/* Add Widget Button */}
                 <div className="flex items-center justify-center py-1">
                     <button onClick={() => setIsAddCustomWidgetModalOpen(true)} className="theme-button text-xs flex items-center gap-1.5 px-3 py-1 rounded">
                         <Plus size={12}/>

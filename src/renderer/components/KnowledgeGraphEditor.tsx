@@ -18,7 +18,6 @@ interface KnowledgeGraphEditorProps {
 const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = false, onClose }) => {
     const aiEnabled = useAiEnabled();
 
-    // Data state
     const [kgData, setKgData] = useState<{ nodes: any[], links: any[] }>({ nodes: [], links: [] });
     const [kgGenerations, setKgGenerations] = useState<number[]>([]);
     const [currentKgGeneration, setCurrentKgGeneration] = useState<number | null>(null);
@@ -32,27 +31,22 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
     const [selectedKgNode, setSelectedKgNode] = useState<any>(null);
     const graphRef = useRef<any>(null);
 
-    // View tab
     const [activeTab, setActiveTab] = useState<ViewTab>('graph');
 
-    // Quick-add
     const [newNodeName, setNewNodeName] = useState('');
     const [newNodeType, setNewNodeType] = useState<'concept' | 'fact'>('concept');
-    // Edge state (kept for API, UI uses connect mode)
+
     const [newEdgeSource, setNewEdgeSource] = useState('');
     const [newEdgeTarget, setNewEdgeTarget] = useState('');
 
-    // Search state
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<{ facts: any[], concepts: any[] }>({ facts: [], concepts: [] });
     const [isSearching, setIsSearching] = useState(false);
     const [highlightedNodes, setHighlightedNodes] = useState<Set<string>>(new Set());
     const [showSearchResults, setShowSearchResults] = useState(false);
 
-    // Multi-select
     const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
 
-    // KG Schedule state
     const [showSchedulePanel, setShowSchedulePanel] = useState(false);
     const [sleepSchedule, setSleepSchedule] = useState('0 3 * * *');
     const [sleepGuidance, setSleepGuidance] = useState('');
@@ -64,38 +58,31 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
     const [kgScheduleLoading, setKgScheduleLoading] = useState(false);
     const [kgScheduleMsg, setKgScheduleMsg] = useState<string | null>(null);
 
-    // KG Import state
     const [showImportPanel, setShowImportPanel] = useState(false);
     const [importText, setImportText] = useState('');
     const [importGuidance, setImportGuidance] = useState('');
     const [importLoading, setImportLoading] = useState(false);
     const [importMsg, setImportMsg] = useState<string | null>(null);
 
-    // KG Query/Chat state
     const [showQueryPanel, setShowQueryPanel] = useState(false);
     const [queryInput, setQueryInput] = useState('');
     const [queryHistory, setQueryHistory] = useState<{ q: string; a: string; sources: string[] }[]>([]);
     const [queryLoading, setQueryLoading] = useState(false);
 
-    // Table sort + inline edit
     const [tableSortField, setTableSortField] = useState<'name' | 'type' | 'connections'>('connections');
     const [tableSortDir, setTableSortDir] = useState<'asc' | 'desc'>('desc');
     const [tableFilter, setTableFilter] = useState('');
     const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
     const [editingNodeName, setEditingNodeName] = useState('');
 
-    // Tree state
     const [treeRootId, setTreeRootId] = useState<string | null>(null);
     const [treeExpanded, setTreeExpanded] = useState<Set<string>>(new Set());
     const [treeBreadcrumbs, setTreeBreadcrumbs] = useState<string[]>([]);
 
-    // Detail panel
     const [showDetail, setShowDetail] = useState(true);
 
-    // Pending delete confirmation (inline, no native confirm())
     const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
-    // Graph interaction: connect mode + double-click-to-add
     const [connectMode, setConnectMode] = useState(false);
     const [connectSource, setConnectSource] = useState<string | null>(null);
     const [newNodePopup, setNewNodePopup] = useState<{ x: number; y: number } | null>(null);
@@ -103,11 +90,9 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
     const [newNodePopupType, setNewNodePopupType] = useState<'concept' | 'fact'>('concept');
     const lastBgClickTime = useRef(0);
 
-    // Context menu + hover
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; node: any } | null>(null);
     const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
 
-    // Auto-sizing for graph
     const graphContainerRef = useRef<HTMLDivElement>(null);
     const [graphDimensions, setGraphDimensions] = useState({ width: 800, height: 500 });
 
@@ -157,7 +142,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
 
     useEffect(() => { fetchKgData(); }, [fetchKgData]);
 
-    // Escape key handler
     useEffect(() => {
         if (!isModal) return;
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -167,7 +151,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isModal, onClose]);
 
-    // Search
     const handleSearch = useCallback(async () => {
         if (!searchQuery.trim()) {
             setSearchResults({ facts: [], concepts: [] });
@@ -202,7 +185,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         setShowSearchResults(false);
     }, []);
 
-    // Processed graph data
     const processedGraphData = useMemo(() => {
         let sourceNodes: any[] = [];
         let sourceLinks: any[] = [];
@@ -225,10 +207,8 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         return { nodes: sourceNodes, links: sourceLinks };
     }, [kgData, kgViewMode, kgNodeFilter, networkStats, cooccurrenceData]);
 
-    // All node names for autocomplete
     const allNodeNames = useMemo(() => processedGraphData.nodes.map((n: any) => n.id), [processedGraphData]);
 
-    // Node degree map
     const nodeDegreeMap = useMemo(() => {
         const map: Record<string, number> = {};
         processedGraphData.links.forEach((l: any) => {
@@ -240,7 +220,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         return map;
     }, [processedGraphData]);
 
-    // Adjacency map for tree view
     const adjacencyMap = useMemo(() => {
         const map: Record<string, string[]> = {};
         processedGraphData.links.forEach((l: any) => {
@@ -256,7 +235,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         return map;
     }, [processedGraphData]);
 
-    // Connected components for tree view
     const connectedComponents = useMemo(() => {
         const visited = new Set<string>();
         const components: { root: string; nodes: string[] }[] = [];
@@ -278,7 +256,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         return components.sort((a, b) => b.nodes.length - a.nodes.length);
     }, [processedGraphData, adjacencyMap, nodeDegreeMap]);
 
-    // Community grouping
     const communityGroups = useMemo(() => {
         const groups: Record<string, any[]> = {};
         processedGraphData.nodes.forEach((n: any) => {
@@ -289,7 +266,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         return groups;
     }, [processedGraphData]);
 
-    // Graph rendering
     const getNodeColor = useCallback((node: any) => {
         if (selectedNodeIds.has(node.id)) return '#f59e0b';
         if (highlightedNodes.size > 0 && highlightedNodes.has(node.id)) return '#22c55e';
@@ -315,13 +291,11 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
 
     const getLinkWidth = useCallback((link: any) => (link.weight ? Math.min(5, link.weight / 2) : 1), []);
 
-    // Draw node labels on graph
     const nodeCanvasObject = useCallback((node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
         const label = node.id;
         const size = getNodeSize(node);
         const color = connectSource === node.id ? '#f97316' : selectedKgNode?.id === node.id ? '#f59e0b' : getNodeColor(node);
 
-        // Hover: dim non-neighbors
         const isHovered = hoveredNodeId === node.id;
         const isHoverNeighbor = hoveredNodeId ? (adjacencyMap[hoveredNodeId] || []).includes(node.id) : false;
         const isImportant = highlightedNodes.has(node.id) || selectedKgNode?.id === node.id || selectedNodeIds.has(node.id) || isHovered;
@@ -329,19 +303,17 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
             ctx.globalAlpha = 0.15;
         }
 
-        // Draw node circle
         ctx.beginPath();
         ctx.arc(node.x, node.y, size, 0, 2 * Math.PI, false);
         ctx.fillStyle = color;
         ctx.fill();
 
-        // Concept nodes get a ring
         if (node.type === 'concept') {
             ctx.strokeStyle = 'rgba(255,255,255,0.4)';
             ctx.lineWidth = 1;
             ctx.stroke();
         }
-        // Hovered node gets a white ring
+
         if (isHovered) {
             ctx.beginPath();
             ctx.arc(node.x, node.y, size + 3, 0, 2 * Math.PI, false);
@@ -349,7 +321,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
             ctx.lineWidth = 1.5;
             ctx.stroke();
         }
-        // Connect source gets an orange ring
+
         if (connectSource === node.id) {
             ctx.beginPath();
             ctx.arc(node.x, node.y, size + 3, 0, 2 * Math.PI, false);
@@ -358,7 +330,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
             ctx.stroke();
         }
 
-        // Draw label when important or zoomed in
         if (isImportant || globalScale > 3.5) {
             const fontSize = Math.max(10, 12 / globalScale);
             ctx.font = `${fontSize}px monospace`;
@@ -378,7 +349,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         ctx.globalAlpha = 1;
     }, [getNodeColor, getNodeSize, highlightedNodes, selectedKgNode, selectedNodeIds, connectSource, hoveredNodeId, adjacencyMap]);
 
-    // KG Ingest handler
     const handleIngestText = async () => {
         if (!importText.trim()) return;
         setImportLoading(true);
@@ -452,7 +422,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         }
     };
 
-    // KG Query handler
     const handleQueryKg = async () => {
         if (!queryInput.trim()) return;
         const q = queryInput.trim();
@@ -491,7 +460,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
             setSleepJobActive(sleepStatus && !sleepStatus.error ? (sleepStatus.active ?? false) : false);
             const dreamStatus = await (window as any).api?.jobStatus?.('kg_dream');
             setDreamJobActive(dreamStatus && !dreamStatus.error ? (dreamStatus.active ?? false) : false);
-        } catch { /* ignore */ }
+        } catch {  }
     }, []);
 
     useEffect(() => {
@@ -545,7 +514,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         }
     };
 
-    // Actions
     const handleKgProcessTrigger = async (type: string) => {
         setKgLoading(true);
         setKgError(null);
@@ -649,7 +617,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         }
     };
 
-    // Add node from double-click popup
     const handlePopupAddNode = async () => {
         if (!newNodePopupName.trim()) return;
         setKgLoading(true);
@@ -665,7 +632,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         }
     };
 
-    // Double-click on graph background → add node popup
     const handleBackgroundClick = useCallback((event: MouseEvent) => {
         setContextMenu(null);
         if (connectMode) {
@@ -687,7 +653,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         }
     }, [connectMode]);
 
-    // Keyboard shortcuts
     useEffect(() => {
         const handleKey = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
@@ -695,7 +660,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                 else if (newNodePopup) setNewNodePopup(null);
                 else if (connectMode) { setConnectMode(false); setConnectSource(null); }
             }
-            // Delete key for selected node (not when typing in input)
+
             if ((e.key === 'Delete' || (e.key === 'Backspace' && !e.metaKey)) && selectedKgNode && !editingNodeId) {
                 const tag = (document.activeElement as HTMLElement)?.tagName;
                 if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
@@ -742,7 +707,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         }
     }, [connectMode, connectSource, fetchKgData, currentKgGeneration]);
 
-    // Right-click context menu
     const handleNodeRightClick = useCallback((node: any, event: MouseEvent) => {
         event.preventDefault();
         const rect = graphContainerRef.current?.getBoundingClientRect();
@@ -751,17 +715,14 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         }
     }, []);
 
-    // Hover handler
     const handleNodeHover = useCallback((node: any | null) => {
         setHoveredNodeId(node ? node.id : null);
     }, []);
 
-    // Zoom controls
     const handleZoomIn = useCallback(() => graphRef.current?.zoom(graphRef.current.zoom() * 1.5, 300), []);
     const handleZoomOut = useCallback(() => graphRef.current?.zoom(graphRef.current.zoom() / 1.5, 300), []);
     const handleZoomFit = useCallback(() => graphRef.current?.zoomToFit(400, 40), []);
 
-    // Center graph on a node
     const centerOnNode = useCallback((nodeId: string) => {
         const node = processedGraphData.nodes.find((n: any) => n.id === nodeId);
         if (node && graphRef.current) {
@@ -782,7 +743,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         }
     };
 
-    // Table data
     const tableData = useMemo(() => {
         let nodes = processedGraphData.nodes.map((n: any) => ({
             ...n,
@@ -817,7 +777,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         });
     };
 
-    // Inline delete confirmation widget
     const DeleteConfirm = ({ nodeId, onConfirm, onCancel }: { nodeId: string; onConfirm: () => void; onCancel: () => void }) => (
         <span className="inline-flex items-center gap-1 ml-1">
             <span className="text-[10px] text-red-400">Delete?</span>
@@ -826,7 +785,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         </span>
     );
 
-    // Tab bar
     const tabs: { id: ViewTab; label: string; icon: React.ReactNode }[] = [
         { id: 'graph', label: 'Graph', icon: <Network size={14} /> },
         { id: 'table', label: 'Table', icon: <Table2 size={14} /> },
@@ -834,7 +792,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         { id: 'groups', label: 'Groups', icon: <LayoutGrid size={14} /> },
     ];
 
-    // Tree node recursion
     const renderTreeNode = (nodeId: string, depth: number, visited: Set<string>) => {
         if (visited.has(nodeId)) return null;
         visited.add(nodeId);
@@ -894,7 +851,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         );
     };
 
-    // Selected node detail panel
     const renderNodeDetail = () => {
         if (!selectedKgNode) return (
             <div className="text-xs theme-text-muted text-center py-6 italic">
@@ -940,7 +896,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                     </button>
                 </div>
 
-                {/* Delete button */}
                 {pendingDelete === selectedKgNode.id ? (
                     <div className="flex items-center gap-2 mb-3">
                         <span className="text-xs text-red-400">Delete this node?</span>
@@ -956,7 +911,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                     </button>
                 )}
 
-                {/* Connections */}
                 <div className="border-t theme-border pt-2">
                     <h6 className="text-xs theme-text-muted font-semibold mb-2">
                         Connections ({outgoing.length + incoming.length})
@@ -1017,7 +971,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         );
     };
 
-    // Empty state
     const renderEmptyState = () => (
         <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
             <GitBranch className="text-green-400/30" size={48} />
@@ -1038,19 +991,16 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         </div>
     );
 
-    // Datalist for edge autocomplete
     const nodeDatalist = (
         <datalist id="kg-node-names">
             {allNodeNames.map(name => <option key={name} value={name} />)}
         </datalist>
     );
 
-    // --- Main content ---
     const content = (
         <div className="flex flex-col h-full theme-bg-primary">
             {nodeDatalist}
 
-            {/* Header */}
             <div className="flex items-center justify-between px-3 py-1.5 border-b theme-border flex-shrink-0">
                 <h4 className="text-sm font-semibold flex items-center gap-2 theme-text-primary">
                     <GitBranch className="text-green-400" size={16} />Knowledge Graph
@@ -1102,10 +1052,8 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                 </div>
             </div>
 
-            {/* Schedule panel (collapsible) */}
             {showSchedulePanel && (
                 <div className="px-3 py-2 border-b theme-border flex-shrink-0 space-y-3 bg-gray-900/50">
-                    {/* Sleep schedule */}
                     <div className="flex items-start gap-3">
                         <div className="flex-1 space-y-1.5">
                             <div className="flex items-center gap-2">
@@ -1142,7 +1090,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                         </div>
                     </div>
 
-                    {/* Dream schedule */}
                     <div className="flex items-start gap-3">
                         <div className="flex-1 space-y-1.5">
                             <div className="flex items-center gap-2">
@@ -1183,7 +1130,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                 </div>
             )}
 
-            {/* Import panel (collapsible) */}
             {showImportPanel && (
                 <div className="px-3 py-2 border-b theme-border flex-shrink-0 space-y-2 bg-blue-950/20">
                     <div className="flex items-center justify-between">
@@ -1230,13 +1176,11 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                 </div>
             )}
 
-            {/* Query/Chat panel (collapsible) */}
             {showQueryPanel && (
                 <div className="px-3 py-2 border-b theme-border flex-shrink-0 bg-purple-950/20" style={{ maxHeight: '40%', display: 'flex', flexDirection: 'column' }}>
                     <span className="text-xs font-semibold text-white flex items-center gap-1.5 mb-2">
                         <MessageSquare size={12} className="text-purple-400" /> Ask the Knowledge Graph
                     </span>
-                    {/* Chat history */}
                     <div className="flex-1 overflow-y-auto space-y-2 mb-2 min-h-0" style={{ maxHeight: '200px' }}>
                         {queryHistory.length === 0 && (
                             <div className="text-[11px] text-gray-500 italic">Ask a question about your knowledge graph data...</div>
@@ -1255,7 +1199,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                             </div>
                         ))}
                     </div>
-                    {/* Input */}
                     <div className="flex items-center gap-1.5">
                         <input
                             type="text"
@@ -1276,9 +1219,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                 </div>
             )}
 
-            {/* Toolbar: add + search */}
             <div className="flex items-center gap-2 px-3 py-1.5 border-b theme-border flex-shrink-0">
-                {/* Quick-add node */}
                 <div className="flex items-center gap-1">
                     <input
                         type="text"
@@ -1304,7 +1245,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                     ><Plus size={14} /></button>
                 </div>
 
-                {/* Connect mode: click two nodes to link them */}
                 <button
                     onClick={() => { setConnectMode(!connectMode); setConnectSource(null); }}
                     className={`p-1 rounded text-xs flex items-center gap-1 border transition-colors ${
@@ -1323,7 +1263,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
 
                 <div className="flex-1" />
 
-                {/* Bulk actions */}
                 {selectedNodeIds.size > 0 && (
                     <div className="flex items-center gap-2">
                         <span className="text-xs theme-text-muted">{selectedNodeIds.size} selected</span>
@@ -1332,7 +1271,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                     </div>
                 )}
 
-                {/* Search */}
                 <div className="flex items-center gap-1">
                     <div className="relative">
                         <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 theme-text-muted" />
@@ -1351,7 +1289,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                 </div>
             </div>
 
-            {/* Search results */}
             {showSearchResults && (searchResults.facts.length > 0 || searchResults.concepts.length > 0) && (
                 <div className="mx-3 mt-1 theme-bg-secondary border theme-border rounded-lg max-h-32 overflow-y-auto flex-shrink-0">
                     <button
@@ -1386,7 +1323,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                 </div>
             )}
 
-            {/* View tabs */}
             <div className="flex items-center gap-1 px-3 py-1 border-b theme-border flex-shrink-0">
                 {tabs.map(tab => (
                     <button
@@ -1417,7 +1353,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
 
             {kgError && <div className="text-red-400 text-center text-xs py-1.5 px-3 flex-shrink-0">{kgError}</div>}
 
-            {/* Main view */}
             {kgLoading ? (
                 <div className="flex-1 flex items-center justify-center">
                     <Loader className="animate-spin text-green-400" size={32} />
@@ -1426,9 +1361,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                 renderEmptyState()
             ) : (
                 <div className="flex-1 flex overflow-hidden">
-                    {/* View content */}
                     <div className="flex-1 overflow-auto">
-                        {/* GRAPH VIEW */}
                         {activeTab === 'graph' && (
                             <div ref={graphContainerRef} className="w-full h-full relative">
                                 <ForceGraph2D
@@ -1460,7 +1393,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                                     height={graphDimensions.height}
                                     backgroundColor="transparent"
                                 />
-                                {/* Right-click context menu */}
                                 {contextMenu && (
                                     <div
                                         className="absolute z-30 theme-bg-secondary border theme-border rounded-lg shadow-xl py-1 min-w-[140px]"
@@ -1486,19 +1418,16 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                                         ><Trash2 size={12} /> Delete</button>
                                     </div>
                                 )}
-                                {/* Zoom controls */}
                                 <div className="absolute bottom-3 right-3 flex flex-col gap-1 z-10">
                                     <button onClick={handleZoomIn} className="p-1.5 theme-bg-secondary/80 border theme-border rounded hover:theme-bg-hover backdrop-blur-sm" title="Zoom in"><ZoomIn size={14} className="theme-text-muted" /></button>
                                     <button onClick={handleZoomOut} className="p-1.5 theme-bg-secondary/80 border theme-border rounded hover:theme-bg-hover backdrop-blur-sm" title="Zoom out"><Minus size={14} className="theme-text-muted" /></button>
                                     <button onClick={handleZoomFit} className="p-1.5 theme-bg-secondary/80 border theme-border rounded hover:theme-bg-hover backdrop-blur-sm" title="Fit all"><Maximize2 size={14} className="theme-text-muted" /></button>
                                 </div>
-                                {/* Hint */}
                                 {!connectMode && !newNodePopup && !contextMenu && processedGraphData.nodes.length > 0 && (
                                     <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-[10px] theme-text-muted/50 pointer-events-none select-none">
                                         Double-click to add node · Right-click for options · Shift+click to multi-select
                                     </div>
                                 )}
-                                {/* Connect mode overlay */}
                                 {connectMode && (
                                     <div className="absolute top-2 left-1/2 -translate-x-1/2 px-3 py-1 bg-orange-500/20 border border-orange-500/50 rounded-full text-xs text-orange-400 z-10 pointer-events-none">
                                         {connectSource
@@ -1506,7 +1435,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                                             : 'Click first node to start connection'}
                                     </div>
                                 )}
-                                {/* Double-click popup for adding node */}
                                 {newNodePopup && (
                                     <div
                                         className="absolute z-20 theme-bg-secondary border theme-border rounded-lg shadow-xl p-2"
@@ -1546,7 +1474,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                             </div>
                         )}
 
-                        {/* TABLE VIEW */}
                         {activeTab === 'table' && (
                             <div className="p-3">
                                 <div className="mb-2">
@@ -1622,7 +1549,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                                                                     onChange={(e) => setEditingNodeName(e.target.value)}
                                                                     onKeyDown={(e) => {
                                                                         if (e.key === 'Enter') {
-                                                                            // TODO: rename via API when supported
+
                                                                             setEditingNodeId(null);
                                                                         } else if (e.key === 'Escape') {
                                                                             setEditingNodeId(null);
@@ -1674,7 +1601,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                             </div>
                         )}
 
-                        {/* TREE VIEW */}
                         {activeTab === 'tree' && (
                             <div className="p-3">
                                 {treeRootId && treeBreadcrumbs.length > 0 && (
@@ -1723,7 +1649,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                             </div>
                         )}
 
-                        {/* GROUPS VIEW */}
                         {activeTab === 'groups' && (
                             <div className="p-3">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -1776,7 +1701,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                         )}
                     </div>
 
-                    {/* Right sidebar: detail + stats */}
                     {showDetail && (
                         <div className="w-56 flex-shrink-0 border-l theme-border overflow-y-auto p-2.5 space-y-2.5">
                             {renderNodeDetail()}

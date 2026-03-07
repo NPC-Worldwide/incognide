@@ -63,7 +63,6 @@ const ActivityIntelligence: React.FC<ActivityIntelligenceProps> = ({ isModal = f
         loadActivityData();
     }, [loadActivityData]);
 
-    // Escape key handler
     useEffect(() => {
         if (!isModal) return;
         const handleKeyDown = (e: KeyboardEvent) => {

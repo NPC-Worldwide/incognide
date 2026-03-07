@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback, useRef, useMemo, memo } from '
 import { Save, Download, Plus, Trash2, X, Edit, Link, Unlink, Palette, Eye, Edit2, ArrowRight, ArrowLeft, GitBranch, Map, Network, Workflow } from 'lucide-react';
 import ForceGraph2D from 'react-force-graph-2d';
 
-// Map types/archetypes
 type MapType = 'freeform' | 'flowchart' | 'coordinate' | 'hierarchy';
 
 interface MindMapNode {
@@ -12,19 +11,19 @@ interface MindMapNode {
     y: number;
     color: string;
     parentId: string | null;
-    // For coordinate maps - actual geographic or custom coordinates
+
     lat?: number;
     lng?: number;
-    // For flowchart - node type
+
     nodeType?: 'start' | 'end' | 'process' | 'decision' | 'default';
-    // For hierarchy - level
+
     level?: number;
 }
 
 interface MindMapLink {
     source: string;
     target: string;
-    label?: string; // For flowchart - edge labels like "yes"/"no"
+    label?: string;
 }
 
 interface MindMapData {
@@ -32,7 +31,7 @@ interface MindMapData {
     mapType: MapType;
     nodes: MindMapNode[];
     links: MindMapLink[];
-    // For coordinate maps - bounds
+
     bounds?: { minLat: number; maxLat: number; minLng: number; maxLng: number };
 }
 
@@ -65,7 +64,7 @@ const MindMapViewer = ({
     const [hasChanges, setHasChanges] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [linkMode, setLinkMode] = useState<{ active: boolean; sourceId: string | null }>({ active: false, sourceId: null });
-    const [isEditMode, setIsEditMode] = useState(true); // Default to edit mode for new maps
+    const [isEditMode, setIsEditMode] = useState(true);
     const [pendingNodePosition, setPendingNodePosition] = useState<{ x: number; y: number } | null>(null);
     const [showQuickAdd, setShowQuickAdd] = useState(false);
     const [quickAddLabel, setQuickAddLabel] = useState('');
@@ -76,13 +75,12 @@ const MindMapViewer = ({
     const paneData = contentDataRef.current[nodeId];
     const filePath = paneData?.contentId;
 
-    // Load mind map from file - supports both .mapx (YAML) and .mindmap (JSON)
     useEffect(() => {
         const loadMindMap = async () => {
             if (!filePath) return;
 
             try {
-                // Try loading via backend API first (handles YAML .mapx files)
+
                 if (filePath.endsWith('.mapx')) {
                     const response = await (window as any).api?.loadMap?.(filePath);
                     if (response && !response.error) {
@@ -94,11 +92,10 @@ const MindMapViewer = ({
                     }
                 }
 
-                // Fallback: load as JSON (for .mindmap files or if API fails)
                 const response = await (window as any).api?.readFile?.(filePath);
                 if (response && !response.error) {
                     const content = response.content || response;
-                    // Try parsing as JSON first
+
                     try {
                         const data: MindMapData = JSON.parse(content);
                         setMapName(data.name || 'Untitled Mind Map');
@@ -106,7 +103,7 @@ const MindMapViewer = ({
                         setNodes(data.nodes || []);
                         setLinks(data.links || []);
                     } catch {
-                        // If JSON parse fails, it might be YAML - backend will handle conversion
+
                         console.log('File may be YAML format, attempting backend load');
                     }
                 }
@@ -117,7 +114,6 @@ const MindMapViewer = ({
         loadMindMap();
     }, [filePath]);
 
-    // Save mind map - uses backend API for .mapx (YAML), direct write for .mindmap (JSON)
     const saveMindMap = useCallback(async () => {
         if (!filePath) return;
         setIsSaving(true);
@@ -125,12 +121,11 @@ const MindMapViewer = ({
         try {
             const data: MindMapData = { name: mapName, mapType, nodes, links };
 
-            // For .mapx files, use backend API which will save as YAML
             if (filePath.endsWith('.mapx')) {
                 const response = await (window as any).api?.saveMap?.({
                     map: data,
                     filePath,
-                    // YAML structure for npcpy processing
+
                     yaml_format: {
                         map_name: mapName,
                         map_type: mapType,
@@ -155,11 +150,11 @@ const MindMapViewer = ({
 
                 if (response?.error) {
                     console.error('Error saving map via API:', response.error);
-                    // Fallback to local JSON save
+
                     await (window as any).api?.writeFile?.(filePath, JSON.stringify(data, null, 2));
                 }
             } else {
-                // For .mindmap files, save as JSON directly
+
                 await (window as any).api?.writeFile?.(filePath, JSON.stringify(data, null, 2));
             }
 
@@ -171,7 +166,6 @@ const MindMapViewer = ({
         }
     }, [filePath, mapName, mapType, nodes, links]);
 
-    // Handle double-click on canvas to add node
     const handleCanvasDoubleClick = useCallback((event: React.MouseEvent) => {
         if (!isEditMode) return;
 
@@ -182,13 +176,11 @@ const MindMapViewer = ({
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;
 
-        // Store position and show quick add dialog
         setPendingNodePosition({ x, y });
         setShowQuickAdd(true);
         setQuickAddLabel('');
     }, [isEditMode]);
 
-    // Quick add node at position
     const handleQuickAddNode = useCallback(() => {
         if (!quickAddLabel.trim() || !pendingNodePosition) return;
 
@@ -201,13 +193,12 @@ const MindMapViewer = ({
             x: pendingNodePosition.x,
             y: pendingNodePosition.y,
             color,
-            parentId: selectedNode, // If a node is selected, make it parent
+            parentId: selectedNode,
             level: selectedNode ? (nodes.find(n => n.id === selectedNode)?.level || 0) + 1 : 0,
         };
 
         setNodes(prev => [...prev, newNode]);
 
-        // Auto-link to selected node if one exists
         if (selectedNode) {
             setLinks(prev => [...prev, { source: selectedNode, target: id }]);
         }
@@ -219,7 +210,6 @@ const MindMapViewer = ({
         setHasChanges(true);
     }, [quickAddLabel, pendingNodePosition, selectedNode, nodes]);
 
-    // Handle right-click on canvas
     const handleCanvasContextMenu = useCallback((event: React.MouseEvent) => {
         event.preventDefault();
         if (!isEditMode) return;
@@ -239,7 +229,6 @@ const MindMapViewer = ({
         });
     }, [isEditMode]);
 
-    // Handle right-click on node (from ForceGraph)
     const handleNodeRightClick = useCallback((node: any, event: MouseEvent) => {
         event.preventDefault();
         if (!isEditMode) return;
@@ -251,7 +240,6 @@ const MindMapViewer = ({
         });
     }, [isEditMode]);
 
-    // Add node from context menu at specific position
     const handleContextMenuAddNode = useCallback((connectToSelected: boolean = false) => {
         if (!contextMenu) return;
 
@@ -284,7 +272,6 @@ const MindMapViewer = ({
         setHasChanges(true);
     }, [contextMenu, selectedNode, nodes]);
 
-    // Add connected node from a specific node
     const handleAddConnectedNode = useCallback(() => {
         if (!contextMenu?.nodeId) return;
 
@@ -294,7 +281,6 @@ const MindMapViewer = ({
         const id = `node_${Date.now()}`;
         const color = NODE_COLORS[nodes.length % NODE_COLORS.length];
 
-        // Position new node relative to parent
         const childCount = links.filter(l => l.source === contextMenu.nodeId).length;
         const angle = (childCount * 60 + 30) * (Math.PI / 180);
         const x = parentNode.x + Math.cos(angle) * 150;
@@ -320,14 +306,12 @@ const MindMapViewer = ({
         setHasChanges(true);
     }, [contextMenu, nodes, links]);
 
-    // Start linking from context menu node
     const handleStartLinking = useCallback(() => {
         if (!contextMenu?.nodeId) return;
         setLinkMode({ active: true, sourceId: contextMenu.nodeId });
         setContextMenu(null);
     }, [contextMenu]);
 
-    // Add node
     const handleAddNode = useCallback((parentId: string | null = null) => {
         if (!newNodeLabel.trim()) return;
         const id = `node_${Date.now()}`;
@@ -359,7 +343,6 @@ const MindMapViewer = ({
         setHasChanges(true);
     }, [newNodeLabel, nodes, links]);
 
-    // Delete node and descendants
     const handleDeleteNode = useCallback((nodeId: string) => {
         const getDescendants = (id: string): string[] => {
             const children = links.filter(l => l.source === id).map(l => l.target);
@@ -375,13 +358,11 @@ const MindMapViewer = ({
         setHasChanges(true);
     }, [links, selectedNode]);
 
-    // Update node
     const handleUpdateNode = useCallback((nodeId: string, updates: Partial<MindMapNode>) => {
         setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, ...updates } : n));
         setHasChanges(true);
     }, []);
 
-    // Start editing node label
     const startEditingNode = useCallback((nodeId: string) => {
         const node = nodes.find(n => n.id === nodeId);
         if (node) {
@@ -390,7 +371,6 @@ const MindMapViewer = ({
         }
     }, [nodes]);
 
-    // Save edited label
     const saveEditedLabel = useCallback(() => {
         if (editingNode && editLabel.trim()) {
             handleUpdateNode(editingNode, { label: editLabel.trim() });
@@ -399,24 +379,23 @@ const MindMapViewer = ({
         setEditLabel('');
     }, [editingNode, editLabel, handleUpdateNode]);
 
-    // Add/remove link between nodes
     const handleLinkClick = useCallback((nodeId: string) => {
         if (!linkMode.active) return;
 
         if (!linkMode.sourceId) {
             setLinkMode({ active: true, sourceId: nodeId });
         } else if (linkMode.sourceId !== nodeId) {
-            // Check if link already exists
+
             const existingLink = links.find(l =>
                 (l.source === linkMode.sourceId && l.target === nodeId) ||
                 (l.source === nodeId && l.target === linkMode.sourceId)
             );
 
             if (existingLink) {
-                // Remove link
+
                 setLinks(prev => prev.filter(l => l !== existingLink));
             } else {
-                // Add link
+
                 setLinks(prev => [...prev, { source: linkMode.sourceId!, target: nodeId }]);
             }
             setLinkMode({ active: false, sourceId: null });
@@ -424,20 +403,17 @@ const MindMapViewer = ({
         }
     }, [linkMode, links]);
 
-    // Remove a specific link
     const handleRemoveLink = useCallback((sourceId: string, targetId: string) => {
         setLinks(prev => prev.filter(l => !(l.source === sourceId && l.target === targetId)));
         setHasChanges(true);
     }, []);
 
-    // Get edges for a selected node (both incoming and outgoing)
     const getNodeEdges = useCallback((nodeId: string) => {
         const outgoing = links.filter(l => l.source === nodeId);
         const incoming = links.filter(l => l.target === nodeId);
         return { outgoing, incoming };
     }, [links]);
 
-    // Graph data
     const graphData = useMemo(() => ({
         nodes: nodes.map(n => ({ ...n, val: n.parentId ? 6 : 10 })),
         links: links.map(l => ({ ...l }))
@@ -448,7 +424,6 @@ const MindMapViewer = ({
 
     return (
         <div className="h-full flex flex-col bg-gray-900">
-            {/* Toolbar */}
             <div className="flex-shrink-0 border-b border-gray-700 p-2 flex items-center gap-2 bg-gray-800">
                 <input
                     type="text"
@@ -457,7 +432,6 @@ const MindMapViewer = ({
                     className="px-2 py-1 text-sm bg-gray-700 text-white border border-gray-600 rounded focus:border-cyan-500 focus:outline-none w-40"
                 />
                 <div className="h-4 w-px bg-gray-600" />
-                {/* Map Type Selector */}
                 <select
                     value={mapType}
                     onChange={(e) => { setMapType(e.target.value as MapType); setHasChanges(true); }}
@@ -478,7 +452,6 @@ const MindMapViewer = ({
                     <Save size={18} />
                 </button>
                 <div className="h-4 w-px bg-gray-600" />
-                {/* View/Edit mode toggle */}
                 <div className="flex items-center gap-1 px-1 py-0.5 bg-gray-800 rounded border border-gray-600">
                     <button
                         onClick={() => setIsEditMode(false)}
@@ -516,11 +489,8 @@ const MindMapViewer = ({
                 </button>
             </div>
 
-            {/* Main content */}
             <div className="flex-1 flex">
-                {/* Sidebar */}
                 <div className="w-64 border-r border-gray-700 p-3 flex flex-col gap-3 bg-gray-800/50">
-                    {/* Map Type Info */}
                     <div className="border border-gray-700 rounded-lg p-2 bg-gray-900/50">
                         <div className="flex items-center gap-2 mb-1">
                             {(() => {
@@ -538,7 +508,6 @@ const MindMapViewer = ({
                         )}
                     </div>
 
-                    {/* Add node - only in edit mode */}
                     {isEditMode && (
                         <div>
                             <label className="text-xs text-gray-400 mb-1 block">Add Node (or double-click canvas)</label>
@@ -563,7 +532,6 @@ const MindMapViewer = ({
                         </div>
                     )}
 
-                    {/* Selected node info */}
                     {selectedNodeData && (
                         <div className="border border-gray-700 rounded-lg p-2 bg-gray-900/50">
                             <div className="flex items-center justify-between mb-2">
@@ -589,7 +557,6 @@ const MindMapViewer = ({
                                 <p className="text-sm text-white mb-2 truncate" title={selectedNodeData.label}>{selectedNodeData.label}</p>
                             )}
 
-                            {/* Edit mode actions */}
                             {isEditMode && (
                                 <>
                                     <div className="flex gap-1 mb-2">
@@ -608,7 +575,6 @@ const MindMapViewer = ({
                                         </button>
                                     </div>
 
-                                    {/* Color picker */}
                                     <div className="mb-2">
                                         <label className="text-xs text-gray-400 mb-1 block">Color</label>
                                         <div className="flex gap-1 flex-wrap">
@@ -625,7 +591,6 @@ const MindMapViewer = ({
                                 </>
                             )}
 
-                            {/* Node properties (always visible) */}
                             <div className="border-t border-gray-700 pt-2 mt-2">
                                 <label className="text-xs text-gray-400 mb-1 block">Properties</label>
                                 <div className="text-xs space-y-0.5">
@@ -638,13 +603,11 @@ const MindMapViewer = ({
                                 </div>
                             </div>
 
-                            {/* Edges section */}
                             <div className="border-t border-gray-700 pt-2 mt-2">
                                 <label className="text-xs text-gray-400 mb-1 block">
                                     Connections ({selectedNodeEdges.outgoing.length + selectedNodeEdges.incoming.length})
                                 </label>
 
-                                {/* Outgoing links */}
                                 {selectedNodeEdges.outgoing.length > 0 && (
                                     <div className="mb-2">
                                         <span className="text-[10px] text-gray-500 flex items-center gap-1 mb-1"><ArrowRight size={10} /> Outgoing</span>
@@ -671,7 +634,6 @@ const MindMapViewer = ({
                                     </div>
                                 )}
 
-                                {/* Incoming links */}
                                 {selectedNodeEdges.incoming.length > 0 && (
                                     <div>
                                         <span className="text-[10px] text-gray-500 flex items-center gap-1 mb-1"><ArrowLeft size={10} /> Incoming</span>
@@ -705,7 +667,6 @@ const MindMapViewer = ({
                         </div>
                     )}
 
-                    {/* Link mode indicator */}
                     {linkMode.active && (
                         <div className="border border-cyan-600 rounded-lg p-2 bg-cyan-900/30">
                             <p className="text-xs text-cyan-400">
@@ -722,7 +683,6 @@ const MindMapViewer = ({
                         </div>
                     )}
 
-                    {/* Node list */}
                     <div className="flex-1 overflow-y-auto">
                         <label className="text-xs text-gray-400 mb-1 block">All Nodes ({nodes.length})</label>
                         <div className="space-y-1">
@@ -742,7 +702,6 @@ const MindMapViewer = ({
                     </div>
                 </div>
 
-                {/* Graph canvas */}
                 <div
                     ref={containerRef}
                     className="flex-1 bg-gray-900 relative"
@@ -818,7 +777,6 @@ const MindMapViewer = ({
                         />
                     )}
 
-                    {/* Quick Add Node Popup */}
                     {showQuickAdd && pendingNodePosition && (
                         <div
                             className="absolute bg-gray-800 border border-cyan-500 rounded-lg shadow-xl p-3 z-50"
@@ -872,7 +830,6 @@ const MindMapViewer = ({
                         </div>
                     )}
 
-                    {/* Right-click Context Menu */}
                     {contextMenu && (
                         <>
                             <div
@@ -884,7 +841,7 @@ const MindMapViewer = ({
                                 style={{ top: contextMenu.y, left: contextMenu.x }}
                             >
                                 {contextMenu.nodeId ? (
-                                    // Node context menu
+
                                     <>
                                         <div className="px-3 py-1 text-[10px] text-gray-500 border-b border-gray-700">
                                             Node: {nodes.find(n => n.id === contextMenu.nodeId)?.label}
@@ -926,7 +883,7 @@ const MindMapViewer = ({
                                         </button>
                                     </>
                                 ) : (
-                                    // Canvas context menu
+
                                     <>
                                         <button
                                             onClick={() => handleContextMenuAddNode(false)}
@@ -955,7 +912,6 @@ const MindMapViewer = ({
     );
 };
 
-// Custom comparison to prevent reload on pane resize
 const arePropsEqual = (prevProps: any, nextProps: any) => {
     return prevProps.nodeId === nextProps.nodeId;
 };

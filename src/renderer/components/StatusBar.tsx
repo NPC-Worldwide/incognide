@@ -3,7 +3,7 @@ import {
     MessageSquare, Terminal, Globe, FileText, File as FileIcon,
     BrainCircuit, Clock, Bot, Zap, Users, Database, ChevronRight, ChevronDown,
     GitBranch, Image, BarChart3, AlertCircle, RefreshCw, Check, Columns, Layers,
-    Activity
+    Activity, Server
 } from 'lucide-react';
 import MemoryIcon from './MemoryIcon';
 import { useAiEnabled } from './AiFeatureContext';
@@ -16,39 +16,41 @@ interface PaneItem {
 }
 
 interface StatusBarProps {
-    // DB Tool (left side)
+
     createDBToolPane?: () => void;
-    // Team Management (right side now)
+
     createTeamManagementPane?: () => void;
-    // Panes
+
+    createMcpManagerPane?: () => void;
+
     paneItems: PaneItem[];
     setActiveContentPaneId: (id: string) => void;
-    // Memory
+
     pendingMemoryCount?: number;
     createMemoryManagerPane?: () => void;
-    // Knowledge Graph
+
     kgGeneration?: number | null;
     kgScheduleEnabled?: boolean;
     createGraphViewerPane?: () => void;
-    // NPCs and Jinxs
+
     createNPCTeamPane?: () => void;
     createJinxPane?: () => void;
-    // Resizable height
+
     height?: number;
     onStartResize?: () => void;
-    // Sidebar collapse
+
     sidebarCollapsed?: boolean;
     onExpandSidebar?: () => void;
-    // Top bar collapse (kept for interface but not used in StatusBar anymore)
+
     topBarCollapsed?: boolean;
     onExpandTopBar?: () => void;
-    // Update checking
+
     appVersion?: string;
     updateAvailable?: { latestVersion: string; releaseUrl: string } | null;
     onCheckForUpdates?: () => Promise<void>;
-    // Collapse
+
     onCollapse?: () => void;
-    // Open mode (pane vs tab)
+
     openMode?: 'pane' | 'tab';
     onToggleOpenMode?: () => void;
 }
@@ -58,6 +60,7 @@ type BackendStatus = 'ok' | 'unhealthy' | 'unreachable' | 'restarting' | 'unknow
 const StatusBar: React.FC<StatusBarProps> = ({
     createDBToolPane,
     createTeamManagementPane,
+    createMcpManagerPane,
     paneItems,
     setActiveContentPaneId,
     pendingMemoryCount = 0,
@@ -83,7 +86,6 @@ const StatusBar: React.FC<StatusBarProps> = ({
     const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
     const [showBackendMenu, setShowBackendMenu] = useState(false);
 
-    // Backend health state
     const [backendStatus, setBackendStatus] = useState<BackendStatus>('unknown');
     const [backendPid, setBackendPid] = useState<number | null>(null);
     const [failCount, setFailCount] = useState(0);
@@ -157,7 +159,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
     const handleCheckUpdates = async () => {
         if (checkingUpdates || downloadProgress !== null) return;
         if (updateAvailable) {
-            // Download and install in-app
+
             setDownloadProgress(0);
             const cleanup = (window as any).api?.onUpdateDownloadProgress?.((data: any) => {
                 setDownloadProgress(data.progress);
@@ -169,7 +171,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
                 if (result?.success) {
                     setDownloadProgress(100);
                 } else {
-                    // Fallback to external download
+
                     (window as any).api?.browserOpenExternal?.(updateAvailable.releaseUrl);
                     setDownloadProgress(null);
                 }
@@ -185,18 +187,16 @@ const StatusBar: React.FC<StatusBarProps> = ({
         setCheckingUpdates(true);
         try { await onCheckForUpdates(); } finally { setCheckingUpdates(false); }
     };
-    // Common button style - explicit transparent background, only icon colored
+
     const btnClass = "p-2 rounded transition-colors hover:opacity-80 bg-transparent";
 
     return (
         <div className="flex-shrink-0 relative" style={{ height }}>
-            {/* Resize handle for bottom bar */}
             <div
                 className="absolute top-0 left-0 right-0 h-1 cursor-ns-resize hover:bg-blue-500/50 transition-colors z-10"
                 onMouseDown={(e) => { e.preventDefault(); onStartResize?.(); }}
             />
             <div className="h-full theme-bg-tertiary border-t theme-border flex items-center px-3 text-[12px] theme-text-muted gap-2">
-            {/* Expand sidebar button - only when collapsed */}
             {sidebarCollapsed && (
                 <button
                     onClick={() => onExpandSidebar?.()}
@@ -207,7 +207,6 @@ const StatusBar: React.FC<StatusBarProps> = ({
                 </button>
             )}
 
-            {/* Python backend health indicator */}
             <div className="relative group/backend">
                 <div
                     onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setShowBackendMenu(true); }}
@@ -243,8 +242,6 @@ const StatusBar: React.FC<StatusBarProps> = ({
                 )}
             </div>
 
-            {/* Left side - DB, Memory (AI only), KG */}
-            {/* DB Tool button */}
             <button
                 onClick={() => createDBToolPane?.()}
                 className={`${btnClass} text-blue-600 dark:text-blue-400`}
@@ -253,7 +250,6 @@ const StatusBar: React.FC<StatusBarProps> = ({
                 <Database size={20} />
             </button>
 
-            {/* Memory button - AI only */}
             {aiEnabled && (
                 <button
                     onClick={() => createMemoryManagerPane?.()}
@@ -265,7 +261,6 @@ const StatusBar: React.FC<StatusBarProps> = ({
                 </button>
             )}
 
-            {/* KG button */}
             <button
                 data-tutorial="kg-button"
                 onClick={() => createGraphViewerPane?.()}
@@ -289,7 +284,6 @@ const StatusBar: React.FC<StatusBarProps> = ({
 
             <div className="flex-1" />
 
-            {/* Collapse status bar - left of pane dock */}
             {onCollapse && (
                 <button
                     onClick={onCollapse}
@@ -300,7 +294,6 @@ const StatusBar: React.FC<StatusBarProps> = ({
                 </button>
             )}
 
-            {/* Pane Dock - centered */}
             <div className="flex items-center gap-1">
                 {paneItems.map((pane) => (
                     <button
@@ -335,10 +328,8 @@ const StatusBar: React.FC<StatusBarProps> = ({
 
             <div className="flex-1" />
 
-            {/* Right side - NPCs, Jinxs, Team Management (AI only) */}
             {aiEnabled && (
                 <div className="flex items-center gap-1">
-                    {/* NPCs button */}
                     <button
                         data-tutorial="npc-team-button"
                         onClick={() => createNPCTeamPane?.()}
@@ -348,7 +339,6 @@ const StatusBar: React.FC<StatusBarProps> = ({
                         <Bot size={20} />
                     </button>
 
-                    {/* Jinxs button */}
                     <button
                         data-tutorial="jinxs-button"
                         onClick={() => createJinxPane?.()}
@@ -358,7 +348,6 @@ const StatusBar: React.FC<StatusBarProps> = ({
                         <Zap size={20} />
                     </button>
 
-                    {/* Team Management button */}
                     <button
                         data-tutorial="team-management-button"
                         onClick={() => createTeamManagementPane?.()}
@@ -367,10 +356,17 @@ const StatusBar: React.FC<StatusBarProps> = ({
                     >
                         <Users size={20} />
                     </button>
+
+                    <button
+                        onClick={() => createMcpManagerPane?.()}
+                        className={`${btnClass} text-cyan-600 dark:text-cyan-400`}
+                        title="MCP Server Manager"
+                    >
+                        <Server size={20} />
+                    </button>
                 </div>
             )}
 
-            {/* Open mode toggle */}
             {onToggleOpenMode && (
                 <button
                     onClick={onToggleOpenMode}
@@ -381,7 +377,6 @@ const StatusBar: React.FC<StatusBarProps> = ({
                 </button>
             )}
 
-            {/* Update check - far right, icon only, version in tooltip above */}
             <div className="relative group/update">
                 <button
                     onClick={handleCheckUpdates}

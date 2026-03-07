@@ -9,7 +9,6 @@ import {
     MoreHorizontal, Scissors, Clipboard, ClipboardPaste, RotateCcw, Sun, Moon, Check, Pencil
 } from 'lucide-react';
 
-// Font options - comprehensive list
 const FONTS = [
     { name: 'Arial', family: 'Arial, Helvetica, sans-serif' },
     { name: 'Calibri', family: 'Calibri, sans-serif' },
@@ -55,27 +54,22 @@ const TEXT_COLORS = [
     '#e6b8af', '#f4cccc', '#fce5cd', '#fff2cc', '#d9ead3', '#d0e0e3', '#c9daf8', '#cfe2f3', '#d9d2e9', '#ead1dc',
 ];
 
-// Track loaded fonts
 const loadedFonts = new Set<string>();
 
-// Load a Google Font dynamically
 function loadGoogleFont(fontName: string): void {
     if (!fontName || loadedFonts.has(fontName)) return;
     loadedFonts.add(fontName);
 
-    // System fonts don't need loading
     const systemFonts = ['Arial', 'Helvetica', 'Times New Roman', 'Georgia', 'Verdana', 'Courier New', 'Calibri', 'Cambria', 'Comic Sans MS', 'Impact', 'Trebuchet MS'];
     if (systemFonts.includes(fontName)) return;
 
     console.log('[DOCX] Loading font:', fontName);
 
-    // Try to load from Google Fonts by injecting a style tag (works around some CSP issues)
     const style = document.createElement('style');
     style.textContent = `@import url('https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontName)}:wght@300;400;500;600;700&display=swap');`;
     document.head.appendChild(style);
 }
 
-// Global cache for loaded DOCX content - keyed by filePath
 const docxContentCache = new Map<string, {
     html: string;
     fonts?: any;
@@ -83,7 +77,6 @@ const docxContentCache = new Map<string, {
     hasChanges?: boolean;
 }>();
 
-// Document templates
 const TEMPLATES = [
     { name: 'Blank', content: '<p><br></p>' },
     { name: 'Letter', content: '<p style="text-align: right;">[Your Name]<br>[Your Address]<br>[City, State ZIP]<br>[Date]</p><p><br></p><p>[Recipient Name]<br>[Recipient Address]<br>[City, State ZIP]</p><p><br></p><p>Dear [Recipient],</p><p><br></p><p>[Letter body...]</p><p><br></p><p>Sincerely,</p><p>[Your Name]</p>' },
@@ -122,47 +115,39 @@ const DocxViewer = ({
     const [isLoaded, setIsLoaded] = useState(false);
     const lastFilePathRef = useRef<string | null>(null);
 
-    // Synchronously check cache when filePath changes to avoid loading flash on tab switch
     if (filePath && filePath !== lastFilePathRef.current) {
         const cached = docxContentCache.get(filePath);
         if (cached) {
-            // Update state synchronously during render for cached content
+
             if (!isLoaded || htmlContent !== cached.html) {
                 setHtmlContent(cached.html);
                 setHistory([cached.html]);
                 setHistoryIndex(0);
                 setIsLoaded(true);
                 setError(null);
-                // Restore unsaved changes flag from cache (survives remount from resize/split)
+
                 if (cached.hasChanges) setHasChanges(true);
             }
         } else if (isLoaded) {
-            // Reset loading state for uncached files
+
             setIsLoaded(false);
         }
         lastFilePathRef.current = filePath;
     }
 
-    // Independent document light/dark mode
     const [docLightMode, setDocLightMode] = useState(() => {
         const saved = localStorage.getItem('docxViewer_lightMode');
         return saved !== null ? JSON.parse(saved) : true;
     });
 
-    // Persist docLightMode changes
     useEffect(() => {
         localStorage.setItem('docxViewer_lightMode', JSON.stringify(docLightMode));
     }, [docLightMode]);
 
-    // Debug logging
-    // console.log('[DOCX] nodeId:', nodeId, 'paneData:', paneData, 'filePath:', filePath);
-
-    // UI State
     const [zoom, setZoom] = useState(100);
     const [showRuler, setShowRuler] = useState(true);
     const [viewMode, setViewMode] = useState<'page' | 'web'>('page');
 
-    // Toolbar dropdowns
     const [showFontPicker, setShowFontPicker] = useState(false);
     const [showSizePicker, setShowSizePicker] = useState(false);
     const [showHighlightPicker, setShowHighlightPicker] = useState(false);
@@ -172,13 +157,11 @@ const DocxViewer = ({
     const [showMoreTools, setShowMoreTools] = useState(false);
     const [docxContextMenu, setDocxContextMenu] = useState<{ x: number; y: number } | null>(null);
 
-    // Current formatting state
     const [currentFont, setCurrentFont] = useState('Calibri');
     const [currentFontSize, setCurrentFontSize] = useState('12');
 
-    // Document fonts from DOCX
     const [docFonts, setDocFonts] = useState<{ default: string; heading: string; all: string[] } | null>(null);
-    // Page dimensions from DOCX (in inches)
+
     const [pageSize, setPageSize] = useState<{
         width: number;
         height: number;
@@ -187,7 +170,7 @@ const DocxViewer = ({
         marginLeft: number;
         marginRight: number;
     }>({ width: 8.5, height: 11, marginTop: 1, marginBottom: 1, marginLeft: 1, marginRight: 1 });
-    // Spacing from DOCX
+
     const [docSpacing, setDocSpacing] = useState<{
         lineHeight: number;
         paragraphBefore: number;
@@ -195,13 +178,11 @@ const DocxViewer = ({
     }>({ lineHeight: 1.15, paragraphBefore: 0, paragraphAfter: 8 });
     const [tablePickerSize, setTablePickerSize] = useState({ rows: 3, cols: 3 });
 
-    // Find and replace
     const [showFindReplace, setShowFindReplace] = useState(false);
     const [findText, setFindText] = useState('');
     const [replaceText, setReplaceText] = useState('');
     const [matchCount, setMatchCount] = useState(0);
 
-    // Document statistics
     const documentStats = useMemo(() => {
         const text = editorRef.current?.innerText || '';
         const words = text.trim() ? text.trim().split(/\s+/).length : 0;
@@ -210,12 +191,10 @@ const DocxViewer = ({
         return { words, chars, pages };
     }, [htmlContent]);
 
-    // Load document
     useEffect(() => {
         const loadDocx = async () => {
             if (!filePath) return;
 
-            // Check global cache first
             const cached = docxContentCache.get(filePath);
             if (cached) {
                 setHtmlContent(cached.html);
@@ -229,19 +208,16 @@ const DocxViewer = ({
             }
 
             try {
-                // console.log('[DOCX] Reading file buffer...');
-                // Read as buffer first to check if it's a real DOCX
+
                 const rawBuffer = await window.api.readFileBuffer(filePath);
-                // console.log('[DOCX] Got rawBuffer:', rawBuffer?.length || 'null', typeof rawBuffer);
-                // Convert to Uint8Array if needed (IPC may return different types)
+
                 const buffer = rawBuffer instanceof Uint8Array ? rawBuffer :
                                rawBuffer?.data ? new Uint8Array(rawBuffer.data) :
                                rawBuffer?.type === 'Buffer' ? new Uint8Array(rawBuffer.data) :
                                new Uint8Array(rawBuffer || []);
-                // console.log('[DOCX] Converted buffer length:', buffer?.length, 'first bytes:', buffer?.[0], buffer?.[1]);
 
                 if (!buffer || buffer.length === 0) {
-                    // Empty file - start with blank
+
                     const blank = '<p><br></p>';
                     setHtmlContent(blank);
                     setHistory([blank]);
@@ -251,12 +227,10 @@ const DocxViewer = ({
                     return;
                 }
 
-                // Check if it's a ZIP (DOCX files are ZIP archives starting with PK)
                 const isZip = buffer[0] === 0x50 && buffer[1] === 0x4B;
-                // console.log('[DOCX] isZip:', isZip);
 
                 if (isZip) {
-                    // It's a real DOCX file - use mammoth
+
                     console.log('[DOCX] Calling readDocxContent...');
                     const response = await window.api.readDocxContent(filePath);
                     console.log('[DOCX] readDocxContent response length:', response.content?.length);
@@ -265,7 +239,6 @@ const DocxViewer = ({
                     }
                     const html = response.content || '<p><br></p>';
 
-                    // Debug: count empty paragraphs
                     const nbspCount = (html.match(/<p>&nbsp;<\/p>/g) || []).length;
                     const emptyPCount = (html.match(/<p>\s*<\/p>/g) || []).length;
                     console.log('[DOCX] Empty paragraphs with &nbsp;:', nbspCount, 'Empty <p>:', emptyPCount);
@@ -276,43 +249,39 @@ const DocxViewer = ({
                     setHistoryIndex(0);
                     if (editorRef.current) editorRef.current.innerHTML = html;
 
-                    // Handle document fonts
                     if (response.fonts) {
                         console.log('[DOCX] Document fonts:', response.fonts);
                         setDocFonts(response.fonts);
                         setCurrentFont(response.fonts.default || 'Calibri');
 
-                        // Load all fonts from the document
                         for (const font of response.fonts.all || []) {
                             loadGoogleFont(font);
                         }
                     }
 
-                    // Handle page size
                     if (response.pageSize) {
                         console.log('[DOCX] Page size:', response.pageSize);
                         setPageSize(response.pageSize);
                     }
 
-                    // Handle spacing
                     if (response.spacing) {
                         setDocSpacing(response.spacing);
                     }
-                    // Cache globally by filePath
+
                     docxContentCache.set(filePath, {
                         html,
                         fonts: response.fonts,
                         pageSize: response.pageSize
                     });
                 } else {
-                    // It's a text/HTML file saved by our editor
+
                     const textContent = await window.api.readFileContent(filePath);
                     const content = textContent?.content || '<p><br></p>';
                     setHtmlContent(content);
                     setHistory([content]);
                     setHistoryIndex(0);
                     if (editorRef.current) editorRef.current.innerHTML = content;
-                    // Cache globally
+
                     docxContentCache.set(filePath, { html: content });
                 }
 
@@ -321,12 +290,11 @@ const DocxViewer = ({
                 console.error('[DOCX] Load error:', err);
                 setError(err.message);
             }
-            // console.log('[DOCX] loadDocx finished');
+
         };
         loadDocx();
     }, [filePath]);
 
-    // Set content to editor only on initial load (not on every content change, which resets cursor)
     const hasSetInitialContent = useRef(false);
     useEffect(() => {
         if (isLoaded && editorRef.current && htmlContent && !hasSetInitialContent.current) {
@@ -335,12 +303,10 @@ const DocxViewer = ({
         }
     }, [isLoaded]);
 
-    // Reset flag when file changes
     useEffect(() => {
         hasSetInitialContent.current = false;
     }, [filePath]);
 
-    // History management
     const addToHistory = useCallback((newContent: string) => {
         if (isUndoRedoRef.current) {
             isUndoRedoRef.current = false;
@@ -361,7 +327,7 @@ const DocxViewer = ({
         setHtmlContent(newContent);
         setHasChanges(true);
         addToHistory(newContent);
-        // Sync to global cache so edits survive component remount (e.g. pane resize/split)
+
         if (filePath) {
             const existing = docxContentCache.get(filePath);
             docxContentCache.set(filePath, { ...existing, html: newContent, hasChanges: true });
@@ -392,13 +358,19 @@ const DocxViewer = ({
         }
     }, [history, historyIndex]);
 
-    // Save document
     const saveDocument = useCallback(async () => {
         if (!hasChanges || !editorRef.current) return;
         setIsSaving(true);
         try {
             const content = editorRef.current.innerHTML;
-            await window.api.writeFileContent(filePath, content);
+            if (filePath.endsWith('.docx')) {
+                await window.api.writeDocxContent(filePath, content, { font: currentFont });
+            } else {
+                await window.api.writeFileContent(filePath, content);
+            }
+
+            const existing = docxContentCache.get(filePath);
+            docxContentCache.set(filePath, { ...existing, html: content, hasChanges: false });
             setHtmlContent(content);
             setHasChanges(false);
         } catch (err) {
@@ -406,16 +378,45 @@ const DocxViewer = ({
         } finally {
             setIsSaving(false);
         }
-    }, [hasChanges, filePath]);
+    }, [hasChanges, filePath, currentFont]);
 
-    // Execute formatting command
+    const saveDocumentAs = useCallback(async () => {
+        if (!editorRef.current) return;
+        try {
+            const newPath = await window.api.showSaveDialog({
+                defaultPath: filePath,
+                filters: [
+                    { name: 'Word Document', extensions: ['docx'] },
+                    { name: 'HTML', extensions: ['html'] },
+                    { name: 'All Files', extensions: ['*'] },
+                ],
+            });
+            if (!newPath) return;
+            setIsSaving(true);
+            const content = editorRef.current.innerHTML;
+            if (newPath.endsWith('.docx')) {
+                await window.api.writeDocxContent(newPath, content, { font: currentFont });
+            } else {
+                await window.api.writeFileContent(newPath, content);
+            }
+
+            if (contentDataRef.current[nodeId]) {
+                contentDataRef.current[nodeId].contentId = newPath;
+            }
+            setHasChanges(false);
+            setIsSaving(false);
+        } catch (err) {
+            setError(err.message);
+            setIsSaving(false);
+        }
+    }, [filePath, currentFont, nodeId, contentDataRef]);
+
     const execCommand = useCallback((command: string, value: string | null = null) => {
         document.execCommand(command, false, value);
         editorRef.current?.focus();
         setTimeout(handleInput, 0);
     }, [handleInput]);
 
-    // Insert HTML at cursor
     const insertAtCursor = useCallback((html: string) => {
         editorRef.current?.focus();
         const selection = window.getSelection();
@@ -429,7 +430,6 @@ const DocxViewer = ({
         setTimeout(handleInput, 0);
     }, [handleInput]);
 
-    // Insert table
     const insertTable = useCallback((rows: number, cols: number) => {
         let html = '<table style="border-collapse: collapse; width: 100%; margin: 16px 0;">';
         for (let r = 0; r < rows; r++) {
@@ -447,7 +447,6 @@ const DocxViewer = ({
         setShowTablePicker(false);
     }, [insertAtCursor]);
 
-    // Insert image
     const insertImage = useCallback(() => {
         const input = document.createElement('input');
         input.type = 'file';
@@ -842,8 +841,11 @@ ${htmlContent}
                         <Redo size={14} />
                     </button>
                     <div className="w-px h-4 bg-gray-600 mx-1" />
-                    <button onClick={saveDocument} disabled={!hasChanges} className="p-1.5 theme-hover rounded disabled:opacity-30" title="Save">
+                    <button onClick={saveDocument} disabled={!hasChanges} className="p-1.5 theme-hover rounded disabled:opacity-30" title="Save (Ctrl+S)">
                         <Save size={14} />
+                    </button>
+                    <button onClick={saveDocumentAs} className="p-1.5 theme-hover rounded" title="Save As (Ctrl+Shift+S)">
+                        <FileDown size={14} />
                     </button>
                     <button onClick={printDocument} className="p-1.5 theme-hover rounded" title="Print">
                         <Printer size={14} />
@@ -886,9 +888,7 @@ ${htmlContent}
                 </div>
             </div>
 
-            {/* Main Toolbar */}
             <div className="px-2 py-1.5 border-b theme-border theme-bg-tertiary flex items-center gap-1 flex-wrap">
-                {/* Font Family */}
                 <div className="relative dropdown-container">
                     <button
                         onClick={(e) => { e.stopPropagation(); setShowFontPicker(!showFontPicker); }}
@@ -915,7 +915,6 @@ ${htmlContent}
                     )}
                 </div>
 
-                {/* Font Size */}
                 <div className="relative dropdown-container">
                     <button
                         onClick={(e) => { e.stopPropagation(); setShowSizePicker(!showSizePicker); }}
@@ -941,7 +940,6 @@ ${htmlContent}
 
                 <div className="w-px h-5 bg-gray-600 mx-0.5" />
 
-                {/* Text Formatting */}
                 <button onClick={() => execCommand('bold')} className="p-1.5 theme-hover rounded" title="Bold (Ctrl+B)"><Bold size={14} /></button>
                 <button onClick={() => execCommand('italic')} className="p-1.5 theme-hover rounded" title="Italic (Ctrl+I)"><Italic size={14} /></button>
                 <button onClick={() => execCommand('underline')} className="p-1.5 theme-hover rounded" title="Underline (Ctrl+U)"><Underline size={14} /></button>
@@ -949,7 +947,6 @@ ${htmlContent}
 
                 <div className="w-px h-5 bg-gray-600 mx-0.5" />
 
-                {/* Text Color */}
                 <div className="relative dropdown-container">
                     <button
                         onClick={(e) => { e.stopPropagation(); setShowTextColorPicker(!showTextColorPicker); }}
@@ -975,7 +972,6 @@ ${htmlContent}
                     )}
                 </div>
 
-                {/* Highlight Color */}
                 <div className="relative dropdown-container">
                     <button
                         onClick={(e) => { e.stopPropagation(); setShowHighlightPicker(!showHighlightPicker); }}
@@ -1006,7 +1002,6 @@ ${htmlContent}
 
                 <div className="w-px h-5 bg-gray-600 mx-0.5" />
 
-                {/* Alignment */}
                 <button onClick={() => execCommand('justifyLeft')} className="p-1.5 theme-hover rounded" title="Align Left"><AlignLeft size={14} /></button>
                 <button onClick={() => execCommand('justifyCenter')} className="p-1.5 theme-hover rounded" title="Center"><AlignCenter size={14} /></button>
                 <button onClick={() => execCommand('justifyRight')} className="p-1.5 theme-hover rounded" title="Align Right"><AlignRight size={14} /></button>
@@ -1014,7 +1009,6 @@ ${htmlContent}
 
                 <div className="w-px h-5 bg-gray-600 mx-0.5" />
 
-                {/* Lists & Indent */}
                 <button onClick={() => execCommand('insertUnorderedList')} className="p-1.5 theme-hover rounded" title="Bullet List"><List size={14} /></button>
                 <button onClick={() => execCommand('insertOrderedList')} className="p-1.5 theme-hover rounded" title="Numbered List"><ListOrdered size={14} /></button>
                 <button onClick={() => execCommand('indent')} className="p-1.5 theme-hover rounded" title="Increase Indent"><Indent size={14} /></button>
@@ -1022,7 +1016,6 @@ ${htmlContent}
 
                 <div className="w-px h-5 bg-gray-600 mx-0.5" />
 
-                {/* Block Format */}
                 <select
                     onChange={(e) => execCommand('formatBlock', e.target.value)}
                     className="px-2 py-1 rounded theme-bg-secondary border border-white/10 text-[11px]"
@@ -1039,7 +1032,6 @@ ${htmlContent}
 
                 <div className="w-px h-5 bg-gray-600 mx-0.5" />
 
-                {/* Insert */}
                 <button onClick={insertImage} className="p-1.5 theme-hover rounded" title="Insert Image"><Image size={14} /></button>
 
                 <div className="relative dropdown-container">
@@ -1071,7 +1063,6 @@ ${htmlContent}
                 <button onClick={insertLink} className="p-1.5 theme-hover rounded" title="Insert Link"><Link size={14} /></button>
                 <button onClick={() => insertAtCursor('<hr style="border: none; border-top: 1px solid #ccc; margin: 16px 0;" /><p><br></p>')} className="p-1.5 theme-hover rounded" title="Horizontal Line"><Minus size={14} /></button>
 
-                {/* Templates */}
                 <div className="relative dropdown-container">
                     <button onClick={(e) => { e.stopPropagation(); setShowTemplatePicker(!showTemplatePicker); }} className="p-1.5 theme-hover rounded" title="Templates">
                         <LayoutTemplate size={14} />
@@ -1093,13 +1084,11 @@ ${htmlContent}
 
                 <div className="flex-1" />
 
-                {/* Zoom */}
                 <button onClick={() => setZoom(z => Math.max(50, z - 10))} className="p-1.5 theme-hover rounded" title="Zoom Out"><ZoomOut size={14} /></button>
                 <span className="text-[10px] text-gray-400 w-10 text-center">{zoom}%</span>
                 <button onClick={() => setZoom(z => Math.min(200, z + 10))} className="p-1.5 theme-hover rounded" title="Zoom In"><ZoomIn size={14} /></button>
             </div>
 
-            {/* Find & Replace Bar */}
             {showFindReplace && (
                 <div className="flex items-center gap-2 px-3 py-2 border-b theme-border theme-bg-tertiary">
                     <Search size={14} className="text-gray-500" />
@@ -1129,9 +1118,7 @@ ${htmlContent}
                 </div>
             )}
 
-            {/* Document Area */}
             <div className="flex-1 overflow-auto theme-bg-primary">
-                {/* Ruler */}
                 {showRuler && viewMode === 'page' && (
                     <div className="sticky top-0 z-10 bg-gray-100 dark:bg-gray-800 border-b border-gray-300 dark:border-gray-700 h-6 flex items-end justify-center">
                         <div style={{ width: `${pageSize.width}in`, paddingLeft: `${pageSize.marginLeft}in`, paddingRight: `${pageSize.marginRight}in`, transform: `scale(${zoom / 100})`, transformOrigin: 'center bottom' }} className="flex items-end">
@@ -1149,7 +1136,6 @@ ${htmlContent}
                     </div>
                 )}
 
-                {/* Editor */}
                 <div className={`${viewMode === 'page' ? 'py-8' : 'p-4'}`} style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top center' }}>
                     <style>{`
                         .docx-editor { font-family: "${docFonts?.default || currentFont}", ${currentFont}, Arial, sans-serif; }
@@ -1176,7 +1162,7 @@ ${htmlContent}
                         .docx-editor em, .docx-editor i { font-style: italic; }
                         .docx-editor u { text-decoration: underline; }
                         .docx-editor s, .docx-editor strike { text-decoration: line-through; }
-                        /* Page break styling */
+
                         .docx-editor .docx-page-break {
                             page-break-after: always;
                             break-after: page;
@@ -1231,7 +1217,6 @@ ${htmlContent}
                 </div>
             </div>
 
-            {/* Context Menu */}
             {docxContextMenu && (
                 <>
                     <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setDocxContextMenu(null)} />
@@ -1245,7 +1230,24 @@ ${htmlContent}
                         <button onClick={() => { document.execCommand('copy'); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
                             <Clipboard size={12} /> Copy
                         </button>
-                        <button onClick={() => { document.execCommand('paste'); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                        <button onClick={async () => {
+                            try {
+                                const text = await navigator.clipboard.readText();
+                                if (text && editorRef.current) {
+                                    editorRef.current.focus();
+                                    const sel = window.getSelection();
+                                    if (sel && sel.rangeCount > 0) {
+                                        const range = sel.getRangeAt(0);
+                                        range.deleteContents();
+                                        range.insertNode(document.createTextNode(text));
+                                        range.collapse(false);
+                                    } else {
+                                        document.execCommand('insertText', false, text);
+                                    }
+                                }
+                            } catch (e) { console.error('Paste failed:', e); }
+                            setDocxContextMenu(null);
+                        }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
                             <ClipboardPaste size={12} /> Paste
                         </button>
                         <div className="border-t theme-border my-1" />
@@ -1272,6 +1274,9 @@ ${htmlContent}
                         <button onClick={() => { saveDocument(); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
                             <Save size={12} /> Save
                         </button>
+                        <button onClick={() => { saveDocumentAs(); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                            <FileDown size={12} /> Save As...
+                        </button>
                         <button onClick={() => { setShowFindReplace(true); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
                             <Search size={12} /> Find & Replace
                         </button>
@@ -1279,7 +1284,6 @@ ${htmlContent}
                 </>
             )}
 
-            {/* Status Bar */}
             <div className="flex items-center justify-between px-3 py-1 border-t theme-border theme-bg-tertiary text-[10px] text-gray-500">
                 <div className="flex items-center gap-4">
                     <span>Page {documentStats.pages}</span>
@@ -1296,7 +1300,6 @@ ${htmlContent}
     );
 };
 
-// Custom comparison to prevent re-renders when layout changes but pane identity is the same
 const arePropsEqual = (prevProps: any, nextProps: any) => {
     return prevProps.nodeId === nextProps.nodeId
         && prevProps.renamingPaneId === nextProps.renamingPaneId

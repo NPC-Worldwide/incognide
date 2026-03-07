@@ -13,7 +13,7 @@ interface BranchOptionsModalProps {
 
 export interface BranchOptions {
     mode: 'same' | 'different' | 'broadcast' | 'jinx';
-    models: string[];  // For broadcast mode, multiple models
+    models: string[];
     jinxName?: string;
     jinxParams?: Record<string, any>;
 }
@@ -58,7 +58,6 @@ export const BranchOptionsModal: React.FC<BranchOptionsModalProps> = ({
         );
     };
 
-    // Group models by provider
     const modelsByProvider = availableModels.reduce((acc: Record<string, any[]>, model: any) => {
         const provider = model.provider || 'Other';
         if (!acc[provider]) acc[provider] = [];
@@ -72,7 +71,6 @@ export const BranchOptionsModal: React.FC<BranchOptionsModalProps> = ({
                 className="theme-bg-primary border theme-border rounded-xl shadow-2xl w-[500px] max-h-[80vh] overflow-hidden"
                 onClick={e => e.stopPropagation()}
             >
-                {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b theme-border">
                     <h2 className="text-lg font-semibold">Create Branch</h2>
                     <button onClick={onClose} className="p-1 theme-hover rounded">
@@ -80,7 +78,6 @@ export const BranchOptionsModal: React.FC<BranchOptionsModalProps> = ({
                     </button>
                 </div>
 
-                {/* Message Preview */}
                 <div className="px-4 py-3 border-b theme-border bg-black/20">
                     <div className="text-xs text-gray-400 mb-1">Branching from message:</div>
                     <div className="text-sm line-clamp-2 text-gray-300">
@@ -88,9 +85,7 @@ export const BranchOptionsModal: React.FC<BranchOptionsModalProps> = ({
                     </div>
                 </div>
 
-                {/* Mode Selection */}
                 <div className="p-4 space-y-3">
-                    {/* Same Model */}
                     <button
                         onClick={() => setMode('same')}
                         className={`w-full p-3 rounded-lg border transition-all text-left flex items-center gap-3 ${
@@ -111,7 +106,6 @@ export const BranchOptionsModal: React.FC<BranchOptionsModalProps> = ({
                         {mode === 'same' && <Check size={18} className="text-purple-400" />}
                     </button>
 
-                    {/* Different Model */}
                     <button
                         onClick={() => setMode('different')}
                         className={`w-full p-3 rounded-lg border transition-all text-left flex items-center gap-3 ${
@@ -132,7 +126,6 @@ export const BranchOptionsModal: React.FC<BranchOptionsModalProps> = ({
                         {mode === 'different' && <Check size={18} className="text-blue-400" />}
                     </button>
 
-                    {/* Model selector for different mode */}
                     {mode === 'different' && (
                         <div className="ml-11 p-3 theme-bg-secondary rounded-lg">
                             <select
@@ -149,7 +142,6 @@ export const BranchOptionsModal: React.FC<BranchOptionsModalProps> = ({
                         </div>
                     )}
 
-                    {/* Broadcast */}
                     <button
                         onClick={() => setMode('broadcast')}
                         className={`w-full p-3 rounded-lg border transition-all text-left flex items-center gap-3 ${
@@ -170,7 +162,6 @@ export const BranchOptionsModal: React.FC<BranchOptionsModalProps> = ({
                         {mode === 'broadcast' && <Check size={18} className="text-green-400" />}
                     </button>
 
-                    {/* Model multi-selector for broadcast */}
                     {mode === 'broadcast' && (
                         <div className="ml-11 p-3 theme-bg-secondary rounded-lg max-h-48 overflow-y-auto space-y-2">
                             {Object.entries(modelsByProvider).map(([provider, models]) => (
@@ -200,7 +191,6 @@ export const BranchOptionsModal: React.FC<BranchOptionsModalProps> = ({
                         </div>
                     )}
 
-                    {/* Apply Jinx */}
                     <button
                         onClick={() => setMode('jinx')}
                         className={`w-full p-3 rounded-lg border transition-all text-left flex items-center gap-3 ${
@@ -221,7 +211,6 @@ export const BranchOptionsModal: React.FC<BranchOptionsModalProps> = ({
                         {mode === 'jinx' && <Check size={18} className="text-orange-400" />}
                     </button>
 
-                    {/* Jinx selector */}
                     {mode === 'jinx' && (
                         <div className="ml-11 p-3 theme-bg-secondary rounded-lg">
                             {availableJinxs.length > 0 ? (
@@ -244,7 +233,6 @@ export const BranchOptionsModal: React.FC<BranchOptionsModalProps> = ({
                     )}
                 </div>
 
-                {/* Footer */}
                 <div className="flex justify-end gap-3 p-4 border-t theme-border">
                     <button
                         onClick={onClose}

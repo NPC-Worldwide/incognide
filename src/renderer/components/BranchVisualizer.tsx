@@ -16,7 +16,7 @@ interface BranchVisualizerProps {
     conversationBranches: Map<string, Branch>;
     currentBranchId: string;
     onSwitchBranch: (branchId: string) => void;
-    allMessages?: any[]; // Message tree data
+    allMessages?: any[];
     onExpandBranch?: (path: string[]) => void;
     expandedBranchPath?: string[];
 }
@@ -51,13 +51,12 @@ export const BranchVisualizer: React.FC<BranchVisualizerProps> = ({
     onExpandBranch,
     expandedBranchPath = []
 }) => {
-    // Build tree from actual message data
+
     const messageTreeData = useMemo(() => {
         if (!allMessages.length) return { nodes: [] as MsgNode[], edges: [] as { from: string; to: string }[], totalHeight: 0, maxX: 0 };
 
         const msgById = new Map(allMessages.map((m: any) => [m.id, m]));
 
-        // Find broadcast points (multiple assistant responses to same user message)
         const siblingRunsMap: { [key: string]: any[] } = {};
         allMessages.forEach((m: any) => {
             if (m.role === 'assistant') {
@@ -69,12 +68,10 @@ export const BranchVisualizer: React.FC<BranchVisualizerProps> = ({
             }
         });
 
-        // Build nodes for visualization
         const nodes: MsgNode[] = [];
         const edges: { from: string; to: string }[] = [];
         const processed = new Set<string>();
 
-        // Find root user messages
         const rootUsers = allMessages.filter((m: any) =>
             m.role === 'user' && (!m.parentMessageId || !msgById.has(m.parentMessageId))
         );
@@ -106,10 +103,10 @@ export const BranchVisualizer: React.FC<BranchVisualizerProps> = ({
             yPos += NODE_HEIGHT;
 
             if (msg.role === 'user') {
-                // Find assistant responses
+
                 const responses = siblingRunsMap[msg.id] || [];
                 if (responses.length > 1) {
-                    // Branch point - show all responses side by side
+
                     nodes[nodes.length - 1].isBranchPoint = true;
                     nodes[nodes.length - 1].siblings = responses;
 
@@ -125,7 +122,7 @@ export const BranchVisualizer: React.FC<BranchVisualizerProps> = ({
                     processMessage(responses[0], xPos, depth);
                 }
             } else {
-                // Find follow-up user messages to this assistant
+
                 const followUps = allMessages.filter((m: any) =>
                     m.role === 'user' && m.parentMessageId === msg.id
                 );
@@ -152,7 +149,6 @@ export const BranchVisualizer: React.FC<BranchVisualizerProps> = ({
                 className="theme-bg-primary border theme-border rounded-xl shadow-2xl w-[900px] max-w-[95vw] max-h-[85vh] overflow-hidden flex flex-col"
                 onClick={e => e.stopPropagation()}
             >
-                {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b theme-border flex-shrink-0">
                     <div className="flex items-center gap-2">
                         <GitBranch size={20} className="text-purple-400" />
@@ -164,7 +160,6 @@ export const BranchVisualizer: React.FC<BranchVisualizerProps> = ({
                     </button>
                 </div>
 
-                {/* Message Tree */}
                 <div className="flex-1 overflow-auto p-4">
                     {nodes.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-full text-gray-400">
@@ -174,7 +169,6 @@ export const BranchVisualizer: React.FC<BranchVisualizerProps> = ({
                     ) : (
                         <svg width={maxX || 400} height={totalHeight || 200} className="min-w-full">
                             <g transform="translate(20, 10)">
-                                {/* Draw edges */}
                                 {edges.map((edge, i) => {
                                     const fromNode = nodeMap.get(edge.from);
                                     const toNode = nodeMap.get(edge.to);
@@ -192,13 +186,12 @@ export const BranchVisualizer: React.FC<BranchVisualizerProps> = ({
                                     );
                                 })}
 
-                                {/* Draw nodes */}
                                 {nodes.map(node => (
                                     <foreignObject key={node.id} x={node.x} y={node.y} width="140" height="50">
                                         <div
                                             onClick={() => {
                                                 if (onExpandBranch && node.msg.role === 'assistant') {
-                                                    // Build path to this node
+
                                                     const path: string[] = [];
                                                     let cur = node.msg;
                                                     const msgById = new Map(allMessages.map((m: any) => [m.id, m]));
@@ -241,7 +234,6 @@ export const BranchVisualizer: React.FC<BranchVisualizerProps> = ({
                     )}
                 </div>
 
-                {/* Legend */}
                 <div className="flex items-center gap-4 px-4 py-3 border-t theme-border text-xs text-gray-400 flex-shrink-0">
                     <div className="flex items-center gap-2">
                         <div className="w-3 h-3 rounded border border-blue-600 bg-blue-900/30" />

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BACKEND_URL } from '../config';
 import {
-    Wrench, Loader, ChevronRight, X, Save, Plus, Trash2, 
+    Wrench, Loader, ChevronRight, X, Save, Plus, Trash2,
     FolderTree, Play, History, CheckCircle, XCircle, Tag
 } from 'lucide-react';
 import AutosizeTextarea from './AutosizeTextarea';
@@ -32,7 +32,7 @@ const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = t
             if (!isOpen) return;
             setLoading(true);
             setError(null);
-            
+
             const response = isGlobal
                 ? await window.api.getJinxsGlobal(globalPath)
                 : await window.api.getJinxsProject(currentPath);
@@ -42,7 +42,7 @@ const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = t
                 setLoading(false);
                 return;
             }
-            
+
             setJinxs(response.jinxs || []);
             setLoading(false);
         };
@@ -51,10 +51,10 @@ const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = t
 
     const buildFolderTree = (jinxsList) => {
         const tree = { folders: {}, files: [] };
-        
+
         for (const jinx of jinxsList) {
             const pathParts = (jinx.path || jinx.jinx_name).split('/');
-            
+
             if (pathParts.length === 1) {
                 tree.files.push(jinx);
             } else {
@@ -83,25 +83,25 @@ const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = t
 
     const renderTree = (node, path = '') => {
         const items = [];
-        
+
         const sortedFolders = Object.keys(node.folders).sort();
         for (const folder of sortedFolders) {
             const folderPath = path ? `${path}/${folder}` : folder;
             const isExpanded = expandedFolders.has(folderPath);
-            
+
             items.push(
                 <div key={folderPath}>
                     <button
                         onClick={() => toggleFolder(folderPath)}
-                        className="flex items-center gap-2 w-full p-2 
+                        className="flex items-center gap-2 w-full p-2
                             rounded text-sm text-left theme-hover"
                     >
                         <FolderTree size={16} className="text-yellow-500" />
                         <span className="flex-1 font-medium">{folder}</span>
-                        <ChevronRight 
-                            size={16} 
-                            className={`text-gray-500 transition-transform 
-                                ${isExpanded ? 'rotate-90' : ''}`} 
+                        <ChevronRight
+                            size={16}
+                            className={`text-gray-500 transition-transform
+                                ${isExpanded ? 'rotate-90' : ''}`}
                         />
                     </button>
                     {isExpanded && (
@@ -112,8 +112,8 @@ const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = t
                 </div>
             );
         }
-        
-        const sortedFiles = node.files.sort((a, b) => 
+
+        const sortedFiles = node.files.sort((a, b) =>
             a.jinx_name.localeCompare(b.jinx_name)
         );
         for (const jinx of sortedFiles) {
@@ -121,10 +121,10 @@ const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = t
                 <button
                     key={jinx.path || jinx.jinx_name}
                     onClick={() => handleJinxSelect(jinx)}
-                    className={`flex items-center gap-2 w-full p-2 
-                        rounded text-sm text-left 
-                        ${selectedJinx?.jinx_name === jinx.jinx_name 
-                            ? 'bg-blue-600/50' 
+                    className={`flex items-center gap-2 w-full p-2
+                        rounded text-sm text-left
+                        ${selectedJinx?.jinx_name === jinx.jinx_name
+                            ? 'bg-blue-600/50'
                             : 'theme-hover'}`}
                 >
                     <Wrench size={14} className="text-gray-400" />
@@ -132,13 +132,12 @@ const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = t
                 </button>
             );
         }
-        
+
         return items;
     };
 const handleJinxSelect = async (jinx) => {
     setSelectedJinx(jinx);
 
-    // Normalize inputs - can be strings or objects like { "model": "default_value" }
     const normalizedInputs = [];
     const inputs = {};
 
@@ -147,7 +146,7 @@ const handleJinxSelect = async (jinx) => {
             normalizedInputs.push(inp);
             inputs[inp] = '';
         } else if (typeof inp === 'object' && inp !== null) {
-            // Object format: { "input_name": "default_value" }
+
             const name = Object.keys(inp)[0] || '';
             const defaultVal = inp[name];
             normalizedInputs.push(name);
@@ -158,7 +157,7 @@ const handleJinxSelect = async (jinx) => {
     setEditedJinx({ ...jinx, inputs: normalizedInputs });
     setTestOutput(null);
     setTestInputs(inputs);
-    
+
     const historyResponse = await fetch(
         `${BACKEND_URL}/api/jinx/executions?jinxName=${encodeURIComponent(jinx.jinx_name)}`
     );
@@ -172,7 +171,7 @@ const labelExecution = async (messageId, label) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messageId, label })
     });
-    
+
     const historyResponse = await fetch(
         `${BACKEND_URL}/api/jinx/executions?jinxName=${encodeURIComponent(selectedJinx.jinx_name)}`
     );
@@ -211,10 +210,10 @@ const labelExecution = async (messageId, label) => {
             ...prev,
             steps: [
                 ...prev.steps,
-                { 
-                    name: `step_${prev.steps.length + 1}`, 
-                    engine: 'python', 
-                    code: '' 
+                {
+                    name: `step_${prev.steps.length + 1}`,
+                    engine: 'python',
+                    code: ''
                 }
             ]
         }));
@@ -233,7 +232,7 @@ const labelExecution = async (messageId, label) => {
             newInputs[index] = value;
             return { ...prev, inputs: newInputs };
         });
-        
+
         setTestInputs(prev => {
             const newTest = { ...prev };
             if (!newTest[value]) newTest[value] = '';
@@ -268,7 +267,7 @@ const labelExecution = async (messageId, label) => {
     const runTest = async () => {
         setTestRunning(true);
         setTestOutput(null);
-        
+
         const response = await fetch(`${BACKEND_URL}/api/jinx/test`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -278,10 +277,10 @@ const labelExecution = async (messageId, label) => {
                 currentPath
             })
         });
-        
+
         const data = await response.json();
         setTestRunning(false);
-        
+
         if (data.error) {
             setTestOutput({ error: data.error });
         } else {
@@ -320,13 +319,13 @@ const labelExecution = async (messageId, label) => {
     const content = (
         <>
             <div className="flex flex-1 min-h-0 border theme-border rounded-lg overflow-hidden">
-                    <div className="w-1/3 border-r theme-border 
+                    <div className="w-1/3 border-r theme-border
                         flex flex-col min-h-0">
                         <div className="p-2 border-b theme-border flex-shrink-0">
-                            <button 
-                                onClick={handleNewJinx} 
-                                className="theme-button-primary w-full p-2 
-                                    rounded text-sm flex items-center 
+                            <button
+                                onClick={handleNewJinx}
+                                className="theme-button-primary w-full p-2
+                                    rounded text-sm flex items-center
                                     justify-center gap-2"
                             >
                                 <Plus size={16} /> New Jinx
@@ -334,9 +333,9 @@ const labelExecution = async (messageId, label) => {
                         </div>
                         <div className="flex-1 overflow-y-auto p-2">
                             {loading ? (
-                                <div className="flex items-center 
+                                <div className="flex items-center
                                     justify-center p-8">
-                                    <Loader className="animate-spin 
+                                    <Loader className="animate-spin
                                         text-blue-400" />
                                 </div>
                             ) : error ? (
@@ -346,7 +345,7 @@ const labelExecution = async (messageId, label) => {
                             ) : jinxs.length > 0 ? (
                                 renderTree(tree)
                             ) : (
-                                <div className="theme-text-secondary text-sm 
+                                <div className="theme-text-secondary text-sm
                                     p-4 text-center">
                                     No jinxs found.
                                 </div>
@@ -358,35 +357,35 @@ const labelExecution = async (messageId, label) => {
                         {selectedJinx && editedJinx ? (
                             <div className="flex-1 overflow-y-auto p-6">
                                 <div className="space-y-6">
-                                    <div className="flex justify-between 
+                                    <div className="flex justify-between
                                         items-start gap-4">
                                         <div className="flex-grow space-y-2">
                                             <div>
-                                                <label className="block text-xs 
+                                                <label className="block text-xs
                                                     theme-text-secondary mb-1">
                                                     Jinx Name
                                                 </label>
                                                 <input
-                                                    className="w-full theme-input 
+                                                    className="w-full theme-input
                                                         text-xl font-bold p-2"
                                                     value={editedJinx.jinx_name || ''}
                                                     onChange={(e) => handleInputChange(
-                                                        'jinx_name', 
+                                                        'jinx_name',
                                                         e.target.value
                                                     )}
                                                 />
                                             </div>
                                             <div>
-                                                <label className="block text-xs 
+                                                <label className="block text-xs
                                                     theme-text-secondary mb-1">
                                                     Path (e.g. utils/myutil)
                                                 </label>
                                                 <input
-                                                    className="w-full theme-input 
+                                                    className="w-full theme-input
                                                         p-2 text-sm font-mono"
                                                     value={editedJinx.path || ''}
                                                     onChange={(e) => handleInputChange(
-                                                        'path', 
+                                                        'path',
                                                         e.target.value
                                                     )}
                                                     placeholder="code/python"
@@ -394,20 +393,20 @@ const labelExecution = async (messageId, label) => {
                                             </div>
                                         </div>
                                         <div className="flex gap-2 mt-6">
-                                            <button 
+                                            <button
                                                 onClick={runTest}
                                                 disabled={testRunning}
-                                                className="theme-button px-3 
-                                                    py-2 rounded text-sm flex 
+                                                className="theme-button px-3
+                                                    py-2 rounded text-sm flex
                                                     items-center gap-2"
                                             >
-                                                <Play size={16} /> 
+                                                <Play size={16} />
                                                 {testRunning ? 'Running...' : 'Test'}
                                             </button>
-                                            <button 
-                                                onClick={handleSave} 
-                                                className="theme-button-success px-4 
-                                                    py-2 rounded text-sm flex 
+                                            <button
+                                                onClick={handleSave}
+                                                className="theme-button-success px-4
+                                                    py-2 rounded text-sm flex
                                                     items-center gap-2"
                                             >
                                                 <Save size={16} /> Save
@@ -416,17 +415,17 @@ const labelExecution = async (messageId, label) => {
                                     </div>
 
                                     <div>
-                                        <label className="block text-sm 
+                                        <label className="block text-sm
                                             font-semibold theme-text-secondary mb-1">
                                             Description
                                         </label>
                                         <AutosizeTextarea
-                                            className="w-full theme-input p-2 
-                                                rounded text-sm resize-none 
+                                            className="w-full theme-input p-2
+                                                rounded text-sm resize-none
                                                 min-h-[60px]"
                                             value={editedJinx.description || ''}
                                             onChange={(e) => handleInputChange(
-                                                'description', 
+                                                'description',
                                                 e.target.value
                                             )}
                                             placeholder="Describe what this jinx does..."
@@ -434,51 +433,51 @@ const labelExecution = async (messageId, label) => {
                                     </div>
 
                                     <div className="space-y-2">
-                                        <div className="flex justify-between 
+                                        <div className="flex justify-between
                                             items-center mb-2">
-                                            <label className="text-sm font-semibold 
+                                            <label className="text-sm font-semibold
                                                 theme-text-secondary">
                                                 Inputs
                                             </label>
-                                            <button 
-                                                onClick={addInput} 
-                                                className="text-sm theme-button-subtle 
+                                            <button
+                                                onClick={addInput}
+                                                className="text-sm theme-button-subtle
                                                     flex items-center gap-1"
                                             >
                                                 <Plus size={14} /> Add
                                             </button>
                                         </div>
                                         {(editedJinx.inputs || []).map((input, i) => (
-                                            <div key={i} className="flex 
+                                            <div key={i} className="flex
                                                 items-center gap-2">
                                                 <input
-                                                    className="flex-1 theme-input 
+                                                    className="flex-1 theme-input
                                                         p-2 rounded text-sm font-mono"
                                                     value={input}
-                                                    onChange={(e) => 
+                                                    onChange={(e) =>
                                                         handleInputValueChange(
-                                                            i, 
+                                                            i,
                                                             e.target.value
                                                         )
                                                     }
                                                     placeholder="input_name"
                                                 />
                                                 <input
-                                                    className="flex-1 theme-input 
+                                                    className="flex-1 theme-input
                                                         p-2 rounded text-sm"
                                                     value={testInputs[input] || ''}
-                                                    onChange={(e) => 
+                                                    onChange={(e) =>
                                                         handleTestInputChange(
-                                                            input, 
+                                                            input,
                                                             e.target.value
                                                         )
                                                     }
                                                     placeholder="test value"
                                                 />
-                                                <button 
-                                                    onClick={() => removeInput(i)} 
-                                                    className="p-2 
-                                                        theme-button-danger-subtle 
+                                                <button
+                                                    onClick={() => removeInput(i)}
+                                                    className="p-2
+                                                        theme-button-danger-subtle
                                                         rounded"
                                                 >
                                                     <Trash2 size={16} />
@@ -543,58 +542,58 @@ const labelExecution = async (messageId, label) => {
 </div>
 
                                     <div className="space-y-4">
-                                        <div className="flex justify-between 
+                                        <div className="flex justify-between
                                             items-center">
-                                            <h3 className="text-sm font-semibold 
+                                            <h3 className="text-sm font-semibold
                                                 theme-text-secondary">
                                                 Steps
                                             </h3>
-                                            <button 
-                                                onClick={addStep} 
-                                                className="text-sm theme-button-subtle 
+                                            <button
+                                                onClick={addStep}
+                                                className="text-sm theme-button-subtle
                                                     flex items-center gap-1"
                                             >
                                                 <Plus size={14} /> Add Step
                                             </button>
                                         </div>
                                         {editedJinx.steps?.map((step, i) => (
-                                            <div key={i} className="space-y-3 p-4 
-                                                bg-gray-900/50 rounded border 
+                                            <div key={i} className="space-y-3 p-4
+                                                bg-gray-900/50 rounded border
                                                 theme-border">
-                                                <div className="flex justify-between 
+                                                <div className="flex justify-between
                                                     items-center gap-2">
                                                     <input
-                                                        className="theme-input p-1 
-                                                            text-sm font-medium 
+                                                        className="theme-input p-1
+                                                            text-sm font-medium
                                                             flex-1"
-                                                        value={step.name || 
+                                                        value={step.name ||
                                                             `step_${i + 1}`}
-                                                        onChange={(e) => 
+                                                        onChange={(e) =>
                                                             handleStepChange(
-                                                                i, 
-                                                                'name', 
+                                                                i,
+                                                                'name',
                                                                 e.target.value
                                                             )
                                                         }
                                                         placeholder="step_name"
                                                     />
-                                                    <button 
-                                                        onClick={() => removeStep(i)} 
-                                                        className="p-1 
-                                                            theme-button-danger-subtle 
+                                                    <button
+                                                        onClick={() => removeStep(i)}
+                                                        className="p-1
+                                                            theme-button-danger-subtle
                                                             rounded"
                                                     >
                                                         <X size={16} />
                                                     </button>
                                                 </div>
                                                 <select
-                                                    className="w-full theme-input 
+                                                    className="w-full theme-input
                                                         p-2 rounded text-sm"
                                                     value={step.engine}
-                                                    onChange={(e) => 
+                                                    onChange={(e) =>
                                                         handleStepChange(
-                                                            i, 
-                                                            'engine', 
+                                                            i,
+                                                            'engine',
                                                             e.target.value
                                                         )
                                                     }
@@ -610,15 +609,15 @@ const labelExecution = async (messageId, label) => {
                                                     </option>
                                                 </select>
                                                 <AutosizeTextarea
-                                                    className="w-full theme-input p-2 
-                                                        rounded font-mono text-sm 
-                                                        resize-y min-h-[100px] 
+                                                    className="w-full theme-input p-2
+                                                        rounded font-mono text-sm
+                                                        resize-y min-h-[100px]
                                                         max-h-64"
                                                     value={step.code}
-                                                    onChange={(e) => 
+                                                    onChange={(e) =>
                                                         handleStepChange(
-                                                            i, 
-                                                            'code', 
+                                                            i,
+                                                            'code',
                                                             e.target.value
                                                         )
                                                     }
@@ -641,12 +640,10 @@ const labelExecution = async (messageId, label) => {
         </>
     );
 
-    // Embedded mode - return just the content
     if (embedded) {
         return <div className="flex flex-col h-full">{content}</div>;
     }
 
-    // Modal mode - wrap in modal container
     return (
         <div className="fixed inset-0 bg-black/60 flex items-center
             justify-center z-50 p-4" onClick={onClose}>

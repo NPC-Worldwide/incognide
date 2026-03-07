@@ -15,7 +15,6 @@ interface DownloadItem {
     startTime: number;
 }
 
-// Toast notification for new downloads
 let toastCallback: ((message: string, filename: string) => void) | null = null;
 export const setDownloadToastCallback = (cb: (message: string, filename: string) => void) => {
     toastCallback = cb;
@@ -27,7 +26,6 @@ interface DownloadManagerProps {
     currentPath: string;
 }
 
-// Store downloads globally so they persist
 let globalDownloads: DownloadItem[] = [];
 let downloadListeners: ((downloads: DownloadItem[]) => void)[] = [];
 
@@ -51,7 +49,6 @@ export const addDownload = (url: string, filename: string) => {
     globalDownloads.unshift(download);
     notifyListeners();
 
-    // Show toast notification
     if (toastCallback) {
         toastCallback('Download started', filename);
     }
@@ -116,14 +113,12 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isOpen, onClose, curr
         };
     }, []);
 
-    // Listen for download events from main process
     useEffect(() => {
         const api = (window as any).api;
 
         const handleDownloadRequested = async (data: { url: string; filename: string }) => {
             const id = addDownload(data.url, data.filename);
 
-            // Auto-start download with current path
             try {
                 updateDownload(id, { status: 'downloading', savePath: null });
 
@@ -221,7 +216,6 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isOpen, onClose, curr
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
             <div className="w-[600px] max-h-[80vh] theme-bg-primary rounded-lg shadow-xl border theme-border flex flex-col">
-                {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b theme-border">
                     <div className="flex items-center gap-2">
                         <Download size={20} className="text-blue-400" />
@@ -248,7 +242,6 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isOpen, onClose, curr
                     </div>
                 </div>
 
-                {/* Download directory */}
                 <div className="px-4 py-2 border-b theme-border bg-gray-800/30">
                     <div className="flex items-center gap-2 text-xs text-gray-400">
                         <FolderOpen size={12} />
@@ -256,7 +249,6 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isOpen, onClose, curr
                     </div>
                 </div>
 
-                {/* Downloads list */}
                 <div className="flex-1 overflow-y-auto p-2">
                     {downloads.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-12 text-gray-500">
@@ -327,7 +319,6 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isOpen, onClose, curr
                                                 {formatTime(Date.now() - download.startTime)}
                                             </span>
 
-                                            {/* Control buttons for active downloads */}
                                             {download.status === 'downloading' && (
                                                 <>
                                                     <button
@@ -376,7 +367,6 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isOpen, onClose, curr
                                                 </button>
                                             )}
 
-                                            {/* Delete button for completed/failed/cancelled */}
                                             {(download.status === 'completed' || download.status === 'failed' || download.status === 'cancelled') && (
                                                 <button
                                                     onClick={() => deleteDownload(download.id)}

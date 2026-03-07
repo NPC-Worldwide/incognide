@@ -24,13 +24,12 @@ const PdfDrawingCanvas: React.FC<PdfDrawingCanvasProps> = ({
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const isDrawingRef = useRef(false);
     const pointsRef = useRef<{ x: number; y: number }[]>([]);
-    // Keep callback refs to avoid stale closures
+
     const onPathCompleteRef = useRef(onPathComplete);
     const onEraseRef = useRef(onErase);
     onPathCompleteRef.current = onPathComplete;
     onEraseRef.current = onErase;
 
-    // Create/update canvas on the page element
     useEffect(() => {
         if (!pageElement) return;
 
@@ -50,7 +49,6 @@ const PdfDrawingCanvas: React.FC<PdfDrawingCanvasProps> = ({
             pageElement.appendChild(canvas);
         }
 
-        // Match canvas resolution to element size
         const rect = pageElement.getBoundingClientRect();
         canvas.width = rect.width;
         canvas.height = rect.height;
@@ -66,11 +64,10 @@ const PdfDrawingCanvas: React.FC<PdfDrawingCanvasProps> = ({
         canvasRef.current = canvas;
 
         return () => {
-            // Don't remove canvas - it may have drawings
+
         };
     }, [pageElement, isActive, tool]);
 
-    // Mouse handlers - NO isDrawing in deps to avoid re-attach on every stroke
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas || !isActive || !tool) return;
@@ -134,13 +131,11 @@ const PdfDrawingCanvas: React.FC<PdfDrawingCanvasProps> = ({
                 return;
             }
 
-            // Convert to SVG path
             let svgPath = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
             for (let i = 1; i < points.length; i++) {
                 svgPath += ` L ${points[i].x.toFixed(2)} ${points[i].y.toFixed(2)}`;
             }
 
-            // Clear the live canvas (SVG overlay will show the saved path)
             const ctx = canvas.getContext('2d');
             if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -159,7 +154,7 @@ const PdfDrawingCanvas: React.FC<PdfDrawingCanvasProps> = ({
         };
     }, [canvasRef.current, isActive, tool, strokeColor, strokeWidth, pageIndex]);
 
-    return null; // Renders via DOM manipulation
+    return null;
 };
 
 export default PdfDrawingCanvas;

@@ -1,8 +1,4 @@
-/**
- * Electron-based DocumentFileApi adapter.
- * Bridges window.api (Electron IPC) to the npcts DocumentFileApi interface
- * so the shared viewer components work in incognide.
- */
+
 import type { DocumentFileApi } from 'npcts';
 
 declare global {
@@ -30,7 +26,7 @@ export const electronFileApi: DocumentFileApi = {
         if (window.api.writeFileBuffer) {
             return window.api.writeFileBuffer(path, buffer);
         }
-        // Fallback: some versions use writeFileContent with 'binary' flag
+
         return window.api.writeFileContent(path, buffer as any, 'binary');
     },
 
@@ -45,9 +41,7 @@ export const electronFileApi: DocumentFileApi = {
     readCsvContent: async (path: string) => {
         const response = await window.api.readCsvContent(path);
         if (response.error) return { content: '', error: response.error };
-        // readCsvContent in Electron returns parsed { headers, rows } - convert back to text
-        // But the npcts CsvViewer expects raw text. For XLSX files this path isn't used anyway.
-        // Return the content if available, otherwise signal that parsed data was returned.
+
         return { content: response.content || '', error: undefined };
     },
 };
