@@ -6,7 +6,6 @@ import AppTutorial from './components/AppTutorial';
 import { AuthProvider } from './components/AuthProvider';
 import { AiFeatureProvider } from './components/AiFeatureContext';
 
-// Clerk publishable key from environment
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || '';
 
 const AuthWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -32,7 +31,6 @@ const App: React.FC = () => {
         const result = await (window as any).api?.setupCheckNeeded?.();
         setShowSetup(result?.needed ?? false);
 
-        // If setup is already done, check if tutorial should show
         if (!result?.needed) {
           const profile = await (window as any).api?.profileGet?.();
           if (profile && !profile.tutorialComplete) {
@@ -49,7 +47,7 @@ const App: React.FC = () => {
 
   const handleSetupComplete = () => {
     setShowSetup(false);
-    // Show tutorial after setup completes
+
     setShowTutorial(true);
   };
 
@@ -62,7 +60,6 @@ const App: React.FC = () => {
     }
   };
 
-  // Loading state while checking
   if (showSetup === null) {
     return (
       <div className="fixed inset-0 bg-gray-900 flex items-center justify-center">
@@ -71,7 +68,6 @@ const App: React.FC = () => {
     );
   }
 
-  // Show setup wizard if needed
   if (showSetup) {
     return (
       <AuthWrapper>
@@ -81,7 +77,7 @@ const App: React.FC = () => {
   }
 
   const handleRerunSetup = async () => {
-    // Reset profile so setup runs fresh
+
     try {
       await (window as any).api?.profileSave?.({ setupComplete: false, tutorialComplete: false });
     } catch (err) {

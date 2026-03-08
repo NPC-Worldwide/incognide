@@ -10,23 +10,23 @@ const ConversationList = ({ conversations, onConversationSelect, activeConversat
         const currentIndex = conversations.findIndex(c => c.id === conv.id);
 
         if (e.shiftKey && lastClickedIndex !== null) {
-           
+
             e.preventDefault();
             e.stopPropagation();
             const start = Math.min(lastClickedIndex, currentIndex);
             const end = Math.max(lastClickedIndex, currentIndex);
             const newSelected = new Set(selectedConvos);
-            
+
             for (let i = start; i <= end; i++) {
                 if (conversations[i]) {
                     newSelected.add(conversations[i].id);
                 }
             }
             setSelectedConvos(newSelected);
-           
+
             onConversationSelect(conv.id);
         } else if (e.ctrlKey || e.metaKey) {
-           
+
             e.preventDefault();
             e.stopPropagation();
             const newSelected = new Set(selectedConvos);
@@ -37,9 +37,9 @@ const ConversationList = ({ conversations, onConversationSelect, activeConversat
             }
             setSelectedConvos(newSelected);
             setLastClickedIndex(currentIndex);
-           
+
         } else {
-           
+
             setSelectedConvos(new Set([conv.id]));
             onConversationSelect(conv.id);
             setLastClickedIndex(currentIndex);
@@ -52,14 +52,12 @@ const ConversationList = ({ conversations, onConversationSelect, activeConversat
         setContextMenuPos({ x: e.clientX, y: e.clientY });
     };
 
-   
     const handleClickOutside = (e) => {
         if (contextMenuPos) {
             setContextMenuPos(null);
         }
     };
 
-   
     React.useEffect(() => {
         document.addEventListener('click', handleClickOutside);
         return () => document.removeEventListener('click', handleClickOutside);
@@ -69,7 +67,7 @@ const ConversationList = ({ conversations, onConversationSelect, activeConversat
         <div onContextMenu={handleContextMenu} className="relative">
             {conversations.map((conv) => {
                 const isSelected = selectedConvos.has(conv.id);
-                
+
                 return (
                     <button
                         key={conv.id}

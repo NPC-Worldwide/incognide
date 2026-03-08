@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, Copy, Square, CheckSquare, User, Maximize2 } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
 
-// Strip source prefixes like "project:" or "global:" from NPC names
 const stripSourcePrefix = (name: string): string => {
     if (!name) return name;
     return name.replace(/^(project:|global:)/, '');
@@ -11,13 +10,13 @@ const stripSourcePrefix = (name: string): string => {
 interface BroadcastResponseRowProps {
     siblingRuns: any[];
     userMessage: any;
-    allMessages: any[]; // Full message list to find children
+    allMessages: any[];
     onCopyAll: (messages: any[]) => void;
     onToggleBranchSelection: (message: any, selected: boolean) => void;
     selectedBranchIds: Set<string>;
     onApplyToCode?: (message: any) => void;
-    onExpandBranch?: (assistantMsgId: string) => void; // Expand this branch as main view
-    depth?: number; // For nested rendering
+    onExpandBranch?: (assistantMsgId: string) => void;
+    depth?: number;
 }
 
 const BroadcastResponseRow: React.FC<BroadcastResponseRowProps> = ({
@@ -31,7 +30,7 @@ const BroadcastResponseRow: React.FC<BroadcastResponseRowProps> = ({
     onExpandBranch,
     depth = 0
 }) => {
-    // Debug: Log what we received
+
     console.log('[BROADCAST ROW] depth:', depth, 'siblingRuns:', siblingRuns.length,
         'allMessages:', allMessages.length,
         'runs:', siblingRuns.map((r: any) => ({ id: String(r.id || '').slice(0,8), parent: String(r.parentMessageId || '').slice(0,8), npc: r.npc })));
@@ -88,7 +87,6 @@ const BroadcastResponseRow: React.FC<BroadcastResponseRowProps> = ({
         onCopyAll(siblingRuns);
     };
 
-    // Find children of a message (user messages that have this as parentMessageId)
     const getChildUserMessages = (parentId: string) => {
         const children = allMessages.filter((m: any) => m.role === 'user' && m.parentMessageId === parentId);
         if (children.length > 0) {
@@ -98,7 +96,6 @@ const BroadcastResponseRow: React.FC<BroadcastResponseRowProps> = ({
         return children;
     };
 
-    // Find assistant responses to a user message
     const getAssistantResponses = (userMsgId: string) => {
         const responses = allMessages.filter((m: any) => m.role === 'assistant' && m.parentMessageId === userMsgId);
         if (responses.length > 0) {
@@ -113,7 +110,6 @@ const BroadcastResponseRow: React.FC<BroadcastResponseRowProps> = ({
 
     return (
         <div className="flex flex-col items-start w-full">
-            {/* Bulk actions bar - only at top level */}
             {depth === 0 && siblingRuns.length > 1 && (
                 <div className="flex items-center gap-2 mb-1 text-[10px]">
                     <button
@@ -138,22 +134,17 @@ const BroadcastResponseRow: React.FC<BroadcastResponseRowProps> = ({
                 </div>
             )}
 
-            {/* Center trunk line from parent */}
             <div className="w-0.5 h-4 bg-purple-500/50 self-center" />
 
-            {/* Horizontal connector bar */}
             <div className="relative w-full">
-                {/* The horizontal line spanning all branches */}
                 <div className="absolute top-0 left-0 right-0 h-0.5 bg-purple-500/50" />
 
-                {/* Branch connectors and cards - flex to fill evenly */}
                 <div className="flex gap-2 pt-4 w-full">
                     {siblingRuns.map((run) => {
                         const isExpanded = expandedCards.has(run.id);
                         const isSelected = selectedBranchIds.has(run.id);
                         const label = stripSourcePrefix(run.npc || run.model || 'Response');
 
-                        // Find child conversations (user messages that branch from this response)
                         const childUserMsgs = getChildUserMessages(run.id);
 
                         return (
@@ -162,17 +153,13 @@ const BroadcastResponseRow: React.FC<BroadcastResponseRowProps> = ({
                                 className="flex flex-col items-center min-w-0"
                                 style={{ flex: '1 1 0' }}
                             >
-                                {/* Vertical connector from horizontal bar */}
                                 <div className={`w-0.5 h-3 -mt-4 ${isSelected ? 'bg-purple-400' : 'bg-purple-500/50'}`} />
 
-                                {/* Card */}
                                 <div className={`w-full bg-[#1a1a2e] border rounded-lg overflow-visible transition-all ${isSelected ? 'border-purple-400 ring-1 ring-purple-400/50' : 'border-purple-500/30'}`}>
-                                    {/* Card header */}
                                     <div
                                         className="flex items-center gap-1 px-2 py-1.5 cursor-pointer hover:bg-purple-500/10 transition-colors"
                                         onClick={() => toggleCard(run.id)}
                                     >
-                                        {/* Checkbox for branch selection */}
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation();
@@ -198,21 +185,17 @@ const BroadcastResponseRow: React.FC<BroadcastResponseRowProps> = ({
                                             <ChevronRight size={12} className="text-purple-400 flex-shrink-0" />
                                         )}
 
-                                        {/* NPC/Model badge */}
                                         <span className={`px-1.5 py-0.5 text-[9px] font-medium rounded-full border truncate ${isSelected ? 'bg-purple-500/40 text-purple-200 border-purple-400' : 'bg-purple-500/20 text-purple-300 border-purple-500/30'}`}>
                                             {label}
                                         </span>
 
-                                        {/* Child count indicator */}
                                         {childUserMsgs.length > 0 && (
                                             <span className="text-[8px] text-purple-400/70 ml-1">
                                                 +{childUserMsgs.length}
                                             </span>
                                         )}
 
-                                        {/* Actions */}
                                         <div className="flex items-center gap-0.5 ml-auto flex-shrink-0">
-                                            {/* Expand branch button - only show if there are sub-chains */}
                                             {onExpandBranch && childUserMsgs.length > 0 && (
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); onExpandBranch(run.id); }}
@@ -232,7 +215,6 @@ const BroadcastResponseRow: React.FC<BroadcastResponseRowProps> = ({
                                         </div>
                                     </div>
 
-                                    {/* Expanded content */}
                                     {isExpanded && (
                                         <div
                                             className="px-2 pb-2 border-t border-purple-500/10 relative"
@@ -243,7 +225,6 @@ const BroadcastResponseRow: React.FC<BroadcastResponseRowProps> = ({
                                                 <MarkdownRenderer content={run.content || ''} />
                                             </div>
 
-                                            {/* Show indicator for sub-chains - don't recursively render */}
                                             {childUserMsgs.length > 0 && (
                                                 <div className="mt-2 pt-2 border-t border-purple-500/20">
                                                     <div className="text-[10px] text-purple-400 flex items-center gap-1">

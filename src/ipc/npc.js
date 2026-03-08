@@ -6,7 +6,6 @@ const crypto = require('crypto');
 const fetch = require('node-fetch');
 const yaml = require('js-yaml');
 
-// Hash a file's contents for change detection
 function hashFile(filePath) {
   try {
     const content = fs.readFileSync(filePath);
@@ -21,11 +20,6 @@ function hashBuffer(buf) {
 function register(ctx) {
   const { ipcMain, getMainWindow, callBackendApi, BACKEND_URL, log, generateId, activeStreams, appDir } = ctx;
 
-  // ============== Deploy bundled incognide npc_team ==============
-  // Smart deploy: only overwrite files the user hasn't modified locally.
-  // Uses .deploy_manifest.json to track hashes of last-deployed bundled files.
-  // If local file still matches last-deployed hash → safe to update.
-  // If local file was modified by user → skip, flag for review.
   const INCOGNIDE_TEAM_PATH = path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team');
 
   (async () => {
@@ -34,16 +28,14 @@ function register(ctx) {
     try {
       await fsPromises.mkdir(destBase, { recursive: true });
 
-      // Load existing manifest (hashes of last-deployed bundled files)
       let manifest = {};
       try {
         manifest = JSON.parse(await fsPromises.readFile(manifestPath, 'utf8'));
-      } catch { /* first deploy or corrupt manifest */ }
+      } catch {  }
 
       const newManifest = { ...manifest };
       const skippedFiles = [];
 
-      // Smart deploy: compare hashes before overwriting
       const smartCopyRecursive = async (src, dest, relBase = '') => {
         const stat = await fsPromises.stat(src);
         if (stat.isDirectory()) {
@@ -62,17 +54,16 @@ function register(ctx) {
             const lastDeployedHash = manifest[relPath];
 
             if (localHash === srcHash) {
-              // Local matches bundled — already up to date
+
               newManifest[relPath] = srcHash;
             } else if (lastDeployedHash && localHash !== lastDeployedHash) {
-              // User modified the file locally AND bundled version changed — skip
+
               skippedFiles.push(relPath);
-              newManifest[relPath] = lastDeployedHash; // keep old hash
+              newManifest[relPath] = lastDeployedHash;
             } else {
-              // Either first deploy (no manifest entry) with existing file that doesn't match,
-              // or local file matches last-deployed hash (user didn't change it) — safe to update
+
               if (!lastDeployedHash && localHash !== srcHash) {
-                // First deploy but file exists and differs — skip to be safe
+
                 skippedFiles.push(relPath);
               } else {
                 await fsPromises.copyFile(src, dest);
@@ -80,21 +71,19 @@ function register(ctx) {
               }
             }
           } else {
-            // File doesn't exist locally — always deploy
+
             await fsPromises.copyFile(src, dest);
             newManifest[relPath] = srcHash;
           }
         }
       };
 
-      // Deploy npc_team files
       const npcTeamSrc = path.join(appDir, 'npc_team');
       if (fs.existsSync(npcTeamSrc)) {
         await smartCopyRecursive(npcTeamSrc, destBase);
         log(`[NPC] Smart-deployed incognide npc_team to ${destBase}`);
       }
 
-      // Deploy MCP servers (same smart logic)
       const mcpSrc = path.join(appDir, 'mcp_servers');
       if (fs.existsSync(mcpSrc)) {
         const mcpFiles = await fsPromises.readdir(mcpSrc);
@@ -124,7 +113,6 @@ function register(ctx) {
         }
       }
 
-      // Save updated manifest
       await fsPromises.writeFile(manifestPath, JSON.stringify(newManifest, null, 2));
 
       if (skippedFiles.length > 0) {
@@ -135,16 +123,14 @@ function register(ctx) {
     }
   })();
 
-  // ============== Jinx Handlers ==============
-
-  ipcMain.handle('getAvailableJinxs', async (event, { currentPath, npc }) => {
+  ipcMain.handle('getAvailableJinxes', async (event, { currentPath, npc }) => {
     try {
         const params = new URLSearchParams();
         if (currentPath) params.append('currentPath', currentPath);
         if (npc) params.append('npc', npc);
 
-        const url = `${BACKEND_URL}/api/jinxs/available?${params.toString()}`;
-        log('Fetching available jinxs from:', url);
+        const url = `${BACKEND_URL}/api/jinxes/available?${params.toString()}`;
+        log('Fetching available jinxes from:', url);
 
         const response = await fetch(url);
         if (!response.ok) {
@@ -153,11 +139,11 @@ function register(ctx) {
         }
 
         const data = await response.json();
-        log('Received jinxs:', data.jinxs?.length);
+        log('Received jinxes:', data.jinxes?.length);
         return data;
     } catch (err) {
-        log('Error in getAvailableJinxs handler:', err);
-        return { jinxs: [], error: err.message };
+        log('Error in getAvailableJinxes handler:', err);
+        return { jinxes: [], error: err.message };
     }
   });
 
@@ -250,31 +236,30 @@ function register(ctx) {
     }
   });
 
-  // globalPath arg: defaults to incognide team. Pass 'npcsh' for raw npcsh global jinxs.
-  ipcMain.handle('get-jinxs-global', async (event, globalPath) => {
+  ipcMain.handle('get-jinxes-global', async (event, globalPath) => {
     try {
         if (globalPath === 'npcsh') {
-            const response = await fetch(`${BACKEND_URL}/api/jinxs/global`);
+            const response = await fetch(`${BACKEND_URL}/api/jinxes/global`);
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const data = await response.json();
-            return { jinxs: (data.jinxs || []).map(j => ({ ...j, source: 'npcsh' })) };
+            return { jinxes: (data.jinxes || []).map(j => ({ ...j, source: 'npcsh' })) };
         }
 
         const teamPath = globalPath || INCOGNIDE_TEAM_PATH;
-        const response = await fetch(`${BACKEND_URL}/api/jinxs/project?currentPath=${encodeURIComponent(teamPath)}`);
+        const response = await fetch(`${BACKEND_URL}/api/jinxes/project?currentPath=${encodeURIComponent(teamPath)}`);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const data = await response.json();
-        return { jinxs: (data.jinxs || []).map(j => ({ ...j, source: globalPath ? 'custom' : 'incognide' })) };
+        return { jinxes: (data.jinxes || []).map(j => ({ ...j, source: globalPath ? 'custom' : 'incognide' })) };
     } catch (err) {
-        console.error('Error loading global jinxs:', err);
-        return { jinxs: [], error: err.message };
+        console.error('Error loading global jinxes:', err);
+        return { jinxes: [], error: err.message };
     }
   });
 
-  ipcMain.handle('get-jinxs-project', async (event, currentPath) => {
+  ipcMain.handle('get-jinxes-project', async (event, currentPath) => {
     try {
-        const url = `${BACKEND_URL}/api/jinxs/project?currentPath=${encodeURIComponent(currentPath)}`;
-        console.log('Fetching project jinxs from URL:', url);
+        const url = `${BACKEND_URL}/api/jinxes/project?currentPath=${encodeURIComponent(currentPath)}`;
+        console.log('Fetching project jinxes from URL:', url);
 
         const response = await fetch(url);
         if (!response.ok) {
@@ -282,22 +267,21 @@ function register(ctx) {
         }
 
         const data = await response.json();
-        console.log('Project jinxs data:', data);
+        console.log('Project jinxes data:', data);
         return data;
     } catch (err) {
-        console.error('Error loading project jinxs:', err);
-        return { jinxs: [], error: err.message };
+        console.error('Error loading project jinxes:', err);
+        return { jinxes: [], error: err.message };
     }
   });
 
-  // data.globalPath: 'npcsh' to save to npcsh global, omit for incognide (default)
   ipcMain.handle('save-jinx', async (event, data) => {
     try {
         if (data.globalPath !== 'npcsh' && !data.currentPath) {
             data.currentPath = data.globalPath || INCOGNIDE_TEAM_PATH;
         }
         delete data.globalPath;
-        const response = await fetch(`${BACKEND_URL}/api/jinxs/save`, {
+        const response = await fetch(`${BACKEND_URL}/api/jinxes/save`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -316,12 +300,84 @@ function register(ctx) {
     }
   });
 
-  // ============== NPC Team Handlers ==============
+  ipcMain.handle('ingest-jinx', async (event, data) => {
+    try {
+        const response = await fetch(`${BACKEND_URL}/api/jinxes/ingest`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return await response.json();
+    } catch (err) {
+        console.error('Error ingesting jinx:', err);
+        return { error: err.message };
+    }
+  });
 
-  // data.globalPath: 'npcsh' to save to npcsh global, omit for incognide (default)
+  ipcMain.handle('delete-jinx', async (event, data) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/jinxes/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.error || `HTTP ${response.status}`);
+      return json;
+    } catch (err) {
+      console.error('Error deleting jinx:', err);
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('import-npc-team', async (event, data) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/npc-team/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.error || `HTTP ${response.status}`);
+      return json;
+    } catch (err) {
+      console.error('Error importing NPC team:', err);
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('get-jinxes-all-teams', async (event, currentPath) => {
+    try {
+      const [npcshRes, incognideRes, projectRes] = await Promise.all([
+        fetch(`${BACKEND_URL}/api/jinxes/global`),
+        fetch(`${BACKEND_URL}/api/jinxes/project?currentPath=${encodeURIComponent(INCOGNIDE_TEAM_PATH)}`),
+        currentPath
+          ? fetch(`${BACKEND_URL}/api/jinxes/project?currentPath=${encodeURIComponent(currentPath)}`)
+          : Promise.resolve(null),
+      ]);
+
+      const npcsh = npcshRes.ok ? await npcshRes.json() : { jinxes: [] };
+      const incognide = incognideRes.ok ? await incognideRes.json() : { jinxes: [] };
+      const project = projectRes?.ok ? await projectRes.json() : { jinxes: [] };
+
+      return {
+        npcsh: (npcsh.jinxes || []).map(j => ({ ...j, team: 'npcsh', scope: 'global' })),
+        incognide: (incognide.jinxes || []).map(j => ({ ...j, team: 'incognide', scope: 'global' })),
+        project: (project.jinxes || []).map(j => ({ ...j, team: 'project', scope: 'project' })),
+        error: null,
+      };
+    } catch (err) {
+      console.error('Error loading all teams jinxes:', err);
+      return { npcsh: [], incognide: [], project: [], error: err.message };
+    }
+  });
+
   ipcMain.handle('save-npc', async (event, data) => {
     try {
-        // If saving to incognide team (default), include the team path
+
         if (data.globalPath !== 'npcsh' && !data.currentPath) {
             data.currentPath = data.globalPath || INCOGNIDE_TEAM_PATH;
         }
@@ -339,11 +395,10 @@ function register(ctx) {
     }
   });
 
-  // globalPath arg: defaults to incognide team. Pass 'npcsh' to get the raw npcsh global team.
   ipcMain.handle('getNPCTeamGlobal', async (event, globalPath) => {
     try {
       if (globalPath === 'npcsh') {
-        // Raw npcsh global team
+
         const response = await fetch(`${BACKEND_URL}/api/npc_team_global`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' }
@@ -353,7 +408,6 @@ function register(ctx) {
         return { npcs: (data.npcs || []).map(n => ({ ...n, source: 'npcsh' })) };
       }
 
-      // Default: incognide team (or custom path)
       const teamPath = globalPath || INCOGNIDE_TEAM_PATH;
       const response = await fetch(`${BACKEND_URL}/api/npc_team_project?currentPath=${encodeURIComponent(teamPath)}`, {
         method: 'GET',
@@ -405,7 +459,6 @@ function register(ctx) {
     }
   });
 
-  // Re-deploy incognide team — force overwrite all files and update manifest
   ipcMain.handle('deploy-incognide-team', async () => {
     const destBase = INCOGNIDE_TEAM_PATH;
     const manifestPath = path.join(destBase, '.deploy_manifest.json');
@@ -438,7 +491,6 @@ function register(ctx) {
     }
   });
 
-  // Compare local team files vs bundled app files — returns diff status per file
   ipcMain.handle('npc-team:compare-bundled', async () => {
     const destBase = INCOGNIDE_TEAM_PATH;
     const manifestPath = path.join(destBase, '.deploy_manifest.json');
@@ -448,9 +500,8 @@ function register(ctx) {
 
       const npcTeamSrc = path.join(appDir, 'npc_team');
       const mcpSrc = path.join(appDir, 'mcp_servers');
-      const results = []; // { file, status: 'up-to-date' | 'user-modified' | 'app-updated' | 'both-changed' | 'new-from-app' | 'local-only' }
+      const results = [];
 
-      // Collect all bundled files
       const bundledFiles = {};
       const collectBundled = async (src, relBase = '') => {
         if (!fs.existsSync(src)) return;
@@ -474,7 +525,6 @@ function register(ctx) {
         }
       }
 
-      // Collect all local files (excluding manifest and .git)
       const localFiles = {};
       const collectLocal = async (dir, relBase = '') => {
         if (!fs.existsSync(dir)) return;
@@ -493,7 +543,6 @@ function register(ctx) {
       };
       await collectLocal(destBase);
 
-      // Compare
       const allFiles = new Set([...Object.keys(bundledFiles), ...Object.keys(localFiles)]);
       for (const file of allFiles) {
         const bundledHash = bundledFiles[file];
@@ -507,7 +556,7 @@ function register(ctx) {
         } else if (bundledHash === localHash) {
           results.push({ file, status: 'up-to-date' });
         } else {
-          // Both exist, different hashes
+
           const userModified = lastDeployedHash && localHash !== lastDeployedHash;
           const appUpdated = lastDeployedHash && bundledHash !== lastDeployedHash;
           if (userModified && appUpdated) {
@@ -528,12 +577,11 @@ function register(ctx) {
     }
   });
 
-  // Accept bundled version for a specific file (overwrite local with app version)
   ipcMain.handle('npc-team:accept-bundled', async (event, { filePath }) => {
     const destBase = INCOGNIDE_TEAM_PATH;
     const manifestPath = path.join(destBase, '.deploy_manifest.json');
     try {
-      // Find bundled source
+
       const npcTeamSrc = path.join(appDir, 'npc_team');
       let srcPath = path.join(npcTeamSrc, filePath);
       if (!fs.existsSync(srcPath)) {
@@ -545,7 +593,6 @@ function register(ctx) {
       await fsPromises.mkdir(path.dirname(destPath), { recursive: true });
       await fsPromises.copyFile(srcPath, destPath);
 
-      // Update manifest
       let manifest = {};
       try { manifest = JSON.parse(await fsPromises.readFile(manifestPath, 'utf8')); } catch {}
       manifest[filePath] = hashFile(destPath);
@@ -557,7 +604,6 @@ function register(ctx) {
     }
   });
 
-  // Get diff between local and bundled version of a file
   ipcMain.handle('npc-team:bundled-diff', async (event, { filePath }) => {
     const destBase = INCOGNIDE_TEAM_PATH;
     try {
@@ -574,8 +620,6 @@ function register(ctx) {
       return { success: false, error: e.message };
     }
   });
-
-  // ============== NPC Team Sync Handlers ==============
 
   ipcMain.handle('npc-team:sync-status', async (event, globalPath) => {
     try {
@@ -660,20 +704,23 @@ function register(ctx) {
     }
   });
 
-  // ============== MCP Server Handlers ==============
-
-  // --- MCP Server helpers ---
   async function fetchCtxMcpServers(currentPath) {
-    const servers = new Map(); // serverPath -> { serverPath, origin }
+    const servers = new Map();
     const addServer = (entry, origin) => {
       if (!entry) return;
-      const serverPath = typeof entry === 'string' ? entry : entry.value;
+      const isObj = typeof entry === 'object' && entry !== null;
+      const serverPath = isObj ? entry.value : entry;
       if (serverPath && !servers.has(serverPath)) {
-        servers.set(serverPath, { serverPath, origin });
+        const info = { serverPath, origin };
+        if (isObj) {
+          if (entry.env) info.env = entry.env;
+          if (entry.name) info.name = entry.name;
+          if (entry.id) info.id = entry.id;
+        }
+        servers.set(serverPath, info);
       }
     };
 
-    // Auto-discover MCP servers from known team directories
     const npcshDir = ctx.NPCSH_BASE || path.join(os.homedir(), '.npcsh');
     const knownTeamDirs = [
       { dir: path.join(npcshDir, 'npc_team'), name: 'npcsh' },
@@ -683,7 +730,7 @@ function register(ctx) {
     for (const { dir, name } of knownTeamDirs) {
       try {
         if (fs.existsSync(dir)) {
-          // Look for *_mcp_server.py or mcp_server.py
+
           const files = fs.readdirSync(dir);
           for (const file of files) {
             if (file.endsWith('_mcp_server.py') || file === 'mcp_server.py') {
@@ -697,13 +744,11 @@ function register(ctx) {
       }
     }
 
-    // Also check ~/.npcsh/mcp_server.py directly
     const globalMcpServer = path.join(npcshDir, 'mcp_server.py');
     if (fs.existsSync(globalMcpServer)) {
       addServer(globalMcpServer, 'auto:global');
     }
 
-    // Load from context files (these can override auto-discovered ones)
     try {
       const globalRes = await fetch(`${BACKEND_URL}/api/context/global`);
       const globalJson = await globalRes.json();
@@ -729,13 +774,18 @@ function register(ctx) {
       const serverList = await fetchCtxMcpServers(currentPath);
       const statuses = [];
       for (const serverInfo of serverList) {
-        const { serverPath, origin } = serverInfo;
+        const { serverPath, origin, env, name, id } = serverInfo;
         try {
           const statusRes = await fetch(`${BACKEND_URL}/api/mcp/server/status?serverPath=${encodeURIComponent(serverPath)}${currentPath ? `&currentPath=${encodeURIComponent(currentPath)}` : ''}`);
           const statusJson = await statusRes.json();
-          statuses.push({ serverPath, origin, status: statusJson.status || (statusJson.running ? 'running' : 'unknown'), details: statusJson });
+          statuses.push({
+            serverPath, origin, name, id, env,
+            status: statusJson.status || (statusJson.running ? 'running' : 'unknown'),
+            pid: statusJson.pid,
+            details: statusJson,
+          });
         } catch (err) {
-          statuses.push({ serverPath, origin, status: 'error', error: err.message });
+          statuses.push({ serverPath, origin, name, id, env, status: 'error', error: err.message });
         }
       }
       return { servers: statuses, error: null };
@@ -745,12 +795,12 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('mcp:startServer', async (event, { serverPath, currentPath } = {}) => {
+  ipcMain.handle('mcp:startServer', async (event, { serverPath, currentPath, envVars } = {}) => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/mcp/server/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ serverPath, currentPath })
+        body: JSON.stringify({ serverPath, currentPath, envVars })
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
@@ -807,55 +857,45 @@ function register(ctx) {
     }
   });
 
-  // Add a desktop integration MCP server
   ipcMain.handle('mcp:addIntegration', async (event, { integrationId, serverScript, envVars, name } = {}) => {
     try {
-      // Destination directory for MCP servers
+
       const npcshDir = ctx.NPCSH_BASE || path.join(os.homedir(), '.npcsh');
       const mcpServersDir = path.join(npcshDir, 'mcp_servers');
 
-      // Ensure directories exist
       await fsPromises.mkdir(mcpServersDir, { recursive: true });
 
-      // Source path (bundled with app)
       const sourcePath = path.join(appDir, 'mcp_servers', serverScript);
       const destPath = path.join(mcpServersDir, serverScript);
 
-      // Check if source exists
       if (!fs.existsSync(sourcePath)) {
         return { error: `MCP server script not found: ${serverScript}` };
       }
 
-      // Copy the script
       await fsPromises.copyFile(sourcePath, destPath);
       console.log(`[MCP] Copied ${serverScript} to ${destPath}`);
 
-      // Build server path that will be added to context
       const serverPath = destPath;
 
-      // Read current global context
       let globalContext = {};
       const globalCtxPath = path.join(npcshDir, '.ctx');
       try {
         const ctxContent = await fsPromises.readFile(globalCtxPath, 'utf-8');
         globalContext = JSON.parse(ctxContent);
       } catch (e) {
-        // File doesn't exist yet, start fresh
+
         globalContext = {};
       }
 
-      // Ensure mcp_servers array exists
       if (!globalContext.mcp_servers) {
         globalContext.mcp_servers = [];
       }
 
-      // Check if this integration already exists
       const existingIndex = globalContext.mcp_servers.findIndex(s => {
         if (typeof s === 'string') return s === serverPath;
         return s.value === serverPath || s.id === integrationId;
       });
 
-      // Create the server entry with env vars
       const serverEntry = {
         id: integrationId,
         name: name,
@@ -864,22 +904,20 @@ function register(ctx) {
       };
 
       if (existingIndex >= 0) {
-        // Update existing
+
         globalContext.mcp_servers[existingIndex] = serverEntry;
       } else {
-        // Add new
+
         globalContext.mcp_servers.push(serverEntry);
       }
 
-      // Write back the context
       await fsPromises.writeFile(globalCtxPath, JSON.stringify(globalContext, null, 2), 'utf-8');
       console.log(`[MCP] Added ${name} integration to global context`);
 
-      // Notify npcpy backend to reload context (if endpoint exists)
       try {
         await fetch(`${BACKEND_URL}/api/context/reload`, { method: 'POST' });
       } catch (e) {
-        // Ignore if reload endpoint doesn't exist
+
       }
 
       return { success: true, serverPath, error: null };
@@ -888,8 +926,6 @@ function register(ctx) {
       return { error: err.message };
     }
   });
-
-  // ============== Knowledge Graph Handlers ==============
 
   ipcMain.handle('kg:getGraphData', async (event, { generation }) => {
     const params = generation !== null ? `?generation=${generation}` : '';
@@ -934,7 +970,6 @@ function register(ctx) {
     });
   });
 
-  // KG Node/Edge editing handlers
   ipcMain.handle('kg:addNode', async (event, { nodeId, nodeType = 'concept', properties = {} }) => {
     return await callBackendApi(`${BACKEND_URL}/api/kg/node`, {
       method: 'POST',
@@ -971,7 +1006,6 @@ function register(ctx) {
     });
   });
 
-  // KG Search handlers
   ipcMain.handle('kg:search', async (event, { q, generation, type, limit }) => {
     const params = new URLSearchParams();
     if (q) params.append('q', q);
@@ -1028,8 +1062,6 @@ function register(ctx) {
     });
   });
 
-  // ============== Memory Handlers ==============
-
   ipcMain.handle('memory:search', async (event, { q, npc, team, directory_path, status, limit }) => {
     const params = new URLSearchParams();
     if (q) params.append('q', q);
@@ -1076,8 +1108,6 @@ function register(ctx) {
     }
   });
 
-  // ============== Map (Mind Map) Handlers ==============
-
   ipcMain.handle('save-map', async (event, data) => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/maps/save`, {
@@ -1104,24 +1134,20 @@ function register(ctx) {
     }
   });
 
-  // ============== Context Handlers ==============
-
-  // Find the .ctx file in a team directory (e.g. incognide.ctx, npcsh.ctx, team.ctx)
   async function findCtxFile(teamDir) {
     try {
       const files = await fsPromises.readdir(teamDir);
       const ctxFile = files.find(f => f.endsWith('.ctx'));
       if (ctxFile) return path.join(teamDir, ctxFile);
-    } catch (e) { /* dir doesn't exist */ }
+    } catch (e) {  }
     return null;
   }
 
-  // globalPath: 'npcsh' for raw npcsh context, omit for incognide (default)
   ipcMain.handle('get-global-context', async (event, globalPath) => {
     if (globalPath === 'npcsh') {
       return await callBackendApi(`${BACKEND_URL}/api/context/global`);
     }
-    // Read incognide .ctx file directly
+
     const teamDir = globalPath || INCOGNIDE_TEAM_PATH;
     const ctxFilePath = await findCtxFile(teamDir);
     if (!ctxFilePath) return { context: {}, error: null };
@@ -1142,7 +1168,7 @@ function register(ctx) {
         body: JSON.stringify({ context: contextData }),
       });
     }
-    // Write incognide .ctx file directly
+
     const teamDir = globalPath || INCOGNIDE_TEAM_PATH;
     let ctxFilePath = await findCtxFile(teamDir);
     if (!ctxFilePath) ctxFilePath = path.join(teamDir, 'incognide.ctx');
@@ -1155,17 +1181,14 @@ function register(ctx) {
     }
   });
 
-  // Check if ~/.npcsh exists and has a valid npc_team
   ipcMain.handle('npcsh-check', async () => {
     return await callBackendApi(`${BACKEND_URL}/api/npcsh/check`);
   });
 
-  // Get NPCs and jinxs available in the npcsh package
   ipcMain.handle('npcsh-package-contents', async () => {
     return await callBackendApi(`${BACKEND_URL}/api/npcsh/package-contents`);
   });
 
-  // Initialize ~/.npcsh with default npc_team
   ipcMain.handle('npcsh-init', async () => {
     return await callBackendApi(`${BACKEND_URL}/api/npcsh/init`, {
       method: 'POST',

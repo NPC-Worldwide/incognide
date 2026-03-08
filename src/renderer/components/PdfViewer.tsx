@@ -27,7 +27,6 @@ const HIGHLIGHT_COLORS = {
     purple: { bg: 'rgba(180, 100, 255, 0.3)', border: 'rgba(150, 50, 255, 0.5)' },
 };
 
-// Global cache for PDF buffers - keyed by filePath, max 10 entries
 const PDF_CACHE_MAX = 10;
 const pdfBufferCache = new Map<string, ArrayBuffer>();
 const cachePdfBuffer = (key: string, buffer: ArrayBuffer) => {
@@ -60,7 +59,6 @@ interface PdfDrawing {
     height: number;
 }
 
-// Exported utility function for loading PDF highlights for a specific pane
 export const loadPdfHighlightsForActivePane = async (
     activeContentPaneId: string | null,
     contentDataRef: React.MutableRefObject<any>,
@@ -108,7 +106,7 @@ const PdfContextMenu = ({
     setSelectedColor,
     onAddComment
 }) => {
-    // All hooks MUST be called before any conditional return
+
     const aiEnabled = useAiEnabled();
     const copyText = useCallback(() => {
         handleCopyPdfText(selectedPdfText?.text);
@@ -132,7 +130,6 @@ const PdfContextMenu = ({
 
     if (!pdfContextMenuPos) return null;
 
-    // Clamp to viewport bounds
     const menuWidth = 180;
     const menuHeight = 220;
     const clampedX = Math.min(pdfContextMenuPos.x, window.innerWidth - menuWidth);
@@ -197,7 +194,6 @@ const PdfContextMenu = ({
     );
 };
 
-// Annotations Panel Component
 const AnnotationsPanel = ({
     highlights,
     drawings,
@@ -260,7 +256,6 @@ const AnnotationsPanel = ({
 
     return (
         <div className="w-72 border-l theme-border flex flex-col theme-bg-secondary h-full">
-            {/* Header */}
             <div className="flex items-center justify-between p-3 border-b theme-border">
                 <h3 className="font-semibold text-sm flex items-center gap-2">
                     <Highlighter size={16} className="text-yellow-400" />
@@ -275,7 +270,6 @@ const AnnotationsPanel = ({
                 </button>
             </div>
 
-            {/* Tabs */}
             <div className="flex border-b theme-border">
                 <button
                     onClick={() => setTab('highlights')}
@@ -291,7 +285,6 @@ const AnnotationsPanel = ({
                 </button>
             </div>
 
-            {/* Content */}
             <div className="flex-1 overflow-auto p-2 space-y-2">
                 {tab === 'highlights' ? (
                     <>
@@ -397,7 +390,6 @@ const AnnotationsPanel = ({
                             </div>
                         ) : (
                             <>
-                                {/* Undo last */}
                                 <div className="flex gap-1 mb-2">
                                     <button
                                         onClick={onUndoLastDrawing}
@@ -451,7 +443,6 @@ const AnnotationsPanel = ({
     );
 };
 
-// Manager that finds page layers and mounts PdfDrawingCanvas on each
 const DrawingCanvasManager = ({
     wrapperRef,
     drawingMode,
@@ -490,7 +481,6 @@ const DrawingCanvasManager = ({
             setPageElements(pages);
         };
 
-        // Find pages initially and watch for new ones
         const timer = setTimeout(findPages, 500);
         const observer = new MutationObserver(() => {
             setTimeout(findPages, 200);
@@ -549,7 +539,6 @@ const PdfViewer = ({
     const [inlineComment, setInlineComment] = useState<{ highlightId: number; x: number; y: number } | null>(null);
     const [inlineCommentText, setInlineCommentText] = useState('');
 
-    // Drawing / Signature state
     const [drawingMode, setDrawingMode] = useState(false);
     const [drawingTool, setDrawingTool] = useState<'pen' | 'eraser' | null>(null);
     const [drawingColor, setDrawingColor] = useState('#000000');
@@ -563,10 +552,8 @@ const PdfViewer = ({
 
     const workerUrl = pdfjsWorkerUrl;
 
-    // Plugin factories are custom hooks internally - must be called unconditionally every render
     const zoomPluginInstance = zoomPlugin();
 
-    // Inject global style for --scale-factor to prevent pdfjs warnings
     useEffect(() => {
         const styleId = 'pdf-scale-factor-style';
         let style = document.getElementById(styleId) as HTMLStyleElement;
@@ -595,18 +582,16 @@ const PdfViewer = ({
             }
         `;
         return () => {
-            // Don't remove - other PDF viewers may need it
+
         };
     }, [currentScale]);
 
-    // Set scale factor on document load
     const handleDocumentLoad = useCallback((e: any) => {
-        // Set initial scale factor on wrapper
+
         const wrapper = viewerWrapperRef.current;
         if (wrapper) {
             wrapper.style.setProperty('--scale-factor', String(currentScale || 1));
 
-            // Also set on all existing text layers
             const textLayers = wrapper.querySelectorAll('.rpv-core__text-layer');
             textLayers.forEach((el: HTMLElement) => {
                 el.style.setProperty('--scale-factor', String(currentScale || 1));
@@ -614,7 +599,10 @@ const PdfViewer = ({
         }
     }, [currentScale]);
 
-    const defaultLayoutPluginInstance = defaultLayoutPlugin();
+    const defaultLayoutPluginInstance = defaultLayoutPlugin({
+        sidebarTabs: () => [],
+        renderToolbar: () => <></>,
+    });
 
     const paneData = contentDataRef.current[nodeId];
     const filePath = paneData?.contentId;
@@ -622,31 +610,29 @@ const PdfViewer = ({
     const lastFilePathRef = useRef<string | null>(null);
     const blobUrlRef = useRef<string | null>(null);
 
-    // Synchronously check cache when filePath changes to avoid loading flash on tab switch
     if (filePath && filePath !== lastFilePathRef.current) {
         const cachedBuffer = pdfBufferCache.get(filePath);
         if (cachedBuffer && !pdfData) {
-            // Revoke old blob URL if exists
+
             if (blobUrlRef.current) {
                 URL.revokeObjectURL(blobUrlRef.current);
             }
-            // Create blob URL synchronously for cached content
+
             const newBlobUrl = URL.createObjectURL(new Blob([cachedBuffer], { type: 'application/pdf' }));
             blobUrlRef.current = newBlobUrl;
             setPdfData(newBlobUrl);
             setError(null);
         } else if (!cachedBuffer && pdfData) {
-            // Reset for uncached files
+
             setPdfData(null);
         }
         lastFilePathRef.current = filePath;
     }
 
-    // Listen for refresh events for this specific PDF
     useEffect(() => {
         const handleRefresh = (e: CustomEvent) => {
             if (e.detail?.pdfPath === filePath) {
-                // Invalidate cache so we reload from disk
+
                 pdfBufferCache.delete(filePath);
                 setRefreshTrigger((prev) => prev + 1);
             }
@@ -713,7 +699,6 @@ const PdfViewer = ({
         setSelectedHighlightId(highlight?.id || null);
     }, []);
 
-    // --- Drawing functions ---
     const loadDrawings = useCallback(async () => {
         if (!filePath) { setDrawings([]); return; }
         try {
@@ -743,10 +728,10 @@ const PdfViewer = ({
     }, [filePath, drawingColor, drawingStrokeWidth, loadDrawings]);
 
     const handleEraseAt = useCallback(async (pageIndex: number, x: number, y: number) => {
-        // Find and delete the drawing closest to (x, y) on this page
+
         const pageDrawings = drawings.filter(d => d.page_index === pageIndex);
         if (pageDrawings.length === 0) return;
-        // Simple hit-test: check if (x,y) is near any point on a path
+
         let closestId: number | null = null;
         let closestDist = Infinity;
         for (const d of pageDrawings) {
@@ -855,7 +840,6 @@ const PdfViewer = ({
             const pdfDoc = await PDFDocument.load(new Uint8Array(cachedBuffer));
             const pages = pdfDoc.getPages();
 
-            // Draw highlights
             for (const hl of localHighlights) {
                 const colorStyle = HIGHLIGHT_COLORS[hl.color || 'yellow'];
                 const rgba = colorStyle?.bg || 'rgba(255, 255, 0, 0.3)';
@@ -881,7 +865,6 @@ const PdfViewer = ({
                 }
             }
 
-            // Draw annotations
             for (const d of drawings) {
                 if (d.page_index >= pages.length) continue;
                 const page = pages[d.page_index];
@@ -907,7 +890,7 @@ const PdfViewer = ({
                         color: rgb(cr, cg, cb),
                     });
                 } else {
-                    // Freehand / signature paths
+
                     const cmds = d.svg_path.match(/[ML]\s*[\d.]+\s+[\d.]+/g);
                     if (!cmds || cmds.length < 2) continue;
                     const cMatch = d.stroke_color.match(/^#([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
@@ -964,8 +947,6 @@ const PdfViewer = ({
         setLocalContextMenuPos(null);
     }, []);
 
-
-    // Track file mtime to detect external changes (e.g. LaTeX recompile)
     const lastMtimeRef = useRef<number | null>(null);
 
     useEffect(() => {
@@ -980,7 +961,7 @@ const PdfViewer = ({
         const loadFile = async (forceReload = false) => {
             setError(null);
             try {
-                // Check global cache first (skip if forced reload)
+
                 if (!forceReload) {
                     const cachedBuffer = pdfBufferCache.get(filePath);
                     if (cachedBuffer) {
@@ -997,7 +978,7 @@ const PdfViewer = ({
                     setError('Empty file');
                     return;
                 }
-                // Cache globally
+
                 cachePdfBuffer(filePath, buffer);
                 if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
                 currentBlobUrl = URL.createObjectURL(new Blob([buffer], { type: 'application/pdf' }));
@@ -1010,7 +991,6 @@ const PdfViewer = ({
 
         loadFile();
 
-        // Poll for file changes (mtime) every 2 seconds
         const pollInterval = setInterval(async () => {
             try {
                 const stat = await (window as any).api?.getFileStats?.(filePath);
@@ -1033,12 +1013,10 @@ const PdfViewer = ({
         loadHighlights();
     }, [nodeId, pdfHighlightsTrigger, loadHighlights]);
 
-    // Load drawings on mount and when filePath changes
     useEffect(() => {
         loadDrawings();
     }, [loadDrawings]);
 
-    // Render highlights as DOM overlays on page layers
     useEffect(() => {
         const wrapper = viewerWrapperRef.current;
         if (!wrapper) return;
@@ -1092,7 +1070,6 @@ const PdfViewer = ({
                         pageLayer.appendChild(div);
                     });
 
-                    // Add comment bubble at end of last rect
                     const lastRect = rects[rects.length - 1];
                     const hasAnnotation = !!(highlight.content?.annotation);
                     const bubble = document.createElement('div');
@@ -1137,12 +1114,10 @@ const PdfViewer = ({
         return () => clearTimeout(timer);
     }, [localHighlights, showHighlights, selectedHighlightId, pdfData]);
 
-    // Render drawings as SVG overlays on page layers
     useEffect(() => {
         const wrapper = viewerWrapperRef.current;
         if (!wrapper) return;
 
-        // Always clear old drawing overlays
         wrapper.querySelectorAll('.pdf-drawing-overlay').forEach(el => el.remove());
 
         if (!drawings || drawings.length === 0) return;
@@ -1223,7 +1198,7 @@ const PdfViewer = ({
                         g.appendChild(path);
                         svg.appendChild(g);
                     } else {
-                        // Freehand path
+
                         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
                         path.setAttribute('d', d.svg_path);
                         path.setAttribute('fill', 'none');
@@ -1243,7 +1218,6 @@ const PdfViewer = ({
         return () => clearTimeout(timer);
     }, [drawings, pdfData]);
 
-    // Handle signature placement clicks
     useEffect(() => {
         if (!signaturePlacementMode || !currentSignature) return;
         const wrapper = viewerWrapperRef.current;
@@ -1269,7 +1243,6 @@ const PdfViewer = ({
         return () => wrapper.removeEventListener('click', handleClick);
     }, [signaturePlacementMode, currentSignature, handleSignaturePlacement]);
 
-    // Handle text placement clicks
     useEffect(() => {
         if (!textPlacementMode) return;
         const wrapper = viewerWrapperRef.current;
@@ -1296,7 +1269,6 @@ const PdfViewer = ({
         return () => wrapper.removeEventListener('click', handleClick);
     }, [textPlacementMode]);
 
-    // Escape key handler for dismissing popovers and exiting drawing mode
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
@@ -1317,14 +1289,13 @@ const PdfViewer = ({
                     return;
                 }
             }
-            // Keyboard shortcuts (only when not typing in an input)
+
             const tag = (e.target as HTMLElement)?.tagName;
             if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-            // Also skip if target is a contenteditable element or inside a CodeMirror editor
+
             if ((e.target as HTMLElement)?.isContentEditable) return;
             if ((e.target as HTMLElement)?.closest?.('.cm-editor')) return;
 
-            // Single-key shortcuts (no modifier) only fire when this PDF pane is active
             const isPaneActive = activeContentPaneId === nodeId;
 
             if (e.key === 'z' && (e.ctrlKey || e.metaKey) && drawingMode) {
@@ -1348,7 +1319,6 @@ const PdfViewer = ({
         return () => document.removeEventListener('keydown', handleKeyDown);
     }, [localContextMenuPos, inlineComment, textInput, signaturePlacementMode, textPlacementMode, drawingMode, handleUndoLastDrawing, activeContentPaneId, nodeId]);
 
-    // Enforce text layer invisibility and scale factor via MutationObserver
     useEffect(() => {
         const wrapper = viewerWrapperRef.current;
         if (!wrapper) return;
@@ -1393,7 +1363,6 @@ const PdfViewer = ({
         return () => observer.disconnect();
     }, [currentScale]);
 
-    // Handle text selection
     useEffect(() => {
         const wrapper = viewerWrapperRef.current;
         if (!wrapper) return;
@@ -1464,7 +1433,6 @@ const PdfViewer = ({
         };
     }, [handleTextSelect, pdfData]);
 
-    // Save highlight directly using this viewer's own filePath
     const saveHighlight = useCallback(async (text: string, position: any, color: string = 'yellow') => {
         if (!text || !position || !filePath) return;
         try {
@@ -1490,9 +1458,7 @@ const PdfViewer = ({
 
     return (
         <div className="flex h-full w-full">
-            {/* Main PDF viewer column */}
             <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Drawing / annotation toolbar row */}
                 <div className="flex items-center gap-1 theme-bg-secondary border-b theme-border px-2 py-1 flex-shrink-0">
                     <button
                         onClick={toggleDrawingMode}
@@ -1629,7 +1595,6 @@ const PdfViewer = ({
                     </button>
                 </div>
 
-                {/* PDF Viewer */}
                 <div
                     ref={viewerWrapperRef}
                     className="flex-1 relative overflow-hidden pdf-viewer-container"
@@ -1642,13 +1607,8 @@ const PdfViewer = ({
                             defaultScale={SpecialZoomLevel.PageWidth}
                             pageLayout={{
                                 transformSize: ({ size }) => ({
-                                    height: size.height + 8,
+                                    height: size.height + 4,
                                     width: size.width,
-                                }),
-                                buildPageStyles: () => ({
-                                    alignItems: 'center',
-                                    display: 'flex',
-                                    justifyContent: 'center',
                                 }),
                             }}
                             onDocumentLoad={handleDocumentLoad}
@@ -1667,7 +1627,6 @@ const PdfViewer = ({
                         />
                     </Worker>
 
-                    {/* Drawing canvas overlays for each visible page */}
                     <DrawingCanvasManager
                         wrapperRef={viewerWrapperRef}
                         drawingMode={drawingMode}
@@ -1681,7 +1640,6 @@ const PdfViewer = ({
                 </div>
             </div>
 
-            {/* Signature modal */}
             <SignatureModal
                 isOpen={signatureModalOpen}
                 onClose={() => setSignatureModalOpen(false)}
@@ -1706,7 +1664,6 @@ const PdfViewer = ({
                 }}
             />
 
-            {/* Inline comment popover */}
             {inlineComment && (
                 <>
                     <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setInlineComment(null)} />
@@ -1757,7 +1714,6 @@ const PdfViewer = ({
                 </>
             )}
 
-            {/* Text annotation input */}
             {textInput && (
                 <>
                     <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setTextInput(null)} />
@@ -1797,7 +1753,6 @@ const PdfViewer = ({
                 </>
             )}
 
-            {/* Annotations panel */}
             {showAnnotationsPanel && (
                 <AnnotationsPanel
                     highlights={localHighlights || []}
@@ -1817,7 +1772,6 @@ const PdfViewer = ({
     );
 };
 
-// Custom comparison to prevent reload on pane resize
 const arePropsEqual = (prevProps: any, nextProps: any) => {
     return prevProps.nodeId === nextProps.nodeId;
 };

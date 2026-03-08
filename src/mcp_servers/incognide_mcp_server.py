@@ -268,6 +268,36 @@ async def list_actions() -> str:
 
 
 @mcp.tool()
+async def browser_back(pane_id: str = "active") -> str:
+    """
+    Navigate back in a browser pane's history.
+
+    Args:
+        pane_id: ID of the browser pane, or "active" for the current browser pane
+
+    Returns:
+        JSON result with status
+    """
+    result = await call_incognide_action("browser_back", {"paneId": pane_id})
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def browser_forward(pane_id: str = "active") -> str:
+    """
+    Navigate forward in a browser pane's history.
+
+    Args:
+        pane_id: ID of the browser pane, or "active" for the current browser pane
+
+    Returns:
+        JSON result with status
+    """
+    result = await call_incognide_action("browser_forward", {"paneId": pane_id})
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
 async def navigate_browser(url: str, pane_id: str = "active") -> str:
     """
     Navigate a browser pane to a specific URL.
@@ -1232,28 +1262,368 @@ async def presentation_save(pane_id: str = "active") -> str:
     return json.dumps(result, indent=2)
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONTENT TOOLS (read/write pane content)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@mcp.tool()
+async def read_pane(pane_id: str = "active") -> str:
+    """
+    Read the contents of any pane. For editors, returns file content. For chat,
+    returns recent messages. For terminal, returns terminal output. For browser,
+    returns URL/title. For spreadsheets/documents/presentations, returns their data.
+
+    Args:
+        pane_id: ID of the pane to read, or "active" for the current pane
+
+    Returns:
+        JSON with pane type, path, and content (format depends on pane type)
+    """
+    result = await call_incognide_action("read_pane", {"paneId": pane_id})
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def write_file(
+    content: str,
+    pane_id: str = "active",
+    path: str = ""
+) -> str:
+    """
+    Write content to an editor pane. The pane must be an editor type.
+
+    Args:
+        content: The text content to write to the editor
+        pane_id: ID of the editor pane, or "active" for the current pane
+        path: Optional file path to set (changes the file the editor is editing)
+
+    Returns:
+        JSON with success status and bytes written
+    """
+    args = {"paneId": pane_id, "content": content}
+    if path:
+        args["path"] = path
+    result = await call_incognide_action("write_file", args)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def get_selection(pane_id: str = "active") -> str:
+    """
+    Get the currently selected text in an editor pane.
+
+    Args:
+        pane_id: ID of the editor pane, or "active" for the current pane
+
+    Returns:
+        JSON with selected text and whether there is a selection
+    """
+    result = await call_incognide_action("get_selection", {"paneId": pane_id})
+    return json.dumps(result, indent=2)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB MANAGEMENT TOOLS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@mcp.tool()
+async def add_tab(
+    tab_type: str,
+    pane_id: str = "active",
+    path: str = ""
+) -> str:
+    """
+    Add a new tab to an existing pane. The tab opens within the same pane container.
+
+    Args:
+        tab_type: Type of tab to add (editor, terminal, chat, browser, csv, pdf, etc.)
+        pane_id: ID of the pane to add a tab to, or "active" for the current pane
+        path: Optional file path for file-based tabs
+
+    Returns:
+        JSON with success status
+    """
+    args: Dict[str, Any] = {"paneId": pane_id, "type": tab_type}
+    if path:
+        args["path"] = path
+    result = await call_incognide_action("add_tab", args)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def close_tab(
+    tab_index: int,
+    pane_id: str = "active"
+) -> str:
+    """
+    Close a tab in a pane.
+
+    Args:
+        tab_index: Index of the tab to close (0-based)
+        pane_id: ID of the pane, or "active" for the current pane
+
+    Returns:
+        JSON with success status
+    """
+    result = await call_incognide_action("close_tab", {
+        "paneId": pane_id,
+        "tabIndex": tab_index
+    })
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def switch_tab(
+    tab_index: int,
+    pane_id: str = "active"
+) -> str:
+    """
+    Switch to a specific tab in a pane.
+
+    Args:
+        tab_index: Index of the tab to switch to (0-based)
+        pane_id: ID of the pane, or "active" for the current pane
+
+    Returns:
+        JSON with success status and active tab index
+    """
+    result = await call_incognide_action("switch_tab", {
+        "paneId": pane_id,
+        "tabIndex": tab_index
+    })
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def list_tabs(pane_id: str = "active") -> str:
+    """
+    List all tabs in a pane with their types, paths, and active status.
+
+    Args:
+        pane_id: ID of the pane, or "active" for the current pane
+
+    Returns:
+        JSON with tabs array, active tab index, and count
+    """
+    result = await call_incognide_action("list_tabs", {"paneId": pane_id})
+    return json.dumps(result, indent=2)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CHAT & NPC TOOLS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@mcp.tool()
+async def send_message(
+    message: str,
+    pane_id: str = "active"
+) -> str:
+    """
+    Send a message in a chat pane. The pane must be a chat type.
+
+    Args:
+        message: The message text to send
+        pane_id: ID of the chat pane, or "active" for the current pane
+
+    Returns:
+        JSON with success status
+    """
+    result = await call_incognide_action("send_message", {
+        "paneId": pane_id,
+        "message": message
+    })
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def switch_npc(
+    npc_name: str,
+    pane_id: str = "active"
+) -> str:
+    """
+    Switch the active NPC/agent in a chat pane.
+
+    Args:
+        npc_name: Name of the NPC to switch to
+        pane_id: ID of the chat pane, or "active" for the current pane
+
+    Returns:
+        JSON with success status and NPC name
+    """
+    result = await call_incognide_action("switch_npc", {
+        "paneId": pane_id,
+        "npcName": npc_name
+    })
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def open_file_picker(
+    picker_type: str = "file",
+    multiple: bool = False
+) -> str:
+    """
+    Open a native file/directory picker dialog.
+
+    Args:
+        picker_type: Type of picker - "file" or "directory"
+        multiple: Whether to allow selecting multiple items
+
+    Returns:
+        JSON with selected paths or canceled status
+    """
+    result = await call_incognide_action("open_file_picker", {
+        "type": picker_type,
+        "multiple": multiple
+    })
+    return json.dumps(result, indent=2)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# WINDOW INFO TOOLS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@mcp.tool()
+async def get_window_info() -> str:
+    """
+    Get detailed info about the current window: its ID, folder path, title,
+    and all open panes with their types, titles, and active status.
+
+    Returns:
+        JSON with windowId, currentPath, title, paneCount, and panes array
+    """
+    result = await call_incognide_action("get_window_info", {})
+    return json.dumps(result, indent=2)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ADDITIONAL SPREADSHEET TOOLS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@mcp.tool()
+async def spreadsheet_update_header(
+    col: int,
+    value: str,
+    pane_id: str = "active"
+) -> str:
+    """
+    Update a column header name in a spreadsheet.
+
+    Args:
+        col: Column index (0-based)
+        value: New header name
+        pane_id: ID of the spreadsheet pane, or "active"
+
+    Returns:
+        JSON with success status
+    """
+    result = await call_incognide_action("spreadsheet_update_header", {
+        "paneId": pane_id,
+        "col": col,
+        "value": value
+    })
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def spreadsheet_filter(
+    col: int,
+    value: str,
+    pane_id: str = "active"
+) -> str:
+    """
+    Filter spreadsheet rows by a column value. Only shows rows where the column
+    contains the specified value.
+
+    Args:
+        col: Column index to filter by (0-based)
+        value: Value to filter for
+        pane_id: ID of the spreadsheet pane, or "active"
+
+    Returns:
+        JSON with success status
+    """
+    result = await call_incognide_action("spreadsheet_filter", {
+        "paneId": pane_id,
+        "col": col,
+        "value": value
+    })
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+async def spreadsheet_clear_filters(pane_id: str = "active") -> str:
+    """
+    Clear all active filters on a spreadsheet, showing all rows again.
+
+    Args:
+        pane_id: ID of the spreadsheet pane, or "active"
+
+    Returns:
+        JSON with success status
+    """
+    result = await call_incognide_action("spreadsheet_clear_filters", {"paneId": pane_id})
+    return json.dumps(result, indent=2)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ADDITIONAL DOCUMENT TOOLS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@mcp.tool()
+async def document_export(
+    format: str = "html",
+    pane_id: str = "active"
+) -> str:
+    """
+    Export a DOCX document to a different format.
+
+    Args:
+        format: Export format - "html" or "markdown"
+        pane_id: ID of the document pane, or "active"
+
+    Returns:
+        JSON with success status and exported content
+    """
+    result = await call_incognide_action("document_export", {
+        "paneId": pane_id,
+        "format": format
+    })
+    return json.dumps(result, indent=2)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ADDITIONAL PRESENTATION TOOLS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@mcp.tool()
+async def presentation_go_to_slide(
+    slide_index: int,
+    pane_id: str = "active"
+) -> str:
+    """
+    Navigate to a specific slide in a presentation.
+
+    Args:
+        slide_index: Slide index to navigate to (0-based)
+        pane_id: ID of the presentation pane, or "active"
+
+    Returns:
+        JSON with success status and current slide index
+    """
+    result = await call_incognide_action("presentation_go_to_slide", {
+        "paneId": pane_id,
+        "slideIndex": slide_index
+    })
+    return json.dumps(result, indent=2)
+
+
 if __name__ == "__main__":
     # CRITICAL: Using stderr for all debug messages so stdout remains pure JSON-RPC
     sys.stderr.write(f"Starting Incognide MCP server...\n")
     sys.stderr.write(f"Backend URL: {INCOGNIDE_BACKEND_URL}\n")
-    sys.stderr.write(f"Available tools: list_windows, set_target_window, get_target_window,\n")
-    sys.stderr.write(f"                 open_pane, close_pane, focus_pane, list_panes, list_pane_types,\n")
-    sys.stderr.write(f"                 navigate_browser, show_diff, request_approval,\n")
-    sys.stderr.write(f"                 notify, get_browser_info, split_pane, zen_mode, list_actions,\n")
-    sys.stderr.write(f"                 run_terminal, browser_click, browser_type,\n")
-    sys.stderr.write(f"                 get_browser_content, browser_screenshot, browser_eval,\n")
-    sys.stderr.write(f"                 spreadsheet_read, spreadsheet_eval, spreadsheet_update_cell,\n")
-    sys.stderr.write(f"                 spreadsheet_update_cells, spreadsheet_add_row, spreadsheet_delete_row,\n")
-    sys.stderr.write(f"                 spreadsheet_add_column, spreadsheet_delete_column, spreadsheet_sort,\n")
-    sys.stderr.write(f"                 spreadsheet_stats, spreadsheet_save, spreadsheet_export,\n")
-    sys.stderr.write(f"                 spreadsheet_switch_sheet,\n")
-    sys.stderr.write(f"                 document_read, document_eval, document_write,\n")
-    sys.stderr.write(f"                 document_find_replace, document_format, document_insert_table,\n")
-    sys.stderr.write(f"                 document_save, document_stats,\n")
-    sys.stderr.write(f"                 presentation_read, presentation_read_slide, presentation_eval,\n")
-    sys.stderr.write(f"                 presentation_update_text, presentation_add_slide,\n")
-    sys.stderr.write(f"                 presentation_delete_slide, presentation_duplicate_slide,\n")
-    sys.stderr.write(f"                 presentation_set_background, presentation_add_shape,\n")
-    sys.stderr.write(f"                 presentation_save\n")
+    sys.stderr.write(f"Available tools ({len(mcp._tool_manager._tools)}):\n")
+    for name in sorted(mcp._tool_manager._tools.keys()):
+        sys.stderr.write(f"  - {name}\n")
 
     mcp.run(transport="stdio")

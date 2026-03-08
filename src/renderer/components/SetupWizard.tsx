@@ -64,10 +64,9 @@ const INSTALL_OPTIONS: InstallOption[] = [
 type SetupStep = 'welcome' | 'preferences' | 'path' | 'cloud-keys' | 'extras' | 'models' | 'creating' | 'installing' | 'concepts' | 'complete' | 'error';
 
 const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
-    // Path selection
+
     const [userPath, setUserPath] = useState<UserPath>('local-ai');
 
-    // Python/install state
     const [detectedPythons, setDetectedPythons] = useState<PythonInfo[]>([]);
     const [selectedPython, setSelectedPython] = useState<PythonInfo | null>(null);
     const [selectedExtras, setSelectedExtras] = useState<string>('local');
@@ -77,7 +76,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     const [loading, setLoading] = useState(false);
     const logContainerRef = useRef<HTMLDivElement>(null);
 
-    // Model detection state
     const [detectedModels, setDetectedModels] = useState<ModelInfo[]>([]);
     const [checkingModels, setCheckingModels] = useState(false);
     const [platform, setPlatform] = useState<string>('');
@@ -89,27 +87,21 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     const [installError, setInstallError] = useState<string | null>(null);
     const [installMessage, setInstallMessage] = useState<string | null>(null);
 
-    // Preferences state
     const [isDarkMode, setIsDarkMode] = useState(() => document.body.classList.contains('dark-mode'));
     const [dataDirectory, setDataDirectory] = useState('~/.npcsh/incognide');
 
-    // Cloud API key state
     const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
 
-    // Step state
     const [step, setStep] = useState<SetupStep>('welcome');
 
-    // NPC images path
     const [npcImagesPath, setNpcImagesPath] = useState<string>('');
 
-    // Auto-scroll log container
     useEffect(() => {
         if (logContainerRef.current) {
             logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
         }
     }, [installOutput]);
 
-    // Detect Python on mount
     useEffect(() => {
         const detect = async () => {
             try {
@@ -127,7 +119,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         detect();
     }, []);
 
-    // Get NPC images path
     useEffect(() => {
         const getPath = async () => {
             try {
@@ -140,7 +131,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         getPath();
     }, []);
 
-    // Check platform and tools
     useEffect(() => {
         const check = async () => {
             try {
@@ -157,7 +147,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         check();
     }, []);
 
-    // Listen for install progress
     useEffect(() => {
         const unsubscribe = (window as any).api?.onSetupInstallProgress?.((data: { type: string; text: string }) => {
             if (data.text) {
@@ -170,7 +159,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         return () => unsubscribe?.();
     }, []);
 
-    // Check local models
     const checkLocalModels = async () => {
         setCheckingModels(true);
         setInstallError(null);
@@ -183,7 +171,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         setCheckingModels(false);
     };
 
-    // Install Ollama
     const handleInstallOllama = async (method?: string) => {
         setInstallingOllama(true);
         setInstallError(null);
@@ -205,7 +192,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         setInstallingOllama(false);
     };
 
-    // Install Xcode CLT
     const handleInstallXcode = async () => {
         setInstallingXcode(true);
         setInstallError(null);
@@ -219,7 +205,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         setInstallingXcode(false);
     };
 
-    // Install Homebrew
     const handleInstallHomebrew = async () => {
         setInstallingHomebrew(true);
         setInstallError(null);
@@ -233,14 +218,12 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         setInstallingHomebrew(false);
     };
 
-    // Determine extras based on path
     const getExtrasForPath = (): string => {
         if (userPath === 'no-ai') return 'lite';
         if (userPath === 'cloud-ai') return selectedExtras === 'local' ? 'lite' : selectedExtras;
         return selectedExtras;
     };
 
-    // Start installation
     const handleStartInstall = async () => {
         setError(null);
         setInstallOutput([]);
@@ -285,7 +268,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         setInstallOutput(prev => [...prev, 'Saving configuration...']);
 
         try {
-            // Save user profile with chosen path
+
             const aiEnabled = userPath !== 'no-ai';
             await (window as any).api?.profileSave?.({
                 path: userPath,
@@ -295,7 +278,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 tutorialComplete: false,
             });
 
-            // Save any API keys entered
             if (userPath === 'cloud-ai' && Object.keys(apiKeys).length > 0) {
                 for (const [key, value] of Object.entries(apiKeys)) {
                     if (value.trim()) {
@@ -318,7 +300,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 setInstallOutput(prev => [...prev, 'Backend started successfully!']);
             }
 
-            // Deploy NPC team
             setInstallOutput(prev => [...prev, 'Setting up NPC team...']);
             try {
                 await (window as any).api?.deployNpcTeam?.();
@@ -327,7 +308,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 setInstallOutput(prev => [...prev, 'Note: NPC team will be set up on next launch']);
             }
 
-            // For AI paths, show concepts screen; for no-ai, go straight to complete
             if (userPath !== 'no-ai') {
                 setStep('concepts');
             } else {
@@ -350,32 +330,27 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         }
     };
 
-    // Navigate from path selection to the next appropriate step
     const handlePathNext = () => {
         if (userPath === 'no-ai') {
             handleStartInstall();
         } else if (userPath === 'cloud-ai') {
             setStep('cloud-keys');
         } else {
-            // local-ai — skip extras, default to 'local', go straight to models
+
             setSelectedExtras('local');
             setStep('models');
             checkLocalModels();
         }
     };
 
-    // Navigate from cloud keys to install
     const handleCloudKeysNext = () => {
         handleStartInstall();
     };
 
-    // Navigate from extras to models
     const handleExtrasNext = async () => {
         setStep('models');
         await checkLocalModels();
     };
-
-    // ─── RENDER FUNCTIONS ───────────────────────────────────────
 
     const renderWelcome = () => (
         <div className="space-y-6">
@@ -416,7 +391,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 <p className="text-gray-400 text-sm">You can change these anytime in Settings</p>
             </div>
 
-            {/* Dark / Light mode */}
             <div className="space-y-2">
                 <label className="text-xs text-gray-400 font-medium">Theme</label>
                 <div className="flex gap-3">
@@ -455,7 +429,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 </div>
             </div>
 
-            {/* Data directory */}
             <div className="space-y-2">
                 <label className="text-xs text-gray-400 font-medium">Data Directory</label>
                 <div className="flex gap-2">
@@ -495,7 +468,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 </button>
                 <button
                     onClick={() => {
-                        // Save data directory if changed from default
+
                         if (dataDirectory && dataDirectory !== '~/.npcsh/incognide') {
                             (window as any).api?.saveGlobalSettings?.({
                                 global_settings: { data_directory: dataDirectory },
@@ -520,7 +493,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
             </div>
 
             <div className="space-y-3">
-                {/* Workspace (no AI) */}
                 <button
                     onClick={() => setUserPath('no-ai')}
                     className={`w-full p-4 rounded-lg text-left border transition-all ${
@@ -541,7 +513,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                     </div>
                 </button>
 
-                {/* Cloud AI */}
                 <button
                     onClick={() => setUserPath('cloud-ai')}
                     className={`w-full p-4 rounded-lg text-left border transition-all ${
@@ -562,7 +533,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                     </div>
                 </button>
 
-                {/* Local AI */}
                 <button
                     onClick={() => setUserPath('local-ai')}
                     className={`w-full p-4 rounded-lg text-left border transition-all ${
@@ -720,7 +690,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
             ) : (
                 <>
                     <div className="space-y-3">
-                        {/* Ollama */}
                         <div className={`p-3 rounded-lg border ${detectedModels.find(m => m.provider === 'ollama')?.available ? 'border-green-500/50 bg-green-900/20' : 'border-gray-700 bg-gray-800/50'}`}>
                             <div className="flex items-center justify-between mb-1">
                                 <div className="flex items-center gap-2">
@@ -764,7 +733,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                             )}
                         </div>
 
-                        {/* LM Studio */}
                         <div className={`p-3 rounded-lg border ${detectedModels.find(m => m.provider === 'lmstudio')?.available ? 'border-green-500/50 bg-green-900/20' : 'border-gray-700 bg-gray-800/50'}`}>
                             <div className="flex items-center justify-between mb-1">
                                 <div className="flex items-center gap-2">
@@ -781,7 +749,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                         </div>
                     </div>
 
-                    {/* Mac-specific helpers */}
                     {platform === 'darwin' && !xcodeAvailable && (
                         <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
                             <div className="flex items-center justify-between mb-1">
@@ -899,7 +866,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 <p className="text-gray-400 text-sm">AI assistants and tools at your fingertips</p>
             </div>
 
-            {/* Ledbi - the Incognide forenpc */}
             <div className="bg-gradient-to-br from-amber-900/30 to-amber-800/20 border border-amber-500/30 rounded-lg p-4">
                 <div className="flex items-center gap-3 mb-3">
                     {npcImagesPath ? (
@@ -926,7 +892,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 </div>
             </div>
 
-            {/* Quick concepts */}
             <div className="grid grid-cols-2 gap-3">
                 <div className="bg-gradient-to-br from-purple-900/30 to-purple-800/20 border border-purple-500/30 rounded-lg p-3">
                     <div className="flex items-center gap-2 mb-2">

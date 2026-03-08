@@ -1,7 +1,5 @@
 const { contextBridge, ipcRenderer, shell } = require('electron');
 
-// Backend URL - detect dev mode and use appropriate port
-// Dev mode: 5437, Prod mode: 5337
 const IS_DEV = process.env.NODE_ENV === 'development' || process.env.ELECTRON_IS_DEV === '1';
 const DEFAULT_PORT = IS_DEV ? '5437' : '5337';
 const BACKEND_PORT = process.env.INCOGNIDE_PORT || DEFAULT_PORT;
@@ -10,11 +8,11 @@ const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
 contextBridge.exposeInMainWorld('api', {
 textPredict: (data) => ipcRenderer.invoke('text-predict', data),
 
-readCsvContent: (filePath) => 
+readCsvContent: (filePath) =>
   ipcRenderer.invoke('read-csv-content', filePath),
 
 readFileBuffer: (filePath) => ipcRenderer.invoke('read-file-buffer', filePath),
-readDocxContent: (filePath) => 
+readDocxContent: (filePath) =>
   ipcRenderer.invoke('read-docx-content', filePath),
     getDefaultConfig: () => ipcRenderer.invoke('getDefaultConfig'),
     getProjectCtx: (currentPath) => ipcRenderer.invoke('getProjectCtx', currentPath),
@@ -28,7 +26,7 @@ readDocxContent: (filePath) =>
     readDirectoryImages: (dirPath) => ipcRenderer.invoke('readDirectoryImages', dirPath),
     open_directory_picker: () => ipcRenderer.invoke('open_directory_picker'),
 
-    getAvailableJinxs: (params) => ipcRenderer.invoke('getAvailableJinxs', params),
+    getAvailableJinxes: (params) => ipcRenderer.invoke('getAvailableJinxes', params),
     executeJinx: (params) => ipcRenderer.invoke('executeJinx', params),
 
     getAvailableImageModels: (currentPath) => ipcRenderer.invoke('getAvailableImageModels', currentPath),
@@ -43,12 +41,11 @@ readDocxContent: (filePath) =>
     removeDaemon: (daemonId) => ipcRenderer.invoke('removeDaemon', daemonId),
     getDaemons: () => ipcRenderer.invoke('getDaemons'),
 
-   
     generateImages: (prompt, n, model, provider, attachments, baseFilename, currentPath) => ipcRenderer.invoke('generate_images', { prompt, n, model, provider, attachments, baseFilename,currentPath}),
 
     openNewWindow: (path) => ipcRenderer.invoke('open-new-window', path),
+    getWindowCount: () => ipcRenderer.invoke('get-window-count'),
     openInNativeExplorer: (path) => ipcRenderer.invoke('open-in-native-explorer', path),
-
 
     deleteConversation: (id) => ipcRenderer.invoke('deleteConversation', id),
     getConversations: (path) => ipcRenderer.invoke('getConversations', path),
@@ -89,20 +86,16 @@ readDocxContent: (filePath) =>
     gitResetToCommit: (repoPath, commitHash, mode) => ipcRenderer.invoke('gitResetToCommit', repoPath, commitHash, mode),
     gitLogBranch: (repoPath, branchName, options) => ipcRenderer.invoke('gitLogBranch', repoPath, branchName, options),
 
-    // Terminal shortcut relay methods
     triggerNewTextFile: () => ipcRenderer.send('trigger-new-text-file'),
     triggerBrowserNewTab: () => ipcRenderer.send('trigger-browser-new-tab'),
 
-    // Window management
     closeWindow: () => ipcRenderer.invoke('close-window'),
     showItemInFolder: (path) => ipcRenderer.invoke('show-item-in-folder', path),
 
-    // Device ID and info for multi-device sync
     getDeviceInfo: () => ipcRenderer.invoke('getDeviceInfo'),
     setDeviceName: (name) => ipcRenderer.invoke('setDeviceName', name),
     getDeviceId: () => ipcRenderer.invoke('getDeviceId'),
 
-    // Menu callbacks
     onMenuNewTextFile: (callback) => {
         ipcRenderer.on('menu-new-text-file', callback);
         return () => ipcRenderer.removeListener('menu-new-text-file', callback);
@@ -113,14 +106,24 @@ readDocxContent: (filePath) =>
     },
 
     readFile: (filePath) => ipcRenderer.invoke('read-file-buffer', filePath),
-   
+
     readFileContent: (filePath) => ipcRenderer.invoke('read-file-content', filePath),
     writeFileContent: (filePath, content) => ipcRenderer.invoke('write-file-content', filePath, content),
+    writeDocxContent: (filePath, html, opts) => ipcRenderer.invoke('write-docx-content', filePath, html, opts),
+    watchFile: (filePath) => ipcRenderer.invoke('file:watch', filePath),
+    unwatchFile: (filePath) => ipcRenderer.invoke('file:unwatch', filePath),
+    onFileChanged: (callback) => {
+        const handler = (_, filePath) => callback(filePath);
+        ipcRenderer.on('file:changed', handler);
+        return () => ipcRenderer.removeListener('file:changed', handler);
+    },
     executeCode: (args) => ipcRenderer.invoke('executeCode', args),
     saveTempFile: (args) => ipcRenderer.invoke('save-temp-file', args),
     createDirectory: (path) => ipcRenderer.invoke('create-directory', path),
     deleteDirectory: (path) => ipcRenderer.invoke('delete-directory', path),
     getDirectoryContentsRecursive: (path) => ipcRenderer.invoke('get-directory-contents-recursive', path),
+    searchFiles: (data) => ipcRenderer.invoke('search-files', data),
+    searchConversations: (data) => ipcRenderer.invoke('search-conversations', data),
     analyzeDiskUsage: (path) => ipcRenderer.invoke('analyze-disk-usage', path),
     showPdf: (args) => ipcRenderer.send('show-pdf', args),
     updatePdfBounds: (bounds) => ipcRenderer.send('update-pdf-bounds', bounds),
@@ -143,7 +146,6 @@ readDocxContent: (filePath) =>
     browserGetHistoryGraph: (args) => ipcRenderer.invoke('browser:getHistoryGraph', args),
     browserSetVisibility: (args) => ipcRenderer.invoke('browser:set-visibility', args),
 
-    // Browser extensions
     browserLoadExtension: (extensionPath) => ipcRenderer.invoke('browser:loadExtension', extensionPath),
     browserRemoveExtension: (extensionId) => ipcRenderer.invoke('browser:removeExtension', extensionId),
     browserGetExtensions: () => ipcRenderer.invoke('browser:getExtensions'),
@@ -152,7 +154,6 @@ readDocxContent: (filePath) =>
     browserGetInstalledBrowsers: () => ipcRenderer.invoke('browser:getInstalledBrowsers'),
     browserImportExtensionsFrom: (args) => ipcRenderer.invoke('browser:importExtensionsFrom', args),
 
-    // Cookie inheritance management
     browserRegisterPartition: (args) => ipcRenderer.invoke('browser:registerPartition', args),
     browserGetKnownPartitions: () => ipcRenderer.invoke('browser:getKnownPartitions'),
     browserGetCookiesFromPartition: (args) => ipcRenderer.invoke('browser:getCookiesFromPartition', args),
@@ -161,28 +162,29 @@ readDocxContent: (filePath) =>
     browserGetCookieInheritance: (args) => ipcRenderer.invoke('browser:getCookieInheritance', args),
     browserGetCookieDomains: (args) => ipcRenderer.invoke('browser:getCookieDomains', args),
 
-    // CLI workspace opening - for launching incognide with a folder path
     onCliOpenWorkspace: (callback) => {
         const handler = (_, data) => callback(data);
         ipcRenderer.on('cli-open-workspace', handler);
         return () => ipcRenderer.removeListener('cli-open-workspace', handler);
     },
+    onBlankWindow: (callback) => {
+        const handler = () => callback();
+        ipcRenderer.on('blank-window', handler);
+        return () => ipcRenderer.removeListener('blank-window', handler);
+    },
 
-    // Open URL in browser pane (from xdg-open or command line)
     onOpenUrlInBrowser: (callback) => {
         const handler = (_, data) => callback(data);
         ipcRenderer.on('open-url-in-browser', handler);
         return () => ipcRenderer.removeListener('open-url-in-browser', handler);
     },
 
-    // Ctrl+Shift+O folder picker shortcut
     onOpenFolderPicker: (callback) => {
         const handler = () => callback();
         ipcRenderer.on('open-folder-picker', handler);
         return () => ipcRenderer.removeListener('open-folder-picker', handler);
     },
 
-    // Menu bar event listeners
     onMenuNewChat: (callback) => {
         ipcRenderer.on('menu-new-chat', callback);
         return () => ipcRenderer.removeListener('menu-new-chat', callback);
@@ -248,7 +250,6 @@ readDocxContent: (filePath) =>
         return () => ipcRenderer.removeListener('menu-show-shortcuts', callback);
     },
 
-    // External studio action execution - for CLI/LLM control
     onExecuteStudioAction: (callback) => {
         const handler = (_, data) => callback(data);
         ipcRenderer.on('execute-studio-action', handler);
@@ -275,33 +276,29 @@ readDocxContent: (filePath) =>
         ipcRenderer.on('browser-load-error', handler);
         return () => ipcRenderer.removeListener('browser-load-error', handler);
     },
-    onBrowserNavigationStateUpdated: (callback) => { // Expose new event
+    onBrowserNavigationStateUpdated: (callback) => {
         const handler = (_, data) => callback(data);
         ipcRenderer.on('browser-navigation-state-updated', handler);
         return () => ipcRenderer.removeListener('browser-navigation-state-updated', handler);
     },
 
-    // Browser context menu actions - pass currentPath for correct default directory
     browserSaveImage: (imageUrl, currentPath) => ipcRenderer.invoke('browser-save-image', { imageUrl, currentPath }),
     browserSaveLink: (url, suggestedFilename, currentPath) => ipcRenderer.invoke('browser-save-link', { url, suggestedFilename, currentPath }),
     browserOpenExternal: (url) => ipcRenderer.invoke('browser-open-external', { url }),
     setWorkspacePath: (workspacePath) => ipcRenderer.send('set-workspace-path', workspacePath),
 
-    // Listen for download requests from main process (for automatic downloads)
     onBrowserDownloadRequested: (callback) => {
         const handler = (_, data) => callback(data);
         ipcRenderer.on('browser-download-requested', handler);
         return () => ipcRenderer.removeListener('browser-download-requested', handler);
     },
 
-    // Listen for new tab requests from main process (ctrl+click, middle-click on links)
     onBrowserOpenInNewTab: (callback) => {
         const handler = (_, data) => callback(data);
         ipcRenderer.on('browser-open-in-new-tab', handler);
         return () => ipcRenderer.removeListener('browser-open-in-new-tab', handler);
     },
 
-    // Listen for Ctrl+T shortcut from main process
     onBrowserNewTab: (callback) => {
         const handler = () => callback();
         ipcRenderer.on('browser-new-tab', handler);
@@ -322,7 +319,6 @@ readDocxContent: (filePath) =>
     pauseDownload: (filename) => ipcRenderer.invoke('pause-download', filename),
     resumeDownload: (filename) => ipcRenderer.invoke('resume-download', filename),
 
-
     onThumbnailCreated: (callback) => {
         const handler = (_, data) => callback(data);
         ipcRenderer.on('thumbnail-created', handler);
@@ -338,8 +334,7 @@ readDocxContent: (filePath) =>
         ipcRenderer.on('thumbnail-complete', handler);
         return () => ipcRenderer.removeListener('thumbnail-complete', handler);
     },
-    
-    
+
     getHighlightsForFile: (filePath) => ipcRenderer.invoke('db:getHighlightsForFile', { filePath }),
     addPdfHighlight: (data) => ipcRenderer.invoke('db:addPdfHighlight', data),
     updatePdfHighlight: (data) => ipcRenderer.invoke('db:updatePdfHighlight', data),
@@ -359,14 +354,12 @@ readDocxContent: (filePath) =>
     chmod: (options) => ipcRenderer.invoke('chmod', options),
     chown: (options) => ipcRenderer.invoke('chown', options),
 
-    // Tile configuration
     tilesConfigGet: () => ipcRenderer.invoke('tiles-config-get'),
     tilesConfigSave: (config) => ipcRenderer.invoke('tiles-config-save', config),
     tilesConfigReset: () => ipcRenderer.invoke('tiles-config-reset'),
     tilesConfigAddCustom: (tile) => ipcRenderer.invoke('tiles-config-add-custom', tile),
     tilesConfigRemoveCustom: (tileId) => ipcRenderer.invoke('tiles-config-remove-custom', tileId),
 
-    // Tile Jinx system
     tileJinxList: () => ipcRenderer.invoke('tile-jinx-list'),
     tileJinxRead: (filename) => ipcRenderer.invoke('tile-jinx-read', filename),
     tileJinxWrite: (filename, content) => ipcRenderer.invoke('tile-jinx-write', filename, content),
@@ -376,7 +369,6 @@ readDocxContent: (filePath) =>
     tileJinxRecompile: () => ipcRenderer.invoke('tile-jinx-recompile'),
     transformTsx: (code) => ipcRenderer.invoke('transformTsx', code),
 
-    // globalPath: 'npcsh' for raw npcsh context, omit for incognide (default)
     getGlobalContext: (globalPath) => ipcRenderer.invoke('get-global-context', globalPath),
     saveGlobalContext: (contextData, globalPath) => ipcRenderer.invoke('save-global-context', contextData, globalPath),
     getProjectContext: (path) => ipcRenderer.invoke('get-project-context', path),
@@ -392,7 +384,6 @@ readDocxContent: (filePath) =>
     getTableSchema: (args) => ipcRenderer.invoke('db:getTableSchema', args),
     exportToCSV: (data) => ipcRenderer.invoke('db:exportCSV', data),
 
-    // Custom database connection APIs (supports SQLite, PostgreSQL, MySQL, MSSQL, Snowflake)
     testDbConnection: (args) => ipcRenderer.invoke('db:testConnection', args),
     listTablesForPath: (args) => ipcRenderer.invoke('db:listTablesForPath', args),
     getTableSchemaForPath: (args) => ipcRenderer.invoke('db:getTableSchemaForPath', args),
@@ -423,11 +414,9 @@ readDocxContent: (filePath) =>
     kg_ingest: (args) => ipcRenderer.invoke('kg:ingest', args),
     kg_query: (args) => ipcRenderer.invoke('kg:query', args),
 
-    // Backend health & restart
     backendHealth: () => ipcRenderer.invoke('backend:health'),
     backendRestart: () => ipcRenderer.invoke('backend:restart'),
 
-    // Memory APIs
     memory_search: (args) => ipcRenderer.invoke('memory:search', args),
     memory_pending: (args) => ipcRenderer.invoke('memory:pending', args),
     memory_scope: (args) => ipcRenderer.invoke('memory:scope', args),
@@ -450,7 +439,6 @@ onTerminalClosed: (callback) => {
 },
     executeShellCommand: (args) => ipcRenderer.invoke('executeShellCommand', args),
 
-   
     executeCommand: (data) => ipcRenderer.invoke('executeCommand', {
         commandstr: data.commandstr,
         current_path: data.currentPath,
@@ -470,8 +458,7 @@ onTerminalClosed: (callback) => {
             throw error;
         }
     },
-    
-   
+
     onStreamData: (callback) => {
         const handler = (_, data) => callback(_, data);
         ipcRenderer.on('stream-data', handler);
@@ -488,7 +475,6 @@ onTerminalClosed: (callback) => {
         return () => ipcRenderer.removeListener('stream-error', handler);
     },
 
-    // MCP server management
     getMcpServers: (currentPath) => ipcRenderer.invoke('mcp:getServers', { currentPath }),
     startMcpServer: (args) => ipcRenderer.invoke('mcp:startServer', args),
     stopMcpServer: (args) => ipcRenderer.invoke('mcp:stopServer', args),
@@ -496,29 +482,33 @@ onTerminalClosed: (callback) => {
     listMcpTools: (args) => ipcRenderer.invoke('mcp:listTools', args),
     addMcpIntegration: (args) => ipcRenderer.invoke('mcp:addIntegration', args),
     showOpenDialog: (options) => ipcRenderer.invoke('show-open-dialog', options),
+    showSaveDialog: (options) => ipcRenderer.invoke('show-save-dialog', options),
     showBrowser: (args) => ipcRenderer.invoke('show-browser', args),
     hideBrowser: (args) => ipcRenderer.invoke('hide-browser', args),
     updateBrowserBounds: (args) => ipcRenderer.invoke('update-browser-bounds', args),
     getBrowserHistory: (folderPath) => ipcRenderer.invoke('get-browser-history', folderPath),
     browserAddToHistory: (data) => ipcRenderer.invoke('browser-add-to-history', data),
-    // globalPath: optional. 'npcsh' for raw npcsh team, omit for incognide (default)
-    getJinxsGlobal: (globalPath) => ipcRenderer.invoke('get-jinxs-global', globalPath),
-    getJinxsProject: async (currentPath) => {
+
+    getJinxesGlobal: (globalPath) => ipcRenderer.invoke('get-jinxes-global', globalPath),
+    getJinxesProject: async (currentPath) => {
         try {
-            const response = await fetch(`${BACKEND_URL}/api/jinxs/project?currentPath=${encodeURIComponent(currentPath)}`);
+            const response = await fetch(`${BACKEND_URL}/api/jinxes/project?currentPath=${encodeURIComponent(currentPath)}`);
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             const data = await response.json();
             return data;
         } catch (error) {
-            console.error('Error loading project jinxs:', error);
-            return { jinxs: [], error: error.message };
+            console.error('Error loading project jinxes:', error);
+            return { jinxes: [], error: error.message };
         }
     },
     saveJinx: (data) => ipcRenderer.invoke('save-jinx', data),
+    ingestJinx: (data) => ipcRenderer.invoke('ingest-jinx', data),
+    deleteJinx: (data) => ipcRenderer.invoke('delete-jinx', data),
+    importNpcTeam: (data) => ipcRenderer.invoke('import-npc-team', data),
+    getJinxesAllTeams: (currentPath) => ipcRenderer.invoke('get-jinxes-all-teams', currentPath),
 
-    // Mapx (Mind Map) APIs - YAML-based storage like NPCs/Jinxs
     getMapsGlobal: async () => {
         try {
             const response = await fetch(`${BACKEND_URL}/api/maps/global`);
@@ -542,7 +532,6 @@ onTerminalClosed: (callback) => {
     saveMap: (data) => ipcRenderer.invoke('save-map', data),
     loadMap: (filePath) => ipcRenderer.invoke('load-map', filePath),
 
-    // SQL Models APIs (dbt-style npcsql with jinja syntax)
     getSqlModelsGlobal: () => ipcRenderer.invoke('getSqlModelsGlobal'),
     getSqlModelsProject: (currentPath) => ipcRenderer.invoke('getSqlModelsProject', currentPath),
     saveSqlModelGlobal: (modelData) => ipcRenderer.invoke('saveSqlModelGlobal', modelData),
@@ -551,7 +540,6 @@ onTerminalClosed: (callback) => {
     deleteSqlModelProject: (args) => ipcRenderer.invoke('deleteSqlModelProject', args),
     runSqlModel: (args) => ipcRenderer.invoke('runSqlModel', args),
 
-    // Local Model Provider APIs (LM Studio, Ollama, llama.cpp, GGUF)
     scanLocalModels: (provider) => ipcRenderer.invoke('scan-local-models', provider),
     getLocalModelStatus: (provider) => ipcRenderer.invoke('get-local-model-status', provider),
     scanGgufModels: (directory) => ipcRenderer.invoke('scan-gguf-models', directory),
@@ -561,12 +549,10 @@ onTerminalClosed: (callback) => {
     listHfFiles: (params) => ipcRenderer.invoke('list-hf-files', params),
     downloadHfFile: (params) => ipcRenderer.invoke('download-hf-file', params),
 
-    // Activity Tracking for RNN predictor
     trackActivity: (activity) => ipcRenderer.invoke('track-activity', activity),
     getActivityPredictions: () => ipcRenderer.invoke('get-activity-predictions'),
     trainActivityModel: () => ipcRenderer.invoke('train-activity-model'),
 
-    // Password Manager APIs
     passwordSave: (params) => ipcRenderer.invoke('password-save', params),
     passwordGetForSite: (site) => ipcRenderer.invoke('password-get-for-site', { site }),
     passwordGet: (id) => ipcRenderer.invoke('password-get', { id }),
@@ -574,7 +560,6 @@ onTerminalClosed: (callback) => {
     passwordDelete: (id) => ipcRenderer.invoke('password-delete', { id }),
     passwordEncryptionStatus: () => ipcRenderer.invoke('password-encryption-status'),
 
-    // Python Environment Configuration
     pythonEnvGet: (workspacePath) => ipcRenderer.invoke('python-env-get', { workspacePath }),
     pythonEnvSave: (workspacePath, envConfig) => ipcRenderer.invoke('python-env-save', { workspacePath, envConfig }),
     pythonEnvDelete: (workspacePath) => ipcRenderer.invoke('python-env-delete', { workspacePath }),
@@ -587,11 +572,9 @@ onTerminalClosed: (callback) => {
     pythonEnvInstallPackage: (workspacePath, packageName, extraArgs) => ipcRenderer.invoke('python-env-install-package', workspacePath, packageName, extraArgs),
     pythonEnvUninstallPackage: (workspacePath, packageName) => ipcRenderer.invoke('python-env-uninstall-package', workspacePath, packageName),
 
-    // User profile
     profileGet: () => ipcRenderer.invoke('profile:get'),
     profileSave: (profile) => ipcRenderer.invoke('profile:save', profile),
 
-    // First-run setup
     setupCheckNeeded: () => ipcRenderer.invoke('setup:checkNeeded'),
     setupGetBackendPythonPath: () => ipcRenderer.invoke('setup:getBackendPythonPath'),
     setupDetectPython: () => ipcRenderer.invoke('setup:detectPython'),
@@ -613,12 +596,10 @@ onTerminalClosed: (callback) => {
     fineTuneDiffusers: (params) => ipcRenderer.invoke('finetune-diffusers', params),
     getFineTuneStatus: (jobId) => ipcRenderer.invoke('get-finetune-status', jobId),
 
-    // Instruction fine-tuning (SFT, USFT, DPO, memory_classifier)
     fineTuneInstruction: (params) => ipcRenderer.invoke('finetune-instruction', params),
     getInstructionFineTuneStatus: (jobId) => ipcRenderer.invoke('get-instruction-finetune-status', jobId),
     getInstructionModels: (currentPath) => ipcRenderer.invoke('get-instruction-models', currentPath),
 
-    // Genetic evolution population management
     createGeneticPopulation: (params) => ipcRenderer.invoke('genetic-create-population', params),
     evolvePopulation: (params) => ipcRenderer.invoke('genetic-evolve', params),
     getPopulation: (populationId) => ipcRenderer.invoke('genetic-get-population', populationId),
@@ -626,7 +607,6 @@ onTerminalClosed: (callback) => {
     deletePopulation: (populationId) => ipcRenderer.invoke('genetic-delete-population', populationId),
     injectIndividuals: (params) => ipcRenderer.invoke('genetic-inject', params),
     saveGeneratedImage: (blob, folderPath, filename) => ipcRenderer.invoke('save-generated-image', blob, folderPath, filename),
-
 
 getFileStats: (filePath) => ipcRenderer.invoke('getFileStats', filePath),
 
@@ -646,7 +626,7 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
         }
         return await ipcRenderer.invoke('getNPCTeamProject', currentPath);
     },
-    // globalPath: optional. 'npcsh' for raw npcsh team, omit for incognide (default)
+
     getNPCTeamGlobal: (globalPath) => ipcRenderer.invoke('getNPCTeamGlobal', globalPath),
     onBrowserShowContextMenu: (callback) => {
         const handler = (_, data) => callback(data);
@@ -654,14 +634,12 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
         return () => ipcRenderer.removeListener('browser-show-context-menu', handler);
     },
     browserGetPageContent: (args) => ipcRenderer.invoke('browser-get-page-content', args),
-    
-   
+
     getMessageAttachments: (messageId) => ipcRenderer.invoke('get-message-attachments', messageId),
     getAttachment: (attachmentId) => ipcRenderer.invoke('get-attachment', attachmentId),
     get_attachment_response: (attachmentData, conversationId) =>
         ipcRenderer.invoke('get_attachment_response', attachmentData, conversationId),
 
-   
     loadGlobalSettings: () => ipcRenderer.invoke('loadGlobalSettings'),
     saveGlobalSettings: (args) => ipcRenderer.invoke('saveGlobalSettings', args),
     loadProjectSettings: (path) => ipcRenderer.invoke('loadProjectSettings', path),
@@ -672,7 +650,6 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
     npcshInit: () => ipcRenderer.invoke('npcsh-init'),
     deployIncognideTeam: () => ipcRenderer.invoke('deploy-incognide-team'),
 
-    // NPC Team Sync
     npcTeamSyncStatus: (globalPath) => ipcRenderer.invoke('npc-team:sync-status', globalPath),
     npcTeamSyncInit: (globalPath) => ipcRenderer.invoke('npc-team:sync-init', globalPath),
     npcTeamSyncPull: (globalPath) => ipcRenderer.invoke('npc-team:sync-pull', globalPath),
@@ -696,7 +673,6 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
     pullOllamaModel: (args) => ipcRenderer.invoke('ollama:pullModel', args),
     deleteOllamaModel: (args) => ipcRenderer.invoke('ollama:deleteModel', args),
 
-   
     onOllamaPullProgress: (callback) => {
         const handler = (_, progress) => callback(progress);
         ipcRenderer.on('ollama-pull-progress', handler);
@@ -712,7 +688,6 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
         return () => ipcRenderer.removeListener('ollama-pull-error', handler);
     },
 
-   
     onShowMacroInput: (callback) => {
       ipcRenderer.on('show-macro-input', callback);
       return () => ipcRenderer.removeListener('show-macro-input', callback);
@@ -728,7 +703,6 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
     checkServerConnection: () => ipcRenderer.invoke('checkServerConnection'),
     openExternal: (url) => ipcRenderer.invoke('openExternal', url),
 
-    // Jupyter Kernel APIs
     jupyterListKernels: (args) => ipcRenderer.invoke('jupyter:listKernels', args),
     jupyterStartKernel: (args) => ipcRenderer.invoke('jupyter:startKernel', args),
     jupyterExecuteCode: (args) => ipcRenderer.invoke('jupyter:executeCode', args),
@@ -751,7 +725,6 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
         return () => ipcRenderer.removeListener('jupyter:installProgress', handler);
     },
 
-    // Zoom control events (from menu accelerators — forwarded to renderer so active webview can be zoomed)
     onZoomIn: (callback) => {
         const handler = () => callback();
         ipcRenderer.on('zoom-in', handler);
@@ -768,7 +741,6 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
         return () => ipcRenderer.removeListener('zoom-reset', handler);
     },
 
-    // Version and Update APIs
     checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
     downloadAndInstallUpdate: (opts) => ipcRenderer.invoke('download-and-install-update', opts),

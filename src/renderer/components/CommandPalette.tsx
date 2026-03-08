@@ -15,28 +15,25 @@ interface CommandPaletteProps {
     folderStructure: any;
 }
 
-// Flatten folder structure to get all files
-// Structure format: { "filename": { type: 'file', path: '...' }, "dirname": { type: 'directory', path: '...', children: {...} } }
 const flattenFiles = (structure: any, basePath: string = ''): FileItem[] => {
     const files: FileItem[] = [];
 
     if (!structure || typeof structure !== 'object') return files;
 
-    // Skip error responses
     if (structure.error) return files;
 
     for (const [name, value] of Object.entries(structure)) {
-        // Skip if not an object with type property
+
         if (!value || typeof value !== 'object') continue;
 
         const item = value as any;
 
         if (item.type === 'file') {
-            // It's a file - use the stored path or construct one
+
             const filePath = item.path || (basePath ? `${basePath}/${name}` : name);
             files.push({ name, path: filePath, type: 'file' });
         } else if (item.type === 'directory') {
-            // It's a directory - recurse into children
+
             const dirPath = item.path || (basePath ? `${basePath}/${name}` : name);
             files.push({ name, path: dirPath, type: 'directory' });
             if (item.children && typeof item.children === 'object') {
@@ -48,7 +45,6 @@ const flattenFiles = (structure: any, basePath: string = ''): FileItem[] => {
     return files;
 };
 
-// Fuzzy match score
 const fuzzyMatch = (query: string, text: string): { match: boolean; score: number; indices: number[] } => {
     const queryLower = query.toLowerCase();
     const textLower = text.toLowerCase();
@@ -63,10 +59,10 @@ const fuzzyMatch = (query: string, text: string): { match: boolean; score: numbe
     for (let i = 0; i < textLower.length && queryIdx < queryLower.length; i++) {
         if (textLower[i] === queryLower[queryIdx]) {
             indices.push(i);
-            // Bonus for consecutive matches
+
             score += 1 + consecutiveBonus;
             consecutiveBonus += 0.5;
-            // Bonus for matching at start or after separator
+
             if (i === 0 || text[i - 1] === '/' || text[i - 1] === '_' || text[i - 1] === '-' || text[i - 1] === '.') {
                 score += 2;
             }
@@ -77,7 +73,7 @@ const fuzzyMatch = (query: string, text: string): { match: boolean; score: numbe
     }
 
     const match = queryIdx === queryLower.length;
-    // Penalize longer paths slightly
+
     if (match) {
         score -= text.length * 0.01;
     }
@@ -85,7 +81,6 @@ const fuzzyMatch = (query: string, text: string): { match: boolean; score: numbe
     return { match, score, indices };
 };
 
-// Highlight matched characters
 const HighlightedText: React.FC<{ text: string; indices: number[] }> = ({ text, indices }) => {
     const indexSet = new Set(indices);
     return (
@@ -111,15 +106,13 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     const inputRef = useRef<HTMLInputElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
 
-    // Get all files from folder structure
     const allFiles = useMemo(() => {
         return flattenFiles(folderStructure, currentPath).filter(f => f.type === 'file');
     }, [folderStructure, currentPath]);
 
-    // Filter and sort files based on query
     const filteredFiles = useMemo(() => {
         if (!query.trim()) {
-            // Show recent/all files when no query
+
             return allFiles.slice(0, 50);
         }
 
@@ -130,7 +123,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 return {
                     file,
                     match: match || pathMatch.match,
-                    score: Math.max(score, pathMatch.score * 0.8), // Prefer name matches
+                    score: Math.max(score, pathMatch.score * 0.8),
                     indices: match ? indices : pathMatch.indices,
                     usePathIndices: !match && pathMatch.match,
                 };
@@ -142,12 +135,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         return results.map(r => ({ ...r.file, indices: r.indices, usePathIndices: r.usePathIndices }));
     }, [allFiles, query]);
 
-    // Reset selection when query changes
     useEffect(() => {
         setSelectedIndex(0);
     }, [query]);
 
-    // Focus input when opened
     useEffect(() => {
         if (isOpen) {
             setQuery('');
@@ -156,7 +147,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         }
     }, [isOpen]);
 
-    // Scroll selected item into view
     useEffect(() => {
         if (listRef.current) {
             const selectedElement = listRef.current.children[selectedIndex] as HTMLElement;
@@ -230,7 +220,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                     overflow: 'hidden',
                 }}
             >
-                {/* Search Input */}
                 <div style={{ padding: '16px', borderBottom: '1px solid #45475a' }}>
                     <input
                         ref={inputRef}
@@ -252,7 +241,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                     />
                 </div>
 
-                {/* Results List */}
                 <div
                     ref={listRef}
                     style={{
@@ -317,7 +305,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                     )}
                 </div>
 
-                {/* Footer */}
                 <div style={{
                     padding: '8px 16px',
                     borderTop: '1px solid #45475a',

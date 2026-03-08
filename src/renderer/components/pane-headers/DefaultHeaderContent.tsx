@@ -95,7 +95,6 @@ const DefaultHeaderContent: React.FC<DefaultHeaderContentProps> = ({
                 </span>
             )}
 
-            {/* Buttons area */}
             <div style={{ flex: '1 1 0', width: 0, minWidth: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
                 {children}
 

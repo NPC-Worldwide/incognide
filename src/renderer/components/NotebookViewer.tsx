@@ -13,7 +13,6 @@ import { tags as t } from '@lezer/highlight';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import MarkdownRenderer from './MarkdownRenderer';
 
-// Syntax highlighting style
 const highlightStyle = HighlightStyle.define([
     { tag: t.keyword, color: '#c678dd' },
     { tag: [t.name, t.deleted, t.character, t.propertyName, t.macroName], color: '#e06c75' },
@@ -34,10 +33,8 @@ const editorTheme = EditorView.theme({
     '.cm-activeLine': { backgroundColor: 'rgba(137, 180, 250, 0.08)' },
 });
 
-// Cell types: standard ipynb + incognb extensions
 type CellType = 'code' | 'markdown' | 'raw' | 'chat' | 'jinx' | 'latex' | 'data';
 
-// Paper state for incognb format
 type PaperState = 'in_paper' | 'exploration' | 'discarded';
 
 interface NotebookCell {
@@ -46,15 +43,15 @@ interface NotebookCell {
     outputs?: any[];
     execution_count?: number | null;
     metadata?: {
-        // Standard metadata
+
         collapsed?: boolean;
         scrolled?: boolean;
-        // Incognb extensions
+
         paper_state?: PaperState;
         paper_order?: number;
         paper_section?: string;
         decision_note?: string;
-        // Chat cell metadata
+
         chat?: {
             model?: string;
             provider?: string;
@@ -62,12 +59,12 @@ interface NotebookCell {
             temperature?: number;
             maxTokens?: number;
         };
-        // Jinx cell metadata
+
         jinx?: {
             name?: string;
             inputs?: Record<string, any>;
         };
-        // Data cell metadata
+
         data?: {
             files?: Array<{
                 name: string;
@@ -78,10 +75,10 @@ interface NotebookCell {
                 mime_type: string;
             }>;
         };
-        // Timestamps
+
         created_at?: string;
         modified_at?: string;
-        // Any other metadata
+
         [key: string]: any;
     };
 }
@@ -113,7 +110,6 @@ const NotebookViewer = ({
     const [collapsedCells, setCollapsedCells] = useState<Set<number>>(new Set());
     const [editingMarkdownCell, setEditingMarkdownCell] = useState<number | null>(null);
 
-    // Kernel state
     const [availableKernels, setAvailableKernels] = useState<Array<{name: string, displayName: string, language: string}>>([]);
     const [selectedKernel, setSelectedKernel] = useState<string>('python3');
     const [kernelId, setKernelId] = useState<string | null>(null);
@@ -123,23 +119,19 @@ const NotebookViewer = ({
     const [isInstalling, setIsInstalling] = useState(false);
     const [pythonPath, setPythonPath] = useState<string>('python3');
 
-    // Incognb state - models, NPCs, jinxs for chat/jinx cells
     const [availableModels, setAvailableModels] = useState<any[]>([]);
     const [availableNPCs, setAvailableNPCs] = useState<any[]>([]);
-    const [availableJinxs, setAvailableJinxs] = useState<any[]>([]);
+    const [availableJinxes, setAvailableJinxes] = useState<any[]>([]);
     const [showAddCellMenu, setShowAddCellMenu] = useState<number | null>(null);
 
-    // Variables panel state
     const [showVariablesPanel, setShowVariablesPanel] = useState(true);
     const [variables, setVariables] = useState<any[]>([]);
     const variablesRef = useRef<any[]>([]);
     const [variablesLoading, setVariablesLoading] = useState(false);
     const [expandedVars, setExpandedVars] = useState<Set<string>>(new Set());
 
-    // Collapsed outputs state - track which cell outputs are collapsed
     const [collapsedOutputs, setCollapsedOutputs] = useState<Set<number>>(new Set());
 
-    // Data Explorer state
     const [explorerVar, setExplorerVar] = useState<string | null>(null);
     const [explorerData, setExplorerData] = useState<any>(null);
     const [explorerLoading, setExplorerLoading] = useState(false);
@@ -148,7 +140,6 @@ const NotebookViewer = ({
     const [explorerFilter, setExplorerFilter] = useState('');
     const [showColumnStats, setShowColumnStats] = useState<string | null>(null);
 
-    // Matplotlib configuration state
     const [showMplConfig, setShowMplConfig] = useState(false);
     const [mplConfig, setMplConfig] = useState({
         style: 'default',
@@ -156,7 +147,7 @@ const NotebookViewer = ({
         fontSize: 10,
         labelSize: 20,
         tickSize: 20,
-        usetex: false,  // Requires full LaTeX install (texlive-full + cm-super)
+        usetex: false,
         cmap: 'plasma',
         figWidth: 6.4,
         figHeight: 4.8,
@@ -168,11 +159,9 @@ const NotebookViewer = ({
     });
     const [mplConfigApplied, setMplConfigApplied] = useState(false);
 
-    // Export state
     const [showExportMenu, setShowExportMenu] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
 
-    // Streaming state for chat cells
     const [streamingCellIndex, setStreamingCellIndex] = useState<number | null>(null);
     const [streamingContent, setStreamingContent] = useState<string>('');
     const [streamingReasoningContent, setStreamingReasoningContent] = useState<string>('');
@@ -185,13 +174,10 @@ const NotebookViewer = ({
     const filePath = paneData?.contentId;
     const isIncognb = filePath?.endsWith('.incognb');
 
-    // Get workspace path from file path
     const workspacePath = filePath ? filePath.substring(0, filePath.lastIndexOf('/')) : null;
 
-    // Ref for executeCell so CodeMirror keybindings always call the latest version
     const executeCellRef = useRef<(index: number) => void>(() => {});
 
-    // Base Python extensions (shared, no cell-specific keybindings)
     const basePythonExtensions = useMemo(() => [
         python(),
         syntaxHighlighting(highlightStyle),
@@ -206,7 +192,6 @@ const NotebookViewer = ({
         EditorView.lineWrapping,
     ], []);
 
-    // Per-cell Python extensions with Ctrl+Enter / Shift+Enter keybindings
     const getCellExtensions = useCallback((cellIndex: number) => [
         ...basePythonExtensions,
         keymap.of([
@@ -221,7 +206,6 @@ const NotebookViewer = ({
         ]),
     ], [basePythonExtensions]);
 
-    // CodeMirror extensions for Markdown
     const markdownExtensions = useMemo(() => [
         markdown(),
         syntaxHighlighting(highlightStyle),
@@ -233,20 +217,17 @@ const NotebookViewer = ({
         EditorView.lineWrapping,
     ], []);
 
-    // Keep refs in sync with state
     useEffect(() => { notebookRef.current = notebook; }, [notebook]);
     useEffect(() => { kernelIdRef.current = kernelId; }, [kernelId]);
 
-    // Track focused cell for Ctrl+Enter
     const [focusedCellIndex, setFocusedCellIndex] = useState<number | null>(null);
 
-    // Check if Jupyter is installed and load kernels on mount
     useEffect(() => {
         const checkAndLoadKernels = async () => {
             if (!workspacePath) return;
 
             try {
-                // First check if Jupyter is installed
+
                 const checkResult = await (window as any).api.jupyterCheckInstalled({ workspacePath });
                 setJupyterInstalled(checkResult?.installed ?? false);
                 if (checkResult?.pythonPath) {
@@ -254,7 +235,7 @@ const NotebookViewer = ({
                 }
 
                 if (checkResult?.installed) {
-                    // Load available kernels
+
                     const result = await (window as any).api.jupyterListKernels({ workspacePath });
                     if (result?.success && result.kernels) {
                         setAvailableKernels(result.kernels);
@@ -274,27 +255,24 @@ const NotebookViewer = ({
         checkAndLoadKernels();
     }, [workspacePath]);
 
-    // Load models, NPCs, and jinxs for chat/jinx cells (all notebooks)
     useEffect(() => {
         const loadNotebookResources = async () => {
             if (!workspacePath) return;
             try {
-                // Load models
+
                 const modelsResult = await (window as any).api.getAvailableModels?.(workspacePath);
                 if (modelsResult && !modelsResult.error) {
                     setAvailableModels(modelsResult);
                 }
 
-                // Load NPCs
                 const npcsResult = await (window as any).api.loadNPCs?.({ currentPath: workspacePath });
                 if (npcsResult?.npcs) {
                     setAvailableNPCs(npcsResult.npcs);
                 }
 
-                // Load jinxs
-                const jinxsResult = await (window as any).api.loadJinxs?.({ currentPath: workspacePath });
-                if (jinxsResult?.jinxs) {
-                    setAvailableJinxs(jinxsResult.jinxs);
+                const jinxesResult = await (window as any).api.loadJinxes?.({ currentPath: workspacePath });
+                if (jinxesResult?.jinxes) {
+                    setAvailableJinxes(jinxesResult.jinxes);
                 }
             } catch (e) {
                 console.error('Failed to load notebook resources:', e);
@@ -303,7 +281,6 @@ const NotebookViewer = ({
         loadNotebookResources();
     }, [workspacePath]);
 
-    // Install Jupyter
     const installJupyter = useCallback(async () => {
         if (!workspacePath) return;
         setIsInstalling(true);
@@ -312,11 +289,10 @@ const NotebookViewer = ({
         try {
             const result = await (window as any).api.jupyterInstall({ workspacePath });
             if (result?.success) {
-                // Register the kernel
+
                 await (window as any).api.jupyterRegisterKernel({ workspacePath });
                 setJupyterInstalled(true);
 
-                // Load kernels
                 const kernelResult = await (window as any).api.jupyterListKernels({ workspacePath });
                 if (kernelResult?.success && kernelResult.kernels) {
                     setAvailableKernels(kernelResult.kernels);
@@ -331,7 +307,6 @@ const NotebookViewer = ({
         }
     }, [workspacePath]);
 
-    // Start kernel
     const startKernel = useCallback(async () => {
         if (kernelStatus === 'connected' || kernelStatus === 'starting') return;
         if (!jupyterInstalled) {
@@ -366,7 +341,6 @@ const NotebookViewer = ({
         }
     }, [selectedKernel, kernelStatus, nodeId, workspacePath, jupyterInstalled]);
 
-    // Stop kernel
     const stopKernel = useCallback(async () => {
         if (!kernelId) return;
 
@@ -380,7 +354,6 @@ const NotebookViewer = ({
         }
     }, [kernelId]);
 
-    // Clean up kernel on unmount
     useEffect(() => {
         return () => {
             if (kernelId) {
@@ -389,7 +362,6 @@ const NotebookViewer = ({
         };
     }, [kernelId]);
 
-    // Listen for kernel stopped events
     useEffect(() => {
         const unsubscribe = (window as any).api.onJupyterKernelStopped?.((data: any) => {
             if (data.kernelId === kernelId) {
@@ -401,7 +373,6 @@ const NotebookViewer = ({
         return () => unsubscribe?.();
     }, [kernelId]);
 
-    // Load notebook
     useEffect(() => {
         const load = async () => {
             if (!filePath) return;
@@ -419,7 +390,6 @@ const NotebookViewer = ({
         load();
     }, [filePath]);
 
-    // Save notebook
     const save = useCallback(async () => {
         if (!hasChanges || !notebook) return;
         setIsSaving(true);
@@ -434,7 +404,6 @@ const NotebookViewer = ({
         }
     }, [hasChanges, notebook, filePath]);
 
-    // Update cell source
     const updateCellSource = useCallback((index: number, newSource: string) => {
         if (!notebook) return;
         const newCells = [...notebook.cells];
@@ -445,7 +414,6 @@ const NotebookViewer = ({
         setHasChanges(true);
     }, [notebook]);
 
-    // Add new cell
     const addCell = useCallback((afterIndex: number, type: CellType) => {
         if (!notebook) return;
 
@@ -460,7 +428,7 @@ const NotebookViewer = ({
             metadata: {
                 created_at: new Date().toISOString(),
                 paper_state: 'exploration',
-                // Type-specific metadata
+
                 ...(type === 'chat' && {
                     chat: {
                         model: defaultModel,
@@ -488,7 +456,6 @@ const NotebookViewer = ({
         setShowAddCellMenu(null);
     }, [notebook, availableModels, availableNPCs]);
 
-    // Delete cell
     const deleteCell = useCallback((index: number) => {
         if (!notebook || notebook.cells.length <= 1) return;
         const newCells = notebook.cells.filter((_, i) => i !== index);
@@ -496,7 +463,6 @@ const NotebookViewer = ({
         setHasChanges(true);
     }, [notebook]);
 
-    // Change cell type
     const changeCellType = useCallback((index: number, newType: CellType) => {
         if (!notebook) return;
         const defaultModel = availableModels.length > 0 ? availableModels[0].value : '';
@@ -526,7 +492,6 @@ const NotebookViewer = ({
         setHasChanges(true);
     }, [notebook, availableModels, availableNPCs]);
 
-    // Update cell metadata (for chat/jinx config changes)
     const updateCellMetadata = useCallback((index: number, metadataUpdate: Partial<NotebookCell['metadata']>) => {
         if (!notebook) return;
         const newCells = [...notebook.cells];
@@ -538,7 +503,6 @@ const NotebookViewer = ({
         setHasChanges(true);
     }, [notebook]);
 
-    // Toggle paper state for incognb
     const togglePaperState = useCallback((index: number) => {
         if (!notebook) return;
         const states: PaperState[] = ['exploration', 'in_paper', 'discarded'];
@@ -547,7 +511,6 @@ const NotebookViewer = ({
         updateCellMetadata(index, { paper_state: states[nextIndex] });
     }, [notebook, updateCellMetadata]);
 
-    // Toggle cell collapse
     const toggleCollapse = useCallback((index: number) => {
         setCollapsedCells(prev => {
             const newSet = new Set(prev);
@@ -557,7 +520,6 @@ const NotebookViewer = ({
         });
     }, []);
 
-    // Execute a single cell
     const executeCellDirect = async (index: number, kid: string): Promise<void> => {
         const nb = notebookRef.current;
         if (!nb) return;
@@ -592,7 +554,7 @@ const NotebookViewer = ({
                 return { ...prev, cells: newCells };
             });
             setHasChanges(true);
-            // If kernel was not found, mark as disconnected so user can restart
+
             if (!result.success && result.error?.includes('Kernel not found')) {
                 setKernelStatus('disconnected');
                 setKernelId(null);
@@ -607,14 +569,13 @@ const NotebookViewer = ({
             });
         } finally {
             setIsExecuting(null);
-            // Only set connected if kernel is still alive
+
             if (kernelStatus !== 'disconnected') {
                 setKernelStatus('connected');
             }
         }
     };
 
-    // Ensure kernel is ready and return its ID
     const ensureKernel = async (): Promise<string | null> => {
         let kid = kernelIdRef.current;
         if (kid && kernelStatus === 'connected') return kid;
@@ -628,7 +589,7 @@ const NotebookViewer = ({
             if (running?.kernels?.length > 0) {
                 kid = running.kernels[running.kernels.length - 1].kernelId;
                 kernelIdRef.current = kid;
-                setKernelId(kid);  // Also update state so refreshVariables works
+                setKernelId(kid);
                 setKernelStatus('connected');
                 return kid;
             }
@@ -637,17 +598,14 @@ const NotebookViewer = ({
         return null;
     };
 
-    // Execute single cell (public API)
     const executeCell = useCallback(async (index: number) => {
         const kid = await ensureKernel();
         if (!kid) return;
         await executeCellDirect(index, kid);
     }, [kernelStatus, startKernel]);
 
-    // Keep executeCell ref in sync for CodeMirror keybindings
     useEffect(() => { executeCellRef.current = executeCell; }, [executeCell]);
 
-    // Run all cells in strict sequential order
     const runAllCells = useCallback(async () => {
         const nb = notebookRef.current;
         if (!nb) return;
@@ -666,7 +624,6 @@ const NotebookViewer = ({
         console.log(`[EXEC] All cells complete`);
     }, [kernelStatus, startKernel]);
 
-    // Run all cells before (and including) the given index
     const runAllBefore = useCallback(async (index: number) => {
         const nb = notebookRef.current;
         if (!nb) return;
@@ -678,7 +635,6 @@ const NotebookViewer = ({
         }
     }, [kernelStatus, startKernel]);
 
-    // Run all cells after (and including) the given index
     const runAllAfter = useCallback(async (index: number) => {
         const nb = notebookRef.current;
         if (!nb) return;
@@ -690,12 +646,10 @@ const NotebookViewer = ({
         }
     }, [kernelStatus, startKernel]);
 
-    // Keep variablesRef in sync
     useEffect(() => {
         variablesRef.current = variables;
     }, [variables]);
 
-    // Refresh variables from kernel
     const refreshVariables = useCallback(async () => {
         console.log('[VAR] refreshVariables called, kernelId:', kernelId, 'status:', kernelStatus);
         if (!kernelId || kernelStatus !== 'connected') {
@@ -722,14 +676,12 @@ const NotebookViewer = ({
         }
     }, [kernelId, kernelStatus]);
 
-    // Auto-refresh variables after cell execution
     useEffect(() => {
         if (kernelStatus === 'connected' && isExecuting === null) {
             refreshVariables();
         }
     }, [kernelStatus, isExecuting, refreshVariables]);
 
-    // Load dataframe data for explorer
     const loadDataFrameData = useCallback(async (varName: string, offset = 0) => {
         if (!kernelId) return;
         setExplorerLoading(true);
@@ -753,7 +705,6 @@ const NotebookViewer = ({
         }
     }, [kernelId]);
 
-    // Open dataframe in explorer
     const openInExplorer = useCallback((varName: string) => {
         setExplorerVar(varName);
         setExplorerSort(null);
@@ -762,7 +713,6 @@ const NotebookViewer = ({
         loadDataFrameData(varName, 0);
     }, [loadDataFrameData]);
 
-    // Apply matplotlib configuration to kernel
     const applyMplConfig = useCallback(async () => {
         if (!kernelId || kernelStatus !== 'connected') return;
 
@@ -809,7 +759,6 @@ print("Matplotlib configured for scientific publishing")
         }
     }, [kernelId, kernelStatus, mplConfig]);
 
-    // Auto-apply matplotlib config when kernel connects, reset when disconnected
     useEffect(() => {
         if (kernelStatus === 'connected' && !mplConfigApplied) {
             applyMplConfig();
@@ -818,7 +767,6 @@ print("Matplotlib configured for scientific publishing")
         }
     }, [kernelStatus, mplConfigApplied, applyMplConfig]);
 
-    // Export to Python (.py)
     const exportToPython = useCallback(async () => {
         if (!notebook || !filePath) return;
         setIsExporting(true);
@@ -842,7 +790,6 @@ print("Matplotlib configured for scientific publishing")
         }
     }, [notebook, filePath]);
 
-    // Export to HTML
     const exportToHTML = useCallback(async () => {
         if (!notebook || !filePath) return;
         setIsExporting(true);
@@ -902,15 +849,13 @@ ${notebook.cells.map((cell, i) => {
         }
     }, [notebook, filePath]);
 
-    // Export to PDF (via nbconvert if available)
     const exportToPDF = useCallback(async () => {
         if (!notebook || !filePath || !kernelId) return;
         setIsExporting(true);
         try {
-            // First save the notebook
+
             await save();
 
-            // Try to use nbconvert via kernel
             const result = await (window as any).api.jupyterExecuteCode({
                 kernelId,
                 code: `
@@ -932,7 +877,7 @@ except Exception as e:
             if (output.includes('PDF_EXPORT_SUCCESS')) {
                 alert(`Exported to ${filePath.replace(/\.(ipynb|incognb)$/, '.pdf')}`);
             } else {
-                // Fallback: suggest installing nbconvert
+
                 alert('PDF export requires jupyter nbconvert with LaTeX support.\nInstall with: pip install nbconvert[webpdf]\n\nError: ' + output);
             }
         } catch (e: any) {
@@ -943,7 +888,6 @@ except Exception as e:
         }
     }, [notebook, filePath, kernelId, save]);
 
-    // Execute chat cell - send prompt to LLM via streaming API
     const executeChatCell = useCallback(async (index: number, targetModels?: string[]) => {
         if (!notebook) return;
 
@@ -954,10 +898,8 @@ except Exception as e:
         const source = Array.isArray(cell.source) ? cell.source.join('') : cell.source;
         const chatMeta = cell.metadata?.chat || {};
 
-        // If targetModels provided, run on multiple models (matrix run)
         const modelsToRun = targetModels || [chatMeta.model || availableModels[0]?.value || 'gpt-4'];
 
-        // Clear existing outputs
         const clearedCells = [...notebook.cells];
         clearedCells[index] = {
             ...clearedCells[index],
@@ -969,7 +911,6 @@ except Exception as e:
         };
         setNotebook({ ...notebook, cells: clearedCells });
 
-        // Process models sequentially
         for (const modelValue of modelsToRun) {
             const selectedModel = availableModels.find((m: any) => m.value === modelValue);
             const provider = selectedModel?.provider || 'openai';
@@ -984,7 +925,6 @@ except Exception as e:
             streamingReasoningRef.current = '';
             streamingToolCallsRef.current = [];
 
-            // Helper to process a parsed event (matches utils.tsx pattern)
             const processEvent = (parsed: any) => {
                 let content = '', reasoningContent = '', toolCalls: any[] | null = null;
 
@@ -1016,7 +956,6 @@ except Exception as e:
                 return { content, reasoningContent, toolCalls };
             };
 
-            // Set up stream listeners at call time
             let streamComplete = false;
             const cleanupData = (window as any).api?.onStreamData?.((_: any, data: any) => {
                 if (data.streamId === streamId && data.chunk) {
@@ -1025,7 +964,7 @@ except Exception as e:
                         let content = '', reasoningContent = '', toolCalls: any[] | null = null;
 
                         if (typeof chunk === 'string') {
-                            // Handle SSE format - may contain multiple events
+
                             const events = chunk.split(/\n\n/).filter((e: string) => e.trim());
                             for (const event of events) {
                                 const trimmedEvent = event.trim();
@@ -1060,19 +999,16 @@ except Exception as e:
                             toolCalls = result.toolCalls;
                         }
 
-                        // Update content
                         if (content) {
                             streamingContentRef.current += content;
                             setStreamingContent(streamingContentRef.current);
                         }
 
-                        // Update reasoning
                         if (reasoningContent) {
                             streamingReasoningRef.current += reasoningContent;
                             setStreamingReasoningContent(streamingReasoningRef.current);
                         }
 
-                        // Update tool calls
                         if (toolCalls) {
                             const normalizedCalls = toolCalls.map((tc: any) => ({
                                 id: tc.id || '',
@@ -1100,7 +1036,7 @@ except Exception as e:
                             setStreamingToolCalls([...existing]);
                         }
                     } catch {
-                        // Partial chunk, ignore
+
                     }
                 }
             });
@@ -1173,7 +1109,6 @@ except Exception as e:
                 }
             });
 
-            // Execute the stream
             (window as any).api?.executeCommandStream?.({
                 streamId,
                 commandstr: source,
@@ -1184,7 +1119,6 @@ except Exception as e:
                 npc,
             });
 
-            // Wait for this stream to complete before starting next model
             await new Promise<void>((resolve) => {
                 const checkInterval = setInterval(() => {
                     if (streamComplete) {
@@ -1205,7 +1139,6 @@ except Exception as e:
         streamingToolCallsRef.current = [];
     }, [notebook, availableModels, workspacePath]);
 
-    // Execute jinx cell - run jinx workflow
     const executeJinxCell = useCallback(async (index: number) => {
         if (!notebook) return;
 
@@ -1217,7 +1150,7 @@ except Exception as e:
         const jinxMeta = cell.metadata?.jinx || {};
 
         try {
-            // Execute via jinx API
+
             const response = await fetch(`${BACKEND_URL}/api/jinx/execute`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1275,7 +1208,6 @@ except Exception as e:
         }
     }, [notebook, workspacePath]);
 
-    // Keyboard shortcuts
     const onKeyDown = useCallback((e: KeyboardEvent) => {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
             e.preventDefault();
@@ -1288,7 +1220,6 @@ except Exception as e:
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [onKeyDown]);
 
-    // Render a tool call with status indicator
     const renderToolCall = (tool: any, index: number) => {
         const statusColor = tool.status === 'error' ? 'border-red-500'
             : tool.status === 'complete' ? 'border-green-500'
@@ -1322,7 +1253,6 @@ except Exception as e:
         );
     };
 
-    // Render cell output
     const renderOutput = (output: any, outputIndex: number) => {
         if (!output) return null;
 
@@ -1342,7 +1272,6 @@ except Exception as e:
 
             return (
                 <div key={outputIndex} className="space-y-2">
-                    {/* Reasoning content */}
                     {reasoningContent && (
                         <div className="px-3 py-2 bg-gray-800 rounded-md border-l-2 border-yellow-500">
                             <div className="text-xs text-yellow-400 mb-1 font-semibold">Thinking Process:</div>
@@ -1352,10 +1281,8 @@ except Exception as e:
                         </div>
                     )}
 
-                    {/* Tool calls */}
                     {toolCalls?.map((tool: any, ti: number) => renderToolCall(tool, ti))}
 
-                    {/* Main content */}
                     {data?.['text/html'] ? (
                         <div className="text-xs bg-gray-900 p-2 rounded"
                              dangerouslySetInnerHTML={{ __html: Array.isArray(data['text/html']) ? data['text/html'].join('') : data['text/html'] }} />
@@ -1388,11 +1315,8 @@ except Exception as e:
 
     return (
         <div className="h-full flex flex-col theme-bg-secondary overflow-hidden">
-            {/* Main content area - horizontal layout */}
             <div className="flex-1 flex flex-row overflow-hidden">
-                {/* Left column - Header + Cells */}
                 <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-                    {/* Header */}
                     <div
                         draggable="true"
                     onDragStart={(e) => {
@@ -1420,7 +1344,6 @@ except Exception as e:
                         {filePath ? getFileName(filePath) : 'Untitled.ipynb'}{hasChanges ? ' *' : ''}
                     </span>
                     <div className="flex items-center gap-2">
-                        {/* Kernel controls */}
                         <div className="relative flex items-center gap-1">
                             <button
                                 onClick={() => setShowKernelMenu(!showKernelMenu)}
@@ -1442,7 +1365,6 @@ except Exception as e:
 
                             {showKernelMenu && (
                                 <div className="absolute top-full right-0 mt-1 w-56 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 py-1">
-                                    {/* Python path info */}
                                     <div className="px-3 py-1.5 text-[10px] text-gray-500 border-b border-gray-700">
                                         <span className="uppercase">Python:</span>
                                         <div className="text-gray-400 truncate" title={pythonPath}>{pythonPath.split('/').slice(-3).join('/')}</div>
@@ -1584,7 +1506,6 @@ except Exception as e:
                             </button>
                             {showAddCellMenu === -1 && (
                                 <div className="absolute top-full right-0 mt-1 w-32 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 py-1">
-                                    {/* Standard cell types for regular .ipynb, extended types for .incognb */}
                                     {(isIncognb ? ['code', 'markdown', 'chat', 'jinx', 'latex', 'data'] : ['code', 'markdown']).map(type => {
                                         const cellTypeStyles: Record<string, { text: string; icon: any; label: string }> = {
                                             code: { text: 'text-blue-400', icon: Code2, label: 'Code' },
@@ -1624,7 +1545,6 @@ except Exception as e:
                         </div>
                     </div>
 
-                    {/* Jupyter install banner - shown prominently when not installed */}
                     {jupyterInstalled === false && (
                         <div className="mx-4 mt-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg flex items-center gap-3">
                             <Zap size={16} className="text-yellow-400 flex-shrink-0" />
@@ -1641,7 +1561,6 @@ except Exception as e:
                         </div>
                     )}
 
-                    {/* Cells */}
                     <div className="flex-1 overflow-auto p-4 space-y-4">
                 {(notebook.cells || []).map((cell, index) => {
                     const source = Array.isArray(cell.source) ? cell.source.join('') : cell.source;
@@ -1649,7 +1568,6 @@ except Exception as e:
                     const cellType = cell.cell_type;
                     const paperState = cell.metadata?.paper_state || 'exploration';
 
-                    // Cell type styling
                     const cellTypeStyles: Record<string, { bg: string; text: string; icon: any; label: string }> = {
                         code: { bg: 'bg-blue-500/20', text: 'text-blue-400', icon: Code2, label: 'Code' },
                         markdown: { bg: 'bg-green-500/20', text: 'text-green-400', icon: FileText, label: 'Markdown' },
@@ -1662,7 +1580,6 @@ except Exception as e:
                     const style = cellTypeStyles[cellType] || cellTypeStyles.raw;
                     const CellIcon = style.icon;
 
-                    // Paper state styling for incognb
                     const paperStateStyles: Record<PaperState, { border: string; opacity: string; icon: any }> = {
                         in_paper: { border: 'border-l-4 border-l-green-500', opacity: '', icon: Eye },
                         exploration: { border: '', opacity: '', icon: Sparkles },
@@ -1672,24 +1589,20 @@ except Exception as e:
 
                     return (
                         <div key={index} className={`border border-gray-700 rounded-lg overflow-hidden ${paperStyle.border} ${paperStyle.opacity}`}>
-                            {/* Cell header */}
                             <div className="flex items-center gap-2 px-2 py-1 bg-gray-800 border-b border-gray-700">
                                 <button onClick={() => toggleCollapse(index)} className="text-gray-400 hover:text-gray-200">
                                     {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
                                 </button>
 
-                                {/* Cell type badge */}
                                 <span className={`text-xs px-2 py-0.5 rounded flex items-center gap-1 ${style.bg} ${style.text}`}>
                                     <CellIcon size={10} />
                                     {style.label}
                                 </span>
 
-                                {/* Execution count for code cells */}
                                 {cellType === 'code' && cell.execution_count != null && (
                                     <span className="text-xs text-gray-500">[{cell.execution_count}]</span>
                                 )}
 
-                                {/* Chat cell config display */}
                                 {cellType === 'chat' && cell.metadata?.chat && (
                                     <div className="flex items-center gap-1">
                                         <select
@@ -1713,7 +1626,6 @@ except Exception as e:
                                     </div>
                                 )}
 
-                                {/* Jinx cell config display */}
                                 {cellType === 'jinx' && (
                                     <select
                                         value={cell.metadata?.jinx?.name || ''}
@@ -1721,13 +1633,12 @@ except Exception as e:
                                         className="text-[10px] bg-gray-700 border-none rounded px-1 py-0.5 text-orange-300"
                                     >
                                         <option value="">Select jinx...</option>
-                                        {availableJinxs.map(j => (
+                                        {availableJinxes.map(j => (
                                             <option key={j.name} value={j.name}>{j.name}</option>
                                         ))}
                                     </select>
                                 )}
 
-                                {/* Paper state toggle for incognb */}
                                 {isIncognb && (
                                     <button
                                         onClick={() => togglePaperState(index)}
@@ -1745,7 +1656,6 @@ except Exception as e:
 
                                 <div className="flex-1" />
 
-                                {/* Execute buttons - varies by cell type */}
                                 {cellType === 'code' && (
                                     <>
                                         <button
@@ -1788,7 +1698,6 @@ except Exception as e:
                                     </button>
                                 )}
 
-                                {/* Markdown/LaTeX edit button */}
                                 {(cellType === 'markdown' || cellType === 'latex') && (
                                     <button
                                         onClick={() => setEditingMarkdownCell(editingMarkdownCell === index ? null : index)}
@@ -1799,7 +1708,6 @@ except Exception as e:
                                     </button>
                                 )}
 
-                                {/* Add cell menu */}
                                 <div className="relative flex items-center">
                                     <button
                                         onClick={() => addCell(index, 'code')}
@@ -1817,7 +1725,6 @@ except Exception as e:
                                     </button>
                                     {showAddCellMenu === index && (
                                         <div className="absolute top-full right-0 mt-1 w-32 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 py-1">
-                                            {/* Standard cell types for regular .ipynb, extended types for .incognb */}
                                             {(isIncognb ? ['code', 'markdown', 'chat', 'jinx', 'latex', 'data'] : ['code', 'markdown']).map(type => {
                                                 const s = cellTypeStyles[type];
                                                 const Icon = s.icon;
@@ -1846,10 +1753,8 @@ except Exception as e:
                                 </button>
                             </div>
 
-                            {/* Cell content */}
                             {!isCollapsed && (
                                 <div className="bg-gray-900">
-                                    {/* Code cell */}
                                     {cellType === 'code' && (
                                         <div onFocus={() => setFocusedCellIndex(index)}>
                                             <CodeMirror
@@ -1862,7 +1767,6 @@ except Exception as e:
                                         </div>
                                     )}
 
-                                    {/* Markdown cell */}
                                     {cellType === 'markdown' && (
                                         editingMarkdownCell === index ? (
                                             <div onBlur={() => setEditingMarkdownCell(null)}>
@@ -1890,7 +1794,6 @@ except Exception as e:
                                         )
                                     )}
 
-                                    {/* Chat cell */}
                                     {cellType === 'chat' && (
                                         <div className="p-3">
                                             <textarea
@@ -1899,11 +1802,10 @@ except Exception as e:
                                                 placeholder="Enter your prompt here..."
                                                 className="w-full bg-gray-800 border border-gray-700 rounded p-3 text-sm text-gray-200 min-h-[80px] resize-y"
                                             />
-                                            {/* Matrix run button */}
                                             <div className="mt-2 flex items-center gap-2">
                                                 <button
                                                     onClick={() => {
-                                                        // Run on all available models (matrix run)
+
                                                         const allModelValues = availableModels.slice(0, 4).map(m => m.value);
                                                         executeChatCell(index, allModelValues);
                                                     }}
@@ -1917,7 +1819,6 @@ except Exception as e:
                                         </div>
                                     )}
 
-                                    {/* Jinx cell */}
                                     {cellType === 'jinx' && (
                                         <CodeMirror
                                             value={source}
@@ -1929,7 +1830,6 @@ except Exception as e:
                                         />
                                     )}
 
-                                    {/* LaTeX cell */}
                                     {cellType === 'latex' && (
                                         editingMarkdownCell === index ? (
                                             <div onBlur={() => setEditingMarkdownCell(null)}>
@@ -1957,7 +1857,6 @@ except Exception as e:
                                         )
                                     )}
 
-                                    {/* Data cell */}
                                     {cellType === 'data' && (
                                         <div className="p-3">
                                             <div className="border-2 border-dashed border-gray-700 rounded-lg p-4 text-center">
@@ -1978,7 +1877,6 @@ except Exception as e:
                                         </div>
                                     )}
 
-                                    {/* Raw cell */}
                                     {cellType === 'raw' && (
                                         <CodeMirror
                                             value={source}
@@ -1990,7 +1888,6 @@ except Exception as e:
                                 </div>
                             )}
 
-                            {/* Live streaming output for chat cells */}
                             {!isCollapsed && streamingCellIndex === index && (streamingContent || streamingReasoningContent || streamingToolCalls.length > 0) && (
                                 <div className="border-t border-gray-700 bg-gray-850 p-2 space-y-2">
                                     <div className="flex items-center gap-2 text-xs text-purple-400 mb-2">
@@ -1998,7 +1895,6 @@ except Exception as e:
                                         <span>Generating...</span>
                                     </div>
 
-                                    {/* Streaming reasoning content */}
                                     {streamingReasoningContent && (
                                         <div className="px-3 py-2 bg-gray-800 rounded-md border-l-2 border-yellow-500">
                                             <div className="text-xs text-yellow-400 mb-1 font-semibold">Thinking Process:</div>
@@ -2008,10 +1904,8 @@ except Exception as e:
                                         </div>
                                     )}
 
-                                    {/* Streaming tool calls */}
                                     {streamingToolCalls.map((tool, ti) => renderToolCall(tool, ti))}
 
-                                    {/* Streaming content */}
                                     {streamingContent && (
                                         <pre className="text-xs text-gray-300 whitespace-pre-wrap font-mono bg-gray-900 p-2 rounded">
                                             {streamingContent}
@@ -2021,10 +1915,8 @@ except Exception as e:
                                 </div>
                             )}
 
-                            {/* Cell outputs - for code, chat, jinx cells */}
                             {!isCollapsed && ['code', 'chat', 'jinx'].includes(cellType) && cell.outputs && cell.outputs.length > 0 && (
                                 <div className="border-t border-gray-700 bg-gray-850">
-                                    {/* Output header with collapse toggle */}
                                     <div
                                         className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:bg-gray-800/50 text-xs text-gray-400"
                                         onClick={() => {
@@ -2039,12 +1931,10 @@ except Exception as e:
                                         {collapsedOutputs.has(index) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
                                         <span>Output ({cell.outputs.length} {cell.outputs.length === 1 ? 'item' : 'items'})</span>
                                     </div>
-                                    {/* Collapsible output content */}
                                     {!collapsedOutputs.has(index) && (
                                         <div className="p-2 space-y-2 max-h-[500px] overflow-auto">
                                             {cell.outputs.map((output, outputIndex) => (
                                                 <div key={outputIndex}>
-                                                    {/* Output metadata (model/npc for chat cells) */}
                                                     {output.metadata && (output.metadata.model || output.metadata.npc) && (
                                                         <div className="flex items-center gap-1 mb-1">
                                                             {output.metadata.model && (
@@ -2072,9 +1962,7 @@ except Exception as e:
                     </div>
                 </div>
 
-                {/* Right Sidebar - Variables Panel & Data Explorer */}
                 <div className={`border-l theme-border flex flex-col bg-gray-900/50 transition-all flex-shrink-0 ${showVariablesPanel || explorerVar ? 'w-80 max-w-[33%]' : 'w-10'}`}>
-                    {/* Sidebar toggle */}
                     <div className="flex items-center justify-between p-2 border-b theme-border">
                         {(showVariablesPanel || explorerVar) && (
                             <span className="text-xs font-semibold text-gray-400 flex items-center gap-1">
@@ -2099,7 +1987,6 @@ except Exception as e:
 
                     {showVariablesPanel && !explorerVar && (
                         <div className="flex-1 overflow-auto">
-                            {/* Refresh button */}
                             <div className="p-2 border-b theme-border flex items-center justify-between">
                                 <span className="text-[10px] text-gray-500 uppercase">
                                     {variables.length} variable{variables.length !== 1 ? 's' : ''}
@@ -2158,7 +2045,6 @@ except Exception as e:
                                                 <span className="text-[10px] text-gray-500">{v.type}</span>
                                             </div>
 
-                                            {/* Shape/size info */}
                                             <div className="mt-1 flex items-center gap-2 text-[10px] text-gray-500">
                                                 {v.shape && <span className="bg-gray-800 px-1 rounded">{v.shape}</span>}
                                                 {v.length !== undefined && <span className="bg-gray-800 px-1 rounded">len: {v.length}</span>}
@@ -2166,14 +2052,12 @@ except Exception as e:
                                                 {v.memory && <span className="bg-gray-800 px-1 rounded">{(v.memory / 1024).toFixed(1)} KB</span>}
                                             </div>
 
-                                            {/* DataFrame columns preview */}
                                             {v.is_dataframe && v.columns && (
                                                 <div className="mt-1 text-[10px] text-gray-500 truncate">
                                                     cols: {v.columns.slice(0, 5).join(', ')}{v.columns.length > 5 ? ` +${v.columns.length - 5}` : ''}
                                                 </div>
                                             )}
 
-                                            {/* Expanded repr */}
                                             {expandedVars.has(v.name) && !v.is_dataframe && (
                                                 <pre className="mt-2 text-[10px] text-gray-400 bg-gray-900 p-2 rounded overflow-x-auto max-h-32 overflow-y-auto">
                                                     {v.repr}
@@ -2186,10 +2070,8 @@ except Exception as e:
                         </div>
                     )}
 
-                    {/* Data Explorer */}
                     {explorerVar && (
                         <div className="flex-1 flex flex-col overflow-hidden">
-                            {/* Explorer header */}
                             <div className="p-2 border-b theme-border flex items-center justify-between bg-gray-800">
                                 <div className="flex items-center gap-2">
                                     <Table size={14} className="text-blue-400" />
@@ -2208,7 +2090,6 @@ except Exception as e:
                                 </button>
                             </div>
 
-                            {/* Column filter */}
                             <div className="p-2 border-b theme-border">
                                 <input
                                     type="text"
@@ -2225,7 +2106,6 @@ except Exception as e:
                                 </div>
                             ) : explorerData ? (
                                 <>
-                                    {/* Data grid */}
                                     <div className="flex-1 overflow-auto">
                                         <table className="w-full text-xs border-collapse">
                                             <thead className="sticky top-0 bg-gray-800">
@@ -2243,7 +2123,6 @@ except Exception as e:
                                                                     <span className="text-gray-300 font-medium">{col.name}</span>
                                                                     <span className="text-[9px] text-gray-500">{col.dtype}</span>
                                                                 </div>
-                                                                {/* Column stats popup */}
                                                                 {showColumnStats === col.name && (
                                                                     <div className="absolute mt-1 w-48 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 p-2 text-[10px]">
                                                                         <div className="font-semibold text-gray-300 mb-2">{col.name}</div>
@@ -2283,7 +2162,6 @@ except Exception as e:
                                         </table>
                                     </div>
 
-                                    {/* Pagination */}
                                     <div className="p-2 border-t theme-border flex items-center justify-between text-xs text-gray-400">
                                         <span>
                                             {explorerOffset + 1}-{Math.min(explorerOffset + 100, explorerData.total_rows)} of {explorerData.total_rows?.toLocaleString()}
@@ -2312,7 +2190,6 @@ except Exception as e:
                 </div>
             </div>
 
-            {/* Matplotlib Configuration Modal */}
             {showMplConfig && (
                 <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowMplConfig(false)}>
                     <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-xl w-[500px] max-h-[80vh] overflow-auto" onClick={e => e.stopPropagation()}>
@@ -2326,7 +2203,6 @@ except Exception as e:
                             </button>
                         </div>
                         <div className="p-4 space-y-4">
-                            {/* Style preset */}
                             <div>
                                 <label className="text-xs text-gray-400 block mb-1">Style Preset</label>
                                 <select
@@ -2341,7 +2217,6 @@ except Exception as e:
                                 </select>
                             </div>
 
-                            {/* Font settings */}
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="text-xs text-gray-400 block mb-1">Font Family</label>
@@ -2366,7 +2241,6 @@ except Exception as e:
                                 </div>
                             </div>
 
-                            {/* Label/Tick sizes */}
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="text-xs text-gray-400 block mb-1">Axis Label Size</label>
@@ -2388,7 +2262,6 @@ except Exception as e:
                                 </div>
                             </div>
 
-                            {/* Figure size */}
                             <div className="grid grid-cols-3 gap-3">
                                 <div>
                                     <label className="text-xs text-gray-400 block mb-1">Figure Width</label>
@@ -2421,7 +2294,6 @@ except Exception as e:
                                 </div>
                             </div>
 
-                            {/* Colormap */}
                             <div>
                                 <label className="text-xs text-gray-400 block mb-1">Default Colormap</label>
                                 <select
@@ -2440,7 +2312,6 @@ except Exception as e:
                                 </select>
                             </div>
 
-                            {/* Tick settings */}
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="text-xs text-gray-400 block mb-1">Tick Direction</label>
@@ -2468,7 +2339,6 @@ except Exception as e:
                                 </div>
                             </div>
 
-                            {/* Toggles */}
                             <div className="flex flex-wrap gap-4">
                                 <label className="flex items-center gap-2 text-sm">
                                     <input
@@ -2500,7 +2370,6 @@ except Exception as e:
                             </div>
                         </div>
 
-                        {/* Actions */}
                         <div className="p-3 border-t border-gray-700 flex items-center justify-between">
                             <span className="text-xs text-gray-500">
                                 {mplConfigApplied ? '✓ Applied to kernel' : 'Not yet applied'}
@@ -2525,7 +2394,6 @@ except Exception as e:
                 </div>
             )}
 
-            {/* Status bar */}
             <div className="p-2 border-t theme-border text-xs theme-text-muted flex items-center justify-between theme-bg-secondary">
                 <div className="flex items-center gap-3">
                     <span>{(notebook.cells || []).length} cells</span>
@@ -2556,7 +2424,6 @@ except Exception as e:
     );
 };
 
-// Custom comparison to prevent reload on pane resize
 const arePropsEqual = (prevProps: any, nextProps: any) => {
     return prevProps.nodeId === nextProps.nodeId;
 };

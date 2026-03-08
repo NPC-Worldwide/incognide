@@ -48,31 +48,30 @@ const getFileTypeIcon = (item: FileItem) => {
 
     const ext = item.extension?.toLowerCase() || '';
 
-    // Images
     if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext)) {
         return <Image size={20} className="text-purple-400" />;
     }
-    // Documents
+
     if (['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'].includes(ext)) {
         return <FileText size={20} className="text-blue-400" />;
     }
-    // Audio
+
     if (['mp3', 'wav', 'flac', 'ogg', 'm4a', 'aac'].includes(ext)) {
         return <Music size={20} className="text-green-400" />;
     }
-    // Video
+
     if (['mp4', 'mkv', 'avi', 'mov', 'webm', 'wmv'].includes(ext)) {
         return <Video size={20} className="text-red-400" />;
     }
-    // Archives
+
     if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2'].includes(ext)) {
         return <Archive size={20} className="text-orange-400" />;
     }
-    // Code
+
     if (['js', 'ts', 'jsx', 'tsx', 'py', 'java', 'cpp', 'c', 'h', 'rs', 'go', 'rb', 'php', 'html', 'css', 'scss', 'json', 'yaml', 'yml', 'xml', 'sh', 'bash'].includes(ext)) {
         return <Code size={20} className="text-cyan-400" />;
     }
-    // Data
+
     if (['csv', 'xlsx', 'xls', 'db', 'sqlite', 'sql'].includes(ext)) {
         return <Database size={20} className="text-emerald-400" />;
     }
@@ -101,7 +100,6 @@ export const FolderViewer: React.FC<FolderViewerProps> = ({
     const [historyIndex, setHistoryIndex] = useState(0);
     const sortMenuRef = useRef<HTMLDivElement>(null);
 
-    // Close sort menu when clicking outside
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
             if (sortMenuRef.current && !sortMenuRef.current.contains(e.target as Node)) {
@@ -210,21 +208,19 @@ export const FolderViewer: React.FC<FolderViewerProps> = ({
             const aIsDir = a.type === 'directory';
             const bIsDir = b.type === 'directory';
 
-            // Sort order: non-hidden files, non-hidden folders, hidden items
-            // Files before folders (unless foldersFirst is enabled)
             if (aHidden !== bHidden) {
-                return aHidden ? 1 : -1; // Hidden items last
+                return aHidden ? 1 : -1;
             }
 
             if (foldersFirst && aIsDir !== bIsDir) {
-                return aIsDir ? -1 : 1; // Folders first if enabled
+                return aIsDir ? -1 : 1;
             } else if (!foldersFirst && aIsDir !== bIsDir) {
-                return aIsDir ? 1 : -1; // Files first by default
+                return aIsDir ? 1 : -1;
             }
 
             let comparison = 0;
             if (sortBy === 'name') {
-                // Case-insensitive name comparison
+
                 comparison = a.name.toLowerCase().localeCompare(b.name.toLowerCase());
             } else if (sortBy === 'size') {
                 comparison = (a.size || 0) - (b.size || 0);
@@ -247,7 +243,6 @@ export const FolderViewer: React.FC<FolderViewerProps> = ({
 
     return (
         <div className="flex-1 flex flex-col min-h-0 theme-bg-primary">
-            {/* Toolbar */}
             <div className="flex items-center gap-2 p-2 border-b theme-border theme-bg-secondary">
                 <button
                     onClick={goBack}
@@ -280,7 +275,6 @@ export const FolderViewer: React.FC<FolderViewerProps> = ({
                     <RefreshCw size={16} />
                 </button>
 
-                {/* Breadcrumb path */}
                 <div className="flex-1 flex items-center gap-1 px-2 py-1 rounded bg-gray-800 text-xs overflow-x-auto">
                     <button
                         onClick={() => navigateTo('/')}
@@ -302,7 +296,6 @@ export const FolderViewer: React.FC<FolderViewerProps> = ({
                     ))}
                 </div>
 
-                {/* Search */}
                 <div className="relative">
                     <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
                     <input
@@ -314,7 +307,6 @@ export const FolderViewer: React.FC<FolderViewerProps> = ({
                     />
                 </div>
 
-                {/* View mode */}
                 <div className="flex border theme-border rounded overflow-hidden">
                     <button
                         onClick={() => setViewMode('grid')}
@@ -332,7 +324,6 @@ export const FolderViewer: React.FC<FolderViewerProps> = ({
                     </button>
                 </div>
 
-                {/* Sort dropdown */}
                 <div className="relative" ref={sortMenuRef}>
                     <button
                         onClick={() => setShowSortMenu(!showSortMenu)}
@@ -385,7 +376,6 @@ export const FolderViewer: React.FC<FolderViewerProps> = ({
                 </div>
             </div>
 
-            {/* Content */}
             <div className="flex-1 overflow-auto p-2">
                 {loading ? (
                     <div className="flex items-center justify-center h-full text-gray-500">
@@ -422,7 +412,6 @@ export const FolderViewer: React.FC<FolderViewerProps> = ({
                     </div>
                 ) : (
                     <div className="space-y-0.5">
-                        {/* List header */}
                         <div className="flex items-center gap-2 px-2 py-1 text-xs text-gray-500 border-b theme-border">
                             <button
                                 onClick={() => { setSortBy('name'); if (sortBy === 'name') setSortAsc(!sortAsc); }}
@@ -479,7 +468,6 @@ export const FolderViewer: React.FC<FolderViewerProps> = ({
                 )}
             </div>
 
-            {/* Status bar */}
             <div className="flex items-center justify-between px-3 py-1 text-xs text-gray-500 border-t theme-border theme-bg-secondary">
                 <span>{sortedItems.length} items</span>
                 <span>{selectedItems.size} selected</span>

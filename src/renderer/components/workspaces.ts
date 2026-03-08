@@ -1,4 +1,4 @@
-// Workspace utility functions - NO HOOKS, just pure functions
+
 
 const WORKSPACES_STORAGE_KEY = 'incognideWorkspaces_v2';
 
@@ -14,10 +14,9 @@ export const serializeWorkspace = (
 
     const serializedContentData: Record<string, any> = {};
     Object.entries(contentDataRef).forEach(([paneId, paneData]: [string, any]) => {
-        // SKIP panes without contentType - never save empty panes
+
         if (!paneData?.contentType) return;
 
-        // Serialize tabs if present (strip fileContent to save space)
         const serializedTabs = paneData.tabs?.map((tab: any) => ({
             id: tab.id,
             contentType: tab.contentType,
@@ -25,7 +24,7 @@ export const serializeWorkspace = (
             browserUrl: tab.browserUrl,
             title: tab.title,
             fileChanged: tab.fileChanged
-            // Note: fileContent is NOT saved - will be reloaded on restore
+
         }));
 
         serializedContentData[paneId] = {
@@ -34,9 +33,9 @@ export const serializeWorkspace = (
             displayedMessageCount: paneData.chatMessages?.displayedMessageCount,
             browserUrl: paneData.browserUrl,
             fileChanged: paneData.fileChanged,
-            jinxFile: paneData.jinxFile,  // Preserve jinxFile for tilejinx panes
-            tabs: serializedTabs,  // Preserve tabs
-            activeTabIndex: paneData.activeTabIndex  // Preserve active tab index
+            jinxFile: paneData.jinxFile,
+            tabs: serializedTabs,
+            activeTabIndex: paneData.activeTabIndex
         };
     });
 
@@ -97,10 +96,8 @@ export const deserializeWorkspace = async (
     try {
         const newRootLayout = workspaceData.layoutNode;
 
-        // CRITICAL: Clear contentDataRef COMPLETELY first
         contentDataRef.current = {};
 
-        // Collect all pane IDs from layout
         const paneIdsInLayout = new Set<string>();
         const collectPaneIds = (node: any) => {
             if (!node) return;
@@ -111,20 +108,18 @@ export const deserializeWorkspace = async (
         };
         collectPaneIds(newRootLayout);
 
-        // Populate contentDataRef synchronously BEFORE any async operations
-        // Only create panes that have valid content data
         const validPaneIds = new Set<string>();
         paneIdsInLayout.forEach(paneId => {
             const paneData = workspaceData.contentData[paneId];
-            // SKIP panes without a valid contentType - don't create empty panes
+
             if (!paneData?.contentType) {
                 return;
             }
             validPaneIds.add(paneId);
-            // For tilejinx panes, jinxFile === contentId, so use contentId as fallback
+
             const jinxFile = paneData?.jinxFile ||
                 (paneData?.contentType === 'tilejinx' ? paneData?.contentId : undefined);
-            // Fix content type for .exp files that were saved as 'notebook'
+
             let contentType = paneData.contentType;
             if (contentType === 'notebook' && paneData.contentId?.endsWith('.exp')) {
                 contentType = 'exp';
@@ -135,17 +130,16 @@ export const deserializeWorkspace = async (
                 displayedMessageCount: paneData.displayedMessageCount,
                 browserUrl: paneData.browserUrl,
                 fileChanged: paneData.fileChanged || false,
-                jinxFile: jinxFile,  // Restore jinxFile for tilejinx panes
-                tabs: paneData.tabs,  // Restore tabs
-                activeTabIndex: paneData.activeTabIndex || 0  // Restore active tab index
+                jinxFile: jinxFile,
+                tabs: paneData.tabs,
+                activeTabIndex: paneData.activeTabIndex || 0
             };
         });
 
-        // Clean the layout to remove any pane IDs without valid content
         const cleanLayout = (node: any): any => {
             if (!node) return null;
             if (node.type === 'content') {
-                // Remove this pane if it doesn't have valid content
+
                 return validPaneIds.has(node.id) ? node : null;
             }
             if (node.type === 'split') {
@@ -160,17 +154,14 @@ export const deserializeWorkspace = async (
         };
         const cleanedLayout = cleanLayout(newRootLayout);
 
-        // If no valid panes remain, don't set the layout (let default workspace creation handle it)
         if (!cleanedLayout) {
             setIsLoadingWorkspace(false);
             return false;
         }
 
-        // Set the cleaned layout
         setRootLayoutNode(cleanedLayout);
         setActiveContentPaneId(workspaceData.activeContentPaneId);
 
-        // Load actual content asynchronously
         const loadPromises = [];
         for (const [paneId, paneData] of Object.entries(workspaceData.contentData)) {
             if (!paneIdsInLayout.has(paneId)) continue;
@@ -212,7 +203,6 @@ export const deserializeWorkspace = async (
 
         await Promise.all(loadPromises);
 
-        // Log what was loaded
         console.log('[WORKSPACE] All content loaded. ContentDataRef keys:', Object.keys(contentDataRef.current));
         for (const [paneId, paneData] of Object.entries(contentDataRef.current)) {
             const pd = paneData as any;
@@ -221,7 +211,6 @@ export const deserializeWorkspace = async (
             }
         }
 
-        // Force final re-render - this triggers renderChatView to re-execute with fresh data
         console.log('[WORKSPACE] Triggering re-render...');
         setRootLayoutNode((prev: any) => ({ ...prev }));
 
@@ -246,7 +235,6 @@ export const createDefaultWorkspace = async (
 ) => {
     const LAST_ACTIVE_CONVO_ID_KEY = 'incognideLastConvoId';
 
-    // Figure out what conversation to use FIRST
     const storedConvoId = localStorage.getItem(LAST_ACTIVE_CONVO_ID_KEY);
     let targetConvoId = null;
 
@@ -255,7 +243,7 @@ export const createDefaultWorkspace = async (
     } else if (directoryConversations.length > 0) {
         targetConvoId = directoryConversations[0].id;
     } else {
-        // Create new conversation if none exist
+
         const newConversation = await window.api.createConversation({ directory_path: currentPath });
         if (newConversation?.id) {
             targetConvoId = newConversation.id;
@@ -263,7 +251,6 @@ export const createDefaultWorkspace = async (
         }
     }
 
-    // Only create pane if we have content
     if (targetConvoId) {
         const initialPaneId = generateId();
         contentDataRef.current[initialPaneId] = {

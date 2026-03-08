@@ -27,41 +27,40 @@ export function getConversationStats(messages: any[]) {
 export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManagerParams) {
     const [rootLayoutNode, rawSetRootLayoutNode] = useState<any>(null);
     const [contentVersion, setContentVersion] = useState(0);
-    // Normal setter — bumps contentVersion so all LayoutNodes re-render
+
     const setRootLayoutNode = useCallback((updater: any) => {
         setContentVersion(v => v + 1);
         rawSetRootLayoutNode(updater);
     }, []);
-    // Quiet setter — for resize only, doesn't bump contentVersion
+
     const setRootLayoutNodeQuiet = rawSetRootLayoutNode;
     const [activeContentPaneId, setActiveContentPaneId] = useState<string | null>(null);
     const contentDataRef = useRef<Record<string, any>>({});
     const rootLayoutNodeRef = useRef(rootLayoutNode);
     const closedTabsRef = useRef<Array<{ contentType: string; contentId: string; browserUrl?: string; browserTitle?: string }>>([]);
-    const [zenModePaneId, setZenModePaneId] = useState<string | null>(null);
-    const [renamingPaneId, setRenamingPaneId] = useState<string | null>(null);
+    const [zenModePaneId, rawSetZenModePaneId] = useState<string | null>(null);
+    const setZenModePaneId = useCallback((v: any) => { setContentVersion(c => c + 1); rawSetZenModePaneId(v); }, []);
+    const [renamingPaneId, rawSetRenamingPaneId] = useState<string | null>(null);
+    const setRenamingPaneId = useCallback((v: any) => { setContentVersion(c => c + 1); rawSetRenamingPaneId(v); }, []);
     const [editedFileName, setEditedFileName] = useState('');
     const [paneContextMenu, setPaneContextMenu] = useState<any>(null);
 
-    // Refs for external consumers (e.g. MCP polling, studio actions)
     const performSplitRef = useRef<((targetNodePath: number[], side: string, newContentType: string, newContentId: string) => void) | null>(null);
     const closeContentPaneRef = useRef<((paneId: string, nodePath: string[]) => void) | null>(null);
     const updateContentPaneRef = useRef<((paneId: string, contentType: string, contentId: string, skipMessageLoad?: boolean) => void) | null>(null);
 
-    // Keep refs in sync
     const activeContentPaneIdRef = useRef(activeContentPaneId);
     activeContentPaneIdRef.current = activeContentPaneId;
     useEffect(() => {
         rootLayoutNodeRef.current = rootLayoutNode;
     }, [rootLayoutNode]);
 
-    // Add content as tab on active pane (tab mode) or as new pane (pane mode)
     const addPaneOrTab = useCallback((newPaneId: string) => {
         if (openModeRef?.current === 'tab' && activeContentPaneIdRef.current) {
             const activePaneData = contentDataRef.current[activeContentPaneIdRef.current];
             const newPaneData = contentDataRef.current[newPaneId];
             if (activePaneData && newPaneData) {
-                // Save current active pane content into its first tab if tabs not yet initialized
+
                 if (!activePaneData.tabs || activePaneData.tabs.length === 0) {
                     activePaneData.tabs = [{
                         id: `tab_${Date.now()}_0`,
@@ -81,7 +80,7 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
                         chatStats: activePaneData.chatStats,
                     }];
                 }
-                // Add new content as a new tab, preserving all relevant properties
+
                 activePaneData.tabs.push({
                     id: `tab_${Date.now()}_${activePaneData.tabs.length}`,
                     contentType: newPaneData.contentType,
@@ -97,7 +96,7 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
                     chatStats: newPaneData.chatStats,
                 });
                 activePaneData.activeTabIndex = activePaneData.tabs.length - 1;
-                // Copy all relevant properties to the active pane
+
                 activePaneData.contentType = newPaneData.contentType;
                 activePaneData.contentId = newPaneData.contentId;
                 activePaneData.browserUrl = newPaneData.browserUrl;
@@ -121,7 +120,6 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
         return newPaneId;
     }, []);
 
-    // Update content pane with new content type and ID
     const updateContentPane = useCallback(async (paneId: string, newContentType: string, newContentId: string | null, skipMessageLoad = false) => {
         if (!contentDataRef.current[paneId]) {
             contentDataRef.current[paneId] = {};
@@ -146,7 +144,7 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
             } catch (err: any) {
                 paneData.fileContent = `Error loading file: ${err.message}`;
             }
-            // Sync loaded content to the active tab so it persists across tab switches
+
             if (paneData.tabs && Array.isArray(paneData.tabs)) {
                 const activeTabIndex = paneData.activeTabIndex ?? 0;
                 if (paneData.tabs[activeTabIndex] && paneData.tabs[activeTabIndex].contentId === newContentId) {
@@ -218,7 +216,7 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
                     paneData.chatStats = getConversationStats([]);
                 }
             }
-            // Sync loaded chat state to the active tab so it persists across tab switches
+
             if (paneData.tabs && Array.isArray(paneData.tabs)) {
                 const activeTabIndex = paneData.activeTabIndex ?? 0;
                 if (paneData.tabs[activeTabIndex] && paneData.tabs[activeTabIndex].contentId === newContentId) {
@@ -236,8 +234,8 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
         setRootLayoutNode((prev: any) => ({ ...prev }));
     }, [trackActivity, getConversationStats]);
 
-    // Perform split on a pane
     const performSplit = useCallback((targetNodePath: number[], side: string, newContentType: string, newContentId: string | null) => {
+        if (!targetNodePath) return;
         const newPaneId = generateId();
 
         contentDataRef.current[newPaneId] = {
@@ -248,7 +246,6 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
         setRootLayoutNode((oldRoot: any) => {
             if (!oldRoot) return oldRoot;
 
-            // Walk to the target node (use original references — no cloning)
             let targetNode = oldRoot;
             for (let i = 0; i < targetNodePath.length; i++) {
                 targetNode = targetNode.children[targetNodePath[i]];
@@ -269,8 +266,6 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
                 return newSplitNode;
             }
 
-            // Shallow-clone only nodes on the path from root to the target's parent.
-            // All other subtrees keep their original references — React memo skips them.
             const newRoot = { ...oldRoot, children: [...oldRoot.children], sizes: oldRoot.sizes ? [...oldRoot.sizes] : undefined };
             let current = newRoot;
             for (let i = 0; i < targetNodePath.length - 1; i++) {
@@ -290,15 +285,13 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
         }
     }, [updateContentPane]);
 
-    // Close a content pane (with unsaved changes warning)
     const closeContentPane = useCallback((paneId: string, nodePath?: number[]) => {
         const paneData = contentDataRef.current[paneId];
 
-        // Check for unsaved changes before closing
         if (paneData && (paneData.fileChanged || paneData.hasChanges)) {
             const fileName = paneData.contentId?.split('/').pop() || 'this file';
             if (!confirm(`"${fileName}" has unsaved changes. Close anyway?`)) {
-                return; // User cancelled
+                return;
             }
         }
 
@@ -335,7 +328,6 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
                 return null;
             }
 
-            // Shallow-clone only nodes on the path — preserve all other subtree references
             const newRoot = { ...oldRoot, children: [...oldRoot.children], sizes: oldRoot.sizes ? [...oldRoot.sizes] : undefined };
             let parentNode = newRoot;
             for (let i = 0; i < nodePath.length - 1; i++) {
@@ -354,7 +346,7 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
                     delete contentDataRef.current[paneId];
                     return sibling;
                 } else {
-                    // Walk the shallow-cloned path to grandparent
+
                     let grandParentNode = newRoot;
                     for (let i = 0; i < nodePath.length - 2; i++) {
                         grandParentNode = grandParentNode.children[nodePath[i]];
@@ -369,7 +361,6 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
 
             delete contentDataRef.current[paneId];
 
-            // If we closed the active pane, switch to another
             setActiveContentPaneId((currentActive: string | null) => {
                 if (currentActive === paneId) {
                     const findFirstContentPane = (node: any): string | null => {
@@ -392,7 +383,6 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
         });
     }, [trackActivity]);
 
-    // Helper to find an empty pane that can be reused
     const findEmptyPaneId = useCallback(() => {
         const findEmpty = (node: any): string | null => {
             if (!node) return null;
@@ -412,7 +402,6 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
         return findEmpty(rootLayoutNodeRef.current);
     }, []);
 
-    // Create and add a new pane to the layout
     const createAndAddPaneNodeToLayout = useCallback((contentTypeOrOptions: string | { contentType: string; contentId?: string | null; diffStatus?: string; [key: string]: any }, contentId?: string | null) => {
         let contentType: string;
         let finalContentId: string | null;
@@ -433,39 +422,34 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
             return null;
         }
 
-        // Singleton pane types — only one instance allowed, refocus if exists
         const singletonTypes = new Set([
             'settings', 'npcteam', 'teammanagement', 'jinx', 'library', 'help',
             'git', 'projectenv', 'diskusage', 'data-labeler', 'graph-viewer',
             'browsergraph', 'datadash', 'photoviewer', 'scherzo',
         ]);
 
-        // Check for existing pane to refocus instead of creating duplicate
         for (const [paneId, data] of Object.entries(contentDataRef.current)) {
             if (!data?.contentType) continue;
-            // Skip virtual tab panes (they have _tab_ in ID)
+
             if (paneId.includes('_tab_')) continue;
 
-            // Singleton: match by contentType only
             if (singletonTypes.has(contentType) && data.contentType === contentType) {
                 setActiveContentPaneId(paneId);
                 return paneId;
             }
 
-            // Document/file types: match by contentType + contentId
             if (finalContentId && data.contentType === contentType && data.contentId === finalContentId) {
                 setActiveContentPaneId(paneId);
                 return paneId;
             }
 
-            // Also check tabs for matching content
             if (data.tabs && Array.isArray(data.tabs)) {
                 const tabIndex = data.tabs.findIndex((tab: any) =>
                     (singletonTypes.has(contentType) && tab.contentType === contentType) ||
                     (finalContentId && tab.contentType === contentType && tab.contentId === finalContentId)
                 );
                 if (tabIndex >= 0) {
-                    // Switch to the matching tab
+
                     data.activeTabIndex = tabIndex;
                     const tab = data.tabs[tabIndex];
                     data.contentType = tab.contentType;
@@ -495,7 +479,6 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
 
         const resultPaneId = addPaneOrTab(newPaneId);
 
-        // In tab mode, content was merged into active pane (newPaneId deleted)
         const targetId = resultPaneId || newPaneId;
         if (contentType === 'editor' || contentType === 'chat') {
             updateContentPane(targetId, contentType, finalContentId);
@@ -504,13 +487,10 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
         return targetId;
     }, [updateContentPane, addPaneOrTab]);
 
-    // Move a content pane (drag & drop)
     const moveContentPane = useCallback((draggedId: string, draggedPath: number[], targetPath: number[], dropSide: string) => {
         setRootLayoutNode((oldRoot: any) => {
             if (!oldRoot) return oldRoot;
 
-            // Structural clone: shallow-clone split nodes but preserve pane node references
-            // so LayoutNode memo comparator (prev.node === next.node) skips unchanged panes
             const structuralClone = (node: any): any => {
                 if (!node) return null;
                 if (node.type === 'content') return node;
@@ -617,7 +597,6 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
         });
     }, []);
 
-    // Sync contentDataRef with layout changes
     useEffect(() => {
         if (rootLayoutNode) {
             const synchronizedContentData = { ...contentDataRef.current };
@@ -647,13 +626,12 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
         }
     }, [rootLayoutNode]);
 
-    // Keep function refs in sync for external consumers
     useEffect(() => { performSplitRef.current = performSplit; }, [performSplit]);
     useEffect(() => { closeContentPaneRef.current = closeContentPane; }, [closeContentPane]);
     useEffect(() => { updateContentPaneRef.current = updateContentPane; }, [updateContentPane]);
 
     return {
-        // State
+
         rootLayoutNode, setRootLayoutNode, setRootLayoutNodeQuiet,
         contentVersion,
         activeContentPaneId, setActiveContentPaneId,
@@ -664,11 +642,11 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
         renamingPaneId, setRenamingPaneId,
         editedFileName, setEditedFileName,
         paneContextMenu, setPaneContextMenu,
-        // Function refs
+
         performSplitRef,
         closeContentPaneRef,
         updateContentPaneRef,
-        // Functions
+
         updateContentPane,
         performSplit,
         closeContentPane,

@@ -1,8 +1,6 @@
 import { getFileName } from './utils';
 import React, { useEffect, useRef, useState, memo, useCallback } from 'react';
 import { ArrowLeft, ArrowRight, RotateCcw, Globe, Home, X, Plus, Settings, Trash2, Lock, GripVertical, Puzzle, Download, FolderOpen, Key, Eye, EyeOff, Shield, Check, Maximize2, Minimize2 } from 'lucide-react';
-
-// Global cache to persist browser state across tab switches (prevents reload on switch back)
 const browserStateCache = new Map<string, {
     initialized: boolean;
     lastUrl: string;
@@ -21,10 +19,8 @@ const WebBrowserViewer = memo(({
     setPaneContextMenu,
     closeContentPane,
     performSplit,
-    // Zen mode props for unified header behavior
     onToggleZen,
     isZenMode,
-    // Whether we're showing as part of tab bar (hides our zen/close)
     hasTabBar
 }) => {
     const webviewRef = useRef(null);
@@ -43,7 +39,6 @@ const WebBrowserViewer = memo(({
     const [importStatus, setImportStatus] = useState<{ importing: boolean; message?: string } | null>(null);
     const [isSecure, setIsSecure] = useState(false);
 
-    // Password management state
     const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
     const [pendingCredentials, setPendingCredentials] = useState<{ site: string; username: string; password: string } | null>(null);
     const [savedPasswords, setSavedPasswords] = useState<any[]>([]);
@@ -54,13 +49,11 @@ const WebBrowserViewer = memo(({
     const [showPasswordValue, setShowPasswordValue] = useState<string | null>(null);
     const [showRefreshMenu, setShowRefreshMenu] = useState(false);
 
-    // Find in page state
     const [findText, setFindText] = useState('');
     const [showFindBar, setShowFindBar] = useState(false);
     const [findResults, setFindResults] = useState<{ activeMatchOrdinal: number; matches: number } | null>(null);
     const findInputRef = useRef<HTMLInputElement>(null);
 
-    // Site permissions state
     const [sitePermissions, setSitePermissions] = useState<Record<string, string[]>>(() => {
         try {
             return JSON.parse(localStorage.getItem('npc-browser-site-permissions') || '{}');
@@ -68,21 +61,44 @@ const WebBrowserViewer = memo(({
     });
     const [showPermissionsMenu, setShowPermissionsMenu] = useState(false);
 
-    // Privacy & ad blocking state
     const [adBlockEnabled, setAdBlockEnabled] = useState(() => {
-        return localStorage.getItem('npc-browser-adblock') !== 'false'; // Default enabled
+        return localStorage.getItem('npc-browser-adblock') !== 'false';
     });
     const [trackingProtection, setTrackingProtection] = useState(() => {
-        return localStorage.getItem('npc-browser-tracking-protection') !== 'false'; // Default enabled
+        return localStorage.getItem('npc-browser-tracking-protection') !== 'false';
     });
 
-    // Cookie inheritance state
+    const sessionModeKey = `npc-browser-session-mode`;
+    const [sessionMode, setSessionMode] = useState<'global' | 'project'>(() => {
+
+        const perPath = localStorage.getItem(`${sessionModeKey}-${currentPath}`);
+        if (perPath === 'project') return 'project';
+        const global = localStorage.getItem(sessionModeKey);
+        return (global === 'project') ? 'project' : 'global';
+    });
+
+    const [webviewKey, setWebviewKey] = useState(0);
+
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const perPath = localStorage.getItem(`${sessionModeKey}-${currentPath}`);
+            const newMode = perPath === 'project' ? 'project'
+                : (localStorage.getItem(sessionModeKey) === 'project' ? 'project' : 'global');
+            if (newMode !== sessionMode) {
+                setSessionMode(newMode);
+                hasInitializedRef.current = false;
+                setWebviewKey(k => k + 1);
+            }
+        };
+        window.addEventListener('browser-session-mode-changed', handler);
+        return () => window.removeEventListener('browser-session-mode-changed', handler);
+    }, [sessionMode, currentPath]);
+
     const [showCookieManager, setShowCookieManager] = useState(false);
     const [knownPartitions, setKnownPartitions] = useState<Array<{ partition: string; folderPath: string; lastUsed: number }>>([]);
     const [cookieDomains, setCookieDomains] = useState<string[]>([]);
     const [importStatusCookies, setImportStatusCookies] = useState<string | null>(null);
 
-    // Search engine configuration
     const SEARCH_ENGINES = {
         duckduckgo: { name: 'DuckDuckGo', url: 'https://duckduckgo.com/?q=' },
         startpage: { name: 'Startpage', url: 'https://www.startpage.com/sp/search?query=' },
@@ -94,31 +110,27 @@ const WebBrowserViewer = memo(({
         return localStorage.getItem('npc-browser-search-engine') || 'duckduckgo';
     });
 
-    // Track navigation type for history graph
     const isManualNavigationRef = useRef(false);
     const previousUrlRef = useRef<string | null>(null);
     const lastHistorySaveRef = useRef<string | null>(null);
     const historyDebounceRef = useRef<NodeJS.Timeout | null>(null);
     const hasInitializedRef = useRef(false);
     const lastKnownPaneUrlRef = useRef<string | null>(null);
-    // Track the current tab ID to prevent URL bleeding between tabs during async navigation callbacks
+
     const currentTabIdRef = useRef<string | null>(null);
 
     const paneData = contentDataRef.current[nodeId];
-    // Capture initial URL only once using a ref to prevent reload loops
+
     const initialUrlRef = useRef(paneData?.browserUrl || 'about:blank');
-    // Use project-based session so each folder has its own cookies/logins
-    // This allows users to be logged into different accounts per project
-    // Hash the path to create a valid partition name
+
     const projectPartition = currentPath
         ? `project-${currentPath.replace(/[^a-zA-Z0-9]/g, '-').substring(0, 50)}`
         : 'default-browser-session';
-    const viewId = projectPartition;
+    const viewId = sessionMode === 'global' ? 'browser-global' : projectPartition;
 
-    // Expose browser automation methods through contentDataRef
     useEffect(() => {
         if (contentDataRef.current[nodeId]) {
-            // Get page content as text
+
             contentDataRef.current[nodeId].getPageContent = async () => {
                 const webview = webviewRef.current;
                 if (!webview) return { success: false, content: '', url: '', title: '' };
@@ -146,7 +158,6 @@ const WebBrowserViewer = memo(({
                 }
             };
 
-            // Click on element by selector or text content
             contentDataRef.current[nodeId].browserClick = async (selector: string, options?: { text?: string; index?: number }) => {
                 const webview = webviewRef.current;
                 if (!webview) return { success: false, error: 'Webview not available' };
@@ -160,20 +171,18 @@ const WebBrowserViewer = memo(({
 
                             let elements = [];
 
-                            // Try CSS selector first
                             if (selector) {
                                 try {
                                     elements = Array.from(document.querySelectorAll(selector));
                                 } catch (e) {
-                                    // Invalid selector, try text search
+
                                 }
                             }
 
-                            // If text is provided, filter by text content
                             if (text) {
                                 const textLower = text.toLowerCase();
                                 if (elements.length === 0) {
-                                    // Search all clickable elements by text
+
                                     const clickables = document.querySelectorAll('a, button, [role="button"], input[type="submit"], input[type="button"], [onclick]');
                                     elements = Array.from(clickables).filter(el =>
                                         el.textContent?.toLowerCase().includes(textLower) ||
@@ -209,7 +218,6 @@ const WebBrowserViewer = memo(({
                 }
             };
 
-            // Type text into an input element
             contentDataRef.current[nodeId].browserType = async (selector: string, text: string, options?: { clear?: boolean; submit?: boolean }) => {
                 const webview = webviewRef.current;
                 if (!webview) return { success: false, error: 'Webview not available' };
@@ -224,12 +232,10 @@ const WebBrowserViewer = memo(({
 
                             let element = null;
 
-                            // Try CSS selector
                             try {
                                 element = document.querySelector(selector);
                             } catch (e) {}
 
-                            // Fallback: find by placeholder, name, or aria-label
                             if (!element) {
                                 const inputs = document.querySelectorAll('input, textarea, [contenteditable="true"]');
                                 const selectorLower = selector.toLowerCase();
@@ -253,7 +259,6 @@ const WebBrowserViewer = memo(({
                                 element.dispatchEvent(new Event('input', { bubbles: true }));
                             }
 
-                            // Set value and trigger events
                             if (element.isContentEditable) {
                                 element.textContent = text;
                             } else {
@@ -285,7 +290,6 @@ const WebBrowserViewer = memo(({
                 }
             };
 
-            // Get screenshot of the page
             contentDataRef.current[nodeId].browserScreenshot = async () => {
                 const webview = webviewRef.current;
                 if (!webview) return { success: false, error: 'Webview not available' };
@@ -305,7 +309,6 @@ const WebBrowserViewer = memo(({
                 }
             };
 
-            // Execute arbitrary JavaScript (for advanced automation)
             contentDataRef.current[nodeId].triggerFind = () => {
                 setShowFindBar(true);
                 setTimeout(() => {
@@ -328,8 +331,6 @@ const WebBrowserViewer = memo(({
         }
     }, [nodeId, currentUrl, title]);
 
-    // Track the current tab ID to prevent URL bleeding between tabs
-    // This updates whenever the active tab changes
     useEffect(() => {
         const paneData = contentDataRef.current[nodeId];
         if (paneData?.tabs && paneData.activeTabIndex !== undefined) {
@@ -344,7 +345,6 @@ const WebBrowserViewer = memo(({
         const webview = webviewRef.current;
         if (!webview) return;
 
-        // Only set the URL on first initialization to prevent reload loops
         if (!hasInitializedRef.current) {
             hasInitializedRef.current = true;
             const initialUrl = initialUrlRef.current;
@@ -358,7 +358,6 @@ const WebBrowserViewer = memo(({
             setUrlInput(urlToLoad === 'about:blank' ? '' : urlToLoad);
             webview.src = urlToLoad;
 
-            // Focus URL input for blank tabs
             if (urlToLoad === 'about:blank') {
                 setTimeout(() => {
                     urlInputRef.current?.focus();
@@ -366,7 +365,6 @@ const WebBrowserViewer = memo(({
                 }, 100);
             }
         }
-        webview.setAttribute('partition', `persist:${viewId}`); // Ensure persistence per pane
 
         const handleDidStartLoading = () => setLoading(true);
         const handleDidStopLoading = () => {
@@ -374,7 +372,7 @@ const WebBrowserViewer = memo(({
             if (webview) {
                 setCanGoBack(webview.canGoBack());
                 setCanGoForward(webview.canGoForward());
-                // Update title in contentDataRef for PaneHeader (use ref to avoid closure issues)
+
                 if (contentDataRef.current[nodeId]) {
                     contentDataRef.current[nodeId].browserTitle = webview.getTitle();
                 }
@@ -382,14 +380,13 @@ const WebBrowserViewer = memo(({
         };
 
         const handleDidNavigate = (e) => {
-            // Only handle main frame navigations - ignore iframes (like Google's contacts widget)
+
             if (e.isMainFrame === false) {
                 return;
             }
 
             const url = e.url;
 
-            // Skip if this is the same URL we just processed (prevents loops)
             if (url === previousUrlRef.current) {
                 return;
             }
@@ -402,16 +399,14 @@ const WebBrowserViewer = memo(({
             setError(null);
             setIsSecure(url.startsWith('https://'));
 
-            // Debounce history saves to prevent rapid-fire saves during redirects
             if (url && url !== 'about:blank' && url !== lastHistorySaveRef.current) {
-                // Clear any pending history save
+
                 if (historyDebounceRef.current) {
                     clearTimeout(historyDebounceRef.current);
                 }
 
-                // Debounce the history save by 2 seconds to let redirects fully settle
                 historyDebounceRef.current = setTimeout(() => {
-                    // Only save if URL hasn't changed since the timeout was set
+
                     const currentWebviewUrl = webview?.getURL?.();
                     if (currentWebviewUrl && url === currentWebviewUrl) {
                         lastHistorySaveRef.current = url;
@@ -427,21 +422,17 @@ const WebBrowserViewer = memo(({
                 }, 2000);
             }
 
-            // Update tracking refs
             previousUrlRef.current = url;
-            isManualNavigationRef.current = false; // Reset after navigation
+            isManualNavigationRef.current = false;
 
-            // Update paneData url to reflect navigation (but don't trigger re-renders)
             if (contentDataRef.current[nodeId]) {
                 contentDataRef.current[nodeId].browserUrl = url;
-                // Also update our tracking ref to prevent the tab-switch effect from re-navigating
+
                 lastKnownPaneUrlRef.current = url;
 
-                // Update the tab's browserUrl using tab ID (not activeTabIndex) to prevent URL bleeding
-                // This ensures we update the correct tab even if a tab switch happened during navigation
                 const paneData = contentDataRef.current[nodeId];
                 if (paneData?.tabs && currentTabIdRef.current) {
-                    // Find the tab by ID, not by activeTabIndex
+
                     const tabToUpdate = paneData.tabs.find(t => t.id === currentTabIdRef.current);
                     if (tabToUpdate && tabToUpdate.contentType === 'browser') {
                         tabToUpdate.browserUrl = url;
@@ -454,70 +445,57 @@ const WebBrowserViewer = memo(({
             const newTitle = e.title || 'Browser';
             setTitle(newTitle);
 
-            // Update paneData title without triggering layout re-renders
-            // The title state update above handles the local display
             if (contentDataRef.current[nodeId]) {
                 contentDataRef.current[nodeId].browserTitle = newTitle;
 
-                // Update the tab's browserTitle using tab ID (not activeTabIndex) to prevent title bleeding
                 const paneData = contentDataRef.current[nodeId];
                 if (paneData?.tabs && currentTabIdRef.current) {
-                    // Find the tab by ID, not by activeTabIndex
+
                     const tabToUpdate = paneData.tabs.find(t => t.id === currentTabIdRef.current);
                     if (tabToUpdate && tabToUpdate.contentType === 'browser') {
                         tabToUpdate.browserTitle = newTitle;
                     }
                 }
             }
-            // NOTE: Removed setRootLayoutNode call - it was causing render loops
-            // The pane header will get the title from local state instead
+
         };
         const handleDidFailLoad = (e) => {
-            if (e.errorCode !== -3) { // Ignore aborted loads
+            if (e.errorCode !== -3) {
                 setLoading(false);
                 setError(`Failed to load page (Error ${e.errorCode}: ${e.validatedURL})`);
             }
         };
 
-        // Event listener for context menu from webview
         const handleWebviewContextMenu = (e) => {
             e.preventDefault();
             setBrowserContextMenuPos({
                 x: e.x,
                 y: e.y,
-                selectedText: '', // Selection text must come from IPC
-                viewId: nodeId // Use nodeId for pane identification
+                selectedText: '',
+                viewId: nodeId
             });
         };
-        // NOTE: webview.addEventListener for contextmenu is problematic.
-        // IPC from main process is generally more reliable.
-        // Assuming window.api.onBrowserShowContextMenu from Enpistu handles this.
 
-        // Handle links that try to open in new windows (target="_blank", window.open, ctrl+click, middle-click)
         const handleNewWindow = (e) => {
             e.preventDefault();
             const url = e.url;
             if (!url || url === 'about:blank') return;
 
-            // Check disposition to determine if user wants new tab
-            // 'background-tab' = middle-click or ctrl+click
-            // 'foreground-tab' = shift+click or explicit new tab request
             const shouldOpenInNewTab = e.disposition === 'background-tab' ||
                                        e.disposition === 'foreground-tab' ||
                                        e.disposition === 'new-window';
 
             if (shouldOpenInNewTab && handleNewBrowserTab) {
-                // Open in a new tab within the same pane
+
                 handleNewBrowserTab(url, nodeId);
             } else {
-                // Open in the same webview (default behavior for regular link clicks)
+
                 webview.src = url;
             }
         };
 
-        // Handle permission requests (camera, microphone, geolocation, etc.)
         const handlePermissionRequest = (e) => {
-            // Check stored site permissions
+
             try {
                 const storedPerms = JSON.parse(localStorage.getItem('npc-browser-site-permissions') || '{}');
                 const url = webview.getURL?.();
@@ -527,14 +505,12 @@ const WebBrowserViewer = memo(({
                 } catch { site = url; }
                 const sitePerms = storedPerms[site] || [];
 
-                // Allow if permission is explicitly granted for this site
                 if (sitePerms.includes(e.permission)) {
                     e.request.allow();
                     return;
                 }
-            } catch { /* ignore parsing errors */ }
+            } catch {  }
 
-            // Default: allow common safe permissions, deny others
             const defaultAllowed = ['clipboard-read', 'clipboard-write', 'notifications'];
             if (defaultAllowed.includes(e.permission)) {
                 e.request.allow();
@@ -550,10 +526,9 @@ const WebBrowserViewer = memo(({
         webview.addEventListener('page-title-updated', handlePageTitleUpdated);
         webview.addEventListener('did-fail-load', handleDidFailLoad);
         webview.addEventListener('new-window', handleNewWindow);
-        // webview.addEventListener('context-menu', handleWebviewContextMenu); // Use IPC instead
 
         return () => {
-            // Clear debounce timeouts
+
             if (historyDebounceRef.current) {
                 clearTimeout(historyDebounceRef.current);
             }
@@ -566,15 +541,12 @@ const WebBrowserViewer = memo(({
                 webview.removeEventListener('page-title-updated', handlePageTitleUpdated);
                 webview.removeEventListener('did-fail-load', handleDidFailLoad);
                 webview.removeEventListener('new-window', handleNewWindow);
-                // webview.removeEventListener('context-menu', handleWebviewContextMenu);
+
             }
         };
-    // Note: initialUrl and paneData removed from deps to prevent reload loops
-    // The initial URL is captured in a ref and only used once
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
     }, [currentPath, viewId, nodeId, setBrowserContextMenuPos, setRootLayoutNode]);
 
-    // Intercept Ctrl+F from inside the webview via dom-ready -> webContents before-input-event
     useEffect(() => {
         const webview = webviewRef.current as any;
         if (!webview) return;
@@ -597,7 +569,7 @@ const WebBrowserViewer = memo(({
                 wc.on('before-input-event', handler);
                 cleanup = () => wc.removeListener('before-input-event', handler);
             } catch (err) {
-                // getWebContents may not be available in all Electron versions
+
                 console.warn('[WebBrowser] Could not attach before-input-event:', err);
             }
         };
@@ -608,21 +580,17 @@ const WebBrowserViewer = memo(({
         };
     }, []);
 
-    // Effect to handle tab switching - navigate when paneData.browserUrl changes externally
-    // This should ONLY trigger when switching between tabs within this pane that have different URLs
     useEffect(() => {
         const webview = webviewRef.current;
         const paneUrl = contentDataRef.current[nodeId]?.browserUrl;
 
-        // Initialize the ref on first run
         if (lastKnownPaneUrlRef.current === null) {
             lastKnownPaneUrlRef.current = paneUrl || null;
             return;
         }
 
-        // Only navigate if the paneUrl changed externally (tab switch) and differs from current webview URL
         if (webview && paneUrl && hasInitializedRef.current && paneUrl !== lastKnownPaneUrlRef.current) {
-            // Get the current URL from the webview to compare
+
             const currentWebviewUrl = webview.getURL?.() || '';
 
             let urlToLoad = paneUrl;
@@ -631,13 +599,11 @@ const WebBrowserViewer = memo(({
                 urlToLoad = isLocalhost ? `http://${paneUrl}` : `https://${paneUrl}`;
             }
 
-            // Only actually navigate if the webview is showing a different URL
-            // This prevents reloading when just switching panes or re-rendering
             if (currentWebviewUrl !== urlToLoad && currentWebviewUrl !== paneUrl) {
                 lastKnownPaneUrlRef.current = paneUrl;
                 webview.src = urlToLoad;
             } else {
-                // Just update the ref without navigating
+
                 lastKnownPaneUrlRef.current = paneUrl;
             }
         }
@@ -649,26 +615,23 @@ const WebBrowserViewer = memo(({
 
         let finalUrl = input;
 
-        // Check if it's a URL or a search query
-        // Simple rule: if it has a dot and no spaces, treat it as a URL
         const isUrl = input.startsWith('http://') ||
                       input.startsWith('https://') ||
                       input.startsWith('localhost') ||
                       (input.includes('.') && !input.includes(' '));
 
         if (isUrl) {
-            // It's a URL - add protocol if missing
+
             if (!input.startsWith('http')) {
                 const isLocalhost = input.startsWith('localhost') || input.startsWith('127.0.0.1');
                 finalUrl = isLocalhost ? `http://${input}` : `https://${input}`;
             }
         } else {
-            // It's a search query - use the configured search engine
+
             const engine = SEARCH_ENGINES[searchEngine] || SEARCH_ENGINES.duckduckgo;
             finalUrl = engine.url + encodeURIComponent(input);
         }
 
-        // Mark this as manual navigation (user typed URL)
         isManualNavigationRef.current = true;
         if (webviewRef.current) webviewRef.current.src = finalUrl;
     }, [urlInput, searchEngine]);
@@ -677,7 +640,6 @@ const WebBrowserViewer = memo(({
     const handleForward = useCallback(() => webviewRef.current?.goForward(), []);
     const handleRefresh = useCallback(() => webviewRef.current?.reload(), []);
 
-    // macOS two-finger swipe navigation (forward/back)
     useEffect(() => {
         const container = document.querySelector(`[data-pane-id="${nodeId}"]`);
         if (!container) return;
@@ -686,8 +648,7 @@ const WebBrowserViewer = memo(({
         const handleSwipe = (e: WheelEvent) => {
             const now = Date.now();
             if (now - lastSwipeTime < 500) return;
-            // macOS trackpad swipe emits wheel events with deltaX
-            // Only trigger on horizontal scroll with minimal vertical component
+
             if (Math.abs(e.deltaX) > 30 && Math.abs(e.deltaY) < Math.abs(e.deltaX) * 0.5) {
                 if (e.deltaX < -50 && webviewRef.current?.canGoBack()) {
                     lastSwipeTime = now;
@@ -702,25 +663,24 @@ const WebBrowserViewer = memo(({
         container.addEventListener('wheel', handleSwipe as EventListener, { passive: true });
         return () => container.removeEventListener('wheel', handleSwipe as EventListener);
     }, [nodeId]);
-    // Handle find in page
+
     const handleFindInPage = useCallback((text: string, forward: boolean = true) => {
         const webview = webviewRef.current;
         if (!webview || !text) return;
-        
+
         webview.findInPage(text, { forward, findNext: true });
     }, []);
 
     const handleStopFindInPage = useCallback(() => {
         const webview = webviewRef.current;
         if (!webview) return;
-        
+
         webview.stopFindInPage('clearSelection');
         setShowFindBar(false);
         setFindText('');
         setFindResults(null);
     }, []);
 
-    // Listen for find results from webview
     useEffect(() => {
         const webview = webviewRef.current;
         if (!webview) return;
@@ -738,7 +698,6 @@ const WebBrowserViewer = memo(({
         return () => webview.removeEventListener('found-in-page', handleFoundInPage);
     }, []);
 
-    // Listen for menu-triggered find (Ctrl+F from menu accelerator)
     useEffect(() => {
         const handleOpenFindBar = (e: CustomEvent) => {
             if (e.detail?.paneId === nodeId) {
@@ -754,7 +713,6 @@ const WebBrowserViewer = memo(({
         return () => window.removeEventListener('incognide-open-find-bar', handleOpenFindBar as EventListener);
     }, [nodeId]);
 
-    // Listen for zoom events from menu accelerators (Ctrl+=/Ctrl+-/Ctrl+0)
     useEffect(() => {
         const handleZoom = (e: CustomEvent) => {
             if (e.detail?.paneId !== nodeId) return;
@@ -776,7 +734,7 @@ const WebBrowserViewer = memo(({
     const handleHardRefresh = useCallback(() => {
         const webview = webviewRef.current;
         if (!webview) return;
-        // Clear service worker caches inside the webview, then reload ignoring HTTP cache
+
         try {
             webview.executeJavaScript(
                 `if(window.caches){caches.keys().then(ks=>Promise.all(ks.map(k=>caches.delete(k))))}`
@@ -785,26 +743,22 @@ const WebBrowserViewer = memo(({
         webview.reloadIgnoringCache();
     }, []);
 
-    // Keyboard shortcuts: Backspace for back, Ctrl/Cmd+F for find (only when this pane is focused)
-    // Note: Ctrl+R, Ctrl+T, Ctrl+N are handled globally in Enpistu.tsx and main.js
     useEffect(() => {
         const containerRef = document.querySelector(`[data-pane-id="${nodeId}"]`);
 
         const handleKeyDown = (e: KeyboardEvent) => {
-            // Only handle shortcuts if this browser pane is focused
-            // Check if the event target is within this pane's container
+
             const target = e.target as HTMLElement;
             const isWithinThisPane = containerRef?.contains(target) ||
                                       target.closest(`[data-pane-id="${nodeId}"]`) !== null;
 
             if (!isWithinThisPane) return;
 
-            // Ctrl+F / Cmd+F - open find bar
             if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
                 e.preventDefault();
                 e.stopPropagation();
                 setShowFindBar(true);
-                // Focus the find input after a short delay to ensure it's rendered
+
                 setTimeout(() => {
                     findInputRef.current?.focus();
                     findInputRef.current?.select();
@@ -812,14 +766,12 @@ const WebBrowserViewer = memo(({
                 return;
             }
 
-            // Escape - close find bar
             if (e.key === 'Escape' && showFindBar) {
                 e.preventDefault();
                 handleStopFindInPage();
                 return;
             }
 
-            // Ctrl+G / Cmd+G - find next (when find bar is open and has text)
             if ((e.ctrlKey || e.metaKey) && e.key === 'g' && !e.shiftKey && findText) {
                 e.preventDefault();
                 e.stopPropagation();
@@ -827,7 +779,6 @@ const WebBrowserViewer = memo(({
                 return;
             }
 
-            // Ctrl+Shift+G / Cmd+Shift+G - find previous
             if ((e.ctrlKey || e.metaKey) && e.key === 'g' && e.shiftKey && findText) {
                 e.preventDefault();
                 e.stopPropagation();
@@ -835,7 +786,6 @@ const WebBrowserViewer = memo(({
                 return;
             }
 
-            // Ctrl+Shift+R / Cmd+Shift+R - hard refresh
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'R') {
                 e.preventDefault();
                 e.stopPropagation();
@@ -843,7 +793,6 @@ const WebBrowserViewer = memo(({
                 return;
             }
 
-            // Ctrl+= / Cmd+= — zoom in the webview
             if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) {
                 e.preventDefault();
                 e.stopPropagation();
@@ -855,7 +804,6 @@ const WebBrowserViewer = memo(({
                 return;
             }
 
-            // Ctrl+- / Cmd+- — zoom out the webview
             if ((e.ctrlKey || e.metaKey) && e.key === '-') {
                 e.preventDefault();
                 e.stopPropagation();
@@ -867,7 +815,6 @@ const WebBrowserViewer = memo(({
                 return;
             }
 
-            // Ctrl+0 / Cmd+0 — reset zoom
             if ((e.ctrlKey || e.metaKey) && e.key === '0') {
                 e.preventDefault();
                 e.stopPropagation();
@@ -878,7 +825,6 @@ const WebBrowserViewer = memo(({
                 return;
             }
 
-            // Backspace = go back (only if not in a text input)
             if (e.key === 'Backspace') {
                 const isTextInput = target.tagName === 'INPUT' ||
                                    target.tagName === 'TEXTAREA' ||
@@ -901,7 +847,7 @@ const WebBrowserViewer = memo(({
             homeUrl = isLocalhost ? `http://${initial}` : `https://${initial}`;
         }
         if (webviewRef.current) webviewRef.current.src = homeUrl;
-        // Focus URL input if going to blank page
+
         if (initial === 'about:blank' && urlInputRef.current) {
             urlInputRef.current.focus();
             urlInputRef.current.select();
@@ -911,13 +857,13 @@ const WebBrowserViewer = memo(({
     const handleClearSessionData = useCallback(async () => {
         if (!webviewRef.current) return;
         try {
-            // Clear session data via the webview's session
+
             const webContents = webviewRef.current.getWebContents?.();
             if (webContents) {
                 await webContents.session.clearStorageData({
                     storages: ['cookies', 'localstorage', 'sessionstorage', 'cachestorage'],
                 });
-                // Reload the page after clearing
+
                 webviewRef.current.reload();
             }
             setShowSessionMenu(false);
@@ -956,7 +902,6 @@ const WebBrowserViewer = memo(({
         }
     }, []);
 
-    // Extension management
     const loadExtensions = useCallback(async () => {
         const result = await (window as any).api?.browserGetExtensions?.();
         if (result?.success) {
@@ -1006,28 +951,25 @@ const WebBrowserViewer = memo(({
         }
     }, [loadExtensions]);
 
-    // Load extensions when menu opens
     useEffect(() => {
         if (showExtensionsMenu) {
             loadExtensions();
         }
     }, [showExtensionsMenu, loadExtensions]);
 
-    // Register this partition on mount
     useEffect(() => {
         if (currentPath && viewId) {
             (window as any).api?.browserRegisterPartition?.({ partition: viewId, folderPath: currentPath });
         }
     }, [currentPath, viewId]);
 
-    // Load known partitions and cookie domains when cookie manager opens
     const loadCookieManagerData = useCallback(async () => {
         const [partitionsResult, domainsResult] = await Promise.all([
             (window as any).api?.browserGetKnownPartitions?.(),
             (window as any).api?.browserGetCookieDomains?.({ partition: viewId })
         ]);
         if (partitionsResult?.success) {
-            // Filter out current partition and sort by last used
+
             setKnownPartitions(
                 partitionsResult.partitions
                     .filter((p: any) => p.partition !== viewId)
@@ -1045,7 +987,6 @@ const WebBrowserViewer = memo(({
         }
     }, [showCookieManager, loadCookieManagerData]);
 
-    // Import cookies from another folder
     const handleImportCookies = useCallback(async (sourcePartition: string, domain?: string) => {
         setImportStatusCookies('Importing...');
         const result = await (window as any).api?.browserImportCookiesFromPartition?.({
@@ -1056,7 +997,7 @@ const WebBrowserViewer = memo(({
         if (result?.success) {
             setImportStatusCookies(`Imported ${result.imported} cookies`);
             setTimeout(() => setImportStatusCookies(null), 2000);
-            // Reload the page to apply new cookies
+
             if (webviewRef.current) {
                 webviewRef.current.reload();
             }
@@ -1066,7 +1007,6 @@ const WebBrowserViewer = memo(({
         }
     }, [viewId]);
 
-    // Get domains from a source partition for selective import
     const [sourceDomainsMap, setSourceDomainsMap] = useState<Record<string, string[]>>({});
     const loadSourceDomains = useCallback(async (partition: string) => {
         const result = await (window as any).api?.browserGetCookieDomains?.({ partition });
@@ -1075,7 +1015,6 @@ const WebBrowserViewer = memo(({
         }
     }, []);
 
-    // Password management functions
     const getSiteFromUrl = useCallback((url: string) => {
         try {
             const urlObj = new URL(url);
@@ -1117,7 +1056,7 @@ const WebBrowserViewer = memo(({
         if (!webview) return;
 
         try {
-            // Fetch the full credential with password
+
             const result = await (window as any).api?.passwordGet?.(credential.id);
             if (!result?.success || !result.credential) {
                 console.error('[Browser] Failed to get credential for fill');
@@ -1125,19 +1064,16 @@ const WebBrowserViewer = memo(({
             }
             const fullCredential = result.credential;
 
-            // Inject script to fill the login form
             await webview.executeJavaScript(`
                 (function() {
                     const username = ${JSON.stringify(fullCredential.username)};
                     const pwd = ${JSON.stringify(fullCredential.password)};
 
-                    // Find username/email fields
                     const usernameInputs = document.querySelectorAll('input[type="text"], input[type="email"], input[name*="user"], input[name*="email"], input[name*="login"], input[id*="user"], input[id*="email"], input[id*="login"]');
                     const passwordInputs = document.querySelectorAll('input[type="password"]');
 
-                    // Fill username - try to find the best match
                     for (const input of usernameInputs) {
-                        if (input.offsetParent !== null) { // visible
+                        if (input.offsetParent !== null) {
                             input.value = username;
                             input.dispatchEvent(new Event('input', { bubbles: true }));
                             input.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1145,9 +1081,8 @@ const WebBrowserViewer = memo(({
                         }
                     }
 
-                    // Fill password
                     for (const input of passwordInputs) {
-                        if (input.offsetParent !== null) { // visible
+                        if (input.offsetParent !== null) {
                             input.value = pwd;
                             input.dispatchEvent(new Event('input', { bubbles: true }));
                             input.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1182,19 +1117,17 @@ const WebBrowserViewer = memo(({
         }
     }, [loadAllPasswords]);
 
-    // Inject form detection script when page loads
     useEffect(() => {
         const webview = webviewRef.current;
         if (!webview) return;
 
         const handleDomReady = async () => {
-            // Check for saved passwords for this site
+
             const url = webview.getURL?.();
             if (url) {
                 checkForSavedPasswords(url);
             }
 
-            // Inject ad blocking CSS only (non-invasive, won't break sites)
             const isAdBlockOn = localStorage.getItem('npc-browser-adblock') !== 'false';
 
             if (isAdBlockOn) {
@@ -1204,7 +1137,6 @@ const WebBrowserViewer = memo(({
                             if (window.__npcAdBlockInstalled) return;
                             window.__npcAdBlockInstalled = true;
 
-                            // CSS-only ad blocking - safe, won't break site functionality
                             const style = document.createElement('style');
                             style.textContent = \`
                                 .adsbygoogle, ins.adsbygoogle, [id*="google_ads"], [class*="GoogleAd"],
@@ -1220,22 +1152,19 @@ const WebBrowserViewer = memo(({
                         })();
                     `);
                 } catch (err) {
-                    // Ignore - some pages block script injection
+
                 }
             }
 
-            // Inject script to detect login form submissions
             try {
                 await webview.executeJavaScript(`
                     (function() {
                         if (window.__npcPasswordDetectorInstalled) return;
                         window.__npcPasswordDetectorInstalled = true;
 
-                        // Track last known credentials
                         let lastUsername = '';
                         let lastPassword = '';
 
-                        // Scan page for credentials
                         function scanForCredentials() {
                             const passwordInputs = document.querySelectorAll('input[type="password"]');
                             if (passwordInputs.length === 0) return null;
@@ -1248,7 +1177,6 @@ const WebBrowserViewer = memo(({
                                 }
                             }
 
-                            // Find username/email - search whole page, not just form
                             const usernameInputs = document.querySelectorAll('input[type="text"], input[type="email"], input[name*="user"], input[name*="email"], input[name*="login"], input[autocomplete*="user"], input[autocomplete="email"]');
                             let username = '';
                             for (const input of usernameInputs) {
@@ -1257,7 +1185,7 @@ const WebBrowserViewer = memo(({
                                     break;
                                 }
                             }
-                            // Fallback - any text input with value
+
                             if (!username) {
                                 for (const input of usernameInputs) {
                                     if (input.value) {
@@ -1270,7 +1198,6 @@ const WebBrowserViewer = memo(({
                             return { username, password };
                         }
 
-                        // Signal credentials are ready
                         function signalCredentials(username, password) {
                             if (username && password) {
                                 window.__npcPendingCredentials = {
@@ -1283,13 +1210,11 @@ const WebBrowserViewer = memo(({
                             }
                         }
 
-                        // Listen for form submit
                         document.addEventListener('submit', function(e) {
                             const creds = scanForCredentials();
                             if (creds) signalCredentials(creds.username, creds.password);
                         }, true);
 
-                        // Track password field changes
                         document.addEventListener('input', function(e) {
                             if (e.target.type === 'password' && e.target.value) {
                                 lastPassword = e.target.value;
@@ -1299,11 +1224,10 @@ const WebBrowserViewer = memo(({
                             }
                         }, true);
 
-                        // Detect button clicks that might submit (for JS-based forms)
                         document.addEventListener('click', function(e) {
                             const btn = e.target.closest('button, input[type="submit"], [role="button"]');
                             if (btn) {
-                                // Check if there's a password field with value
+
                                 setTimeout(() => {
                                     const creds = scanForCredentials();
                                     if (creds && creds.password) {
@@ -1315,7 +1239,6 @@ const WebBrowserViewer = memo(({
                             }
                         }, true);
 
-                        // Also check before navigation
                         window.addEventListener('beforeunload', function() {
                             if (lastPassword) {
                                 signalCredentials(lastUsername, lastPassword);
@@ -1324,31 +1247,30 @@ const WebBrowserViewer = memo(({
                     })();
                 `);
             } catch (err) {
-                // Ignore errors for pages that don't allow JS injection
+
             }
         };
 
         const handleIpcMessage = async (event: any) => {
             if (event.channel === 'password-detected') {
                 const { site, username, password } = event.args[0];
-                // Check if this credential is already saved before prompting
+
                 try {
                     const existingResult = await (window as any).api?.passwordGetForSite?.(site);
                     const isDuplicate = existingResult?.credentials?.some(
                         (saved: any) => saved.username === username
                     );
                     if (isDuplicate) return;
-                } catch { /* proceed to prompt on error */ }
+                } catch {  }
                 setPendingCredentials({ site, username, password });
                 setShowPasswordPrompt(true);
             }
         };
 
-        // Listen for console messages signaling credentials are ready
         const handleConsoleMessage = async (event: any) => {
             try {
                 if (event.message === 'npc-credentials-ready') {
-                    // Retrieve credentials securely via executeJavaScript
+
                     const creds = await webview.executeJavaScript(`
                         (function() {
                             const c = window.__npcPendingCredentials;
@@ -1357,10 +1279,9 @@ const WebBrowserViewer = memo(({
                         })();
                     `);
                     if (creds && creds.username && creds.password) {
-                        // Check if this exact credential is already saved
+
                         const existingResult = await (window as any).api?.passwordGetForSite?.(creds.site);
-                        // passwordGetForSite returns { id, site, username } without password for security,
-                        // so we check by username only (already filtered by site domain)
+
                         const isDuplicate = existingResult?.credentials?.some(
                             (saved: any) => saved.username === creds.username
                         );
@@ -1370,7 +1291,7 @@ const WebBrowserViewer = memo(({
                         }
                     }
                 }
-            } catch { /* ignore errors */ }
+            } catch {  }
         };
 
         webview.addEventListener('dom-ready', handleDomReady);
@@ -1384,7 +1305,6 @@ const WebBrowserViewer = memo(({
         };
     }, [checkForSavedPasswords]);
 
-    // Site permission management
     const getPermissionsForSite = useCallback((url: string) => {
         const site = getSiteFromUrl(url);
         return sitePermissions[site] || [];
@@ -1411,14 +1331,12 @@ const WebBrowserViewer = memo(({
         { id: 'media', name: 'Camera/Mic', desc: 'Access camera and microphone' },
     ];
 
-    // Load passwords when menu opens
     useEffect(() => {
         if (showPasswordsMenu) {
             loadAllPasswords();
         }
     }, [showPasswordsMenu, loadAllPasswords]);
 
-    // Re-introducing drag-and-drop and context menu for the pane itself
     const handleDragStart = useCallback((e) => {
         e.dataTransfer.effectAllowed = 'move';
         const nodePath = findNodePath(rootLayoutNode, nodeId);
@@ -1442,12 +1360,10 @@ const WebBrowserViewer = memo(({
         });
     }, [setPaneContextMenu, findNodePath, rootLayoutNode, nodeId]);
 
-
     return (
         <div
             className="flex flex-col flex-1 w-full min-h-0 theme-bg-secondary"
         >
-            {/* Browser Header */}
             <div
                 className="flex theme-bg-tertiary border-b theme-border flex-shrink-0 cursor-move"
                 draggable={true}
@@ -1469,7 +1385,6 @@ const WebBrowserViewer = memo(({
                     setPaneContextMenu({ isOpen: true, x: e.clientX, y: e.clientY, nodeId, nodePath });
                 }}
             >
-                {/* Zen mode button - only show when no tab bar */}
                 {!hasTabBar && onToggleZen && (
                     <button
                         onClick={(e) => { e.stopPropagation(); onToggleZen(); }}
@@ -1480,7 +1395,6 @@ const WebBrowserViewer = memo(({
                         {isZenMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
                     </button>
                 )}
-                {/* Left: Nav buttons */}
                 <div className="flex items-center gap-0.5 px-1 border-r theme-border">
                     <button onClick={handleBack} disabled={!canGoBack} className="p-1 theme-hover rounded disabled:opacity-30" title="Back"><ArrowLeft size={16} /></button>
                     <button onClick={handleForward} disabled={!canGoForward} className="p-1 theme-hover rounded disabled:opacity-30" title="Forward"><ArrowRight size={16} /></button>
@@ -1521,10 +1435,8 @@ const WebBrowserViewer = memo(({
                             </>
                         )}
                     </div>
-                    <button onClick={handleHome} className="p-1 theme-hover rounded" title="Home"><Home size={16} /></button>
                 </div>
 
-                {/* Center: Address bar */}
                 <div className="flex-1 flex items-center min-w-0 px-1 gap-1">
                     <GripVertical size={12} className="flex-shrink-0 theme-text-muted" />
                     <div className="flex-1 max-w-[60%] flex items-center gap-1 min-w-0 theme-bg-secondary rounded px-1.5 py-1">
@@ -1534,9 +1446,7 @@ const WebBrowserViewer = memo(({
                     <button onClick={() => handleNewBrowserTab('', nodeId)} className="p-0.5 theme-hover rounded" title="New tab (Ctrl+T)"><Plus size={12} /></button>
                 </div>
 
-                {/* Far right: Passwords + Permissions + Extensions + Settings + Close in one row */}
                 <div className="flex items-center gap-0.5 px-1 border-l theme-border">
-                    {/* Saved passwords indicator */}
                     {savedPasswords.length > 0 && (
                         <div className="relative">
                             <button
@@ -1572,7 +1482,6 @@ const WebBrowserViewer = memo(({
                         </div>
                     )}
 
-                    {/* Site permissions button */}
                     <div className="relative">
                         <button
                             onClick={() => { setShowPermissionsMenu(!showPermissionsMenu); setShowSessionMenu(false); setShowExtensionsMenu(false); setShowPasswordsMenu(false); setShowRefreshMenu(false); }}
@@ -1613,7 +1522,6 @@ const WebBrowserViewer = memo(({
                         )}
                     </div>
 
-                    {/* Passwords manager button */}
                     <div className="relative">
                         <button
                             onClick={() => { setShowPasswordsMenu(!showPasswordsMenu); setShowSessionMenu(false); setShowExtensionsMenu(false); setShowPermissionsMenu(false); setShowRefreshMenu(false); }}
@@ -1667,7 +1575,6 @@ const WebBrowserViewer = memo(({
                         )}
                     </div>
 
-                    {/* Extensions button */}
                     <div className="relative">
                         <button onClick={() => { setShowExtensionsMenu(!showExtensionsMenu); setShowSessionMenu(false); setShowPasswordsMenu(false); setShowPermissionsMenu(false); setShowRefreshMenu(false); }} className={`p-1 theme-hover rounded ${extensions.length > 0 ? 'text-purple-400' : ''}`} title="Extensions"><Puzzle size={16} /></button>
                         {showExtensionsMenu && (
@@ -1679,7 +1586,6 @@ const WebBrowserViewer = memo(({
                                         <button onClick={handleAddExtension} className="p-1 theme-hover rounded text-green-400" title="Add extension from folder"><FolderOpen size={14} /></button>
                                     </div>
 
-                                    {/* Installed extensions */}
                                     {extensions.length > 0 ? (
                                         <div className="py-1 border-b theme-border">
                                             {extensions.map((ext: any) => (
@@ -1696,14 +1602,12 @@ const WebBrowserViewer = memo(({
                                         <div className="px-3 py-2 text-xs theme-text-muted text-center border-b theme-border">No extensions installed</div>
                                     )}
 
-                                    {/* Import status */}
                                     {importStatus && (
                                         <div className={`px-3 py-2 text-xs text-center border-b theme-border ${importStatus.importing ? 'text-blue-400' : 'text-green-400'}`}>
                                             {importStatus.message}
                                         </div>
                                     )}
 
-                                    {/* Import from browsers */}
                                     {installedBrowsers.length > 0 && !importStatus?.importing && (
                                         <div className="py-1">
                                             <div className="px-3 py-1 text-[10px] theme-text-muted uppercase">Import from (MV2 only)</div>
@@ -1719,7 +1623,6 @@ const WebBrowserViewer = memo(({
                         )}
                     </div>
 
-                    {/* Settings button */}
                     <div className="relative">
                         <button onClick={() => { setShowSessionMenu(!showSessionMenu); setShowExtensionsMenu(false); setShowRefreshMenu(false); }} className="p-1 theme-hover rounded" title="Settings"><Settings size={16} /></button>
                         {showSessionMenu && (
@@ -1732,7 +1635,6 @@ const WebBrowserViewer = memo(({
                                             {Object.entries(SEARCH_ENGINES).map(([k, v]) => <option key={k} value={k}>{v.name}</option>)}
                                         </select>
                                     </div>
-                                    {/* Privacy Settings */}
                                     <div className="p-2 border-b theme-border">
                                         <span className="text-xs theme-text-muted block mb-2">Privacy & Ad Blocking</span>
                                         <label className="flex items-center justify-between py-1 cursor-pointer">
@@ -1765,7 +1667,6 @@ const WebBrowserViewer = memo(({
                                             Blocks ads, trackers, and analytics scripts. Reload page after changing.
                                         </div>
                                     </div>
-                                    {/* Cookie Inheritance */}
                                     <div className="p-2 border-b theme-border">
                                         <button
                                             onClick={() => setShowCookieManager(!showCookieManager)}
@@ -1804,7 +1705,6 @@ const WebBrowserViewer = memo(({
                                                                 <div className="text-[9px] theme-text-muted truncate" title={p.folderPath}>
                                                                     {p.folderPath}
                                                                 </div>
-                                                                {/* Show domains for selective import */}
                                                                 {!sourceDomainsMap[p.partition] ? (
                                                                     <button
                                                                         onClick={() => loadSourceDomains(p.partition)}
@@ -1864,7 +1764,6 @@ const WebBrowserViewer = memo(({
                             </>
                         )}
                     </div>
-                    {/* Close button - only show when no tab bar */}
                     {!hasTabBar && closeContentPane && (
                         <button
                             onClick={(e) => {
@@ -1882,7 +1781,6 @@ const WebBrowserViewer = memo(({
                 </div>
             </div>
 
-            {/* Webview Container */}
             <div className="flex-1 relative theme-bg-secondary min-h-0">
                 {error && (
                     <div className="absolute inset-0 flex items-center justify-center z-10 p-4">
@@ -1895,6 +1793,7 @@ const WebBrowserViewer = memo(({
                 )}
 
                 <webview
+                    key={`webview-${viewId}-${webviewKey}`}
                     ref={webviewRef}
                     className="absolute inset-0 w-full h-full"
                     partition={`persist:${viewId}`}
@@ -1904,10 +1803,8 @@ const WebBrowserViewer = memo(({
                     style={{ visibility: error ? 'hidden' : 'visible', backgroundColor: '#ffffff' }}
                 />
 
-                {/* Overlay to block webview interaction during layout resize/drag */}
                 <div className="webview-resize-overlay absolute inset-0 z-10" />
 
-                {/* Find Bar */}
                 {showFindBar && (
                     <div className="absolute top-0 right-0 z-50 m-2 flex items-center gap-2 theme-bg-secondary border theme-border rounded-lg shadow-lg px-3 py-2">
                         <input
@@ -1966,7 +1863,6 @@ const WebBrowserViewer = memo(({
                     </div>
                 )}
 
-                {/* Password Save Prompt */}
                 {showPasswordPrompt && pendingCredentials && (
                     <div className="absolute bottom-4 right-4 z-50 theme-bg-secondary border theme-border rounded-lg shadow-lg p-4 max-w-sm">
                         <div className="flex items-start gap-3">

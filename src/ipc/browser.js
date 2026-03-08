@@ -6,22 +6,18 @@ const os = require('os');
 const fetch = require('node-fetch');
 const crypto = require('crypto');
 
-// Module-local state
 const browserViews = new Map();
 const activeDownloads = new Map();
 const sessionsWithDownloadHandler = new WeakSet();
 
-// ==================== BROWSER EXTENSIONS STATE ====================
 const extensionsDir = path.join(os.homedir(), '.npcsh', 'incognide', 'extensions');
 const extensionsConfigPath = path.join(os.homedir(), '.npcsh', 'incognide', 'extensions.json');
-const loadedExtensions = new Map(); // extensionId => extension object
+const loadedExtensions = new Map();
 
-// Ensure extensions directory exists
 const ensureExtensionsDir = async () => {
   await fsPromises.mkdir(extensionsDir, { recursive: true });
 };
 
-// Load extensions config
 const loadExtensionsConfig = async () => {
   try {
     await ensureExtensionsDir();
@@ -32,17 +28,15 @@ const loadExtensionsConfig = async () => {
   }
 };
 
-// Save extensions config
 const saveExtensionsConfig = async (config) => {
   await ensureExtensionsDir();
   await fsPromises.writeFile(extensionsConfigPath, JSON.stringify(config, null, 2));
 };
 
-// Load previously saved extensions on startup
 const loadSavedExtensions = async () => {
   try {
     const config = await loadExtensionsConfig();
-    const browserSession = session.fromPartition('persist:default-browser-session');
+    const browserSession = session.fromPartition('persist:browser-global');
 
     for (const ext of config.extensions) {
       if (config.enabled[ext.id] !== false && ext.path) {
@@ -60,11 +54,9 @@ const loadSavedExtensions = async () => {
   }
 };
 
-// ==================== COOKIE INHERITANCE STATE ====================
 const cookieInheritanceConfigPath = path.join(os.homedir(), '.npcsh', 'incognide', 'cookie-inheritance.json');
 const knownPartitionsPath = path.join(os.homedir(), '.npcsh', 'incognide', 'known-partitions.json');
 
-// Load/save known partitions (folders that have been used with browser)
 const loadKnownPartitions = async () => {
   try {
     const data = await fsPromises.readFile(knownPartitionsPath, 'utf8');
@@ -80,13 +72,12 @@ const saveKnownPartitions = async (data) => {
   await fsPromises.writeFile(knownPartitionsPath, JSON.stringify(data, null, 2));
 };
 
-// Load/save cookie inheritance config
 const loadCookieInheritanceConfig = async () => {
   try {
     const data = await fsPromises.readFile(cookieInheritanceConfigPath, 'utf8');
     return JSON.parse(data);
   } catch {
-    return { inheritance: {} }; // { targetPartition: [sourcePartitions] }
+    return { inheritance: {} };
   }
 };
 
@@ -96,29 +87,26 @@ const saveCookieInheritanceConfig = async (data) => {
   await fsPromises.writeFile(cookieInheritanceConfigPath, JSON.stringify(data, null, 2));
 };
 
-// ==================== PASSWORD MANAGER STATE ====================
 const passwordsFilePath = path.join(os.homedir(), '.npcsh', 'incognide', 'credentials.enc');
 
-// Ensure the credentials file exists
 const ensurePasswordsFile = async () => {
   const dir = path.dirname(passwordsFilePath);
   await fsPromises.mkdir(dir, { recursive: true });
   try {
     await fsPromises.access(passwordsFilePath);
   } catch {
-    // File doesn't exist, create empty encrypted store
+
     const emptyData = JSON.stringify({ credentials: [] });
     if (safeStorage.isEncryptionAvailable()) {
       const encrypted = safeStorage.encryptString(emptyData);
       await fsPromises.writeFile(passwordsFilePath, encrypted);
     } else {
-      // Fallback to base64 if encryption not available (less secure)
+
       await fsPromises.writeFile(passwordsFilePath, Buffer.from(emptyData).toString('base64'));
     }
   }
 };
 
-// Read all credentials
 const readCredentials = async () => {
   await ensurePasswordsFile();
   const fileContent = await fsPromises.readFile(passwordsFilePath);
@@ -131,7 +119,6 @@ const readCredentials = async () => {
   return JSON.parse(decrypted);
 };
 
-// Write all credentials
 const writeCredentials = async (data) => {
   await ensurePasswordsFile();
   const jsonData = JSON.stringify(data);
@@ -143,19 +130,13 @@ const writeCredentials = async (data) => {
   }
 };
 
-// ==================== WEB CONTENTS HANDLER (called from main.js) ====================
-/**
- * Sets up browser-related handlers on newly created web contents.
- * Called from app.on('web-contents-created') in main.js.
- */
 function setupWebContentsHandlers(contents, getMainWindow, log) {
-  // Handle context menu for webviews
+
   contents.on('context-menu', async (e, params) => {
-    // Only handle for webviews (type 'webview')
+
     if (contents.getType() === 'webview') {
       e.preventDefault();
 
-      // Get selected text
       const selectedText = params.selectionText || '';
       const linkURL = params.linkURL || '';
       const srcURL = params.srcURL || '';
@@ -165,10 +146,9 @@ function setupWebContentsHandlers(contents, getMainWindow, log) {
 
       log(`[CONTEXT MENU] Webview context menu: selectedText="${selectedText.substring(0, 50)}...", linkURL="${linkURL}", mediaType="${mediaType}"`);
 
-      // Send context menu event to renderer
       const mainWindow = getMainWindow();
       if (mainWindow && !mainWindow.isDestroyed()) {
-        // Get exact cursor position from screen
+
         const cursorPos = screen.getCursorScreenPoint();
         const windowBounds = mainWindow.getBounds();
 
@@ -190,7 +170,6 @@ function setupWebContentsHandlers(contents, getMainWindow, log) {
     }
   });
 
-  // Handle downloads from webviews - send to renderer's download manager
   if (contents.getType() === 'webview') {
     const sess = contents.session;
     if (sess && !sessionsWithDownloadHandler.has(sess)) {
@@ -202,10 +181,8 @@ function setupWebContentsHandlers(contents, getMainWindow, log) {
 
         log(`[DOWNLOAD] Intercepted download: ${filename} from ${url}`);
 
-        // Cancel immediately - renderer will handle via download manager
         item.cancel();
 
-        // Send to renderer's download manager
         const mainWindow = getMainWindow();
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('browser-download-requested', {
@@ -220,32 +197,26 @@ function setupWebContentsHandlers(contents, getMainWindow, log) {
   }
 }
 
-// ==================== REGISTER IPC HANDLERS ====================
 function register(ctx) {
   const { ipcMain, getMainWindow, dbQuery, app, log } = ctx;
 
-  // ---- browser-get-page-content ----
   ipcMain.handle('browser-get-page-content', async (event, { viewId }) => {
     if (browserViews.has(viewId)) {
         const browserState = browserViews.get(viewId);
         try {
-            // Extract text content from the page
+
             const pageContent = await browserState.view.webContents.executeJavaScript(`
                 (function() {
-                    // Get main content, skip nav/footer/ads
+
                     const main = document.querySelector('main, article, .content, #content') || document.body;
 
-                    // Remove script, style, nav, footer elements
                     const clone = main.cloneNode(true);
                     clone.querySelectorAll('script, style, nav, footer, aside, .nav, .footer, .ads').forEach(el => el.remove());
 
-                    // Get text content
                     let text = clone.innerText || clone.textContent;
 
-                    // Clean up whitespace
                     text = text.replace(/\\s+/g, ' ').trim();
 
-                    // Limit to ~4000 chars to avoid token limits
                     return text.substring(0, 4000);
                 })();
             `);
@@ -263,7 +234,6 @@ function register(ctx) {
     return { success: false, error: 'Browser view not found' };
   });
 
-  // ---- browser-add-to-history ----
   ipcMain.handle('browser-add-to-history', async (event, { url, title, folderPath }) => {
     try {
         if (!url || url === 'about:blank') return { success: true };
@@ -279,13 +249,11 @@ function register(ctx) {
     }
   });
 
-  // ---- show-browser ----
   ipcMain.handle('show-browser', async (event, { url, bounds, viewId }) => {
     const mainWindow = getMainWindow();
     log(`[BROWSER VIEW] Received 'show-browser' for viewId: ${viewId}`);
     if (!mainWindow) return { success: false, error: 'Main window not found' };
 
-    // Clean up any pre-existing view with the same ID.
     if (browserViews.has(viewId)) {
         const existingState = browserViews.get(viewId);
         mainWindow.removeBrowserView(existingState.view);
@@ -303,14 +271,11 @@ function register(ctx) {
         nodeIntegration: false,
         contextIsolation: true,
         webSecurity: true,
-        // Use shared partition so all browser panes share cookies/sessions
-        // This is needed for Google services to work (auth persists across tabs)
-        partition: 'persist:browser-shared',
+
+        partition: 'persist:browser-global',
       },
     });
 
-    // Set Chrome-like user agent so Google services (Drive, Docs, etc.) work properly
-    // Extract Chrome version from Electron's user agent and use standard Chrome UA
     const electronUA = newBrowserView.webContents.getUserAgent();
     const chromeMatch = electronUA.match(/Chrome\/(\d+\.\d+\.\d+\.\d+)/);
     const chromeVersion = chromeMatch ? chromeMatch[1] : '120.0.0.0';
@@ -329,7 +294,6 @@ function register(ctx) {
     mainWindow.addBrowserView(newBrowserView);
     newBrowserView.setBounds(finalBounds);
 
-    // Enable auto-resize with clipping
     newBrowserView.setAutoResize({
       width: true,
       height: true,
@@ -337,7 +301,6 @@ function register(ctx) {
       vertical: true
     });
 
-    // Store with clipping enabled flag
     browserViews.set(viewId, {
       view: newBrowserView,
       bounds: finalBounds,
@@ -346,11 +309,9 @@ function register(ctx) {
 
     const wc = newBrowserView.webContents;
 
-    // Handle popup windows (window.open, target="_blank")
     wc.setWindowOpenHandler(({ url, disposition }) => {
       log('[Browser] window.open intercepted:', url, 'disposition:', disposition);
 
-      // SSO/OAuth auth flows — allow as popup so tokens stay in the webview's session
       const AUTH_PATTERNS = [
         'accounts.google.com', 'accounts.youtube.com', 'myaccount.google.com',
         'login.microsoftonline.com', 'login.live.com', 'login.windows.net',
@@ -369,7 +330,6 @@ function register(ctx) {
         return { action: 'allow' };
       }
 
-      // Google Colab — open as new tab in the app
       if (url.includes('colab.research.google.com')) {
         log('[Browser] Opening Colab in new tab');
         const mw = getMainWindow();
@@ -379,15 +339,11 @@ function register(ctx) {
         return { action: 'deny' };
       }
 
-      // about:blank or empty URLs: sites like Google Drive call window.open('')
-      // then set the popup's location. We can't capture the final URL from here,
-      // so allow it and intercept navigation on the created window.
       if (!url || url === 'about:blank') {
         log('[Browser] Allowing about:blank popup - will intercept navigation');
         return { action: 'allow' };
       }
 
-      // All other URLs: open in a new browser tab in the app
       const mw = getMainWindow();
       if (mw && !mw.isDestroyed()) {
         mw.webContents.send('browser-open-in-new-tab', { url, disposition });
@@ -395,7 +351,6 @@ function register(ctx) {
       return { action: 'deny' };
     });
 
-    // Intercept popup windows (from about:blank opens) to capture real navigation
     wc.on('did-create-window', (newWindow) => {
       log('[Browser] Popup window created, intercepting navigation');
       const newWc = newWindow.webContents;
@@ -413,7 +368,6 @@ function register(ctx) {
         try { newWindow.close(); } catch (e) {}
       };
 
-      // The opener script sets window.location after creation
       newWc.on('will-navigate', (event, navUrl) => {
         log('[Browser] Popup will-navigate:', navUrl);
         forwardAndClose(navUrl);
@@ -422,17 +376,16 @@ function register(ctx) {
         log('[Browser] Popup did-navigate:', navUrl);
         forwardAndClose(navUrl);
       });
-      // Also catch in-page redirects
+
       newWc.on('will-redirect', (event, navUrl) => {
         log('[Browser] Popup will-redirect:', navUrl);
         forwardAndClose(navUrl);
       });
 
-      // Fallback: close orphaned popup after 8s
       setTimeout(() => {
         if (!handled) {
           log('[Browser] Popup timeout - closing unhandled popup');
-          // Before closing, check if it navigated somewhere useful
+
           try {
             const finalUrl = newWc.getURL();
             if (finalUrl && finalUrl !== 'about:blank') {
@@ -447,7 +400,6 @@ function register(ctx) {
       }, 8000);
     });
 
-    // Listeners now only send events to the renderer; they do not register handlers.
     wc.on('did-navigate', (event, navigatedUrl) => {
         const mw = getMainWindow();
         mw.webContents.send('browser-loaded', { viewId, url: navigatedUrl, title: wc.getTitle() });
@@ -466,15 +418,12 @@ function register(ctx) {
         mw.webContents.send('browser-navigation-state-updated', { viewId, canGoBack: wc.canGoBack(), canGoForward: wc.canGoForward() });
     });
 
-    // Downloads handled by app.on('web-contents-created') handler
-
     const finalURL = url.startsWith('http') ? url : `https://${url}`;
     wc.loadURL(finalURL).catch(err => log(`[BROWSER VIEW ${viewId}] loadURL promise rejected: ${err.message}`));
 
     return { success: true, viewId };
   });
 
-  // ---- browser-save-image ----
   ipcMain.handle('browser-save-image', async (event, { imageUrl, currentPath }) => {
     try {
         const mainWindow = getMainWindow();
@@ -498,7 +447,6 @@ function register(ctx) {
             return { success: false, canceled: true };
         }
 
-        // Download the image
         const response = await fetch(imageUrl);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const buffer = await response.buffer();
@@ -512,17 +460,15 @@ function register(ctx) {
     }
   });
 
-  // ---- browser-save-link ----
   ipcMain.handle('browser-save-link', async (event, { url, suggestedFilename, currentPath }) => {
     const mainWindow = getMainWindow();
     const controller = new AbortController();
 
     try {
-        // Use workspace path or downloads folder
+
         const saveDir = currentPath || app.getPath('downloads');
         const filename = suggestedFilename || path.basename(new URL(url).pathname) || 'download';
 
-        // Ensure unique filename if it already exists
         let finalPath = path.join(saveDir, filename);
         let counter = 1;
         while (fs.existsSync(finalPath)) {
@@ -534,39 +480,35 @@ function register(ctx) {
 
         const downloadFilename = path.basename(finalPath);
 
-        // Track this download
         activeDownloads.set(downloadFilename, { controller, paused: false });
 
         log(`[BROWSER] Starting download: ${filename} to ${finalPath}`);
 
-        // Get cookies from the webview session for authenticated downloads
         const fetchHeaders = {};
         try {
-            // Try to get cookies from the sender's session (webview session)
+
             const senderSession = event.sender.session || session.defaultSession;
             const cookies = await senderSession.cookies.get({ url });
             if (cookies.length > 0) {
                 fetchHeaders['Cookie'] = cookies.map(c => `${c.name}=${c.value}`).join('; ');
             }
-            // Also set a browser-like user agent to avoid 403s from user-agent checks
+
             fetchHeaders['User-Agent'] = event.sender.getUserAgent?.() || 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36';
         } catch (cookieErr) {
             log(`[BROWSER] Could not get session cookies: ${cookieErr.message}`);
         }
 
-        // Download the file with progress tracking
         const response = await fetch(url, { signal: controller.signal, headers: fetchHeaders });
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
         const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
         let received = 0;
 
-        // Stream the response to file
         const fileStream = fs.createWriteStream(finalPath);
         const reader = response.body;
 
         for await (const chunk of reader) {
-            // Check if cancelled
+
             if (controller.signal.aborted) {
                 fileStream.destroy();
                 fs.unlinkSync(finalPath);
@@ -576,7 +518,6 @@ function register(ctx) {
             fileStream.write(chunk);
             received += chunk.length;
 
-            // Send progress to renderer
             if (contentLength > 0 && mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send('download-progress', {
                     filename: downloadFilename,
@@ -592,7 +533,6 @@ function register(ctx) {
 
         log(`[BROWSER] Download completed: ${finalPath}`);
 
-        // Send completion event
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('download-complete', {
                 filename: downloadFilename,
@@ -622,7 +562,6 @@ function register(ctx) {
     }
   });
 
-  // ---- cancel-download ----
   ipcMain.handle('cancel-download', async (event, filename) => {
     const download = activeDownloads.get(filename);
     if (download) {
@@ -634,9 +573,8 @@ function register(ctx) {
     return { success: false, error: 'Download not found' };
   });
 
-  // ---- pause-download ----
   ipcMain.handle('pause-download', async (event, filename) => {
-    // Note: Pause/resume with fetch requires range request support - this is a placeholder
+
     const download = activeDownloads.get(filename);
     if (download) {
         download.paused = true;
@@ -646,9 +584,8 @@ function register(ctx) {
     return { success: false, error: 'Download not found' };
   });
 
-  // ---- resume-download ----
   ipcMain.handle('resume-download', async (event, filename) => {
-    // Note: Pause/resume with fetch requires range request support - this is a placeholder
+
     const download = activeDownloads.get(filename);
     if (download) {
         download.paused = false;
@@ -658,7 +595,6 @@ function register(ctx) {
     return { success: false, error: 'Download not found' };
   });
 
-  // ---- browser-open-external ----
   ipcMain.handle('browser-open-external', async (event, { url }) => {
     try {
         await shell.openExternal(url);
@@ -669,13 +605,12 @@ function register(ctx) {
     }
   });
 
-  // ---- browser:set-visibility ----
   ipcMain.handle('browser:set-visibility', (event, { viewId, visible }) => {
     if (browserViews.has(viewId)) {
         const browserState = browserViews.get(viewId);
         if (visible) {
             log(`[BROWSER VIEW] Setting visibility to TRUE for ${viewId}`);
-            browserState.view.setBounds(browserState.bounds); // Use stored bounds
+            browserState.view.setBounds(browserState.bounds);
             browserState.visible = true;
         } else {
             log(`[BROWSER VIEW] Setting visibility to FALSE for ${viewId}`);
@@ -688,16 +623,13 @@ function register(ctx) {
     return { success: false, error: 'View not found' };
   });
 
-  // ---- update-browser-bounds ----
   ipcMain.handle('update-browser-bounds', (event, { viewId, bounds }) => {
     if (browserViews.has(viewId)) {
       const mainWindow = getMainWindow();
       const browserState = browserViews.get(viewId);
 
-      // Get main window bounds to establish hard limits
       const winBounds = mainWindow.getBounds();
 
-      // Clip bounds to NEVER exceed the pane's boundaries
       const adjustedBounds = {
         x: Math.max(0, Math.round(bounds.x)),
         y: Math.max(0, Math.round(bounds.y)),
@@ -723,7 +655,6 @@ function register(ctx) {
     return { success: false, error: 'Browser view not found' };
   });
 
-  // ---- hide-browser ----
   ipcMain.handle('hide-browser', (event, { viewId }) => {
     const mainWindow = getMainWindow();
     log(`[BROWSER VIEW] Received 'hide-browser' for viewId: ${viewId}`);
@@ -738,7 +669,6 @@ function register(ctx) {
     return { success: false, error: 'Browser view not found' };
   });
 
-  // ---- browser:addToHistory ----
   ipcMain.handle('browser:addToHistory', async (event, { url, title, folderPath, paneId, navigationType = 'click', fromUrl }) => {
     try {
       if (!url || url === 'about:blank') {
@@ -765,7 +695,6 @@ function register(ctx) {
         log(`[BROWSER HISTORY] Added new history entry for ${url} in ${folderPath}`);
       }
 
-      // Record the navigation edge if we have a fromUrl (previous page in this pane)
       if (fromUrl && fromUrl !== 'about:blank' && fromUrl !== url) {
         await dbQuery(
           'INSERT INTO browser_navigations (pane_id, from_url, to_url, navigation_type, folder_path) VALUES (?, ?, ?, ?, ?)',
@@ -780,15 +709,13 @@ function register(ctx) {
     }
   });
 
-  // ---- get-browser-history ----
   ipcMain.handle('get-browser-history', async (event, folderPath) => {
     try {
-      // Only return history entries for this specific folder
+
       const history = await dbQuery(
         'SELECT id, title, url, folder_path, visit_count, last_visited FROM browser_history WHERE folder_path = ? ORDER BY last_visited DESC LIMIT 50',
         [folderPath]
       );
-      log(`[BROWSER HISTORY] Retrieved ${history.length} history entries for ${folderPath}`);
       return { history };
     } catch (error) {
       log(`[BROWSER HISTORY] Error getting history for ${folderPath}:`, error);
@@ -796,24 +723,21 @@ function register(ctx) {
     }
   });
 
-  // ---- browser:getHistory ----
   ipcMain.handle('browser:getHistory', async (event, { folderPath, limit = 50 }) => {
     try {
       const history = await dbQuery(
         'SELECT * FROM browser_history WHERE folder_path = ? ORDER BY last_visited DESC LIMIT ?',
         [folderPath, limit]
       );
-      log(`[BROWSER HISTORY] Retrieved ${history.length} history entries for ${folderPath}`);
       return { success: true, history };
     } catch (error) {
       return { success: false, error: error.message };
     }
   });
 
-  // ---- browser:addBookmark ----
   ipcMain.handle('browser:addBookmark', async (event, { url, title, folderPath, isGlobal = false }) => {
     try {
-      if (!url || url === 'about:blank') { // Don't bookmark blank pages
+      if (!url || url === 'about:blank') {
         log('[BROWSER BOOKMARKS] Skipping add bookmark for blank or invalid URL:', url);
         return { success: false, error: 'Cannot bookmark a blank or invalid URL.' };
       }
@@ -828,7 +752,6 @@ function register(ctx) {
     }
   });
 
-  // ---- browser:getBookmarks ----
   ipcMain.handle('browser:getBookmarks', async (event, { folderPath }) => {
     try {
 
@@ -843,7 +766,6 @@ function register(ctx) {
     }
   });
 
-  // ---- browser:deleteBookmark ----
   ipcMain.handle('browser:deleteBookmark', async (event, { bookmarkId }) => {
     try {
       await dbQuery('DELETE FROM bookmarks WHERE id = ?', [bookmarkId]);
@@ -854,10 +776,9 @@ function register(ctx) {
     }
   });
 
-  // ---- browser:setSiteLimit ----
   ipcMain.handle('browser:setSiteLimit', async (event, { domain, folderPath, hourlyTimeLimit, dailyTimeLimit, hourlyVisitLimit, dailyVisitLimit, isGlobal = false }) => {
     try {
-      // Upsert - insert or update on conflict
+
       await dbQuery(
         `INSERT INTO site_limits (domain, folder_path, is_global, hourly_time_limit, daily_time_limit, hourly_visit_limit, daily_visit_limit)
          VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -875,7 +796,6 @@ function register(ctx) {
     }
   });
 
-  // ---- browser:getSiteLimits ----
   ipcMain.handle('browser:getSiteLimits', async (event, { folderPath }) => {
     try {
       const limits = await dbQuery(
@@ -888,7 +808,6 @@ function register(ctx) {
     }
   });
 
-  // ---- browser:deleteSiteLimit ----
   ipcMain.handle('browser:deleteSiteLimit', async (event, { limitId }) => {
     try {
       await dbQuery('DELETE FROM site_limits WHERE id = ?', [limitId]);
@@ -899,7 +818,6 @@ function register(ctx) {
     }
   });
 
-  // ---- browser:clearHistory ----
   ipcMain.handle('browser:clearHistory', async (event, { folderPath }) => {
     try {
       await dbQuery('DELETE FROM browser_history WHERE folder_path = ?', [folderPath]);
@@ -911,10 +829,9 @@ function register(ctx) {
     }
   });
 
-  // ---- browser:getHistoryGraph ----
   ipcMain.handle('browser:getHistoryGraph', async (event, { folderPath, minVisits = 1, dateFrom, dateTo }) => {
     try {
-      // Build date filter clause
+
       let dateFilter = '';
       const params = [folderPath];
       if (dateFrom) {
@@ -926,7 +843,6 @@ function register(ctx) {
         params.push(dateTo);
       }
 
-      // Get all history entries as nodes (grouped by domain for cleaner visualization)
       const historyEntries = await dbQuery(
         `SELECT url, title, visit_count, last_visited, pane_id, navigation_type
          FROM browser_history
@@ -935,7 +851,6 @@ function register(ctx) {
         [...params.slice(0, 1), minVisits, ...params.slice(1)]
       );
 
-      // Get all navigations as edges
       let navDateFilter = '';
       const navParams = [folderPath];
       if (dateFrom) {
@@ -956,7 +871,6 @@ function register(ctx) {
         navParams
       );
 
-      // Helper to extract domain from URL
       const getDomain = (url) => {
         try {
           return new URL(url).hostname;
@@ -965,7 +879,6 @@ function register(ctx) {
         }
       };
 
-      // Build node map (by domain)
       const domainMap = new Map();
       for (const entry of historyEntries) {
         const domain = getDomain(entry.url);
@@ -986,12 +899,11 @@ function register(ctx) {
         }
       }
 
-      // Build edge map (domain to domain)
       const edgeMap = new Map();
       for (const nav of navigations) {
         const fromDomain = getDomain(nav.from_url);
         const toDomain = getDomain(nav.to_url);
-        if (fromDomain === toDomain) continue; // Skip self-loops
+        if (fromDomain === toDomain) continue;
 
         const edgeKey = `${fromDomain}->${toDomain}`;
         if (!edgeMap.has(edgeKey)) {
@@ -1012,7 +924,6 @@ function register(ctx) {
         }
       }
 
-      // Convert maps to arrays, filtering to only include nodes that are in navigations
       const allDomains = new Set([...domainMap.keys()]);
       const navigatedDomains = new Set();
       for (const edge of edgeMap.values()) {
@@ -1020,13 +931,11 @@ function register(ctx) {
         navigatedDomains.add(edge.target);
       }
 
-      // Include all domains that have visits, plus any in navigations
       const nodes = Array.from(domainMap.values()).filter(n =>
         n.visitCount >= minVisits || navigatedDomains.has(n.id)
       );
       const links = Array.from(edgeMap.values());
 
-      // Calculate stats
       const totalVisits = nodes.reduce((sum, n) => sum + n.visitCount, 0);
       const totalNavigations = links.reduce((sum, l) => sum + l.weight, 0);
       const topDomains = [...nodes].sort((a, b) => b.visitCount - a.visitCount).slice(0, 10);
@@ -1051,21 +960,19 @@ function register(ctx) {
     }
   });
 
-  // ---- browser-navigate ----
   ipcMain.handle('browser-navigate', (event, { viewId, url }) => {
     if (browserViews.has(viewId)) {
       const finalURL = url.startsWith('http') ? url : `https://${url}`;
       log(`[BROWSER VIEW] Navigating ${viewId} to: ${finalURL}`);
-      browserViews.get(viewId).view.webContents.loadURL(finalURL); // Access webContents via .view
+      browserViews.get(viewId).view.webContents.loadURL(finalURL);
       return { success: true };
     }
     return { success: false, error: 'Browser view not found' };
   });
 
-  // ---- browser-back ----
   ipcMain.handle('browser-back', (event, { viewId }) => {
     if (browserViews.has(viewId)) {
-      const webContents = browserViews.get(viewId).view.webContents; // Access webContents via .view
+      const webContents = browserViews.get(viewId).view.webContents;
       if (webContents.canGoBack()) {
         webContents.goBack();
         return { success: true };
@@ -1075,10 +982,9 @@ function register(ctx) {
     return { success: false, error: 'Browser view not found' };
   });
 
-  // ---- browser-forward ----
   ipcMain.handle('browser-forward', (event, { viewId }) => {
     if (browserViews.has(viewId)) {
-      const webContents = browserViews.get(viewId).view.webContents; // Access webContents via .view
+      const webContents = browserViews.get(viewId).view.webContents;
       if (webContents.canGoForward()) {
         webContents.goForward();
         return { success: true };
@@ -1088,16 +994,14 @@ function register(ctx) {
     return { success: false, error: 'Browser view not found' };
   });
 
-  // ---- browser-refresh ----
   ipcMain.handle('browser-refresh', (event, { viewId }) => {
     if (browserViews.has(viewId)) {
-      browserViews.get(viewId).view.webContents.reload(); // Access webContents via .view
+      browserViews.get(viewId).view.webContents.reload();
       return { success: true };
     }
     return { success: false, error: 'Browser view not found' };
   });
 
-  // ---- browser-hard-refresh ----
   ipcMain.handle('browser-hard-refresh', (event, { viewId }) => {
     if (browserViews.has(viewId)) {
       browserViews.get(viewId).view.webContents.reloadIgnoringCache();
@@ -1106,7 +1010,6 @@ function register(ctx) {
     return { success: false, error: 'Browser view not found' };
   });
 
-  // ---- browser-get-selected-text ----
   ipcMain.handle('browser-get-selected-text', (event, { viewId }) => {
     if (browserViews.has(viewId)) {
       return new Promise((resolve) => {
@@ -1122,16 +1025,12 @@ function register(ctx) {
     return { success: false, error: 'Browser view not found' };
   });
 
-  // ==================== BROWSER EXTENSIONS IPC HANDLERS ====================
-
-  // ---- browser:loadExtension ----
   ipcMain.handle('browser:loadExtension', async (event, extensionPath) => {
     try {
-      const browserSession = session.fromPartition('persist:default-browser-session');
+      const browserSession = session.fromPartition('persist:browser-global');
       const extension = await browserSession.loadExtension(extensionPath, { allowFileAccess: true });
       loadedExtensions.set(extension.id, extension);
 
-      // Save to config
       const config = await loadExtensionsConfig();
       if (!config.extensions.find(e => e.path === extensionPath)) {
         config.extensions.push({
@@ -1151,14 +1050,12 @@ function register(ctx) {
     }
   });
 
-  // ---- browser:removeExtension ----
   ipcMain.handle('browser:removeExtension', async (event, extensionId) => {
     try {
-      const browserSession = session.fromPartition('persist:default-browser-session');
+      const browserSession = session.fromPartition('persist:browser-global');
       await browserSession.removeExtension(extensionId);
       loadedExtensions.delete(extensionId);
 
-      // Remove from config
       const config = await loadExtensionsConfig();
       config.extensions = config.extensions.filter(e => e.id !== extensionId);
       delete config.enabled[extensionId];
@@ -1170,10 +1067,9 @@ function register(ctx) {
     }
   });
 
-  // ---- browser:getExtensions ----
   ipcMain.handle('browser:getExtensions', async () => {
     try {
-      const browserSession = session.fromPartition('persist:default-browser-session');
+      const browserSession = session.fromPartition('persist:browser-global');
       const extensions = browserSession.getAllExtensions();
       const config = await loadExtensionsConfig();
 
@@ -1191,22 +1087,18 @@ function register(ctx) {
     }
   });
 
-  // ---- browser:toggleExtension ----
   ipcMain.handle('browser:toggleExtension', async (event, { extensionId, enabled }) => {
     try {
       const config = await loadExtensionsConfig();
       config.enabled[extensionId] = enabled;
       await saveExtensionsConfig(config);
 
-      // Reload the browser session to apply changes
-      // Note: Electron doesn't have a direct enable/disable, so we'd need to reload
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
     }
   });
 
-  // ---- browser:selectExtensionFolder ----
   ipcMain.handle('browser:selectExtensionFolder', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory'],
@@ -1220,7 +1112,6 @@ function register(ctx) {
 
     const extensionPath = result.filePaths[0];
 
-    // Verify it's a valid extension (has manifest.json)
     const manifestPath = path.join(extensionPath, 'manifest.json');
     try {
       await fsPromises.access(manifestPath);
@@ -1230,12 +1121,10 @@ function register(ctx) {
     }
   });
 
-  // ---- browser:getInstalledBrowsers ----
   ipcMain.handle('browser:getInstalledBrowsers', async () => {
     const browsers = [];
     const homeDir = os.homedir();
 
-    // Common browser profile paths
     const browserPaths = {
       chrome: {
         linux: path.join(homeDir, '.config', 'google-chrome'),
@@ -1282,7 +1171,7 @@ function register(ctx) {
             key: browserName
           });
         } catch {
-          // Browser not installed
+
         }
       }
     }
@@ -1290,14 +1179,12 @@ function register(ctx) {
     return { success: true, browsers };
   });
 
-  // ---- browser:importExtensionsFrom ----
   ipcMain.handle('browser:importExtensionsFrom', async (event, { browserKey }) => {
     try {
       const homeDir = os.homedir();
       const platform = process.platform;
       let extensionsPath;
 
-      // Chrome-based browsers store extensions in a similar structure
       const chromiumPaths = {
         chrome: {
           linux: path.join(homeDir, '.config', 'google-chrome', 'Default', 'Extensions'),
@@ -1341,30 +1228,26 @@ function register(ctx) {
       const extensionDirs = await fsPromises.readdir(extensionsPath);
       const imported = [];
       const skipped = [];
-      const browserSession = session.fromPartition('persist:default-browser-session');
+      const browserSession = session.fromPartition('persist:browser-global');
 
       for (const extId of extensionDirs) {
         const extPath = path.join(extensionsPath, extId);
         const stat = await fsPromises.stat(extPath);
         if (!stat.isDirectory()) continue;
 
-        // Extensions have version subfolders
         const versions = await fsPromises.readdir(extPath);
         if (versions.length === 0) continue;
 
-        // Get the latest version
         const latestVersion = versions.sort().pop();
         const fullExtPath = path.join(extPath, latestVersion);
         const manifestPath = path.join(fullExtPath, 'manifest.json');
 
-        // Check for manifest.json and read it
         try {
           await fsPromises.access(manifestPath);
           const manifestData = JSON.parse(await fsPromises.readFile(manifestPath, 'utf-8'));
           const manifestVersion = manifestData.manifest_version || 2;
           const extName = manifestData.name || extId;
 
-          // Skip MV3 extensions with service workers (limited support in Electron)
           if (manifestVersion === 3 && manifestData.background?.service_worker) {
             console.log(`[Extensions] Skipping MV3 service worker extension: ${extName}`);
             skipped.push({ name: extName, reason: 'MV3 service worker not fully supported' });
@@ -1379,7 +1262,6 @@ function register(ctx) {
         }
       }
 
-      // Save imported extensions to config
       if (imported.length > 0) {
         const config = await loadExtensionsConfig();
         for (const ext of imported) {
@@ -1398,9 +1280,6 @@ function register(ctx) {
     }
   });
 
-  // ==================== COOKIE MANAGEMENT IPC HANDLERS ====================
-
-  // ---- browser:registerPartition ----
   ipcMain.handle('browser:registerPartition', async (event, { partition, folderPath }) => {
     try {
       const config = await loadKnownPartitions();
@@ -1409,7 +1288,7 @@ function register(ctx) {
         config.partitions.push({ partition, folderPath, lastUsed: Date.now() });
       } else {
         existing.lastUsed = Date.now();
-        existing.folderPath = folderPath; // Update path in case it changed
+        existing.folderPath = folderPath;
       }
       await saveKnownPartitions(config);
       return { success: true };
@@ -1418,7 +1297,6 @@ function register(ctx) {
     }
   });
 
-  // ---- browser:getKnownPartitions ----
   ipcMain.handle('browser:getKnownPartitions', async () => {
     try {
       const config = await loadKnownPartitions();
@@ -1428,7 +1306,6 @@ function register(ctx) {
     }
   });
 
-  // ---- browser:getCookiesFromPartition ----
   ipcMain.handle('browser:getCookiesFromPartition', async (event, { partition }) => {
     try {
       const sess = session.fromPartition(`persist:${partition}`);
@@ -1439,20 +1316,18 @@ function register(ctx) {
     }
   });
 
-  // ---- browser:importCookiesFromPartition ----
   ipcMain.handle('browser:importCookiesFromPartition', async (event, { sourcePartition, targetPartition, domain }) => {
     try {
       const sourceSession = session.fromPartition(`persist:${sourcePartition}`);
       const targetSession = session.fromPartition(`persist:${targetPartition}`);
 
-      // Get cookies from source (optionally filtered by domain)
       const filter = domain ? { domain } : {};
       const cookies = await sourceSession.cookies.get(filter);
 
       let imported = 0;
       for (const cookie of cookies) {
         try {
-          // Build the URL for the cookie
+
           const protocol = cookie.secure ? 'https' : 'http';
           const cookieDomain = cookie.domain.startsWith('.') ? cookie.domain.slice(1) : cookie.domain;
           const url = `${protocol}://${cookieDomain}${cookie.path || '/'}`;
@@ -1480,7 +1355,6 @@ function register(ctx) {
     }
   });
 
-  // ---- browser:setCookieInheritance ----
   ipcMain.handle('browser:setCookieInheritance', async (event, { targetPartition, sourcePartitions }) => {
     try {
       const config = await loadCookieInheritanceConfig();
@@ -1492,7 +1366,6 @@ function register(ctx) {
     }
   });
 
-  // ---- browser:getCookieInheritance ----
   ipcMain.handle('browser:getCookieInheritance', async (event, { partition }) => {
     try {
       const config = await loadCookieInheritanceConfig();
@@ -1502,7 +1375,6 @@ function register(ctx) {
     }
   });
 
-  // ---- browser:getCookieDomains ----
   ipcMain.handle('browser:getCookieDomains', async (event, { partition }) => {
     try {
       const sess = session.fromPartition(`persist:${partition}`);
@@ -1514,9 +1386,6 @@ function register(ctx) {
     }
   });
 
-  // ==================== PASSWORD MANAGER IPC HANDLERS ====================
-
-  // ---- password-save ----
   ipcMain.handle('password-save', async (event, { site, username, password, notes }) => {
     try {
       const data = await readCredentials();
@@ -1546,11 +1415,10 @@ function register(ctx) {
     }
   });
 
-  // ---- password-get-for-site ----
   ipcMain.handle('password-get-for-site', async (event, { site }) => {
     try {
       const data = await readCredentials();
-      // Match by domain - extract domain from URL
+
       const extractDomain = (url) => {
         try {
           const parsed = new URL(url.startsWith('http') ? url : `https://${url}`);
@@ -1566,7 +1434,6 @@ function register(ctx) {
         return credDomain === siteDomain || siteDomain.endsWith(`.${credDomain}`) || credDomain.endsWith(`.${siteDomain}`);
       });
 
-      // Return without exposing password in list (get specific one with password-get)
       return {
         success: true,
         credentials: matches.map(c => ({ id: c.id, site: c.site, username: c.username }))
@@ -1577,7 +1444,6 @@ function register(ctx) {
     }
   });
 
-  // ---- password-get ----
   ipcMain.handle('password-get', async (event, { id }) => {
     try {
       const data = await readCredentials();
@@ -1592,7 +1458,6 @@ function register(ctx) {
     }
   });
 
-  // ---- password-list ----
   ipcMain.handle('password-list', async () => {
     try {
       const data = await readCredentials();
@@ -1613,7 +1478,6 @@ function register(ctx) {
     }
   });
 
-  // ---- password-delete ----
   ipcMain.handle('password-delete', async (event, { id }) => {
     try {
       const data = await readCredentials();
@@ -1630,7 +1494,6 @@ function register(ctx) {
     }
   });
 
-  // ---- password-encryption-status ----
   ipcMain.handle('password-encryption-status', async () => {
     return {
       available: safeStorage.isEncryptionAvailable(),

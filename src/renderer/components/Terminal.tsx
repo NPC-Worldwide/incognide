@@ -6,13 +6,8 @@ import '@xterm/xterm/css/xterm.css';
 
 const SHELL_PROMPT_KEY = 'incognide-shell-profile-prompted';
 
-// Maximum lines to keep in the terminal output buffer for chat context
 const MAX_TERMINAL_CONTEXT_LINES = 100;
 
-// Smart selection that joins soft-wrapped lines into continuous text.
-// xterm pads lines to full column width and inserts \n at visual wrap boundaries.
-// This checks the buffer's isWrapped flag to distinguish soft wraps (terminal width)
-// from hard newlines (actual line breaks), joining the former.
 function getSmartSelection(term: Terminal): string {
     const selection = term.getSelection();
     if (!selection) return '';
@@ -29,7 +24,7 @@ function getSmartSelection(term: Terminal): string {
         const bufferLine = buffer.getLine(bufferY);
 
         if (i > 0 && bufferLine?.isWrapped) {
-            // Soft-wrapped continuation — trim trailing pad spaces and join
+
             result[result.length - 1] = result[result.length - 1].replace(/\s+$/, '') + rawLines[i];
         } else {
             result.push(rawLines[i]);
@@ -39,7 +34,6 @@ function getSmartSelection(term: Terminal): string {
     return result.join('\n');
 }
 
-// Theme presets with actual hex color values
 const THEME_PRESETS = {
     'default': {
         background: '#1a1b26',
@@ -176,7 +170,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
     const resizeObserverRef = useRef<ResizeObserver | null>(null);
     const isSessionReady = useRef(false);
     const terminalOutputBuffer = useRef<string[]>([]);
-    const initialPathRef = useRef(currentPath); // Capture initial path for terminal cwd
+    const initialPathRef = useRef(currentPath);
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
     const [showShellPrompt, setShowShellPrompt] = useState(false);
     const [activeShell, setActiveShell] = useState<string>('system');
@@ -252,16 +246,15 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
     const paneData = contentDataRef.current[nodeId];
     const terminalId = paneData?.contentId;
 
-    // Store terminal output buffer and settings toggle in contentDataRef
     useEffect(() => {
         if (nodeId && contentDataRef.current[nodeId]) {
             contentDataRef.current[nodeId].getTerminalContext = () => {
-                return terminalOutputBuffer.current.join('').slice(-10000); // Last 10k chars
+                return terminalOutputBuffer.current.join('').slice(-10000);
             };
             contentDataRef.current[nodeId].toggleSettings = () => setShowSettings(prev => !prev);
         }
     }, [nodeId, contentDataRef]);
-    // Use shell prop if provided (e.g., 'python3'), otherwise check paneData, default to 'system'
+
     const shellType = shell || paneData?.shellType || 'system';
 
     const handleCopy = useCallback(() => {
@@ -278,8 +271,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
         try {
             const text = await navigator.clipboard.readText();
             if (isSessionReady.current && text) {
-                // Use bracketed paste mode to prevent multi-line pastes from executing line by line
-                // This wraps the paste in escape sequences that tell the shell it's a paste operation
+
                 const bracketedText = '\x1b[200~' + text + '\x1b[201~';
                 window.api.writeToTerminal({ id: terminalId, data: bracketedText });
             }
@@ -363,20 +355,18 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             term.loadAddon(fitAddon);
             term.open(terminalRef.current);
             xtermInstance.current = term;
-            // Use requestAnimationFrame to ensure fit happens after render
+
             requestAnimationFrame(() => {
                 fitAddon.fit();
             });
 
-            // Register link provider for file:line:col patterns (clickable error paths)
-            // Matches: /path/to/file.ext:123:45, ./file.ext:123, file.py:123
             term.registerLinkProvider({
                 provideLinks: (lineNumber: number, callback: (links: any[]) => void) => {
                     const line = term.buffer.active.getLine(lineNumber - 1);
                     if (!line) { callback([]); return; }
                     const text = line.translateToString();
                     const links: any[] = [];
-                    // Match file:line or file:line:col patterns
+
                     const regex = /(?:^|\s|['"`(])([.\/~]?(?:[\w\-./]+\/)?[\w\-]+\.[\w]+):(\d+)(?::(\d+))?/g;
                     let match;
                     while ((match = regex.exec(text)) !== null) {
@@ -398,19 +388,17 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                 }
             });
 
-            // Debounced resize handler to prevent rapid resize events causing cursor desync
             let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
             const resizeObserver = new ResizeObserver(() => {
                 if (resizeTimeout) clearTimeout(resizeTimeout);
                 resizeTimeout = setTimeout(() => {
                     requestAnimationFrame(() => {
-                        // Capture scroll position before resize
+
                         const wasAtBottom = term.buffer.active?.viewportY === term.buffer.active?.baseY;
                         const scrollOffset = term.buffer.active?.viewportY ?? 0;
 
                         fitAddon.fit();
 
-                        // Restore scroll position after resize (unless was at bottom, stay at bottom)
                         if (wasAtBottom) {
                             term.scrollToBottom();
                         } else if (scrollOffset !== term.buffer.active?.viewportY) {
@@ -425,21 +413,19 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                             });
                         }
                     });
-                }, 100); // 100ms debounce for smoother resize
+                }, 100);
             });
             resizeObserverRef.current = resizeObserver;
             resizeObserver.observe(terminalRef.current);
 
             term.attachCustomKeyEventHandler((event) => {
-                // Only handle keydown, not keyup (prevents double-firing)
+
                 if (event.type !== 'keydown') return true;
 
                 const isMeta = event.ctrlKey || event.metaKey;
                 const key = event.key.toLowerCase();
                 const isMac = navigator.platform.toLowerCase().includes('mac');
 
-                // Tab key - send tab character to terminal for shell completion
-                // Must prevent default to avoid browser focus navigation
                 if (event.key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey) {
                     event.preventDefault();
                     event.stopPropagation();
@@ -449,7 +435,6 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                     return false;
                 }
 
-                // Escape key - send ESC to terminal (needed for vim, Claude Code, etc)
                 if (event.key === 'Escape') {
                     if (isSessionReady.current) {
                         window.api.writeToTerminal({ id: terminalId, data: '\x1b' });
@@ -457,28 +442,25 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                     return false;
                 }
 
-                // Ctrl+C (not Cmd+C on Mac) - send SIGINT
                 if (event.ctrlKey && !event.metaKey && !event.shiftKey && key === 'c') {
                     const selection = getSmartSelection(term);
                     if (selection) {
                         navigator.clipboard.writeText(selection);
                         return false;
                     }
-                    // No selection - send SIGINT
+
                     if (isSessionReady.current) {
                         window.api.writeToTerminal({ id: terminalId, data: '\x03' });
                     }
                     return false;
                 }
 
-                // Ctrl+V / Cmd+V paste - handle manually, prevent browser default
                 if (isMeta && key === 'v') {
                     event.preventDefault();
                     event.stopPropagation();
                     navigator.clipboard.readText().then(text => {
                         if (isSessionReady.current && text) {
-                            // Use bracketed paste mode to prevent multi-line pastes from executing line by line
-                            // This wraps the paste in escape sequences that tell the shell it's a paste operation
+
                             const bracketedText = '\x1b[200~' + text + '\x1b[201~';
                             window.api.writeToTerminal({ id: terminalId, data: bracketedText });
                         }
@@ -486,7 +468,6 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                     return false;
                 }
 
-                // Ctrl+Shift+C or Cmd+Shift+C for copy (terminal standard)
                 if (isMeta && event.shiftKey && key === 'c') {
                     event.stopPropagation();
                     const selection = getSmartSelection(term);
@@ -496,7 +477,6 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                     return false;
                 }
 
-                // Cmd+C (Mac) - copy if selection exists
                 if (event.metaKey && !event.ctrlKey && !event.shiftKey && key === 'c') {
                     const selection = getSmartSelection(term);
                     if (selection) {
@@ -505,15 +485,13 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                     }
                 }
 
-                // Ctrl+L - Clear screen (send to terminal)
                 if (isMeta && key === 'l') {
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x0c' }); // Form feed
+                        window.api.writeToTerminal({ id: terminalId, data: '\x0c' });
                     }
                     return false;
                 }
 
-                // Select all: Cmd+A (Mac), Ctrl+A (non-Mac), or Ctrl+Shift+A (any)
                 if (key === 'a' && (
                     (event.metaKey && !event.ctrlKey) ||
                     (!isMac && event.ctrlKey && !event.metaKey && !event.shiftKey) ||
@@ -523,91 +501,73 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                     return false;
                 }
 
-                // Ctrl+A on Mac only - Go to beginning of line (readline behavior)
-                // Non-Mac uses Ctrl+A for select all instead
                 if (isMac && event.ctrlKey && !event.metaKey && !event.shiftKey && key === 'a') {
                     event.preventDefault();
                     event.stopPropagation();
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x01' }); // ASCII SOH
+                        window.api.writeToTerminal({ id: terminalId, data: '\x01' });
                     }
                     return false;
                 }
 
-                // Ctrl+E - Go to end of line (Ctrl only, not Cmd)
                 if (event.ctrlKey && !event.metaKey && key === 'e') {
                     event.preventDefault();
                     event.stopPropagation();
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x05' }); // ASCII ENQ
+                        window.api.writeToTerminal({ id: terminalId, data: '\x05' });
                     }
                     return false;
                 }
 
-                // Ctrl+U - Clear line before cursor
                 if (isMeta && key === 'u') {
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x15' }); // ASCII NAK
+                        window.api.writeToTerminal({ id: terminalId, data: '\x15' });
                     }
                     return false;
                 }
 
-                // Ctrl+K - Kill line after cursor
                 if (isMeta && key === 'k') {
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x0b' }); // ASCII VT
+                        window.api.writeToTerminal({ id: terminalId, data: '\x0b' });
                     }
                     return false;
                 }
 
-                // Ctrl+W - Delete word before cursor
                 if (isMeta && key === 'w') {
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x17' }); // ASCII ETB
+                        window.api.writeToTerminal({ id: terminalId, data: '\x17' });
                     }
                     return false;
                 }
 
-                // Ctrl+D - EOF / Exit (let it pass through)
-                // Ctrl+Z - Suspend (let it pass through)
-                // Ctrl+R - Reverse search (let it pass through)
-
-                // Ctrl+Shift+T - Could be used for new tab (handled elsewhere)
-                // Ctrl+Shift+N - Could be new window
-
-                // Alt+B - Move back one word (readline)
                 if (event.altKey && key === 'b') {
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x1bb' }); // ESC b
+                        window.api.writeToTerminal({ id: terminalId, data: '\x1bb' });
                     }
                     return false;
                 }
 
-                // Alt+F - Move forward one word (readline)
                 if (event.altKey && key === 'f') {
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x1bf' }); // ESC f
+                        window.api.writeToTerminal({ id: terminalId, data: '\x1bf' });
                     }
                     return false;
                 }
 
-                // Alt+D - Delete word after cursor
                 if (event.altKey && key === 'd') {
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x1bd' }); // ESC d
+                        window.api.writeToTerminal({ id: terminalId, data: '\x1bd' });
                     }
                     return false;
                 }
 
-                // Alt+Backspace - Delete word before cursor
                 if (event.altKey && event.key === 'Backspace') {
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x1b\x7f' }); // ESC DEL
+                        window.api.writeToTerminal({ id: terminalId, data: '\x1b\x7f' });
                     }
                     return false;
                 }
 
-                // Ctrl+Left Arrow - Move back one word
                 if (isMeta && event.key === 'ArrowLeft') {
                     if (isSessionReady.current) {
                         window.api.writeToTerminal({ id: terminalId, data: '\x1bb' });
@@ -615,7 +575,6 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                     return false;
                 }
 
-                // Ctrl+Right Arrow - Move forward one word
                 if (isMeta && event.key === 'ArrowRight') {
                     if (isSessionReady.current) {
                         window.api.writeToTerminal({ id: terminalId, data: '\x1bf' });
@@ -623,42 +582,73 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                     return false;
                 }
 
-                // Ctrl+N - Create new text file (app-level shortcut)
                 if (event.ctrlKey && !event.metaKey && !event.shiftKey && key === 'n') {
                     event.preventDefault();
                     event.stopPropagation();
-                    // Trigger the menu-new-text-file event via IPC
+
                     (window as any).api?.triggerNewTextFile?.();
                     return false;
                 }
 
-                // Ctrl+T - New browser tab (app-level shortcut)
                 if (event.ctrlKey && !event.metaKey && !event.shiftKey && key === 't') {
                     event.preventDefault();
                     event.stopPropagation();
-                    // Trigger the browser-new-tab event via IPC
+
                     (window as any).api?.triggerBrowserNewTab?.();
                     return false;
                 }
 
                 return true;
             });
+
         }
+
+        // Handle image paste — save to temp file and type path into terminal
+        const handleImagePaste = async (e: ClipboardEvent) => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            const imageItem = Array.from(items).find(item => item.type.startsWith('image/'));
+            if (!imageItem) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const blob = imageItem.getAsFile();
+            if (!blob) return;
+            const reader = new FileReader();
+            reader.onloadend = async () => {
+                const base64 = (reader.result as string).split(',')[1];
+                const ext = imageItem.type.split('/')[1] || 'png';
+                const fileName = `pasted-image-${Date.now()}.${ext}`;
+                try {
+                    const result = await (window as any).api?.saveTempFile?.({
+                        name: fileName,
+                        data: base64,
+                        encoding: 'base64'
+                    });
+                    if (result?.path && isSessionReady.current) {
+                        const bracketedText = '\x1b[200~' + result.path + '\x1b[201~';
+                        window.api.writeToTerminal({ id: terminalId, data: bracketedText });
+                    }
+                } catch (err) {
+                    console.error('Failed to paste image into terminal:', err);
+                }
+            };
+            reader.readAsDataURL(blob);
+        };
+        const pasteContainer = terminalRef.current;
+        pasteContainer?.addEventListener('paste', handleImagePaste, true);
 
         let isEffectCancelled = false;
 
-        // Only reinitialize if session isn't already ready
         if (isSessionReady.current) return;
 
         isSessionReady.current = false;
-        // Don't clear or show message yet - wait to see if we're reconnecting
 
         const dataCallback = (_, { id, data }) => {
             if (id === terminalId && !isEffectCancelled) {
                 xtermInstance.current?.write(data);
-                // Capture output in buffer for chat context
+
                 terminalOutputBuffer.current.push(data);
-                // Keep buffer size manageable - trim to last N lines
+
                 const fullOutput = terminalOutputBuffer.current.join('');
                 const lines = fullOutput.split('\n');
                 if (lines.length > MAX_TERMINAL_CONTEXT_LINES) {
@@ -695,7 +685,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                 if (result.success) {
                     isSessionReady.current = true;
                     setActiveShell(result.shell || 'system');
-                    // Immediately send resize to ensure PTY knows exact dimensions
+
                     fitAddonRef.current?.fit();
                     window.api.resizeTerminal?.({
                         id: terminalId,
@@ -705,8 +695,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                     if (activeContentPaneId === nodeId) {
                         xtermInstance.current.focus();
                     }
-                    // Check if this is the first terminal startup (not a reconnection)
-                    // result.reconnected would be true if session already existed
+
                     const hasBeenPrompted = localStorage.getItem(SHELL_PROMPT_KEY);
                     if (!hasBeenPrompted && result.shell === 'system') {
                         setShowShellPrompt(true);
@@ -719,7 +708,6 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             }
         };
 
-        // Load Python environment info for display
         const loadPythonEnv = async () => {
             try {
                 const envConfig = await (window as any).api?.pythonEnvGet?.(initialPathRef.current);
@@ -735,7 +723,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                     }
                 }
             } catch (e) {
-                // No Python env configured
+
             }
         };
 
@@ -749,9 +737,10 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             removeClosedListener();
             resizeObserverRef.current?.disconnect();
             resizeObserverRef.current = null;
+            pasteContainer?.removeEventListener('paste', handleImagePaste, true);
             window.api.closeTerminalSession(terminalId);
         };
-    }, [terminalId, shellType]); // Note: currentPath removed - use initialPathRef to avoid re-creating session on navigation
+    }, [terminalId, shellType]);
 
     useEffect(() => {
         if (activeContentPaneId === nodeId && xtermInstance.current) {
@@ -759,7 +748,6 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
         }
     }, [activeContentPaneId, nodeId]);
 
-    // Apply the correct theme preset based on dark/light mode
     useEffect(() => {
         if (!xtermInstance.current) return;
         const presetKey = isDarkMode ? darkThemePreset : lightThemePreset;
@@ -781,7 +769,6 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
         xtermInstance.current.refresh(0, xtermInstance.current.rows - 1);
     }, [isDarkMode, darkThemePreset, lightThemePreset]);
 
-    // Apply all terminal settings when changed
     useEffect(() => {
         if (xtermInstance.current) {
             xtermInstance.current.options.fontSize = fontSize;
@@ -798,7 +785,6 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             xtermInstance.current.options.bellStyle = bellStyle;
             fitAddonRef.current?.fit();
 
-            // Save all settings to localStorage
             localStorage.setItem('terminal-font-size', String(fontSize));
             localStorage.setItem('terminal-font-family', fontFamily);
             localStorage.setItem('terminal-cursor-style', cursorStyle);
@@ -819,8 +805,6 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             localStorage.setItem('terminal-light-theme', lightThemePreset);
             localStorage.setItem('terminal-default-shell', defaultShell);
 
-            // Theme colors are handled by the dedicated isDarkMode effect above
-
             xtermInstance.current.options.rightClickSelectsWord = rightClickPaste;
             xtermInstance.current.options.macOptionIsMeta = macOptionIsMeta;
             xtermInstance.current.options.altClickMovesCursor = altClickMoveCursor;
@@ -835,7 +819,6 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             onContextMenu={handleContextMenu}
             data-terminal="true"
         >
-            {/* Settings panel */}
             {showSettings && (
                 <div className="absolute top-10 right-2 z-30 w-80 theme-bg-secondary rounded-lg border theme-border shadow-xl overflow-hidden">
                     <div className="flex items-center justify-between p-3 border-b theme-border">
@@ -845,7 +828,6 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                         </button>
                     </div>
 
-                    {/* Tabs */}
                     <div className="flex border-b theme-border">
                         {(['font', 'cursor', 'behavior', 'theme'] as const).map(tab => (
                             <button
@@ -1161,7 +1143,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                                 <div className="pt-2 border-t theme-border">
                                     <button
                                         onClick={() => {
-                                            // Reset all settings to defaults
+
                                             setFontSize(14);
                                             setFontFamily('"Fira Code", monospace');
                                             setCursorStyle('block');
@@ -1256,12 +1238,10 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                 </div>
             )}
 
-
         </div>
     );
 };
 
-// Custom comparison to prevent reload on pane resize, but allow theme changes
 const arePropsEqual = (prevProps: any, nextProps: any) => {
     return prevProps.nodeId === nextProps.nodeId
         && prevProps.isDarkMode === nextProps.isDarkMode;

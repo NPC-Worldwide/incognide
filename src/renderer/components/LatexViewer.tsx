@@ -20,7 +20,6 @@ import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap, t
 import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { lintGutter } from '@codemirror/lint';
 
-// LaTeX language mode
 const latexLanguage = StreamLanguage.define({
     name: 'latex',
     startState: () => ({
@@ -30,13 +29,11 @@ const latexLanguage = StreamLanguage.define({
     token: (stream, state) => {
         if (stream.eatSpace()) return null;
 
-        // Comments
         if (stream.match('%')) {
             stream.skipToEnd();
             return 'comment';
         }
 
-        // Math delimiters
         if (stream.match('$$')) {
             state.inMath = !state.inMath;
             state.mathDelimiter = state.inMath ? '$$' : null;
@@ -116,7 +113,6 @@ const latexHighlightStyleLight = HighlightStyle.define([
     { tag: t.link, color: '#0891b2', textDecoration: 'underline' },
 ]);
 
-// Quick symbols for math
 const MATH_SYMBOLS = [
     { label: 'α', cmd: '\\alpha' }, { label: 'β', cmd: '\\beta' }, { label: 'γ', cmd: '\\gamma' },
     { label: 'δ', cmd: '\\delta' }, { label: 'ε', cmd: '\\epsilon' }, { label: 'θ', cmd: '\\theta' },
@@ -131,8 +127,6 @@ const MATH_SYMBOLS = [
     { label: '←', cmd: '\\leftarrow' }, { label: '⇒', cmd: '\\Rightarrow' }, { label: '⇔', cmd: '\\Leftrightarrow' },
 ];
 
-// Snippets — 'ENV:envname' triggers wrapInEnvironment for block-level wrapping
-// Consolidated into 5 menus to keep toolbar clean
 const SNIPPETS = {
     structure: [
         { label: 'Part', snippet: '\\part{', icon: Hash },
@@ -145,7 +139,7 @@ const SNIPPETS = {
         { label: 'Table of Contents', snippet: '\\tableofcontents', icon: List },
     ],
     format: [
-        // --- Text style ---
+
         { label: 'Bold', snippet: '\\textbf{', icon: Bold },
         { label: 'Italic', snippet: '\\textit{', icon: Italic },
         { label: 'Underline', snippet: '\\underline{', icon: UnderlineIcon },
@@ -156,13 +150,13 @@ const SNIPPETS = {
         { label: 'Superscript', snippet: '\\textsuperscript{', icon: Type },
         { label: 'Subscript', snippet: '\\textsubscript{', icon: Type },
         { label: 'Text Color', snippet: '\\textcolor{red}{', icon: Type },
-        // --- Size ---
+
         { label: '\\tiny', snippet: '{\\tiny ', icon: Type },
         { label: '\\small', snippet: '{\\small ', icon: Type },
         { label: '\\large', snippet: '{\\large ', icon: Type },
         { label: '\\Large', snippet: '{\\Large ', icon: Type },
         { label: '\\Huge', snippet: '{\\Huge ', icon: Type },
-        // --- Alignment ---
+
         { label: 'Center Block', snippet: 'ENV:center', icon: AlignLeft },
         { label: 'Flush Left', snippet: 'ENV:flushleft', icon: AlignLeft },
         { label: 'Flush Right', snippet: 'ENV:flushright', icon: AlignLeft },
@@ -189,7 +183,7 @@ const SNIPPETS = {
         { label: 'Hat / Vec / Dot', snippet: '\\hat{', icon: Sigma },
     ],
     insert: [
-        // --- Environments ---
+
         { label: 'Figure', snippet: '\\begin{figure}[htbp]\n  \\centering\n  \\includegraphics[width=0.8\\textwidth]{}\n  \\caption{}\n  \\label{fig:}\n\\end{figure}', icon: Image },
         { label: 'Table', snippet: '\\begin{table}[htbp]\n  \\centering\n  \\begin{tabular}{|c|c|c|}\n    \\hline\n    A & B & C \\\\\n    \\hline\n  \\end{tabular}\n  \\caption{}\n  \\label{tab:}\n\\end{table}', icon: Table },
         { label: 'Itemize', snippet: '\\begin{itemize}\n  \\item \n  \\item \n\\end{itemize}', icon: List },
@@ -200,7 +194,7 @@ const SNIPPETS = {
         { label: 'Abstract', snippet: 'ENV:abstract', icon: FileText },
         { label: 'Minipage', snippet: '\\begin{minipage}[t]{0.45\\textwidth}\n\n\\end{minipage}', icon: Layout },
         { label: 'Multicols', snippet: '\\begin{multicols}{2}\n\n\\end{multicols}', icon: Layout },
-        // --- Theorems ---
+
         { label: 'Theorem', snippet: 'ENV:theorem', icon: BookOpen },
         { label: 'Lemma', snippet: 'ENV:lemma', icon: BookOpen },
         { label: 'Proof', snippet: 'ENV:proof', icon: BookOpen },
@@ -208,12 +202,12 @@ const SNIPPETS = {
         { label: 'Corollary', snippet: 'ENV:corollary', icon: BookOpen },
         { label: 'Remark', snippet: 'ENV:remark', icon: BookOpen },
         { label: 'Example', snippet: 'ENV:example', icon: BookOpen },
-        // --- Code ---
+
         { label: 'lstlisting', snippet: '\\begin{lstlisting}[language=Python]\n\n\\end{lstlisting}', icon: Code },
         { label: 'minted', snippet: '\\begin{minted}{python}\n\n\\end{minted}', icon: Code },
         { label: 'Algorithm', snippet: '\\begin{algorithm}[H]\n  \\caption{}\n  \\begin{algorithmic}[1]\n    \\State \n  \\end{algorithmic}\n\\end{algorithm}', icon: Code },
         { label: 'Comment Block', snippet: '\\iffalse\n\n\\fi', icon: MessageSquare },
-        // --- Layout ---
+
         { label: 'New Page', snippet: '\\newpage', icon: FileText },
         { label: 'Vert Space', snippet: '\\vspace{1em}', icon: FileText },
         { label: '\\include{}', snippet: '\\include{', icon: FileText },
@@ -590,7 +584,7 @@ const LatexViewer = ({
     setDraggedItem,
     setPaneContextMenu,
     closeContentPane,
-    performSplit,
+    createAndAddPaneNodeToLayout,
     onToggleZen,
     isZenMode,
     onClose,
@@ -603,7 +597,6 @@ const LatexViewer = ({
     const paneData = contentDataRef.current[nodeId];
     const filePath = paneData?.contentId;
 
-    // Restore content from contentDataRef if available (survives remounts from layout changes)
     const [content, setContentRaw] = useState(() => paneData?.fileContent || '');
     const [hasChangesRaw, setHasChangesRaw] = useState(() => paneData?.fileChanged || false);
     const hasChanges = hasChangesRaw;
@@ -621,7 +614,6 @@ const LatexViewer = ({
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(() => !paneData?.fileContent);
 
-    // UI state
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const [showSymbols, setShowSymbols] = useState(false);
     const [showLog, setShowLog] = useState(false);
@@ -649,7 +641,6 @@ const LatexViewer = ({
     const editorRef = useRef<any>(null);
     const editorViewRef = useRef<any>(null);
 
-    // Watch for light/dark mode changes
     useEffect(() => {
         const observer = new MutationObserver(() => {
             setIsDarkMode(!document.body.classList.contains('light-mode'));
@@ -658,14 +649,12 @@ const LatexViewer = ({
         return () => observer.disconnect();
     }, []);
 
-    // Bibliography state
     const [bibFilePath, setBibFilePath] = useState<string | null>(null);
     const [bibEntries, setBibEntries] = useState<{ key: string; title?: string; author?: string; year?: string }[]>([]);
     const [availableBibFiles, setAvailableBibFiles] = useState<string[]>([]);
     const bibEntriesRef = useRef(bibEntries);
     bibEntriesRef.current = bibEntries;
 
-    // Scan for .bib files in the same directory
     useEffect(() => {
         if (!filePath) return;
         const dir = filePath.substring(0, filePath.lastIndexOf('/')) || filePath.substring(0, filePath.lastIndexOf('\\'));
@@ -676,18 +665,17 @@ const LatexViewer = ({
                 if (result?.files) {
                     const bibs = result.files.filter((f: any) => (f.name || f).endsWith('.bib')).map((f: any) => f.name || f);
                     setAvailableBibFiles(bibs);
-                    // Auto-select first .bib if none selected
+
                     if (!bibFilePath && bibs.length > 0) {
                         setBibFilePath(dir + '/' + bibs[0]);
                     }
                 }
             } catch (err) {
-                // Directory listing may not be available
+
             }
         })();
     }, [filePath]);
 
-    // Load bib entries when bibFilePath changes
     useEffect(() => {
         if (!bibFilePath) { setBibEntries([]); return; }
         (async () => {
@@ -695,7 +683,7 @@ const LatexViewer = ({
                 const result = await (window as any).api?.readFile?.(bibFilePath);
                 const text = typeof result === 'string' ? result : result?.content || '';
                 if (!text) return;
-                // Simple .bib parser: extract @type{key, title, author, year}
+
                 const entries: { key: string; title?: string; author?: string; year?: string }[] = [];
                 const entryRegex = /@\w+\s*\{\s*([^,\s]+)\s*,([^@]*)/g;
                 let match;
@@ -716,7 +704,6 @@ const LatexViewer = ({
         })();
     }, [bibFilePath]);
 
-    // Wrap setContent to always sync to contentDataRef so content survives remounts
     const setContent = useCallback((valOrFn: string | ((prev: string) => string)) => {
         setContentRaw(prev => {
             const next = typeof valOrFn === 'function' ? valOrFn(prev) : valOrFn;
@@ -727,7 +714,6 @@ const LatexViewer = ({
         });
     }, [paneData]);
 
-    // Document statistics
     const stats = useMemo(() => {
         const lines = content.split('\n').length;
         const words = content.trim() ? content.trim().split(/\s+/).length : 0;
@@ -735,29 +721,28 @@ const LatexViewer = ({
         return { lines, words, chars };
     }, [content]);
 
-    // Extract document outline (sections, subsections, figures, tables, labels, theorems, etc.)
     const outline = useMemo(() => {
         const items: { level: number; title: string; line: number; kind: string }[] = [];
         const lines = content.split('\n');
         let inCommentBlock = false;
         lines.forEach((line, idx) => {
             const trimmed = line.trimStart();
-            // Track \iffalse...\fi comment blocks
+
             if (trimmed.startsWith('\\iffalse')) { inCommentBlock = true; return; }
             if (inCommentBlock) { if (trimmed.startsWith('\\fi')) inCommentBlock = false; return; }
-            // Skip commented-out lines
+
             if (trimmed.startsWith('%')) return;
-            // Sections
+
             const secMatch = line.match(/\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)\*?\{([^}]+)\}/);
             if (secMatch) {
                 const levels: Record<string, number> = { part: -1, chapter: 0, section: 1, subsection: 2, subsubsection: 3, paragraph: 4, subparagraph: 5 };
                 items.push({ level: levels[secMatch[1]] ?? 1, title: secMatch[2], line: idx + 1, kind: secMatch[1] });
                 return;
             }
-            // Figures
+
             const figMatch = line.match(/\\begin\{figure\}/);
             if (figMatch) {
-                // Look ahead for caption
+
                 for (let j = idx; j < Math.min(idx + 15, lines.length); j++) {
                     const capMatch = lines[j].match(/\\caption\{([^}]+)\}/);
                     if (capMatch) { items.push({ level: 10, title: `Fig: ${capMatch[1]}`, line: idx + 1, kind: 'figure' }); return; }
@@ -765,7 +750,7 @@ const LatexViewer = ({
                 items.push({ level: 10, title: 'Figure', line: idx + 1, kind: 'figure' });
                 return;
             }
-            // Tables
+
             const tabMatch = line.match(/\\begin\{table\}/);
             if (tabMatch) {
                 for (let j = idx; j < Math.min(idx + 20, lines.length); j++) {
@@ -775,14 +760,14 @@ const LatexViewer = ({
                 items.push({ level: 10, title: 'Table', line: idx + 1, kind: 'table' });
                 return;
             }
-            // Theorems, lemmas, proofs, definitions, etc.
+
             const thmMatch = line.match(/\\begin\{(theorem|lemma|proof|definition|corollary|proposition|remark|example)\}/);
             if (thmMatch) {
                 const name = thmMatch[1].charAt(0).toUpperCase() + thmMatch[1].slice(1);
                 items.push({ level: 10, title: name, line: idx + 1, kind: 'theorem' });
                 return;
             }
-            // Labels
+
             const labelMatch = line.match(/\\label\{([^}]+)\}/);
             if (labelMatch) {
                 items.push({ level: 11, title: `\\label{${labelMatch[1]}}`, line: idx + 1, kind: 'label' });
@@ -791,32 +776,27 @@ const LatexViewer = ({
         return items;
     }, [content]);
 
-    // Separate structural outline (sections only) for navigation
     const sectionOutline = useMemo(() => outline.filter(item => item.level <= 5), [outline]);
 
-    // Parse compile errors
     const parseErrors = useMemo(() => {
         const errors: { line: number; message: string }[] = [];
         if (!compileLog) return errors;
 
-        // Standard line errors: l.XX message
         const lineRegex = /^l\.(\d+)\s+(.+)$/gm;
         let match;
         while ((match = lineRegex.exec(compileLog)) !== null) {
             errors.push({ line: parseInt(match[1]), message: match[2] });
         }
 
-        // LaTeX errors: ! error message (missing packages, classes, etc.)
         const bangRegex = /^!\s+(.+)$/gm;
         while ((match = bangRegex.exec(compileLog)) !== null) {
             const msg = match[1].trim();
-            // Skip if already captured as a line error
+
             if (!errors.some(e => e.message.includes(msg))) {
                 errors.push({ line: 0, message: msg });
             }
         }
 
-        // Package/class not found: File `foo.sty' not found / File `foo.cls' not found
         const fileNotFoundRegex = /File [`']([^']+)' not found/gi;
         while ((match = fileNotFoundRegex.exec(compileLog)) !== null) {
             const msg = `Missing file: ${match[1]}`;
@@ -828,24 +808,23 @@ const LatexViewer = ({
         return errors;
     }, [compileLog]);
 
-    // LaTeX command autocompletion: triggers when typing \
     const latexCommandCompletion = useCallback((context: CompletionContext) => {
         const before = context.matchBefore(/\\[a-zA-Z]*/);
         if (!before || before.text.length < 1) return null;
-        // Don't trigger inside \cite{...} — that's handled by citation completion
+
         const lineText = context.state.doc.lineAt(context.pos).text;
         const upToCursor = lineText.slice(0, context.pos - context.state.doc.lineAt(context.pos).from);
         if (/\\(?:cite|textcite|parencite|autocite|citet|citep|nocite)\{[^}]*$/.test(upToCursor)) return null;
 
         const commands: { label: string; detail?: string; type: string; boost?: number }[] = [
-            // Sectioning
+
             { label: '\\section{}', detail: 'Section', type: 'keyword', boost: 10 },
             { label: '\\subsection{}', detail: 'Subsection', type: 'keyword', boost: 9 },
             { label: '\\subsubsection{}', detail: 'Subsubsection', type: 'keyword', boost: 8 },
             { label: '\\chapter{}', detail: 'Chapter', type: 'keyword', boost: 7 },
             { label: '\\paragraph{}', detail: 'Paragraph', type: 'keyword' },
             { label: '\\part{}', detail: 'Part', type: 'keyword' },
-            // Formatting
+
             { label: '\\textbf{}', detail: 'Bold', type: 'function', boost: 9 },
             { label: '\\textit{}', detail: 'Italic', type: 'function', boost: 9 },
             { label: '\\underline{}', detail: 'Underline', type: 'function', boost: 8 },
@@ -855,7 +834,7 @@ const LatexViewer = ({
             { label: '\\textsf{}', detail: 'Sans Serif', type: 'function' },
             { label: '\\textsl{}', detail: 'Slanted', type: 'function' },
             { label: '\\textrm{}', detail: 'Roman', type: 'function' },
-            // Font size
+
             { label: '\\tiny', detail: 'Tiny size', type: 'property' },
             { label: '\\scriptsize', detail: 'Script size', type: 'property' },
             { label: '\\footnotesize', detail: 'Footnote size', type: 'property' },
@@ -866,10 +845,10 @@ const LatexViewer = ({
             { label: '\\LARGE', detail: 'Even larger', type: 'property' },
             { label: '\\huge', detail: 'Huge size', type: 'property' },
             { label: '\\Huge', detail: 'Largest size', type: 'property' },
-            // Environments
+
             { label: '\\begin{}', detail: 'Begin environment', type: 'keyword', boost: 10 },
             { label: '\\end{}', detail: 'End environment', type: 'keyword', boost: 10 },
-            // Math
+
             { label: '\\frac{}{}', detail: 'Fraction', type: 'function', boost: 6 },
             { label: '\\sqrt{}', detail: 'Square root', type: 'function' },
             { label: '\\sum', detail: 'Summation', type: 'function' },
@@ -920,7 +899,7 @@ const LatexViewer = ({
             { label: '\\leftarrow', detail: 'Left arrow', type: 'constant' },
             { label: '\\Rightarrow', detail: 'Double right arrow', type: 'constant' },
             { label: '\\Leftarrow', detail: 'Double left arrow', type: 'constant' },
-            // References
+
             { label: '\\label{}', detail: 'Label', type: 'keyword', boost: 6 },
             { label: '\\ref{}', detail: 'Reference', type: 'keyword', boost: 6 },
             { label: '\\eqref{}', detail: 'Equation ref', type: 'keyword' },
@@ -930,24 +909,24 @@ const LatexViewer = ({
             { label: '\\parencite{}', detail: 'Paren citation', type: 'keyword' },
             { label: '\\autocite{}', detail: 'Auto citation', type: 'keyword' },
             { label: '\\footcite{}', detail: 'Footnote cite', type: 'keyword' },
-            // Lists / structure
+
             { label: '\\item', detail: 'List item', type: 'keyword', boost: 7 },
             { label: '\\footnote{}', detail: 'Footnote', type: 'function' },
             { label: '\\caption{}', detail: 'Caption', type: 'function' },
-            // Includes / preamble
+
             { label: '\\usepackage{}', detail: 'Use package', type: 'keyword', boost: 5 },
             { label: '\\documentclass{}', detail: 'Document class', type: 'keyword', boost: 5 },
             { label: '\\input{}', detail: 'Input file', type: 'keyword' },
             { label: '\\include{}', detail: 'Include file', type: 'keyword' },
             { label: '\\bibliography{}', detail: 'Bibliography', type: 'keyword' },
             { label: '\\bibliographystyle{}', detail: 'Bib style', type: 'keyword' },
-            // Spacing / breaks
+
             { label: '\\newline', detail: 'New line', type: 'keyword' },
             { label: '\\newpage', detail: 'New page', type: 'keyword' },
             { label: '\\hspace{}', detail: 'Horizontal space', type: 'function' },
             { label: '\\vspace{}', detail: 'Vertical space', type: 'function' },
             { label: '\\noindent', detail: 'No indent', type: 'keyword' },
-            // Figures / tables
+
             { label: '\\includegraphics{}', detail: 'Include image', type: 'function', boost: 6 },
             { label: '\\centering', detail: 'Center content', type: 'keyword' },
             { label: '\\hline', detail: 'Horizontal line', type: 'keyword' },
@@ -968,7 +947,7 @@ const LatexViewer = ({
                 boost: c.boost,
                 apply: (view: any, completion: any, from: number, to: number) => {
                     const text = c.label;
-                    // Place cursor inside the first {} if it exists
+
                     const firstBrace = text.indexOf('{');
                     if (firstBrace >= 0) {
                         view.dispatch({
@@ -987,13 +966,12 @@ const LatexViewer = ({
         };
     }, []);
 
-    // Citation autocompletion: triggers after \cite{, \textcite{, \parencite{, \autocite{, \citet{, \citep{
     const citationCompletion = useCallback((context: CompletionContext) => {
         const before = context.matchBefore(/\\(?:cite|textcite|parencite|autocite|citet|citep|nocite)\{[^}]*/);
         if (!before) return null;
         const bracePos = before.text.indexOf('{');
         if (bracePos === -1) return null;
-        // Handle multiple citations separated by comma
+
         const afterBrace = before.text.slice(bracePos + 1);
         const lastComma = afterBrace.lastIndexOf(',');
         const partial = (lastComma >= 0 ? afterBrace.slice(lastComma + 1) : afterBrace).trim();
@@ -1071,7 +1049,7 @@ const LatexViewer = ({
         EditorView.updateListener.of((update) => {
             if (update.view) editorViewRef.current = update.view;
         }),
-        // Scroll preservation via ViewPlugin — no race conditions with CM's resize handler
+
         ViewPlugin.fromClass(class {
             savedScrollTop: number;
             lastHeight: number;
@@ -1098,7 +1076,6 @@ const LatexViewer = ({
                     return;
                 }
 
-                // Track pixel scroll position
                 const currentTop = scrollDOM.scrollTop;
                 if (currentTop !== this.savedScrollTop) {
                     this.savedScrollTop = currentTop;
@@ -1108,7 +1085,6 @@ const LatexViewer = ({
         }),
     ], [citationCompletion, latexCommandCompletion, isDarkMode, paneData]);
 
-    // Save to paneData on unmount
     useEffect(() => {
         return () => {
             const view = editorViewRef.current;
@@ -1118,11 +1094,10 @@ const LatexViewer = ({
         };
     }, [nodeId]);
 
-    // Load file — skip if contentDataRef already has content (remount after layout change)
     useEffect(() => {
         const load = async () => {
             if (!filePath) return;
-            // If we already have content from a previous mount, don't reload from disk
+
             if (paneData?.fileContent && paneData.fileContent.length > 0) {
                 setIsLoading(false);
                 return;
@@ -1143,8 +1118,35 @@ const LatexViewer = ({
         load();
     }, [filePath]);
 
-    // Insert text at cursor, or wrap selection for formatting commands
-    // Commands ending with '{' auto-close with '}' and place cursor inside
+    const contentRef = useRef(content);
+    contentRef.current = content;
+    const hasChangesRef = useRef(hasChanges);
+    hasChangesRef.current = hasChanges;
+    useEffect(() => {
+        if (!filePath) return;
+        (window as any).api.watchFile(filePath);
+        const removeListener = (window as any).api.onFileChanged(async (changedPath: string) => {
+            if (changedPath !== filePath) return;
+            try {
+                const result = await (window as any).api.readFileContent(changedPath);
+                const diskContent = typeof result === 'string' ? result : result?.content;
+                if (diskContent == null || diskContent === contentRef.current) return;
+                if (hasChangesRef.current) {
+                    const reload = window.confirm('This file has been changed on disk. Reload and lose your changes?');
+                    if (!reload) return;
+                }
+                setContent(diskContent);
+                setHasChanges(false);
+            } catch (e) {
+                console.error('[FILE-WATCH] Error reloading:', e);
+            }
+        });
+        return () => {
+            removeListener();
+            (window as any).api.unwatchFile(filePath);
+        };
+    }, [filePath]);
+
     const insertAtCursor = useCallback((text: string) => {
         const view = editorViewRef.current;
         if (view) {
@@ -1153,14 +1155,14 @@ const LatexViewer = ({
             const endsWithBrace = text.endsWith('{');
 
             if (endsWithBrace && selectedText.length > 0) {
-                // Wrap selection: \textbf{selected text}
+
                 const wrapped = text + selectedText + '}';
                 view.dispatch({
                     changes: { from, to, insert: wrapped },
                     selection: { anchor: from + text.length, head: from + text.length + selectedText.length },
                 });
             } else if (endsWithBrace) {
-                // No selection: insert \textbf{} with cursor between braces
+
                 const withClose = text + '}';
                 view.dispatch({
                     changes: { from, to, insert: withClose },
@@ -1180,7 +1182,6 @@ const LatexViewer = ({
         setActiveMenu(null);
     }, []);
 
-    // Toggle line comment (%) on selected lines
     const toggleComment = useCallback(() => {
         const view = editorViewRef.current;
         if (!view) return;
@@ -1212,7 +1213,6 @@ const LatexViewer = ({
         setHasChanges(true);
     }, []);
 
-    // Wrap selected text (or insert empty) in a \begin{env}...\end{env} block
     const wrapInEnvironment = useCallback((envName: string) => {
         const view = editorViewRef.current;
         if (!view) {
@@ -1238,14 +1238,12 @@ const LatexViewer = ({
         setActiveMenu(null);
     }, []);
 
-    // Wrap selection in a block comment (\iffalse...\fi)
     const toggleBlockComment = useCallback(() => {
         const view = editorViewRef.current;
         if (!view) return;
         const { from, to } = view.state.selection.main;
         const selectedText = view.state.sliceDoc(from, to);
 
-        // Check if selection is already block-commented
         if (selectedText.startsWith('\\iffalse\n') && selectedText.endsWith('\n\\fi')) {
             const inner = selectedText.slice('\\iffalse\n'.length, selectedText.length - '\n\\fi'.length);
             view.dispatch({
@@ -1263,7 +1261,6 @@ const LatexViewer = ({
         setHasChanges(true);
     }, []);
 
-    // Handle snippet click: ENV: prefix triggers wrapInEnvironment, otherwise insertAtCursor
     const handleSnippetClick = useCallback((snippet: string) => {
         if (snippet.startsWith('ENV:')) {
             wrapInEnvironment(snippet.slice(4));
@@ -1272,7 +1269,6 @@ const LatexViewer = ({
         }
     }, [wrapInEnvironment, insertAtCursor]);
 
-    // Go to line — scroll so the target line appears at the top of the editor
     const goToLine = useCallback((lineNum: number) => {
         const view = editorViewRef.current;
         if (view) {
@@ -1285,7 +1281,6 @@ const LatexViewer = ({
         }
     }, []);
 
-    // Navigate to prev/next section
     const navigateSection = useCallback((direction: 'prev' | 'next') => {
         const view = editorViewRef.current;
         if (!view || sectionOutline.length === 0) return;
@@ -1317,7 +1312,6 @@ const LatexViewer = ({
         }
     }, [hasChanges, content, filePath]);
 
-    // Autosave: debounced write to disk 3 seconds after last edit
     useEffect(() => {
         if (!hasChanges || !filePath || isSaving) return;
         const timer = setTimeout(async () => {
@@ -1325,7 +1319,7 @@ const LatexViewer = ({
                 await (window as any).api.writeFileContent(filePath, content);
                 setHasChanges(false);
             } catch (e) {
-                // Silent fail for autosave - user can still manual save
+
             }
         }, 3000);
         return () => clearTimeout(timer);
@@ -1339,10 +1333,10 @@ const LatexViewer = ({
             window.dispatchEvent(new CustomEvent('pdf-refresh', { detail: { pdfPath } }));
             return;
         }
-        if (performSplit) {
-            performSplit(findNodePath(rootLayoutNode, nodeId), 'right', 'pdf', pdfPath);
+        if (createAndAddPaneNodeToLayout) {
+            createAndAddPaneNodeToLayout('pdf', pdfPath);
         }
-    }, [performSplit, findNodePath, rootLayoutNode, nodeId, contentDataRef]);
+    }, [createAndAddPaneNodeToLayout, contentDataRef]);
 
     const compile = useCallback(async (openInSplit = true) => {
         if (hasChanges) {
@@ -1377,7 +1371,7 @@ const LatexViewer = ({
             }
 
             setCompileStatus('success');
-            if (openInSplit && performSplit) {
+            if (openInSplit && createAndAddPaneNodeToLayout) {
                 openPdfInSplit(pdfPath);
             }
         } catch (e: any) {
@@ -1386,9 +1380,8 @@ const LatexViewer = ({
         } finally {
             setIsCompiling(false);
         }
-    }, [filePath, content, hasChanges, performSplit, openPdfInSplit]);
+    }, [filePath, content, hasChanges, createAndAddPaneNodeToLayout, openPdfInSplit]);
 
-    // Keyboard shortcuts
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
             const isCtrl = e.ctrlKey || e.metaKey;
@@ -1425,7 +1418,6 @@ const LatexViewer = ({
         return () => window.removeEventListener('keydown', handler);
     }, [save, compile, insertAtCursor, toggleComment, toggleBlockComment, wrapInEnvironment, openPdfOnBuild]);
 
-    // Expose save/compile on paneData so PaneHeader buttons can call them
     useEffect(() => {
         const paneData = contentDataRef.current[nodeId];
         if (paneData) {
@@ -1439,7 +1431,6 @@ const LatexViewer = ({
         }
     }, [nodeId, save, compile, hasChanges, isSaving, isCompiling, compileStatus, contentDataRef]);
 
-    // Close menus on outside click
     useEffect(() => {
         const handler = (e: MouseEvent) => {
             if (!(e.target as HTMLElement).closest('.dropdown-menu')) {
@@ -1491,7 +1482,6 @@ const LatexViewer = ({
 
     return (
         <div className="h-full flex flex-col overflow-hidden theme-bg-primary">
-            {/* Toolbar (also serves as pane header — draggable, with close/zen) */}
             <div
                 ref={toolbarRef}
                 className="flex items-center gap-0.5 px-1 h-10 flex-shrink-0 theme-bg-secondary border-b theme-border"
@@ -1512,7 +1502,6 @@ const LatexViewer = ({
                     setPaneContextMenu?.({ isOpen: true, x: e.clientX, y: e.clientY, nodeId, nodePath });
                 }}
             >
-                {/* Zen mode toggle */}
                 {onToggleZen && (
                     <button
                         onClick={(e) => { e.stopPropagation(); onToggleZen(); }}
@@ -1524,7 +1513,6 @@ const LatexViewer = ({
                     </button>
                 )}
 
-                {/* File title */}
                 {renamingPaneId === nodeId ? (
                     <div
                         className="flex items-center gap-1 flex-shrink-0 px-1"
@@ -1566,12 +1554,10 @@ const LatexViewer = ({
 
                 <ToolbarDivider />
 
-                {/* Outline toggle */}
                 <ToolbarButton onClick={() => setShowOutline(!showOutline)} title="Outline" active={showOutline}><PanelLeft size={14} /></ToolbarButton>
 
                 <ToolbarDivider />
 
-                {/* Templates dropdown — only when document is empty */}
                 {content.trim().length === 0 && (
                     <>
                         <div className="relative dropdown-menu">
@@ -1601,7 +1587,6 @@ const LatexViewer = ({
                     </>
                 )}
 
-                {/* Quick format */}
                 <ToolbarButton onClick={() => insertAtCursor('\\textbf{')} title="Bold (Ctrl+B)"><Bold size={14} /></ToolbarButton>
                 <ToolbarButton onClick={() => insertAtCursor('\\textit{')} title="Italic (Ctrl+I)"><Italic size={14} /></ToolbarButton>
                 <ToolbarButton onClick={() => insertAtCursor('\\underline{')} title="Underline (Ctrl+U)"><UnderlineIcon size={14} /></ToolbarButton>
@@ -1609,20 +1594,17 @@ const LatexViewer = ({
 
                 <ToolbarDivider />
 
-                {/* Comment toggle */}
                 <ToolbarButton onClick={toggleComment} title="Toggle Comment (Ctrl+/)">
                     <span className="text-[13px] font-mono font-bold leading-none">%</span>
                 </ToolbarButton>
 
                 <ToolbarDivider />
 
-                {/* Section nav */}
                 <ToolbarButton onClick={() => navigateSection('prev')} title="Previous section" disabled={sectionOutline.length === 0}><ChevronUp size={14} /></ToolbarButton>
                 <ToolbarButton onClick={() => navigateSection('next')} title="Next section" disabled={sectionOutline.length === 0}><ChevronDown size={14} /></ToolbarButton>
 
                 <ToolbarDivider />
 
-                {/* Snippet menus */}
                 {Object.entries(SNIPPETS).map(([cat, items]) => {
                     const icons: Record<string, any> = { structure: Hash, format: AlignLeft, math: Sigma, insert: Braces, references: Link };
                     const colors: Record<string, string> = { structure: '#c084fc', format: '#f472b6', math: '#60a5fa', insert: '#4ade80', references: '#fbbf24' };
@@ -1665,7 +1647,6 @@ const LatexViewer = ({
                     );
                 })}
 
-                {/* Bib file selector */}
                 {availableBibFiles.length > 0 && (
                     <>
                         <ToolbarDivider />
@@ -1694,7 +1675,6 @@ const LatexViewer = ({
 
                 <div className="flex-1" />
 
-                {/* Compile button + PDF toggle */}
                 <div className="flex items-center gap-0.5">
                     <button
                         onClick={() => compile(openPdfOnBuild)}
@@ -1724,10 +1704,8 @@ const LatexViewer = ({
 
                 <ToolbarDivider />
 
-                {/* Symbols toggle */}
                 <ToolbarButton onClick={() => setShowSymbols(!showSymbols)} title="Math Symbols" active={showSymbols}><Sigma size={14} /></ToolbarButton>
 
-                {/* Stats pill */}
                 {!isCompact && (
                     <div className="flex items-center gap-2 ml-1.5 px-2.5 h-6 rounded-full text-[10px] theme-text-muted tabular-nums"
                         style={{ background: isDarkMode ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)', border: isDarkMode ? '1px solid rgba(255,255,255,0.04)' : '1px solid rgba(0,0,0,0.06)' }}>
@@ -1739,7 +1717,6 @@ const LatexViewer = ({
 
                 <ToolbarDivider />
 
-                {/* Save button */}
                 <button
                     onClick={(e) => { e.stopPropagation(); save(); }}
                     disabled={!hasChanges || isSaving}
@@ -1749,7 +1726,6 @@ const LatexViewer = ({
                     {isSaving ? <Loader size={12} className="animate-spin" /> : showSavedFlash ? <CheckCircle size={12} /> : <Save size={12} />}
                 </button>
 
-                {/* Close button */}
                 {onClose && (
                     <button
                         onClick={(e) => { e.stopPropagation(); onClose(); }}
@@ -1762,9 +1738,7 @@ const LatexViewer = ({
                 )}
             </div>
 
-            {/* Main content */}
             <div className="flex-1 flex min-h-0 overflow-hidden">
-                {/* Outline panel */}
                 {showOutline && (
                     <div className="w-56 flex flex-col flex-shrink-0 overflow-hidden theme-bg-secondary" style={{
                         borderRight: '1px solid var(--theme-border)',
@@ -1818,7 +1792,6 @@ const LatexViewer = ({
                     </div>
                 )}
 
-                {/* Editor */}
                 <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
                     {isCompiling && (
                         <div className={`absolute inset-0 ${isDarkMode ? 'bg-black/60' : 'bg-white/60'} flex items-center justify-center z-10 backdrop-blur-sm`}>
@@ -1847,7 +1820,6 @@ const LatexViewer = ({
                     </div>
                 </div>
 
-                {/* Symbols panel */}
                 {showSymbols && (
                     <div className="w-52 flex flex-col flex-shrink-0 overflow-hidden theme-bg-secondary" style={{
                         borderLeft: '1px solid var(--theme-border)',
@@ -1877,7 +1849,6 @@ const LatexViewer = ({
                 )}
             </div>
 
-            {/* Build log */}
             {showLog && (
                 <div className="flex flex-col flex-shrink-0 theme-bg-secondary" style={{
                     borderTop: '1px solid var(--theme-border)',
@@ -1931,7 +1902,6 @@ const LatexViewer = ({
                 </div>
             )}
 
-            {/* Status bar */}
             <div className="flex items-center justify-between px-3 h-6 flex-shrink-0 text-[10px] theme-bg-secondary" style={{
                 borderTop: '1px solid var(--theme-border)',
             }}>
@@ -1968,7 +1938,6 @@ const LatexViewer = ({
     );
 };
 
-// Custom comparison to prevent reload on pane resize
 const arePropsEqual = (prevProps: any, nextProps: any) => {
     return prevProps.nodeId === nextProps.nodeId
         && prevProps.renamingPaneId === nextProps.renamingPaneId

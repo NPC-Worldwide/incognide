@@ -25,7 +25,7 @@ interface Memory {
     directory_path: string;
     created_at: string;
     timestamp?: string;
-    // For instruction dataset
+
     context?: string;
     qualityScore?: number;
     includeInTraining?: boolean;
@@ -73,11 +73,9 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
     const [editingMemory, setEditingMemory] = useState<number | null>(null);
     const [editedText, setEditedText] = useState('');
 
-    // Selection State
     const [selectedMemories, setSelectedMemories] = useState<Set<number>>(new Set());
     const [selectionMode, setSelectionMode] = useState(false);
 
-    // Fine-tune State
     const [showFineTuneModal, setShowFineTuneModal] = useState(false);
     const [fineTuneConfig, setFineTuneConfig] = useState({
         outputName: 'my_instruction_model',
@@ -90,7 +88,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
     const [isFineTuning, setIsFineTuning] = useState(false);
     const [fineTuneStatus, setFineTuneStatus] = useState<string | null>(null);
 
-    // Dataset Curation State
     const [activeTab, setActiveTab] = useState<'memories' | 'datasets' | 'schedule'>('memories');
     const [instructionDatasets, setInstructionDatasets] = useState<InstructionDataset[]>(() => {
         try {
@@ -104,7 +101,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
     const [showAddToDataset, setShowAddToDataset] = useState(false);
     const [contextPrompt, setContextPrompt] = useState('');
 
-    // Schedule State
     const [extractSchedule, setExtractSchedule] = useState('0 */6 * * *');
     const [extractGuidance, setExtractGuidance] = useState('');
     const [extractLimit, setExtractLimit] = useState('50');
@@ -114,7 +110,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
     const [scheduleError, setScheduleError] = useState<string | null>(null);
     const [scheduleSuccess, setScheduleSuccess] = useState<string | null>(null);
 
-    // Schedule presets
     const SCHEDULE_PRESETS = [
         { label: 'Every 6h', value: '0 */6 * * *' },
         { label: 'Every 12h', value: '0 */12 * * *' },
@@ -124,7 +119,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
         { label: 'Weekly Sun', value: '0 0 * * 0' },
     ];
 
-    // Check extraction job status
     const checkExtractJobStatus = useCallback(async () => {
         try {
             const status = await (window as any).api?.jobStatus?.('memory_extract');
@@ -140,7 +134,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
         }
     }, []);
 
-    // Schedule extraction job
     const handleScheduleExtract = async () => {
         setScheduleLoading(true);
         setScheduleError(null);
@@ -168,7 +161,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
         }
     };
 
-    // Unschedule extraction job
     const handleUnscheduleExtract = async () => {
         setScheduleLoading(true);
         setScheduleError(null);
@@ -189,21 +181,18 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
         }
     };
 
-    // Check job status when schedule tab is opened
     useEffect(() => {
         if (activeTab === 'schedule') {
             checkExtractJobStatus();
         }
     }, [activeTab, checkExtractJobStatus]);
 
-    // Save datasets to localStorage
     useEffect(() => {
         localStorage.setItem('incognide_instructionDatasets', JSON.stringify(instructionDatasets));
     }, [instructionDatasets]);
 
     const selectedDataset = instructionDatasets.find(d => d.id === selectedDatasetId);
 
-    // Build training data from selected memories (input/output format for backend)
     const buildTrainingData = () => {
         const selectedMems = memories.filter(m => selectedMemories.has(m.id));
         return selectedMems.map(m => ({
@@ -215,7 +204,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
         }));
     };
 
-    // Start fine-tuning
     const handleStartFineTune = async () => {
         if (selectedMemories.size === 0) return;
 
@@ -246,7 +234,7 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                 setIsFineTuning(false);
             } else if (response?.jobId) {
                 setFineTuneStatus(`Training started! Job ID: ${response.jobId}`);
-                // Start polling for status
+
                 pollFineTuneStatus(response.jobId);
             } else {
                 setFineTuneStatus('Training started...');
@@ -258,7 +246,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
         }
     };
 
-    // Poll for fine-tune job status
     const pollFineTuneStatus = async (jobId: string) => {
         const poll = async () => {
             try {
@@ -272,17 +259,16 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                 } else if (status?.status === 'running') {
                     const progress = status.epoch ? `Epoch ${status.epoch}/${status.total_epochs}` : 'Training...';
                     setFineTuneStatus(`${progress}${status.loss ? ` | Loss: ${status.loss.toFixed(4)}` : ''}`);
-                    setTimeout(poll, 2000); // Poll every 2 seconds
+                    setTimeout(poll, 2000);
                 }
             } catch (err) {
                 console.error('Status poll error:', err);
-                setTimeout(poll, 5000); // Retry after 5 seconds on error
+                setTimeout(poll, 5000);
             }
         };
         poll();
     };
 
-    // Export selected memories
     const handleExport = () => {
         const selectedMems = memories.filter(m => selectedMemories.has(m.id));
         let content = '';
@@ -324,7 +310,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
         setSelectionMode(false);
     };
 
-    // Create new dataset
     const createDataset = () => {
         if (!newDatasetName.trim()) return;
         const newDataset: InstructionDataset = {
@@ -341,13 +326,11 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
         setShowCreateDataset(false);
     };
 
-    // Delete dataset
     const deleteDataset = (id: string) => {
         setInstructionDatasets(prev => prev.filter(d => d.id !== id));
         if (selectedDatasetId === id) setSelectedDatasetId(null);
     };
 
-    // Add selected memories to dataset
     const addMemoriesToDataset = (datasetId: string) => {
         const dataset = instructionDatasets.find(d => d.id === datasetId);
         if (!dataset) return;
@@ -376,7 +359,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
         setShowFineTuneModal(false);
     };
 
-    // Update example quality
     const updateExampleQuality = (datasetId: string, exampleId: string, score: number) => {
         setInstructionDatasets(prev => prev.map(d =>
             d.id === datasetId
@@ -385,7 +367,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
         ));
     };
 
-    // Remove example
     const removeExample = (datasetId: string, exampleId: string) => {
         setInstructionDatasets(prev => prev.map(d =>
             d.id === datasetId
@@ -394,7 +375,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
         ));
     };
 
-    // Export dataset
     const exportDataset = (dataset: InstructionDataset) => {
         let content = '';
         let filename = `${dataset.name.replace(/\s+/g, '_')}`;
@@ -431,7 +411,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
         URL.revokeObjectURL(url);
     };
 
-    // Toggle memory selection
     const toggleMemorySelection = (id: number) => {
         setSelectedMemories(prev => {
             const next = new Set(prev);
@@ -441,17 +420,14 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
         });
     };
 
-    // Select all visible memories
     const selectAllMemories = () => {
         setSelectedMemories(new Set(memories.map(m => m.id)));
     };
 
-    // Clear selection
     const clearSelection = () => {
         setSelectedMemories(new Set());
     };
 
-    // Fetch memories using Python backend API
     const fetchMemories = useCallback(async () => {
         setLoading(true);
         setError(null);
@@ -461,7 +437,7 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
             let result: any;
 
             if (searchQuery.trim()) {
-                // Use search endpoint for text search
+
                 result = await (window as any).api?.memory_search?.({
                     q: searchQuery,
                     status: statusFilter !== 'all' ? statusFilter : undefined,
@@ -470,14 +446,14 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                     limit: 100
                 });
             } else if (statusFilter === 'pending_approval') {
-                // Use pending endpoint for pending memories
+
                 result = await (window as any).api?.memory_pending?.({
                     directory_path: pathFilter || undefined,
                     npc: npcFilter || undefined,
                     limit: 100
                 });
             } else {
-                // Use scope endpoint for filtered memories
+
                 result = await (window as any).api?.memory_scope?.({
                     status: statusFilter !== 'all' ? statusFilter : undefined,
                     directory_path: pathFilter || undefined,
@@ -512,7 +488,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
         }
     }, [isOpen, fetchMemories]);
 
-    // Handle memory approval
     const handleApprove = async (memory: Memory) => {
         try {
             await (window as any).api?.memory_approve?.({
@@ -528,7 +503,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
         }
     };
 
-    // Handle memory rejection
     const handleReject = async (memory: Memory) => {
         try {
             await (window as any).api?.memory_approve?.({
@@ -543,10 +517,9 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
         }
     };
 
-    // Handle memory edit
     const handleEdit = async (memory: Memory) => {
         if (editingMemory === memory.id) {
-            // Save edit
+
             try {
                 await (window as any).api?.memory_approve?.({
                     approvals: [{
@@ -562,13 +535,12 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                 setError(err.message);
             }
         } else {
-            // Start editing
+
             setEditingMemory(memory.id);
             setEditedText(memory.final_memory || memory.initial_memory);
         }
     };
 
-    // Bulk approve all pending
     const handleApproveAll = async () => {
         const pending = memories.filter(m => m.status === 'pending_approval');
         if (pending.length === 0) return;
@@ -599,10 +571,8 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
 
     if (!isOpen && !isPane) return null;
 
-    // Render datasets tab content
     const renderDatasetsTab = () => (
         <div className="flex h-full">
-            {/* Dataset List Sidebar */}
             <div className="w-64 border-r theme-border flex flex-col">
                 <div className="p-3 border-b theme-border">
                     <button
@@ -641,11 +611,9 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                 </div>
             </div>
 
-            {/* Dataset Content */}
             <div className="flex-1 flex flex-col overflow-hidden">
                 {selectedDataset ? (
                     <>
-                        {/* Dataset Header */}
                         <div className="p-4 border-b theme-border flex items-center justify-between">
                             <div>
                                 <h4 className="font-semibold">{selectedDataset.name}</h4>
@@ -678,7 +646,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                             </div>
                         </div>
 
-                        {/* Examples List */}
                         <div className="flex-1 overflow-y-auto p-4 space-y-3">
                             {selectedDataset.examples.length === 0 ? (
                                 <div className="text-center py-12 text-gray-500">
@@ -745,17 +712,14 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
         </div>
     );
 
-    // Content component (shared between modal and pane modes)
     const content = (
         <>
-            {/* Header */}
             <div className="flex items-center justify-between p-4 border-b theme-border flex-shrink-0">
                 <div className="flex items-center gap-4">
                     <h3 className="text-lg font-semibold flex items-center gap-2">
                         <Database className="text-amber-400" size={20} />
                         Memory Manager
                     </h3>
-                    {/* Tabs */}
                     <div className="flex gap-1 bg-gray-800 rounded p-0.5">
                         <button
                             onClick={() => setActiveTab('memories')}
@@ -799,7 +763,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                 </div>
             ) : activeTab === 'schedule' ? (
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                    {/* Memory Extraction Job */}
                     <div className="border border-gray-700 rounded-lg p-4 space-y-3">
                         <div className="flex items-center justify-between">
                             <h4 className="text-sm font-semibold text-white flex items-center gap-2">
@@ -816,7 +779,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                             Automatically extract memories from recent conversations and store them as pending approval.
                         </p>
 
-                        {/* Schedule picker */}
                         <div>
                             <label className="text-xs text-gray-400 block mb-1">Frequency</label>
                             <select
@@ -830,7 +792,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                             </select>
                         </div>
 
-                        {/* Limit */}
                         <div>
                             <label className="text-xs text-gray-400 block mb-1">Conversations to process per run</label>
                             <input
@@ -843,7 +804,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                             />
                         </div>
 
-                        {/* Guidance */}
                         <div>
                             <label className="text-xs text-gray-400 block mb-1">Extraction guidance (optional)</label>
                             <textarea
@@ -855,7 +815,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                             />
                         </div>
 
-                        {/* Action buttons */}
                         <div className="flex items-center gap-2">
                             <button
                                 onClick={handleScheduleExtract}
@@ -882,7 +841,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                             </button>
                         </div>
 
-                        {/* Status messages */}
                         {scheduleError && (
                             <div className="text-xs text-red-400 bg-red-900/20 p-2 rounded">{scheduleError}</div>
                         )}
@@ -890,7 +848,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                             <div className="text-xs text-green-400 bg-green-900/20 p-2 rounded">{scheduleSuccess}</div>
                         )}
 
-                        {/* Recent log */}
                         {extractJobLog.length > 0 && (
                             <div className="mt-2">
                                 <label className="text-xs text-gray-400 block mb-1">Recent log</label>
@@ -903,7 +860,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                         )}
                     </div>
 
-                    {/* Pipeline info */}
                     <div className="border border-gray-700/50 rounded-lg p-4 space-y-2">
                         <h4 className="text-sm font-semibold text-gray-300 flex items-center gap-2">
                             <ChevronRight size={14} /> Pipeline
@@ -923,7 +879,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                 </div>
             ) : (
                 <>
-                {/* Controls */}
                 <div className="p-4 border-b theme-border space-y-3">
                     <div className="flex gap-2">
                         <div className="flex-1 relative">
@@ -956,7 +911,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
                         </button>
                     </div>
-                    {/* Path and NPC filters */}
                     <div className="flex gap-2">
                         <input
                             type="text"
@@ -976,7 +930,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                         />
                     </div>
 
-                    {/* Selection actions - always visible */}
                     <div className="flex items-center gap-2 text-sm">
                         <span className={selectedMemories.size > 0 ? 'text-amber-300' : 'text-gray-500'}>{selectedMemories.size} selected</span>
                         <button
@@ -1018,7 +971,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                     </div>
                 </div>
 
-                {/* Memory List */}
                 <div className="flex-1 overflow-y-auto p-4">
                     {error && (
                         <div className="mb-4 p-3 bg-red-900/30 border border-red-700 rounded text-red-300 text-sm">
@@ -1096,7 +1048,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                                         </details>
                                     )}
 
-                                    {/* Actions */}
                                     <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-700">
                                         {memory.status === 'pending_approval' && (
                                             <>
@@ -1140,7 +1091,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                     )}
                 </div>
 
-            {/* Footer */}
             <div className="p-3 border-t theme-border text-xs text-gray-500 flex-shrink-0">
                 Showing {memories.length} memories
                 {currentPath && <span> in {currentPath}</span>}
@@ -1148,7 +1098,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                 </>
             )}
 
-            {/* Create Dataset Modal */}
             {showCreateDataset && (
                 <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[200]" onClick={() => setShowCreateDataset(false)}>
                     <div className="bg-gray-800 rounded-lg shadow-xl w-96 p-6" onClick={e => e.stopPropagation()}>
@@ -1184,7 +1133,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                 </div>
             )}
 
-            {/* Fine-tune / Add to Dataset Modal */}
             {showAddToDataset && (
                 <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[200]" onClick={() => setShowAddToDataset(false)}>
                     <div className="bg-gray-800 rounded-lg shadow-xl w-[600px] max-h-[80vh] overflow-y-auto p-6" onClick={e => e.stopPropagation()}>
@@ -1198,7 +1146,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                             </button>
                         </div>
 
-                        {/* Config */}
                         <div className="space-y-4 mb-6">
                             <div>
                                 <label className="text-sm font-medium">Output Model Name</label>
@@ -1262,9 +1209,7 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                             </div>
                         </div>
 
-                        {/* Actions */}
                         <div className="border-t border-gray-700 pt-4 space-y-3">
-                            {/* Fine-tune directly */}
                             <button
                                 onClick={handleStartFineTune}
                                 disabled={isFineTuning}
@@ -1278,7 +1223,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                                 <div className="text-sm text-center text-amber-400">{fineTuneStatus}</div>
                             )}
 
-                            {/* Export */}
                             <div className="flex gap-2">
                                 <select
                                     value={exportFormat}
@@ -1297,7 +1241,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                                 </button>
                             </div>
 
-                            {/* Add to existing dataset */}
                             <div className="border-t border-gray-700 pt-3">
                                 <label className="text-xs text-gray-400 mb-2 block">Or add to dataset:</label>
                                 <div className="flex gap-2">
@@ -1312,7 +1255,7 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
                                         onClick={() => {
                                             if (newDatasetName.trim()) {
                                                 createDataset();
-                                                // Dataset created, now add memories to it
+
                                                 setTimeout(() => {
                                                     const newId = instructionDatasets[instructionDatasets.length - 1]?.id;
                                                     if (newId) addMemoriesToDataset(newId);
@@ -1347,7 +1290,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
         </>
     );
 
-    // Pane mode - render directly
     if (isPane) {
         return (
             <div className="flex-1 flex flex-col overflow-hidden theme-bg-secondary">
@@ -1356,7 +1298,6 @@ const MemoryManager: React.FC<MemoryManagerProps> = ({
         );
     }
 
-    // Modal mode - render with overlay
     return (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100]" onClick={onClose}>
             <div

@@ -4,16 +4,13 @@ import {
     HardDrive, FolderPlus, X, ChevronDown, ArrowUp, KeyRound
 } from 'lucide-react';
 
-// Helper to split paths on both / and \ (Windows compatibility)
 const splitPath = (p: string): string[] => p.split(/[\\/]/).filter(Boolean);
 
-// Helper to detect if path is Windows-style (has drive letter)
 const isWindowsPath = (p: string): boolean => /^[A-Za-z]:/.test(p);
 
-// Helper to join path segments back together
 const joinPath = (segments: string[], originalPath: string): string => {
     if (!segments.length) return originalPath;
-    // Preserve Windows drive letter format
+
     if (isWindowsPath(originalPath)) {
         return segments[0] + '\\' + segments.slice(1).join('\\');
     }
@@ -47,7 +44,6 @@ export const PathSwitcher: React.FC<PathSwitcherProps> = ({
     const dropdownRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    // Load recent paths
     useEffect(() => {
         try {
             const stored = localStorage.getItem(RECENT_PATHS_KEY);
@@ -57,7 +53,6 @@ export const PathSwitcher: React.FC<PathSwitcherProps> = ({
         } catch {}
     }, []);
 
-    // Save to recent paths when path changes
     useEffect(() => {
         if (currentPath && currentPath !== baseDir) {
             setRecentPaths(prev => {
@@ -69,7 +64,6 @@ export const PathSwitcher: React.FC<PathSwitcherProps> = ({
         }
     }, [currentPath, baseDir]);
 
-    // Close dropdown when clicking outside
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -80,7 +74,6 @@ export const PathSwitcher: React.FC<PathSwitcherProps> = ({
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    // Focus input when editing
     useEffect(() => {
         if (isEditing && inputRef.current) {
             inputRef.current.focus();
@@ -88,21 +81,18 @@ export const PathSwitcher: React.FC<PathSwitcherProps> = ({
         }
     }, [isEditing]);
 
-    // Parse path into segments (handles both / and \ separators)
     const pathSegments = currentPath ? splitPath(currentPath) : [];
     const isAtRoot = currentPath === baseDir || !currentPath;
     const baseDirSegments = baseDir ? splitPath(baseDir) : [];
     const rawRootName = baseDirSegments[baseDirSegments.length - 1] || '';
 
-    // Give friendly names to special folders
     const getRootDisplayName = (name: string) => {
         if (name === '.npcsh' || name === 'npcsh') return 'Global';
-        if (name.startsWith('.')) return name.slice(1); // Remove leading dot
+        if (name.startsWith('.')) return name.slice(1);
         return name || 'Workspace';
     };
     const rootFolderName = getRootDisplayName(rawRootName);
 
-    // Handle native folder picker
     const handleOpenFolderPicker = async () => {
         try {
             const result = await (window as any).api.open_directory_picker();
@@ -115,13 +105,11 @@ export const PathSwitcher: React.FC<PathSwitcherProps> = ({
         }
     };
 
-    // Handle path segment click - navigate to that segment
     const handleSegmentClick = (index: number) => {
         const newPath = joinPath(pathSegments.slice(0, index + 1), currentPath);
         onPathChange(newPath);
     };
 
-    // Handle keyboard in edit mode
     const handleEditKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter') {
             setIsEditing(false);
@@ -134,7 +122,6 @@ export const PathSwitcher: React.FC<PathSwitcherProps> = ({
         }
     };
 
-    // Get folder name from path
     const getFolderName = (path: string) => {
         const parts = splitPath(path);
         return parts[parts.length - 1] || path;
@@ -142,7 +129,6 @@ export const PathSwitcher: React.FC<PathSwitcherProps> = ({
 
     return (
         <div className="relative flex w-full" ref={dropdownRef}>
-            {/* Open folder in pane button */}
             <button
                 onClick={() => onOpenFolderPane?.(currentPath)}
                 className="flex-1 py-4 theme-bg-tertiary border-y border-l theme-border transition-all flex items-center justify-center hover:bg-green-500/10"
@@ -151,12 +137,10 @@ export const PathSwitcher: React.FC<PathSwitcherProps> = ({
                 <FolderOpen size={18} className="text-green-400" />
             </button>
 
-            {/* Main path display button */}
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 className="flex-[4] flex items-center gap-2 px-3 py-4 theme-bg-tertiary border theme-border hover:bg-purple-500/10 transition-all min-w-0"
             >
-                {/* Folder icon */}
                 <div className="flex-shrink-0">
                     {isAtRoot ? (
                         <Folder size={18} className="text-purple-400" />
@@ -165,21 +149,18 @@ export const PathSwitcher: React.FC<PathSwitcherProps> = ({
                     )}
                 </div>
 
-                {/* Just show last folder name */}
                 <div className="flex items-center overflow-hidden flex-1 min-w-0">
                     <span className="text-[10px] theme-text-primary font-medium truncate" title={currentPath}>
                         {isAtRoot ? rootFolderName : pathSegments[pathSegments.length - 1]}
                     </span>
                 </div>
 
-                {/* Dropdown indicator */}
                 <ChevronDown
                     size={12}
                     className={`text-gray-400 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}
                 />
             </button>
 
-            {/* Native folder picker button */}
             <button
                 onClick={handleOpenFolderPicker}
                 className="flex-1 py-4 theme-bg-tertiary border-y theme-border hover:bg-blue-500/10 transition-all flex items-center justify-center"
@@ -188,7 +169,6 @@ export const PathSwitcher: React.FC<PathSwitcherProps> = ({
                 <FolderPlus size={18} className="text-blue-400" />
             </button>
 
-            {/* Env settings button */}
             {onOpenEnv && (
                 <button
                     onClick={onOpenEnv}
@@ -199,10 +179,8 @@ export const PathSwitcher: React.FC<PathSwitcherProps> = ({
                 </button>
             )}
 
-            {/* Dropdown menu */}
             {isOpen && (
                 <div className="absolute top-full left-0 mt-1 w-80 theme-bg-secondary border theme-border rounded-xl shadow-2xl z-50 overflow-hidden">
-                    {/* Edit path input */}
                     <div className="p-3 border-b theme-border">
                         <div className="flex items-center gap-2">
                             <HardDrive size={14} className="text-gray-400 flex-shrink-0" />
@@ -223,7 +201,7 @@ export const PathSwitcher: React.FC<PathSwitcherProps> = ({
                                     className="flex-1 text-left text-xs theme-text-muted font-mono truncate hover:theme-text-primary px-2 py-1 rounded theme-hover"
                                     title="Click to edit path"
                                 >
-                                    {currentPath || '/'}
+                                    {currentPath || 'No folder selected'}
                                 </button>
                             )}
                             {isEditing && (
@@ -237,7 +215,6 @@ export const PathSwitcher: React.FC<PathSwitcherProps> = ({
                         </div>
                     </div>
 
-                    {/* Path segments for quick navigation */}
                     {pathSegments.length > 0 && (
                         <div className="p-2 border-b theme-border">
                             <div className="text-[10px] uppercase text-gray-500 px-2 mb-1">Navigate To</div>
@@ -265,7 +242,6 @@ export const PathSwitcher: React.FC<PathSwitcherProps> = ({
                         </div>
                     )}
 
-                    {/* Recent paths */}
                     {recentPaths.length > 0 && (
                         <div className="p-2 max-h-48 overflow-y-auto">
                             <div className="text-[10px] uppercase text-gray-500 px-2 mb-1 flex items-center gap-1">
@@ -292,7 +268,6 @@ export const PathSwitcher: React.FC<PathSwitcherProps> = ({
                         </div>
                     )}
 
-                    {/* Actions footer */}
                     <div className="p-2 border-t theme-border bg-black/20 flex gap-2">
                         <button
                             onClick={handleOpenFolderPicker}

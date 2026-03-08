@@ -6,7 +6,7 @@ interface UseMemoryAndLabelingParams {
 }
 
 export function useMemoryAndLabeling({ currentPath }: UseMemoryAndLabelingParams) {
-    // Memory state
+
     const [pendingMemories, setPendingMemories] = useState([]);
     const [memoryApprovalModal, setMemoryApprovalModal] = useState({
         isOpen: false,
@@ -19,7 +19,6 @@ export function useMemoryAndLabeling({ currentPath }: UseMemoryAndLabelingParams
     const [pendingMemoryCount, setPendingMemoryCount] = useState(0);
     const [kgGeneration, setKgGeneration] = useState<number | null>(null);
 
-    // Message labeling state
     const [labelingModal, setLabelingModal] = useState<{ isOpen: boolean; message: any | null }>({ isOpen: false, message: null });
     const [messageLabels, setMessageLabels] = useState<{ [key: string]: MessageLabel }>(() => {
         const allLabels = MessageLabelStorage.getAll();
@@ -30,7 +29,6 @@ export function useMemoryAndLabeling({ currentPath }: UseMemoryAndLabelingParams
         return labelsMap;
     });
 
-    // Conversation labeling state
     const [conversationLabelingModal, setConversationLabelingModal] = useState<{ isOpen: boolean; conversation: any | null }>({ isOpen: false, conversation: null });
     const [conversationLabels, setConversationLabels] = useState<{ [key: string]: ConversationLabel }>(() => {
         const allLabels = ConversationLabelStorage.getAll();
@@ -41,7 +39,6 @@ export function useMemoryAndLabeling({ currentPath }: UseMemoryAndLabelingParams
         return labelsMap;
     });
 
-    // Load memories from DB
     const loadMemories = useCallback(async () => {
         setMemoryLoading(true);
         try {
@@ -60,7 +57,6 @@ export function useMemoryAndLabeling({ currentPath }: UseMemoryAndLabelingParams
         }
     }, []);
 
-    // Filtered memories
     const filteredMemories = useMemo(() => {
         return memories.filter(memory => {
             const matchesStatus = memoryFilter === 'all' || memory.status === memoryFilter;
@@ -71,7 +67,6 @@ export function useMemoryAndLabeling({ currentPath }: UseMemoryAndLabelingParams
         });
     }, [memories, memoryFilter, memorySearchTerm]);
 
-    // Fetch pending memory count and KG generation for status bar (30s polling)
     useEffect(() => {
         const fetchStatusBarData = async () => {
             try {
@@ -97,7 +92,6 @@ export function useMemoryAndLabeling({ currentPath }: UseMemoryAndLabelingParams
         return () => clearInterval(interval);
     }, [currentPath]);
 
-    // Message labeling handlers
     const handleLabelMessage = useCallback((message: any) => {
         setLabelingModal({ isOpen: true, message });
     }, []);
@@ -115,7 +109,6 @@ export function useMemoryAndLabeling({ currentPath }: UseMemoryAndLabelingParams
         setLabelingModal({ isOpen: false, message: null });
     }, []);
 
-    // Conversation labeling handlers
     const handleLabelConversation = useCallback((conversationId: string, messages: any[]) => {
         setConversationLabelingModal({
             isOpen: true,
@@ -137,7 +130,7 @@ export function useMemoryAndLabeling({ currentPath }: UseMemoryAndLabelingParams
     }, []);
 
     return {
-        // Memory state
+
         pendingMemories,
         setPendingMemories,
         memoryApprovalModal,
@@ -153,10 +146,10 @@ export function useMemoryAndLabeling({ currentPath }: UseMemoryAndLabelingParams
         setPendingMemoryCount,
         kgGeneration,
         setKgGeneration,
-        // Memory handlers
+
         loadMemories,
         filteredMemories,
-        // Labeling state
+
         labelingModal,
         setLabelingModal,
         messageLabels,
@@ -165,7 +158,7 @@ export function useMemoryAndLabeling({ currentPath }: UseMemoryAndLabelingParams
         setConversationLabelingModal,
         conversationLabels,
         setConversationLabels,
-        // Labeling handlers
+
         handleLabelMessage,
         handleSaveLabel,
         handleCloseLabelingModal,

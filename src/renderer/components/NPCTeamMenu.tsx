@@ -12,14 +12,13 @@ import ForceGraph2D from 'react-force-graph-2d';
         try {
             const newConversation = await createNewConversation();
             if (newConversation) {
-               
+
                 setCurrentNPC(npc.name);
-                
-               
-                setMessages([{ 
-                    role: 'assistant', 
-                    content: `Hello, I'm ${npc.name}. ${npc.primary_directive}`, 
-                    timestamp: new Date().toISOString(), 
+
+                setMessages([{
+                    role: 'assistant',
+                    content: `Hello, I'm ${npc.name}. ${npc.primary_directive}`,
+                    timestamp: new Date().toISOString(),
                     npc: npc.name,
                     model: npc.model || currentModel
                 }]);
@@ -44,10 +43,10 @@ const NPCTeamMenu = ({
     const [npcs, setNpcs] = useState([]);
     const [selectedNpc, setSelectedNpc] = useState(null);
     const [editedNpc, setEditedNpc] = useState(null);
-    const [availableJinxs, setAvailableJinxs] = useState([]);
+    const [availableJinxes, setAvailableJinxes] = useState([]);
     const [activeTab, setActiveTab] = useState('config');
     const [expandedExecution, setExpandedExecution] = useState(null);
-    
+
     const [executionHistory, setExecutionHistory] = useState([]);
     const [filteredExecutions, setFilteredExecutions] = useState([]);
     const [executionSearch, setExecutionSearch] = useState('');
@@ -58,13 +57,12 @@ const NPCTeamMenu = ({
     const [datasetName, setDatasetName] = useState('');
     const [datasetFormat, setDatasetFormat] = useState('sft');
     const [visibleCount, setVisibleCount] = useState(50);
-    
+
     const [memories, setMemories] = useState([]);
     const [memoryLoading, setMemoryLoading] = useState(false);
     const [memoryFilter, setMemoryFilter] = useState('all');
     const [memorySearch, setMemorySearch] = useState('');
 
-    // Memory fine-tuning state
     const [selectedMemories, setSelectedMemories] = useState(new Set());
     const [showFineTuneModal, setShowFineTuneModal] = useState(false);
     const [fineTuneConfig, setFineTuneConfig] = useState({
@@ -77,7 +75,7 @@ const NPCTeamMenu = ({
     });
     const [isFineTuning, setIsFineTuning] = useState(false);
     const [fineTuneStatus, setFineTuneStatus] = useState(null);
-    
+
     const [kgData, setKgData] = useState({ nodes: [], links: [] });
     const [kgLoading, setKgLoading] = useState(false);
     const graphRef = useRef();
@@ -95,17 +93,17 @@ const NPCTeamMenu = ({
             if (!isOpen) return;
             setLoading(true);
             setError(null);
-            
+
             const npcResponse = isGlobal
                 ? await window.api.getNPCTeamGlobal(globalPath)
                 : await window.api.getNPCTeamProject(currentPath);
             setNpcs(npcResponse.npcs || []);
 
             const jinxResponse = isGlobal
-                ? await window.api.getJinxsGlobal(globalPath)
-                : await window.api.getJinxsProject(currentPath);
-            setAvailableJinxs(jinxResponse.jinxs || []);
-            
+                ? await window.api.getJinxesGlobal(globalPath)
+                : await window.api.getJinxesProject(currentPath);
+            setAvailableJinxes(jinxResponse.jinxes || []);
+
             setLoading(false);
         };
         loadData();
@@ -113,30 +111,30 @@ const NPCTeamMenu = ({
 
     useEffect(() => {
         let filtered = executionHistory;
-        
+
         if (executionSearch) {
             const search = executionSearch.toLowerCase();
-            filtered = filtered.filter(e => 
+            filtered = filtered.filter(e =>
                 e.input?.toLowerCase().includes(search) ||
                 e.output?.toLowerCase().includes(search)
             );
         }
-        
+
         if (executionLabelFilter !== 'all') {
             filtered = filtered.filter(e => e.label === executionLabelFilter);
         }
-        
+
         if (executionDateRange !== 'all') {
             const now = new Date();
             const cutoff = new Date();
             if (executionDateRange === '7d') cutoff.setDate(now.getDate() - 7);
             if (executionDateRange === '30d') cutoff.setDate(now.getDate() - 30);
             if (executionDateRange === '90d') cutoff.setDate(now.getDate() - 90);
-            filtered = filtered.filter(e => 
+            filtered = filtered.filter(e =>
                 new Date(e.timestamp) >= cutoff
             );
         }
-        
+
         setFilteredExecutions(filtered);
     }, [executionHistory, executionSearch, executionLabelFilter, executionDateRange]);
 
@@ -158,7 +156,6 @@ const NPCTeamMenu = ({
         setMemoryLoading(false);
     };
 
-    // Memory selection toggle
     const toggleMemorySelection = (memId) => {
         setSelectedMemories(prev => {
             const next = new Set(prev);
@@ -180,7 +177,6 @@ const NPCTeamMenu = ({
         setSelectedMemories(new Set());
     };
 
-    // Start fine-tuning on selected memories for this NPC
     const handleNpcFineTune = async () => {
         if (selectedMemories.size === 0 || !selectedNpc) return;
 
@@ -256,7 +252,7 @@ const NPCTeamMenu = ({
         setKgLoading(true);
         const response = await window.api.executeSQL({
             query: `
-                SELECT DISTINCT 
+                SELECT DISTINCT
                     ch.content,
                     ch.timestamp
                 FROM conversation_history ch
@@ -266,42 +262,42 @@ const NPCTeamMenu = ({
                 LIMIT 50
             `
         });
-        
+
         if (!response.error && response.result) {
             const nodes = [];
             const links = [];
             const nodeMap = new Map();
-            
-            nodeMap.set(npcName, { 
-                id: npcName, 
-                type: 'npc', 
-                size: 12 
+
+            nodeMap.set(npcName, {
+                id: npcName,
+                type: 'npc',
+                size: 12
             });
             nodes.push(nodeMap.get(npcName));
-            
+
             response.result.forEach((msg) => {
                 const words = msg.content
                     .toLowerCase()
                     .split(/\s+/)
                     .filter(w => w.length > 5)
                     .slice(0, 10);
-                
+
                 words.forEach(word => {
                     if (!nodeMap.has(word)) {
-                        nodeMap.set(word, { 
-                            id: word, 
-                            type: 'concept', 
-                            size: 4 
+                        nodeMap.set(word, {
+                            id: word,
+                            type: 'concept',
+                            size: 4
                         });
                         nodes.push(nodeMap.get(word));
                     }
-                    links.push({ 
-                        source: npcName, 
-                        target: word 
+                    links.push({
+                        source: npcName,
+                        target: word
                     });
                 });
             });
-            
+
             setKgData({ nodes, links });
         }
         setKgLoading(false);
@@ -309,24 +305,24 @@ const NPCTeamMenu = ({
 
     const handleNPCSelect = async (npc) => {
         setSelectedNpc(npc);
-        const jinxsArray = npc.jinxs === '*' 
-            ? ['*'] 
-            : Array.isArray(npc.jinxs) 
-                ? npc.jinxs 
-                : npc.jinxs 
-                    ? [npc.jinxs] 
+        const jinxesArray = npc.jinxes === '*'
+            ? ['*']
+            : Array.isArray(npc.jinxes)
+                ? npc.jinxes
+                : npc.jinxes
+                    ? [npc.jinxes]
                     : ['*'];
-        setEditedNpc({ ...npc, jinxs: jinxsArray });
+        setEditedNpc({ ...npc, jinxes: jinxesArray });
         setActiveTab('config');
         setSelectedExecutions(new Set());
         setVisibleCount(50);
-        
+
         const historyResponse = await fetch(
             `${BACKEND_URL}/api/npc/executions?npcName=${encodeURIComponent(npc.name)}`
         );
         const historyData = await historyResponse.json();
         setExecutionHistory(historyData.executions || []);
-        
+
         loadNpcMemories(npc.name);
         loadNpcKnowledgeGraph(npc.name);
     };
@@ -344,35 +340,35 @@ const NPCTeamMenu = ({
 
     const handleJinxPatternChange = (index, value) => {
         setEditedNpc(prev => {
-            const newPatterns = [...(prev.jinxs || [])];
+            const newPatterns = [...(prev.jinxes || [])];
             newPatterns[index] = value;
-            return { ...prev, jinxs: newPatterns };
+            return { ...prev, jinxes: newPatterns };
         });
     };
 
     const addJinxPattern = () => {
         setEditedNpc(prev => ({
             ...prev,
-            jinxs: [...(prev.jinxs || []), '']
+            jinxes: [...(prev.jinxes || []), '']
         }));
     };
 
     const removeJinxPattern = (index) => {
         setEditedNpc(prev => ({
             ...prev,
-            jinxs: prev.jinxs.filter((_, i) => i !== index)
+            jinxes: prev.jinxes.filter((_, i) => i !== index)
         }));
     };
 
     const handleSave = async () => {
         const npcToSave = {
             ...editedNpc,
-            jinxs: editedNpc.jinxs.length === 1 && 
-                   editedNpc.jinxs[0] === '*'
+            jinxes: editedNpc.jinxes.length === 1 &&
+                   editedNpc.jinxes[0] === '*'
                 ? '*'
-                : editedNpc.jinxs
+                : editedNpc.jinxes
         };
-        
+
         const response = await window.api.saveNPC({
             npc: npcToSave,
             isGlobal,
@@ -398,11 +394,11 @@ const NPCTeamMenu = ({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ messageId, label })
         });
-        
-        setExecutionHistory(prev => 
-            prev.map(e => 
-                e.message_id === messageId 
-                    ? { ...e, label } 
+
+        setExecutionHistory(prev =>
+            prev.map(e =>
+                e.message_id === messageId
+                    ? { ...e, label }
                     : e
             )
         );
@@ -429,10 +425,10 @@ const NPCTeamMenu = ({
     };
 
     const exportDataset = () => {
-        const selected = executionHistory.filter(e => 
+        const selected = executionHistory.filter(e =>
             selectedExecutions.has(e.message_id)
         );
-        
+
         let dataset;
         if (datasetFormat === 'sft') {
             dataset = selected.map(e => ({
@@ -462,9 +458,9 @@ const NPCTeamMenu = ({
                 model: e.model
             }));
         }
-        
+
         const blob = new Blob(
-            [JSON.stringify(dataset, null, 2)], 
+            [JSON.stringify(dataset, null, 2)],
             { type: 'application/json' }
         );
         const url = URL.createObjectURL(blob);
@@ -477,9 +473,9 @@ const NPCTeamMenu = ({
     };
 
     const filteredMemories = memories.filter(m => {
-        const matchesStatus = memoryFilter === 'all' || 
+        const matchesStatus = memoryFilter === 'all' ||
                               m.status === memoryFilter;
-        const matchesSearch = !memorySearch || 
+        const matchesSearch = !memorySearch ||
             m.initial_memory?.toLowerCase()
                 .includes(memorySearch.toLowerCase()) ||
             m.final_memory?.toLowerCase()
@@ -492,26 +488,26 @@ const NPCTeamMenu = ({
     const content = (
         <>
             <div className="flex flex-1 min-h-0 overflow-hidden border theme-border rounded-lg">
-                    <div className="w-1/5 border-r theme-border 
+                    <div className="w-1/5 border-r theme-border
                         flex flex-col min-h-0">
                         <div className="flex-1 overflow-y-auto p-2">
                             {loading ? (
-                                <div className="flex items-center 
+                                <div className="flex items-center
                                     justify-center p-8">
-                                    <Loader className="animate-spin 
+                                    <Loader className="animate-spin
                                         text-blue-400" />
                                 </div>
                             ) : (
                                 <div className="space-y-1">
                                     {npcs.map((npc) => (
-                                        <button 
-                                            key={npc.name} 
+                                        <button
+                                            key={npc.name}
                                             onClick={() => handleNPCSelect(npc)}
-                                            className={`flex items-center gap-2 
-                                                w-full p-2 rounded text-sm 
-                                                text-left 
-                                                ${selectedNpc?.name === npc.name 
-                                                    ? 'bg-blue-600/50' 
+                                            className={`flex items-center gap-2
+                                                w-full p-2 rounded text-sm
+                                                text-left
+                                                ${selectedNpc?.name === npc.name
+                                                    ? 'bg-blue-600/50'
                                                     : 'theme-hover'}`}
                                         >
                                             <Bot size={14} />
@@ -527,40 +523,40 @@ const NPCTeamMenu = ({
 
                     {selectedNpc && editedNpc ? (
                         <div className="flex-1 flex flex-col min-h-0">
-                            <div className="flex border-b theme-border 
+                            <div className="flex border-b theme-border
                                 flex-shrink-0">
                                 <button
                                     onClick={() => setActiveTab('config')}
-                                    className={`px-4 py-2 text-sm 
-                                        ${activeTab === 'config' 
-                                            ? 'border-b-2 border-blue-500' 
+                                    className={`px-4 py-2 text-sm
+                                        ${activeTab === 'config'
+                                            ? 'border-b-2 border-blue-500'
                                             : 'theme-text-secondary'}`}
                                 >
                                     Config
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('history')}
-                                    className={`px-4 py-2 text-sm 
-                                        ${activeTab === 'history' 
-                                            ? 'border-b-2 border-blue-500' 
+                                    className={`px-4 py-2 text-sm
+                                        ${activeTab === 'history'
+                                            ? 'border-b-2 border-blue-500'
                                             : 'theme-text-secondary'}`}
                                 >
                                     History ({executionHistory.length})
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('memory')}
-                                    className={`px-4 py-2 text-sm 
-                                        ${activeTab === 'memory' 
-                                            ? 'border-b-2 border-blue-500' 
+                                    className={`px-4 py-2 text-sm
+                                        ${activeTab === 'memory'
+                                            ? 'border-b-2 border-blue-500'
                                             : 'theme-text-secondary'}`}
                                 >
                                     Memory ({memories.length})
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('kg')}
-                                    className={`px-4 py-2 text-sm 
-                                        ${activeTab === 'kg' 
-                                            ? 'border-b-2 border-blue-500' 
+                                    className={`px-4 py-2 text-sm
+                                        ${activeTab === 'kg'
+                                            ? 'border-b-2 border-blue-500'
                                             : 'theme-text-secondary'}`}
                                 >
                                     Knowledge
@@ -570,29 +566,29 @@ const NPCTeamMenu = ({
                             <div className="flex-1 overflow-y-auto p-4">
                                 {activeTab === 'config' && (
                                     <div className="space-y-4">
-                                        <div className="flex justify-between 
+                                        <div className="flex justify-between
                                             items-start gap-2">
                                             <input
-                                                className="flex-1 theme-input 
+                                                className="flex-1 theme-input
                                                     text-lg font-bold p-2"
                                                 value={editedNpc.name}
                                                 onChange={(e) => handleInputChange(
-                                                    'name', 
+                                                    'name',
                                                     e.target.value
                                                 )}
                                             />
                                             <div className="flex gap-1">
-                                                <button 
-                                                    onClick={handleChatWithNpc} 
-                                                    className="theme-button-primary 
+                                                <button
+                                                    onClick={handleChatWithNpc}
+                                                    className="theme-button-primary
                                                         p-2 rounded"
                                                     title="Chat"
                                                 >
                                                     <MessageSquare size={16} />
                                                 </button>
-                                                <button 
-                                                    onClick={handleSave} 
-                                                    className="theme-button-success 
+                                                <button
+                                                    onClick={handleSave}
+                                                    className="theme-button-success
                                                         p-2 rounded"
                                                     title="Save"
                                                 >
@@ -602,16 +598,16 @@ const NPCTeamMenu = ({
                                         </div>
 
                                         <div>
-                                            <label className="block text-xs 
+                                            <label className="block text-xs
                                                 theme-text-secondary mb-1">
                                                 Primary Directive
                                             </label>
                                             <AutosizeTextarea
-                                                className="w-full theme-input p-2 
+                                                className="w-full theme-input p-2
                                                     rounded text-sm min-h-[80px]"
                                                 value={editedNpc.primary_directive || ''}
                                                 onChange={(e) => handleInputChange(
-                                                    'primary_directive', 
+                                                    'primary_directive',
                                                     e.target.value
                                                 )}
                                             />
@@ -619,31 +615,31 @@ const NPCTeamMenu = ({
 
                                         <div className="grid grid-cols-2 gap-2">
                                             <div>
-                                                <label className="block text-xs 
+                                                <label className="block text-xs
                                                     theme-text-secondary mb-1">
                                                     Model
                                                 </label>
                                                 <input
-                                                    className="w-full theme-input 
+                                                    className="w-full theme-input
                                                         p-2 rounded text-sm"
                                                     value={editedNpc.model || ''}
                                                     onChange={(e) => handleInputChange(
-                                                        'model', 
+                                                        'model',
                                                         e.target.value
                                                     )}
                                                 />
                                             </div>
                                             <div>
-                                                <label className="block text-xs 
+                                                <label className="block text-xs
                                                     theme-text-secondary mb-1">
                                                     Provider
                                                 </label>
                                                 <input
-                                                    className="w-full theme-input 
+                                                    className="w-full theme-input
                                                         p-2 rounded text-sm"
                                                     value={editedNpc.provider || ''}
                                                     onChange={(e) => handleInputChange(
-                                                        'provider', 
+                                                        'provider',
                                                         e.target.value
                                                     )}
                                                 />
@@ -651,35 +647,35 @@ const NPCTeamMenu = ({
                                         </div>
 
                                         <div>
-                                            <div className="flex justify-between 
+                                            <div className="flex justify-between
                                                 items-center mb-2">
-                                                <label className="text-sm 
+                                                <label className="text-sm
                                                     font-semibold">
                                                     Jinx Patterns
                                                 </label>
-                                                <button 
-                                                    onClick={addJinxPattern} 
-                                                    className="text-xs 
-                                                        theme-button-subtle 
+                                                <button
+                                                    onClick={addJinxPattern}
+                                                    className="text-xs
+                                                        theme-button-subtle
                                                         flex items-center gap-1"
                                                 >
                                                     <Plus size={12} /> Add
                                                 </button>
                                             </div>
-                                            
+
                                             <div className="space-y-1">
-                                                {(editedNpc.jinxs || []).map((pattern, i) => (
-                                                    <div key={i} className="flex 
+                                                {(editedNpc.jinxes || []).map((pattern, i) => (
+                                                    <div key={i} className="flex
                                                         items-center gap-1">
                                                         <input
-                                                            className="flex-1 
-                                                                theme-input p-1.5 
-                                                                rounded text-xs 
+                                                            className="flex-1
+                                                                theme-input p-1.5
+                                                                rounded text-xs
                                                                 font-mono"
                                                             value={pattern}
-                                                            onChange={(e) => 
+                                                            onChange={(e) =>
                                                                 handleJinxPatternChange(
-                                                                    i, 
+                                                                    i,
                                                                     e.target.value
                                                                 )
                                                             }
@@ -1064,52 +1060,52 @@ const NPCTeamMenu = ({
                                 {activeTab === 'kg' && (
                                     <div className="space-y-4">
                                         <div className="flex items-center gap-2">
-                                            <GitBranch size={16} 
+                                            <GitBranch size={16}
                                                 className="text-green-400" />
                                             <h3 className="text-sm font-semibold">
                                                 Concept Network
                                             </h3>
                                             <button
-                                                onClick={() => 
+                                                onClick={() =>
                                                     loadNpcKnowledgeGraph(
                                                         selectedNpc.name
                                                     )
                                                 }
                                                 disabled={kgLoading}
-                                                className="ml-auto text-xs 
+                                                className="ml-auto text-xs
                                                     theme-button-subtle"
                                             >
-                                                {kgLoading 
-                                                    ? 'Loading...' 
+                                                {kgLoading
+                                                    ? 'Loading...'
                                                     : 'Refresh'}
                                             </button>
                                         </div>
 
-                                        <div className="text-xs 
+                                        <div className="text-xs
                                             theme-text-secondary">
-                                            Nodes: {kgData.nodes.length} | 
+                                            Nodes: {kgData.nodes.length} |
                                             Links: {kgData.links.length}
                                         </div>
 
                                         {kgLoading ? (
                                             <div className="flex justify-center p-8">
-                                                <Loader className="animate-spin 
+                                                <Loader className="animate-spin
                                                     text-green-400" />
                                             </div>
                                         ) : (
-                                            <div className="h-80 
-                                                theme-bg-tertiary rounded 
+                                            <div className="h-80
+                                                theme-bg-tertiary rounded
                                                 overflow-hidden">
                                                 <ForceGraph2D
                                                     ref={graphRef}
                                                     graphData={kgData}
                                                     nodeLabel="id"
                                                     nodeVal={n => n.size || 4}
-                                                    nodeColor={n => 
-                                                        n.type === 'npc' 
-                                                            ? '#3b82f6' 
+                                                    nodeColor={n =>
+                                                        n.type === 'npc'
+                                                            ? '#3b82f6'
                                                             : '#a855f7'}
-                                                    linkColor={() => 
+                                                    linkColor={() =>
                                                         'rgba(255,255,255,0.2)'}
                                                     width={600}
                                                     height={320}
@@ -1130,26 +1126,26 @@ const NPCTeamMenu = ({
             </div>
 
             {showDatasetBuilder && (
-                <div className="fixed inset-0 bg-black/70 flex items-center 
+                <div className="fixed inset-0 bg-black/70 flex items-center
                     justify-center z-[60]">
-                    <div className="theme-bg-secondary p-6 rounded-lg 
+                    <div className="theme-bg-secondary p-6 rounded-lg
                         shadow-xl w-full max-w-md">
-                        <h3 className="text-lg font-semibold mb-4 
+                        <h3 className="text-lg font-semibold mb-4
                             flex items-center gap-2">
                             <Database className="text-purple-400" />
                             Create Training Dataset
                         </h3>
-                        
+
                         <div className="space-y-4">
                             <div>
-                                <label className="text-sm 
+                                <label className="text-sm
                                     theme-text-secondary block mb-1">
                                     Dataset Name
                                 </label>
                                 <input
                                     type="text"
                                     value={datasetName}
-                                    onChange={(e) => 
+                                    onChange={(e) =>
                                         setDatasetName(e.target.value)
                                     }
                                     placeholder={`${selectedNpc?.name}_dataset`}
@@ -1158,13 +1154,13 @@ const NPCTeamMenu = ({
                             </div>
 
                             <div>
-                                <label className="text-sm 
+                                <label className="text-sm
                                     theme-text-secondary block mb-1">
                                     Format
                                 </label>
                                 <select
                                     value={datasetFormat}
-                                    onChange={(e) => 
+                                    onChange={(e) =>
                                         setDatasetFormat(e.target.value)
                                     }
                                     className="w-full theme-input p-2 text-sm"
@@ -1186,10 +1182,10 @@ const NPCTeamMenu = ({
                             </div>
 
                             {datasetFormat === 'dpo' && (
-                                <div className="text-xs text-yellow-400 
+                                <div className="text-xs text-yellow-400
                                     bg-yellow-900/20 p-2 rounded">
-                                    DPO format requires labeled data. Only 
-                                    executions marked as "good" or "bad" 
+                                    DPO format requires labeled data. Only
+                                    executions marked as "good" or "bad"
                                     will be included.
                                 </div>
                             )}
@@ -1216,7 +1212,6 @@ const NPCTeamMenu = ({
                 </div>
             )}
 
-            {/* Fine-tune Modal for NPC Memories */}
             {showFineTuneModal && (
                 <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60]">
                     <div className="theme-bg-secondary p-6 rounded-lg shadow-xl w-full max-w-md">
@@ -1320,12 +1315,10 @@ const NPCTeamMenu = ({
         </>
     );
 
-    // Embedded mode - return just the content
     if (embedded) {
         return <div className="flex flex-col h-full">{content}</div>;
     }
 
-    // Modal mode - wrap in modal container
     return (
         <div className="fixed inset-0 bg-black/60 flex items-center
             justify-center z-50 p-4 overflow-hidden" onClick={onClose}>

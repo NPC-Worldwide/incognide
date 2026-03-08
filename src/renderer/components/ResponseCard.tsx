@@ -35,10 +35,9 @@ const ResponseCard: React.FC<ResponseCardProps> = ({
         setTimeout(() => setCopied(false), 2000);
     };
 
-    // Extract preview text from message content
     const previewText = useMemo(() => {
         const content = message.content || '';
-        // Strip markdown formatting for preview
+
         const stripped = content
             .replace(/```[\s\S]*?```/g, '[code]')
             .replace(/`[^`]+`/g, '[code]')
@@ -50,7 +49,6 @@ const ResponseCard: React.FC<ResponseCardProps> = ({
         return stripped.slice(0, 150) + (stripped.length > 150 ? '...' : '');
     }, [message.content]);
 
-    // Get badge color based on model/npc
     const getBadgeColor = () => {
         if (npcName) return 'bg-purple-500/30 text-purple-300 border-purple-500/50';
         if (modelName?.includes('claude')) return 'bg-orange-500/30 text-orange-300 border-orange-500/50';
@@ -68,12 +66,10 @@ const ResponseCard: React.FC<ResponseCardProps> = ({
                 hover:border-white/20
             `}
         >
-            {/* Header - always visible */}
             <div
                 className="flex items-center gap-2 p-2 cursor-pointer"
                 onClick={onToggleExpand}
             >
-                {/* Selection checkbox */}
                 <input
                     type="checkbox"
                     checked={isSelected}
@@ -84,27 +80,22 @@ const ResponseCard: React.FC<ResponseCardProps> = ({
                     className="w-4 h-4 rounded border-white/20 bg-white/5 text-purple-500 focus:ring-purple-500/50"
                 />
 
-                {/* Model/NPC badge */}
                 <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${getBadgeColor()}`}>
                     {npcName ? <Bot size={10} /> : <Cpu size={10} />}
                     <span>{npcName || modelName || 'Unknown'}</span>
                 </div>
 
-                {/* Expand/collapse indicator */}
                 <div className="ml-auto flex items-center gap-1 text-gray-400">
                     {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                 </div>
             </div>
 
-            {/* Content */}
             {isExpanded ? (
                 <div className="px-3 pb-3">
-                    {/* Full content with markdown */}
                     <div className="prose prose-invert prose-sm max-w-none overflow-hidden">
                         <MarkdownRenderer content={message.content || ''} />
                     </div>
 
-                    {/* Action buttons */}
                     <div className="flex items-center gap-2 mt-3 pt-2 border-t border-white/10">
                         <button
                             onClick={handleCopy}
@@ -135,7 +126,7 @@ const ResponseCard: React.FC<ResponseCardProps> = ({
                     </div>
                 </div>
             ) : (
-                /* Collapsed preview */
+
                 <div className="px-3 pb-2">
                     <p className="text-xs text-gray-400 line-clamp-2">{previewText}</p>
                 </div>

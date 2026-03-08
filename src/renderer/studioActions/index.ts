@@ -1,6 +1,4 @@
-/**
- * Studio Actions Registry
- */
+
 
 import type React from 'react';
 
@@ -34,7 +32,6 @@ export type StudioActionHandler = (
   ctx: StudioContext
 ) => Promise<StudioActionResult>;
 
-// Action registry
 const actions: Record<string, StudioActionHandler> = {};
 
 export function registerAction(name: string, handler: StudioActionHandler): void {
@@ -48,7 +45,6 @@ async function ensureInitialized() {
   if (initialized) return;
   initialized = true;
 
-  // Dynamic imports to avoid circular dependency
   await import('./paneActions');
   await import('./contentActions');
   await import('./tabActions');
@@ -60,7 +56,6 @@ async function ensureInitialized() {
   console.log('[StudioActions] All actions loaded:', Object.keys(actions));
 }
 
-// Initialize immediately
 ensureInitialized();
 
 export async function executeStudioAction(
@@ -97,7 +92,6 @@ export function hasAction(name: string): boolean {
   return name in actions;
 }
 
-// Built-in action: list all available studio actions
 registerAction('list_actions', async () => {
   const actionNames = Object.keys(actions).sort();
   const categories: Record<string, string[]> = {

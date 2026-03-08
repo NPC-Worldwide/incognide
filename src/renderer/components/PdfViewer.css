@@ -218,9 +218,13 @@
    TOOLBAR
    ============================================ */
 
+/* Hide default layout toolbar and sidebar — we use our own */
 .pdf-viewer-container .rpv-default-layout__toolbar {
-    user-select: none !important;
-    -webkit-user-select: none !important;
+    display: none !important;
+}
+
+.pdf-viewer-container .rpv-default-layout__sidebar {
+    display: none !important;
 }
 
 /* ============================================
@@ -273,24 +277,9 @@
    Required for pdfjs-dist text layer rendering
    ============================================ */
 
-/* Set on all possible containers - cascade down */
-:root {
+/* Set scale-factor only on the text layer where it's needed for text selection */
+.pdf-viewer-container {
     --scale-factor: 1;
-}
-
-.pdf-viewer-container,
-.pdf-viewer-container *,
-.rpv-core__viewer,
-.rpv-core__inner-pages,
-.rpv-core__inner-page,
-.rpv-core__page-layer,
-.rpv-core__text-layer {
-    --scale-factor: 1;
-}
-
-/* Ensure text layer is properly styled for selection */
-.rpv-core__text-layer {
-    --scale-factor: 1 !important;
 }
 
 /* Text layer spans - MUST be invisible but selectable */

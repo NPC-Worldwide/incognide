@@ -46,8 +46,7 @@ const CtxEditor = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = 
             setIsLoading(false);
         }
     };
-    
-   
+
     const handleSave = async () => {
         setIsLoading(true);
         setError(null);
@@ -69,7 +68,6 @@ const CtxEditor = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = 
         setCtx(prev => ({ ...prev, [field]: value }));
     };
 
-    // Get custom KV pairs (excluding reserved keys that have their own tabs)
     const getCustomKvPairs = (ctx) => {
         const reserved = ['forenpc', 'context', 'databases', 'mcp_servers'];
         return Object.entries(ctx || {}).filter(([key]) => !reserved.includes(key));
@@ -137,7 +135,6 @@ const CtxEditor = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = 
                     </div>
                 </div>
 
-                {/* Generic KV Pairs */}
                 <div className="space-y-2">
                     <h4 className="text-sm theme-text-primary font-semibold mb-2">Additional Context</h4>
                     <div className="space-y-3">
@@ -175,14 +172,12 @@ const CtxEditor = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = 
 
     const content = (
         <>
-            {/* Content */}
             <div className="flex-1 overflow-y-auto">
                 {isLoading ? <p className="text-center theme-text-muted">Loading...</p> : error ? <p className="text-red-500">{error}</p> : (
                     renderForm(isGlobal ? 'global' : 'project')
                 )}
             </div>
 
-            {/* Save Button */}
             <div className="border-t theme-border pt-4 mt-4 flex justify-end">
                 <button onClick={handleSave} className="theme-button-primary flex items-center gap-2 px-4 py-2 rounded text-sm" disabled={isLoading}>
                     <Save size={16} />
@@ -192,12 +187,10 @@ const CtxEditor = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = 
         </>
     );
 
-    // Embedded mode - return just the content
     if (embedded) {
         return <div className="flex flex-col h-full">{content}</div>;
     }
 
-    // Modal mode - wrap in modal container
     return (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
             <div className="theme-bg-secondary rounded-lg shadow-xl w-full max-w-5xl flex flex-col" onClick={(e) => e.stopPropagation()}>

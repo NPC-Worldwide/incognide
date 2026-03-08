@@ -20,11 +20,10 @@ const ProjectEnvEditor: React.FC<ProjectEnvEditorProps> = ({ currentPath }) => {
     const [hasChanges, setHasChanges] = useState(false);
     const [viewMode, setViewMode] = useState<'table' | 'raw'>('table');
 
-    const envPath = currentPath 
-        ? `${currentPath.replace(/[\\/]$/, '')}/.env` // Remove trailing slash before adding new one
+    const envPath = currentPath
+        ? `${currentPath.replace(/[\\/]$/, '')}/.env`
         : null;
 
-    // Parse .env content into variables
     const parseEnvContent = (content: string): EnvVariable[] => {
         const lines = content.split('\n');
         const variables: EnvVariable[] = [];
@@ -37,7 +36,7 @@ const ProjectEnvEditor: React.FC<ProjectEnvEditorProps> = ({ currentPath }) => {
             if (eqIndex > 0) {
                 const key = trimmed.substring(0, eqIndex).trim();
                 let value = trimmed.substring(eqIndex + 1).trim();
-                // Remove quotes if present
+
                 if ((value.startsWith('"') && value.endsWith('"')) ||
                     (value.startsWith("'") && value.endsWith("'"))) {
                     value = value.slice(1, -1);
@@ -52,7 +51,6 @@ const ProjectEnvEditor: React.FC<ProjectEnvEditorProps> = ({ currentPath }) => {
         return variables;
     };
 
-    // Convert variables back to .env format
     const variablesToEnvContent = (variables: EnvVariable[]): string => {
         return variables
             .filter(v => v.key.trim())
@@ -65,7 +63,6 @@ const ProjectEnvEditor: React.FC<ProjectEnvEditorProps> = ({ currentPath }) => {
             .join('\n');
     };
 
-    // Load .env file
     const loadEnvFile = useCallback(async () => {
         if (!envPath) return;
 
@@ -75,7 +72,7 @@ const ProjectEnvEditor: React.FC<ProjectEnvEditorProps> = ({ currentPath }) => {
         try {
             const result = await (window as any).api?.readFileContent?.(envPath);
             if (result?.error) {
-                // File doesn't exist - that's OK, we'll create it
+
                 setEnvContent('');
                 setEnvVariables([]);
             } else {
@@ -92,7 +89,6 @@ const ProjectEnvEditor: React.FC<ProjectEnvEditorProps> = ({ currentPath }) => {
         }
     }, [envPath]);
 
-    // Save .env file
     const saveEnvFile = async () => {
         if (!envPath) return;
 
@@ -107,7 +103,6 @@ const ProjectEnvEditor: React.FC<ProjectEnvEditorProps> = ({ currentPath }) => {
             await (window as any).api?.writeFileContent?.(envPath, content);
             setHasChanges(false);
 
-            // Sync the other view
             if (viewMode === 'table') {
                 setEnvContent(content);
             } else {
@@ -121,14 +116,12 @@ const ProjectEnvEditor: React.FC<ProjectEnvEditorProps> = ({ currentPath }) => {
         }
     };
 
-    // Load on mount
     useEffect(() => {
         if (envPath) {
             loadEnvFile();
         }
     }, [envPath, loadEnvFile]);
 
-    // Ctrl+S to save
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -140,13 +133,11 @@ const ProjectEnvEditor: React.FC<ProjectEnvEditorProps> = ({ currentPath }) => {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
 
-    // Add new variable
     const addVariable = () => {
         setEnvVariables([...envVariables, { key: '', value: '', isSecret: false }]);
         setHasChanges(true);
     };
 
-    // Update variable
     const updateVariable = (index: number, field: 'key' | 'value', newValue: string) => {
         const updated = [...envVariables];
         updated[index] = { ...updated[index], [field]: newValue };
@@ -160,27 +151,24 @@ const ProjectEnvEditor: React.FC<ProjectEnvEditorProps> = ({ currentPath }) => {
         setHasChanges(true);
     };
 
-    // Delete variable
     const deleteVariable = (index: number) => {
         setEnvVariables(envVariables.filter((_, i) => i !== index));
         setHasChanges(true);
     };
 
-    // Handle raw content change
     const handleRawContentChange = (content: string) => {
         setEnvContent(content);
         setHasChanges(true);
     };
 
-    // Switch view modes
     const switchViewMode = (mode: 'table' | 'raw') => {
         if (mode === viewMode) return;
 
         if (viewMode === 'table') {
-            // Sync table to raw
+
             setEnvContent(variablesToEnvContent(envVariables));
         } else {
-            // Sync raw to table
+
             setEnvVariables(parseEnvContent(envContent));
         }
         setViewMode(mode);
@@ -188,7 +176,6 @@ const ProjectEnvEditor: React.FC<ProjectEnvEditorProps> = ({ currentPath }) => {
 
     return (
         <div className="flex flex-col h-full overflow-hidden">
-            {/* Header */}
             <div className="flex items-center justify-between p-3 border-b theme-border flex-shrink-0">
                 <div className="flex items-center gap-2">
                     <KeyRound className="text-orange-400" size={16} />
@@ -220,7 +207,6 @@ const ProjectEnvEditor: React.FC<ProjectEnvEditorProps> = ({ currentPath }) => {
                 </div>
             </div>
 
-                {/* View mode tabs */}
                 <div className="flex border-b theme-border">
                     <button
                         onClick={() => switchViewMode('table')}
@@ -244,7 +230,6 @@ const ProjectEnvEditor: React.FC<ProjectEnvEditorProps> = ({ currentPath }) => {
                     </button>
                 </div>
 
-                {/* Error message */}
                 {error && (
                     <div className="p-3 bg-red-900/30 border-b border-red-800 flex items-center gap-2 text-red-400 text-sm">
                         <AlertCircle size={16} />
@@ -252,7 +237,6 @@ const ProjectEnvEditor: React.FC<ProjectEnvEditorProps> = ({ currentPath }) => {
                     </div>
                 )}
 
-                {/* Content */}
                 <div className="flex-1 overflow-auto p-4">
                     {loading ? (
                         <div className="flex items-center justify-center py-12">
@@ -260,7 +244,6 @@ const ProjectEnvEditor: React.FC<ProjectEnvEditorProps> = ({ currentPath }) => {
                         </div>
                     ) : viewMode === 'table' ? (
                         <div className="space-y-4">
-                            {/* Browser Homepage - prominent field */}
                             <div className="p-3 border border-gray-700 rounded-lg space-y-2">
                                 <label className="flex items-center gap-2 text-sm font-medium">
                                     <Globe size={14} className="text-cyan-400" />
@@ -283,7 +266,6 @@ const ProjectEnvEditor: React.FC<ProjectEnvEditorProps> = ({ currentPath }) => {
                                 />
                             </div>
 
-                            {/* Other env variables */}
                             <div className="space-y-2">
                                 <p className="text-xs theme-text-muted">Other Variables</p>
                                 {envVariables.filter(v => v.key !== 'BROWSER_HOMEPAGE').length === 0 ? (
@@ -341,7 +323,6 @@ const ProjectEnvEditor: React.FC<ProjectEnvEditorProps> = ({ currentPath }) => {
                     )}
                 </div>
 
-            {/* Footer with tips */}
             <div className="p-2 border-t theme-border text-xs theme-text-muted flex-shrink-0">
                 <p>Environment variables for this workspace folder.</p>
             </div>

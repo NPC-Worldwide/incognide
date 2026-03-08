@@ -50,7 +50,6 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
-// Global cache for spreadsheet data - keyed by filePath
 const csvDataCache = new Map<string, {
     headers: any[];
     data: any[][];
@@ -58,7 +57,6 @@ const csvDataCache = new Map<string, {
     hasChanges?: boolean;
 }>();
 
-// Cell style interface
 interface CellStyle {
     fontFamily?: string;
     fontSize?: number;
@@ -77,7 +75,6 @@ interface CellStyle {
     borderRight?: boolean;
 }
 
-// Default fonts
 const FONTS = [
     'Arial', 'Helvetica', 'Times New Roman', 'Georgia', 'Courier New',
     'Verdana', 'Trebuchet MS', 'Comic Sans MS', 'Impact', 'Lucida Console'
@@ -92,7 +89,6 @@ const PRESET_COLORS = [
     '#d0e0e3', '#cfe2f3', '#d9d2e9', '#ead1dc'
 ];
 
-// Convert 0-based column index to Excel-style letters: 0=A, 1=B, ..., 25=Z, 26=AA, 27=AB, etc.
 function colToLetters(idx: number): string {
     let s = '';
     let n = idx + 1;
@@ -104,7 +100,6 @@ function colToLetters(idx: number): string {
     return s;
 }
 
-// Convert Excel-style column letters to 0-based index: A=0, B=1, ..., Z=25, AA=26, AB=27, etc.
 function lettersToCol(letters: string): number {
     let idx = 0;
     for (let i = 0; i < letters.length; i++) {
@@ -116,7 +111,7 @@ function lettersToCol(letters: string): number {
 const CsvViewer = ({
     nodeId,
     contentDataRef,
-    currentPath, // Passed from Enpistu
+    currentPath,
     findNodePath,
     rootLayoutNode,
     setDraggedItem,
@@ -144,7 +139,6 @@ const CsvViewer = ({
     const [activeSheet, setActiveSheet] = useState('');
     const tableRef = useRef(null);
 
-    // New features: sorting, filtering, search
     const [sortConfig, setSortConfig] = useState<{ column: number; direction: 'asc' | 'desc' } | null>(null);
     const [filters, setFilters] = useState<{ [key: number]: string }>({});
     const [searchQuery, setSearchQuery] = useState('');
@@ -153,34 +147,28 @@ const CsvViewer = ({
     const [resizingColumn, setResizingColumn] = useState<number | null>(null);
     const [showColumnMenu, setShowColumnMenu] = useState<number | null>(null);
 
-    // Cell styles storage: { "row,col": CellStyle }
     const [cellStyles, setCellStyles] = useState<{ [key: string]: CellStyle }>({});
     const [showFontPicker, setShowFontPicker] = useState(false);
     const [showTextColorPicker, setShowTextColorPicker] = useState(false);
     const [showBgColorPicker, setShowBgColorPicker] = useState(false);
     const [showNumberFormat, setShowNumberFormat] = useState(false);
 
-    // Undo/Redo history
     const [history, setHistory] = useState<{ data: any[][]; headers: string[] }[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
     const isUndoRedoRef = useRef(false);
 
-    // Freeze panes
     const [freezeRow, setFreezeRow] = useState(false);
     const [freezeCol, setFreezeCol] = useState(false);
 
-    // Document theme mode (independent of app theme)
     const [docLightMode, setDocLightMode] = useState(() => {
         const saved = localStorage.getItem('csvViewer_lightMode');
-        return saved !== null ? JSON.parse(saved) : true; // Default to light mode
+        return saved !== null ? JSON.parse(saved) : true;
     });
 
-    // Save doc theme preference
     useEffect(() => {
         localStorage.setItem('csvViewer_lightMode', JSON.stringify(docLightMode));
     }, [docLightMode]);
 
-    // Sync edited data to global cache so edits survive component remount (pane resize/split)
     useEffect(() => {
         const pData = contentDataRef.current[nodeId];
         const fp = pData?.contentId;
@@ -190,34 +178,28 @@ const CsvViewer = ({
         }
     }, [headers, data, hasChanges, nodeId]);
 
-    // Chart state
     const [showChartModal, setShowChartModal] = useState(false);
     const [chartType, setChartType] = useState<'bar' | 'line' | 'pie' | 'area'>('bar');
     const [chartXColumn, setChartXColumn] = useState(0);
     const [chartYColumns, setChartYColumns] = useState<number[]>([1]);
     const chartCanvasRef = useRef<HTMLCanvasElement>(null);
 
-    // Default grid size for new spreadsheets
     const [defaultRows] = useState(() => parseInt(localStorage.getItem('xlsx_defaultRows') || '10', 10));
     const [defaultCols] = useState(() => parseInt(localStorage.getItem('xlsx_defaultCols') || '10', 10));
 
-    // Context menu for spreadsheet
     const [csvContextMenu, setCsvContextMenu] = useState<{ x: number; y: number; rowIndex?: number; colIndex?: number } | null>(null);
 
-    // XLSX-specific cell styles and data validation
     const [xlsxCellStyles, setXlsxCellStyles] = useState<{ [key: string]: any }>({});
     const [dataValidations, setDataValidations] = useState<{ [key: string]: { type: string; values?: string[] } }>({});
 
-    // Get style for a cell (merges XLSX-extracted styles with user-applied styles)
     const getCellStyle = useCallback((row: number, col: number): CellStyle & { isBoolean?: boolean; boolValue?: boolean } => {
         const key = `${row},${col}`;
         const xlsxStyle = xlsxCellStyles[key] || {};
         const userStyle = cellStyles[key] || {};
-        // User styles override XLSX styles
+
         return { ...xlsxStyle, ...userStyle };
     }, [cellStyles, xlsxCellStyles]);
 
-    // Apply style to selected cells
     const applyStyleToSelection = useCallback((styleUpdate: Partial<CellStyle>) => {
         if (!selectedCell && !selectedRange) return;
 
@@ -242,7 +224,6 @@ const CsvViewer = ({
         setHasChanges(true);
     }, [selectedCell, selectedRange]);
 
-    // Get current selection's style (for toolbar state)
     const currentStyle = useMemo(() => {
         if (selectedCell) {
             return getCellStyle(selectedCell.row, selectedCell.col);
@@ -250,10 +231,9 @@ const CsvViewer = ({
         return {};
     }, [selectedCell, getCellStyle]);
 
-    // Format value based on number format
     const formatCellValue = useCallback((value: any, style: CellStyle): string => {
         if (value === null || value === undefined || value === '') return '';
-        if (typeof value === 'string' && value.startsWith('=')) return value; // Formula
+        if (typeof value === 'string' && value.startsWith('=')) return value;
 
         const num = parseFloat(value);
         if (isNaN(num)) return String(value);
@@ -275,7 +255,6 @@ const CsvViewer = ({
         }
     }, []);
 
-    // Add to history for undo/redo
     const addToHistory = useCallback((newData: any[][], newHeaders: string[]) => {
         if (isUndoRedoRef.current) {
             isUndoRedoRef.current = false;
@@ -294,7 +273,6 @@ const CsvViewer = ({
         setHistory(newHistory);
     }, [history, historyIndex]);
 
-    // Undo
     const undo = useCallback(() => {
         if (historyIndex > 0) {
             isUndoRedoRef.current = true;
@@ -305,7 +283,6 @@ const CsvViewer = ({
         }
     }, [history, historyIndex]);
 
-    // Redo
     const redo = useCallback(() => {
         if (historyIndex < history.length - 1) {
             isUndoRedoRef.current = true;
@@ -316,7 +293,6 @@ const CsvViewer = ({
         }
     }, [history, historyIndex]);
 
-    // Auto-fit column widths
     const autoFitColumns = useCallback(() => {
         const newWidths: { [key: number]: number } = {};
         const canvas = document.createElement('canvas');
@@ -326,7 +302,7 @@ const CsvViewer = ({
         ctx.font = '12px Arial';
 
         headers.forEach((header, colIndex) => {
-            let maxWidth = ctx.measureText(String(header)).width + 40; // Header + padding
+            let maxWidth = ctx.measureText(String(header)).width + 40;
 
             data.slice(0, 100).forEach(row => {
                 const cellValue = String(row[colIndex] ?? '');
@@ -340,7 +316,6 @@ const CsvViewer = ({
         setColumnWidths(newWidths);
     }, [headers, data]);
 
-    // Draw chart on canvas
     const drawChart = useCallback(() => {
         const canvas = chartCanvasRef.current;
         if (!canvas || !data.length) return;
@@ -354,11 +329,9 @@ const CsvViewer = ({
         const chartWidth = width - padding * 2;
         const chartHeight = height - padding * 2;
 
-        // Clear canvas
         ctx.fillStyle = '#1a1a2e';
         ctx.fillRect(0, 0, width, height);
 
-        // Get data for chart
         const labels = data.slice(0, 50).map(row => String(row[chartXColumn] ?? ''));
         const datasets = chartYColumns.map((colIdx, i) => ({
             data: data.slice(0, 50).map(row => parseFloat(row[colIdx]) || 0),
@@ -370,7 +343,6 @@ const CsvViewer = ({
         const minValue = Math.min(...allValues, 0);
         const valueRange = maxValue - minValue || 1;
 
-        // Draw axes
         ctx.strokeStyle = '#4b5563';
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -379,7 +351,6 @@ const CsvViewer = ({
         ctx.lineTo(width - padding, height - padding);
         ctx.stroke();
 
-        // Draw Y axis labels
         ctx.fillStyle = '#9ca3af';
         ctx.font = '10px Arial';
         ctx.textAlign = 'right';
@@ -432,7 +403,6 @@ const CsvViewer = ({
                     ctx.fill();
                 }
 
-                // Draw points
                 ctx.fillStyle = dataset.color;
                 points.forEach(([x, y]) => {
                     ctx.beginPath();
@@ -458,7 +428,6 @@ const CsvViewer = ({
                 ctx.closePath();
                 ctx.fill();
 
-                // Label
                 const labelAngle = startAngle + sliceAngle / 2;
                 const labelX = centerX + Math.cos(labelAngle) * (radius * 0.7);
                 const labelY = centerY + Math.sin(labelAngle) * (radius * 0.7);
@@ -471,7 +440,6 @@ const CsvViewer = ({
             });
         }
 
-        // Draw X axis labels (for bar/line/area)
         if (chartType !== 'pie') {
             ctx.fillStyle = '#9ca3af';
             ctx.font = '9px Arial';
@@ -489,7 +457,6 @@ const CsvViewer = ({
             });
         }
 
-        // Legend
         ctx.font = '11px Arial';
         ctx.textAlign = 'left';
         chartYColumns.forEach((colIdx, i) => {
@@ -501,14 +468,12 @@ const CsvViewer = ({
         });
     }, [data, headers, chartType, chartXColumn, chartYColumns]);
 
-    // Redraw chart when settings change
     useEffect(() => {
         if (showChartModal) {
             setTimeout(drawChart, 50);
         }
     }, [showChartModal, chartType, chartXColumn, chartYColumns, drawChart]);
 
-    // Detect column types
     const columnTypes = useMemo(() => {
         if (!data.length || !headers.length) return {};
         const types: { [key: number]: 'number' | 'date' | 'text' } = {};
@@ -536,11 +501,9 @@ const CsvViewer = ({
         return types;
     }, [data, headers]);
 
-    // Filtered and sorted data
     const processedData = useMemo(() => {
         let result = [...data];
 
-        // Apply search filter
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
             result = result.filter(row =>
@@ -548,7 +511,6 @@ const CsvViewer = ({
             );
         }
 
-        // Apply column filters
         Object.entries(filters).forEach(([colIndex, filterValue]) => {
             if (filterValue.trim()) {
                 const col = parseInt(colIndex);
@@ -559,13 +521,11 @@ const CsvViewer = ({
             }
         });
 
-        // Apply sorting
         if (sortConfig) {
             result.sort((a, b) => {
                 const aVal = a[sortConfig.column] ?? '';
                 const bVal = b[sortConfig.column] ?? '';
 
-                // Try numeric comparison
                 const aNum = parseFloat(aVal);
                 const bNum = parseFloat(bVal);
 
@@ -573,7 +533,6 @@ const CsvViewer = ({
                     return sortConfig.direction === 'asc' ? aNum - bNum : bNum - aNum;
                 }
 
-                // String comparison
                 const comparison = String(aVal).localeCompare(String(bVal));
                 return sortConfig.direction === 'asc' ? comparison : -comparison;
             });
@@ -582,7 +541,6 @@ const CsvViewer = ({
         return result;
     }, [data, searchQuery, filters, sortConfig]);
 
-    // Get original row index for editing
     const getOriginalRowIndex = useCallback((processedIndex: number) => {
         if (!searchQuery.trim() && Object.keys(filters).length === 0 && !sortConfig) {
             return processedIndex;
@@ -598,7 +556,7 @@ const CsvViewer = ({
 
     useEffect(() => {
         loadSpreadsheet();
-    }, [filePath, activeSheet]); // Add activeSheet to dependencies
+    }, [filePath, activeSheet]);
 
     const loadSheetData = useCallback((wb, sheetName) => {
         const sheet = wb.Sheets[sheetName];
@@ -608,14 +566,13 @@ const CsvViewer = ({
             setHeaders(jsonData[0] || ['Column 1']);
             setData(jsonData.slice(1).length > 0 ? jsonData.slice(1) : [new Array(jsonData[0].length).fill('')]);
         } else {
-            // Empty sheet - use default grid size
+
             const cols = defaultCols;
             const rows = defaultRows;
             setHeaders(Array.from({ length: cols }, (_, i) => colToLetters(i)));
             setData(Array.from({ length: rows }, () => new Array(cols).fill('')));
         }
 
-        // Extract cell styles from XLSX
         const extractedStyles: { [key: string]: any } = {};
         const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
 
@@ -624,7 +581,7 @@ const CsvViewer = ({
                 const cellAddr = XLSX.utils.encode_cell({ r: row, c: col });
                 const cell = sheet[cellAddr];
                 if (cell && cell.s) {
-                    // Extract style information
+
                     const style: any = {};
                     if (cell.s.font) {
                         if (cell.s.font.bold) style.bold = true;
@@ -641,15 +598,15 @@ const CsvViewer = ({
                     if (cell.s.alignment?.horizontal) {
                         style.align = cell.s.alignment.horizontal;
                     }
-                    // Map row index (excluding header)
+
                     const dataRow = row - 1;
                     if (dataRow >= 0 && Object.keys(style).length > 0) {
                         extractedStyles[`${dataRow},${col}`] = style;
                     }
                 }
-                // Handle boolean values (checkboxes)
+
                 if (cell && cell.t === 'b') {
-                    // Mark as boolean for checkbox rendering
+
                     const dataRow = row - 1;
                     if (dataRow >= 0) {
                         if (!extractedStyles[`${dataRow},${col}`]) extractedStyles[`${dataRow},${col}`] = {};
@@ -660,7 +617,6 @@ const CsvViewer = ({
             }
         }
 
-        // Extract data validation (dropdowns)
         const validations: { [key: string]: { type: string; values?: string[] } } = {};
         if (sheet['!dataValidation']) {
             for (const dv of sheet['!dataValidation']) {
@@ -679,7 +635,7 @@ const CsvViewer = ({
                                 }
                             }
                         } catch (e) {
-                            // Skip invalid ranges
+
                         }
                     }
                 }
@@ -693,13 +649,12 @@ const CsvViewer = ({
     const loadSpreadsheet = useCallback(async () => {
         if (!filePath) return;
 
-        // Check global cache first
         const cached = csvDataCache.get(filePath);
         if (cached) {
             if (cached.workbook) {
                 setWorkbook(cached.workbook);
                 setSheetNames(cached.workbook.SheetNames);
-                // Reload sheet data from workbook if headers/data not cached
+
                 if (cached.headers && cached.data) {
                     setHeaders(cached.headers);
                     setData(cached.data);
@@ -712,7 +667,7 @@ const CsvViewer = ({
                 setHeaders(cached.headers || ['Column 1']);
                 setData(cached.data || [[]]);
             }
-            // Restore unsaved changes flag from cache (survives remount from resize/split)
+
             setHasChanges(cached.hasChanges || false);
             setError(null);
             return;
@@ -740,7 +695,7 @@ const CsvViewer = ({
                     setActiveSheet(sheetToLoad);
                     loadSheetData(wb, sheetToLoad);
                 }
-                // Cache workbook only - headers/data come from loadSheetData
+
                 csvDataCache.set(filePath, { headers: null, data: null, workbook: wb });
             } else {
                 const response = await window.api.readCsvContent(filePath);
@@ -748,7 +703,7 @@ const CsvViewer = ({
 
                 setHeaders(response.headers || ['Column 1']);
                 setData(response.rows || [[]]);
-                // Cache globally
+
                 csvDataCache.set(filePath, {
                     headers: response.headers || ['Column 1'],
                     data: response.rows || [[]]
@@ -767,7 +722,7 @@ const CsvViewer = ({
     }, [filePath, isXlsx, activeSheet, loadSheetData]);
 
     const switchSheet = useCallback((sheetName) => {
-        if (workbook && activeSheet) { // Only save if there was an active sheet
+        if (workbook && activeSheet) {
             const sheetData = [headers, ...data];
             workbook.Sheets[activeSheet] = XLSX.utils.aoa_to_sheet(sheetData);
         }
@@ -802,7 +757,7 @@ const CsvViewer = ({
             } else {
                 const csvContent = [
                     headers.join(','),
-                    ...data.map(row => 
+                    ...data.map(row =>
                         row.map(cell => {
                             const str = String(cell ?? '');
                             if (str.includes(',') || str.includes('"') || str.includes('\n')) {
@@ -821,14 +776,12 @@ const CsvViewer = ({
         }
     }, [isXlsx, workbook, headers, data, activeSheet, filePath]);
 
-    // Helper to convert string to ArrayBuffer
     const s2ab = (s) => {
         const buf = new ArrayBuffer(s.length);
         const view = new Uint8Array(buf);
         for (let i = 0; i < s.length; i++) view[i] = s.charCodeAt(i) & 0xFF;
         return buf;
     };
-
 
     const updateCell = useCallback((rowIndex, colIndex, value) => {
         setData(prevData => {
@@ -881,25 +834,22 @@ const CsvViewer = ({
         setHasChanges(true);
     }, [headers.length]);
 
-    // Sort toggle
     const toggleSort = useCallback((colIndex: number) => {
         setSortConfig(prev => {
             if (prev?.column === colIndex) {
                 if (prev.direction === 'asc') return { column: colIndex, direction: 'desc' };
-                return null; // Third click clears sort
+                return null;
             }
             return { column: colIndex, direction: 'asc' };
         });
     }, []);
 
-    // Clear all filters
     const clearFilters = useCallback(() => {
         setFilters({});
         setSearchQuery('');
         setSortConfig(null);
     }, []);
 
-    // Export to different formats
     const exportData = useCallback(async (format: 'csv' | 'json' | 'xlsx') => {
         try {
             const baseName = filePath?.replace(/\.[^.]+$/, '') || 'export';
@@ -944,7 +894,6 @@ const CsvViewer = ({
         }
     }, [headers, data, filePath]);
 
-    // Column statistics
     const getColumnStats = useCallback((colIndex: number) => {
         const values = data.map(row => row[colIndex]).filter(v => v !== null && v !== undefined && v !== '');
         const numValues = values.map(v => parseFloat(v)).filter(n => !isNaN(n));
@@ -971,7 +920,7 @@ const CsvViewer = ({
     const moveRow = useCallback((fromIndex, direction) => {
         const toIndex = fromIndex + direction;
         if (toIndex < 0 || toIndex >= data.length) return;
-        
+
         setData(prev => {
             const newData = [...prev];
             [newData[fromIndex], newData[toIndex]] = [newData[toIndex], newData[fromIndex]];
@@ -982,7 +931,7 @@ const CsvViewer = ({
 
     const copySelection = useCallback(() => {
         if (!selectedCell && !selectedRange) return;
-        
+
         if (selectedRange) {
             const { startRow, endRow, startCol, endCol } = selectedRange;
             const copied = [];
@@ -1002,7 +951,7 @@ const CsvViewer = ({
 
     const cutSelection = useCallback(() => {
         copySelection();
-        
+
         if (selectedRange) {
             const { startRow, endRow, startCol, endCol } = selectedRange;
             setData(prev => {
@@ -1025,17 +974,17 @@ const CsvViewer = ({
 
     const pasteSelection = useCallback(() => {
         if (!clipboard || !selectedCell) return;
-        
+
         const { row: startRow, col: startCol } = selectedCell;
         setData(prev => {
             const newData = [...prev];
-            
+
             clipboard.forEach((clipRow, rOffset) => {
                 const targetRow = startRow + rOffset;
                 if (targetRow >= newData.length) {
                     newData.push(new Array(headers.length).fill(''));
                 }
-                
+
                 newData[targetRow] = [...(newData[targetRow] || [])];
                 clipRow.forEach((value, cOffset) => {
                     const targetCol = startCol + cOffset;
@@ -1044,7 +993,7 @@ const CsvViewer = ({
                     }
                 });
             });
-            
+
             return newData;
         });
         setHasChanges(true);
@@ -1079,7 +1028,6 @@ const CsvViewer = ({
         try {
             const expr = formula.substring(1).toUpperCase();
 
-            // Generic cell reference resolver (supports multi-letter columns: A1, AA1, AZ99, etc.)
             const resolveCellRef = (ref) => {
                 const m = ref.match(/^([A-Z]+)(\d+)$/);
                 if (!m) return NaN;
@@ -1088,7 +1036,6 @@ const CsvViewer = ({
                 return parseFloat(sheetData[row]?.[col]) || 0;
             };
 
-            // Parse a range like A1:B3 or AA1:AZ99
             const parseRange = (match) => {
                 if (!match) return null;
                 return {
@@ -1111,7 +1058,6 @@ const CsvViewer = ({
                     endRow: parseInt(funcMatch[5]) - 1,
                 };
 
-                // Collect all numeric values in range
                 const nums: number[] = [];
                 let nonEmpty = 0;
                 for (let r = range.startRow; r <= range.endRow; r++) {
@@ -1141,14 +1087,13 @@ const CsvViewer = ({
                 }
             }
 
-            // SUM/AVERAGE/etc with comma-separated args: =SUM(A1,B2,C3)
             const commaFuncMatch = expr.match(/^(SUM|AVERAGE|COUNT|MAX|MIN)\(([^)]+)\)$/);
             if (commaFuncMatch && commaFuncMatch[2].includes(',')) {
                 const funcName = commaFuncMatch[1];
                 const args = commaFuncMatch[2].split(',').map(s => s.trim());
                 const nums: number[] = [];
                 for (const arg of args) {
-                    // Check if it's a range (A1:B3) or single ref (A1) or literal number
+
                     const rangeM = arg.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
                     if (rangeM) {
                         const sc = colLettersToIndex(rangeM[1]), sr = parseInt(rangeM[2]) - 1;
@@ -1173,14 +1118,13 @@ const CsvViewer = ({
                 }
             }
 
-            // Simple math: e.g., =A1+B1, =A1*2, =AA1+AB1, etc.
             const mathematicalExpression = expr.replace(/([A-Z]+\d+)/g, (match) => {
                 const value = resolveCellRef(match);
                 return isNaN(value) ? `"${match}"` : value.toString();
             });
 
             try {
-                // eslint-disable-next-line no-eval
+
                 const result = eval(mathematicalExpression);
                 return isNaN(result) ? '#VALUE!' : result;
             } catch (evalError) {
@@ -1193,33 +1137,28 @@ const CsvViewer = ({
         }
     }, []);
 
-    // Helper to scroll the selected cell into view
     const scrollCellIntoView = useCallback((newRow: number, newCol: number) => {
         const container = tableRef.current;
         if (!container) return;
 
-        // Find the target cell (adjust for header row and row number column)
         const rows = container.querySelectorAll('tbody tr');
         const targetRow = rows[newRow];
         if (!targetRow) return;
 
         const cells = targetRow.querySelectorAll('td');
-        const targetCell = cells[newCol + 1]; // +1 for row number column
+        const targetCell = cells[newCol + 1];
         if (!targetCell) return;
 
-        // Scroll the cell into view if needed
         const containerRect = container.getBoundingClientRect();
         const cellRect = targetCell.getBoundingClientRect();
 
-        // Horizontal scrolling
-        if (cellRect.left < containerRect.left + 50) { // +50 to account for row number column
+        if (cellRect.left < containerRect.left + 50) {
             container.scrollLeft -= (containerRect.left + 50 - cellRect.left + 20);
         } else if (cellRect.right > containerRect.right) {
             container.scrollLeft += (cellRect.right - containerRect.right + 20);
         }
 
-        // Vertical scrolling
-        if (cellRect.top < containerRect.top + 40) { // +40 to account for header row
+        if (cellRect.top < containerRect.top + 40) {
             container.scrollTop -= (containerRect.top + 40 - cellRect.top + 20);
         } else if (cellRect.bottom > containerRect.bottom) {
             container.scrollTop += (cellRect.bottom - containerRect.bottom + 20);
@@ -1339,7 +1278,7 @@ const CsvViewer = ({
             case 'b':
             case 'i':
             case 'u':
-                // Block browser shortcuts when in spreadsheet
+
                 if (e.ctrlKey || e.metaKey) {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1363,10 +1302,6 @@ const CsvViewer = ({
         return selectedCell?.row === rowIndex && selectedCell?.col === colIndex;
     };
 
-    // ═══════════════════════════════════════════════════════════════════
-    // Studio Actions: Expose spreadsheet methods for AI control
-    // (Same pattern as WebBrowserViewer registering browserClick, etc.)
-    // ═══════════════════════════════════════════════════════════════════
     const dataRef = useRef(data);
     const headersRef = useRef(headers);
     useEffect(() => { dataRef.current = data; }, [data]);
@@ -1376,7 +1311,6 @@ const CsvViewer = ({
         if (!contentDataRef.current[nodeId]) return;
         const ref = contentDataRef.current[nodeId];
 
-        // READ: Get spreadsheet data, headers, metadata
         ref.readSpreadsheetData = async (opts?: { maxRows?: number; includeStats?: boolean }) => {
             const limit = opts?.maxRows || 500;
             const d = dataRef.current;
@@ -1402,8 +1336,6 @@ const CsvViewer = ({
             return result;
         };
 
-        // EVAL: Execute arbitrary JS with access to {headers, data, XLSX}
-        // The AI writes code that transforms the data - can do ANY operation
         ref.evalSpreadsheet = async (code: string) => {
             try {
                 const fn = new Function('ctx', code);
@@ -1428,13 +1360,11 @@ const CsvViewer = ({
             }
         };
 
-        // UPDATE: Single cell
         ref.updateSpreadsheetCell = async (row: number, col: number, value: any) => {
             updateCell(row, col, value);
             return { success: true, row, col, value };
         };
 
-        // UPDATE: Batch cells (single setData for performance)
         ref.updateSpreadsheetCells = async (updates: { row: number; col: number; value: any }[]) => {
             setData(prevData => {
                 const newData = prevData.map(r => [...r]);
@@ -1449,13 +1379,11 @@ const CsvViewer = ({
             return { success: true, updatedCount: updates.length };
         };
 
-        // UPDATE: Header
         ref.updateSpreadsheetHeader = async (col: number, value: string) => {
             updateHeader(col, value);
             return { success: true, col, value };
         };
 
-        // STRUCT: Add/delete rows and columns
         ref.addSpreadsheetRow = async (index?: number) => {
             addRow(index);
             return { success: true, rowCount: dataRef.current.length + 1 };
@@ -1477,7 +1405,6 @@ const CsvViewer = ({
             return { success: true };
         };
 
-        // SORT/FILTER
         ref.sortSpreadsheet = async (col: number, direction: 'asc' | 'desc') => {
             setSortConfig({ column: col, direction });
             return { success: true, column: col, direction };
@@ -1493,24 +1420,20 @@ const CsvViewer = ({
             return { success: true };
         };
 
-        // STATS
         ref.getSpreadsheetColumnStats = async (col: number) => {
             return { success: true, header: headersRef.current[col], ...getColumnStats(col) };
         };
 
-        // SAVE
         ref.saveSpreadsheet = async () => {
             await saveSpreadsheet();
             return { success: true };
         };
 
-        // EXPORT
         ref.exportSpreadsheet = async (format: 'csv' | 'json' | 'xlsx') => {
             await exportData(format);
             return { success: true, format };
         };
 
-        // SWITCH SHEET (xlsx only)
         ref.switchSpreadsheetSheet = async (sheetName: string) => {
             if (workbook && sheetNames.includes(sheetName)) {
                 switchSheet(sheetName);
@@ -1528,7 +1451,6 @@ const CsvViewer = ({
 
     return (
         <div className="flex-1 flex flex-col theme-bg-secondary" style={{ overflow: 'hidden', position: 'relative' }}>
-            {/* Header bar */}
             <div
                 draggable={renamingPaneId !== nodeId}
                 onDragStart={(e) => {
@@ -1614,9 +1536,7 @@ const CsvViewer = ({
                 </div>
             </div>
 
-            {/* Enhanced toolbar */}
             <div className="flex items-center gap-2 px-2 py-1.5 border-b theme-border theme-bg-tertiary flex-shrink-0">
-                {/* Undo/Redo */}
                 <button
                     onClick={undo}
                     disabled={historyIndex <= 0}
@@ -1636,7 +1556,6 @@ const CsvViewer = ({
 
                 <div className="w-px h-4 bg-gray-600" />
 
-                {/* Search */}
                 <div className="relative flex-1 max-w-xs">
                     <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
                     <input
@@ -1653,7 +1572,6 @@ const CsvViewer = ({
                     )}
                 </div>
 
-                {/* Filter toggle */}
                 <button
                     onClick={() => setShowFilterRow(!showFilterRow)}
                     className={`p-1.5 rounded flex items-center gap-1 text-[10px] ${showFilterRow ? 'bg-blue-600/30 text-blue-400' : 'theme-hover theme-text-muted'}`}
@@ -1663,7 +1581,6 @@ const CsvViewer = ({
                     <span className="hidden sm:inline">Filters</span>
                 </button>
 
-                {/* Clear filters */}
                 {hasActiveFilters && (
                     <button
                         onClick={clearFilters}
@@ -1676,7 +1593,6 @@ const CsvViewer = ({
 
                 <div className="w-px h-4 bg-gray-600" />
 
-                {/* Stats indicator */}
                 <span className="text-[10px] text-gray-500">
                     {processedData.length === data.length
                         ? `${data.length} rows`
@@ -1686,7 +1602,6 @@ const CsvViewer = ({
 
                 <div className="flex-1" />
 
-                {/* Freeze panes */}
                 <button
                     onClick={() => setFreezeRow(!freezeRow)}
                     className={`p-1.5 rounded flex items-center gap-1 text-[10px] ${freezeRow ? 'bg-blue-600/30 text-blue-400' : 'theme-hover theme-text-muted'}`}
@@ -1706,7 +1621,6 @@ const CsvViewer = ({
 
                 <div className="w-px h-4 bg-gray-600" />
 
-                {/* Auto-fit columns */}
                 <button
                     onClick={autoFitColumns}
                     className="p-1.5 rounded theme-hover flex items-center gap-1 text-[10px] theme-text-muted"
@@ -1716,7 +1630,6 @@ const CsvViewer = ({
                     <span className="hidden sm:inline">Auto-fit</span>
                 </button>
 
-                {/* Chart button */}
                 <button
                     onClick={() => setShowChartModal(true)}
                     className="p-1.5 rounded theme-hover flex items-center gap-1 text-[10px] theme-text-muted"
@@ -1726,7 +1639,6 @@ const CsvViewer = ({
                     <span className="hidden sm:inline">Chart</span>
                 </button>
 
-                {/* Document light/dark mode toggle */}
                 <button
                     onClick={() => setDocLightMode(!docLightMode)}
                     className="p-1.5 rounded theme-hover flex items-center gap-1 text-[10px] theme-text-muted"
@@ -1735,7 +1647,6 @@ const CsvViewer = ({
                     {docLightMode ? <Moon size={12} /> : <Sun size={12} />}
                 </button>
 
-                {/* Export dropdown */}
                 <div className="relative group">
                     <button className="p-1.5 rounded theme-hover flex items-center gap-1 text-[10px] theme-text-muted">
                         <Download size={12} />
@@ -1750,9 +1661,7 @@ const CsvViewer = ({
                 </div>
             </div>
 
-            {/* Formatting toolbar */}
             <div className="flex items-center gap-1 px-2 py-1 border-b theme-border theme-bg-tertiary flex-shrink-0 flex-wrap">
-                {/* Font family */}
                 <div className="relative">
                     <button
                         onClick={() => setShowFontPicker(!showFontPicker)}
@@ -1778,7 +1687,6 @@ const CsvViewer = ({
                     )}
                 </div>
 
-                {/* Font size */}
                 <select
                     value={currentStyle.fontSize || 12}
                     onChange={(e) => applyStyleToSelection({ fontSize: parseInt(e.target.value) })}
@@ -1791,7 +1699,6 @@ const CsvViewer = ({
 
                 <div className="w-px h-4 bg-gray-600 mx-0.5" />
 
-                {/* Bold */}
                 <button
                     onClick={() => applyStyleToSelection({ bold: !currentStyle.bold })}
                     className={`p-1.5 rounded ${currentStyle.bold ? 'bg-blue-600/40 text-blue-300' : 'theme-hover'}`}
@@ -1800,7 +1707,6 @@ const CsvViewer = ({
                     <Bold size={12} />
                 </button>
 
-                {/* Italic */}
                 <button
                     onClick={() => applyStyleToSelection({ italic: !currentStyle.italic })}
                     className={`p-1.5 rounded ${currentStyle.italic ? 'bg-blue-600/40 text-blue-300' : 'theme-hover'}`}
@@ -1809,7 +1715,6 @@ const CsvViewer = ({
                     <Italic size={12} />
                 </button>
 
-                {/* Underline */}
                 <button
                     onClick={() => applyStyleToSelection({ underline: !currentStyle.underline })}
                     className={`p-1.5 rounded ${currentStyle.underline ? 'bg-blue-600/40 text-blue-300' : 'theme-hover'}`}
@@ -1818,7 +1723,6 @@ const CsvViewer = ({
                     <Underline size={12} />
                 </button>
 
-                {/* Strikethrough */}
                 <button
                     onClick={() => applyStyleToSelection({ strikethrough: !currentStyle.strikethrough })}
                     className={`p-1.5 rounded ${currentStyle.strikethrough ? 'bg-blue-600/40 text-blue-300' : 'theme-hover'}`}
@@ -1829,7 +1733,6 @@ const CsvViewer = ({
 
                 <div className="w-px h-4 bg-gray-600 mx-0.5" />
 
-                {/* Text color */}
                 <div className="relative">
                     <button
                         onClick={() => setShowTextColorPicker(!showTextColorPicker)}
@@ -1861,7 +1764,6 @@ const CsvViewer = ({
                     )}
                 </div>
 
-                {/* Background color */}
                 <div className="relative">
                     <button
                         onClick={() => setShowBgColorPicker(!showBgColorPicker)}
@@ -1901,7 +1803,6 @@ const CsvViewer = ({
 
                 <div className="w-px h-4 bg-gray-600 mx-0.5" />
 
-                {/* Alignment */}
                 <button
                     onClick={() => applyStyleToSelection({ align: 'left' })}
                     className={`p-1.5 rounded ${currentStyle.align === 'left' ? 'bg-blue-600/40 text-blue-300' : 'theme-hover'}`}
@@ -1926,7 +1827,6 @@ const CsvViewer = ({
 
                 <div className="w-px h-4 bg-gray-600 mx-0.5" />
 
-                {/* Number format */}
                 <div className="relative">
                     <button
                         onClick={() => setShowNumberFormat(!showNumberFormat)}
@@ -1947,7 +1847,6 @@ const CsvViewer = ({
                     )}
                 </div>
 
-                {/* Borders */}
                 <button
                     onClick={() => applyStyleToSelection({
                         borderTop: true, borderBottom: true, borderLeft: true, borderRight: true
@@ -1964,7 +1863,7 @@ const CsvViewer = ({
                 style={{
                     overflow: 'scroll',
                     position: 'absolute',
-                    top: '115px', // Header + search toolbar + format toolbar
+                    top: '115px',
                     bottom: isXlsx && sheetNames.length > 0 ? '85px' : '45px',
                     left: '0',
                     right: '0'
@@ -1972,7 +1871,6 @@ const CsvViewer = ({
             >
                 <table className="border-collapse text-sm">
                     <thead className={`${freezeRow ? 'sticky top-0' : ''} theme-bg-tertiary z-10`}>
-                        {/* Header row */}
                         <tr>
                             <th className={`border theme-border p-1 w-12 bg-gray-700 ${freezeCol ? 'sticky left-0 z-[15]' : ''}`}>#</th>
                             {headers.map((header, colIndex) => (
@@ -1982,14 +1880,12 @@ const CsvViewer = ({
                                     style={{ width: columnWidths[colIndex] ? `${columnWidths[colIndex]}px` : 'auto' }}
                                 >
                                     <div className="flex items-center">
-                                        {/* Column type indicator */}
                                         <span className="px-1 text-gray-500" title={`Type: ${columnTypes[colIndex] || 'text'}`}>
                                             {columnTypes[colIndex] === 'number' ? <Hash size={10} /> :
                                              columnTypes[colIndex] === 'date' ? <Calendar size={10} /> :
                                              <Type size={10} />}
                                         </span>
 
-                                        {/* Editable header */}
                                         <input
                                             type="text"
                                             value={header}
@@ -1997,7 +1893,6 @@ const CsvViewer = ({
                                             className="flex-1 bg-transparent text-center font-semibold outline-none py-1 min-w-0"
                                         />
 
-                                        {/* Sort button */}
                                         <button
                                             onClick={() => toggleSort(colIndex)}
                                             className={`p-0.5 rounded ${sortConfig?.column === colIndex ? 'text-blue-400' : 'text-gray-500 opacity-0 group-hover:opacity-100'}`}
@@ -2009,7 +1904,6 @@ const CsvViewer = ({
                                             }
                                         </button>
 
-                                        {/* Delete button */}
                                         <button
                                             onClick={() => deleteColumn(colIndex)}
                                             className="p-0.5 text-red-400 opacity-0 group-hover:opacity-100"
@@ -2031,7 +1925,6 @@ const CsvViewer = ({
                             </th>
                         </tr>
 
-                        {/* Filter row */}
                         {showFilterRow && (
                             <tr className="bg-gray-800">
                                 <th className={`border theme-border p-0.5 w-12 ${freezeCol ? 'sticky left-0 z-[15] bg-gray-800' : ''}`}>
@@ -2106,7 +1999,6 @@ const CsvViewer = ({
                                         ? evaluateFormula(cellValue, data)
                                         : formatCellValue(cellValue, style);
 
-                                    // Build cell inline styles
                                     const cellInlineStyle: React.CSSProperties = {
                                         fontFamily: style.fontFamily || 'inherit',
                                         fontSize: style.fontSize ? `${style.fontSize}px` : 'inherit',
@@ -2125,7 +2017,6 @@ const CsvViewer = ({
                                         borderRight: style.borderRight ? '1px solid #555' : undefined,
                                     };
 
-                                    // Check if this is a boolean cell (checkbox)
                                     const isBoolean = style.isBoolean || (typeof cellValue === 'boolean') || cellValue === 'TRUE' || cellValue === 'FALSE' || cellValue === true || cellValue === false;
                                     const boolValue = cellValue === true || cellValue === 'TRUE' || cellValue === 1 || cellValue === '1';
 
@@ -2146,7 +2037,6 @@ const CsvViewer = ({
                                                 setCsvContextMenu({ x: e.clientX, y: e.clientY, rowIndex, colIndex });
                                             }}
                                         >
-                                            {/* Boolean values render as checkboxes */}
                                             {isBoolean && !isEditing ? (
                                                 <div className="p-2 min-h-[32px] flex items-center justify-center">
                                                     <input
@@ -2160,7 +2050,7 @@ const CsvViewer = ({
                                                     />
                                                 </div>
                                             ) : validation?.type === 'list' && validation.values && validation.values.length > 0 ? (
-                                                /* Data validation dropdown */
+
                                                 <select
                                                     value={String(cellValue)}
                                                     onChange={(e) => updateCell(rowIndex, colIndex, e.target.value)}
@@ -2206,7 +2096,7 @@ const CsvViewer = ({
                         <button
                             key={name}
                             onClick={() => switchSheet(name)}
-                            className={`px-3 py-1 text-xs rounded transition-all whitespace-nowrap ${ 
+                            className={`px-3 py-1 text-xs rounded transition-all whitespace-nowrap ${
                                 activeSheet === name
                                     ? 'theme-button-primary'
                                     : 'theme-button theme-hover'
@@ -2276,11 +2166,9 @@ const CsvViewer = ({
                 </div>
             </div>
 
-            {/* Chart Modal */}
             {showChartModal && (
                 <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-8">
                     <div className="bg-gray-800 rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
-                        {/* Header */}
                         <div className="flex items-center justify-between p-4 border-b border-gray-700">
                             <h3 className="text-lg font-semibold flex items-center gap-2">
                                 <BarChart2 size={20} className="text-blue-400" />
@@ -2291,11 +2179,8 @@ const CsvViewer = ({
                             </button>
                         </div>
 
-                        {/* Content */}
                         <div className="flex flex-1 overflow-hidden">
-                            {/* Settings Panel */}
                             <div className="w-64 border-r border-gray-700 p-4 space-y-4 overflow-y-auto">
-                                {/* Chart Type */}
                                 <div>
                                     <label className="block text-xs font-medium text-gray-400 mb-2">Chart Type</label>
                                     <div className="grid grid-cols-2 gap-2">
@@ -2319,7 +2204,6 @@ const CsvViewer = ({
                                     </div>
                                 </div>
 
-                                {/* X Axis Column */}
                                 <div>
                                     <label className="block text-xs font-medium text-gray-400 mb-2">
                                         {chartType === 'pie' ? 'Labels Column' : 'X Axis (Labels)'}
@@ -2335,7 +2219,6 @@ const CsvViewer = ({
                                     </select>
                                 </div>
 
-                                {/* Y Axis Columns */}
                                 <div>
                                     <label className="block text-xs font-medium text-gray-400 mb-2">
                                         {chartType === 'pie' ? 'Values Column' : 'Y Axis (Values)'}
@@ -2365,13 +2248,11 @@ const CsvViewer = ({
                                     </div>
                                 </div>
 
-                                {/* Info */}
                                 <div className="text-xs text-gray-500 bg-gray-900/50 p-2 rounded">
                                     Showing first 50 rows of data. Select numeric columns for best results.
                                 </div>
                             </div>
 
-                            {/* Chart Canvas */}
                             <div className="flex-1 p-4 flex items-center justify-center bg-gray-900">
                                 <canvas
                                     ref={chartCanvasRef}
@@ -2382,7 +2263,6 @@ const CsvViewer = ({
                             </div>
                         </div>
 
-                        {/* Footer */}
                         <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-700">
                             <button
                                 onClick={() => {
@@ -2410,7 +2290,6 @@ const CsvViewer = ({
                 </div>
             )}
 
-            {/* Spreadsheet Context Menu */}
             {csvContextMenu && (
                 <>
                     <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setCsvContextMenu(null)} />
@@ -2454,7 +2333,7 @@ const CsvViewer = ({
                             <Scissors size={12} /> Cut
                         </button>
                         {selectedCell && clipboard && (
-                            <button onClick={() => { /* paste handled by keyboard */ setCsvContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                            <button onClick={() => {  setCsvContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
                                 <Plus size={12} /> Paste
                             </button>
                         )}
@@ -2498,7 +2377,6 @@ const CsvViewer = ({
     );
 };
 
-// Custom comparison to prevent reload on pane resize
 const arePropsEqual = (prevProps: any, nextProps: any) => {
     return prevProps.nodeId === nextProps.nodeId
         && prevProps.renamingPaneId === nextProps.renamingPaneId

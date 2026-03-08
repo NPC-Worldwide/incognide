@@ -26,7 +26,6 @@ export function useWorkspace() {
     const WINDOW_WORKSPACES_KEY = 'incognideWindowWorkspaces';
     const MAX_WORKSPACES = 50;
 
-    // Load conversations without auto-selecting one
     const loadConversationsWithoutAutoSelect = useCallback(async (dirPath: string) => {
         try {
             const normalizedPath = normalizePath(dirPath);
@@ -47,7 +46,6 @@ export function useWorkspace() {
         }
     }, []);
 
-    // Load directory structure without triggering conversation selection
     const loadDirectoryStructureWithoutConversationLoad = useCallback(async (dirPath: string) => {
         try {
             if (!dirPath) {
@@ -70,18 +68,17 @@ export function useWorkspace() {
         }
     }, [loadConversationsWithoutAutoSelect]);
 
-    // Load directory structure (with conversation loading)
     const loadDirectoryStructure = useCallback(async (dirPath: string) => {
         await loadDirectoryStructureUtil(
             dirPath,
             setFolderStructure,
             loadConversationsWithoutAutoSelect,
-            () => {} // setError - not available here, caller can handle
+            () => {}
         );
     }, [loadConversationsWithoutAutoSelect]);
 
     return {
-        // State
+
         currentPath, setCurrentPath,
         folderStructure, setFolderStructure,
         baseDir, setBaseDir,
@@ -92,12 +89,12 @@ export function useWorkspace() {
         workspaces, setWorkspaces,
         isLoadingWorkspace, setIsLoadingWorkspace,
         windowId,
-        // Constants
+
         WORKSPACES_STORAGE_KEY,
         ACTIVE_WINDOWS_KEY,
         WINDOW_WORKSPACES_KEY,
         MAX_WORKSPACES,
-        // Functions
+
         loadConversationsWithoutAutoSelect,
         loadDirectoryStructureWithoutConversationLoad,
         loadDirectoryStructure,

@@ -1299,6 +1299,56 @@ function register(ctx) {
           return { success: false, error: err.message || 'Failed to change owner' };
       }
   });
+  ipcMain.handle('search-files', async (_, { query, path: searchPath, limit = 50 }) => {
+      try {
+          if (!query || !searchPath) return { files: [] };
+
+          const excludeDirs = ['node_modules', '.git', '__pycache__', '.venv', 'venv', 'dist', 'build'];
+          const cmd = `grep -r -n -i --binary-files=without-match ${excludeDirs.map(d => `--exclude-dir=${d}`).join(' ')} -m 3 -- ${JSON.stringify(query)} ${JSON.stringify(searchPath)} 2>/dev/null | head -500`;
+
+          return new Promise((resolve) => {
+              const proc = spawn('sh', ['-c', cmd]);
+              let output = '';
+              proc.stdout.on('data', (d) => { output += d.toString(); });
+              proc.stderr.on('data', () => {});
+              proc.on('close', () => {
+                  const lines = output.trim().split('\n').filter(Boolean);
+                  const fileMap = {};
+
+                  for (const line of lines) {
+                      const match = line.match(/^(.+?):(\d+):(.*)$/);
+                      if (!match) continue;
+                      const [, filePath, lineNum, content] = match;
+                      if (!fileMap[filePath]) {
+                          fileMap[filePath] = {
+                              name: path.basename(filePath),
+                              path: filePath,
+                              matches: []
+                          };
+                      }
+                      if (fileMap[filePath].matches.length < 3) {
+                          fileMap[filePath].matches.push({
+                              line: parseInt(lineNum),
+                              content: content.trim().slice(0, 200)
+                          });
+                      }
+                  }
+
+                  const results = Object.values(fileMap).slice(0, limit).map((f) => ({
+                      name: f.name,
+                      path: f.path,
+                      snippet: f.matches.map(m => `L${m.line}: ${m.content}`).join('\n'),
+                      match: f.matches[0]?.content || ''
+                  }));
+
+                  resolve({ files: results });
+              });
+          });
+      } catch (err) {
+          console.error('[SEARCH_FILES] Error:', err);
+          return { files: [], error: err.message };
+      }
+  });
 }
 
 module.exports = { register };

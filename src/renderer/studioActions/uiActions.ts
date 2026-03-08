@@ -1,15 +1,7 @@
-/**
- * UI Actions
- *
- * Actions for UI interactions:
- * - notify, confirm, open_file_picker, send_message, switch_npc
- */
+
 
 import { registerAction, StudioContext, StudioActionResult } from './index';
 
-/**
- * Show a notification toast
- */
 async function notify(
   args: { message: string; type?: 'info' | 'success' | 'warning' | 'error'; duration?: number },
   _ctx: StudioContext
@@ -20,13 +12,10 @@ async function notify(
     return { success: false, error: 'message is required' };
   }
 
-  // Use the notification system if available
-  // For now, create a simple toast notification
   try {
-    // This would integrate with a toast notification system
+
     console.log(`[${type.toUpperCase()}] ${message}`);
 
-    // Could also use browser notification API as fallback
     if (typeof window !== 'undefined' && 'Notification' in window) {
       if (Notification.permission === 'granted') {
         new Notification('Incognide', { body: message });
@@ -47,9 +36,6 @@ async function notify(
   }
 }
 
-/**
- * Show a confirmation dialog
- */
 async function confirm(
   args: { message: string; title?: string },
   _ctx: StudioContext
@@ -60,8 +46,6 @@ async function confirm(
     return { success: false, error: 'message is required' };
   }
 
-  // Use window.confirm as a simple implementation
-  // Could be replaced with a custom modal
   const confirmed = window.confirm(`${title}\n\n${message}`);
 
   return {
@@ -71,9 +55,6 @@ async function confirm(
   };
 }
 
-/**
- * Open file picker dialog
- */
 async function open_file_picker(
   args: { type?: 'file' | 'directory'; multiple?: boolean; filters?: any[] },
   _ctx: StudioContext
@@ -81,7 +62,7 @@ async function open_file_picker(
   const { type = 'file', multiple = false } = args;
 
   try {
-    // Use Electron's dialog via IPC
+
     const result = await (window as any).api?.showOpenDialog?.({
       properties: [
         type === 'directory' ? 'openDirectory' : 'openFile',
@@ -110,9 +91,6 @@ async function open_file_picker(
   }
 }
 
-/**
- * Send a message in a chat pane
- */
 async function send_message(
   args: { paneId?: string; message: string },
   ctx: StudioContext
@@ -137,8 +115,6 @@ async function send_message(
     return { success: false, error: `Pane is not a chat: ${data.contentType}` };
   }
 
-  // This would need to trigger the chat input submit
-  // For now, return a placeholder
   return {
     success: true,
     paneId,
@@ -147,9 +123,6 @@ async function send_message(
   };
 }
 
-/**
- * Switch active NPC in a chat pane
- */
 async function switch_npc(
   args: { paneId?: string; npcName: string },
   ctx: StudioContext
@@ -174,7 +147,6 @@ async function switch_npc(
     return { success: false, error: `Pane is not a chat: ${data.contentType}` };
   }
 
-  // Update the selected NPC for this pane
   ctx.contentDataRef.current[paneId] = {
     ...data,
     selectedNpc: npcName
@@ -187,7 +159,6 @@ async function switch_npc(
   };
 }
 
-// Register all UI actions
 registerAction('notify', notify);
 registerAction('confirm', confirm);
 registerAction('open_file_picker', open_file_picker);

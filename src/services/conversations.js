@@ -1,8 +1,8 @@
-// src/services/conversations.js
+
 export const loadConversations = async (api, dirPath) => {
   const normalizedPath = dirPath.replace(/\\/g, '/').replace(/\/$/, '');
   const response = await api.getConversations(normalizedPath);
-  
+
   const formattedConversations = response?.conversations?.map(conv => ({
     id: conv.id,
     title: conv.preview?.split('\n')[0]?.substring(0, 30) || 'New Conversation',
@@ -11,10 +11,10 @@ export const loadConversations = async (api, dirPath) => {
     last_message_timestamp: conv.last_message_timestamp || conv.timestamp || Date.now()
   })) || [];
 
-  formattedConversations.sort((a, b) => 
+  formattedConversations.sort((a, b) =>
     new Date(b.last_message_timestamp).getTime() - new Date(a.last_message_timestamp).getTime()
   );
-  
+
   return formattedConversations;
 };
 
@@ -23,7 +23,7 @@ export const createConversation = async (api, directoryPath) => {
   if (!conversation || !conversation.id) {
     throw new Error("Failed to create conversation or received invalid data.");
   }
-  
+
   return {
     id: conversation.id,
     title: 'New Conversation',

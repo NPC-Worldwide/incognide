@@ -3,12 +3,11 @@ import { BACKEND_URL } from '../config';
 import { Code2, FileText, FileJson, BarChart3, File } from 'lucide-react';
 import { executeStudioAction, StudioContext } from '../studioActions';
 
-// Auto TTS trigger for voice input responses
 export const triggerAutoTTS = async (text: string) => {
     if (!text?.trim()) return;
 
     try {
-        // Get saved TTS settings
+
         let engine = 'kokoro';
         let voice = 'af_heart';
         try {
@@ -49,10 +48,10 @@ export const convertFileToBase64 = (file: File) => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
-           
+
             resolve({
                 dataUrl: reader.result,
-                base64: reader.result.split(',')[1] 
+                base64: reader.result.split(',')[1]
             });
         };
         reader.onerror = (error) => reject(error);
@@ -82,16 +81,14 @@ export const getParentPath = (filePath: string | null | undefined): string => {
 
 export const generateId = () => Math.random().toString(36).substr(2, 9);
 
-// Strip source prefixes like "project:" or "global:" from NPC names
 export const stripSourcePrefix = (name: string | undefined | null): string => {
     if (!name) return '';
     return name.replace(/^(project:|global:)/, '');
 };
 
-// Styled extension badge for file icons — distinctive per file type
 const ExtBadge = ({ label, color, bg }: { label: string; color: string; bg: string }) => (
     <span className="flex-shrink-0 inline-flex items-center justify-center rounded" style={{
-        width: 18, height: 16, fontSize: label.length > 3 ? '7px' : '8px', fontWeight: 700,
+        width: 16, height: 14, fontSize: label.length > 3 ? '6.5px' : '7.5px', fontWeight: 700,
         fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
         color, background: bg, letterSpacing: '-0.3px', lineHeight: 1,
     }}>
@@ -101,7 +98,7 @@ const ExtBadge = ({ label, color, bg }: { label: string; color: string; bg: stri
 
 export const getFileIcon = (filename: string) => {
     const ext = filename.split('.').pop()?.toLowerCase() || '';
-    const iconProps = { size: 16, className: "flex-shrink-0" };
+    const iconProps = { size: 12, className: "flex-shrink-0" };
     switch(ext) {
         case 'py': return <ExtBadge label="py" color="#60a5fa" bg="rgba(96,165,250,0.15)" />;
         case 'js': return <ExtBadge label="js" color="#facc15" bg="rgba(250,204,21,0.15)" />;
@@ -133,7 +130,7 @@ export const getFileIcon = (filename: string) => {
         case 'stl': return <ExtBadge label="stl" color="#22d3ee" bg="rgba(34,211,238,0.12)" />;
         case 'tex': case 'latex': case 'sty': case 'cls': case 'bib':
             return <span className="flex-shrink-0 inline-flex items-center justify-center rounded" style={{
-                width: 18, height: 16, fontSize: '8px', fontWeight: 800,
+                width: 16, height: 14, fontSize: '7.5px', fontWeight: 800,
                 fontFamily: '"CMU Serif", "Computer Modern", Georgia, serif',
                 color: '#4ade80', background: 'rgba(74,222,128,0.12)',
                 letterSpacing: '-0.5px', lineHeight: 1,
@@ -146,11 +143,9 @@ export const getFileIcon = (filename: string) => {
     }
 };
 
-// Custom hook for loading website history
-// Extract the registrable domain (TLD+1) from a hostname
 const getRootDomain = (hostname: string): string => {
     const parts = hostname.split('.');
-    // Handle known multi-part TLDs
+
     const multiPartTlds = ['co.uk', 'com.au', 'co.nz', 'co.jp', 'co.kr', 'com.br', 'co.in', 'org.uk', 'ac.uk', 'gov.uk'];
     if (parts.length >= 3) {
         const lastTwo = parts.slice(-2).join('.');
@@ -173,7 +168,6 @@ export const useLoadWebsiteHistory = (
         if (response?.history) {
             setWebsiteHistory(response.history);
 
-            // Group by root domain, track subdomain frequencies
             const domainGroups = new Map<string, {
                 rootDomain: string;
                 totalCount: number;
@@ -214,7 +208,6 @@ export const useLoadWebsiteHistory = (
                 } catch {}
             });
 
-            // Sort groups by total count, convert subdomains to sorted array
             const common = Array.from(domainGroups.values())
                 .sort((a, b) => b.totalCount - a.totalCount)
                 .slice(0, 15)
@@ -231,7 +224,6 @@ export const useLoadWebsiteHistory = (
     }
 }, [currentPath, setWebsiteHistory, setCommonSites]);
 };
-
 
 export const handleBrowserCopyText = (
     browserContextMenu: any,
@@ -282,12 +274,8 @@ export const handleBrowserAiAction = (
     }
     setInput(prompt);
 
-
     setBrowserContextMenu({ isOpen: false, x: 0, y: 0, selectedText: '', viewId: null });
 };
-    
-
-
 
 export const loadAvailableNPCs = async (
     currentPath: string | null,
@@ -303,10 +291,8 @@ export const loadAvailableNPCs = async (
         const projectResponse = await window.api.getNPCTeamProject(currentPath);
         const projectNPCs = projectResponse.npcs || [];
 
-
         const globalResponse = await window.api.getNPCTeamGlobal('npcsh');
         const globalNPCs = globalResponse.npcs || [];
-
 
         const formattedProjectNPCs = projectNPCs.map(npc => ({
             ...npc,
@@ -322,7 +308,6 @@ export const loadAvailableNPCs = async (
             source: 'global'
         }));
 
-
         const combinedNPCs = [...formattedProjectNPCs, ...formattedGlobalNPCs];
         setAvailableNPCs(combinedNPCs);
         return combinedNPCs;
@@ -336,12 +321,11 @@ export const loadAvailableNPCs = async (
     }
 };
 
-
 export const hashContext = (contexts: any[]) => {
     const contentString = contexts
         .map(ctx => `${ctx.type}:${ctx.path || ctx.url}:${ctx.content?.substring(0, 100)}`)
         .join('|');
-    // Use TextEncoder to handle Unicode characters that btoa can't handle
+
     const bytes = new TextEncoder().encode(contentString);
     let binary = '';
     for (let i = 0; i < bytes.length; i++) {
@@ -353,9 +337,8 @@ export const hashContext = (contexts: any[]) => {
 export const gatherWorkspaceContext = (contentDataRef: React.MutableRefObject<any>, contextFiles?: any[], excludedPaneIds?: Set<string>) => {
     const contexts: any[] = [];
 
-    // Add open pane contexts
     Object.entries(contentDataRef.current).forEach(([paneId, paneData]: [string, any]) => {
-        // Skip panes that are excluded from context
+
         if (excludedPaneIds && excludedPaneIds.has(paneId)) return;
         const fileContentTypes = ['editor', 'latex', 'csv', 'notebook', 'docx', 'pptx', 'exp', 'mindmap'];
         if (fileContentTypes.includes(paneData.contentType) && (paneData.fileContent || paneData.contentId)) {
@@ -387,7 +370,7 @@ export const gatherWorkspaceContext = (contentDataRef: React.MutableRefObject<an
                 paneId: paneId
             });
         } else if (paneData.contentType === 'terminal' && paneData.getTerminalContext) {
-            // Include terminal output context
+
             try {
                 const terminalOutput = paneData.getTerminalContext();
                 if (terminalOutput && terminalOutput.trim()) {
@@ -404,10 +387,9 @@ export const gatherWorkspaceContext = (contentDataRef: React.MutableRefObject<an
         }
     });
 
-    // Add explicit context files (if not already included from open panes)
     if (contextFiles && contextFiles.length > 0) {
         contextFiles.forEach((file: any) => {
-            // Don't add duplicates from open panes
+
             const alreadyIncluded = contexts.some(ctx => ctx.path === file.path);
             if (!alreadyIncluded && file.content) {
                 contexts.push({
@@ -422,7 +404,6 @@ export const gatherWorkspaceContext = (contentDataRef: React.MutableRefObject<an
 
     return contexts;
 };
-
 
 export const useSwitchToPath = (
     windowId: string,
@@ -442,7 +423,6 @@ export const useSwitchToPath = (
 
         console.log(`[Window ${windowId}] Switching from ${currentPath} to ${newPath}`);
 
-        // Save current workspace before leaving
         if (currentPath && rootLayoutNode) {
             const workspaceData = serializeWorkspace();
             if (workspaceData) {
@@ -451,14 +431,12 @@ export const useSwitchToPath = (
             }
         }
 
-        // Clear current state
         setRootLayoutNode(null);
         setActiveContentPaneId(null);
         contentDataRef.current = {};
         setActiveConversationId(null);
         setCurrentFile(null);
 
-        // THIS IS THE KEY PART - Actually set the new path
         setCurrentPath(newPath);
     }, [windowId, currentPath, rootLayoutNode, serializeWorkspace, saveWorkspaceToStorage, setRootLayoutNode, setActiveContentPaneId, contentDataRef, setActiveConversationId, setCurrentFile, setCurrentPath]);
 };
@@ -473,8 +451,6 @@ export const useDebounce = (value: any, delay: number) => {
     }, [value, delay]);
     return debouncedValue;
 };
-
-
 
 export const useAIEditModalStreamHandlers = (
     aiEditModal: any,
@@ -535,13 +511,11 @@ export const useAIEditModalStreamHandlers = (
         const handleAIStreamComplete = async (_: any, { streamId }: any) => {
             if (streamId !== currentStreamId) return;
 
-            // First, update isLoading to false, and keep the raw aiResponse
             setAiEditModal((prev: any) => ({
                 ...prev,
                 isLoading: false,
             }));
 
-            // Now, parse the full aiResponse to get proposedChanges
             const latestAiEditModal = aiEditModal;
             console.log('handleAIStreamComplete: Full AI Response for parsing:', latestAiEditModal.aiResponse);
 
@@ -577,7 +551,6 @@ export const useAIEditModalStreamHandlers = (
         };
     }, [aiEditModal.isOpen, aiEditModal.isLoading, aiEditModal.streamId, aiEditModal.aiResponse, setAiEditModal, setPendingMemories, setMemoryApprovalModal, setError, parseAgenticResponse, contentDataRef]);
 };
-
 
 export const handleMemoryDecision = async (
     memoryId: string,
@@ -643,7 +616,6 @@ export const loadDefaultPath = async (
     }
 };
 
-
 export const fetchModels = async (
     currentPath: string | null,
     setModelsLoading: (loading: boolean) => void,
@@ -698,12 +670,10 @@ export const loadConversations = async (
 
         setDirectoryConversations(formattedConversations);
 
-        // Check if any conversation is already open in a pane
         const hasOpenConversation = Object.values(contentDataRef.current).some(
             (paneData: any) => paneData?.contentType === 'chat' && paneData?.contentId
         );
 
-        // Only auto-select if conditions are met
         const activeExists = formattedConversations.some((c: any) => c.id === currentActiveId);
 
         if (!activeExists && !hasOpenConversation && initialLoadComplete.current) {
@@ -810,7 +780,6 @@ export const usePaneAwareStreamListeners = (
             const paneData = contentDataRef.current[targetPaneId];
             if (!paneData || !paneData.chatMessages) return;
 
-            // Helper to process a single parsed event
             const processEvent = (parsed: any, isDecisionFlag: boolean) => {
                 let content = '', reasoningContent = '', toolCalls = null, isDecision = isDecisionFlag;
                 let usage: { input_tokens: number; output_tokens: number; cost: number } | null = null;
@@ -855,7 +824,7 @@ export const usePaneAwareStreamListeners = (
                 let usage: { input_tokens: number; output_tokens: number } | null = null;
 
                 if (typeof chunk === 'string') {
-                    // Handle SSE format - may contain multiple events separated by \n\n
+
                     const events = chunk.split(/\n\n/).filter((e: string) => e.trim());
 
                     for (const event of events) {
@@ -879,7 +848,7 @@ export const usePaneAwareStreamListeners = (
                                 }
                             }
                         } else {
-                            // Plain text chunk
+
                             content += trimmedEvent;
                         }
                     }
@@ -915,19 +884,16 @@ export const usePaneAwareStreamListeners = (
                     message.content = (message.content || '') + content;
                     message.reasoningContent = (message.reasoningContent || '') + reasoningContent;
 
-                    // Store actual token usage from backend
                     if (usage) {
                         message.input_tokens = usage.input_tokens;
                         message.output_tokens = usage.output_tokens;
                         message.cost = usage.cost;
                     }
 
-                    // Initialize contentParts if not present
                     if (!message.contentParts) {
                         message.contentParts = [];
                     }
 
-                    // Add text content to parts
                     if (content) {
                         const lastPart = message.contentParts[message.contentParts.length - 1];
                         if (lastPart && lastPart.type === 'text') {
@@ -956,12 +922,11 @@ export const usePaneAwareStreamListeners = (
                             result_preview: tc.result_preview || ''
                         }));
 
-                        // Intercept and execute studio.* actions
                         if (studioContext) {
                             for (const tc of normalizedCalls) {
                                 const funcName = tc.function?.name || '';
                                 if (funcName.startsWith('studio.')) {
-                                    const actionName = funcName.slice(7); // remove "studio."
+                                    const actionName = funcName.slice(7);
                                     let args = {};
                                     try {
                                         args = JSON.parse(tc.function?.arguments || '{}');
@@ -969,16 +934,13 @@ export const usePaneAwareStreamListeners = (
                                         console.warn('[STUDIO] Failed to parse arguments:', tc.function?.arguments);
                                     }
 
-                                    // Execute the studio action asynchronously
                                     (async () => {
                                         try {
                                             const result = await executeStudioAction(actionName, args, studioContext);
 
-                                            // Update the tool call with the result
                                             tc.status = result.success ? 'complete' : 'error';
                                             tc.result_preview = JSON.stringify(result, null, 2);
 
-                                            // Also send result back to backend for agent continuation
                                             if (incomingStreamId) {
                                                 try {
                                                     await fetch(`${BACKEND_URL}/api/studio/action_result`, {
@@ -995,7 +957,6 @@ export const usePaneAwareStreamListeners = (
                                                 }
                                             }
 
-                                            // Force re-render to show updated status
                                             setRootLayoutNode(prev => ({ ...prev }));
                                         } catch (err) {
                                             console.error(`[STUDIO] Action ${actionName} failed:`, err);
@@ -1024,7 +985,7 @@ export const usePaneAwareStreamListeners = (
                                         arguments: shouldReplaceArgs ? newArgs : (existingTc.function?.arguments || '')
                                     }
                                 };
-                                // Update the tool call in contentParts too
+
                                 const partIdx = message.contentParts.findIndex((p: any) =>
                                     p.type === 'tool_call' && (p.call.id === tc.id || p.call.function?.name === tc.function?.name)
                                 );
@@ -1033,7 +994,7 @@ export const usePaneAwareStreamListeners = (
                                 }
                             } else {
                                 merged.push(tc);
-                                // Add tool call to contentParts at current position
+
                                 message.contentParts.push({ type: 'tool_call', call: tc });
                             }
                         });
@@ -1083,7 +1044,6 @@ export const usePaneAwareStreamListeners = (
                             }
                         }
 
-                        // Auto-TTS if user used voice input
                         const wasVoiceInput = recentUserMsgs.length > 0 && recentUserMsgs[recentUserMsgs.length - 1]?.wasVoiceInput;
                         if (wasVoiceInput && msg.content) {
                             triggerAutoTTS(msg.content);
@@ -1128,8 +1088,6 @@ export const usePaneAwareStreamListeners = (
         const cleanupStreamComplete = window.api.onStreamComplete(handleStreamComplete);
         const cleanupStreamError = window.api.onStreamError(handleStreamError);
 
-        // Safety net: periodically check for stale streams that never received stream-complete
-        // This handles cases where the backend fails to send completion (e.g., sender destroyed, connection drop)
         const staleStreamInterval = setInterval(() => {
             const activeStreams = Object.keys(streamToPaneRef.current);
             if (activeStreams.length === 0) return;
@@ -1141,15 +1099,14 @@ export const usePaneAwareStreamListeners = (
                 if (!paneData?.chatMessages) continue;
                 const msg = paneData.chatMessages.allMessages.find((m: any) => m.id === streamId);
                 if (!msg || !msg.isStreaming) {
-                    // Stream ref exists but message isn't streaming - clean up orphan
+
                     delete streamToPaneRef.current[streamId];
                     continue;
                 }
-                // If the message has content but hasn't updated in a while, the stream likely dropped
-                // We track this by checking if the message timestamp is old
+
                 const msgTime = new Date(msg.timestamp).getTime();
                 const elapsed = Date.now() - msgTime;
-                // If streaming for more than 5 minutes with content, mark as complete
+
                 if (elapsed > 300000 && msg.content && msg.content.length > 0) {
                     console.warn(`[STREAM] Stale stream detected: ${streamId} (${Math.round(elapsed/1000)}s). Marking as complete.`);
                     msg.isStreaming = false;
@@ -1161,7 +1118,7 @@ export const usePaneAwareStreamListeners = (
                     setRootLayoutNode(prev => ({ ...prev }));
                 }
             }
-        }, 30000); // Check every 30 seconds
+        }, 30000);
 
         listenersAttached.current = true;
 
@@ -1174,10 +1131,6 @@ export const usePaneAwareStreamListeners = (
         };
     }, [config, listenersAttached, streamToPaneRef, contentDataRef, setRootLayoutNode, setIsStreaming, setAiEditModal, parseAgenticResponse, getConversationStats, refreshConversations, studioContext]);
 };
-
-
-
-
 
 export const useTrackLastActiveChatPane = (
     activeContentPaneId: string | null,
@@ -1247,7 +1200,6 @@ export const handleInterruptStream = async (
     }
 };
 
-
 export const handleRenameFile = async (
     nodeId: string,
     oldPath: string,
@@ -1271,17 +1223,14 @@ export const handleRenameFile = async (
         const response = await window.api.renameFile(oldPath, newPath);
         if (response?.error) throw new Error(response.error);
 
-        // Update contentData for the pane
         if (contentDataRef.current[nodeId]) {
             contentDataRef.current[nodeId].contentId = newPath;
         }
 
-        // Reload directory structure
         if (currentPath) {
             await loadDirectoryStructureFn(currentPath);
         }
 
-        // Force re-render
         setRootLayoutNode(p => ({ ...p }));
 
     } catch (err: any) {
@@ -1313,7 +1262,6 @@ export const createToggleMessageSelectionMode = (
     };
 };
 
-// Layout navigation utility functions
 export const findNodeByPath = (node: any, path: number[]): any => {
     if (!node || !path) return null;
     let currentNode = node;

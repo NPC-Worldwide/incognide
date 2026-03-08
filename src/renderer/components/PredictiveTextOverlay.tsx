@@ -12,7 +12,6 @@ export const PredictiveTextOverlay = ({
     const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number } | null>(null);
     const shouldShow = predictionSuggestion && predictionTargetElement && isPredictiveTextEnabled && cursorPosition;
 
-    // Get cursor position from the target element
     useEffect(() => {
         if (!predictionTargetElement) {
             setCursorPosition(null);
@@ -23,15 +22,15 @@ export const PredictiveTextOverlay = ({
             let pos: { x: number; y: number } | null = null;
 
             if (predictionTargetElement instanceof HTMLTextAreaElement || predictionTargetElement instanceof HTMLInputElement) {
-                // For textarea/input, use the element's position + approximate cursor location
+
                 const rect = predictionTargetElement.getBoundingClientRect();
-                // Position at bottom-left of the input for now
+
                 pos = {
                     x: rect.left + 10,
-                    y: Math.min(rect.bottom, window.innerHeight - 250) // Keep on screen
+                    y: Math.min(rect.bottom, window.innerHeight - 250)
                 };
             } else if (predictionTargetElement.isContentEditable) {
-                // For contenteditable, try to get selection position
+
                 const selection = window.getSelection();
                 if (selection && selection.rangeCount > 0) {
                     const range = selection.getRangeAt(0);
@@ -44,7 +43,7 @@ export const PredictiveTextOverlay = ({
                         };
                     }
                 }
-                // Fallback to element position
+
                 if (!pos) {
                     const rect = predictionTargetElement.getBoundingClientRect();
                     pos = {
@@ -54,7 +53,6 @@ export const PredictiveTextOverlay = ({
                 }
             }
 
-            // Ensure position is on screen
             if (pos) {
                 pos.x = Math.max(10, Math.min(pos.x, window.innerWidth - 320));
                 pos.y = Math.max(10, Math.min(pos.y, window.innerHeight - 100));
@@ -65,7 +63,6 @@ export const PredictiveTextOverlay = ({
 
         updateCursorPosition();
 
-        // Update on scroll/resize
         window.addEventListener('scroll', updateCursorPosition, true);
         window.addEventListener('resize', updateCursorPosition);
 
@@ -162,6 +159,5 @@ export const PredictiveTextOverlay = ({
         </div>
     );
 
-    // Render via portal to ensure it's at the top level of the DOM
     return createPortal(overlay, document.body);
 };

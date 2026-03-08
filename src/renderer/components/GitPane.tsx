@@ -138,7 +138,6 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
     };
     return (
         <div className="flex flex-col h-full theme-bg-primary overflow-hidden">
-            {/* Header */}
             <div className="flex items-center justify-between p-4 border-b theme-border">
                 <div className="flex items-center gap-3">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-purple-400">
@@ -155,7 +154,6 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
                 </button>
             </div>
 
-            {/* Tab Bar */}
             <div className="flex border-b theme-border px-4">
                 {(['status', 'diff', 'branches', 'history'] as const).map(tab => (
                     <button
@@ -177,12 +175,11 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
                 ))}
             </div>
 
-            {/* Tab Content */}
             <div className="flex-1 overflow-auto p-4">
                 {!gitStatus ? (
                     <div className="text-center theme-text-muted py-8">No git repository in this directory</div>
                 ) : gitModalTab === 'status' ? (
-                    /* Status Tab */
+
                     <div className="space-y-4">
                         <div className="flex items-center gap-4 text-sm">
                             <span className="theme-text-primary font-medium">Branch: {gitStatus.branch}</span>
@@ -253,7 +250,6 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
                             </div>
                         </div>
 
-                        {/* Commit Section */}
                         <div className="theme-bg-secondary rounded-lg p-3">
                             <h3 className="text-sm font-medium theme-text-primary mb-2">Commit</h3>
                             <textarea
@@ -286,7 +282,7 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
                         </div>
                     </div>
                 ) : gitModalTab === 'diff' ? (
-                    /* Diff Tab */
+
                     <div className="space-y-2">
                         {gitDiffContent ? (
                             <pre className="text-xs font-mono whitespace-pre-wrap theme-bg-secondary p-3 rounded-lg overflow-auto max-h-[60vh]">
@@ -304,7 +300,7 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
                         )}
                     </div>
                 ) : gitModalTab === 'branches' ? (
-                    /* Branches Tab */
+
                     <div className="space-y-4">
                         <div className="flex gap-2">
                             <input
@@ -323,7 +319,6 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
                             </button>
                         </div>
 
-                        {/* Local Branches */}
                         <div>
                             <div className="text-xs font-medium theme-text-muted mb-2 flex items-center gap-2">
                                 <span>Local Branches</span>
@@ -364,7 +359,6 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
                             </div>
                         </div>
 
-                        {/* Remote Branches */}
                         {gitBranches?.all?.some((b: string) => b.startsWith('remotes/')) && (
                             <div>
                                 <div className="text-xs font-medium theme-text-muted mb-2 flex items-center gap-2">
@@ -411,9 +405,8 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
                         )}
                     </div>
                 ) : gitModalTab === 'history' ? (
-                    /* History Tab */
+
                     <div className="flex flex-col gap-3 h-full min-h-[400px]">
-                        {/* Feedback Banner */}
                         {actionFeedback && (
                             <div className={`px-3 py-2 rounded text-xs flex items-center gap-2 ${
                                 actionFeedback.type === 'success' ? 'bg-green-900/40 text-green-400 border border-green-500/30' : 'bg-red-900/40 text-red-400 border border-red-500/30'
@@ -429,7 +422,6 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
                             </div>
                         )}
 
-                        {/* Reset Confirmation Dialog */}
                         {resetConfirm && (
                             <div className="px-3 py-2 rounded text-xs bg-amber-900/40 border border-amber-500/30">
                                 <div className="flex items-center gap-2 text-amber-400 mb-2">
@@ -455,7 +447,6 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
                             </div>
                         )}
 
-                        {/* Cherry-pick from another branch */}
                         <div className="theme-bg-secondary rounded-lg p-2">
                             <div className="flex items-center gap-2">
                                 <span className="text-xs font-medium theme-text-muted flex items-center gap-1">
@@ -495,7 +486,6 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
                         </div>
 
                         <div className="flex gap-4 flex-1 min-h-0">
-                            {/* Commit List */}
                             <div className="w-1/2 theme-bg-secondary rounded-lg p-3 flex flex-col">
                                 <div className="flex items-center justify-between mb-2">
                                     <span className="text-xs font-medium theme-text-muted">Commits</span>
@@ -522,7 +512,6 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
                                                 <div className="theme-text-primary truncate mt-1 pr-20">{commit.message}</div>
                                                 <div className="theme-text-muted mt-0.5">{commit.author_name || commit.author}</div>
                                             </button>
-                                            {/* Hover action buttons */}
                                             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                 {idx > 0 && (
                                                     <>
@@ -560,7 +549,6 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
                                 </div>
                             </div>
 
-                            {/* Commit Details */}
                             <div className="w-1/2 theme-bg-secondary rounded-lg p-3 flex flex-col">
                                 <span className="text-xs font-medium theme-text-muted mb-2">Details</span>
                                 {gitSelectedCommit ? (
@@ -571,7 +559,6 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
                                             <div className="theme-text-muted">{new Date(gitSelectedCommit.date).toLocaleString()}</div>
                                             <div className="theme-text-primary mt-2 whitespace-pre-wrap">{gitSelectedCommit.message}</div>
                                         </div>
-                                        {/* Action buttons */}
                                         <div className="flex flex-wrap gap-1.5 mb-3 pb-3 border-b theme-border">
                                             <button
                                                 onClick={() => handleCherryPick(gitSelectedCommit.hash)}

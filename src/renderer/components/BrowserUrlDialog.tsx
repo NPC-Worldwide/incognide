@@ -22,7 +22,7 @@ const BrowserUrlDialog = ({ isOpen, onClose, onNavigate, currentPath }) => {
                 window.api.browserGetBookmarks({ folderPath: currentPath }),
                 window.api.browserGetHistory({ folderPath: currentPath, limit: 20 })
             ]);
-            
+
             if (bookmarkRes.success) setBookmarks(bookmarkRes.bookmarks);
             if (historyRes.success) setHistory(historyRes.history);
         } catch (error) {
@@ -48,18 +48,18 @@ const BrowserUrlDialog = ({ isOpen, onClose, onNavigate, currentPath }) => {
 
     const handleAddBookmark = async () => {
         if (!urlInput.trim()) return;
-        
+
         try {
             const finalUrl = urlInput.startsWith('http') ? urlInput : `https://${urlInput}`;
             const title = finalUrl.replace(/^https?:\/\//, '').split('/')[0];
-            
+
             const result = await window.api.browserAddBookmark({
                 url: finalUrl,
                 title,
                 folderPath: currentPath,
                 isGlobal: false
             });
-            
+
             if (result.success) {
                 await loadBookmarksAndHistory();
                 setActiveTab('bookmarks');
@@ -84,7 +84,7 @@ const BrowserUrlDialog = ({ isOpen, onClose, onNavigate, currentPath }) => {
     const handleMakeGlobal = async (bookmark, e) => {
         e.stopPropagation();
         try {
-           
+
             await window.api.browserDeleteBookmark({ bookmarkId: bookmark.id });
             await window.api.browserAddBookmark({
                 url: bookmark.url,
@@ -119,21 +119,20 @@ const BrowserUrlDialog = ({ isOpen, onClose, onNavigate, currentPath }) => {
                         <Globe size={20} />
                         Open Website
                     </h3>
-                    <button 
-                        onClick={onClose} 
+                    <button
+                        onClick={onClose}
                         className="p-1 theme-hover rounded-full transition-colors"
                     >
                         <X size={16} />
                     </button>
                 </div>
 
-                {/* Tab Navigation */}
                 <div className="flex border-b theme-border mb-4 -mx-2">
                     <button
                         onClick={() => setActiveTab('url')}
                         className={`px-4 py-2 text-sm border-b-2 transition-colors flex items-center gap-2 ${
-                            activeTab === 'url' 
-                                ? 'border-blue-500 theme-text-primary bg-blue-500/10' 
+                            activeTab === 'url'
+                                ? 'border-blue-500 theme-text-primary bg-blue-500/10'
                                 : 'border-transparent theme-text-muted hover:theme-text-primary hover:bg-gray-700/30'
                         }`}
                     >
@@ -143,8 +142,8 @@ const BrowserUrlDialog = ({ isOpen, onClose, onNavigate, currentPath }) => {
                     <button
                         onClick={() => setActiveTab('bookmarks')}
                         className={`px-4 py-2 text-sm border-b-2 transition-colors flex items-center gap-2 ${
-                            activeTab === 'bookmarks' 
-                                ? 'border-blue-500 theme-text-primary bg-blue-500/10' 
+                            activeTab === 'bookmarks'
+                                ? 'border-blue-500 theme-text-primary bg-blue-500/10'
                                 : 'border-transparent theme-text-muted hover:theme-text-primary hover:bg-gray-700/30'
                         }`}
                     >
@@ -154,8 +153,8 @@ const BrowserUrlDialog = ({ isOpen, onClose, onNavigate, currentPath }) => {
                     <button
                         onClick={() => setActiveTab('history')}
                         className={`px-4 py-2 text-sm border-b-2 transition-colors flex items-center gap-2 ${
-                            activeTab === 'history' 
-                                ? 'border-blue-500 theme-text-primary bg-blue-500/10' 
+                            activeTab === 'history'
+                                ? 'border-blue-500 theme-text-primary bg-blue-500/10'
                                 : 'border-transparent theme-text-muted hover:theme-text-primary hover:bg-gray-700/30'
                         }`}
                     >
@@ -164,7 +163,6 @@ const BrowserUrlDialog = ({ isOpen, onClose, onNavigate, currentPath }) => {
                     </button>
                 </div>
 
-                {/* Tab Content */}
                 <div className="flex-1 overflow-y-auto min-h-0">
                     {activeTab === 'url' && (
                         <div className="space-y-4">
@@ -329,7 +327,6 @@ const BrowserUrlDialog = ({ isOpen, onClose, onNavigate, currentPath }) => {
                     )}
                 </div>
 
-                {/* Footer */}
                 <div className="flex justify-end gap-3 mt-4 pt-4 border-t theme-border">
                     <button
                         onClick={onClose}

@@ -35,7 +35,6 @@ export const usePredictiveText = ({
             return;
         }
 
-        // ---- ACCEPT WITH TAB ----
         if (e.key === 'Tab') {
             if (predictionSuggestion && predictionTargetElement) {
                 e.preventDefault();
@@ -78,7 +77,6 @@ export const usePredictiveText = ({
             return;
         }
 
-        // ---- REJECT WITH ESC ----
         if (e.key === 'Escape') {
             setPredictionSuggestion('');
             setPredictionTargetElement(null);
@@ -89,7 +87,6 @@ export const usePredictiveText = ({
             return;
         }
 
-        // ---- UNCONDITIONAL PREDICT ON TYPING (no ctrl/meta/alt) ----
         if (e.ctrlKey || e.metaKey || e.altKey) return;
 
         const activeElement = document.activeElement as HTMLElement | null;
@@ -126,7 +123,6 @@ export const usePredictiveText = ({
             return;
         }
 
-        // kill prior stream so tokens don't interleave
         if (predictionStreamIdRef.current) {
             (window as any).api?.interruptStream?.(predictionStreamIdRef.current);
             predictionStreamIdRef.current = null;
@@ -178,11 +174,9 @@ export const usePredictiveText = ({
         predictionTargetElement
     ]);
 
-    // Store setPredictionSuggestion in a ref so the listener doesn't need to re-register
     const setPredictionSuggestionRef = useRef(setPredictionSuggestion);
     setPredictionSuggestionRef.current = setPredictionSuggestion;
 
-    // Handle stream data for predictions - only set up once
     useEffect(() => {
         console.log('[PRED] Setting up stream listeners (one-time)');
 
@@ -283,10 +277,9 @@ export const usePredictiveText = ({
             offComplete?.();
             offError?.();
         };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []); // Run once - uses refs for current values
 
-    // Attach keydown listener with capture for Tab priority
+    }, []);
+
     useEffect(() => {
         window.addEventListener('keydown', handleGlobalPredictionTrigger, true);
         return () => {

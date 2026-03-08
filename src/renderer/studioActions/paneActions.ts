@@ -1,17 +1,7 @@
-/**
- * Pane Actions
- *
- * Actions for managing panes in Incognide:
- * - open_pane, close_pane, focus_pane, split_pane, list_panes, list_pane_types, zen_mode
- */
+
 
 import { registerAction, StudioContext, StudioActionResult } from './index';
 
-/**
- * All known pane types with human-readable names and descriptions.
- * Tool panes use their type as contentId (e.g., datadash → 'datadash').
- * File panes need an explicit path/url as contentId.
- */
 const PANE_TYPE_INFO: Record<string, { title: string; description: string; needsPath?: boolean; needsUrl?: boolean }> = {
   'chat':             { title: 'Chat',             description: 'AI chat conversation' },
   'editor':           { title: 'Code Editor',      description: 'Edit code and text files', needsPath: true },
@@ -34,8 +24,8 @@ const PANE_TYPE_INFO: Record<string, { title: string; description: string; needs
   'photoviewer':      { title: 'Photo Viewer',      description: 'Browse and view photos' },
   'scherzo':          { title: 'Audio Studio',      description: 'Audio playback and generation' },
   'npcteam':          { title: 'NPC Team',          description: 'View and manage NPC agents' },
-  'jinx':             { title: 'Jinxs',             description: 'View and manage jinx actions' },
-  'teammanagement':   { title: 'Team Management',   description: 'Manage NPCs, jinxs, databases, MCP servers, cron jobs' },
+  'jinx':             { title: 'Jinxes',             description: 'View and manage jinx actions' },
+  'teammanagement':   { title: 'Team Management',   description: 'Manage NPCs, jinxes, databases, MCP servers, cron jobs' },
   'search':           { title: 'Search',            description: 'Search files and content' },
   'library':          { title: 'Library',           description: 'Browse installed packages and libraries' },
   'diskusage':        { title: 'Disk Usage',        description: 'Analyze disk space usage' },
@@ -47,20 +37,18 @@ const PANE_TYPE_INFO: Record<string, { title: string; description: string; needs
   'data-labeler':     { title: 'Data Labeler',      description: 'Label and annotate data' },
   'diff':             { title: 'Diff Viewer',       description: 'View file diffs' },
   'git':              { title: 'Git',               description: 'Git repository management' },
+  'mcp-manager':      { title: 'MCP Manager',       description: 'View and manage MCP servers and tools' },
+  'skills-manager':   { title: 'Skills Manager',    description: 'Manage skills, jinxes, and import NPC teams' },
   'folder':           { title: 'Folder',            description: 'Browse folder contents', needsPath: true },
 };
 
-// Tool pane types that use their type name as contentId (no path needed)
 const TOOL_PANE_TYPES = new Set([
   'graph-viewer', 'datadash', 'dbtool', 'memory-manager', 'photoviewer', 'scherzo',
   'npcteam', 'jinx', 'teammanagement', 'search', 'library', 'diskusage', 'help',
   'settings', 'cron-daemon', 'projectenv', 'browsergraph', 'data-labeler', 'git',
-  'chat', 'terminal',
+  'mcp-manager', 'skills-manager', 'chat', 'terminal',
 ]);
 
-/**
- * Collect information about all panes in the layout
- */
 export function collectPaneInfo(
   node: any,
   contentData: Record<string, any>,
@@ -92,43 +80,32 @@ export function collectPaneInfo(
   return [];
 }
 
-/**
- * Get a human-readable title for a pane
- */
 function getPaneTitle(data: any): string {
   if (!data) return 'Untitled';
 
   const { contentType, contentId } = data;
   const info = PANE_TYPE_INFO[contentType];
 
-  // For file-based panes, show the filename
   if (contentId && typeof contentId === 'string' && contentId.includes('/')) {
     const fileName = contentId.split('/').pop() || contentId;
     return info ? `${info.title}: ${fileName}` : fileName;
   }
 
-  // For tool panes, use the human-readable title
   if (info && TOOL_PANE_TYPES.has(contentType)) {
     return info.title;
   }
 
-  // For browser panes, show URL hostname
   if (contentType === 'browser' && data.browserUrl) {
     try { return `Browser: ${new URL(data.browserUrl).hostname}`; } catch {}
   }
 
-  // For terminal panes, show shell type
   if (contentType === 'terminal') {
     return `Terminal${data.shellType ? ` (${data.shellType})` : ''}`;
   }
 
-  // Fallback
   return info?.title || contentId || contentType || 'Untitled';
 }
 
-/**
- * Open a new pane
- */
 async function open_pane(
   args: { type: string; path?: string; url?: string; position?: string; shellType?: string },
   ctx: StudioContext
@@ -144,17 +121,16 @@ async function open_pane(
     return { success: false, error: `Unknown pane type: "${type}". Available types: ${available}` };
   }
 
-  // Determine contentId based on pane type
   let contentId: string;
   if (path) {
     contentId = path;
   } else if (url) {
     contentId = url;
   } else if (TOOL_PANE_TYPES.has(type)) {
-    // Tool panes use their type name as contentId
+
     contentId = type;
   } else {
-    // File-based panes need a path
+
     const info = PANE_TYPE_INFO[type];
     if (info?.needsPath) {
       return { success: false, error: `Pane type "${type}" requires a path argument.` };
@@ -165,13 +141,10 @@ async function open_pane(
     contentId = ctx.generateId();
   }
 
-  // Get path to active pane
   const activePath = ctx.findPanePath(ctx.rootLayoutNode, ctx.activeContentPaneId) || [];
 
-  // Perform split to create new pane
   ctx.performSplit(activePath, position, type, contentId);
 
-  // For tool panes, also set extra pane data after creation
   await new Promise(resolve => setTimeout(resolve, 50));
 
   let actualPaneId: string | null = null;
@@ -182,7 +155,6 @@ async function open_pane(
     }
   }
 
-  // Set shell type for terminal panes
   if (actualPaneId && type === 'terminal' && shellType) {
     ctx.contentDataRef.current[actualPaneId] = {
       ...ctx.contentDataRef.current[actualPaneId],
@@ -190,7 +162,13 @@ async function open_pane(
     };
   }
 
-  // For dbtool, trigger updateContentPane for proper initialization
+  if (actualPaneId && type === 'browser' && url) {
+    ctx.contentDataRef.current[actualPaneId] = {
+      ...ctx.contentDataRef.current[actualPaneId],
+      browserUrl: url
+    };
+  }
+
   if (actualPaneId && type === 'dbtool') {
     ctx.updateContentPane(actualPaneId, 'dbtool', 'dbtool');
   }
@@ -206,9 +184,6 @@ async function open_pane(
   };
 }
 
-/**
- * Close a pane
- */
 async function close_pane(
   args: { paneId?: string },
   ctx: StudioContext
@@ -216,6 +191,11 @@ async function close_pane(
   const paneId = args.paneId === 'active' || !args.paneId
     ? ctx.activeContentPaneId
     : args.paneId;
+
+  const allPanes = collectPaneInfo(ctx.rootLayoutNode, ctx.contentDataRef.current, ctx.activeContentPaneId);
+  if (allPanes.length <= 1) {
+    return { success: false, error: 'Cannot close the last pane' };
+  }
 
   const nodePath = ctx.findPanePath(ctx.rootLayoutNode, paneId);
 
@@ -228,9 +208,6 @@ async function close_pane(
   return { success: true, closedPaneId: paneId };
 }
 
-/**
- * Focus/activate a pane
- */
 async function focus_pane(
   args: { paneId: string },
   ctx: StudioContext
@@ -241,7 +218,6 @@ async function focus_pane(
     return { success: false, error: 'paneId is required' };
   }
 
-  // Verify pane exists
   const nodePath = ctx.findPanePath(ctx.rootLayoutNode, paneId);
   if (!nodePath && paneId !== 'active') {
     return { success: false, error: `Pane not found: ${paneId}` };
@@ -252,9 +228,6 @@ async function focus_pane(
   return { success: true, activePaneId: paneId };
 }
 
-/**
- * Split an existing pane
- */
 async function split_pane(
   args: { paneId?: string; direction: string; type: string; path?: string },
   ctx: StudioContext
@@ -277,12 +250,10 @@ async function split_pane(
     return { success: false, error: `Pane not found: ${paneId}` };
   }
 
-  // Use type as contentId for tool panes, path for file panes
   const contentId = path || (TOOL_PANE_TYPES.has(type) ? type : ctx.generateId());
 
   ctx.performSplit(nodePath, direction, type, contentId);
 
-  // Wait for React to update, then find the new pane
   await new Promise(resolve => setTimeout(resolve, 50));
   let newPaneId: string | null = null;
   for (const [pid, data] of Object.entries(ctx.contentDataRef.current)) {
@@ -305,9 +276,6 @@ async function split_pane(
   };
 }
 
-/**
- * List all open panes
- */
 async function list_panes(
   _args: Record<string, any>,
   ctx: StudioContext
@@ -318,7 +286,6 @@ async function list_panes(
     ctx.activeContentPaneId
   );
 
-  // Enrich with extra detail (URLs, shell types, file paths)
   const enrichedPanes = panes.map(pane => {
     const data = ctx.contentDataRef.current[pane.id] || {};
     const extra: Record<string, any> = {};
@@ -338,9 +305,6 @@ async function list_panes(
   };
 }
 
-/**
- * List all available pane types that can be opened
- */
 async function list_pane_types(
   _args: Record<string, any>,
   _ctx: StudioContext
@@ -360,9 +324,6 @@ async function list_pane_types(
   };
 }
 
-/**
- * Toggle zen mode for a pane
- */
 async function zen_mode(
   args: { paneId?: string },
   ctx: StudioContext
@@ -380,7 +341,6 @@ async function zen_mode(
   return { success: true, paneId };
 }
 
-// Register all pane actions
 registerAction('open_pane', open_pane);
 registerAction('close_pane', close_pane);
 registerAction('focus_pane', focus_pane);

@@ -28,7 +28,7 @@ const SignatureModal: React.FC<SignatureModalProps> = ({ isOpen, onClose, onSave
 
     useEffect(() => {
         if (!isOpen) return;
-        // Load Google Fonts for signatures
+
         const link = document.createElement('link');
         link.href = 'https://fonts.googleapis.com/css2?family=Dancing+Script&family=Great+Vibes&family=Pacifico&family=Caveat&family=Satisfy&display=swap';
         link.rel = 'stylesheet';
@@ -58,7 +58,6 @@ const SignatureModal: React.FC<SignatureModalProps> = ({ isOpen, onClose, onSave
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        // Draw guide line
         ctx.strokeStyle = '#374151';
         ctx.lineWidth = 1;
         ctx.setLineDash([5, 5]);
@@ -120,7 +119,6 @@ const SignatureModal: React.FC<SignatureModalProps> = ({ isOpen, onClose, onSave
     const handleSaveDrawn = useCallback(() => {
         if (allPathsRef.current.length === 0) return;
 
-        // Convert all paths to SVG, normalized to 0-100% of canvas
         const canvas = canvasRef.current;
         if (!canvas) return;
 
@@ -138,7 +136,7 @@ const SignatureModal: React.FC<SignatureModalProps> = ({ isOpen, onClose, onSave
 
     const handleSaveTyped = useCallback(() => {
         if (!typedName.trim()) return;
-        // For typed signatures, we store as a special format the renderer will handle
+
         const fontFamily = SIGNATURE_FONTS[selectedFont].family;
         onSave(`TEXT:${fontFamily}:${typedName}`, 'typed');
     }, [typedName, selectedFont, onSave]);
@@ -149,7 +147,6 @@ const SignatureModal: React.FC<SignatureModalProps> = ({ isOpen, onClose, onSave
         <div className="fixed inset-0 z-[60] flex items-center justify-center">
             <div className="fixed inset-0 bg-black/50" onClick={onClose} />
             <div className="relative z-[61] theme-bg-secondary rounded-lg shadow-2xl border theme-border" style={{ width: '560px' }}>
-                {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b theme-border">
                     <h2 className="text-sm font-semibold">Create Signature</h2>
                     <button onClick={onClose} className="p-1 hover:bg-gray-700 rounded">
@@ -157,7 +154,6 @@ const SignatureModal: React.FC<SignatureModalProps> = ({ isOpen, onClose, onSave
                     </button>
                 </div>
 
-                {/* Mode tabs */}
                 <div className="flex border-b theme-border">
                     <button
                         onClick={() => setMode('draw')}
@@ -177,7 +173,6 @@ const SignatureModal: React.FC<SignatureModalProps> = ({ isOpen, onClose, onSave
                     </button>
                 </div>
 
-                {/* Content */}
                 <div className="p-4">
                     {mode === 'draw' ? (
                         <>
@@ -237,7 +232,6 @@ const SignatureModal: React.FC<SignatureModalProps> = ({ isOpen, onClose, onSave
                     )}
                 </div>
 
-                {/* Footer */}
                 <div className="flex justify-end gap-2 p-4 border-t theme-border">
                     <button
                         onClick={onClose}

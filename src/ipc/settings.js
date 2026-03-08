@@ -6,7 +6,6 @@ const { dialog } = require('electron');
 const { spawn, execSync } = require('child_process');
 const fetch = require('node-fetch');
 
-// ==================== PYTHON ENVIRONMENT CONFIG ====================
 const pythonEnvConfigPath = path.join(os.homedir(), '.npcsh', 'incognide', 'python_envs.json');
 
 const ensurePythonEnvConfig = async () => {
@@ -19,23 +18,19 @@ const ensurePythonEnvConfig = async () => {
   }
 };
 
-// Read python env config
 const readPythonEnvConfig = async () => {
   await ensurePythonEnvConfig();
   const content = await fsPromises.readFile(pythonEnvConfigPath, 'utf8');
   return JSON.parse(content);
 };
 
-// Write python env config
 const writePythonEnvConfig = async (data) => {
   await ensurePythonEnvConfig();
   await fsPromises.writeFile(pythonEnvConfigPath, JSON.stringify(data, null, 2));
 };
 
-// ==================== TILE CONFIGURATION ====================
 const tilesConfigPath = path.join(os.homedir(), '.npcsh', 'incognide', 'tiles.json');
 
-// Default tiles configuration
 const defaultTilesConfig = {
   tiles: [
     { id: 'theme', label: 'Theme', icon: 'theme', enabled: true, order: 0 },
@@ -50,7 +45,6 @@ const defaultTilesConfig = {
   customTiles: []
 };
 
-// Ensure tiles config file exists
 const ensureTilesConfig = async () => {
   const dir = path.dirname(tilesConfigPath);
   await fsPromises.mkdir(dir, { recursive: true });
@@ -61,15 +55,14 @@ const ensureTilesConfig = async () => {
   }
 };
 
-// Read tiles config
 const readTilesConfig = async () => {
   await ensureTilesConfig();
   const content = await fsPromises.readFile(tilesConfigPath, 'utf8');
   const config = JSON.parse(content);
-  // Merge with defaults to ensure all default tiles exist
+
   const defaultIds = defaultTilesConfig.tiles.map(t => t.id);
   const existingIds = (config.tiles || []).map(t => t.id);
-  // Add any missing default tiles
+
   for (const defaultTile of defaultTilesConfig.tiles) {
     if (!existingIds.includes(defaultTile.id)) {
       config.tiles = config.tiles || [];
@@ -79,19 +72,13 @@ const readTilesConfig = async () => {
   return config;
 };
 
-// Write tiles config
 const writeTilesConfig = async (data) => {
   await ensureTilesConfig();
   await fsPromises.writeFile(tilesConfigPath, JSON.stringify(data, null, 2));
 };
 
-// ==================== TILE JINX SYSTEM ====================
 const tileJinxDir = path.join(os.homedir(), '.npcsh', 'incognide', 'tiles');
 
-// Map tile names to their source component files
-// Each jinx file contains the FULL component source code
-// Bottom grid tiles - 2x2 grid only
-// Moved: settings/env to top bar, npc/jinx to bottom right, graph/browsergraph/disk/team elsewhere
 const tileSourceMap = {
   'db.jinx': { source: 'DBTool.tsx', label: 'DB Tool', icon: 'Database', order: 0 },
   'photo.jinx': { source: 'PhotoViewer.tsx', label: 'Photo', icon: 'Image', order: 1 },
@@ -99,44 +86,33 @@ const tileSourceMap = {
   'datadash.jinx': { source: 'DataDash.tsx', label: 'Data Dash', icon: 'BarChart3', order: 3 },
 };
 
-// Components directory path
 const componentsDir = path.join(__dirname, '..', 'renderer', 'components');
 
-// Generate jinx header with metadata
-const generateJinxHeader = (meta) => `/**
- * @jinx tile.${meta.filename.replace('.jinx', '')}
- * @label ${meta.label}
- * @icon ${meta.icon}
- * @order ${meta.order}
- * @enabled true
- */
+const generateJinxHeader = (meta) => `
 
 `;
 
-// Ensure tile jinx directory exists with defaults
 const ensureTileJinxDir = async () => {
   await fsPromises.mkdir(tileJinxDir, { recursive: true });
 
-  // Write default jinx files from actual component source
-  // Sync if source is newer than jinx file
   for (const [filename, meta] of Object.entries(tileSourceMap)) {
     const jinxPath = path.join(tileJinxDir, filename);
     const sourcePath = path.join(componentsDir, meta.source);
 
     try {
-      // Check if source exists
+
       const sourceStats = await fsPromises.stat(sourcePath);
 
       let shouldWrite = false;
       try {
         const jinxStats = await fsPromises.stat(jinxPath);
-        // Jinx exists - check if source is newer
+
         if (sourceStats.mtime > jinxStats.mtime) {
           console.log(`[Tiles] Source ${meta.source} is newer than ${filename}, syncing...`);
           shouldWrite = true;
         }
       } catch {
-        // Jinx doesn't exist, create it
+
         shouldWrite = true;
       }
 
@@ -152,31 +128,26 @@ const ensureTileJinxDir = async () => {
   }
 };
 
-// Cache directory for compiled jinx files
 const tileJinxCacheDir = path.join(tileJinxDir, '.cache');
 
-// Compile a single jinx file to cached JS
 const compileJinxFile = async (jinxFilename) => {
   const ts = require('typescript');
   const jinxPath = path.join(tileJinxDir, jinxFilename);
   const cachePath = path.join(tileJinxCacheDir, jinxFilename.replace('.jinx', '.js'));
 
   try {
-    // Read source
+
     const source = await fsPromises.readFile(jinxPath, 'utf8');
 
-    // Find exported component name
     const exportMatch = source.match(/export\s+default\s+(\w+)\s*;?\s*$/m);
     const exportFuncMatch = source.match(/export\s+default\s+(?:function|const)\s+(\w+)/);
     const componentName = exportMatch?.[1] || exportFuncMatch?.[1] || 'Component';
 
-    // Clean source: remove JSDoc metadata and imports
     let cleaned = source.replace(/\/\*\*[\s\S]*?\*\/\s*\n?/, '');
     cleaned = cleaned.replace(/^#[^\n]*\n/gm, '');
     cleaned = cleaned.replace(/^import\s+.*?['"];?\s*$/gm, '');
     cleaned = cleaned.replace(/^export\s+(default\s+)?/gm, '');
 
-    // Compile TypeScript
     const result = ts.transpileModule(cleaned, {
       compilerOptions: {
         module: ts.ModuleKind.None,
@@ -194,7 +165,6 @@ const compileJinxFile = async (jinxFilename) => {
       return { success: false, error: errors };
     }
 
-    // Clean compiled output
     let compiled = result.outputText;
     compiled = compiled.replace(/["']use strict["'];?\n?/g, '');
     compiled = compiled.replace(/Object\.defineProperty\(exports[\s\S]*?\);/g, '');
@@ -205,16 +175,14 @@ const compileJinxFile = async (jinxFilename) => {
     compiled = compiled.replace(/\w+_\d+\.(\w+)/g, '$1');
     compiled = compiled.replace(/react_1\.(\w+)/g, '$1');
 
-    // Wrap in module format with component name export
     const moduleCode = `// Compiled from ${jinxFilename}
-// Component: ${componentName}
+
 ${compiled}
-// Export component name for loader
+
 var __componentName = "${componentName}";
 var __component = ${componentName};
 `;
 
-    // Write to cache
     await fsPromises.mkdir(tileJinxCacheDir, { recursive: true });
     await fsPromises.writeFile(cachePath, moduleCode);
 
@@ -226,7 +194,6 @@ var __component = ${componentName};
   }
 };
 
-// Compile all jinx files (with mtime-based cache invalidation)
 const compileAllJinxFiles = async () => {
   try {
     await ensureTileJinxDir();
@@ -246,10 +213,10 @@ const compileAllJinxFiles = async () => {
 
         try {
           const cacheStat = await fsPromises.stat(cachePath);
-          // Only recompile if source is newer than cache
+
           needsCompile = jinxStat.mtimeMs > cacheStat.mtimeMs;
         } catch {
-          // Cache doesn't exist, need to compile
+
         }
 
         if (needsCompile) {
@@ -271,23 +238,18 @@ const compileAllJinxFiles = async () => {
   }
 };
 
-// Track if we've done initial compile
 let jinxInitialCompileDone = false;
 
-// ==================== VERSION / UPDATE ====================
 const packageJson = require('../../package.json');
 const APP_VERSION = packageJson.version;
 const UPDATE_MANIFEST_URL = 'https://storage.googleapis.com/incognide-executables/manifest.json';
 
-// ==================== HELPER: resolvePythonPath ====================
-// Helper to resolve Python path from config or detect from workspace
 const resolvePythonPath = async (workspacePath, envConfig, getBackendPythonPath) => {
   const platform = process.platform;
   const isWindows = platform === 'win32';
   const pythonBin = isWindows ? 'python.exe' : 'python';
   const pythonBin3 = isWindows ? 'python3.exe' : 'python3';
 
-  // If we have a config, use it
   if (envConfig) {
     if (envConfig.type === 'venv' || envConfig.type === 'uv') {
       const binDir = isWindows ? 'Scripts' : 'bin';
@@ -306,7 +268,7 @@ const resolvePythonPath = async (workspacePath, envConfig, getBackendPythonPath)
     } else if (envConfig.type === 'custom' && envConfig.customPath) {
       return { pythonPath: envConfig.customPath };
     } else if (envConfig.type === 'pyenv' && envConfig.pyenvVersion) {
-      // pyenv stores versions in ~/.pyenv/versions/<version>/bin/python
+
       try {
         const pyenvRoot = execSync('pyenv root 2>/dev/null', { encoding: 'utf8' }).trim() || path.join(os.homedir(), '.pyenv');
         const pyenvPython = path.join(pyenvRoot, 'versions', envConfig.pyenvVersion, 'bin', 'python');
@@ -323,7 +285,6 @@ const resolvePythonPath = async (workspacePath, envConfig, getBackendPythonPath)
     }
   }
 
-  // Try to detect venv in workspace
   const venvPaths = ['.venv', 'venv', '.env', 'env'];
   for (const venvDir of venvPaths) {
     const binDir = isWindows ? 'Scripts' : 'bin';
@@ -340,13 +301,11 @@ const resolvePythonPath = async (workspacePath, envConfig, getBackendPythonPath)
     }
   }
 
-  // Fall back to BACKEND_PYTHON_PATH (from first-run setup)
   const backendPython = getBackendPythonPath();
   if (backendPython) {
     return { pythonPath: backendPython };
   }
 
-  // Fall back to system python
   try {
     const systemPython = execSync('which python3 || which python', { encoding: 'utf8' }).trim();
     if (systemPython) {
@@ -368,16 +327,13 @@ function register(ctx) {
           logsDir, electronLogPath, backendLogPath,
           readPythonEnvConfig: ctxReadPythonEnvConfig } = ctx;
 
-  // Use context-provided readPythonEnvConfig if available, otherwise use local
   const _readPythonEnvConfig = ctxReadPythonEnvConfig || readPythonEnvConfig;
 
-  // ==================== SUBMIT MACRO ====================
   ipcMain.handle('submit-macro', async (event, command) => {
     const mainWindow = getMainWindow();
     if (mainWindow) mainWindow.hide();
   });
 
-  // ==================== SCREENSHOT CAPTURED ====================
   ipcMain.on('screenshot-captured', (event, data) => {
     const mainWindow = getMainWindow();
     if (mainWindow) {
@@ -388,8 +344,6 @@ function register(ctx) {
       });
     }
   });
-
-  // ==================== CRON / DAEMONS ====================
 
   ipcMain.handle('getCronJobs', async () => {
     return await callBackendApi(`${BACKEND_URL}/api/cron/jobs`);
@@ -452,7 +406,6 @@ function register(ctx) {
     return Array.from(daemons.values()).map(({ process, ...rest }) => rest);
   });
 
-  // ==================== UPDATE SHORTCUT ====================
   ipcMain.handle('update-shortcut', (event, newShortcut) => {
     const rcPath = path.join(os.homedir(), '.npcshrc');
     try {
@@ -478,11 +431,9 @@ function register(ctx) {
     }
   });
 
-  // ==================== LOCAL MODEL DETECTION ====================
   ipcMain.handle('detect-local-models', async () => {
     const models = [];
 
-    // Check Ollama directly (port 11434) — works even if backend isn't running
     try {
       const ollamaRes = await fetch('http://127.0.0.1:11434/api/tags', { signal: AbortSignal.timeout(3000) });
       if (ollamaRes.ok) {
@@ -496,7 +447,6 @@ function register(ctx) {
       models.push({ provider: 'ollama', available: false, models: [] });
     }
 
-    // Check LM Studio (port 1234)
     try {
       const lmRes = await fetch('http://127.0.0.1:1234/v1/models', { signal: AbortSignal.timeout(3000) });
       if (lmRes.ok) {
@@ -513,7 +463,6 @@ function register(ctx) {
     return { models };
   });
 
-  // ==================== OLLAMA ====================
   ipcMain.handle('ollama:checkStatus', async () => {
     log('[Main Process] Checking Ollama status via backend...');
     return await callBackendApi(`${BACKEND_URL}/api/ollama/status`);
@@ -576,8 +525,6 @@ function register(ctx) {
                         mainWindow?.webContents.send('ollama-pull-progress', frontendProgress);
                     }
 
-
-
                     }
                 }
             } catch (e) {
@@ -606,9 +553,6 @@ function register(ctx) {
     }
   });
 
-  // ==================== PYTHON ENVIRONMENT HANDLERS ====================
-
-  // Get Python environment config for a workspace
   ipcMain.handle('python-env-get', async (event, { workspacePath }) => {
     try {
       const config = await _readPythonEnvConfig();
@@ -619,7 +563,6 @@ function register(ctx) {
     }
   });
 
-  // Save Python environment config for a workspace
   ipcMain.handle('python-env-save', async (event, { workspacePath, envConfig }) => {
     try {
       const config = await _readPythonEnvConfig();
@@ -629,7 +572,6 @@ function register(ctx) {
       };
       await writePythonEnvConfig(config);
 
-      // Also update .npcshrc with the resolved Python path
       try {
         const pythonInfo = await resolvePythonPath(workspacePath, envConfig, getBackendPythonPath);
         if (pythonInfo?.pythonPath) {
@@ -646,7 +588,6 @@ function register(ctx) {
     }
   });
 
-  // Delete Python environment config for a workspace
   ipcMain.handle('python-env-delete', async (event, { workspacePath }) => {
     try {
       const config = await _readPythonEnvConfig();
@@ -659,7 +600,6 @@ function register(ctx) {
     }
   });
 
-  // List all Python environment configs
   ipcMain.handle('python-env-list', async () => {
     try {
       const config = await _readPythonEnvConfig();
@@ -670,7 +610,6 @@ function register(ctx) {
     }
   });
 
-  // Detect available Python environments in a workspace
   ipcMain.handle('python-env-detect', async (event, { workspacePath }) => {
     const detected = [];
     const platform = process.platform;
@@ -678,7 +617,6 @@ function register(ctx) {
     const pythonBin = isWindows ? 'python.exe' : 'python';
     const pythonBin3 = isWindows ? 'python3.exe' : 'python3';
 
-    // Check for venv/virtualenv patterns
     const venvPaths = ['.venv', 'venv', '.env', 'env'];
     for (const venvDir of venvPaths) {
       const binDir = isWindows ? 'Scripts' : 'bin';
@@ -702,19 +640,14 @@ function register(ctx) {
             venvPath: venvDir
           });
         } catch {
-          // Not found
+
         }
       }
     }
 
-    // Check for uv-created .venv (same as venv but often in .venv)
-    // uv uses standard venv structure, so it's already covered above
-
-    // Check for pyenv - both local .python-version and globally installed versions
     const pyenvRoot = process.env.PYENV_ROOT || path.join(os.homedir(), '.pyenv');
     const pyenvVersionsDir = path.join(pyenvRoot, 'versions');
 
-    // First check for local .python-version file (project-specific)
     const pyenvVersionFile = path.join(workspacePath, '.python-version');
     let localPyenvVersion = null;
     try {
@@ -730,7 +663,7 @@ function register(ctx) {
           isLocalVersion: true
         });
       } catch {
-        // pyenv version file exists but version not installed
+
         detected.push({
           type: 'pyenv',
           name: `pyenv (${localPyenvVersion}) - not installed`,
@@ -740,17 +673,15 @@ function register(ctx) {
         });
       }
     } catch {
-      // No .python-version file - that's fine
+
     }
 
-    // Also scan for all installed pyenv versions
     try {
       const versions = await fsPromises.readdir(pyenvVersionsDir);
       for (const version of versions) {
-        // Skip if this is the local version (already added)
+
         if (version === localPyenvVersion) continue;
 
-        // Skip non-version directories (like .DS_Store, envs, etc)
         if (version.startsWith('.') || version === 'envs') continue;
 
         const pyenvPythonPath = path.join(pyenvVersionsDir, version, 'bin', pythonBin);
@@ -763,24 +694,23 @@ function register(ctx) {
             pyenvVersion: version
           });
         } catch {
-          // This version doesn't have python binary - skip
+
         }
       }
     } catch {
-      // pyenv versions directory doesn't exist or not readable
+
     }
 
-    // Check for conda environment.yml or environment.yaml
     const condaEnvFiles = ['environment.yml', 'environment.yaml'];
     for (const envFile of condaEnvFiles) {
       const envFilePath = path.join(workspacePath, envFile);
       try {
         const content = await fsPromises.readFile(envFilePath, 'utf8');
-        // Simple YAML parsing to get name
+
         const nameMatch = content.match(/^name:\s*(.+)$/m);
         if (nameMatch) {
           const envName = nameMatch[1].trim();
-          // Try common conda paths
+
           const condaPaths = [
             path.join(os.homedir(), 'anaconda3'),
             path.join(os.homedir(), 'miniconda3'),
@@ -800,25 +730,24 @@ function register(ctx) {
               });
               break;
             } catch {
-              // Try next conda path
+
             }
           }
         }
       } catch {
-        // No conda env file
+
       }
     }
 
-    // Check for pyproject.toml with uv or poetry
     const pyprojectPath = path.join(workspacePath, 'pyproject.toml');
     try {
       const content = await fsPromises.readFile(pyprojectPath, 'utf8');
       if (content.includes('[tool.uv]') || content.includes('uv.lock')) {
-        // uv project - check for .venv
+
         const uvVenvPath = path.join(workspacePath, '.venv', isWindows ? 'Scripts' : 'bin', pythonBin);
         try {
           await fsPromises.access(uvVenvPath);
-          // Only add if not already detected as venv
+
           if (!detected.some(d => d.path === uvVenvPath)) {
             detected.push({
               type: 'uv',
@@ -838,10 +767,9 @@ function register(ctx) {
         }
       }
     } catch {
-      // No pyproject.toml
+
     }
 
-    // Check uv.lock file
     const uvLockPath = path.join(workspacePath, 'uv.lock');
     try {
       await fsPromises.access(uvLockPath);
@@ -868,10 +796,9 @@ function register(ctx) {
         }
       }
     } catch {
-      // No uv.lock
+
     }
 
-    // Always add system Python as fallback
     detected.push({
       type: 'system',
       name: 'System Python',
@@ -881,14 +808,13 @@ function register(ctx) {
     return detected;
   });
 
-  // Get the resolved Python path for running scripts
   ipcMain.handle('python-env-resolve', async (event, { workspacePath }) => {
     try {
       const config = await _readPythonEnvConfig();
       const envConfig = config.workspaces[workspacePath];
 
       if (!envConfig) {
-        // No config - return system python
+
         return { pythonPath: process.platform === 'win32' ? 'python' : 'python3' };
       }
 
@@ -924,25 +850,22 @@ function register(ctx) {
     }
   });
 
-  // Create a new virtual environment in the workspace
   ipcMain.handle('python-env-create', async (event, { workspacePath, venvName = '.venv', pythonPath = null }) => {
     try {
       const venvDir = path.join(workspacePath, venvName);
 
-      // Check if venv already exists
       try {
         await fsPromises.access(venvDir);
         return { success: false, error: `Virtual environment '${venvName}' already exists` };
       } catch {
-        // Good - venv doesn't exist
+
       }
 
-      // Determine which python to use for creating the venv
       const isWindows = process.platform === 'win32';
       let pythonCmd = pythonPath || (isWindows ? 'python' : 'python3');
 
       return new Promise((resolve) => {
-        // Create venv using python -m venv
+
         const args = ['-m', 'venv', venvDir];
         console.log(`[VENV] Creating venv with: ${pythonCmd} ${args.join(' ')}`);
 
@@ -958,7 +881,7 @@ function register(ctx) {
 
         proc.on('close', async (code) => {
           if (code === 0) {
-            // Venv created successfully - auto-configure it
+
             try {
               const config = await _readPythonEnvConfig();
               config.workspaces[workspacePath] = {
@@ -997,7 +920,6 @@ function register(ctx) {
     }
   });
 
-  // Check if Python environment is configured for a workspace
   ipcMain.handle('python-env-check-configured', async (event, { workspacePath }) => {
     try {
       const config = await _readPythonEnvConfig();
@@ -1008,13 +930,11 @@ function register(ctx) {
     }
   });
 
-  // List installed packages in the Python environment
   ipcMain.handle('python-env-list-packages', async (event, workspacePath) => {
     try {
       const config = await _readPythonEnvConfig();
       const envConfig = config.workspaces[workspacePath];
 
-      // Get the Python path for this workspace
       const pythonInfo = await resolvePythonPath(workspacePath, envConfig, getBackendPythonPath);
       if (!pythonInfo?.pythonPath) {
         return [];
@@ -1054,7 +974,6 @@ function register(ctx) {
     }
   });
 
-  // Install a package in the Python environment
   ipcMain.handle('python-env-install-package', async (event, workspacePath, packageName, extraArgs = []) => {
     try {
       const config = await _readPythonEnvConfig();
@@ -1065,7 +984,6 @@ function register(ctx) {
         return { success: false, error: 'No Python environment configured' };
       }
 
-      // Split package name in case multiple packages are passed
       const packages = packageName.split(/\s+/).filter(p => p.trim());
       const args = ['-m', 'pip', 'install', ...packages, ...extraArgs];
 
@@ -1107,7 +1025,6 @@ function register(ctx) {
     }
   });
 
-  // Uninstall a package from the Python environment
   ipcMain.handle('python-env-uninstall-package', async (event, workspacePath, packageName) => {
     try {
       const config = await _readPythonEnvConfig();
@@ -1150,20 +1067,15 @@ function register(ctx) {
     }
   });
 
-  // ==================== FIRST-RUN SETUP ====================
-
-  // Check if first-run setup is needed
   ipcMain.handle('setup:checkNeeded', async () => {
     return { needed: needsFirstRunSetup() };
   });
 
-  // Get current backend Python path
   ipcMain.handle('setup:getBackendPythonPath', async () => {
     const pythonPath = getBackendPythonPath();
     return { pythonPath };
   });
 
-  // Detect available Python installations
   ipcMain.handle('setup:detectPython', async () => {
     const pythons = [];
 
@@ -1178,7 +1090,6 @@ function register(ctx) {
     tryPython('python3', 'Python 3 (System)');
     tryPython('python', 'Python (System)');
 
-    // Check for pyenv
     try {
       const pyenvVersions = execSync('pyenv versions --bare 2>/dev/null', { encoding: 'utf8' }).trim().split('\n').filter(v => v);
       const pyenvRoot = execSync('pyenv root', { encoding: 'utf8' }).trim();
@@ -1192,7 +1103,6 @@ function register(ctx) {
       }
     } catch {}
 
-    // Check for conda
     try {
       const condaEnvs = execSync('conda env list --json 2>/dev/null', { encoding: 'utf8' });
       const envData = JSON.parse(condaEnvs);
@@ -1210,18 +1120,16 @@ function register(ctx) {
     return { pythons };
   });
 
-  // Create the incognide venv for the backend
   ipcMain.handle('setup:createVenv', async () => {
     const venvDir = path.join(os.homedir(), '.npcsh', 'incognide', 'venv');
 
     try {
-      // Create parent directory
+
       await fsPromises.mkdir(path.dirname(venvDir), { recursive: true });
 
-      // Check if venv already exists
       try {
         await fsPromises.access(venvDir);
-        // Venv exists - return its python path
+
         const pythonPath = path.join(venvDir, 'bin', 'python');
         return { success: true, pythonPath, message: 'Using existing virtual environment' };
       } catch {}
@@ -1256,21 +1164,18 @@ function register(ctx) {
     }
   });
 
-  // Install npcpy and dependencies in a Python environment
   ipcMain.handle('setup:installNpcpy', async (event, { pythonPath, extras = 'local' }) => {
     if (!pythonPath) {
       return { success: false, error: 'No Python path provided' };
     }
 
-    // Validate extras to prevent injection
     const validExtras = ['lite', 'local', 'yap', 'all'];
     const safeExtras = validExtras.includes(extras) ? extras : 'local';
 
-    // Get the sender's webContents to stream updates
     const sender = event.sender;
 
     return new Promise((resolve) => {
-      // Install npcpy with selected extras
+
       const args = ['-m', 'pip', 'install', '--upgrade', `npcpy[${safeExtras}]`];
       log(`[SETUP] Installing npcpy: ${pythonPath} ${args.join(' ')}`);
 
@@ -1285,7 +1190,7 @@ function register(ctx) {
         const text = data.toString();
         stdout += text;
         log('[SETUP]', text.trim());
-        // Stream to renderer
+
         if (sender && !sender.isDestroyed()) {
           sender.send('setup:installProgress', { type: 'stdout', text: text.trim() });
         }
@@ -1295,7 +1200,7 @@ function register(ctx) {
         const text = data.toString();
         stderr += text;
         log('[SETUP]', text.trim());
-        // Stream to renderer (pip outputs progress to stderr)
+
         if (sender && !sender.isDestroyed()) {
           sender.send('setup:installProgress', { type: 'stderr', text: text.trim() });
         }
@@ -1315,7 +1220,6 @@ function register(ctx) {
     });
   });
 
-  // Complete setup - save Python path and mark complete
   ipcMain.handle('setup:complete', async (event, { pythonPath }) => {
     try {
       if (pythonPath) {
@@ -1332,33 +1236,29 @@ function register(ctx) {
     }
   });
 
-  // Skip setup without configuring Python
   ipcMain.handle('setup:skip', async () => {
     markSetupComplete();
     return { success: true };
   });
 
-  // Reset setup to allow re-running the wizard
   ipcMain.handle('setup:reset', async () => {
     const setupMarkerPath = path.join(os.homedir(), '.npcsh', 'incognide', '.setup_complete');
     try {
       await fsPromises.unlink(setupMarkerPath);
       return { success: true };
     } catch (err) {
-      // File might not exist, that's fine
+
       return { success: true };
     }
   });
 
-  // Restart backend with new Python path (for after setup)
   ipcMain.handle('setup:restartBackend', async () => {
     try {
-      // Kill existing backend
+
       if (killBackendProcess) {
         killBackendProcess();
       }
 
-      // Get the newly configured Python path
       const customPythonPath = getBackendPythonPath();
 
       if (!customPythonPath) {
@@ -1399,8 +1299,6 @@ function register(ctx) {
     }
   });
 
-  // ==================== USER PROFILE ====================
-
   ipcMain.handle('profile:get', async () => {
     try {
       return getUserProfile();
@@ -1420,9 +1318,6 @@ function register(ctx) {
     }
   });
 
-  // ==================== TILE CONFIGURATION HANDLERS ====================
-
-  // Get tiles configuration
   ipcMain.handle('tiles-config-get', async () => {
     try {
       return await readTilesConfig();
@@ -1432,7 +1327,6 @@ function register(ctx) {
     }
   });
 
-  // Save tiles configuration
   ipcMain.handle('tiles-config-save', async (event, config) => {
     try {
       await writeTilesConfig(config);
@@ -1443,7 +1337,6 @@ function register(ctx) {
     }
   });
 
-  // Reset tiles to defaults
   ipcMain.handle('tiles-config-reset', async () => {
     try {
       await writeTilesConfig(defaultTilesConfig);
@@ -1454,7 +1347,6 @@ function register(ctx) {
     }
   });
 
-  // Add a custom tile
   ipcMain.handle('tiles-config-add-custom', async (event, customTile) => {
     try {
       const config = await readTilesConfig();
@@ -1470,7 +1362,6 @@ function register(ctx) {
     }
   });
 
-  // Remove a custom tile
   ipcMain.handle('tiles-config-remove-custom', async (event, tileId) => {
     try {
       const config = await readTilesConfig();
@@ -1483,14 +1374,10 @@ function register(ctx) {
     }
   });
 
-  // ==================== TILE JINX HANDLERS ====================
-
-  // List all tile jinx files (compiles on first access)
   ipcMain.handle('tile-jinx-list', async () => {
     try {
       await ensureTileJinxDir();
 
-      // Compile on first access
       if (!jinxInitialCompileDone) {
         console.log('First jinx list request - compiling all jinx files...');
         const compileResult = await compileAllJinxFiles();
@@ -1518,7 +1405,6 @@ function register(ctx) {
     }
   });
 
-  // Read a specific tile jinx
   ipcMain.handle('tile-jinx-read', async (event, filename) => {
     try {
       await ensureTileJinxDir();
@@ -1531,7 +1417,6 @@ function register(ctx) {
     }
   });
 
-  // Write/update a tile jinx
   ipcMain.handle('tile-jinx-write', async (event, filename, content) => {
     try {
       await ensureTileJinxDir();
@@ -1547,7 +1432,6 @@ function register(ctx) {
     }
   });
 
-  // Delete a tile jinx
   ipcMain.handle('tile-jinx-delete', async (event, filename) => {
     try {
       const filePath = path.join(tileJinxDir, filename);
@@ -1559,17 +1443,16 @@ function register(ctx) {
     }
   });
 
-  // Reset tile jinxes to defaults
   ipcMain.handle('tile-jinx-reset', async () => {
     try {
-      // Delete all existing jinx files
+
       const files = await fsPromises.readdir(tileJinxDir);
       for (const file of files) {
         if (file.endsWith('.jinx')) {
           await fsPromises.unlink(path.join(tileJinxDir, file));
         }
       }
-      // Recreate from source component files
+
       for (const [filename, meta] of Object.entries(tileSourceMap)) {
         try {
           const sourcePath = path.join(componentsDir, meta.source);
@@ -1587,15 +1470,13 @@ function register(ctx) {
     }
   });
 
-  // Transform/check TSX code
   ipcMain.handle('transformTsx', async (event, code) => {
     try {
       const ts = require('typescript');
 
-      // Transpile TypeScript to JavaScript (no imports/exports, just plain JS)
       const result = ts.transpileModule(code, {
         compilerOptions: {
-          module: ts.ModuleKind.None,  // No module system - inline everything
+          module: ts.ModuleKind.None,
           target: ts.ScriptTarget.ES2020,
           jsx: ts.JsxEmit.React,
           esModuleInterop: false,
@@ -1604,7 +1485,6 @@ function register(ctx) {
         reportDiagnostics: true,
       });
 
-      // Check for errors
       if (result.diagnostics && result.diagnostics.length > 0) {
         const errors = result.diagnostics.map(d => {
           const message = ts.flattenDiagnosticMessageText(d.messageText, '\n');
@@ -1620,7 +1500,6 @@ function register(ctx) {
     }
   });
 
-  // Get compiled jinx code for a tile
   ipcMain.handle('tile-jinx-compiled', async (event, filename) => {
     try {
       const cachePath = path.join(tileJinxCacheDir, filename.replace('.jinx', '.js'));
@@ -1629,7 +1508,7 @@ function register(ctx) {
         const compiled = await fsPromises.readFile(cachePath, 'utf8');
         return { success: true, compiled };
       } catch {
-        // Cache miss - compile now
+
         const result = await compileJinxFile(filename);
         if (result.success) {
           const compiled = await fsPromises.readFile(cachePath, 'utf8');
@@ -1642,9 +1521,8 @@ function register(ctx) {
     }
   });
 
-  // Force recompile all jinx files
   ipcMain.handle('tile-jinx-recompile', async () => {
-    // Delete cache first
+
     try {
       const cacheFiles = await fsPromises.readdir(tileJinxCacheDir);
       for (const file of cacheFiles) {
@@ -1653,8 +1531,6 @@ function register(ctx) {
     } catch {}
     return compileAllJinxFiles();
   });
-
-  // ==================== PROJECT / GLOBAL SETTINGS ====================
 
   ipcMain.handle('loadProjectSettings', async (event, currentPath) => {
     try {
@@ -1726,8 +1602,6 @@ function register(ctx) {
     }
   );
 
-  // ==================== LOGS ====================
-
   ipcMain.handle('getLogsDir', async () => {
     return {
       logsDir,
@@ -1745,7 +1619,7 @@ function register(ctx) {
         default: throw new Error(`Unknown log type: ${logType}`);
       }
       if (fs.existsSync(logPath)) {
-        // Read last 1000 lines
+
         const content = fs.readFileSync(logPath, 'utf8');
         const lines = content.split('\n');
         return lines.slice(-1000).join('\n');
@@ -1756,8 +1630,6 @@ function register(ctx) {
       return '';
     }
   });
-
-  // ==================== FILE STATS ====================
 
   ipcMain.handle('getFileStats', async (event, filePath) => {
     let resolvedPath = filePath;
@@ -1774,8 +1646,6 @@ function register(ctx) {
     };
   });
 
-  // ==================== LINT FILE ====================
-
   ipcMain.handle('lintFile', async (event, { filePath, content, language }) => {
     const { execFile } = require('child_process');
     const tmpdir = os.tmpdir();
@@ -1783,13 +1653,13 @@ function register(ctx) {
 
     try {
       if (language === 'python') {
-        // Try ruff first, fall back to pyflakes
+
         const tmpFile = path.join(tmpdir, `incognide_lint_${Date.now()}.py`);
         await fsPromises.writeFile(tmpFile, content);
         try {
           const result = await new Promise((resolve, reject) => {
             execFile('ruff', ['check', '--output-format=json', '--no-fix', tmpFile], { timeout: 10000 }, (err, stdout) => {
-              // ruff returns exit code 1 when there are lint errors, that's fine
+
               try { resolve(JSON.parse(stdout || '[]')); } catch { resolve([]); }
             });
           });
@@ -1801,7 +1671,7 @@ function register(ctx) {
             severity: d.code?.startsWith('E') ? 'error' : 'warning',
           }));
         } catch {
-          // ruff not available, try pyflakes
+
           try {
             const result = await new Promise((resolve) => {
               execFile('pyflakes', [tmpFile], { timeout: 10000 }, (err, stdout, stderr) => {
@@ -1831,7 +1701,7 @@ function register(ctx) {
       }
 
       if (language === 'javascript' || language === 'typescript') {
-        // Use eslint if available
+
         const tmpExt = language === 'typescript' ? '.ts' : '.js';
         const tmpFile = path.join(tmpdir, `incognide_lint_${Date.now()}${tmpExt}`);
         await fsPromises.writeFile(tmpFile, content);
@@ -1859,7 +1729,7 @@ function register(ctx) {
       }
 
       if (language === 'tex') {
-        // Use chktex if available
+
         const tmpFile = path.join(tmpdir, `incognide_lint_${Date.now()}.tex`);
         await fsPromises.writeFile(tmpFile, content);
         try {
@@ -1896,8 +1766,6 @@ function register(ctx) {
     }
   });
 
-  // ==================== PROMPT DIALOG ====================
-
   ipcMain.handle('showPromptDialog', async (event, options) => {
     const { title, message, defaultValue } = options;
     const mainWindow = getMainWindow();
@@ -1914,8 +1782,6 @@ function register(ctx) {
     }
     return null;
   });
-
-  // ==================== LOCAL MODEL STATUS / SCANNING ====================
 
   ipcMain.handle('scan-local-models', async (event, provider) => {
     try {
@@ -1943,38 +1809,36 @@ function register(ctx) {
     try {
         const homeDir = os.homedir();
 
-        // Default directories to scan for GGUF/GGML files
         const defaultDirs = [
-            // HuggingFace cache (where transformers downloads GGUF files)
+
             path.join(homeDir, '.cache', 'huggingface', 'hub'),
-            // LM Studio locations
+
             path.join(homeDir, '.cache', 'lm-studio', 'models'),
             path.join(homeDir, 'lm-studio', 'models'),
             path.join(homeDir, '.lmstudio', 'models'),
             path.join(homeDir, '.local', 'share', 'lmstudio', 'models'),
-            // llama.cpp locations
+
             path.join(homeDir, 'llama.cpp', 'models'),
             path.join(homeDir, '.llama.cpp', 'models'),
             path.join(homeDir, '.local', 'share', 'llama.cpp', 'models'),
-            // Kobold.cpp locations
+
             path.join(homeDir, 'koboldcpp', 'models'),
             path.join(homeDir, '.koboldcpp', 'models'),
             path.join(homeDir, '.local', 'share', 'koboldcpp', 'models'),
-            // Ollama models (GGUF based)
+
             path.join(homeDir, '.ollama', 'models', 'blobs'),
-            // GPT4All
+
             path.join(homeDir, '.cache', 'gpt4all'),
             path.join(homeDir, '.local', 'share', 'gpt4all'),
-            // General model directories
+
             path.join(homeDir, '.npcsh', 'models', 'gguf'),
             path.join(homeDir, '.npcsh', 'models'),
             path.join(homeDir, 'models'),
             path.join(homeDir, 'Models'),
-            // Text-generation-webui (oobabooga)
+
             path.join(homeDir, 'text-generation-webui', 'models'),
         ];
 
-        // Directories to scan
         const dirsToScan = directory
             ? [directory.replace(/^~/, homeDir)]
             : defaultDirs;
@@ -1982,30 +1846,29 @@ function register(ctx) {
         const models = [];
         const seenPaths = new Set();
 
-        // Recursive function to find GGUF/GGML files (follows symlinks)
         const scanDirectory = async (dir, depth = 0) => {
-            if (depth > 5) return; // Limit recursion depth
+            if (depth > 5) return;
             try {
                 const entries = await fsPromises.readdir(dir, { withFileTypes: true });
                 for (const entry of entries) {
                     const fullPath = path.join(dir, entry.name);
-                    // Use stat to follow symlinks (HuggingFace uses symlinks)
+
                     try {
                         const stats = await fsPromises.stat(fullPath);
                         if (stats.isDirectory()) {
-                            // Skip some directories that are unlikely to have models
+
                             if (!entry.name.startsWith('.git') && entry.name !== 'node_modules') {
                                 await scanDirectory(fullPath, depth + 1);
                             }
                         } else if (stats.isFile()) {
                             const ext = path.extname(entry.name).toLowerCase();
                             if (ext === '.gguf' || ext === '.ggml' || ext === '.bin') {
-                                // Skip .bin files that are too small (likely not models)
+
                                 if (ext === '.bin' && entry.name.length < 10) continue;
 
                                 if (!seenPaths.has(fullPath)) {
                                     seenPaths.add(fullPath);
-                                    // Only include files larger than 50MB (likely actual models)
+
                                     if (stats.size > 50 * 1024 * 1024) {
                                         models.push({
                                             name: entry.name,
@@ -2027,20 +1890,18 @@ function register(ctx) {
                             }
                         }
                     } catch (statErr) {
-                        // Skip broken symlinks or files we can't stat
+
                     }
                 }
             } catch (err) {
-                // Directory doesn't exist or can't be read - skip silently
+
             }
         };
 
-        // Scan all directories
         for (const dir of dirsToScan) {
             await scanDirectory(dir);
         }
 
-        // Sort by modification date (newest first)
         models.sort((a, b) => new Date(b.modified_at) - new Date(a.modified_at));
 
         return {
@@ -2058,7 +1919,6 @@ function register(ctx) {
     }
   });
 
-  // Browse and select individual GGUF/GGML files
   ipcMain.handle('browse-gguf-file', async (event) => {
     try {
         const mainWindow = getMainWindow();
@@ -2096,8 +1956,6 @@ function register(ctx) {
     }
   });
 
-  // ==================== HUGGINGFACE ====================
-
   ipcMain.handle('download-hf-model', async (event, { url, targetDir }) => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/models/hf/download`, {
@@ -2113,7 +1971,6 @@ function register(ctx) {
     }
   });
 
-  // Search HuggingFace for GGUF models
   ipcMain.handle('search-hf-models', async (event, { query, limit = 20 }) => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/models/hf/search?q=${encodeURIComponent(query)}&limit=${limit}`);
@@ -2125,7 +1982,6 @@ function register(ctx) {
     }
   });
 
-  // List GGUF files in a HuggingFace repository
   ipcMain.handle('list-hf-files', async (event, { repoId }) => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/models/hf/files?repo_id=${encodeURIComponent(repoId)}`);
@@ -2137,7 +1993,6 @@ function register(ctx) {
     }
   });
 
-  // Download a specific file from HuggingFace
   ipcMain.handle('download-hf-file', async (event, { repoId, filename, targetDir }) => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/models/hf/download_file`, {
@@ -2152,8 +2007,6 @@ function register(ctx) {
         return { error: err.message };
     }
   });
-
-  // ==================== ACTIVITY TRACKING ====================
 
   ipcMain.handle('track-activity', async (event, activity) => {
     try {
@@ -2192,8 +2045,6 @@ function register(ctx) {
     }
   });
 
-  // ==================== ML / FINETUNING ====================
-
   ipcMain.handle('finetune-diffusers', async (event, params) => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/finetune_diffusers`, {
@@ -2230,7 +2081,6 @@ function register(ctx) {
     }
   });
 
-  // Instruction fine-tuning (SFT, USFT, DPO, memory_classifier)
   ipcMain.handle('finetune-instruction', async (event, params) => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/finetune_instruction`, {
@@ -2285,8 +2135,6 @@ function register(ctx) {
         return { error: error.message, models: [] };
     }
   });
-
-  // ==================== GENETIC EVOLUTION ====================
 
   ipcMain.handle('genetic-create-population', async (event, params) => {
     try {
@@ -2398,8 +2246,6 @@ function register(ctx) {
     }
   });
 
-  // ==================== DEVICE INFO ====================
-
   ipcMain.handle('getDeviceInfo', async () => {
     return getOrCreateDeviceId();
   });
@@ -2413,8 +2259,6 @@ function register(ctx) {
     return config.deviceId;
   });
 
-  // ==================== VERSION / UPDATES ====================
-
   ipcMain.handle('check-for-updates', async () => {
     try {
         log(`[UPDATE] Checking for updates. Current version: ${APP_VERSION}`);
@@ -2424,7 +2268,6 @@ function register(ctx) {
         const manifest = await response.json();
         const latestVersion = manifest.version;
 
-        // Compare versions (simple semver comparison)
         const compareVersions = (a, b) => {
             const pa = a.split('.').map(Number);
             const pb = b.split('.').map(Number);
@@ -2466,7 +2309,6 @@ function register(ctx) {
 
   ipcMain.handle('get-app-version', () => APP_VERSION);
 
-  // Download and install update
   ipcMain.handle('download-and-install-update', async (event, { releaseUrl }) => {
     try {
       log(`[UPDATE] Downloading update from: ${releaseUrl}`);
@@ -2476,7 +2318,6 @@ function register(ctx) {
       const fileName = path.basename(new URL(releaseUrl).pathname) || 'incognide-update';
       const filePath = path.join(tmpDir, fileName);
 
-      // Download with progress
       const response = await fetch(releaseUrl);
       if (!response.ok) throw new Error(`Download failed: ${response.status}`);
 
@@ -2500,15 +2341,14 @@ function register(ctx) {
 
       log(`[UPDATE] Downloaded to: ${filePath}`);
 
-      // Open the installer
       const platform = process.platform;
       if (platform === 'darwin' && filePath.endsWith('.dmg')) {
-        // Mount DMG and open it
+
         spawn('open', [filePath], { detached: true, stdio: 'ignore' });
       } else if (platform === 'win32') {
         spawn(filePath, [], { detached: true, stdio: 'ignore' });
       } else if (platform === 'linux') {
-        // For AppImage or deb
+
         if (filePath.endsWith('.AppImage')) {
           await fsPromises.chmod(filePath, '755');
           spawn(filePath, [], { detached: true, stdio: 'ignore' });

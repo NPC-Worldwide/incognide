@@ -41,7 +41,6 @@ const ZipViewer = ({
     const paneData = contentDataRef.current[nodeId];
     const filePath = paneData?.contentId;
 
-    // Build tree structure from flat entries
     const buildTree = useCallback((flatEntries: ZipEntry[]): TreeNode => {
         const root: TreeNode = {
             name: getFileName(filePath) || 'archive.zip',
@@ -88,7 +87,7 @@ const ZipViewer = ({
             if (result?.error) throw new Error(result.error);
             setEntries(result.entries || []);
             setTreeData(buildTree(result.entries || []));
-            // Expand root by default
+
             setExpandedPaths(new Set(['']));
         } catch (e: any) {
             setError(e.message || String(e));
@@ -114,7 +113,7 @@ const ZipViewer = ({
     }, []);
 
     const handleExtract = useCallback(async (entry: ZipEntry | null) => {
-        // entry=null means extract all
+
         setExtractModal({ entry, extractAll: entry === null });
     }, []);
 
@@ -129,7 +128,7 @@ const ZipViewer = ({
             );
             if (result?.error) throw new Error(result.error);
             setExtractModal(null);
-            // Could show success message or refresh sidebar
+
         } catch (e: any) {
             setError(e.message || String(e));
         } finally {
@@ -166,7 +165,7 @@ const ZipViewer = ({
         const isExpanded = expandedPaths.has(node.path);
         const isSelected = selectedPath === node.path;
         const childrenArray = Array.from(node.children.values()).sort((a, b) => {
-            // Directories first, then alphabetically
+
             if (a.isDirectory && !b.isDirectory) return -1;
             if (!a.isDirectory && b.isDirectory) return 1;
             return a.name.localeCompare(b.name);
@@ -240,7 +239,6 @@ const ZipViewer = ({
 
     return (
         <div className="h-full flex flex-col theme-bg-secondary overflow-hidden">
-            {/* Header */}
             <div
                 draggable="true"
                 onDragStart={(e) => {
@@ -299,7 +297,6 @@ const ZipViewer = ({
                 </div>
             </div>
 
-            {/* Stats bar */}
             <div className="px-3 py-2 border-b theme-border text-xs theme-text-muted flex items-center gap-4 flex-shrink-0">
                 <span>{fileCount} files</span>
                 <span>{dirCount} folders</span>
@@ -307,12 +304,10 @@ const ZipViewer = ({
                 <span>Compressed: {formatSize(compressedSize)}</span>
             </div>
 
-            {/* Tree view */}
             <div className="flex-1 overflow-auto">
                 {treeData && renderTreeNode(treeData)}
             </div>
 
-            {/* Selected item actions */}
             {selectedPath !== null && selectedPath !== '' && (
                 <div className="p-2 border-t theme-border flex items-center gap-2 flex-shrink-0">
                     <button
@@ -329,7 +324,6 @@ const ZipViewer = ({
                 </div>
             )}
 
-            {/* Extract Modal */}
             {extractModal && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setExtractModal(null)}>
                     <div className="theme-bg-secondary rounded-lg p-4 w-80 shadow-xl" onClick={e => e.stopPropagation()}>
@@ -376,7 +370,6 @@ const ZipViewer = ({
     );
 };
 
-// Custom comparison to prevent reload on pane resize
 const arePropsEqual = (prevProps: any, nextProps: any) => {
     return prevProps.nodeId === nextProps.nodeId;
 };

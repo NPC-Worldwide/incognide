@@ -44,7 +44,6 @@ const BrowserHistoryWeb: React.FC<BrowserHistoryWebProps> = ({ isModal = false, 
         fetchHistoryGraph();
     }, [fetchHistoryGraph]);
 
-    // Escape key handler
     useEffect(() => {
         if (!isModal) return;
         const handleKeyDown = (e: KeyboardEvent) => {

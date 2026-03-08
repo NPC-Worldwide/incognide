@@ -50,12 +50,10 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     const [isDark, setIsDark] = useState(true);
     const [hasUnsavedResolutions, setHasUnsavedResolutions] = useState(false);
 
-    // Refs for synchronized scrolling
     const leftScrollRef = useRef<HTMLDivElement>(null);
     const rightScrollRef = useRef<HTMLDivElement>(null);
     const isScrolling = useRef<'left' | 'right' | null>(null);
 
-    // Detect file extension for syntax highlighting
     const getLanguageExtension = useCallback((path: string) => {
         const ext = path.split('.').pop()?.toLowerCase();
         switch (ext) {
@@ -82,7 +80,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
         }
     }, []);
 
-    // Detect merge conflicts in content
     const detectMergeConflicts = useCallback((content: string) => {
         const conflicts: MergeConflict[] = [];
         const lines = content.split('\n');
@@ -136,25 +133,23 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
             const repoPath = currentPath || filePath.replace(/\\/g, '/').split('/').slice(0, -1).join('/');
             const relativePath = filePath.replace(repoPath + '/', '').replace(repoPath, '');
 
-            // Load original content from git (HEAD version)
             const originalResult = await (window as any).api?.gitShowFile?.(repoPath, relativePath, 'HEAD');
             if (originalResult?.success) {
                 setOriginalContent(originalResult.content || '');
             } else {
-                // File might be new, so no original
+
                 setOriginalContent('');
             }
 
-            // Load current modified content
             const modifiedResult = await (window as any).api?.readFileContent?.(filePath);
             if (modifiedResult) {
-                // Handle both string and {content: string} response formats
+
                 const content = typeof modifiedResult === 'string' ? modifiedResult : (modifiedResult.content || '');
                 setModifiedContent(content);
-                // Check for merge conflicts
+
                 const conflicts = detectMergeConflicts(content);
                 setMergeConflicts(conflicts);
-                // Auto-switch to conflicts view if there are conflicts
+
                 if (conflicts.length > 0 && viewMode !== 'conflicts') {
                     setViewMode('conflicts');
                 }
@@ -170,7 +165,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
 
     useEffect(() => {
         loadContent();
-        // Check theme
+
         setIsDark(document.documentElement.classList.contains('dark'));
     }, [filePath, currentPath]);
 
@@ -198,7 +193,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
         }
     };
 
-    // Resolve a specific conflict
     const resolveConflict = useCallback((conflictId: number, resolution: 'ours' | 'theirs' | 'both') => {
         setMergeConflicts(prev => prev.map(c => {
             if (c.id !== conflictId) return c;
@@ -215,7 +209,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
         setHasUnsavedResolutions(true);
     }, []);
 
-    // Apply all conflict resolutions and save file
     const applyResolutions = useCallback(async () => {
         const unresolvedCount = mergeConflicts.filter(c => !c.resolved).length;
         if (unresolvedCount > 0) {
@@ -225,7 +218,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
         }
 
         let newContent = modifiedContent;
-        // Apply resolutions in reverse order to preserve line numbers
+
         const sortedConflicts = [...mergeConflicts].sort((a, b) => b.startLine - a.startLine);
 
         for (const conflict of sortedConflicts) {
@@ -254,19 +247,16 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     const editorExtensions = useMemo(() => [
         langExt,
         EditorView.lineWrapping,
-        EditorView.editable.of(false), // Read-only
+        EditorView.editable.of(false),
     ].flat(), [langExt]);
 
-    // Simple LCS-based diff algorithm
     const computeDiff = useMemo(() => {
         const origLines = (originalContent || '').split('\n');
         const modLines = (modifiedContent || '').split('\n');
 
-        // Build a set of original lines for quick lookup
         const origSet = new Set(origLines);
         const modSet = new Set(modLines);
 
-        // Mark lines as added, removed, or unchanged
         const leftLines: { line: string; type: 'removed' | 'unchanged' | 'empty'; lineNum: number }[] = [];
         const rightLines: { line: string; type: 'added' | 'unchanged' | 'empty'; lineNum: number }[] = [];
 
@@ -278,23 +268,23 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
             const modLine = ri < modLines.length ? modLines[ri] : null;
 
             if (origLine === modLine) {
-                // Lines match
+
                 leftLines.push({ line: origLine || '', type: 'unchanged', lineNum: leftLineNum++ });
                 rightLines.push({ line: modLine || '', type: 'unchanged', lineNum: rightLineNum++ });
                 li++;
                 ri++;
             } else if (origLine !== null && !modSet.has(origLine)) {
-                // Line was removed (not in modified)
+
                 leftLines.push({ line: origLine, type: 'removed', lineNum: leftLineNum++ });
                 rightLines.push({ line: '', type: 'empty', lineNum: 0 });
                 li++;
             } else if (modLine !== null && !origSet.has(modLine)) {
-                // Line was added (not in original)
+
                 leftLines.push({ line: '', type: 'empty', lineNum: 0 });
                 rightLines.push({ line: modLine, type: 'added', lineNum: rightLineNum++ });
                 ri++;
             } else {
-                // Lines changed - show as remove + add
+
                 if (origLine !== null) {
                     leftLines.push({ line: origLine, type: 'removed', lineNum: leftLineNum++ });
                     rightLines.push({ line: '', type: 'empty', lineNum: 0 });
@@ -311,7 +301,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
         return { leftLines, rightLines };
     }, [originalContent, modifiedContent]);
 
-    // Scroll sync handler
     const handleScroll = useCallback((side: 'left' | 'right') => {
         if (isScrolling.current && isScrolling.current !== side) return;
 
@@ -324,7 +313,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
             target.scrollLeft = source.scrollLeft;
         }
 
-        // Reset scrolling lock after a short delay
         setTimeout(() => { isScrolling.current = null; }, 50);
     }, []);
 
@@ -355,7 +343,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
             );
         };
 
-        // Calculate minimap markers
         const totalLines = Math.max(leftLines.length, rightLines.length);
         const leftMarkers = leftLines.map((l, i) => ({ index: i, type: l.type })).filter(m => m.type === 'removed');
         const rightMarkers = rightLines.map((l, i) => ({ index: i, type: l.type })).filter(m => m.type === 'added');
@@ -378,7 +365,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
 
         return (
             <div className="flex flex-1 min-h-0">
-                {/* Left side - Original */}
                 <div className="flex-1 flex flex-col border-r theme-border min-w-0">
                     <div className="px-2 py-1 text-[10px] font-medium text-pink-300 bg-pink-900/20 flex items-center gap-1">
                         <GitBranch size={10} /> Original (HEAD)
@@ -395,7 +381,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
                     </div>
                 </div>
 
-                {/* Right side - Modified */}
                 <div className="flex-1 flex flex-col min-w-0">
                     <div className="px-2 py-1 text-[10px] font-medium text-teal-300 bg-teal-900/20 flex items-center gap-1">
                         <GitBranch size={10} /> Modified (Working Copy)
@@ -423,7 +408,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
     const renderUnifiedView = () => {
         const { leftLines, rightLines } = computeDiff;
 
-        // Interleave removed and added lines in order
         const unifiedLines: { line: string; type: 'removed' | 'added' | 'unchanged' | 'empty'; lineNum: number; origNum: number }[] = [];
         for (let i = 0; i < leftLines.length; i++) {
             const left = leftLines[i];
@@ -468,7 +452,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
         );
     };
 
-    // Render conflict resolution view
     const renderConflictsView = () => {
         if (mergeConflicts.length === 0) {
             return (
@@ -509,7 +492,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
                             conflict.resolved ? 'border-teal-500/50 bg-teal-900/10' : 'border-yellow-500/50 bg-yellow-900/10'
                         }`}
                     >
-                        {/* Conflict header */}
                         <div className="px-3 py-2 border-b border-gray-700/50 flex items-center justify-between">
                             <div className="flex items-center gap-2">
                                 <span className="text-xs font-medium text-gray-300">
@@ -551,9 +533,7 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
                             )}
                         </div>
 
-                        {/* Conflict content */}
                         <div className="flex">
-                            {/* Ours side */}
                             <div className={`flex-1 border-r border-gray-700/50 ${conflict.resolved === 'theirs' ? 'opacity-40' : ''}`}>
                                 <div className="px-2 py-1 text-[10px] font-medium text-pink-300 bg-pink-900/30 flex items-center gap-1">
                                     <ArrowLeft size={10} /> {conflict.oursLabel} (Current)
@@ -563,7 +543,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
                                 </pre>
                             </div>
 
-                            {/* Theirs side */}
                             <div className={`flex-1 ${conflict.resolved === 'ours' ? 'opacity-40' : ''}`}>
                                 <div className="px-2 py-1 text-[10px] font-medium text-teal-300 bg-teal-900/30 flex items-center gap-1">
                                     {conflict.theirsLabel} (Incoming) <ArrowRight size={10} />
@@ -574,7 +553,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
                             </div>
                         </div>
 
-                        {/* Show resolved content preview */}
                         {conflict.resolved && conflict.resolvedContent && (
                             <div className="border-t border-gray-700/50">
                                 <div className="px-2 py-1 text-[10px] font-medium text-blue-300 bg-blue-900/30 flex items-center gap-1">
@@ -593,7 +571,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
 
     return (
         <div className="flex flex-col h-full theme-bg-primary">
-            {/* Header */}
             <div className="flex items-center justify-between px-3 py-2 border-b theme-border bg-gradient-to-r from-orange-900/20 to-amber-900/20">
                 <div className="flex items-center gap-2">
                     <GitBranch size={16} className="text-orange-400" />
@@ -620,7 +597,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
                     )}
                 </div>
                 <div className="flex items-center gap-1">
-                    {/* View mode buttons */}
                     <div className="flex items-center bg-black/20 rounded p-0.5 mr-2">
                         <button
                             onClick={() => setViewMode('split')}
@@ -670,7 +646,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
                 </div>
             </div>
 
-            {/* Content */}
             {loading ? (
                 <div className="flex-1 flex items-center justify-center">
                     <RefreshCw size={24} className="animate-spin text-gray-400" />
@@ -687,7 +662,6 @@ const DiffViewer: React.FC<DiffViewerProps> = ({
                 renderConflictsView()
             )}
 
-            {/* Footer with file path */}
             <div className="px-3 py-1 border-t theme-border text-[10px] text-gray-500 truncate flex items-center justify-between">
                 <span>{filePath}</span>
                 <span>

@@ -21,7 +21,7 @@ context: |
     6. Use notify to inform the user of status
 
 forenpc: ledbi
-use_global_jinxs: false
+use_global_jinxes: false
 preferences:
     - Always request approval before destructive operations
     - Keep the user informed with notifications

@@ -7,12 +7,8 @@ const os = require('os');
 function register(ctx) {
   const { ipcMain, log, getMainWindow, readPythonEnvConfig } = ctx;
 
-  // ============================================
-  // Jupyter Kernel Management
-  // ============================================
-  const jupyterKernels = new Map(); // kernelId -> { process, connectionFile, executionCount, pythonPath }
+  const jupyterKernels = new Map();
 
-  // Helper to get Python path for workspace
   const getWorkspacePythonPath = async (workspacePath) => {
       if (!workspacePath) return 'python3';
 
@@ -24,7 +20,6 @@ function register(ctx) {
           }
       } catch {}
 
-      // Try to find a venv in the workspace
       const isWindows = process.platform === 'win32';
       const binDir = isWindows ? 'Scripts' : 'bin';
       const pythonBin = isWindows ? 'python.exe' : 'python';
@@ -45,7 +40,7 @@ function register(ctx) {
           const pythonPath = await getWorkspacePythonPath(workspacePath);
 
           return new Promise((resolve) => {
-              // Use python -m jupyter kernelspec list instead of bare jupyter command
+
               const proc = spawn(pythonPath, ['-m', 'jupyter', 'kernelspec', 'list', '--json'], {
                   env: { ...process.env },
                   cwd: workspacePath || process.cwd()
@@ -123,7 +118,6 @@ function register(ctx) {
               workspacePath
           });
 
-          // Wait for connection file to appear (poll up to 15s instead of hardcoded 3s)
           let connectionReady = false;
           for (let i = 0; i < 30; i++) {
               await new Promise((resolve) => setTimeout(resolve, 500));
@@ -132,9 +126,9 @@ function register(ctx) {
                   connectionReady = true;
                   break;
               } catch {
-                  // Not ready yet
+
               }
-              // Check if process died
+
               if (proc.exitCode !== null) {
                   jupyterKernels.delete(kernelId);
                   return { success: false, error: `Kernel process exited with code ${proc.exitCode}` };
@@ -145,7 +139,6 @@ function register(ctx) {
               return { success: true, kernelId, connectionFile, pythonPath, warning: 'Connection file may not be ready yet' };
           }
 
-          // Verify kernel is actually responsive by running a quick test
           try {
               const testProc = spawn(pythonPath, ['-c', `
 import sys, json
@@ -266,7 +259,6 @@ except Exception as e:
       }
   });
 
-  // Get variables from kernel namespace for Variables pane
   ipcMain.handle('jupyter:getVariables', async (_, { kernelId }) => {
       try {
           const kernel = jupyterKernels.get(kernelId);
@@ -446,7 +438,6 @@ except Exception as e:
       }
   });
 
-  // Get dataframe data for Data Explorer
   ipcMain.handle('jupyter:getDataFrame', async (_, { kernelId, varName, offset = 0, limit = 100 }) => {
       try {
           const kernel = jupyterKernels.get(kernelId);
@@ -607,7 +598,6 @@ except Exception as e:
       return { success: true, kernels: running };
   });
 
-  // Check if Jupyter is installed in the workspace Python environment
   ipcMain.handle('jupyter:checkInstalled', async (_, { workspacePath } = {}) => {
       try {
           const pythonPath = await getWorkspacePythonPath(workspacePath);
@@ -640,7 +630,6 @@ except Exception as e:
       }
   });
 
-  // Install Jupyter in the workspace Python environment
   ipcMain.handle('jupyter:install', async (_, { workspacePath } = {}) => {
       try {
           const pythonPath = await getWorkspacePythonPath(workspacePath);
@@ -683,7 +672,6 @@ except Exception as e:
       }
   });
 
-  // Register the ipykernel for this Python environment
   ipcMain.handle('jupyter:registerKernel', async (_, { workspacePath, kernelName = 'python3', displayName = 'Python 3' } = {}) => {
       try {
           const pythonPath = await getWorkspacePythonPath(workspacePath);

@@ -1,15 +1,4 @@
-/**
- * PostureGuardian - Incognide Integration
- *
- * Screen-based posture estimation that uses active pane position
- * to estimate user posture strain without a webcam.
- *
- * Features:
- * - Estimates neck/eye strain from pane position
- * - Pomodoro-style break reminders
- * - Session statistics
- * - Training data collection mode (when webcam data available)
- */
+
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -18,7 +7,6 @@ import {
     Monitor, Target, TrendingUp, RefreshCw
 } from 'lucide-react';
 
-// Types
 interface ScreenGeometry {
     screenWidth: number;
     screenHeight: number;
@@ -66,7 +54,6 @@ interface PostureGuardianProps {
     onBreakDue?: (breakType: string, message: string) => void;
 }
 
-// Constants
 const DEFAULT_GEOMETRY: ScreenGeometry = {
     screenWidth: window.innerWidth || 1920,
     screenHeight: window.innerHeight || 1080,
@@ -75,9 +62,9 @@ const DEFAULT_GEOMETRY: ScreenGeometry = {
 };
 
 const BREAK_INTERVALS = {
-    micro: 20 * 60 * 1000,    // 20 minutes
-    short: 50 * 60 * 1000,    // 50 minutes
-    long: 2 * 60 * 60 * 1000  // 2 hours
+    micro: 20 * 60 * 1000,
+    short: 50 * 60 * 1000,
+    long: 2 * 60 * 60 * 1000
 };
 
 const STRAIN_THRESHOLDS = {
@@ -86,7 +73,6 @@ const STRAIN_THRESHOLDS = {
     maxNeckStrain: 0.6
 };
 
-// Utility Functions
 const calculateGazeAngle = (
     targetPx: number,
     screenSizePx: number,
@@ -96,14 +82,11 @@ const calculateGazeAngle = (
     const centerPx = screenSizePx / 2;
     const offsetPx = targetPx - centerPx;
 
-    // Calculate PPI
     const diagonalPx = Math.sqrt(geometry.screenWidth ** 2 + geometry.screenHeight ** 2);
     const ppi = diagonalPx / geometry.screenDiagonalInches;
 
-    // Convert to physical distance
     const offsetInches = offsetPx / ppi;
 
-    // Calculate angle
     const angleRad = Math.atan(offsetInches / geometry.viewingDistanceInches);
     return angleRad * (180 / Math.PI);
 };
@@ -118,11 +101,9 @@ const estimatePostureFromPane = (
     const horizontalAngle = calculateGazeAngle(centerX, geometry.screenWidth, geometry, true);
     const verticalAngle = calculateGazeAngle(centerY, geometry.screenHeight, geometry, false);
 
-    // Calculate strain scores
     const horizontalStrain = Math.abs(horizontalAngle) * 0.02;
     const verticalStrain = Math.max(0, verticalAngle) * 0.025;
 
-    // Small pane bonus (squinting)
     const paneArea = pane.width * pane.height;
     const screenArea = geometry.screenWidth * geometry.screenHeight;
     const areaRatio = paneArea / screenArea;
@@ -135,14 +116,12 @@ const estimatePostureFromPane = (
         (Math.abs(verticalAngle) / 45) * 0.2
     );
 
-    // Determine if strained
     const isStrained = (
         Math.abs(horizontalAngle) > STRAIN_THRESHOLDS.maxHorizontalAngle ||
         Math.abs(verticalAngle) > STRAIN_THRESHOLDS.maxVerticalAngle ||
         neckStrain > STRAIN_THRESHOLDS.maxNeckStrain
     );
 
-    // Generate description
     const issues: string[] = [];
     if (Math.abs(horizontalAngle) > 30) {
         issues.push(`looking far ${horizontalAngle > 0 ? 'right' : 'left'}`);
@@ -166,7 +145,6 @@ const estimatePostureFromPane = (
     };
 };
 
-// Status Indicator Component
 const StatusIndicator: React.FC<{ isStrained: boolean; isEnabled: boolean }> = ({ isStrained, isEnabled }) => {
     if (!isEnabled) {
         return (
@@ -193,7 +171,6 @@ const StatusIndicator: React.FC<{ isStrained: boolean; isEnabled: boolean }> = (
     );
 };
 
-// Break Timer Component
 const BreakTimer: React.FC<{ breakState: BreakState }> = ({ breakState }) => {
     const now = Date.now();
     const nextMicro = Math.max(0, (breakState.lastMicroBreak + BREAK_INTERVALS.micro - now) / 60000);
@@ -213,7 +190,6 @@ const BreakTimer: React.FC<{ breakState: BreakState }> = ({ breakState }) => {
     );
 };
 
-// Stats Panel Component
 const StatsPanel: React.FC<{ stats: SessionStats; isExpanded: boolean }> = ({ stats, isExpanded }) => {
     if (!isExpanded) return null;
 
@@ -250,7 +226,6 @@ const StatsPanel: React.FC<{ stats: SessionStats; isExpanded: boolean }> = ({ st
     );
 };
 
-// Main Component
 export const PostureGuardian: React.FC<PostureGuardianProps> = ({
     activePanePosition,
     isEnabled: initialEnabled = true,
@@ -283,7 +258,6 @@ export const PostureGuardian: React.FC<PostureGuardianProps> = ({
     const lastAlertTimeRef = useRef(0);
     const checkIntervalRef = useRef<NodeJS.Timer | null>(null);
 
-    // Update geometry on window resize
     useEffect(() => {
         const handleResize = () => {
             setGeometry(prev => ({
@@ -297,7 +271,6 @@ export const PostureGuardian: React.FC<PostureGuardianProps> = ({
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    // Process pane position changes
     useEffect(() => {
         if (!isEnabled || !activePanePosition) {
             setCurrentEstimate(null);
@@ -307,14 +280,12 @@ export const PostureGuardian: React.FC<PostureGuardianProps> = ({
         const estimate = estimatePostureFromPane(activePanePosition, geometry);
         setCurrentEstimate(estimate);
 
-        // Track strain time
         const now = Date.now();
         if (estimate.isStrained) {
             if (strainStartRef.current === null) {
                 strainStartRef.current = now;
             }
 
-            // Check if we should alert (60s continuous strain, 2min cooldown)
             const strainDuration = now - strainStartRef.current;
             if (strainDuration >= 60000 && now - lastAlertTimeRef.current > 120000) {
                 lastAlertTimeRef.current = now;
@@ -330,7 +301,6 @@ export const PostureGuardian: React.FC<PostureGuardianProps> = ({
         }
     }, [activePanePosition, isEnabled, geometry, onPostureAlert]);
 
-    // Break check interval
     useEffect(() => {
         if (!isEnabled) {
             if (checkIntervalRef.current) {
@@ -342,7 +312,6 @@ export const PostureGuardian: React.FC<PostureGuardianProps> = ({
         const checkBreaks = () => {
             const now = Date.now();
 
-            // Update session stats
             const sessionDuration = now - sessionStartRef.current;
             const strainedTime = totalStrainTimeRef.current +
                 (strainStartRef.current ? now - strainStartRef.current : 0);
@@ -354,7 +323,6 @@ export const PostureGuardian: React.FC<PostureGuardianProps> = ({
                 strainPercentage: sessionDuration > 0 ? (strainedTime / sessionDuration) * 100 : 0
             }));
 
-            // Check for due breaks
             const microDue = now - breakState.lastMicroBreak >= BREAK_INTERVALS.micro;
             const shortDue = now - breakState.lastShortBreak >= BREAK_INTERVALS.short;
             const longDue = now - breakState.lastLongBreak >= BREAK_INTERVALS.long;
@@ -368,7 +336,7 @@ export const PostureGuardian: React.FC<PostureGuardianProps> = ({
             } else if (microDue && !breakState.microBreaksDue) {
                 onBreakDue?.('micro', 'Eye break: Look at something 20 feet away for 20 seconds.');
                 setBreakState(prev => ({ ...prev, microBreaksDue: true }));
-                // Auto-reset micro break
+
                 setTimeout(() => {
                     setBreakState(prev => ({
                         ...prev,
@@ -380,7 +348,7 @@ export const PostureGuardian: React.FC<PostureGuardianProps> = ({
         };
 
         checkIntervalRef.current = setInterval(checkBreaks, 30000);
-        checkBreaks(); // Initial check
+        checkBreaks();
 
         return () => {
             if (checkIntervalRef.current) {
@@ -395,7 +363,7 @@ export const PostureGuardian: React.FC<PostureGuardianProps> = ({
             ...prev,
             [`last${type.charAt(0).toUpperCase() + type.slice(1)}Break`]: now,
             [`${type}BreaksDue`]: false,
-            // Reset smaller breaks when taking larger ones
+
             ...(type === 'long' && { lastShortBreak: now, lastMicroBreak: now }),
             ...(type === 'short' && { lastMicroBreak: now })
         }));
@@ -432,7 +400,6 @@ export const PostureGuardian: React.FC<PostureGuardianProps> = ({
 
     return (
         <div className="posture-guardian theme-bg-primary theme-border border rounded-lg p-2">
-            {/* Header */}
             <div
                 className="flex items-center justify-between cursor-pointer"
                 onClick={() => setIsExpanded(!isExpanded)}
@@ -459,10 +426,8 @@ export const PostureGuardian: React.FC<PostureGuardianProps> = ({
                 </div>
             </div>
 
-            {/* Expanded Content */}
             {isExpanded && (
                 <div className="mt-2 space-y-2">
-                    {/* Current Status */}
                     {currentEstimate && isEnabled && (
                         <div className="p-2 rounded theme-bg-secondary text-xs">
                             <div className="flex items-center gap-2 mb-1">
@@ -479,7 +444,6 @@ export const PostureGuardian: React.FC<PostureGuardianProps> = ({
                         </div>
                     )}
 
-                    {/* Break Timers */}
                     <div className="flex items-center justify-between">
                         <BreakTimer breakState={breakState} />
                         <div className="flex gap-1">
@@ -507,10 +471,8 @@ export const PostureGuardian: React.FC<PostureGuardianProps> = ({
                         </div>
                     </div>
 
-                    {/* Stats */}
                     <StatsPanel stats={stats} isExpanded={true} />
 
-                    {/* Actions */}
                     <div className="flex justify-end">
                         <button
                             onClick={resetSession}
@@ -526,7 +488,6 @@ export const PostureGuardian: React.FC<PostureGuardianProps> = ({
     );
 };
 
-// Hook for easy integration
 export const usePostureGuardian = (activePaneId: string | null, rootLayoutNode: any) => {
     const [panePosition, setPanePosition] = useState<PanePosition | null>(null);
 
@@ -536,7 +497,6 @@ export const usePostureGuardian = (activePaneId: string | null, rootLayoutNode: 
             return;
         }
 
-        // Find the pane element in the DOM
         const paneElement = document.querySelector(`[data-pane-id="${activePaneId}"]`);
         if (paneElement) {
             const rect = paneElement.getBoundingClientRect();

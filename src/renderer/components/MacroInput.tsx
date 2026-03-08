@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Command } from 'lucide-react';
 
-// Cache for models by path
 const modelCache = new Map();
 const LAST_USED_MODEL_KEY = 'lastUsedModel';
 
@@ -12,7 +11,6 @@ const MacroInput = ({ isOpen, onClose, onSubmit, currentPath }) => {
     const [selectedModel, setSelectedModel] = useState(null);
     const inputRef = useRef(null);
 
-   
     useEffect(() => {
         if (selectedModel) {
             console.log('Selected model:', {
@@ -39,12 +37,11 @@ const MacroInput = ({ isOpen, onClose, onSubmit, currentPath }) => {
 
                 if (models) {
                     setAvailableModels(models);
-                    
-                   
+
                     const lastUsedModel = localStorage.getItem(LAST_USED_MODEL_KEY);
                     if (lastUsedModel) {
-                        const foundModel = models.find(m => 
-                            m.value === JSON.parse(lastUsedModel).value && 
+                        const foundModel = models.find(m =>
+                            m.value === JSON.parse(lastUsedModel).value &&
                             m.provider === JSON.parse(lastUsedModel).provider
                         );
                         if (foundModel) {
@@ -52,14 +49,13 @@ const MacroInput = ({ isOpen, onClose, onSubmit, currentPath }) => {
                             return;
                         }
                     }
-                   
+
                     setSelectedModel(models[0]);
                 }
             };
             loadModels();
         }
     }, [isOpen, currentPath]);
-
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -79,7 +75,6 @@ const MacroInput = ({ isOpen, onClose, onSubmit, currentPath }) => {
                 directory_path: currentPath
             });
 
-            // Pass all data to Enpistu which will handle streaming
             onSubmit({
                 macro: macro.trim(),
                 conversationId: conversation.id,
@@ -98,8 +93,6 @@ const MacroInput = ({ isOpen, onClose, onSubmit, currentPath }) => {
         }
     };
 
-
-    
     const handleKeyDown = (e) => {
         if (e.key === 'Escape') {
             e.preventDefault();
@@ -139,8 +132,7 @@ const MacroInput = ({ isOpen, onClose, onSubmit, currentPath }) => {
                         disabled={isSubmitting}
                         autoFocus
                     />
-                    
-                    {/* Model Selection with explicit provider info */}
+
                     <select
                         value={selectedModel?.value || ''}
                         onChange={(e) => {

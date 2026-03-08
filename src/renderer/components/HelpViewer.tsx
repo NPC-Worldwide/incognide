@@ -64,7 +64,6 @@ interface HelpViewerProps {
 export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
     const [searchQuery, setSearchQuery] = useState('');
 
-    // Filter sections based on search
     const matchesSearch = (text: string) => {
         if (!searchQuery) return true;
         return text.toLowerCase().includes(searchQuery.toLowerCase());
@@ -72,13 +71,11 @@ export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
 
     return (
         <div className="flex flex-col h-full theme-bg-primary overflow-hidden">
-            {/* Header */}
             <div className="flex-shrink-0 px-6 py-4 border-b theme-border">
                 <h1 className="text-xl font-bold theme-text-primary">Incognide</h1>
                 <p className="text-sm theme-text-muted mt-1">AI-native desktop environment</p>
             </div>
 
-            {/* Search */}
             <div className="flex-shrink-0 px-6 py-3 border-b theme-border">
                 <div className="relative">
                     <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
@@ -92,21 +89,18 @@ export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
                 </div>
             </div>
 
-            {/* Scrollable Content */}
             <div className="flex-1 overflow-y-auto px-6 py-4">
-                {/* Introduction */}
                 {matchesSearch('welcome introduction overview') && (
                     <div className="mb-6 p-4 rounded-lg bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/20">
                         <h2 className="text-lg font-semibold theme-text-primary mb-2">Welcome to Incognide</h2>
                         <p className="text-sm theme-text-muted leading-relaxed">
                             Incognide is an AI-native desktop environment that combines an integrated development environment,
                             web browser, document editing, terminal, and knowledge management into a flexible tiled workspace.
-                            Create custom AI personas (NPCs), automate workflows with Jinxs, and organize your work however you like.
+                            Create custom AI personas (NPCs), automate workflows with Jinxes, and organize your work however you like.
                         </p>
                     </div>
                 )}
 
-                {/* Core Features */}
                 {matchesSearch('features chat terminal browser editor layout document') && (
                     <CollapsibleSection title="Core Features" icon={<Layout size={18} />} defaultOpen={false}>
                         <div className="space-y-1">
@@ -159,9 +153,8 @@ export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
                     </CollapsibleSection>
                 )}
 
-                {/* NPCs & Jinxs */}
                 {matchesSearch('npc persona jinx workflow automation agent') && (
-                    <CollapsibleSection title="NPCs & Jinxs" icon={<Users size={18} />}>
+                    <CollapsibleSection title="NPCs & Jinxes" icon={<Users size={18} />}>
                         <div className="space-y-3">
                             <div>
                                 <h4 className="font-medium theme-text-primary text-sm mb-1">NPCs (Personas)</h4>
@@ -173,9 +166,9 @@ export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
                                 </p>
                             </div>
                             <div>
-                                <h4 className="font-medium theme-text-primary text-sm mb-1">Jinxs (Workflows)</h4>
+                                <h4 className="font-medium theme-text-primary text-sm mb-1">Jinxes (Workflows)</h4>
                                 <p className="text-xs theme-text-muted">
-                                    Jinxs are reusable YAML workflows with Jinja2 templating. Type <code className="px-1 py-0.5 bg-gray-700 rounded text-[10px]">/jinx_name</code> in chat
+                                    Jinxes are reusable YAML workflows with Jinja2 templating. Type <code className="px-1 py-0.5 bg-gray-700 rounded text-[10px]">/jinx_name</code> in chat
                                     to run them. Define inputs, chain multiple AI steps, and automate repetitive tasks.
                                 </p>
                             </div>
@@ -198,7 +191,6 @@ export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
                     </CollapsibleSection>
                 )}
 
-                {/* Pane Types */}
                 {matchesSearch('pane type panel view notebook pdf image database') && (
                     <CollapsibleSection title="All Pane Types" icon={<FolderOpen size={18} />}>
                         <div className="grid grid-cols-2 gap-1.5 text-xs">
@@ -225,7 +217,6 @@ export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
                     </CollapsibleSection>
                 )}
 
-                {/* Keyboard Shortcuts */}
                 {matchesSearch('keyboard shortcut hotkey keybind') && (
                     <CollapsibleSection title="Keyboard Shortcuts" icon={<Keyboard size={18} />}>
                         <div className="space-y-0.5">
@@ -251,7 +242,6 @@ export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
                     </CollapsibleSection>
                 )}
 
-                {/* Mouse Actions */}
                 {matchesSearch('mouse drag click right context menu') && (
                     <CollapsibleSection title="Mouse Actions" icon={<MousePointer size={18} />}>
                         <div className="space-y-1.5 text-xs">
@@ -279,7 +269,6 @@ export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
                     </CollapsibleSection>
                 )}
 
-                {/* Chat Commands */}
                 {matchesSearch('chat command slash mention file') && (
                     <CollapsibleSection title="Chat Commands" icon={<Command size={18} />}>
                         <div className="space-y-1.5 text-xs">
@@ -302,7 +291,6 @@ export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
                     </CollapsibleSection>
                 )}
 
-                {/* File Locations */}
                 {matchesSearch('file location path directory config') && (
                     <CollapsibleSection title="File Locations" icon={<FolderOpen size={18} />}>
                         <div className="space-y-2 text-xs font-mono">
@@ -312,7 +300,7 @@ export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
                             </div>
                             <div>
                                 <div className="theme-text-primary">~/.npcsh/npc_team/</div>
-                                <div className="text-[10px] theme-text-muted pl-3">Global NPCs, jinxs, contexts</div>
+                                <div className="text-[10px] theme-text-muted pl-3">Global NPCs, jinxes, contexts</div>
                             </div>
                             <div>
                                 <div className="theme-text-primary">~/.npcshrc</div>
@@ -320,7 +308,7 @@ export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
                             </div>
                             <div>
                                 <div className="theme-text-primary">./npc_team/</div>
-                                <div className="text-[10px] theme-text-muted pl-3">Project-local NPCs and jinxs</div>
+                                <div className="text-[10px] theme-text-muted pl-3">Project-local NPCs and jinxes</div>
                             </div>
                             <div>
                                 <div className="theme-text-primary">./.npcsh/</div>
@@ -330,7 +318,6 @@ export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
                     </CollapsibleSection>
                 )}
 
-                {/* Models & Providers */}
                 {matchesSearch('model provider api ollama openai anthropic gemini') && (
                     <CollapsibleSection title="Models & Providers" icon={<Brain size={18} />}>
                         <div className="text-xs theme-text-muted space-y-2">
@@ -348,7 +335,6 @@ export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
                     </CollapsibleSection>
                 )}
 
-                {/* Tips */}
                 {matchesSearch('tip trick hint') && (
                     <CollapsibleSection title="Tips & Tricks" icon={<Zap size={18} />}>
                         <ul className="space-y-1.5 text-xs theme-text-muted">
@@ -380,7 +366,6 @@ export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
                     </CollapsibleSection>
                 )}
 
-                {/* Bug Report */}
                 <div className="mt-4 p-4 rounded-lg border border-amber-500/30 bg-amber-500/5">
                     <div className="flex items-center gap-2 mb-2">
                         <Bug size={16} className="text-amber-400" />
@@ -399,7 +384,6 @@ export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
                     </a>
                 </div>
 
-                {/* Version Info */}
                 <div className="mt-6 pt-4 border-t theme-border text-center">
                     <p className="text-xs theme-text-muted">
                         Incognide {appVersion ? `v${appVersion}` : ''} | Built with Electron + React

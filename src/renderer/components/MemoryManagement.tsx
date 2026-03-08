@@ -33,7 +33,6 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
             });
             console.log('[MemoryManagement] Raw SQL result:', apiResult);
 
-            // Handle error from API
             if (apiResult?.error) {
                 console.error('[MemoryManagement] SQL error:', apiResult.error);
                 setLoadError(apiResult.error);
@@ -41,7 +40,6 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
                 return;
             }
 
-            // executeSQL returns { result: rows, error: null }
             let memoriesArray: Memory[] = [];
             if (Array.isArray(apiResult?.result)) {
                 memoriesArray = apiResult.result;
@@ -69,7 +67,6 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
         loadMemories();
     }, []);
 
-    // Escape key handler
     useEffect(() => {
         if (!isModal) return;
         const handleKeyDown = (e: KeyboardEvent) => {

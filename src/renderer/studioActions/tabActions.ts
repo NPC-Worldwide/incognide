@@ -1,15 +1,7 @@
-/**
- * Tab Actions
- *
- * Actions for managing tabs within panes:
- * - add_tab, close_tab, switch_tab, list_tabs
- */
+
 
 import { registerAction, StudioContext, StudioActionResult } from './index';
 
-/**
- * Add a new tab to a pane
- */
 async function add_tab(
   args: { paneId?: string; type: string; path?: string },
   ctx: StudioContext
@@ -30,7 +22,6 @@ async function add_tab(
 
   ctx.handleAddTab(paneId, type);
 
-  // Update the new tab's content if path provided
   if (path) {
     const data = ctx.contentDataRef.current[paneId];
     if (data?.tabs) {
@@ -47,9 +38,6 @@ async function add_tab(
   };
 }
 
-/**
- * Close a tab in a pane
- */
 async function close_tab(
   args: { paneId?: string; tabIndex: number },
   ctx: StudioContext
@@ -82,9 +70,6 @@ async function close_tab(
   };
 }
 
-/**
- * Switch to a specific tab
- */
 async function switch_tab(
   args: { paneId?: string; tabIndex: number },
   ctx: StudioContext
@@ -117,9 +102,6 @@ async function switch_tab(
   };
 }
 
-/**
- * List all tabs in a pane
- */
 async function list_tabs(
   args: { paneId?: string },
   ctx: StudioContext
@@ -155,7 +137,6 @@ async function list_tabs(
   };
 }
 
-// Register all tab actions
 registerAction('add_tab', add_tab);
 registerAction('close_tab', close_tab);
 registerAction('switch_tab', switch_tab);

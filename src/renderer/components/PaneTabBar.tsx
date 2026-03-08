@@ -26,11 +26,11 @@ interface PaneTabBarProps {
     onTabReorder?: (fromIndex: number, toIndex: number) => void;
     onReceiveExternalTab?: (tab: Tab, insertIndex: number) => void;
     nodeId: string;
-    // Zen mode and close pane
+
     onToggleZen?: () => void;
     isZenMode?: boolean;
     onClosePane?: () => void;
-    // For dragging tabs out to form new panes
+
     setDraggedItem?: (item: any) => void;
     findNodePath?: (node: any, id: string) => number[] | null;
     rootLayoutNode?: any;
@@ -112,7 +112,7 @@ const getTabTitle = (tab: Tab): string => {
         case 'terminal':
             return 'Terminal';
         case 'browser':
-            // Use browserTitle if available, truncate long titles
+
             if (tab.browserTitle && tab.browserTitle !== 'Browser') {
                 const title = tab.browserTitle;
                 return title.length > 25 ? title.slice(0, 22) + '...' : title;
@@ -198,18 +198,15 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
         e.dataTransfer.setData('text/plain', `tab:${nodeId}:${index}`);
         setDraggedTabIndex(index);
 
-        // Set draggedItem for external drops (to other panes)
-        // Use setTimeout to allow drag event to fully initialize before state update
         if (setDraggedItem && tabs[index]) {
             const tab = tabs[index];
-            // For browser tabs, get browserUrl from pane data as it's always up-to-date
-            // The tab object might not have the latest URL if no navigation event occurred
+
             const paneData = contentDataRef?.current?.[nodeId];
             const isActiveTab = index === (paneData?.activeTabIndex ?? 0);
             const browserUrl = tab.contentType === 'browser' && isActiveTab
                 ? (paneData?.browserUrl || tab.browserUrl)
                 : tab.browserUrl;
-            // For active tabs, get fileContent from virtual data (where the editor writes)
+
             const virtualData = contentDataRef?.current?.[`${nodeId}_${tab.id}`];
             const latestFileContent = virtualData?.fileContent ?? tab.fileContent;
             const latestFileChanged = virtualData?.fileChanged ?? tab.fileChanged;
@@ -235,7 +232,7 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
     const handleDragEnd = useCallback(() => {
         setDraggedTabIndex(null);
         setDragOverIndex(null);
-        // Clear the global draggedItem
+
         if (setDraggedItem) {
             setDraggedItem(null);
         }
@@ -264,9 +261,8 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
         onTabClose(index);
     }, [onTabClose]);
 
-    // Middle-click (auxclick with button 1) to close tab
     const handleTabAuxClick = useCallback((e: React.MouseEvent, index: number) => {
-        // button 1 = middle mouse button
+
         if (e.button === 1) {
             e.preventDefault();
             e.stopPropagation();
@@ -280,7 +276,6 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
             className="flex items-center gap-0.5 px-1 py-0.5 theme-bg-tertiary border-b theme-border overflow-x-auto"
             style={{ minHeight: '28px' }}
         >
-            {/* Zen mode button - left side */}
             {onToggleZen && (
                 <button
                     onClick={(e) => { e.stopPropagation(); onToggleZen(); }}
@@ -332,10 +327,8 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
                 </button>
             )}
 
-            {/* Spacer to push close button to right */}
             <div className="flex-1" />
 
-            {/* Close pane button - right side */}
             {onClosePane && (
                 <button
                     onClick={(e) => { e.stopPropagation(); onClosePane(); }}

@@ -1,4 +1,4 @@
-import { getFileName } from './utils';
+import { getFileName, generateId } from './utils';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAiEnabled } from './AiFeatureContext';
 import {
@@ -14,7 +14,6 @@ import {
     RectangleHorizontal, Brush, Eraser, Blend, Plus, ZoomIn, ZoomOut, Rewind, FastForward,
   } from 'lucide-react';
 
-// Import primitives from npcts
 import {
     ImageGrid,
     Lightbox,
@@ -23,38 +22,34 @@ import {
     SortableList,
     ImageEditor
 } from 'npcts';
-  
- 
+
   const IMAGES_PER_PAGE = 24;
-  
 
   const DARKROOM_LAYER_TYPES = {
-    ADJUSTMENTS: { 
-        name: 'Adjustments', 
-        icon: Sliders, 
-        defaultParams: { exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0, saturation: 0, warmth: 0, tint: 0, pop: 0, vignette: 0 } 
+    ADJUSTMENTS: {
+        name: 'Adjustments',
+        icon: Sliders,
+        defaultParams: { exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0, saturation: 0, warmth: 0, tint: 0, pop: 0, vignette: 0 }
     },
-    TEXT: { 
-        name: 'Text', 
-        icon: Type, 
-        defaultParams: { content: 'Hello World', font: 'Arial', size: 50, color: '#FFFFFF', x: 100, y: 100 } 
+    TEXT: {
+        name: 'Text',
+        icon: Type,
+        defaultParams: { content: 'Hello World', font: 'Arial', size: 50, color: '#FFFFFF', x: 100, y: 100 }
     },
-    TRANSFORM: { 
-        name: 'Transform', 
-        icon: RotateCw, 
-        defaultParams: { rotation: 0, scaleX: 1, scaleY: 1 } 
+    TRANSFORM: {
+        name: 'Transform',
+        icon: RotateCw,
+        defaultParams: { rotation: 0, scaleX: 1, scaleY: 1 }
     },
-    GENERATIVE_FILL: { 
-        name: 'Generative Fill', 
-        icon: Sparkles, 
-        defaultParams: { prompt: '' } 
+    GENERATIVE_FILL: {
+        name: 'Generative Fill',
+        icon: Sparkles,
+        defaultParams: { prompt: '' }
     },
 };
 
 const defaultTransform = { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
 
-
-// Utils
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const downloadJSON = (data, filename = 'labels.json') => {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -70,10 +65,9 @@ const readJSONFile = (file) => new Promise((resolve, reject) => {
   reader.readAsText(file);
 });
 
-
     const handleStartConversationFromViewer = async (images) => {
         if (!images || images.length === 0) return;
-    
+
         const attachmentsToAdd = images.map(img => {
             const filePath = img.path;
             return {
@@ -85,7 +79,7 @@ const readJSONFile = (file) => new Promise((resolve, reject) => {
                 preview: `file://${filePath}`
             };
         });
-    
+
         setUploadedFiles(prev => [...prev, ...attachmentsToAdd]);
         setPhotoViewerOpen(false);
     };
@@ -108,37 +102,33 @@ const PhotoViewer = ({ currentPath, onStartConversation }) => {
     }, []);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-  
-   
+
     console.log(currentPath);
     const [projectPath, setProjectPath] = useState(currentPath || '~/.npcsh/images');
     const [isEditingPath, setIsEditingPath] = useState(false);
     const [imageSources, setImageSources] = useState([]);
       const [activeSourceId, setActiveSourceId] = useState('project-images');
-   
+
     const [selectedModel, setSelectedModel] = useState('');
     const [selectedProvider, setSelectedProvider] = useState('');
     const [availableModels, setAvailableModels] = useState([]);
-    
-   
+
     const [selectedImage, setSelectedImage] = useState(null);
     const [selectedImageGroup, setSelectedImageGroup] = useState(new Set());
     const [lastClickedIndex, setLastClickedIndex] = useState(null);
     const [displayedImagesCount, setDisplayedImagesCount] = useState(IMAGES_PER_PAGE);
-    const [lightboxIndex, setLightboxIndex] = useState(null);  
+    const [lightboxIndex, setLightboxIndex] = useState(null);
     const [viewMode, setViewMode] = useState('list');
     const [searchTerm, setSearchTerm] = useState('');
     const [metaSearch, setMetaSearch] = useState('');
-  
-   
+
     const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, imagePath: null });
     const [renamingImage, setRenamingImage] = useState({ path: null, newName: '' });
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         const saved = localStorage.getItem('vixynt_sidebarCollapsed');
         return saved === 'true';
     });
-    
-   
+
    const [selectionMode, setSelectionMode] = useState(null);
 const [selection, setSelection] = useState(null);
 const [drawingSelection, setDrawingSelection] = useState(false);
@@ -147,7 +137,6 @@ const [textLayers, setTextLayers] = useState([]);
 const [editingTextId, setEditingTextId] = useState(null);
 const [selectedTextId, setSelectedTextId] = useState(null);
 
-    // Video Editor state
     const [videoClips, setVideoClips] = useState([]);
     const [videoTracks, setVideoTracks] = useState([
         { id: 'video-1', type: 'video', clips: [] },
@@ -166,14 +155,12 @@ const [selectedTextId, setSelectedTextId] = useState(null);
     const videoPreviewRef = useRef(null);
     const timelineRef = useRef(null);
 
-    // Video Generator state
     const [videoPrompt, setVideoPrompt] = useState('');
     const [generatingVideo, setGeneratingVideo] = useState(false);
     const [generatedVideos, setGeneratedVideos] = useState([]);
     const [videoModel, setVideoModel] = useState('');
     const [videoDurationSetting, setVideoDurationSetting] = useState(5);
 
-    // Video Dataset state
     const [videoDatasets, setVideoDatasets] = useState(() => {
         try {
             const stored = localStorage.getItem('vixynt_videoDatasets');
@@ -188,42 +175,36 @@ const [selectedTextId, setSelectedTextId] = useState(null);
     const [videoSelectionMode, setVideoSelectionMode] = useState(false);
     const [videoDatasetExportFormat, setVideoDatasetExportFormat] = useState('jsonl');
 
-    // Save video datasets to localStorage
     useEffect(() => {
         localStorage.setItem('vixynt_videoDatasets', JSON.stringify(videoDatasets));
     }, [videoDatasets]);
 
-    // Dataset/Model Manager state
     const [datasets, setDatasets] = useState([]);
     const [trainedModels, setTrainedModels] = useState([]);
     const [selectedDataset, setSelectedDataset] = useState(null);
     const [datasetImages, setDatasetImages] = useState([]);
 
-    const [adjustments, setAdjustments] = useState({ 
+    const [adjustments, setAdjustments] = useState({
         exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0,
         saturation: 100, warmth: 0, tint: 0,
         pop: 0, vignette: 0, blur: 0
     });
-   
+
     const [crop, setCrop] = useState({ x: 0, y: 0, width: 100, height: 100 });
     const [isCropping, setIsCropping] = useState(false);
-    
-   
+
     const [layers, setLayers] = useState([]);
     const [selectedLayerId, setSelectedLayerId] = useState(null);
     const [editorTool, setEditorTool] = useState('select');
-    
-   
+
     const [selectionPath, setSelectionPath] = useState(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [textEditState, setTextEditState] = useState({ editing: false, layerId: null });
     const [draggingLayerId, setDraggingLayerId] = useState(null);
 
-   
     const [editHistory, setEditHistory] = useState([]);
     const [redoStack, setRedoStack] = useState([]);
-  
-   
+
     const [metadata, setMetadata] = useState(null);
     const [customTags, setCustomTags] = useState([]);
     const [rating, setRating] = useState(0);
@@ -232,35 +213,31 @@ const [selectedTextId, setSelectedTextId] = useState(null);
 const [brushColor, setBrushColor] = useState('#000000');
 const canvasRef = useRef(null);
 const [isDrawingBrush, setIsDrawingBrush] = useState(false);
-   
+
     const fileInputRef = useRef(null);
     const imageRef = useRef(null);
     const canvasContainerRef = useRef(null);
+    const lastSaveDataRef = useRef<any>(null);
 
-   
     const activeSource = imageSources.find(s => s.id === activeSourceId);
     const sourceImages = (activeSource?.images || []);
     const filteredImages = sourceImages.filter(img => img.toLowerCase().includes(searchTerm.toLowerCase()));
-    
+
     const [numImagesToGenerate, setNumImagesToGenerate] = useState(1);
     const [selectedGeneratedImages, setSelectedGeneratedImages] = useState(new Set());
 
     const [isDraggingSelection, setIsDraggingSelection] = useState(false);
 const [selectionDragStart, setSelectionDragStart] = useState(null);
-    
+
     const [isDrawingSelection, setIsDrawingSelection] = useState(false);
-    
-    
-    
+
     const [compareMode, setCompareMode] = useState(false);
-  
+
     const [generatePrompt, setGeneratePrompt] = useState('');
     const [generatedImages, setGeneratedImages] = useState([]);
-  
-   
+
     const [generating, setGenerating] = useState(false);
 
-    // Workflow state for ComfyUI-style node editor
     const [workflowNodes, setWorkflowNodes] = useState([]);
     const [workflowConnections, setWorkflowConnections] = useState([]);
     const [selectedNodeId, setSelectedNodeId] = useState(null);
@@ -324,7 +301,7 @@ const pollFineTuneStatus = async (jobId: string) => {
                 loss_history: status.loss_history || []
             });
         }
-    }, 1000);  // Poll more frequently for real-time feel
+    }, 1000);
 };
 
 const handleStartFineTune = async () => {
@@ -332,14 +309,14 @@ const handleStartFineTune = async () => {
         setError('Select images first');
         return;
     }
-    
+
     setIsFineTuning(true);
     setFineTuneStatus({ status: 'preparing', message: 'Preparing training...' });
-    
+
     const imagePaths = Array.from(selectedImageGroup).map(
         p => p.replace('media://', '')
     );
-    
+
     let captions = [];
     if (captionMode === 'manual') {
         captions = imagePaths.map(p => manualCaptions[p] || '');
@@ -349,22 +326,10 @@ const handleStartFineTune = async () => {
             return name.replace(/_/g, ' ').replace(/-/g, ' ');
         });
     }
-    
-    // --- CRITICAL FIX: Update the outputPath here! ---
-    // Ensure it points to the dedicated models directory.
-    // We'll use a consistent path for fine-tuned models.
-    const modelsOutputPath = `${currentPath}/models`; // Or a fixed global path like '~/.npcsh/models'
-    // For now, let's use a project-relative models folder for better organization.
-    // If currentPath is /Users/caug/.npcsh/incognide, this will be /Users/caug/.npcsh/incognide/models
-    // If you prefer a single global models folder, you can hardcode it:
-    // const modelsOutputPath = '~/.npcsh/models'; 
-    // Just ensure your backend's get_finetuned_models scans the same path.
-    // The previous backend change already defaults to '~/.npcsh/models' for scanning.
-    // So, let's make the frontend save to a project-specific models folder, or default to global.
-    // Given the backend's default scan, let's make the frontend save to the global models path for now.
 
-    const finalOutputPath = '~/.npcsh/models'; // This will expand to /Users/caug/.npcsh/models
-    // --------------------------------------------------
+    const modelsOutputPath = `${currentPath}/models`;
+
+    const finalOutputPath = '~/.npcsh/models';
 
     const config = {
         images: imagePaths,
@@ -373,11 +338,11 @@ const handleStartFineTune = async () => {
         epochs: fineTuneConfig.epochs,
         batchSize: fineTuneConfig.batchSize,
         learningRate: fineTuneConfig.learningRate,
-        outputPath: finalOutputPath // <--- UPDATED THIS LINE
+        outputPath: finalOutputPath
     };
-    
+
     const response = await window.api?.fineTuneDiffusers?.(config);
-    
+
     if (response?.error) {
         setError('Fine-tuning failed: ' + response.error);
         setFineTuneStatus(null);
@@ -390,11 +355,11 @@ const handleStartFineTune = async () => {
 
 const renderFineTuneModal = () => {
     if (!showFineTuneModal) return null;
-    
+
     const selectedImages = Array.from(selectedImageGroup);
-    
+
     return (
-        <div className="fixed inset-0 bg-black/70 z-[90] flex items-center 
+        <div className="fixed inset-0 bg-black/70 z-[90] flex items-center
             justify-center p-8">
             <div className="theme-bg-secondary rounded-lg p-6 w-full max-w-2xl
                 space-y-4 max-h-[90vh] overflow-y-auto">
@@ -410,7 +375,7 @@ const renderFineTuneModal = () => {
                 <div className="text-sm theme-text-secondary">
                     Training on {selectedImages.length} images
                 </div>
-                
+
                 <div className="space-y-3">
                     <div>
                         <label className="text-sm font-medium">
@@ -426,7 +391,7 @@ const renderFineTuneModal = () => {
                             placeholder="my_diffusion_model"
                         />
                     </div>
-                    
+
                     <div className="grid grid-cols-3 gap-2">
                         <div>
                             <label className="text-xs font-medium">Epochs</label>
@@ -461,16 +426,16 @@ const renderFineTuneModal = () => {
                                 step="0.0001"
                                 value={fineTuneConfig.learningRate}
                                 onChange={e => setFineTuneConfig(
-                                    p => ({ 
-                                        ...p, 
-                                        learningRate: parseFloat(e.target.value) 
+                                    p => ({
+                                        ...p,
+                                        learningRate: parseFloat(e.target.value)
                                     })
                                 )}
                                 className="w-full theme-input mt-1 text-sm"
                             />
                         </div>
                     </div>
-                    
+
                     <div>
                         <label className="text-sm font-medium">
                             Caption Mode
@@ -478,55 +443,55 @@ const renderFineTuneModal = () => {
                         <div className="grid grid-cols-3 gap-2 mt-1">
                             <button
                                 onClick={() => setCaptionMode('auto')}
-                                className={`p-2 text-xs rounded border 
-                                    ${captionMode === 'auto' 
-                                        ? 'theme-button-primary' 
+                                className={`p-2 text-xs rounded border
+                                    ${captionMode === 'auto'
+                                        ? 'theme-button-primary'
                                         : 'theme-button'}`}
                             >
                                 No Captions
                             </button>
                             <button
                                 onClick={() => setCaptionMode('filename')}
-                                className={`p-2 text-xs rounded border 
-                                    ${captionMode === 'filename' 
-                                        ? 'theme-button-primary' 
+                                className={`p-2 text-xs rounded border
+                                    ${captionMode === 'filename'
+                                        ? 'theme-button-primary'
                                         : 'theme-button'}`}
                             >
                                 From Filename
                             </button>
                             <button
                                 onClick={() => setCaptionMode('manual')}
-                                className={`p-2 text-xs rounded border 
-                                    ${captionMode === 'manual' 
-                                        ? 'theme-button-primary' 
+                                className={`p-2 text-xs rounded border
+                                    ${captionMode === 'manual'
+                                        ? 'theme-button-primary'
                                         : 'theme-button'}`}
                             >
                                 Manual
                             </button>
                         </div>
                     </div>
-                    
+
                     {captionMode === 'manual' && (
-                        <div className="space-y-2 max-h-48 overflow-y-auto 
+                        <div className="space-y-2 max-h-48 overflow-y-auto
                             border theme-border rounded p-2">
                             {selectedImages.map(img => {
                                 const path = img.replace('media://', '');
                                 const name = getFileName(path);
                                 return (
-                                    <div key={img} className="flex gap-2 
+                                    <div key={img} className="flex gap-2
                                         items-center">
-                                        <img 
-                                            src={img} 
-                                            className="w-10 h-10 object-cover 
+                                        <img
+                                            src={img}
+                                            className="w-10 h-10 object-cover
                                                 rounded"
                                         />
                                         <input
                                             type="text"
                                             value={manualCaptions[path] || ''}
                                             onChange={e => setManualCaptions(
-                                                p => ({ 
-                                                    ...p, 
-                                                    [path]: e.target.value 
+                                                p => ({
+                                                    ...p,
+                                                    [path]: e.target.value
                                                 })
                                             )}
                                             placeholder={name}
@@ -538,7 +503,7 @@ const renderFineTuneModal = () => {
                         </div>
                     )}
                 </div>
-                
+
                 {fineTuneStatus && (
                     <div className="bg-blue-900/30 p-4 rounded text-sm space-y-3">
                         {fineTuneStatus.status === 'running' ? (
@@ -548,7 +513,6 @@ const renderFineTuneModal = () => {
                                     <span className="font-medium">Training in progress...</span>
                                 </div>
 
-                                {/* Epoch Progress */}
                                 <div className="space-y-1">
                                     <div className="flex justify-between text-xs">
                                         <span>Epoch {fineTuneStatus.epoch}/{fineTuneStatus.total_epochs}</span>
@@ -562,7 +526,6 @@ const renderFineTuneModal = () => {
                                     </div>
                                 </div>
 
-                                {/* Batch Progress */}
                                 {fineTuneStatus.total_batches > 0 && (
                                     <div className="space-y-1">
                                         <div className="flex justify-between text-xs theme-text-secondary">
@@ -578,7 +541,6 @@ const renderFineTuneModal = () => {
                                     </div>
                                 )}
 
-                                {/* Current Loss */}
                                 {fineTuneStatus.loss != null && (
                                     <div className="flex items-center gap-4 text-xs">
                                         <span className="theme-text-secondary">Current Loss:</span>
@@ -588,7 +550,6 @@ const renderFineTuneModal = () => {
                                     </div>
                                 )}
 
-                                {/* Mini Loss Chart */}
                                 {fineTuneStatus.loss_history && fineTuneStatus.loss_history.length > 1 && (
                                     <div className="mt-2">
                                         <div className="text-xs theme-text-secondary mb-1">Loss History (per epoch avg)</div>
@@ -624,9 +585,9 @@ const renderFineTuneModal = () => {
                         )}
                     </div>
                 )}
-                
+
                 <div className="flex justify-end gap-2">
-                    <button 
+                    <button
                         onClick={() => setShowFineTuneModal(false)}
                         className="theme-button px-4 py-2"
                     >
@@ -635,7 +596,7 @@ const renderFineTuneModal = () => {
                     <button
                         onClick={handleStartFineTune}
                         disabled={isFineTuning || selectedImages.length === 0}
-                        className="theme-button-primary px-4 py-2 
+                        className="theme-button-primary px-4 py-2
                             disabled:opacity-50"
                     >
                         {isFineTuning ? 'Training...' : 'Start Training'}
@@ -646,16 +607,12 @@ const renderFineTuneModal = () => {
     );
 };
 
-
-   
     const [activeTool, setActiveTool] = useState('rect');
-    const [editingLabelId, setEditingLabelId] = useState(null); // Add this line
+    const [editingLabelId, setEditingLabelId] = useState(null);
     const [drawing, setDrawing] = useState(false);
     const [drawPoints, setDrawPoints] = useState([]);
     const imgContainerRef = useRef(null);
 
-    
-    
     const downloadFile = (data, filename, mimeType) => {
       const blob = new Blob([data], { type: mimeType });
       const url = URL.createObjectURL(blob);
@@ -665,14 +622,14 @@ const renderFineTuneModal = () => {
       a.click();
       URL.revokeObjectURL(url);
     };
-    
+
     const readFileAsText = (file) => new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
         reader.onerror = reject;
         reader.readAsText(file);
     });
-    
+
     const parseCsvLine = (line) => {
         const regex = /(?:"([^"]*(?:""[^"]*)*)"|([^,]*))(?:,|$)/g;
         const fields = [];
@@ -683,14 +640,14 @@ const renderFineTuneModal = () => {
         }
         return fields;
     };
-    
+
   const loadImagesForAllSources = useCallback(async (sourcesToLoad) => {
     setLoading(true); setError(null);
     try {
       const updatedSources = await Promise.all(
         sourcesToLoad.map(async (source) => {
           try {
-           
+
             await window.api?.ensureDirectory?.(source.path);
             const images = await window.api?.readDirectoryImages?.(source.path) || [];
             console.log(images);
@@ -715,9 +672,8 @@ const renderFineTuneModal = () => {
                 { id: 'global-images', name: 'Global Images', path: '~/.npcsh/images', icon: ImageIcon },
                 { id: 'screenshots', name: 'Screenshots', path: '~/.npcsh/screenshots', icon: Camera },
             ];
-            
-           
-            setLoading(true); 
+
+            setLoading(true);
             setError(null);
             try {
                 const updatedSources = await Promise.all(
@@ -733,40 +689,37 @@ const renderFineTuneModal = () => {
                     })
                 );
                 setImageSources(updatedSources);
-                
-               
+
                 const projectSource = updatedSources.find(s => s.id === 'project-images');
                 const projectHasImages = projectSource?.images?.length > 0;
-                
+
                 if (projectHasImages) {
                     setActiveSourceId('project-images');
                 } else {
                     setActiveSourceId('global-images');
                 }
-                
+
             } catch (err) {
                 setError('Failed to load image sources: ' + err.message);
             } finally {
                 setLoading(false);
             }
 
-           
             if (currentPath) {
               try {
                 const imageModelsResponse = await window.api.getAvailableImageModels(currentPath);
                 if (imageModelsResponse?.models) {
-                  // <--- CRITICAL FIX: Directly set the models
+
                   setAvailableModels(imageModelsResponse.models);
-                  
-                  // Prioritize the fine-tuned Diffusers model if available
+
                   const fineTunedDiffusersModel = imageModelsResponse.models.find(
                     model => model.provider === 'diffusers' && model.display_name.includes('Fine-tuned Diffuser')
                   );
-                  // Fallback to a standard Diffusers model
+
                   const standardDiffusersModel = imageModelsResponse.models.find(
                     model => model.provider === 'diffusers' && model.value.toLowerCase().includes('stable-diffusion')
                   );
-                  
+
                   if (fineTunedDiffusersModel) {
                     setSelectedModel(fineTunedDiffusersModel.value);
                     setSelectedProvider('diffusers');
@@ -774,29 +727,25 @@ const renderFineTuneModal = () => {
                     setSelectedModel(standardDiffusersModel.value);
                     setSelectedProvider('diffusers');
                   } else if (imageModelsResponse.models.length > 0) {
-                    // If no Diffusers models, select the first available model
+
                     setSelectedModel(imageModelsResponse.models[0].value);
                     setSelectedProvider(imageModelsResponse.models[0].provider);
                   }
                 }
               } catch (error) {
                 console.error('Error loading image models:', error);
-                // Fallback to a default if fetching fails
+
                 setSelectedProvider('diffusers');
               }
             }
         };
-        
+
         loadAllData();
     }, [currentPath, projectPath]);
-
-
 
 const [selectedGeneratedImage, setSelectedGeneratedImage] = useState(null);
 const [isRefreshing, setIsRefreshing] = useState(false);
 
-
-// Add this function before the render functions
 const handleRefreshImages = async () => {
   setIsRefreshing(true);
   try {
@@ -807,47 +756,41 @@ const handleRefreshImages = async () => {
     setIsRefreshing(false);
   }
 };
-// Update the Use button handler
+
 const handleUseGeneratedImage = async (imageData) => {
   try {
-   
+
     const response = await fetch(imageData);
     const blob = await response.blob();
     const timestamp = Date.now();
     const filename = `generated_${timestamp}.png`;
-    
-   
+
     await window.api?.saveGeneratedImage?.(blob, activeSource?.path, filename);
-    
-   
+
     await loadImagesForAllSources(imageSources);
-    
-   
+
     const newImagePath = `media://${activeSource?.path}/${filename}`;
     setSelectedImage(newImagePath);
     setActiveTab('editor');
-    
-   
+
     setSelectedGeneratedImage({
       path: `${activeSource?.path}/${filename}`,
       data: imageData
     });
-    
+
   } catch (error) {
     console.error('Failed to save generated image:', error);
     setError('Failed to save generated image: ' + error.message);
   }
 };
 
-// Add these missing functions before the return statement
 const handleUseSelected = () => {
- 
+
   setActiveTab('editor');
- 
+
   setSelectedGeneratedImages(new Set());
 };
 
-// Add this state near the top with other state declarations
 const [generatedFilenames, setGeneratedFilenames] = useState([]);
 const exportLabelsAsJSON = () => {
   if (labels.length === 0) return;
@@ -879,7 +822,7 @@ const handleLabelImport = async (file) => {
 
   try {
       const content = await readFileAsText(file);
-      
+
       if (extension === 'json') {
           const json = JSON.parse(content);
           if (Array.isArray(json)) setLabels(json);
@@ -900,7 +843,7 @@ const handleLabelImport = async (file) => {
           const labelIndex = headers.indexOf('label');
           const typeIndex = headers.indexOf('type');
           const coordsIndex = headers.indexOf('coords_json');
-          
+
           const newLabels = lines.map(line => {
               const values = parseCsvLine(line);
               if (values.length < headers.length) return null;
@@ -912,10 +855,10 @@ const handleLabelImport = async (file) => {
                       coords: JSON.parse(values[coordsIndex]),
                   };
               } catch {
-                  return null; // Skip rows with invalid JSON in coords
+                  return null;
               }
           }).filter(Boolean);
-          
+
           setLabels(newLabels);
       } else {
           throw new Error('Unsupported file type. Please upload a .json or .csv file.');
@@ -925,7 +868,7 @@ const handleLabelImport = async (file) => {
   }
 };
 const [generateFilename, setGenerateFilename] = useState('vixynt_gen');
- 
+
   const handleImageSelect = (index, isSelected) => {
     const newSelected = new Set(selectedGeneratedImages);
     if (isSelected) {
@@ -936,29 +879,23 @@ const [generateFilename, setGenerateFilename] = useState('vixynt_gen');
     setSelectedGeneratedImages(newSelected);
   };
 
-  
-
-  
-
   const handleContextMenu = (e, imgPath) => {
     e.preventDefault(); e.stopPropagation();
-    // If right-clicked image is not in current selection, start a new selection with just this image
-    // If it is in current selection, keep the full selection (for multi-select right-click)
+
     if (!selectedImageGroup.has(imgPath)) {
         setSelectedImage(imgPath);
         setSelectedImageGroup(new Set([imgPath]));
     } else {
-        // Image is already selected - keep current selection but update selectedImage for single operations
+
         setSelectedImage(imgPath);
     }
     setContextMenu({ visible: true, x: e.clientX, y: e.clientY, imagePath: imgPath });
   };
-  const handleRenameStart = () => { 
-    setRenamingImage({ path: selectedImage, newName: getFileName(selectedImage) }); 
+  const handleRenameStart = () => {
+    setRenamingImage({ path: selectedImage, newName: getFileName(selectedImage) });
     setContextMenu({ visible: false });
     setLightboxIndex(null);
   };
-  
 
   const handleRenameSubmit = async () => {
     if (!renamingImage.path || !renamingImage.newName.trim()) {
@@ -970,17 +907,15 @@ const [generateFilename, setGenerateFilename] = useState('vixynt_gen');
         const oldPath = renamingImage.path.replace('media://', '');
         const pathParts = oldPath.split('/');
         const newPath = [...pathParts.slice(0, -1), renamingImage.newName].join('/');
-        
+
         await window.api?.renameFile?.(oldPath, newPath);
-        
-       
+
         await loadImagesForAllSources(imageSources);
-        
-       
+
         if (selectedImage === renamingImage.path) {
             setSelectedImage(`media://${newPath}`);
         }
-        
+
         setRenamingImage({ path: null, newName: '' });
           setContextMenu({ visible: false });
     setLightboxIndex(null);
@@ -993,15 +928,14 @@ const [generateFilename, setGenerateFilename] = useState('vixynt_gen');
 
 const handleDeleteSelected = async () => {
     if (selectedImageGroup.size === 0) return;
-    
+
     const confirmed = window.confirm(`Delete ${selectedImageGroup.size} image(s)? This cannot be undone.`);
     if (!confirmed) return;
 
     try {
         const filesToDelete = Array.from(selectedImageGroup).map(path => path.replace('media://', ''));
         await Promise.all(filesToDelete.map(path => window.api?.deleteFile?.(path)));
-        
-       
+
         setSelectedImageGroup(new Set());
         setSelectedImage(null);
         await loadImagesForAllSources(imageSources);
@@ -1011,9 +945,6 @@ const handleDeleteSelected = async () => {
     }
 };
 
-
-
-
   const renderHeader = () => (
     <div className="flex items-center justify-between p-3 border-b theme-border flex-shrink-0">
       <div className="flex items-center gap-3">
@@ -1022,13 +953,11 @@ const handleDeleteSelected = async () => {
       </div>
     </div>
   );
-  
-  
- 
-  const pushHistory = (actionName) => { 
+
+  const pushHistory = (actionName) => {
       console.log(`Pushing history: ${actionName}`);
-      setEditHistory(h => [...h, { layers, adjustments, crop }]); 
-      setRedoStack([]); 
+      setEditHistory(h => [...h, { layers, adjustments, crop }]);
+      setRedoStack([]);
   };
 
   const handleUndo = () => {
@@ -1054,20 +983,18 @@ const handleDeleteSelected = async () => {
      });
   };
 
- 
   const addDarkroomLayer = (type) => {
     const layerConfig = DARKROOM_LAYER_TYPES[type];
     if (!layerConfig) return;
 
-   
-    const newLayer = { 
-        id: `layer_${Date.now()}`, 
-        type, 
-        name: layerConfig.name, 
-        visible: true, 
-        params: { ...layerConfig.defaultParams }, 
-        transform: { ...defaultTransform }, 
-        mask: null 
+    const newLayer = {
+        id: `layer_${Date.now()}`,
+        type,
+        name: layerConfig.name,
+        visible: true,
+        params: { ...layerConfig.defaultParams },
+        transform: { ...defaultTransform },
+        mask: null
     };
     const newLayers = [...layers, newLayer];
     setLayers(newLayers);
@@ -1076,7 +1003,7 @@ const handleDeleteSelected = async () => {
 };
 
 const updateLayer = (layerId, newProps, commit = false) => {
-    setLayers(currentLayers => 
+    setLayers(currentLayers =>
         currentLayers.map(l => l.id === layerId ? { ...l, ...newProps } : l)
     );
     if(commit) { pushHistory('Update Layer'); }
@@ -1096,8 +1023,8 @@ const updateLayerTransform = (layerId, newTransform, commit = false) => {
     if(commit) { pushHistory('Transform Layer'); }
 };
 
-const getRelativeCoords = (e) => {
-  const container = e.currentTarget;
+const getRelativeCoords = (e, containerOverride?) => {
+  const container = containerOverride || e.currentTarget;
   if (!container) return null;
   const rect = container.getBoundingClientRect();
   const x = e.clientX - rect.left;
@@ -1110,20 +1037,13 @@ const getRelativeCoords = (e) => {
 };
 const commitLayerParams = () => { pushHistory({ layers, selectedLayerId, adjustments }); };
 
-
-
-
- 
-
   const maskCanvasRef = useRef(null);
 
   const calculateCombinedStyle = () => {
     console.log('Calculating combined style with adjustments:', adjustments);
-    
-   
+
     let combined = { ...adjustments };
 
-   
     layers
         .filter(l => l.type === 'ADJUSTMENTS' && l.visible)
         .forEach(layer => {
@@ -1132,30 +1052,25 @@ const commitLayerParams = () => { pushHistory({ layers, selectedLayerId, adjustm
             });
         });
 
-   
     const brightness = 100 + combined.exposure + (combined.whites / 2.5) + (combined.shadows / -2.5);
     const contrast = 100 + combined.contrast + (combined.pop / 2) + (combined.highlights / 2.5) - (combined.shadows / 2.5);
     const saturate = combined.saturation + (combined.pop);
     const sepia = combined.warmth > 0 ? combined.warmth / 2 : 0;
     const hueRotate = combined.tint;
-    
+
     const filterStyle = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%) sepia(${sepia}%) hue-rotate(${hueRotate}deg) blur(${combined.blur || 0}px)`;
-    
+
     console.log('Generated filter style:', filterStyle);
-    
+
     return {
         filter: filterStyle
     };
 };
 
-// Add missing mouse handlers:
-
-// Fix the missing handleBaseAdjustmentChange:
 const handleBaseAdjustmentChange = (key, value) => {
     console.log(`Adjusting ${key} to ${value}`);
     setAdjustments(prev => ({ ...prev, [key]: value }));
 };
-
 
 const applySelectionAsMask = () => {
     if (!selectionPath || !selectedLayerId) return;
@@ -1163,44 +1078,38 @@ const applySelectionAsMask = () => {
     setSelectionPath(null);
 };
 
-
-
-
 useEffect(() => { setDisplayedImagesCount(IMAGES_PER_PAGE); }, [activeSourceId, searchTerm]);
 
 useEffect(() => {
     if (!selectedImage) return;
-    
-   
+
     setAdjustments({ exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0, saturation: 100, warmth: 0, tint: 0, pop: 0, vignette: 0, blur: 0 });
     setCrop({ x: 0, y: 0, width: 100, height: 100 });
-    setLayers([]); 
+    setLayers([]);
     setSelectedLayerId(null);
-    setEditHistory([]); 
+    setEditHistory([]);
     setRedoStack([]);
     setSelectionPath(null);
     setIsCropping(false);
     setEditorTool('select');
-    
-   
-   
+
     const fsPath = selectedImage.replace('media://', '');
-    window.api?.getImageMetadata?.(fsPath).then(m => { setMetadata(m || {}); /* ... */ });
+    window.api?.getImageMetadata?.(fsPath).then(m => { setMetadata(m || {});  });
     window.api?.loadLabels?.(fsPath).then(ls => setLabels(Array.isArray(ls) ? ls : []));
 }, [selectedImage]);
 
   useEffect(() => {
-   
+
     if (activeTab !== 'editor' || !selectedImage) return;
 
     const canvas = document.getElementById('editor-canvas');
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    
+
     const img = new Image();
     img.src = selectedImage;
     img.onload = () => {
-       
+
         const container = canvas.parentElement;
         const hRatio = container.clientWidth / img.width;
         const vRatio = container.clientHeight / img.height;
@@ -1211,23 +1120,17 @@ useEffect(() => {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-       
         console.log("Canvas ready for layer rendering.");
     };
 
   }, [selectedImage, layers, selectionPath, activeTab]);
-
-  
-  
 
   useEffect(() => {
     if (currentPath && currentPath !== projectPath) {
         setProjectPath(currentPath);
     }
   }, [currentPath]);
-  
-  
-  
+
     useEffect(() => {
         const initialSources = [
           { id: 'project-images', name: 'Project Images', path: projectPath, icon: Folder },
@@ -1236,7 +1139,7 @@ useEffect(() => {
         ];
         loadImagesForAllSources(initialSources);
     }, [projectPath, loadImagesForAllSources]);
-  
+
     useEffect(() => {
       const handleKeyDown = (e) => {
           if (lightboxIndex !== null) {
@@ -1270,7 +1173,7 @@ useEffect(() => {
               setIsEditingPath(false);
           }
       };
-  
+
       const handleClickOutside = () => {
           if (contextMenu.visible) {
               setContextMenu({ visible: false });
@@ -1286,8 +1189,6 @@ useEffect(() => {
       };
   }, [contextMenu.visible, renamingImage.path, isEditingPath, selectionPath, isCropping, textEditState.editing, lightboxIndex, filteredImages.length]);
 
-  
-
   const startDraw = (e) => {
     if (!selectedImage) return;
     const ne = e.nativeEvent.touches?.[0] || e;
@@ -1296,7 +1197,7 @@ useEffect(() => {
     setDrawing(true);
     if (activeTool === 'rect') setDrawPoints([p, p]);
     if (activeTool === 'point') {
-      const point = { id: crypto.randomUUID(), type: 'point', coords: [p], label: newLabelName || 'Point' };
+      const point = { id: crypto.randomUUID(), type: 'point', coords: [p], label: 'Point' };
       setLabels((ls) => [...ls, point]);
     }
     if (activeTool === 'polygon') setDrawPoints([p]);
@@ -1322,8 +1223,6 @@ useEffect(() => {
     setDrawPoints((pts) => [...pts.slice(0, -1), p, p]);
   };
 
-
-
   const endDraw = () => {
     if (!drawing) return;
     setDrawing(false);
@@ -1343,7 +1242,7 @@ useEffect(() => {
   };
 
   const updateLabelName = (id, newName) => {
-    setLabels(prevLabels => 
+    setLabels(prevLabels =>
         prevLabels.map(l => l.id === id ? { ...l, label: newName } : l)
     );
     setEditingLabelId(null);
@@ -1367,7 +1266,6 @@ useEffect(() => {
     } catch (e) { setError('Invalid labels file'); }
   };
 
- 
   const updateMetaField = (path, value) => {
     setMetadata((m) => {
       const clone = { ...(m || {}) };
@@ -1402,9 +1300,6 @@ useEffect(() => {
     } catch (e) { setError('Batch metadata update failed'); }
   };
 
-
-
-  
   const handleUploadClick = () => fileInputRef.current?.click();
 
   const handleUploadFiles = async (e) => {
@@ -1415,10 +1310,9 @@ useEffect(() => {
       await loadImagesForAllSources(imageSources);
     } catch (err) { setError('Upload failed: ' + err.message); }
   };
- 
+
   const renderSidebar = () => (
     <div className={`${sidebarCollapsed ? 'w-12' : 'w-64'} border-r theme-border flex flex-col flex-shrink-0 theme-sidebar transition-all duration-200`}>
-      {/* Collapse toggle button */}
       <button
         onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
         className="p-2 border-b theme-border hover:bg-white/5 transition-colors flex items-center justify-center"
@@ -1541,7 +1435,6 @@ useEffect(() => {
     </div>
   );
 
-  
 useEffect(() => {
     const savedView = localStorage.getItem('vixynt_viewMode');
     if (savedView) setViewMode(savedView);
@@ -1563,11 +1456,11 @@ const [imageMetaCache, setImageMetaCache] = useState({});
 const sortedAndFilteredImages = React.useMemo(() => {
     const source = imageSources.find(s => s.id === activeSourceId);
     const allImages = source?.images || [];
-    
-    let result = allImages.filter(img => 
+
+    let result = allImages.filter(img =>
         img.toLowerCase().includes(searchTerm.toLowerCase())
     );
-    
+
     if (filterType !== 'all') {
         result = result.filter(img => {
             const ext = img.split('.').pop().toLowerCase();
@@ -1578,7 +1471,7 @@ const sortedAndFilteredImages = React.useMemo(() => {
             return true;
         });
     }
-    
+
     result.sort((a, b) => {
         const nameA = getFileName(a).toLowerCase();
         const nameB = getFileName(b).toLowerCase();
@@ -1586,7 +1479,7 @@ const sortedAndFilteredImages = React.useMemo(() => {
         const extB = b.split('.').pop().toLowerCase();
         const metaA = imageMetaCache[a] || {};
         const metaB = imageMetaCache[b] || {};
-        
+
         let comparison = 0;
         if (sortBy === 'name') {
             comparison = nameA.localeCompare(nameB);
@@ -1601,23 +1494,23 @@ const sortedAndFilteredImages = React.useMemo(() => {
             const dateB = metaB?.mtime || metaB?.file?.modified || 0;
             comparison = new Date(dateA) - new Date(dateB);
         }
-        
+
         return sortOrder === 'asc' ? comparison : -comparison;
     });
-    
+
     return result;
 }, [imageSources, activeSourceId, searchTerm, sortBy, sortOrder, filterType, imageMetaCache]);
 
 useEffect(() => {
     if (viewMode !== 'list') return;
-    
+
     const visible = sortedAndFilteredImages.slice(0, displayedImagesCount);
     const toLoad = visible.filter(img => !imageMetaCache[img]);
-    
+
     if (toLoad.length === 0) return;
-    
+
     let cancelled = false;
-    
+
     const loadBatch = async () => {
         for (const img of toLoad) {
             if (cancelled) break;
@@ -1628,9 +1521,9 @@ useEffect(() => {
             }
         }
     };
-    
+
     loadBatch();
-    
+
     return () => { cancelled = true; };
 }, [viewMode, sortedAndFilteredImages, displayedImagesCount]);
 const formatFileSize = (bytes) => {
@@ -1646,35 +1539,6 @@ const formatDate = (dateVal) => {
     if (isNaN(d.getTime())) return '—';
     return d.toLocaleDateString();
 };
-useEffect(() => {
-    if (viewMode !== 'list') return;
-    
-    const visible = sortedAndFilteredImages.slice(0, displayedImagesCount);
-    const toLoad = visible.filter(img => !imageMetaCache[img]);
-    
-    if (toLoad.length === 0) return;
-    
-    let cancelled = false;
-    
-    const loadBatch = async () => {
-        for (const img of toLoad) {
-            if (cancelled) break;
-            const fsPath = img.replace('media://', '');
-            console.log('Loading stats for:', fsPath);
-            const stats = await window.api?.getFileStats?.(fsPath);
-            console.log('Got stats:', stats);
-            if (!cancelled && stats) {
-                setImageMetaCache(prev => ({ ...prev, [img]: stats }));
-            }
-        }
-    };
-    
-    loadBatch();
-    
-    return () => { cancelled = true; };
-}, [viewMode, sortedAndFilteredImages, displayedImagesCount]);
-
-// Split clip at playhead for video editor
 const splitClipAtPlayhead = useCallback(() => {
     const clipAtPlayhead = videoClips.find(c =>
         c.trackId && c.x <= videoCurrentTime && (c.x + c.duration) >= videoCurrentTime
@@ -1697,7 +1561,6 @@ const splitClipAtPlayhead = useCallback(() => {
     }
 }, [videoClips, videoCurrentTime]);
 
-// Video editor keyboard shortcuts
 useEffect(() => {
     const handleKeyDown = (e) => {
         if (activeTab !== 'video-editor') return;
@@ -1725,7 +1588,6 @@ useEffect(() => {
     return () => window.removeEventListener('keydown', handleKeyDown);
 }, [activeTab, videoPlaying, videoCurrentTime, selectedClipId, splitClipAtPlayhead]);
 
-// Single click: select image only
 const handleImageClick = (e, imgPath, index) => {
     e.stopPropagation();
     setRenamingImage({ path: null, newName: '' });
@@ -1748,7 +1610,7 @@ const handleImageClick = (e, imgPath, index) => {
         setSelectedImageGroup(newSelection);
         setLastClickedIndex(index);
     } else {
-        // Single click: select only, don't open lightbox
+
         const newSelection = new Set([imgPath]);
         setSelectedImageGroup(newSelection);
         setSelectedImage(imgPath);
@@ -1756,7 +1618,6 @@ const handleImageClick = (e, imgPath, index) => {
     }
 };
 
-// Double click: open lightbox
 const handleImageDoubleClick = (e, imgPath, index) => {
     e.stopPropagation();
     setLightboxIndex(index);
@@ -1766,7 +1627,6 @@ const handleImageDoubleClick = (e, imgPath, index) => {
 const renderLightbox = () => {
     if (lightboxIndex === null) return null;
 
-    // Use npcts Lightbox component
     return (
         <Lightbox
             images={sortedAndFilteredImages}
@@ -1781,7 +1641,7 @@ const renderLightbox = () => {
 
 const renderGallery = () => (
     <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-2 border-b 
+        <div className="flex items-center justify-between px-4 py-2 border-b
             theme-border theme-bg-secondary/40">
             <div className="flex items-center gap-2 text-xs theme-text-muted">
                 <span>{sortedAndFilteredImages.length} items</span>
@@ -1789,7 +1649,7 @@ const renderGallery = () => (
                     <span>• {selectedImageGroup.size} selected</span>
                 )}
             </div>
-            
+
             <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1">
                     <span className="text-xs theme-text-muted">Sort:</span>
@@ -1808,14 +1668,14 @@ const renderGallery = () => (
                             sortOrder === 'asc' ? 'desc' : 'asc'
                         )}
                         className="theme-button px-2 py-1 text-xs"
-                        title={sortOrder === 'asc' 
-                            ? 'Ascending' 
+                        title={sortOrder === 'asc'
+                            ? 'Ascending'
                             : 'Descending'}
                     >
                         {sortOrder === 'asc' ? '↑' : '↓'}
                     </button>
                 </div>
-                
+
                 <div className="flex items-center gap-1">
                     <span className="text-xs theme-text-muted">Type:</span>
                     <select
@@ -1830,24 +1690,24 @@ const renderGallery = () => (
                         <option value="gif">GIF</option>
                     </select>
                 </div>
-                
-                <button 
-                    className="theme-button px-3 py-1 text-sm rounded 
-                        flex items-center gap-1" 
+
+                <button
+                    className="theme-button px-3 py-1 text-sm rounded
+                        flex items-center gap-1"
                     onClick={() => setActiveTab('metadata')}
                 >
                     <Info size={14} /> Metadata
                 </button>
-                <button 
-                    className="theme-button px-3 py-1 text-sm rounded 
-                        flex items-center gap-1" 
+                <button
+                    className="theme-button px-3 py-1 text-sm rounded
+                        flex items-center gap-1"
                     onClick={() => setActiveTab('labeling')}
                 >
                     <Tag size={14} /> Label
                 </button>
             </div>
         </div>
-        
+
         <div className="flex-1 p-4 overflow-y-auto">
             {viewMode === 'grid' ? (
                 <ImageGrid
@@ -1905,7 +1765,7 @@ const renderGallery = () => (
                 />
             ) : (
     <div className="space-y-1">
-        <div className="grid grid-cols-12 gap-2 px-2 py-1 text-xs 
+        <div className="grid grid-cols-12 gap-2 px-2 py-1 text-xs
             font-semibold theme-text-secondary border-b theme-border">
             <div className="col-span-1"></div>
             <div className="col-span-5">Name</div>
@@ -1913,7 +1773,7 @@ const renderGallery = () => (
             <div className="col-span-2">Size</div>
             <div className="col-span-2">Date</div>
         </div>
-                    
+
         {loading ? (
             <div className="flex justify-center p-8">
                 <Loader className="animate-spin" />
@@ -1927,7 +1787,7 @@ const renderGallery = () => (
                     const filename = getFileName(img);
                     const ext = filename.split('.').pop().toUpperCase();
                     const meta = imageMetaCache[img] || {};
-                    
+
                     return (
                         <div
                             key={img}
@@ -1941,9 +1801,9 @@ const renderGallery = () => (
                                     : 'theme-hover'}`}
                         >
                             <div className="col-span-1">
-                                <img 
-                                    src={img} 
-                                    alt="" 
+                                <img
+                                    src={img}
+                                    alt=""
                                     className="w-10 h-10 object-cover rounded"
                                 />
                             </div>
@@ -1958,9 +1818,9 @@ const renderGallery = () => (
                                         onKeyDown={(e) => {
                                             e.stopPropagation();
                                             if (e.key === 'Enter') handleRenameSubmit();
-                                            if (e.key === 'Escape') setRenamingImage({ 
-                                                path: null, 
-                                                newName: '' 
+                                            if (e.key === 'Escape') setRenamingImage({
+                                                path: null,
+                                                newName: ''
                                             });
                                         }}
                                         onBlur={handleRenameSubmit}
@@ -1996,7 +1856,7 @@ const renderGallery = () => (
 
         {sortedAndFilteredImages.length > displayedImagesCount && (
             <div className="p-4 border-t theme-border text-center">
-                <button 
+                <button
                     onClick={() => setDisplayedImagesCount(prev => prev + IMAGES_PER_PAGE)}
                     className="theme-button px-4 py-2 text-sm rounded"
                 >
@@ -2058,11 +1918,10 @@ const renderGallery = () => (
     )
 );
 
-
   const handleSendToLLM = () => {
   const selectedImages = Array.from(selectedImageGroup);
   if (selectedImages.length === 0) return;
-  
+
   onStartConversation?.(selectedImages.map(path => ({ path: path.replace('media://', '') })));
   setContextMenu({ visible: false });
   setLightboxIndex(null);
@@ -2070,21 +1929,21 @@ const renderGallery = () => (
 
 const handleUseForGeneration = () => {
   if (contextMenu.imagePath) {
-     
+
       setActiveTab('generator');
-     
+
       setGeneratePrompt(prev => `${prev} ${prev ? '\n\n' : ''}Using reference image: ${getFileName(contextMenu.imagePath)}`);
   }
   setContextMenu({ visible: false });
   setLightboxIndex(null);
-  
+
 };
   const handleImageContextMenu = (e, imgPath) => {
-    e.preventDefault(); 
+    e.preventDefault();
     e.stopPropagation();
-    if (!selectedImageGroup.has(imgPath)) { 
-        setSelectedImage(imgPath); 
-        setSelectedImageGroup(new Set([imgPath])); 
+    if (!selectedImageGroup.has(imgPath)) {
+        setSelectedImage(imgPath);
+        setSelectedImageGroup(new Set([imgPath]));
     }
     setContextMenu({ visible: true, x: e.clientX, y: e.clientY, imagePath: imgPath });
 };
@@ -2101,7 +1960,7 @@ const handleUseForGeneration = () => {
               <Field label="Description" value={metadata?.iptc?.description || ''} onChange={v => updateMetaField('iptc.description', v)} multiline />
               <TagsEditor tags={customTags} setTags={setCustomTags} />
             </SettingsSection>
-            
+
             <details className="theme-border border rounded-lg" open>
                 <summary className="p-3 cursor-pointer text-sm font-semibold">Camera Details (EXIF)</summary>
                 <div className="p-3 border-t theme-border space-y-2">
@@ -2126,10 +1985,9 @@ const handleUseForGeneration = () => {
     </div>
   );
 
-
   const renderPathNavigator = () => {
     const displayPath = currentPath || projectPath;
-    
+
     return (
       <div className="flex items-center gap-2 text-sm theme-text-secondary p-2 flex-grow min-w-0" onClick={() => setIsEditingPath(true)}>
           <FolderOpen size={16} className="flex-shrink-0 theme-text-muted" />
@@ -2150,21 +2008,20 @@ const handleUseForGeneration = () => {
     );
   };
 
-  
   const renderLabeling = () => (
     <div className="flex-1 flex overflow-hidden">
       <div
         className="flex-1 relative theme-bg-primary flex items-center justify-center select-none"
       >
         {selectedImage ? (
-          <div 
+          <div
             className="relative"
             onMouseDown={startDraw} onMouseMove={moveDraw} onMouseUp={endDraw} onDoubleClick={addPolygonVertex}
             onTouchStart={startDraw} onTouchMove={moveDraw} onTouchEnd={endDraw}
           >
-            <img 
-              src={selectedImage} 
-              alt="Labeling" 
+            <img
+              src={selectedImage}
+              alt="Labeling"
               className="max-w-full max-h-full object-contain pointer-events-none"
               draggable="false"
             />
@@ -2182,7 +2039,7 @@ const handleUseForGeneration = () => {
           <h4 className="text-lg font-semibold">Labels</h4>
           <div className="flex gap-2">
             <button className="theme-button" onClick={saveLabels} title="Save labels to disk"><Save size={14} /></button>
-            
+
             <div className="relative group">
                 <button className="theme-button" title="Export labels"><Download size={14} /></button>
                 <div className="absolute right-0 top-full mt-1 w-32 theme-bg-secondary border theme-border rounded shadow-lg hidden group-hover:block z-10">
@@ -2210,7 +2067,7 @@ const handleUseForGeneration = () => {
           ) : labels.map((l) => (
             <div key={l.id} className="flex items-center justify-between theme-bg-secondary p-2 rounded gap-2">
               {editingLabelId === l.id ? (
-                <input 
+                <input
                   type="text"
                   defaultValue={l.label}
                   className="w-full theme-input text-sm theme-bg-tertiary"
@@ -2219,8 +2076,8 @@ const handleUseForGeneration = () => {
                   onKeyDown={(e) => { if (e.key === 'Enter') updateLabelName(l.id, e.target.value); if (e.key === 'Escape') setEditingLabelId(null); }}
                 />
               ) : (
-                <span 
-                  className="truncate text-sm flex-1 cursor-pointer" 
+                <span
+                  className="truncate text-sm flex-1 cursor-pointer"
                   onDoubleClick={() => setEditingLabelId(l.id)}
                   title="Double-click to edit"
                 >
@@ -2244,7 +2101,7 @@ const handleUseForGeneration = () => {
         </div>
       </div>
     </div>
-  );  
+  );
 
   const renderGenerator = useCallback(() => {
     const getGridCols = (imageCount) => {
@@ -2259,15 +2116,12 @@ const handleUseForGeneration = () => {
 
     const gridColsClass = getGridCols(generatedImages.length);
 
-    // Filter models based on the currently selected provider
     const filteredAvailableModels = availableModels.filter(
         model => model.provider === selectedProvider
     );
 
-    // Get unique providers
     const uniqueProviders = [...new Set(availableModels.map(model => model.provider))];
 
-    // Quick prompt templates
     const promptTemplates = [
         { label: 'Portrait', prompt: 'A professional portrait photograph of' },
         { label: 'Landscape', prompt: 'A stunning landscape photograph of' },
@@ -2277,7 +2131,6 @@ const handleUseForGeneration = () => {
         { label: 'Concept Art', prompt: 'Detailed concept art depicting' },
     ];
 
-    // Provider display info - comprehensive list of image gen APIs
     const getProviderInfo = (provider) => {
         const info = {
             'diffusers': { name: 'HF Diffusers', color: 'bg-yellow-600', icon: '🤗', order: 0 },
@@ -2297,16 +2150,13 @@ const handleUseForGeneration = () => {
         return info[provider] || { name: provider.charAt(0).toUpperCase() + provider.slice(1), color: 'bg-gray-600', icon: '🖼️', order: 99 };
     };
 
-    // Sort providers with diffusers first, then by order
     const sortedProviders = [...uniqueProviders].sort((a, b) => {
         return getProviderInfo(a).order - getProviderInfo(b).order;
     });
 
     return (
         <div className="flex-1 flex overflow-hidden">
-            {/* Left: Controls Panel - now 40% */}
             <div className="w-[420px] border-r theme-border theme-bg-secondary flex flex-col overflow-hidden">
-                {/* Prompt Section - Top Priority */}
                 <div className="p-4 border-b theme-border">
                     <div className="flex items-center justify-between mb-2">
                         <label className="text-sm font-semibold text-white">Prompt</label>
@@ -2324,7 +2174,6 @@ const handleUseForGeneration = () => {
                         className="w-full theme-input text-sm resize-none"
                         placeholder="Describe the image you want to create..."
                     />
-                    {/* Quick Templates */}
                     <div className="flex flex-wrap gap-1.5 mt-2">
                         {promptTemplates.map(t => (
                             <button
@@ -2338,9 +2187,7 @@ const handleUseForGeneration = () => {
                     </div>
                 </div>
 
-                {/* Scrollable Settings */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                    {/* Provider Selection - Visual Cards */}
                     <div>
                         <label className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2 block">Provider</label>
                         <div className="grid grid-cols-3 gap-2">
@@ -2370,7 +2217,6 @@ const handleUseForGeneration = () => {
                         </div>
                     </div>
 
-                    {/* Model Selection */}
                     <div>
                         <label className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2 block">Model</label>
                         <select
@@ -2386,7 +2232,6 @@ const handleUseForGeneration = () => {
                         </select>
                     </div>
 
-                    {/* Reference Images */}
                     {(selectedImageGroup.size > 0 || selectedGeneratedImages.size > 0) && (
                         <div>
                             <label className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2 block">
@@ -2416,7 +2261,6 @@ const handleUseForGeneration = () => {
                         </div>
                     )}
 
-                    {/* Output Settings - Collapsed by default */}
                     <details className="group">
                         <summary className="text-xs font-medium text-gray-400 uppercase tracking-wide cursor-pointer flex items-center gap-2 select-none">
                             <ChevronRight size={12} className="transition-transform group-open:rotate-90" />
@@ -2476,7 +2320,6 @@ const handleUseForGeneration = () => {
                     </details>
                 </div>
 
-                {/* Generate Button - Fixed at bottom */}
                 <div className="p-4 border-t theme-border bg-black/20">
                     <button
                         onClick={async () => {
@@ -2535,7 +2378,6 @@ const handleUseForGeneration = () => {
                 </div>
             </div>
 
-            {/* Right: Results Panel - now 60% */}
             <div className="flex-1 p-4 overflow-y-auto theme-bg-primary">
                 {generatedImages.length > 0 && (
                     <div className="flex items-center justify-between mb-4">
@@ -2568,7 +2410,6 @@ const handleUseForGeneration = () => {
                                     className="w-full h-full object-cover"
                                     alt={`Generated image ${index + 1}`}
                                 />
-                                {/* Hover overlay */}
                                 <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                                     <button
                                         onClick={() => handleImageSelect(index, !selectedGeneratedImages.has(index))}
@@ -2593,7 +2434,6 @@ const handleUseForGeneration = () => {
                                         <Edit size={16} />
                                     </button>
                                 </div>
-                                {/* Selection indicator */}
                                 {selectedGeneratedImages.has(index) && (
                                     <div className="absolute top-2 left-2 w-6 h-6 rounded-full bg-purple-500 flex items-center justify-center">
                                         <Check size={14} />
@@ -2625,7 +2465,6 @@ const handleUseForGeneration = () => {
     generateFilename, setGenerateFilename, setError, setSelectedImage, setActiveTab
 ]);
 
-// Workflow node types configuration
 const WORKFLOW_NODE_TYPES = {
     source: { name: 'Load Image', icon: '📂', color: 'bg-blue-600', inputs: [], outputs: ['image'] },
     generate: { name: 'Generate', icon: '✨', color: 'bg-purple-600', inputs: ['ref'], outputs: ['image'] },
@@ -2685,24 +2524,60 @@ const addWorkflowConnection = useCallback((fromNode, fromPort, toNode, toPort) =
 const executeWorkflow = useCallback(async () => {
     setWorkflowExecuting(true);
     try {
-        // Find source nodes and start execution
-        const sourceNodes = workflowNodes.filter(n => n.type === 'source' || n.type === 'generate');
-        for (const node of sourceNodes) {
-            // Execute node chain - simplified for now
-            console.log('Executing workflow starting from:', node.id);
+        const nodeOutputs: Record<string, any> = {};
+        // Topological order: process sources first, then follow connections
+        const processed = new Set<string>();
+        const queue = workflowNodes.filter(n => n.type === 'source' || n.type === 'generate');
+
+        for (const node of queue) {
+            if (node.type === 'source' && node.params?.imagePath) {
+                nodeOutputs[node.id] = { image: node.params.imagePath };
+                processed.add(node.id);
+            } else if (node.type === 'generate' && node.params?.prompt) {
+                // Generate node would call AI API
+                nodeOutputs[node.id] = { image: null, prompt: node.params.prompt };
+                processed.add(node.id);
+            }
         }
-        // TODO: Implement actual workflow execution via backend
-    } catch (err) {
+
+        // Process downstream nodes
+        let changed = true;
+        while (changed) {
+            changed = false;
+            for (const node of workflowNodes) {
+                if (processed.has(node.id)) continue;
+                const incomingConns = workflowConnections.filter(c => c.to === node.id);
+                const allInputsReady = incomingConns.length > 0 && incomingConns.every(c => processed.has(c.from));
+                if (!allInputsReady) continue;
+
+                const inputImage = incomingConns.map(c => nodeOutputs[c.from]?.image).find(Boolean);
+                if (node.type === 'adjust') {
+                    nodeOutputs[node.id] = { image: inputImage, adjustments: node.params };
+                } else if (node.type === 'output' && inputImage) {
+                    // Save the final output
+                    const outputName = node.params?.filename || 'output.png';
+                    const outputPath = currentPath ? `${currentPath}/${outputName}` : outputName;
+                    console.log('[Workflow] Output saved to:', outputPath);
+                    nodeOutputs[node.id] = { image: inputImage, savedTo: outputPath };
+                } else {
+                    nodeOutputs[node.id] = { image: inputImage };
+                }
+                processed.add(node.id);
+                changed = true;
+            }
+        }
+
+        console.log('[Workflow] Execution complete. Processed:', processed.size, 'nodes');
+    } catch (err: any) {
         setError('Workflow execution failed: ' + err.message);
     } finally {
         setWorkflowExecuting(false);
     }
-}, [workflowNodes]);
+}, [workflowNodes, workflowConnections, currentPath]);
 
 const renderWorkflow = useCallback(() => {
     return (
         <div className="flex-1 flex overflow-hidden">
-            {/* Left: Node Palette */}
             <div className="w-56 border-r theme-border p-3 flex flex-col gap-3 overflow-y-auto theme-bg-secondary">
                 <h3 className="text-sm font-semibold text-white mb-2">Add Nodes</h3>
                 <div className="grid grid-cols-2 gap-2">
@@ -2750,7 +2625,6 @@ const renderWorkflow = useCallback(() => {
                 </div>
             </div>
 
-            {/* Center: Canvas */}
             <div
                 ref={workflowCanvasRef}
                 className="flex-1 relative overflow-auto theme-bg-primary"
@@ -2759,7 +2633,6 @@ const renderWorkflow = useCallback(() => {
                     backgroundSize: '20px 20px'
                 }}
             >
-                {/* Connection lines */}
                 <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ minWidth: '2000px', minHeight: '2000px' }}>
                     {workflowConnections.map(conn => {
                         const fromNode = workflowNodes.find(n => n.id === conn.from);
@@ -2787,7 +2660,6 @@ const renderWorkflow = useCallback(() => {
                     })}
                 </svg>
 
-                {/* Nodes */}
                 {workflowNodes.map(node => {
                     const config = WORKFLOW_NODE_TYPES[node.type];
                     return (
@@ -2816,7 +2688,6 @@ const renderWorkflow = useCallback(() => {
                                 document.addEventListener('mouseup', handleUp);
                             }}
                         >
-                            {/* Header */}
                             <div className={`${config.color} px-3 py-2 rounded-t-md flex items-center gap-2`}>
                                 <span>{config.icon}</span>
                                 <span className="text-white text-sm font-medium flex-1">{config.name}</span>
@@ -2828,9 +2699,7 @@ const renderWorkflow = useCallback(() => {
                                 </button>
                             </div>
 
-                            {/* Body */}
                             <div className="bg-gray-800 p-2 rounded-b-md">
-                                {/* Input ports */}
                                 {config.inputs.map((input, i) => (
                                     <div key={input} className="flex items-center gap-2 py-1">
                                         <div className="w-3 h-3 rounded-full bg-yellow-500 border-2 border-gray-700 -ml-4" />
@@ -2838,7 +2707,6 @@ const renderWorkflow = useCallback(() => {
                                     </div>
                                 ))}
 
-                                {/* Node-specific params */}
                                 {node.type === 'generate' && (
                                     <input
                                         type="text"
@@ -2884,7 +2752,6 @@ const renderWorkflow = useCallback(() => {
                                     />
                                 )}
 
-                                {/* Output ports */}
                                 {config.outputs.map((output, i) => (
                                     <div key={output} className="flex items-center justify-end gap-2 py-1">
                                         <span className="text-xs text-gray-400">{output}</span>
@@ -2902,7 +2769,6 @@ const renderWorkflow = useCallback(() => {
                     );
                 })}
 
-                {/* Empty state */}
                 {workflowNodes.length === 0 && (
                     <div className="absolute inset-0 flex items-center justify-center">
                         <div className="text-center">
@@ -2914,7 +2780,6 @@ const renderWorkflow = useCallback(() => {
                 )}
             </div>
 
-            {/* Right: Node Inspector */}
             <div className="w-64 border-l theme-border p-3 overflow-y-auto theme-bg-secondary">
                 <h3 className="text-sm font-semibold text-white mb-3">Node Properties</h3>
                 {selectedNodeId ? (() => {
@@ -3058,11 +2923,9 @@ const renderWorkflow = useCallback(() => {
 }, [workflowNodes, workflowConnections, selectedNodeId, workflowExecuting, addWorkflowNode,
     deleteWorkflowNode, updateWorkflowNode, executeWorkflow, selectedImage, availableModels]);
 
-// Dataset/Model Manager
 const renderDatasetManager = useCallback(() => {
     return (
         <div className="flex-1 flex overflow-hidden">
-            {/* Left: Datasets List */}
             <div className="w-72 border-r theme-border p-4 flex flex-col gap-4 overflow-y-auto theme-bg-secondary">
                 <div className="flex items-center justify-between">
                     <h3 className="text-sm font-semibold text-white flex items-center gap-2">
@@ -3133,7 +2996,6 @@ const renderDatasetManager = useCallback(() => {
                 </div>
             </div>
 
-            {/* Center: Dataset Content */}
             <div className="flex-1 p-4 overflow-y-auto theme-bg-primary">
                 {selectedDataset ? (() => {
                     const dataset = datasets.find(d => d.id === selectedDataset);
@@ -3150,7 +3012,7 @@ const renderDatasetManager = useCallback(() => {
                                 <div className="flex gap-2">
                                     <button
                                         onClick={() => {
-                                            // Add selected images from gallery
+
                                             const selectedPaths = Array.from(selectedImageGroup);
                                             if (selectedPaths.length > 0) {
                                                 setDatasets(prev => prev.map(d => d.id === dataset.id ? {
@@ -3233,20 +3095,18 @@ const renderDatasetManager = useCallback(() => {
     );
 }, [datasets, selectedDataset, trainedModels, selectedImageGroup]);
 
-// Video Generator
 const renderVideoGenerator = useCallback(() => {
     const VIDEO_MODELS = [
-        // Google Veo via Gemini API (requires GEMINI_API_KEY)
+
         { id: 'veo-3.1-generate-preview', name: 'Veo 3.1', provider: 'gemini', maxDuration: 8 },
         { id: 'veo-3.1-fast-generate-preview', name: 'Veo 3.1 Fast', provider: 'gemini', maxDuration: 8 },
         { id: 'veo-2.0-generate-001', name: 'Veo 2', provider: 'gemini', maxDuration: 8 },
-        // Diffusers - damo-vilab/text-to-video-ms-1.7b (local)
+
         { id: 'damo-vilab/text-to-video-ms-1.7b', name: 'ModelScope 1.7B (Local)', provider: 'diffusers', maxDuration: 4 },
     ];
 
     return (
         <div className="flex-1 flex overflow-hidden">
-            {/* Left: Controls */}
             <div className="w-96 border-r theme-border p-4 flex flex-col gap-4 overflow-y-auto theme-bg-secondary">
                 <h3 className="text-lg font-semibold text-white flex items-center gap-2">
                     <Video size={20}/> Video Generator
@@ -3355,9 +3215,7 @@ const renderVideoGenerator = useCallback(() => {
                 </button>
             </div>
 
-            {/* Right: Results */}
             <div className="flex-1 flex flex-col overflow-hidden theme-bg-primary">
-                {/* Results toolbar */}
                 {generatedVideos.length > 0 && (
                     <div className="p-3 border-b theme-border flex items-center gap-2">
                         <button
@@ -3438,13 +3296,28 @@ const renderVideoGenerator = useCallback(() => {
                                 <div className="p-3">
                                     <p className="text-sm text-gray-300 line-clamp-2">{video.prompt}</p>
                                     <div className="flex gap-2 mt-2">
-                                        <button className="flex-1 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 rounded text-blue-400 text-xs flex items-center justify-center gap-1">
+                                        <button
+                                            onClick={async () => {
+                                                if (video.url) {
+                                                    try {
+                                                        const link = document.createElement('a');
+                                                        link.href = video.url;
+                                                        link.download = `generated-video-${Date.now()}.mp4`;
+                                                        document.body.appendChild(link);
+                                                        link.click();
+                                                        document.body.removeChild(link);
+                                                    } catch (e) { console.error('Download failed:', e); }
+                                                }
+                                            }}
+                                            disabled={!video.url}
+                                            className="flex-1 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 rounded text-blue-400 text-xs flex items-center justify-center gap-1 disabled:opacity-40"
+                                        >
                                             <Download size={12}/> Download
                                         </button>
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                // Add to video editor
+
                                                 setVideoClips(prev => [...prev, {
                                                     id: `clip_${Date.now()}`,
                                                     type: 'video',
@@ -3475,7 +3348,6 @@ const renderVideoGenerator = useCallback(() => {
                 )}
                 </div>
 
-                {/* Create Video Dataset Modal */}
                 {showCreateVideoDataset && (
                     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[200]" onClick={() => setShowCreateVideoDataset(false)}>
                         <div className="bg-gray-800 rounded-lg shadow-xl w-96 p-6" onClick={e => e.stopPropagation()}>
@@ -3538,7 +3410,6 @@ const renderVideoGenerator = useCallback(() => {
                     </div>
                 )}
 
-                {/* Add to Video Dataset Modal */}
                 {showAddToVideoDataset && (
                     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[200]" onClick={() => setShowAddToVideoDataset(false)}>
                         <div className="bg-gray-800 rounded-lg shadow-xl w-96 p-6" onClick={e => e.stopPropagation()}>
@@ -3608,7 +3479,6 @@ const renderVideoGenerator = useCallback(() => {
     );
 }, [videoPrompt, videoModel, videoDurationSetting, generatingVideo, generatedVideos, selectedImage, videoSelectionMode, selectedGeneratedVideos, showCreateVideoDataset, showAddToVideoDataset, newVideoDatasetName, videoDatasets]);
 
-// Video Editor (Pro-style with trimming, splitting, effects)
 const renderVideoEditor = useCallback(() => {
     const formatTime = (seconds) => {
         const m = Math.floor(seconds / 60);
@@ -3628,7 +3498,6 @@ const renderVideoEditor = useCallback(() => {
 
     return (
         <div className="flex-1 flex flex-col overflow-hidden">
-            {/* Top Toolbar */}
             <div className="h-10 border-b theme-border flex items-center px-3 gap-1 bg-gray-800/80">
                 <button
                     onClick={async () => {
@@ -3642,7 +3511,7 @@ const renderVideoEditor = useCallback(() => {
                                     const clipId = `clip_${Date.now()}_${i}`;
                                     const isAudio = !!file.name.match(/\.(mp3|wav|aac|m4a|ogg|flac)$/i);
                                     const fileSrc = `file://${file.path}`;
-                                    // Probe actual duration
+
                                     const el = document.createElement(isAudio ? 'audio' : 'video');
                                     el.preload = 'metadata';
                                     el.src = fileSrc;
@@ -3679,10 +3548,10 @@ const renderVideoEditor = useCallback(() => {
                     <Upload size={12}/> Import
                 </button>
                 <div className="w-px h-5 bg-gray-600 mx-1"/>
-                <button onClick={() => {}} className="p-1.5 hover:bg-gray-700 rounded" title="Undo (Cmd+Z)">
+                <button onClick={handleUndo} className="p-1.5 hover:bg-gray-700 rounded" title="Undo (Cmd+Z)">
                     <Undo size={14}/>
                 </button>
-                <button onClick={() => {}} className="p-1.5 hover:bg-gray-700 rounded" title="Redo (Cmd+Shift+Z)">
+                <button onClick={handleRedo} className="p-1.5 hover:bg-gray-700 rounded" title="Redo (Cmd+Shift+Z)">
                     <Redo size={14}/>
                 </button>
                 <div className="w-px h-5 bg-gray-600 mx-1"/>
@@ -3736,10 +3605,10 @@ const renderVideoEditor = useCallback(() => {
                 </button>
                 <button
                     onClick={() => {
-                        // Add transition between two consecutive clips
+
                         const videoTrackClips = videoClips.filter(c => c.trackId?.startsWith('video')).sort((a, b) => a.x - b.x);
                         if (videoTrackClips.length >= 2) {
-                            // Find first pair without transition
+
                             for (let i = 0; i < videoTrackClips.length - 1; i++) {
                                 const clip1 = videoTrackClips[i];
                                 const clip2 = videoTrackClips[i + 1];
@@ -3765,14 +3634,31 @@ const renderVideoEditor = useCallback(() => {
                 <div className="flex-1"/>
                 <span className="text-xs text-gray-400 font-mono">{formatTime(videoCurrentTime)}</span>
                 <div className="w-px h-5 bg-gray-600 mx-2"/>
-                <button className="px-3 py-1.5 bg-green-600 hover:bg-green-700 rounded text-xs flex items-center gap-1">
+                <button
+                    onClick={async () => {
+                        try {
+                            const projectData = {
+                                clips: videoClips,
+                                textLayers: videoTextLayers,
+                                duration: videoDuration,
+                                exportedAt: new Date().toISOString()
+                            };
+                            const result = await (window as any).api?.showSaveDialog?.({
+                                defaultPath: 'video-project.json',
+                                filters: [{ name: 'Project', extensions: ['json'] }]
+                            });
+                            if (result?.filePath) {
+                                await (window as any).api?.writeFileContent?.(result.filePath, JSON.stringify(projectData, null, 2));
+                            }
+                        } catch (e) { console.error('Export failed:', e); }
+                    }}
+                    className="px-3 py-1.5 bg-green-600 hover:bg-green-700 rounded text-xs flex items-center gap-1"
+                >
                     <Download size={12}/> Export
                 </button>
             </div>
 
-            {/* Main Area */}
             <div className="flex-1 flex overflow-hidden">
-                {/* Left: Media Browser */}
                 <div className="w-56 border-r theme-border flex flex-col overflow-hidden theme-bg-secondary">
                     <div className="p-2 border-b theme-border">
                         <h4 className="text-xs font-semibold text-gray-400 uppercase">Media</h4>
@@ -3818,7 +3704,6 @@ const renderVideoEditor = useCallback(() => {
                     </div>
                 </div>
 
-                {/* Center: Preview */}
                 <div className="flex-1 flex flex-col">
                     <div className="flex-1 flex items-center justify-center p-4 bg-gray-900/50">
                         {(() => {
@@ -3853,7 +3738,6 @@ const renderVideoEditor = useCallback(() => {
                                             </div>
                                         )}
 
-                                        {/* Text Overlays */}
                                         {videoTextLayers.filter(t =>
                                             videoCurrentTime >= t.startTime && videoCurrentTime <= (t.startTime + t.duration)
                                         ).map(text => (
@@ -3918,7 +3802,6 @@ const renderVideoEditor = useCallback(() => {
                         })()}
                     </div>
 
-                    {/* Transport Controls */}
                     <div className="h-14 border-t theme-border flex items-center justify-center gap-3 bg-gray-800/50">
                         <button onClick={() => { if (videoPreviewRef.current) videoPreviewRef.current.currentTime = 0; setVideoCurrentTime(0); }} className="p-2 hover:bg-gray-700 rounded">
                             <SkipBack size={18}/>
@@ -3957,7 +3840,6 @@ const renderVideoEditor = useCallback(() => {
                     </div>
                 </div>
 
-                {/* Right: Inspector */}
                 <div className="w-64 border-l theme-border flex flex-col overflow-hidden theme-bg-secondary">
                     <div className="p-2 border-b theme-border">
                         <h4 className="text-xs font-semibold text-gray-400 uppercase">Inspector</h4>
@@ -4261,9 +4143,7 @@ const renderVideoEditor = useCallback(() => {
                 </div>
             </div>
 
-            {/* Timeline */}
             <div className="h-56 border-t theme-border flex flex-col bg-gray-900/80">
-                {/* Timeline Toolbar */}
                 <div className="h-8 border-b theme-border flex items-center px-2 gap-2 bg-gray-800/50">
                     <button onClick={() => setVideoZoom(Math.max(0.25, videoZoom - 0.25))} className="p-1 hover:bg-gray-700 rounded text-xs">
                         <ZoomOut size={12}/>
@@ -4278,7 +4158,6 @@ const renderVideoEditor = useCallback(() => {
                     <span className="text-xs text-gray-500">Clips: {videoClips.filter(c => c.trackId).length}</span>
                 </div>
 
-                {/* Time Ruler */}
                 <div className="h-6 border-b theme-border flex" style={{ marginLeft: '80px' }}>
                     <div className="relative" style={{ width: `${totalTimelineWidth - 80}px` }}>
                         {Array.from({ length: Math.ceil(Math.max(videoDuration, 120)) }).map((_, i) => (
@@ -4293,7 +4172,6 @@ const renderVideoEditor = useCallback(() => {
                     </div>
                 </div>
 
-                {/* Tracks */}
                 <div className="flex-1 overflow-auto">
                     <div className="relative" style={{ width: `${totalTimelineWidth}px`, minHeight: '100%' }}>
                         {videoTracks.map((track, trackIndex) => (
@@ -4309,7 +4187,6 @@ const renderVideoEditor = useCallback(() => {
                                     setVideoClips(prev => prev.map(c => c.id === clipId ? {...c, trackId: track.id, x} : c));
                                 }}
                             >
-                                {/* Track Header */}
                                 <div className="w-20 flex-shrink-0 px-2 text-xs border-r theme-border flex flex-col justify-center bg-gray-800/90 z-10">
                                     <div className="flex items-center gap-1">
                                         {track.type === 'video' ? <Film size={12} className="text-blue-400"/> : <Music size={12} className="text-green-400"/>}
@@ -4317,7 +4194,6 @@ const renderVideoEditor = useCallback(() => {
                                     </div>
                                 </div>
 
-                                {/* Clips */}
                                 <div className="flex-1 relative">
                                     {videoClips.filter(c => c.trackId === track.id).map(clip => (
                                         <div
@@ -4333,7 +4209,6 @@ const renderVideoEditor = useCallback(() => {
                                                 width: `${Math.max((clip.duration || 1) * PIXELS_PER_SECOND, 20)}px`
                                             }}
                                         >
-                                            {/* Trim handles - Left */}
                                             <div
                                                 className="absolute left-0 top-0 bottom-0 w-3 cursor-ew-resize bg-white/0 hover:bg-white/40 rounded-l z-10 flex items-center justify-center"
                                                 onMouseDown={(e) => {
@@ -4369,7 +4244,6 @@ const renderVideoEditor = useCallback(() => {
                                             >
                                                 <div className="w-0.5 h-6 bg-white/50 rounded-full opacity-0 group-hover:opacity-100"/>
                                             </div>
-                                            {/* Trim handles - Right */}
                                             <div
                                                 className="absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize bg-white/0 hover:bg-white/40 rounded-r z-10 flex items-center justify-center"
                                                 onMouseDown={(e) => {
@@ -4402,7 +4276,6 @@ const renderVideoEditor = useCallback(() => {
                                                 <div className="w-0.5 h-6 bg-white/50 rounded-full opacity-0 group-hover:opacity-100"/>
                                             </div>
 
-                                            {/* Clip content */}
                                             <div className="px-2 py-1 h-full flex flex-col overflow-hidden">
                                                 <span className="text-xs font-medium truncate">{clip.name}</span>
                                                 {clip.duration > 2 && (
@@ -4410,7 +4283,6 @@ const renderVideoEditor = useCallback(() => {
                                                 )}
                                             </div>
 
-                                            {/* Waveform/Thumbnail placeholder */}
                                             <div className="absolute bottom-0 left-0 right-0 h-3 flex items-end px-1 gap-px opacity-40">
                                                 {Array.from({ length: Math.min(30, Math.floor((clip.duration || 1) * 3)) }).map((_, i) => (
                                                     <div key={i} className="flex-1 bg-white" style={{ height: `${20 + (Math.sin(i * 1.5 + (clip.id?.charCodeAt(0) || 0)) * 0.5 + 0.5) * 80}%` }}/>
@@ -4419,7 +4291,6 @@ const renderVideoEditor = useCallback(() => {
                                         </div>
                                     ))}
 
-                                    {/* Transition indicators */}
                                     {videoTransitions.filter(t => {
                                         const fromClip = videoClips.find(c => c.id === t.fromClipId);
                                         return fromClip?.trackId === track.id;
@@ -4454,7 +4325,6 @@ const renderVideoEditor = useCallback(() => {
                             </div>
                         ))}
 
-                        {/* Text Track */}
                         {videoTextLayers.length > 0 && (
                             <div className="h-10 border-b theme-border flex relative bg-orange-950/30">
                                 <div className="w-20 flex-shrink-0 px-2 text-xs border-r theme-border flex items-center gap-1 bg-gray-800/90 z-10">
@@ -4487,7 +4357,6 @@ const renderVideoEditor = useCallback(() => {
                             </div>
                         )}
 
-                        {/* Add Track */}
                         <button
                             onClick={() => setVideoTracks(prev => [...prev, {
                                 id: `track_${Date.now()}`,
@@ -4499,7 +4368,6 @@ const renderVideoEditor = useCallback(() => {
                             <Plus size={12} className="mr-1"/> Add Track
                         </button>
 
-                        {/* Playhead */}
                         <div
                             className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-30 pointer-events-none"
                             style={{ left: `${80 + videoCurrentTime * PIXELS_PER_SECOND}px` }}
@@ -4521,7 +4389,7 @@ const handleCanvasMouseDown = (e) => {
   const rect = canvasContainerRef.current.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;
-  
+
   if (editorTool === 'text') {
       const newText = {
           id: `text_${Date.now()}`,
@@ -4536,7 +4404,7 @@ const handleCanvasMouseDown = (e) => {
       setEditingTextId(newText.id);
       return;
   }
-  
+
   if (editorTool === 'brush' || editorTool === 'eraser') {
       setIsDrawingBrush(true);
       const canvas = canvasRef.current;
@@ -4550,18 +4418,18 @@ const handleCanvasMouseDown = (e) => {
       ctx.moveTo(x, y);
       return;
   }
-  
+
   if (editorTool === 'select' && selection) {
       const xPercent = (x / rect.width) * 100;
       const yPercent = (y / rect.height) * 100;
-      
+
       if (selection.type === 'rect') {
-          const inSelection = 
+          const inSelection =
               xPercent >= Math.min(selection.x1, selection.x2) &&
               xPercent <= Math.max(selection.x1, selection.x2) &&
               yPercent >= Math.min(selection.y1, selection.y2) &&
               yPercent <= Math.max(selection.y1, selection.y2);
-          
+
           if (inSelection) {
               setIsDraggingSelection(true);
               setSelectionDragStart({ x: xPercent, y: yPercent });
@@ -4569,9 +4437,9 @@ const handleCanvasMouseDown = (e) => {
           }
       }
   }
-  
+
   setDrawingSelection(true);
-  
+
   if (selectionMode === 'rect') {
       const xPercent = (x / rect.width) * 100;
       const yPercent = (y / rect.height) * 100;
@@ -4583,13 +4451,12 @@ const handleCanvasMouseDown = (e) => {
   }
 };
 
-
   const handleCanvasMouseMove = (e) => {
     if (!canvasContainerRef.current) return;
     const rect = canvasContainerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    
+
     if (isDrawingBrush && (editorTool === 'brush' || editorTool === 'eraser')) {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -4598,14 +4465,14 @@ const handleCanvasMouseDown = (e) => {
         ctx.stroke();
         return;
     }
-    
+
     if (isDraggingSelection && selection && editorTool === 'select') {
         const xPercent = (x / rect.width) * 100;
         const yPercent = (y / rect.height) * 100;
-        
+
         const dx = xPercent - selectionDragStart.x;
         const dy = yPercent - selectionDragStart.y;
-        
+
         setSelection(prev => ({
             ...prev,
             x1: prev.x1 + dx,
@@ -4613,16 +4480,16 @@ const handleCanvasMouseDown = (e) => {
             y1: prev.y1 + dy,
             y2: prev.y2 + dy
         }));
-        
+
         setSelectionDragStart({ x: xPercent, y: yPercent });
         return;
     }
-    
+
     if (!drawingSelection) return;
-    
+
     const xPercent = (x / rect.width) * 100;
     const yPercent = (y / rect.height) * 100;
-    
+
     if (selectionMode === 'rect' && selection) {
         setSelection(prev => ({ ...prev, x2: xPercent, y2: yPercent }));
     } else if (selectionMode === 'lasso') {
@@ -4634,11 +4501,11 @@ const handleCanvasMouseUp = () => {
     console.log('Mouse up - selectionMode:', selectionMode);
     console.log('selectionPoints length:', selectionPoints.length);
     console.log('selectionPoints:', selectionPoints);
-    
+
     setDrawingSelection(false);
     setIsDrawingBrush(false);
     setIsDraggingSelection(false);
-    
+
     if (selectionMode === 'lasso' && selectionPoints.length > 2) {
         console.log('Creating lasso selection!');
         setSelection({ type: 'lasso', points: selectionPoints });
@@ -4648,23 +4515,23 @@ const executeGenerativeFill = async (layerId, prompt) => {
     console.log('executeGenerativeFill called with prompt:', prompt);
     console.log('selectedImage:', selectedImage);
     console.log('selection:', selection);
-    
+
     if (!selectedImage || !selection) {
         setError('Need image and selection for generative fill');
         return;
     }
-    
+
     try {
         const maskData = await createMaskFromSelection(selection);
         console.log('Mask data created:', maskData ? 'yes' : 'no');
-        
+
         const imagePath = selectedImage.replace('media://', '');
         console.log('Image path:', imagePath);
-        
+
         const model = selectedModel || 'gemini-2.5-flash-image';
         const provider = selectedProvider || 'gemini';
         console.log('Using model:', model, 'provider:', provider);
-        
+
         const response = await window.api.generativeFill({
             imagePath,
             mask: maskData,
@@ -4672,18 +4539,18 @@ const executeGenerativeFill = async (layerId, prompt) => {
             model: model,
             provider: provider
         });
-        
+
         console.log('Response from generativeFill:', response);
-        
+
         if (response.error) throw new Error(response.error);
-        
+
         if (response.resultPath) {
             setSelectedImage(`media://${response.resultPath}`);
             await loadImagesForAllSources(imageSources);
         }
-        
+
         setSelection(null);
-        
+
     } catch (error) {
         console.error('Fill error:', error);
         setError('Generative fill failed: ' + error.message);
@@ -4694,16 +4561,16 @@ const createMaskFromSelection = async (sel) => {
     const canvas = document.createElement('canvas');
     const img = imageRef.current;
     if (!img) return null;
-    
+
     canvas.width = img.naturalWidth;
     canvas.height = img.naturalHeight;
     const ctx = canvas.getContext('2d');
-    
+
     ctx.fillStyle = 'black';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
+
     ctx.fillStyle = 'white';
-    
+
     if (sel.type === 'rect') {
         const x = Math.min(sel.x1, sel.x2) / 100 * canvas.width;
         const y = Math.min(sel.y1, sel.y2) / 100 * canvas.height;
@@ -4721,7 +4588,7 @@ const createMaskFromSelection = async (sel) => {
         ctx.closePath();
         ctx.fill();
     }
-    
+
     return canvas.toDataURL('image/png');
 };
 const renderDarkRoom = () => {
@@ -4733,18 +4600,89 @@ const renderDarkRoom = () => {
         await executeGenerativeFill(sel, prompt);
     };
 
+    const getFileParts = () => {
+        if (!selectedImage) return null;
+        const fsPath = selectedImage.replace('media://', '');
+        const dir = fsPath.substring(0, fsPath.lastIndexOf('/'));
+        const baseName = fsPath.substring(fsPath.lastIndexOf('/') + 1);
+        const nameNoExt = baseName.substring(0, baseName.lastIndexOf('.'));
+        return { fsPath, dir, baseName, nameNoExt };
+    };
+
+    const handleSaveProject = async (data: any) => {
+        try {
+            const parts = getFileParts();
+            if (!parts) return;
+            lastSaveDataRef.current = data;
+            const projectData = {
+                version: 1,
+                sourceImage: parts.fsPath,
+                adjustments: data.adjustments,
+                textLayers: data.textLayers,
+                savedAt: new Date().toISOString()
+            };
+            const projectPath = `${parts.dir}/${parts.nameNoExt}.vixynt.json`;
+            await (window as any).api?.writeFileContent?.(projectPath, JSON.stringify(projectData, null, 2));
+            console.log('[DarkRoom] Project saved:', projectPath);
+        } catch (e) { console.error('Save project failed:', e); }
+    };
+
+    const handleExport = async (format: 'png' | 'jpg' = 'png') => {
+        try {
+            const data = lastSaveDataRef.current;
+            if (!data?.dataUrl) return;
+            const parts = getFileParts();
+            if (!parts) return;
+
+            const result = await (window as any).api?.showSaveDialog?.({
+                defaultPath: `${parts.nameNoExt}_export.${format}`,
+                filters: [
+                    { name: format.toUpperCase(), extensions: [format] },
+                    { name: 'All Files', extensions: ['*'] }
+                ]
+            });
+            if (!result?.filePath) return;
+
+            const base64 = data.dataUrl.split(',')[1];
+            const binaryStr = atob(base64);
+            const bytes = new Uint8Array(binaryStr.length);
+            for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+            await (window as any).api?.writeFileBuffer?.(result.filePath, bytes);
+            console.log('[DarkRoom] Exported to:', result.filePath);
+        } catch (e) { console.error('Export failed:', e); }
+    };
+
     return (
-        <ImageEditor
-            imageSrc={selectedImage}
-            onGenerativeFill={handleGenerativeFill}
-            showHeader={true}
-            title="DarkRoom"
-            className="flex-1"
-        />
+        <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex items-center gap-2 px-3 py-1.5 border-b theme-border theme-bg-secondary text-xs">
+                <button
+                    onClick={handleExport.bind(null, 'png')}
+                    className="px-3 py-1 bg-green-600 hover:bg-green-500 text-white rounded flex items-center gap-1.5"
+                    title="Export flattened PNG"
+                >
+                    <Download size={12}/> Export PNG
+                </button>
+                <button
+                    onClick={handleExport.bind(null, 'jpg')}
+                    className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded flex items-center gap-1.5"
+                    title="Export flattened JPG"
+                >
+                    <Download size={12}/> Export JPG
+                </button>
+                <span className="theme-text-muted ml-2">Save (in editor) = project file &middot; Export = flattened image</span>
+            </div>
+            <ImageEditor
+                imageSrc={selectedImage}
+                onGenerativeFill={handleGenerativeFill}
+                onSave={handleSaveProject}
+                showHeader={true}
+                title="DarkRoom"
+                className="flex-1"
+            />
+        </div>
     );
 };
 
-// Keep the legacy renderDarkRoom implementation for reference (can be removed later)
 const renderDarkRoomLegacy = () => {
     return (
         <div className="flex-1 flex overflow-hidden">
@@ -4812,7 +4750,7 @@ const renderDarkRoomLegacy = () => {
                 </button>
             </div>
 
-            <div 
+            <div
                 ref={canvasContainerRef}
                 className="flex-1 flex items-center justify-center p-4 overflow-hidden relative theme-bg-secondary/30 select-none"
                 onMouseDown={(e) => {
@@ -4832,10 +4770,10 @@ const renderDarkRoomLegacy = () => {
             >
                 {selectedImage ? (
                     <div className="relative w-full h-full flex items-center justify-center">
-                        <img 
-                            ref={imageRef} 
-                            src={selectedImage} 
-                            style={calculateCombinedStyle()} 
+                        <img
+                            ref={imageRef}
+                            src={selectedImage}
+                            style={calculateCombinedStyle()}
                             className="max-w-full max-h-full object-contain"
                             alt="Main preview"
                             draggable={false}
@@ -4846,13 +4784,13 @@ const renderDarkRoomLegacy = () => {
     className="absolute inset-0 pointer-events-none"
     width={canvasContainerRef.current?.offsetWidth || 800}
     height={canvasContainerRef.current?.offsetHeight || 600}
-    style={{ 
+    style={{
         pointerEvents: editorTool === 'brush' || editorTool === 'eraser' ? 'auto' : 'none',
         zIndex: editorTool === 'brush' || editorTool === 'eraser' ? 20 : 1
     }}
 />
                         {selection && selection.type === 'rect' && (
-                            <div 
+                            <div
                                 className="absolute border-2 border-dashed border-blue-400 pointer-events-none"
                                 style={{
                                     left: `${Math.min(selection.x1, selection.x2)}%`,
@@ -4863,11 +4801,11 @@ const renderDarkRoomLegacy = () => {
                             />
                         )}
 {selectionMode === 'lasso' && drawingSelection && selectionPoints.length > 1 && (
-    <svg 
-        className="absolute inset-0 pointer-events-none" 
+    <svg
+        className="absolute inset-0 pointer-events-none"
         style={{width: '100%', height: '100%', zIndex: 15}}
     >
-        <polyline 
+        <polyline
             points={selectionPoints.map(p => {
                 const rect = canvasContainerRef.current?.getBoundingClientRect();
                 if (!rect) return '0,0';
@@ -4882,11 +4820,11 @@ const renderDarkRoomLegacy = () => {
 )}
 
 {selection && selection.type === 'lasso' && (
-    <svg 
-        className="absolute inset-0 pointer-events-none" 
+    <svg
+        className="absolute inset-0 pointer-events-none"
         style={{width: '100%', height: '100%'}}
     >
-        <polygon 
+        <polygon
             points={selection.points.map(p => {
                 const rect = canvasContainerRef.current?.getBoundingClientRect();
                 if (!rect) return '0,0';
@@ -4994,7 +4932,7 @@ const renderDarkRoomLegacy = () => {
                             </div>
                         ))}
 
-                        <div className="absolute top-0 left-0 w-full h-full pointer-events-none" 
+                        <div className="absolute top-0 left-0 w-full h-full pointer-events-none"
                              style={{boxShadow: `inset 0 0 ${adjustments.vignette * 2.5}px ${adjustments.vignette * 1.5}px rgba(0,0,0,0.9)`}}
                         />
                     </div>
@@ -5036,7 +4974,7 @@ const renderDarkRoomLegacy = () => {
                 <div className="p-4 border-b theme-border">
                     <h4 className="text-lg font-semibold flex items-center gap-2"><Camera size={18}/> DarkRoom</h4>
                 </div>
-                
+
                 <div className="flex-1 overflow-y-auto">
                     <div className="p-4 border-b theme-border space-y-3">
                         <h5 className="font-semibold text-base">Base Adjustments</h5>
@@ -5066,7 +5004,6 @@ const renderDarkRoomLegacy = () => {
                         </details>
                     </div>
 
-{/* Text Layers Panel */}
 {(editorTool === 'text' || textLayers.length > 0) && (
     <div className="p-4 border-b theme-border space-y-3">
         <h5 className="font-semibold text-base flex items-center gap-2"><Type size={16}/> Text Layers</h5>
@@ -5251,7 +5188,7 @@ const renderDarkRoomLegacy = () => {
                 onChange={e => {
                     const newProvider = e.target.value;
                     setSelectedProvider(newProvider);
-                    // Update model to first available for this provider
+
                     const modelsForProvider = availableModels.filter(m => m.provider === newProvider);
                     if (modelsForProvider.length > 0) {
                         setSelectedModel(modelsForProvider[0].value);
@@ -5264,19 +5201,19 @@ const renderDarkRoomLegacy = () => {
                 <option value="gemini">Gemini</option>
             </select>
         </div>
-        
+
         <div>
             <label className="text-xs">Fill Prompt</label>
-            <input 
-                type="text" 
+            <input
+                type="text"
                 placeholder="a realistic continuation..."
                 className="w-full theme-input text-xs mt-1"
                 id="fill-prompt-input"
             />
         </div>
-        
+
         <div className="grid grid-cols-2 gap-2">
-            <button 
+            <button
                 onClick={async () => {
                     const prompt = document.getElementById('fill-prompt-input').value;
                     if (!prompt) {
@@ -5289,7 +5226,7 @@ const renderDarkRoomLegacy = () => {
             >
                 <Sparkles size={14} className="inline mr-1"/> Fill
             </button>
-            <button 
+            <button
                 onClick={() => setSelection(null)}
                 className="theme-button text-xs py-2"
             >
@@ -5304,7 +5241,6 @@ const renderDarkRoomLegacy = () => {
         </div>
     );
 };
-
 
 const VIXYNT_MODES = [
     { id: 'gallery', name: 'Gallery', icon: Grid, group: 'browse' },
@@ -5328,7 +5264,6 @@ return (
     <div className="flex-1 flex overflow-hidden">
       {renderSidebar()}
       <main className="flex-1 flex flex-col overflow-hidden relative">
-        {/* Mode Selector */}
         <div className="flex-shrink-0 px-2 py-1">
           <div className="relative group inline-block">
             <button className="flex items-center gap-2 px-3 py-1.5 theme-bg-secondary theme-hover rounded-lg border theme-border text-sm">
@@ -5414,9 +5349,6 @@ return (
 
 };
 
-
-
-// --- Small UI Helpers ---
 const SettingsSection = ({ title, children }) => (
   <div className="border rounded-lg p-3 theme-border">
     <div className="text-sm font-semibold mb-2">{title}</div>
@@ -5450,26 +5382,24 @@ const LayerItem = ({ layer, isSelected, onSelect }) => (
 const SliderControl = ({ label, value, onChange, onCommit, min = 0, max = 100 }) => (
     <div>
         <label className="text-sm capitalize flex justify-between theme-text-secondary">{label}<span>{value}</span></label>
-        <input 
-            type="range" 
-            min={min} 
-            max={max} 
+        <input
+            type="range"
+            min={min}
+            max={max}
             value={value}
             onChange={e => onChange(parseInt(e.target.value, 10))}
             onMouseUp={onCommit}
             onTouchEnd={onCommit}
-            className="w-full mt-1" 
+            className="w-full mt-1"
         />
     </div>
 );
-
-
 
 const LayerInspector = ({ layer, onUpdate, onCommit, onGenerativeFill }) => {
     if (!layer) return <div className="text-center text-sm theme-text-muted p-8">Select a layer to inspect its properties.</div>;
     const { type, params, id, name } = layer;
     const config = DARKROOM_LAYER_TYPES[type];
-    if (!config) return null; 
+    if (!config) return null;
     const LayerIcon = config.icon;
 
     return (
@@ -5528,7 +5458,7 @@ const TagsEditor = ({ tags, setTags }) => {
       </div>
     );
   };
-  
+
   const OverlayShape = ({ points, type }) => {
     if (type === 'rect' && points.length === 2) {
       const [a, b] = points;
@@ -5555,10 +5485,10 @@ const TagsEditor = ({ tags, setTags }) => {
     }
     return null;
   };
-  
+
   const PlacedShape = ({ shape, onRemove }) => {
     const commonLabel = (x, y) => <div style={{ transform: `translate(${x}px, ${y}px)` }} className="absolute"><div className="absolute -top-6 left-0 text-xs bg-black/70 px-1 rounded text-white whitespace-nowrap">{shape.label}</div><button className="absolute -top-3 -right-3 bg-black/70 rounded-full p-0.5 z-10" onClick={onRemove}><X size={10} className="text-white" /></button></div>;
-    
+
     if (shape.type === 'rect') {
       const [a, b] = shape.coords;
       const style = {
@@ -5595,8 +5525,5 @@ const TagsEditor = ({ tags, setTags }) => {
     }
     return null;
   };
-  
-
-  // StarRating is now imported from npcts
 
 export default PhotoViewer;

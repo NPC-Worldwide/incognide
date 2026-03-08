@@ -41,28 +41,24 @@ export function useModelSelection() {
     });
     const [showAllModels, setShowAllModels] = useState(true);
 
-    // Save currentModel to localStorage when it changes
     useEffect(() => {
         if (currentModel !== null) {
             localStorage.setItem('incognideCurrentModel', JSON.stringify(currentModel));
         }
     }, [currentModel]);
 
-    // Save currentProvider to localStorage when it changes
     useEffect(() => {
         if (currentProvider !== null) {
             localStorage.setItem('incognideCurrentProvider', JSON.stringify(currentProvider));
         }
     }, [currentProvider]);
 
-    // Save currentNPC to localStorage when it changes
     useEffect(() => {
         if (currentNPC !== null) {
             localStorage.setItem('incognideCurrentNPC', JSON.stringify(currentNPC));
         }
     }, [currentNPC]);
 
-    // Sync selectedModels with currentModel when currentModel changes (only if !broadcastMode)
     useEffect(() => {
         if (!broadcastMode) {
             setSelectedModels(prev => {
@@ -75,7 +71,6 @@ export function useModelSelection() {
         }
     }, [currentModel, broadcastMode]);
 
-    // Sync selectedNPCs with currentNPC when currentNPC changes (only if !broadcastMode)
     useEffect(() => {
         if (!broadcastMode) {
             setSelectedNPCs(prev => {
@@ -88,7 +83,6 @@ export function useModelSelection() {
         }
     }, [currentNPC, broadcastMode]);
 
-    // Save executionMode to localStorage when it changes
     useEffect(() => {
         localStorage.setItem('incognideExecutionMode', JSON.stringify(executionMode));
     }, [executionMode]);

@@ -33,7 +33,6 @@ interface PythonEnvSettingsProps {
     compact?: boolean;
 }
 
-// Common ML package bundles
 const PACKAGE_BUNDLES = {
     'torch-cpu': { name: 'PyTorch (CPU)', packages: ['torch', 'torchvision', 'torchaudio'] },
     'torch-cuda': { name: 'PyTorch (CUDA)', packages: ['torch', 'torchvision', 'torchaudio', '--index-url', 'https://download.pytorch.org/whl/cu121'] },
@@ -55,7 +54,6 @@ const PythonEnvSettings: React.FC<PythonEnvSettingsProps> = ({ currentPath, onCl
     const [customPath, setCustomPath] = useState('');
     const [newVenvName, setNewVenvName] = useState('.venv');
 
-    // Package management state
     const [showPackages, setShowPackages] = useState(false);
     const [installedPackages, setInstalledPackages] = useState<InstalledPackage[]>([]);
     const [loadingPackages, setLoadingPackages] = useState(false);
@@ -173,7 +171,7 @@ const PythonEnvSettings: React.FC<PythonEnvSettingsProps> = ({ currentPath, onCl
     useEffect(() => {
         loadConfig();
         detectEnvs();
-        loadPackages(); // Load package count on mount
+        loadPackages();
     }, [loadConfig, detectEnvs, loadPackages]);
 
     const selectEnv = async (env: PythonEnv) => {
@@ -191,7 +189,7 @@ const PythonEnvSettings: React.FC<PythonEnvSettingsProps> = ({ currentPath, onCl
             await (window as any).api?.pythonEnvSave?.(currentPath, config);
             setCurrentConfig(config);
             setShowCustomInput(false);
-            // Reload packages for the newly selected environment
+
             await loadPackages();
         } catch (err) {
             console.error('Error saving python env config:', err);
@@ -212,7 +210,7 @@ const PythonEnvSettings: React.FC<PythonEnvSettingsProps> = ({ currentPath, onCl
             };
             await (window as any).api?.pythonEnvSave?.(currentPath, config);
             setCurrentConfig(config);
-            // Reload packages for the custom Python path
+
             await loadPackages();
         } catch (err) {
             console.error('Error saving custom python path:', err);
@@ -230,7 +228,7 @@ const PythonEnvSettings: React.FC<PythonEnvSettingsProps> = ({ currentPath, onCl
             setCurrentConfig(null);
             setShowCustomInput(false);
             setCustomPath('');
-            // Reload packages (will use fallback/system Python)
+
             await loadPackages();
         } catch (err) {
             console.error('Error clearing python env config:', err);
@@ -249,7 +247,7 @@ const PythonEnvSettings: React.FC<PythonEnvSettingsProps> = ({ currentPath, onCl
             if (result?.success) {
                 setSuccess(result.message || 'Virtual environment created successfully!');
                 setShowCreateVenv(false);
-                // Refresh detected envs, config, and packages for new env
+
                 await detectEnvs();
                 await loadConfig();
                 await loadPackages();
@@ -291,7 +289,7 @@ const PythonEnvSettings: React.FC<PythonEnvSettingsProps> = ({ currentPath, onCl
     };
 
     if (compact) {
-        // Compact dropdown version for quick selection
+
         return (
             <div className="relative">
                 <select
@@ -355,7 +353,6 @@ const PythonEnvSettings: React.FC<PythonEnvSettingsProps> = ({ currentPath, onCl
                 Workspace: {currentPath || 'None'}
             </div>
 
-            {/* Detected Environments */}
             <div className="space-y-1">
                 <div className="text-xs text-gray-400 mb-2">Detected Environments:</div>
                 {loading ? (
@@ -392,7 +389,6 @@ const PythonEnvSettings: React.FC<PythonEnvSettingsProps> = ({ currentPath, onCl
                 )}
             </div>
 
-            {/* Custom Path Option */}
             <div className="pt-2 border-t theme-border">
                 <button
                     onClick={() => setShowCustomInput(!showCustomInput)}
@@ -421,7 +417,6 @@ const PythonEnvSettings: React.FC<PythonEnvSettingsProps> = ({ currentPath, onCl
                 )}
             </div>
 
-            {/* Create New Venv */}
             <div className="pt-2 border-t theme-border">
                 <button
                     onClick={() => setShowCreateVenv(!showCreateVenv)}
@@ -462,7 +457,6 @@ const PythonEnvSettings: React.FC<PythonEnvSettingsProps> = ({ currentPath, onCl
                 )}
             </div>
 
-            {/* Package Management - always show when we have a path */}
             {currentPath && (
                 <div className="pt-2 border-t theme-border">
                     <button
@@ -478,7 +472,6 @@ const PythonEnvSettings: React.FC<PythonEnvSettingsProps> = ({ currentPath, onCl
                     </button>
                     {showPackages && (
                         <div className="mt-2 space-y-3">
-                            {/* Quick Install Bundles */}
                             <div className="space-y-1">
                                 <div className="text-xs text-gray-500">Quick Install:</div>
                                 <div className="flex flex-wrap gap-1">
@@ -497,7 +490,6 @@ const PythonEnvSettings: React.FC<PythonEnvSettingsProps> = ({ currentPath, onCl
                                 </div>
                             </div>
 
-                            {/* Install Custom Package */}
                             <div className="flex gap-2">
                                 <input
                                     type="text"
@@ -517,7 +509,6 @@ const PythonEnvSettings: React.FC<PythonEnvSettingsProps> = ({ currentPath, onCl
                                 </button>
                             </div>
 
-                            {/* Package List */}
                             <div className="space-y-1">
                                 <div className="flex items-center gap-2">
                                     <input
@@ -567,7 +558,6 @@ const PythonEnvSettings: React.FC<PythonEnvSettingsProps> = ({ currentPath, onCl
                 </div>
             )}
 
-            {/* Current Config Display */}
             {currentConfig && (
                 <div className="pt-2 border-t theme-border">
                     <div className="flex items-center justify-between">
@@ -595,7 +585,6 @@ const PythonEnvSettings: React.FC<PythonEnvSettingsProps> = ({ currentPath, onCl
                 </div>
             )}
 
-            {/* Re-run Setup Wizard */}
             <div className="pt-2 border-t theme-border">
                 <button
                     onClick={async () => {

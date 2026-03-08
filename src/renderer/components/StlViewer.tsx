@@ -80,7 +80,6 @@ const StlViewer: React.FC<StlViewerProps> = ({ nodeId, contentDataRef }) => {
         link.click();
     }, [filePath]);
 
-    // Expose methods on paneData for header buttons
     useEffect(() => {
         if (paneData) {
             paneData.resetCamera = resetCamera;
@@ -97,21 +96,18 @@ const StlViewer: React.FC<StlViewerProps> = ({ nodeId, contentDataRef }) => {
         }
     }, [paneData, resetCamera, viewAxis, wireframe, showAxes, showGrid, takeScreenshot, opacity]);
 
-    // Update wireframe on mesh
     useEffect(() => {
         if (meshRef.current) {
             (meshRef.current.material as THREE.MeshStandardMaterial).wireframe = wireframe;
         }
     }, [wireframe]);
 
-    // Update color on mesh
     useEffect(() => {
         if (meshRef.current) {
             (meshRef.current.material as THREE.MeshStandardMaterial).color.set(meshColor);
         }
     }, [meshColor]);
 
-    // Update opacity on mesh
     useEffect(() => {
         if (meshRef.current) {
             const mat = meshRef.current.material as THREE.MeshStandardMaterial;
@@ -121,17 +117,14 @@ const StlViewer: React.FC<StlViewerProps> = ({ nodeId, contentDataRef }) => {
         }
     }, [opacity]);
 
-    // Toggle axes visibility
     useEffect(() => {
         if (axesRef.current) axesRef.current.visible = showAxes;
     }, [showAxes]);
 
-    // Toggle grid visibility
     useEffect(() => {
         if (gridRef.current) gridRef.current.visible = showGrid;
     }, [showGrid]);
 
-    // Initialize scene and load STL
     useEffect(() => {
         if (!containerRef.current || !filePath) return;
 
@@ -139,16 +132,13 @@ const StlViewer: React.FC<StlViewerProps> = ({ nodeId, contentDataRef }) => {
         const width = container.clientWidth;
         const height = container.clientHeight;
 
-        // Scene
         const scene = new THREE.Scene();
         scene.background = new THREE.Color('#1a1a2e');
         sceneRef.current = scene;
 
-        // Camera
         const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 10000);
         cameraRef.current = camera;
 
-        // Renderer
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(width, height);
         renderer.setPixelRatio(window.devicePixelRatio);
@@ -156,7 +146,6 @@ const StlViewer: React.FC<StlViewerProps> = ({ nodeId, contentDataRef }) => {
         container.appendChild(renderer.domElement);
         rendererRef.current = renderer;
 
-        // Controls
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.dampingFactor = 0.1;
@@ -165,7 +154,6 @@ const StlViewer: React.FC<StlViewerProps> = ({ nodeId, contentDataRef }) => {
         controls.panSpeed = 0.6;
         controlsRef.current = controls;
 
-        // Lighting
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         scene.add(ambientLight);
 
@@ -178,13 +166,11 @@ const StlViewer: React.FC<StlViewerProps> = ({ nodeId, contentDataRef }) => {
         dirLight2.position.set(-5, -5, -5);
         scene.add(dirLight2);
 
-        // Grid
         const grid = new THREE.GridHelper(100, 50, 0x444466, 0x333355);
         grid.position.y = 0;
         scene.add(grid);
         gridRef.current = grid;
 
-        // Axes helper (custom colored lines)
         const axesGroup = new THREE.Group();
         const axisLength = 50;
 
@@ -201,7 +187,6 @@ const StlViewer: React.FC<StlViewerProps> = ({ nodeId, contentDataRef }) => {
         scene.add(axesGroup);
         axesRef.current = axesGroup;
 
-        // Load STL
         const loader = new STLLoader();
         (async () => {
             try {
@@ -212,14 +197,12 @@ const StlViewer: React.FC<StlViewerProps> = ({ nodeId, contentDataRef }) => {
                 const geometry = loader.parse(uint8.buffer);
                 geometry.computeVertexNormals();
 
-                // Center the geometry
                 geometry.computeBoundingBox();
                 const bbox = geometry.boundingBox!;
                 const center = new THREE.Vector3();
                 bbox.getCenter(center);
                 geometry.translate(-center.x, -center.y, -center.z);
 
-                // Move so bottom sits on grid
                 geometry.computeBoundingBox();
                 const minY = geometry.boundingBox!.min.y;
                 geometry.translate(0, -minY, 0);
@@ -238,13 +221,11 @@ const StlViewer: React.FC<StlViewerProps> = ({ nodeId, contentDataRef }) => {
                 scene.add(mesh);
                 meshRef.current = mesh;
 
-                // Fit grid to model
                 const modelBox = new THREE.Box3().setFromObject(mesh);
                 const modelSize = modelBox.getSize(new THREE.Vector3());
                 const maxDim = Math.max(modelSize.x, modelSize.y, modelSize.z);
                 grid.scale.setScalar(Math.ceil(maxDim / 50) || 1);
 
-                // Set info
                 const verts = geometry.attributes.position.count;
                 const tris = geometry.index ? geometry.index.count / 3 : verts / 3;
                 setMeshInfo({
@@ -253,7 +234,6 @@ const StlViewer: React.FC<StlViewerProps> = ({ nodeId, contentDataRef }) => {
                     size: `${modelSize.x.toFixed(1)} x ${modelSize.y.toFixed(1)} x ${modelSize.z.toFixed(1)}`,
                 });
 
-                // Position camera
                 const distance = maxDim * 2;
                 camera.position.set(distance * 0.5, distance * 0.5, distance);
                 camera.lookAt(0, modelSize.y / 2, 0);
@@ -268,7 +248,6 @@ const StlViewer: React.FC<StlViewerProps> = ({ nodeId, contentDataRef }) => {
             }
         })();
 
-        // Animation loop
         const animate = () => {
             frameRef.current = requestAnimationFrame(animate);
             controls.update();
@@ -276,7 +255,6 @@ const StlViewer: React.FC<StlViewerProps> = ({ nodeId, contentDataRef }) => {
         };
         animate();
 
-        // Resize
         const handleResize = () => {
             const w = container.clientWidth;
             const h = container.clientHeight;
@@ -296,7 +274,7 @@ const StlViewer: React.FC<StlViewerProps> = ({ nodeId, contentDataRef }) => {
             if (container.contains(renderer.domElement)) {
                 container.removeChild(renderer.domElement);
             }
-            // Dispose geometry and materials
+
             scene.traverse((obj) => {
                 if ((obj as THREE.Mesh).geometry) (obj as THREE.Mesh).geometry.dispose();
                 if ((obj as THREE.Mesh).material) {
@@ -306,11 +284,10 @@ const StlViewer: React.FC<StlViewerProps> = ({ nodeId, contentDataRef }) => {
                 }
             });
         };
-    }, [filePath]); // Only re-run when file changes
+    }, [filePath]);
 
     return (
         <div className="flex-1 flex flex-col overflow-hidden theme-bg-primary">
-            {/* 3D Viewport */}
             <div ref={containerRef} className="flex-1 relative overflow-hidden">
                 {loading && !error && (
                     <div className="absolute inset-0 flex items-center justify-center z-10">
@@ -326,7 +303,6 @@ const StlViewer: React.FC<StlViewerProps> = ({ nodeId, contentDataRef }) => {
                     </div>
                 )}
 
-                {/* Axis view buttons - bottom left corner */}
                 {!loading && !error && (
                     <div className="absolute bottom-2 left-2 z-20 flex flex-col gap-1" style={{ pointerEvents: 'auto' }}>
                         <div className="flex gap-1">
@@ -334,7 +310,6 @@ const StlViewer: React.FC<StlViewerProps> = ({ nodeId, contentDataRef }) => {
                             <button onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); viewAxis('y'); }} className="w-6 h-6 rounded text-[10px] font-bold flex items-center justify-center" style={{ backgroundColor: 'rgba(34,197,94,0.3)', color: '#22c55e' }} title="View from +Y">Y</button>
                             <button onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); viewAxis('z'); }} className="w-6 h-6 rounded text-[10px] font-bold flex items-center justify-center" style={{ backgroundColor: 'rgba(59,130,246,0.3)', color: '#3b82f6' }} title="View from +Z">Z</button>
                         </div>
-                        {/* Color picker */}
                         <div className="flex items-center gap-1">
                             <input
                                 type="color"
@@ -349,7 +324,6 @@ const StlViewer: React.FC<StlViewerProps> = ({ nodeId, contentDataRef }) => {
                 )}
             </div>
 
-            {/* Status Bar */}
             <div className="px-3 py-1 text-xs theme-bg-secondary border-t theme-border theme-text-muted flex items-center gap-4">
                 <span>{getFileName(filePath)}</span>
                 {meshInfo && (

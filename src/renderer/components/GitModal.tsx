@@ -87,7 +87,6 @@ const GitModal: React.FC<GitModalProps> = ({
     return (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={onClose}>
             <div className="w-full max-w-5xl max-h-[85vh] theme-bg-primary rounded-lg border theme-border flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-                {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b theme-border">
                     <div className="flex items-center gap-3">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-purple-400">
@@ -104,7 +103,6 @@ const GitModal: React.FC<GitModalProps> = ({
                     </button>
                 </div>
 
-                {/* Tab Bar */}
                 <div className="flex border-b theme-border px-4">
                     {(['status', 'diff', 'branches', 'history'] as const).map(tab => (
                         <button
@@ -126,12 +124,11 @@ const GitModal: React.FC<GitModalProps> = ({
                     ))}
                 </div>
 
-                {/* Tab Content */}
                 <div className="flex-1 overflow-auto p-4">
                     {!gitStatus ? (
                         <div className="text-center theme-text-muted py-8">No git repository in this directory</div>
                     ) : gitModalTab === 'status' ? (
-                        /* Status Tab */
+
                         <div className="space-y-4">
                             <div className="flex items-center gap-4 text-sm">
                                 <span className="theme-text-primary font-medium">Branch: {gitStatus.branch}</span>
@@ -179,7 +176,6 @@ const GitModal: React.FC<GitModalProps> = ({
                                 </div>
                             </div>
 
-                            {/* File Diff Preview */}
                             {gitSelectedFile && gitFileDiff && (
                                 <div className="theme-bg-secondary rounded-lg p-3">
                                     <div className="flex items-center justify-between mb-2">
@@ -244,7 +240,7 @@ const GitModal: React.FC<GitModalProps> = ({
                             </div>
                         </div>
                     ) : gitModalTab === 'diff' ? (
-                        /* Diff Tab */
+
                         <div className="space-y-4">
                             <div className="flex gap-2 mb-4">
                                 <button onClick={loadGitDiff} className="theme-button px-3 py-1 rounded text-sm">Refresh Diff</button>
@@ -302,9 +298,8 @@ const GitModal: React.FC<GitModalProps> = ({
                             )}
                         </div>
                     ) : gitModalTab === 'branches' ? (
-                        /* Branches Tab */
+
                         <div className="space-y-4">
-                            {/* Create New Branch */}
                             <div className="theme-bg-secondary rounded-lg p-3">
                                 <h3 className="text-sm font-medium theme-text-primary mb-2">Create New Branch</h3>
                                 <div className="flex gap-2">
@@ -325,7 +320,6 @@ const GitModal: React.FC<GitModalProps> = ({
                                 </div>
                             </div>
 
-                            {/* Local Branches */}
                             <div className="theme-bg-secondary rounded-lg p-3">
                                 <div className="flex items-center justify-between mb-2">
                                     <h3 className="text-sm font-medium theme-text-primary flex items-center gap-2">
@@ -377,7 +371,6 @@ const GitModal: React.FC<GitModalProps> = ({
                                 )}
                             </div>
 
-                            {/* Remote Branches */}
                             {gitBranches?.branches?.some((b: string) => b.startsWith('remotes/')) && (
                                 <div className="theme-bg-secondary rounded-lg p-3">
                                     <h3 className="text-sm font-medium theme-text-primary mb-2 flex items-center gap-2">
@@ -425,9 +418,8 @@ const GitModal: React.FC<GitModalProps> = ({
                             )}
                         </div>
                     ) : gitModalTab === 'history' ? (
-                        /* History Tab */
+
                         <div className="flex gap-4 h-full">
-                            {/* Commit List */}
                             <div className="w-1/2 theme-bg-secondary rounded-lg p-3 flex flex-col">
                                 <div className="flex items-center justify-between mb-2">
                                     <h3 className="text-sm font-medium theme-text-primary">Commit History</h3>
@@ -455,7 +447,6 @@ const GitModal: React.FC<GitModalProps> = ({
                                 </div>
                             </div>
 
-                            {/* Commit Details */}
                             <div className="w-1/2 theme-bg-secondary rounded-lg p-3 flex flex-col">
                                 <h3 className="text-sm font-medium theme-text-primary mb-2">Commit Details</h3>
                                 {gitSelectedCommit ? (

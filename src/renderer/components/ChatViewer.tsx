@@ -30,8 +30,8 @@ const renderAttachmentThumbnails = () => {
                     <div key={file.id} className="relative group">
                         <div className="flex items-center gap-2 bg-gray-800 rounded-lg p-2 border border-gray-600 min-w-0">
                             <div className="w-10 h-10 rounded bg-gray-700 flex items-center justify-center flex-shrink-0">
-                                {file.preview ? 
-                                    <img src={file.preview} alt={file.name} className="w-full h-full object-cover rounded" /> : 
+                                {file.preview ?
+                                    <img src={file.preview} alt={file.name} className="w-full h-full object-cover rounded" /> :
                                     getThumbnailIcon(file.name, file.type)}
                             </div>
                             <div className="flex flex-col min-w-0 flex-1">
@@ -53,56 +53,51 @@ const renderAttachmentThumbnails = () => {
     );
 };
 
-
-
     const handleDeleteSelectedMessages = async () => {
     const selectedIds = Array.from(selectedMessages);
     if (selectedIds.length === 0) return;
-    
+
     const activePaneData = contentDataRef.current[activeContentPaneId];
     if (!activePaneData || !activePaneData.chatMessages) {
         console.error("No active chat pane data found for message deletion.");
         return;
     }
-    
+
     const conversationId = activePaneData.contentId;
-    
+
     try {
-        // Get the actual message_id from the message object
+
         const messagesToDelete = activePaneData.chatMessages.allMessages.filter(
             msg => selectedIds.includes(msg.id || msg.timestamp)
         );
-        
+
         console.log('Attempting to delete messages:', messagesToDelete.map(m => ({
             frontendId: m.id,
             message_id: m.message_id,
             timestamp: m.timestamp
         })));
-        
-        // Delete using message_id if available, otherwise use id
+
         const deleteResults = await Promise.all(
             messagesToDelete.map(async msg => {
                 const idToUse = msg.message_id || msg.id || msg.timestamp;
                 console.log(`Deleting message with ID: ${idToUse}`);
-                const result = await window.api.deleteMessage({ 
-                    conversationId, 
-                    messageId: idToUse 
+                const result = await window.api.deleteMessage({
+                    conversationId,
+                    messageId: idToUse
                 });
                 return { ...result, frontendId: msg.id };
             })
         );
-        
+
         console.log('Delete results:', deleteResults);
-        
-        // Check if any actually deleted
+
         const successfulDeletes = deleteResults.filter(r => r.success && r.rowsAffected > 0);
         if (successfulDeletes.length === 0) {
             setError("Failed to delete messages from database");
             console.error("No messages were deleted from DB");
             return;
         }
-        
-        // Remove from local state
+
         activePaneData.chatMessages.allMessages = activePaneData.chatMessages.allMessages.filter(
             msg => !selectedIds.includes(msg.id || msg.timestamp)
         );
@@ -110,12 +105,12 @@ const renderAttachmentThumbnails = () => {
             -activePaneData.chatMessages.displayedMessageCount
         );
         activePaneData.chatStats = getConversationStats(activePaneData.chatMessages.allMessages);
-        
+
         setRootLayoutNode(prev => ({ ...prev }));
         setSelectedMessages(new Set());
         setMessageContextMenuPos(null);
         setMessageSelectionMode(false);
-        
+
         console.log(`Successfully deleted ${successfulDeletes.length} of ${selectedIds.length} messages`);
     } catch (err) {
         console.error('Error deleting messages:', err);
@@ -129,7 +124,7 @@ const handleSummarizeAndStart = async () => {
         setContextMenuPos(null);
 
         try {
-           
+
             const convosContentPromises = selectedIds.map(async (id, index) => {
                 const messages = await window.api.getConversationMessages(id);
                 if (!Array.isArray(messages)) {
@@ -140,24 +135,20 @@ const handleSummarizeAndStart = async () => {
                 return `Conversation ${index + 1} (ID: ${id}):\n---\n${messagesText}\n---`;
             });
             const convosContent = await Promise.all(convosContentPromises);
-            
-           
+
             const fullPrompt = `Please provide a concise summary of the following ${selectedIds.length} conversation(s):\n\n` + convosContent.join('\n\n');
 
-           
             const newConversation = await createNewConversation();
             if (!newConversation) {
                 throw new Error('Failed to create a new conversation for the summary.');
             }
 
-           
             setActiveConversationId(newConversation.id);
             setCurrentConversation(newConversation);
             setMessages([]);
             setAllMessages([]);
             setDisplayedMessageCount(10);
 
-           
             const newStreamId = generateId();
             streamIdRef.current = newStreamId;
             setIsStreaming(true);
@@ -186,14 +177,13 @@ const handleSummarizeAndStart = async () => {
 
             setMessages([userMessage, assistantPlaceholderMessage]);
             setAllMessages([userMessage, assistantPlaceholderMessage]);
-            
-           
+
             await window.api.executeCommandStream({
                 commandstr: fullPrompt,
                 currentPath,
                 conversationId: newConversation.id,
                 model: currentModel,
-                provider: currentProvider, 
+                provider: currentProvider,
                 npc: selectedNpc ? selectedNpc.name : currentNPC,
                 npcSource: selectedNpc ? selectedNpc.source : 'global',
                 attachments: [],
@@ -228,7 +218,7 @@ const handleSummarizeAndDraft = async () => {
             return `Conversation ${index + 1} (ID: ${id}):\n---\n${messagesText}\n---`;
         });
         const convosContent = await Promise.all(convosContentPromises);
-        
+
         const fullPrompt = `Please provide a concise summary of the following ${selectedIds.length} conversation(s):\n\n` + convosContent.join('\n\n');
 
         if (!activeConversationId) {
@@ -236,7 +226,7 @@ const handleSummarizeAndDraft = async () => {
         }
 
         setInput(fullPrompt);
-        
+
     } catch (err) {
         console.error('Error summarizing conversations for draft:', err);
         setError(err.message);
@@ -265,7 +255,7 @@ const handleSummarizeAndPrompt = async () => {
                     return `Conversation ${index + 1} (ID: ${id}):\n---\n${messagesText}\n---`;
                 });
                 const convosContent = await Promise.all(convosContentPromises);
-                
+
                 const fullPrompt = `${customPrompt}\n\nConversations to analyze:\n\n` + convosContent.join('\n\n');
 
                 const { conversation: newConversation, paneId: newPaneId } = await createNewConversation(true);
@@ -311,7 +301,7 @@ const handleSummarizeAndPrompt = async () => {
         }
     });
 };
-// In ChatInterface.jsx
+
 const handleResendMessage = (messageToResend) => {
     if (isStreaming) {
         console.warn('Cannot resend while streaming');
@@ -336,73 +326,67 @@ const handleResendWithSettings = async (messageToResend, selectedModel, selected
         console.warn('Cannot resend while another operation is in progress.');
         return;
     }
-    
+
     const conversationId = activePaneData.contentId;
     let newStreamId = null;
 
     try {
-        // Find the user message and the assistant response that followed
+
         const messageIdToResend = messageToResend.id || messageToResend.timestamp;
         const allMessages = activePaneData.chatMessages.allMessages;
-        const userMsgIndex = allMessages.findIndex(m => 
+        const userMsgIndex = allMessages.findIndex(m =>
             (m.id || m.timestamp) === messageIdToResend
         );
-        
+
         console.log('[RESEND] Found user message at index:', userMsgIndex);
-        
+
         if (userMsgIndex !== -1) {
-            // Collect messages to delete (the user message and any assistant responses after it)
+
             const messagesToDelete = [];
-            
-            // Add the original user message to delete list
+
             const userMsg = allMessages[userMsgIndex];
             if (userMsg.message_id || userMsg.id) {
                 messagesToDelete.push(userMsg.message_id || userMsg.id);
             }
-            
-            // Add the assistant response that followed (if exists)
-            if (userMsgIndex + 1 < allMessages.length && 
+
+            if (userMsgIndex + 1 < allMessages.length &&
                 allMessages[userMsgIndex + 1].role === 'assistant') {
                 const assistantMsg = allMessages[userMsgIndex + 1];
                 if (assistantMsg.message_id || assistantMsg.id) {
                     messagesToDelete.push(assistantMsg.message_id || assistantMsg.id);
                 }
             }
-            
+
             console.log('[RESEND] Messages to delete:', messagesToDelete);
-            
-            // Delete from database
+
             for (const msgId of messagesToDelete) {
                 try {
-                    const result = await window.api.deleteMessage({ 
-                        conversationId, 
-                        messageId: msgId 
+                    const result = await window.api.deleteMessage({
+                        conversationId,
+                        messageId: msgId
                     });
                     console.log('[RESEND] Deleted message:', msgId, 'Result:', result);
                 } catch (err) {
                     console.error('[RESEND] Error deleting message:', msgId, err);
                 }
             }
-            
-            // Remove from local state - keep everything BEFORE the user message
+
             activePaneData.chatMessages.allMessages = allMessages.slice(0, userMsgIndex);
             activePaneData.chatMessages.messages = activePaneData.chatMessages.allMessages.slice(
                 -activePaneData.chatMessages.displayedMessageCount
             );
-            
+
             console.log('[RESEND] Messages after deletion:', activePaneData.chatMessages.allMessages.length);
         }
-        
-        // Now send the new message
+
         newStreamId = generateId();
         streamToPaneRef.current[newStreamId] = activeContentPaneId;
         setIsStreaming(true);
 
         const selectedNpc = availableNPCs.find(npc => npc.value === selectedNPC);
 
-        // Create NEW user message (don't reuse the old one)
         const newUserMessage = {
-            id: generateId(), // NEW ID
+            id: generateId(),
             role: 'user',
             content: messageToResend.content,
             timestamp: new Date().toISOString(),
@@ -420,14 +404,13 @@ const handleResendWithSettings = async (messageToResend, selectedModel, selected
             npc: selectedNPC,
         };
 
-        // Add new messages
         activePaneData.chatMessages.allMessages.push(newUserMessage, assistantPlaceholderMessage);
         activePaneData.chatMessages.messages = activePaneData.chatMessages.allMessages.slice(
             -activePaneData.chatMessages.displayedMessageCount
         );
 
         console.log('[RESEND] Added new messages, total now:', activePaneData.chatMessages.allMessages.length);
-        
+
         setRootLayoutNode(prev => ({ ...prev }));
 
         const selectedModelObj = availableModels.find(m => m.value === selectedModel);
@@ -445,15 +428,14 @@ const handleResendWithSettings = async (messageToResend, selectedModel, selected
                 name: att.name, path: att.path, size: att.size, type: att.type
             })) || [],
             streamId: newStreamId,
-    isResend: true  // ADD THIS FLAG
-            
-            
+    isResend: true
+
         });
 
     } catch (err) {
         console.error('[RESEND] Error resending message:', err);
         setError(err.message);
-        
+
         if (activePaneData.chatMessages) {
             const msgIndex = activePaneData.chatMessages.allMessages.findIndex(m => m.id === newStreamId);
             if (msgIndex !== -1) {
@@ -468,7 +450,7 @@ const handleResendWithSettings = async (messageToResend, selectedModel, selected
         if (Object.keys(streamToPaneRef.current).length === 0) {
             setIsStreaming(false);
         }
-        
+
         setRootLayoutNode(prev => ({ ...prev }));
     }
 };

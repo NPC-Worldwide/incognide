@@ -30,12 +30,11 @@ const DBTool: React.FC<DBToolProps> = ({
     currentNPC,
     onAddToDash
 }) => {
-    // Database client
+
     const dbClient = useMemo<DatabaseClient>(() =>
         createWindowApiDatabaseClient((window as any).api),
     []);
 
-    // Query state - same as DataDash
     const [sqlQuery, setSqlQuery] = useState('SELECT * FROM conversation_history LIMIT 10;');
     const [queryResult, setQueryResult] = useState<any[] | null>(null);
     const [loadingQuery, setLoadingQuery] = useState(false);
@@ -47,14 +46,12 @@ const DBTool: React.FC<DBToolProps> = ({
     const [tableSchemaCache, setTableSchemaCache] = useState<Record<string, any[]>>({});
     const [queryHistory, setQueryHistory] = useState<{query: string, favorited: boolean, date: string}[]>([]);
 
-    // Natural language query
     const [sqlInputMode, setSqlInputMode] = useState<'sql' | 'nl'>('sql');
     const [nlQuery, setNlQuery] = useState('');
     const [generatedSql, setGeneratedSql] = useState('');
     const [generatingSql, setGeneratingSql] = useState(false);
     const [nlToSqlStreamId, setNlToSqlStreamId] = useState<string | null>(null);
 
-    // Database connection
     const [selectedDatabase, setSelectedDatabase] = useState<string>('~/npcsh_history.db');
     const [dbConnectionStatus, setDbConnectionStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
     const [dbConnectionInfo, setDbConnectionInfo] = useState<{
@@ -66,7 +63,6 @@ const DBTool: React.FC<DBToolProps> = ({
         dbType?: string;
     } | null>(null);
 
-    // Chart explorer
     const [chartExplorer, setChartExplorer] = useState({
         xCol: '',
         yCol: '',
@@ -74,13 +70,10 @@ const DBTool: React.FC<DBToolProps> = ({
         showChart: false
     });
 
-    // CSV export
     const [csvExportSettings, setCsvExportSettings] = useState({ alwaysPrompt: true });
 
-    // Tab state for Query vs Data Labeler views
     const [activeTab, setActiveTab] = useState<'query' | 'memory' | 'labels' | 'activity'>('query');
 
-    // Load query history from localStorage
     useEffect(() => {
         const savedHistory = localStorage.getItem('dataDashQueryHistory');
         if (savedHistory) {
@@ -92,7 +85,6 @@ const DBTool: React.FC<DBToolProps> = ({
         }
     }, []);
 
-    // Database connection functions (from DataDash)
     const testDbConnection = useCallback(async (connectionString: string) => {
         setDbConnectionStatus('connecting');
         setDbConnectionInfo(null);
@@ -168,7 +160,6 @@ const DBTool: React.FC<DBToolProps> = ({
         }
     }, [connectToDatabase]);
 
-    // Load tables on mount
     useEffect(() => {
         const fetchTables = async () => {
             if (dbTables.length === 0) {
@@ -202,7 +193,6 @@ const DBTool: React.FC<DBToolProps> = ({
         return labels[dbType] || dbType;
     };
 
-    // Query execution (from DataDash)
     const handleExecuteQuery = async () => {
         setLoadingQuery(true);
         setQueryError(null);
@@ -224,7 +214,6 @@ const DBTool: React.FC<DBToolProps> = ({
         }
     };
 
-    // History actions
     const handleHistoryAction = (index: number, action: 'run' | 'copy' | 'favorite' | 'delete') => {
         const item = queryHistory[index];
         if (!item) return;
@@ -250,7 +239,6 @@ const DBTool: React.FC<DBToolProps> = ({
         }
     };
 
-    // NL to SQL generation (from DataDash)
     const handleGenerateSql = async () => {
         if (!nlQuery.trim()) return;
         setGeneratingSql(true);
@@ -260,7 +248,7 @@ const DBTool: React.FC<DBToolProps> = ({
             const schemaInfo = await Promise.all(
                 dbTables.map(async (table) => {
                     const schemaRes = await (window as any).api.getTableSchema({ tableName: table });
-                    if (schemaRes.error) return `/* Could not load schema for ${table} */`;
+                    if (schemaRes.error) return ``;
                     const columns = schemaRes.schema
                         .map((col: any) => `  ${col.name} ${col.type}`)
                         .join(',\n');
@@ -295,7 +283,6 @@ Please provide only the SQL query without any markdown formatting or explanation
         }
     };
 
-    // Handle streaming response for NL to SQL
     useEffect(() => {
         if (!nlToSqlStreamId) return;
         const handleStreamData = (_: any, { streamId, chunk }: { streamId: string, chunk: any }) => {
@@ -341,7 +328,7 @@ Please provide only the SQL query without any markdown formatting or explanation
         (window as any).api?.onStreamEnd?.(handleStreamEnd);
 
         return () => {
-            // Cleanup handled by electron
+
         };
     }, [nlToSqlStreamId]);
 
@@ -350,7 +337,6 @@ Please provide only the SQL query without any markdown formatting or explanation
         setSqlInputMode('sql');
     };
 
-    // CSV export (from DataDash)
     const generateCSVFilename = (query: string) => {
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
         let description = 'query_result';
@@ -396,7 +382,6 @@ Please provide only the SQL query without any markdown formatting or explanation
         downloadCSV(data, suggestedFilename);
     };
 
-    // Add to dashboard handler
     const handleAddToDash = () => {
         if (!queryResult || !onAddToDash) return;
 
@@ -418,7 +403,6 @@ Please provide only the SQL query without any markdown formatting or explanation
 
     return (
         <div className="flex flex-col h-full theme-bg-secondary overflow-hidden">
-            {/* Header with tabs */}
             <div className="flex items-center border-b theme-border flex-shrink-0">
                 <button
                     onClick={() => setActiveTab('query')}
@@ -466,10 +450,8 @@ Please provide only the SQL query without any markdown formatting or explanation
                 </button>
             </div>
 
-            {/* Tab content */}
             {activeTab === 'query' ? (
             <div className="flex-1 overflow-auto p-3">
-                {/* Connection String Input */}
                 <div className={`mb-4 p-3 rounded-lg border ${
                     dbConnectionStatus === 'connected' ? 'bg-green-500/10 border-green-600/50' :
                     dbConnectionStatus === 'error' ? 'bg-red-500/10 border-red-600/50' :
@@ -530,7 +512,6 @@ Please provide only the SQL query without any markdown formatting or explanation
                         </button>
                     </div>
 
-                    {/* Connection Info */}
                     {dbConnectionInfo && (
                         <div className="mt-2 text-xs">
                             {dbConnectionInfo.error ? (
@@ -573,7 +554,6 @@ Please provide only the SQL query without any markdown formatting or explanation
                         </div>
                     )}
 
-                    {/* Connection string examples */}
                     <div className="mt-2 text-xs theme-text-muted">
                         <p className="mb-1">Connection string formats:</p>
                         <div className="grid grid-cols-1 gap-0.5 font-mono opacity-70">
@@ -584,7 +564,6 @@ Please provide only the SQL query without any markdown formatting or explanation
                     </div>
                 </div>
 
-                {/* Schema and History */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
                     <div className="border theme-border rounded-lg p-3 flex flex-col theme-bg-tertiary">
                         <h5 className="font-semibold mb-2 flex items-center gap-2 theme-text-primary">
@@ -654,7 +633,6 @@ Please provide only the SQL query without any markdown formatting or explanation
                     </div>
                 </div>
 
-                {/* Query Mode Toggle */}
                 <div className="flex items-center gap-2 mb-2">
                     <span className="text-sm font-semibold">Query Mode:</span>
                     <button
@@ -671,7 +649,6 @@ Please provide only the SQL query without any markdown formatting or explanation
                     </button>
                 </div>
 
-                {/* Query Input */}
                 {sqlInputMode === 'nl' ? (
                     <div className="space-y-3">
                         <div className="grid grid-cols-2 gap-3">
@@ -727,7 +704,6 @@ Please provide only the SQL query without any markdown formatting or explanation
                     </>
                 )}
 
-                {/* Loading/Error states */}
                 {loadingQuery && (
                     <div className="flex justify-center p-4">
                         <Loader className="animate-spin"/>
@@ -737,7 +713,6 @@ Please provide only the SQL query without any markdown formatting or explanation
                     <div className="text-red-400 p-3 mt-2 rounded theme-bg-tertiary">{queryError}</div>
                 )}
 
-                {/* Results */}
                 {queryResult && queryResult.length > 0 && (
                     <div className="mt-4">
                         <div className="flex justify-between items-center mb-4">
@@ -760,7 +735,6 @@ Please provide only the SQL query without any markdown formatting or explanation
                             </div>
                         </div>
 
-                        {/* Chart Explorer */}
                         <div className="border theme-border rounded-lg p-3 mb-4 theme-bg-tertiary">
                             <h6 className="font-semibold text-sm mb-3 flex items-center gap-2">
                                 <BarChartIcon size={16} /> Chart Explorer
@@ -814,7 +788,6 @@ Please provide only the SQL query without any markdown formatting or explanation
                             </div>
                         </div>
 
-                        {/* Chart */}
                         {chartExplorer.showChart && chartExplorer.xCol && chartExplorer.yCol && (
                             <div className="border theme-border rounded-lg p-3 mb-4 h-80">
                                 <QueryChart
@@ -829,7 +802,6 @@ Please provide only the SQL query without any markdown formatting or explanation
                             </div>
                         )}
 
-                        {/* Results Table */}
                         <div className="mt-2 overflow-x-auto theme-border border rounded-lg max-h-96">
                             <table className="w-full text-sm text-left">
                                 <thead className="theme-bg-tertiary sticky top-0">
