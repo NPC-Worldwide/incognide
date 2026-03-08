@@ -600,7 +600,42 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
 
                 return true;
             });
+
         }
+
+        // Handle image paste — save to temp file and type path into terminal
+        const handleImagePaste = async (e: ClipboardEvent) => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            const imageItem = Array.from(items).find(item => item.type.startsWith('image/'));
+            if (!imageItem) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const blob = imageItem.getAsFile();
+            if (!blob) return;
+            const reader = new FileReader();
+            reader.onloadend = async () => {
+                const base64 = (reader.result as string).split(',')[1];
+                const ext = imageItem.type.split('/')[1] || 'png';
+                const fileName = `pasted-image-${Date.now()}.${ext}`;
+                try {
+                    const result = await (window as any).api?.saveTempFile?.({
+                        name: fileName,
+                        data: base64,
+                        encoding: 'base64'
+                    });
+                    if (result?.path && isSessionReady.current) {
+                        const bracketedText = '\x1b[200~' + result.path + '\x1b[201~';
+                        window.api.writeToTerminal({ id: terminalId, data: bracketedText });
+                    }
+                } catch (err) {
+                    console.error('Failed to paste image into terminal:', err);
+                }
+            };
+            reader.readAsDataURL(blob);
+        };
+        const pasteContainer = terminalRef.current;
+        pasteContainer?.addEventListener('paste', handleImagePaste, true);
 
         let isEffectCancelled = false;
 
@@ -702,6 +737,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             removeClosedListener();
             resizeObserverRef.current?.disconnect();
             resizeObserverRef.current = null;
+            pasteContainer?.removeEventListener('paste', handleImagePaste, true);
             window.api.closeTerminalSession(terminalId);
         };
     }, [terminalId, shellType]);

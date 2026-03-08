@@ -16,6 +16,7 @@ import {
     Renderer as VFRenderer, Stave, StaveNote, Voice, Formatter,
     Beam, Accidental, StaveConnector
 } from 'vexflow';
+import { demoScores, DemoScore } from './scherzoLibrary';
 
 interface ScherzoProps {
     currentPath?: string;
@@ -278,9 +279,13 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
     const [notationUndoStack, setNotationUndoStack] = useState<Array<{ note: number; start: number; duration: number; velocity: number }[]>>([]);
     const [notationRedoStack, setNotationRedoStack] = useState<Array<{ note: number; start: number; duration: number; velocity: number }[]>>([]);
     const [notationClipboard, setNotationClipboard] = useState<Array<{ note: number; start: number; duration: number; velocity: number }>>([]);
-    const [notationMeasures, setNotationMeasures] = useState(16);
+    const [notationMeasures, setNotationMeasures] = useState(4);
+    const [showLibrary, setShowLibrary] = useState(false);
     const pianoRollScrollRef = useRef<HTMLDivElement>(null);
     const pianoRollGridRef = useRef<HTMLDivElement>(null);
+    const sheetMusicScrollRef = useRef<HTMLDivElement>(null);
+    const vfContainerRef = useRef<HTMLDivElement>(null);
+    const tabScrollRef = useRef<HTMLDivElement>(null);
     const notationAnimRef = useRef<number | null>(null);
     const notationOscillators = useRef<OscillatorNode[]>([]);
     const [pianoRollDrag, setPianoRollDrag] = useState<{
@@ -662,6 +667,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         { id: 'library', name: 'Library', icon: Library, group: 'browse' },
         { id: 'generator', name: 'Generate', icon: Sparkles, group: 'create' },
         { id: 'editor', name: 'Editor', icon: Waves, group: 'edit' },
+        { id: 'beats', name: 'Beat Maker', icon: Grid, group: 'create' },
         { id: 'dj', name: 'DJ Mixer', icon: Disc3, group: 'edit' },
         { id: 'analysis', name: 'Analysis', icon: Activity, group: 'analyze' },
         { id: 'notation', name: 'Notation', icon: Music2, group: 'analyze' },
@@ -1497,6 +1503,15 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
     const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
     const noteToName = (note: number) => `${noteNames[note % 12]}${Math.floor(note / 12) - 1}`;
 
+    const keySignatureToFifths = (key: string): number => {
+        const map: Record<string, number> = { 'Cb': -7, 'Gb': -6, 'Db': -5, 'Ab': -4, 'Eb': -3, 'Bb': -2, 'F': -1, 'C': 0, 'G': 1, 'D': 2, 'A': 3, 'E': 4, 'B': 5, 'F#': 6, 'C#': 7 };
+        return map[key] ?? 0;
+    };
+    const fifthsToKeySignature = (fifths: number): string => {
+        const map: Record<number, string> = { [-7]: 'Cb', [-6]: 'Gb', [-5]: 'Db', [-4]: 'Ab', [-3]: 'Eb', [-2]: 'Bb', [-1]: 'F', 0: 'C', 1: 'G', 2: 'D', 3: 'A', 4: 'E', 5: 'B', 6: 'F#', 7: 'C#' };
+        return map[fifths] ?? 'C';
+    };
+
     const playNote = useCallback((note: number, velocity: number = 0.5) => {
         if (!synthRef.current) synthRef.current = new AudioContext();
         const ctx = synthRef.current;
@@ -1532,6 +1547,20 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         }
     }, []);
 
+    const loadDemoScore = useCallback((demo: DemoScore) => {
+        setPianoNotes(demo.notes);
+        setNotationKeySignature(demo.key);
+        setNotationClef(demo.clef);
+        setNotationTimeSignature(demo.timeSignature);
+        setNotationBpm(demo.bpm);
+        setNotationMeasures(demo.measures);
+        setSelectedNotes(new Set());
+        setInputCursor(0);
+        setNotationUndoStack([]);
+        setNotationRedoStack([]);
+        setShowLibrary(false);
+    }, []);
+
     const pushNotationUndo = useCallback(() => {
         setNotationUndoStack(prev => [...prev.slice(-30), pianoNotes]);
         setNotationRedoStack([]);
@@ -1558,7 +1587,13 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
     const addPianoNote = useCallback((note: number, start: number, duration: number = 0.5, velocity: number = 0.8) => {
         pushNotationUndo();
         setPianoNotes(prev => [...prev, { note, start, duration, velocity }]);
-    }, [pushNotationUndo]);
+        // Auto-expand measures if note is near or past the end
+        const beatsPerMeas = notationTimeSignature[0];
+        const noteEndMeasure = Math.ceil((start + duration) / beatsPerMeas);
+        if (noteEndMeasure >= notationMeasures) {
+            setNotationMeasures(noteEndMeasure + 2);
+        }
+    }, [pushNotationUndo, notationTimeSignature, notationMeasures]);
 
     const deleteSelectedNotes = useCallback(() => {
         pushNotationUndo();
@@ -1725,6 +1760,237 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         }
     }, [pianoNotes, notationBpm, notationTimeSignature]);
 
+    const exportMusicXML = useCallback(async () => {
+        const [tsNum, tsDenom] = notationTimeSignature;
+        const beatsPerMeasure = tsNum * (4 / tsDenom);
+        const divisions = 4; // divisions per quarter note
+
+        // Group notes into measures
+        const measureNotes: Array<Array<{ note: number; start: number; duration: number; velocity: number }>> = [];
+        for (let m = 0; m < notationMeasures; m++) measureNotes.push([]);
+        for (const n of pianoNotes) {
+            const mIdx = Math.floor(n.start / beatsPerMeasure);
+            if (mIdx >= 0 && mIdx < notationMeasures) measureNotes[mIdx].push(n);
+        }
+
+        const midiToPitch = (midi: number) => {
+            const names = ['C', 'C', 'D', 'D', 'E', 'F', 'F', 'G', 'G', 'A', 'A', 'B'];
+            const alters = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0];
+            const pc = midi % 12;
+            const octave = Math.floor(midi / 12) - 1;
+            return { step: names[pc], alter: alters[pc], octave };
+        };
+
+        const durationToType = (dur: number): string => {
+            if (dur >= 4) return 'whole';
+            if (dur >= 2) return 'half';
+            if (dur >= 1) return 'quarter';
+            if (dur >= 0.5) return 'eighth';
+            if (dur >= 0.25) return '16th';
+            return '32nd';
+        };
+
+        let xml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="4.0">
+  <work><work-title>Scherzo Export</work-title></work>
+  <identification>
+    <creator type="composer">Incognide Scherzo</creator>
+    <encoding><software>Incognide Scherzo</software></encoding>
+  </identification>
+  <part-list>
+    <score-part id="P1"><part-name>Part 1</part-name></score-part>
+  </part-list>
+  <part id="P1">\n`;
+
+        for (let m = 0; m < notationMeasures; m++) {
+            xml += `    <measure number="${m + 1}">\n`;
+            if (m === 0) {
+                xml += `      <attributes>
+        <divisions>${divisions}</divisions>
+        <key><fifths>${keySignatureToFifths(notationKeySignature)}</fifths></key>
+        <time><beats>${tsNum}</beats><beat-type>${tsDenom}</beat-type></time>
+        <clef><sign>${notationClef === 'bass' ? 'F' : 'G'}</sign><line>${notationClef === 'bass' ? 4 : 2}</line></clef>
+      </attributes>
+      <direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>${notationBpm}</per-minute></metronome></direction-type></direction>\n`;
+            }
+
+            const notes = measureNotes[m].sort((a, b) => a.start - b.start);
+            const measureStart = m * beatsPerMeasure;
+
+            if (notes.length === 0) {
+                // Whole measure rest
+                xml += `      <note><rest/><duration>${Math.round(beatsPerMeasure * divisions)}</duration><type>whole</type></note>\n`;
+            } else {
+                let cursor = measureStart;
+                for (let i = 0; i < notes.length; i++) {
+                    const n = notes[i];
+                    const noteStart = n.start;
+
+                    // Rest before this note
+                    if (noteStart > cursor + 0.01) {
+                        const restDur = noteStart - cursor;
+                        xml += `      <note><rest/><duration>${Math.round(restDur * divisions)}</duration><type>${durationToType(restDur)}</type></note>\n`;
+                    }
+
+                    const { step, alter, octave } = midiToPitch(n.note);
+                    const dur = Math.min(n.duration, measureStart + beatsPerMeasure - noteStart);
+                    const xmlDur = Math.round(dur * divisions);
+                    const dynamics = Math.round(n.velocity * 127);
+
+                    // Check if this note starts at same time as next (chord)
+                    const isChord = i > 0 && Math.abs(notes[i].start - notes[i - 1].start) < 0.01;
+
+                    xml += `      <note>\n`;
+                    if (isChord) xml += `        <chord/>\n`;
+                    xml += `        <pitch><step>${step}</step>${alter ? `<alter>${alter}</alter>` : ''}<octave>${octave}</octave></pitch>\n`;
+                    xml += `        <duration>${xmlDur}</duration>\n`;
+                    xml += `        <type>${durationToType(dur)}</type>\n`;
+                    xml += `        <dynamics><other-dynamics>${dynamics}</other-dynamics></dynamics>\n`;
+                    xml += `      </note>\n`;
+
+                    if (!isChord) cursor = noteStart + dur;
+                }
+
+                // Fill remaining measure with rest
+                const remaining = measureStart + beatsPerMeasure - cursor;
+                if (remaining > 0.01) {
+                    xml += `      <note><rest/><duration>${Math.round(remaining * divisions)}</duration><type>${durationToType(remaining)}</type></note>\n`;
+                }
+            }
+            xml += `    </measure>\n`;
+        }
+
+        xml += `  </part>\n</score-partwise>`;
+
+        const result = await (window as any).api?.showSaveDialog?.({
+            title: 'Export MusicXML',
+            defaultPath: 'notation.musicxml',
+            filters: [{ name: 'MusicXML', extensions: ['musicxml', 'xml'] }],
+        });
+        if (result?.filePath) {
+            await (window as any).api?.writeFileContent?.(result.filePath, xml);
+        }
+    }, [pianoNotes, notationBpm, notationTimeSignature, notationKeySignature, notationClef, notationMeasures]);
+
+    const importMusicXML = useCallback(async () => {
+        const result = await (window as any).api?.showOpenDialog?.({
+            title: 'Import MusicXML',
+            filters: [{ name: 'MusicXML', extensions: ['musicxml', 'xml', 'mxl'] }],
+            properties: ['openFile'],
+        });
+        if (!result?.filePaths?.[0]) return;
+
+        const content = await (window as any).api?.readFileContent?.(result.filePaths[0]);
+        if (!content) return;
+
+        try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(content, 'text/xml');
+
+            const stepToSemitone: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+
+            // Extract tempo
+            const metronome = doc.querySelector('metronome');
+            let bpm = notationBpm;
+            if (metronome) {
+                const pm = metronome.querySelector('per-minute');
+                if (pm?.textContent) bpm = parseInt(pm.textContent) || bpm;
+            }
+
+            // Extract time signature
+            const timeEl = doc.querySelector('time');
+            let tsNum = notationTimeSignature[0], tsDenom = notationTimeSignature[1];
+            if (timeEl) {
+                const b = timeEl.querySelector('beats');
+                const bt = timeEl.querySelector('beat-type');
+                if (b?.textContent) tsNum = parseInt(b.textContent) || tsNum;
+                if (bt?.textContent) tsDenom = parseInt(bt.textContent) || tsDenom;
+            }
+
+            // Extract key signature
+            const keyEl = doc.querySelector('key');
+            let keySig = notationKeySignature;
+            if (keyEl) {
+                const fifths = parseInt(keyEl.querySelector('fifths')?.textContent || '0');
+                keySig = fifthsToKeySignature(fifths);
+            }
+
+            // Extract clef
+            const clefEl = doc.querySelector('clef');
+            let clef = notationClef;
+            if (clefEl) {
+                const sign = clefEl.querySelector('sign')?.textContent;
+                if (sign === 'F') clef = 'bass';
+                else if (sign === 'G') clef = 'treble';
+            }
+
+            // Extract divisions (ticks per quarter note)
+            const divisionsEl = doc.querySelector('divisions');
+            const divisions = parseInt(divisionsEl?.textContent || '1') || 1;
+
+            // Parse notes from all measures
+            const notes: Array<{ note: number; start: number; duration: number; velocity: number }> = [];
+            const measures = doc.querySelectorAll('measure');
+            let beatOffset = 0;
+
+            measures.forEach((measure) => {
+                let measureBeat = beatOffset;
+                const beatsPerMeasure = tsNum * (4 / tsDenom);
+                let chordBeat = measureBeat;
+
+                measure.querySelectorAll('note').forEach((noteEl) => {
+                    const isRest = noteEl.querySelector('rest');
+                    const isChord = noteEl.querySelector('chord');
+                    const durEl = noteEl.querySelector('duration');
+                    const durationTicks = parseInt(durEl?.textContent || '0') || 0;
+                    const durationBeats = durationTicks / divisions;
+
+                    if (isChord) {
+                        // Chord note starts at the same beat as previous
+                        measureBeat = chordBeat;
+                    }
+
+                    if (!isRest) {
+                        const pitchEl = noteEl.querySelector('pitch');
+                        if (pitchEl) {
+                            const step = pitchEl.querySelector('step')?.textContent || 'C';
+                            const alter = parseInt(pitchEl.querySelector('alter')?.textContent || '0') || 0;
+                            const octave = parseInt(pitchEl.querySelector('octave')?.textContent || '4') || 4;
+                            const midi = (octave + 1) * 12 + (stepToSemitone[step] || 0) + alter;
+
+                            // Extract velocity from dynamics if present
+                            let velocity = 0.8;
+                            const dynEl = noteEl.querySelector('dynamics other-dynamics');
+                            if (dynEl?.textContent) velocity = (parseInt(dynEl.textContent) || 100) / 127;
+
+                            notes.push({ note: midi, start: measureBeat, duration: durationBeats, velocity: Math.min(1, Math.max(0.1, velocity)) });
+                        }
+                    }
+
+                    if (!isChord) {
+                        chordBeat = measureBeat;
+                        measureBeat += durationBeats;
+                    }
+                });
+
+                beatOffset += beatsPerMeasure;
+            });
+
+            pushNotationUndo();
+            setPianoNotes(notes);
+            setNotationBpm(bpm);
+            setNotationTimeSignature([tsNum, tsDenom]);
+            setNotationKeySignature(keySig);
+            setNotationClef(clef);
+            setNotationMeasures(Math.max(notationMeasures, measures.length));
+            setSelectedNotes(new Set());
+            setInputCursor(0);
+        } catch (e) {
+            console.error('Failed to import MusicXML:', e);
+        }
+    }, [notationBpm, notationTimeSignature, notationKeySignature, notationClef, notationMeasures, pushNotationUndo]);
+
     const stopNotation = useCallback(() => {
         // Stop all oscillators
         notationOscillators.current.forEach(osc => { try { osc.stop(); } catch {} });
@@ -1737,7 +2003,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
     const playNotation = useCallback(() => {
         if (isNotationPlaying) { stopNotation(); return; }
-        if (pianoNotes.length === 0) return;
 
         if (!synthRef.current) synthRef.current = new AudioContext();
         const ctx = synthRef.current;
@@ -1768,23 +2033,50 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
         setIsNotationPlaying(true);
         setNotationPlayhead(0);
-        const totalBeats = Math.max(...pianoNotes.map(n => n.start + n.duration), 0);
+        const bpmPerMeasure = notationTimeSignature[0];
+        const totalNoteBeat = pianoNotes.length > 0 ? Math.max(...pianoNotes.map(n => n.start + n.duration)) : 0;
+        // Play through ALL measures, not just to the last note
+        const totalBeats = Math.max(totalNoteBeat, notationMeasures * bpmPerMeasure);
         const totalDurationMs = totalBeats * 60 / notationBpm * 1000;
         const playStartTime = performance.now();
-        const beatWidth = 40 * notationZoom;
+        const beatWidthLocal = 40 * notationZoom;
+        const tabBeatWidthLocal = 36 * notationZoom;
 
         const animatePlayhead = () => {
             const elapsed = performance.now() - playStartTime;
             const currentBeat = (elapsed / 1000) * (notationBpm / 60);
             if (elapsed < totalDurationMs) {
                 setNotationPlayhead(currentBeat);
-                // Auto-scroll the piano roll grid to keep playhead visible
+                // Auto-scroll piano roll
                 if (pianoRollGridRef.current) {
-                    const playheadX = currentBeat * beatWidth;
+                    const playheadX = currentBeat * beatWidthLocal;
                     const scrollLeft = pianoRollGridRef.current.scrollLeft;
                     const viewWidth = pianoRollGridRef.current.clientWidth;
                     if (playheadX > scrollLeft + viewWidth - 60 || playheadX < scrollLeft) {
                         pianoRollGridRef.current.scrollLeft = playheadX - 80;
+                    }
+                }
+                // Auto-scroll sheet music view
+                if (sheetMusicScrollRef.current && staveLayoutRef.current.length > 0) {
+                    const measureIdx = Math.floor(currentBeat / bpmPerMeasure);
+                    const stave = staveLayoutRef.current.find(s => s.measureIdx === measureIdx && s.clef !== 'bass');
+                    if (stave) {
+                        const scrollEl = sheetMusicScrollRef.current;
+                        const staveY = stave.y * notationZoom;
+                        const scrollTop = scrollEl.scrollTop;
+                        const viewH = scrollEl.clientHeight;
+                        if (staveY < scrollTop + 40 || staveY > scrollTop + viewH - 80) {
+                            scrollEl.scrollTop = staveY - 60;
+                        }
+                    }
+                }
+                // Auto-scroll tab view
+                if (tabScrollRef.current) {
+                    const playheadX = currentBeat * tabBeatWidthLocal;
+                    const scrollLeft = tabScrollRef.current.scrollLeft;
+                    const viewWidth = tabScrollRef.current.clientWidth;
+                    if (playheadX > scrollLeft + viewWidth - 60 || playheadX < scrollLeft) {
+                        tabScrollRef.current.scrollLeft = playheadX - 80;
                     }
                 }
                 notationAnimRef.current = requestAnimationFrame(animatePlayhead);
@@ -1796,7 +2088,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
             }
         };
         notationAnimRef.current = requestAnimationFrame(animatePlayhead);
-    }, [pianoNotes, notationBpm, notationInstrument, notationZoom, isNotationPlaying, stopNotation]);
+    }, [pianoNotes, notationBpm, notationInstrument, notationZoom, isNotationPlaying, stopNotation, notationTimeSignature, notationMeasures]);
 
     // Auto-scroll piano roll to middle C on first render
     useEffect(() => {
@@ -3986,12 +4278,15 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
         const renderPianoRoll = () => (
             <div
-                className="flex-1 flex overflow-hidden theme-bg-primary"
+                className="flex-1 flex overflow-hidden"
+                style={{ background: '#121218' }}
                 onMouseMove={handlePianoRollMouseMove}
                 onMouseUp={handlePianoRollMouseUp}
                 onMouseLeave={handlePianoRollMouseUp}
             >
-                <div className="w-14 flex flex-col border-r theme-border overflow-y-auto overflow-x-hidden" ref={pianoRollScrollRef}
+                {/* Piano keyboard sidebar */}
+                <div className="flex flex-col overflow-y-auto overflow-x-hidden" ref={pianoRollScrollRef}
+                    style={{ scrollbarWidth: 'none', width: '52px', background: '#0d0d12' }}
                     onScroll={(e) => {
                         const gridEl = e.currentTarget.nextElementSibling as HTMLElement;
                         if (gridEl) gridEl.scrollTop = e.currentTarget.scrollTop;
@@ -3999,22 +4294,35 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 >
                     {[...visibleKeys].reverse().map(note => {
                         const isBlack = [1, 3, 6, 8, 10].includes(note % 12);
+                        const isC = note % 12 === 0;
+                        const isE = note % 12 === 4;
                         return (
                             <div
                                 key={note}
                                 onClick={() => playNote(note)}
-                                className={`flex items-center justify-end pr-1 text-[8px] cursor-pointer border-b theme-border shrink-0 ${
-                                    isBlack ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'
-                                } hover:bg-purple-500 hover:text-white`}
-                                style={{ height: `${noteHeight}px` }}
+                                className="shrink-0 cursor-pointer flex items-center justify-end pr-1"
+                                style={{
+                                    height: `${noteHeight}px`,
+                                    background: isBlack
+                                        ? 'linear-gradient(90deg, #1a1a24, #15151e)'
+                                        : isC ? '#2a2a38' : '#1e1e2a',
+                                    borderBottom: isC ? '1px solid rgba(99,102,241,0.25)' : isE ? '1px solid rgba(255,255,255,0.04)' : '1px solid rgba(255,255,255,0.02)',
+                                    color: isC ? 'rgba(165,180,252,0.9)' : isBlack ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.35)',
+                                    fontSize: '8px',
+                                    fontFamily: "'SF Mono', 'Fira Code', monospace",
+                                    fontWeight: isC ? 700 : 400,
+                                    letterSpacing: '0.5px',
+                                }}
                             >
-                                {note % 12 === 0 ? noteToName(note) : ''}
+                                {isC ? noteToName(note) : note % 12 === 5 ? 'F' : ''}
                             </div>
                         );
                     })}
                 </div>
 
+                {/* Grid area */}
                 <div className="flex-1 overflow-auto" ref={pianoRollGridRef}
+                    style={{ scrollbarWidth: 'thin', scrollbarColor: '#333 #1a1a1a' }}
                     onScroll={(e) => {
                         if (pianoRollScrollRef.current) pianoRollScrollRef.current.scrollTop = e.currentTarget.scrollTop;
                     }}
@@ -4040,7 +4348,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             }
                         }}
                     >
-                        {/* Grid lines */}
+                        {/* Row backgrounds */}
                         {visibleKeys.map((note, idx) => {
                             const rowIdx = visibleKeys.length - 1 - idx;
                             const isBlack = [1, 3, 6, 8, 10].includes(note % 12);
@@ -4048,35 +4356,48 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             return (
                                 <div
                                     key={note}
-                                    className={`absolute left-0 right-0 border-b ${isC ? 'border-gray-500' : 'border-gray-700/30'}`}
+                                    className="absolute left-0 right-0"
                                     style={{
                                         top: `${rowIdx * noteHeight}px`,
                                         height: `${noteHeight}px`,
-                                        backgroundColor: isBlack ? 'rgba(0,0,0,0.15)' : 'transparent',
+                                        backgroundColor: isBlack ? 'rgba(0,0,0,0.3)' : 'rgba(30,30,45,0.15)',
+                                        borderBottom: isC ? '1px solid rgba(99,102,241,0.15)' : '1px solid rgba(255,255,255,0.018)',
                                     }}
                                 />
                             );
                         })}
 
-                        {/* Beat lines */}
-                        {Array.from({ length: totalBeats }).map((_, beat) => (
-                            <div
-                                key={beat}
-                                className="absolute top-0 bottom-0"
-                                style={{
-                                    left: `${beat * beatWidth}px`,
-                                    width: '1px',
-                                    backgroundColor: beat % beatsPerMeasure === 0 ? 'rgba(100,100,100,0.6)' : 'rgba(60,60,60,0.3)',
-                                }}
-                            />
-                        ))}
+                        {/* Beat/measure lines */}
+                        {Array.from({ length: totalBeats }).map((_, beat) => {
+                            const isMeasure = beat % beatsPerMeasure === 0;
+                            const isHalf = beat % (beatsPerMeasure / 2) === 0 && !isMeasure;
+                            return (
+                                <div
+                                    key={beat}
+                                    className="absolute top-0 bottom-0"
+                                    style={{
+                                        left: `${beat * beatWidth}px`,
+                                        width: '1px',
+                                        backgroundColor: isMeasure ? 'rgba(99,102,241,0.3)' : isHalf ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.025)',
+                                    }}
+                                />
+                            );
+                        })}
 
                         {/* Measure numbers */}
                         {Array.from({ length: Math.ceil(totalBeats / beatsPerMeasure) }).map((_, m) => (
                             <div
                                 key={m}
-                                className="absolute text-[9px] text-gray-500 pointer-events-none"
-                                style={{ left: `${m * beatsPerMeasure * beatWidth + 2}px`, top: '1px' }}
+                                className="absolute pointer-events-none select-none"
+                                style={{
+                                    left: `${m * beatsPerMeasure * beatWidth + 4}px`,
+                                    top: '3px',
+                                    fontSize: '9px',
+                                    color: 'rgba(99,102,241,0.45)',
+                                    fontWeight: 700,
+                                    fontFamily: "'SF Mono', 'Fira Code', monospace",
+                                    letterSpacing: '0.5px',
+                                }}
                             >
                                 {m + 1}
                             </div>
@@ -4089,26 +4410,32 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             const rowIdx = visibleKeys.length - 1 - keyIdx;
                             const noteW = Math.max(note.duration * beatWidth, 6);
                             const isSelected = selectedNotes.has(idx);
+                            const hue = (note.note % 12) * 30;
                             return (
                                 <div
                                     key={idx}
-                                    className={`absolute rounded-sm cursor-grab group ${
-                                        isSelected ? 'ring-2 ring-yellow-400 z-10' : 'z-0'
-                                    }`}
+                                    className="absolute cursor-grab group"
                                     style={{
                                         top: `${rowIdx * noteHeight + 1}px`,
                                         left: `${note.start * beatWidth}px`,
                                         width: `${noteW}px`,
                                         height: `${noteHeight - 2}px`,
-                                        backgroundColor: isSelected ? 'rgba(234, 179, 8, 0.9)' : `rgba(147, 51, 234, ${0.4 + note.velocity * 0.6})`,
+                                        borderRadius: '2px',
+                                        background: isSelected
+                                            ? 'linear-gradient(180deg, #fbbf24, #f59e0b)'
+                                            : `linear-gradient(180deg, hsla(${hue},75%,60%,${0.7 + note.velocity * 0.3}), hsla(${hue},65%,42%,${0.65 + note.velocity * 0.35}))`,
+                                        border: isSelected ? '1px solid #fcd34d' : `1px solid hsla(${hue},60%,70%,0.3)`,
+                                        boxShadow: isSelected
+                                            ? '0 0 10px rgba(251,191,36,0.5), inset 0 1px 0 rgba(255,255,255,0.2)'
+                                            : `0 1px 2px rgba(0,0,0,0.4), inset 0 1px 0 hsla(${hue},60%,80%,0.15)`,
+                                        zIndex: isSelected ? 10 : 1,
                                     }}
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         setSelectedNotes(prev => {
                                             const next = new Set(prev);
                                             if (e.shiftKey) {
-                                                if (next.has(idx)) next.delete(idx);
-                                                else next.add(idx);
+                                                if (next.has(idx)) next.delete(idx); else next.add(idx);
                                             } else {
                                                 if (next.has(idx) && next.size === 1) next.delete(idx);
                                                 else { next.clear(); next.add(idx); }
@@ -4119,12 +4446,23 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                     onMouseDown={(e) => { if (e.button === 0) handlePianoRollMouseDown(e, idx, 'move'); }}
                                     title={`${noteToName(note.note)} | Beat ${note.start} | Dur ${note.duration} | Vel ${Math.round(note.velocity * 100)}%`}
                                 >
-                                    <span className="text-[7px] text-white/80 pl-0.5 pointer-events-none select-none">
+                                    <span className="pointer-events-none select-none pl-0.5" style={{
+                                        fontSize: '7px', color: 'rgba(255,255,255,0.9)', fontWeight: 600,
+                                        fontFamily: "'SF Mono', 'Fira Code', monospace",
+                                        textShadow: '0 1px 1px rgba(0,0,0,0.4)',
+                                    }}>
                                         {noteW > 30 ? noteToName(note.note) : ''}
                                     </span>
+                                    {/* Velocity bar at bottom */}
+                                    <div className="absolute bottom-0 left-0 pointer-events-none" style={{
+                                        height: '2px', borderRadius: '0 0 2px 2px',
+                                        width: `${note.velocity * 100}%`,
+                                        background: isSelected ? 'rgba(255,255,255,0.5)' : `hsla(${hue},80%,75%,0.5)`,
+                                    }}/>
                                     {/* Resize handle */}
                                     <div
-                                        className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize opacity-0 group-hover:opacity-100 bg-white/30 rounded-r-sm"
+                                        className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize opacity-0 group-hover:opacity-100"
+                                        style={{ background: 'rgba(255,255,255,0.35)', borderRadius: '0 2px 2px 0' }}
                                         onMouseDown={(e) => { e.stopPropagation(); handlePianoRollMouseDown(e, idx, 'resize'); }}
                                     />
                                 </div>
@@ -4134,19 +4472,41 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         {/* Playhead */}
                         {(isNotationPlaying || notationPlayhead > 0) && (
                             <div
-                                className="absolute top-0 bottom-0 pointer-events-none z-20"
-                                style={{ left: `${notationPlayhead * beatWidth}px` }}
+                                className="absolute top-0 pointer-events-none z-30"
+                                style={{ left: `${notationPlayhead * beatWidth}px`, height: `${visibleKeys.length * noteHeight}px` }}
                             >
-                                <div className="w-0 h-0 border-l-[5px] border-r-[5px] border-t-[8px] border-l-transparent border-r-transparent border-t-red-500 -translate-x-[5px]" />
-                                <div className="w-[2px] bg-red-500 -translate-x-[1px]" style={{ height: `${visibleKeys.length * noteHeight}px` }} />
+                                <div className="absolute top-0 bottom-0" style={{
+                                    left: '-6px', width: '13px',
+                                    background: 'linear-gradient(90deg, transparent, rgba(239,68,68,0.08), rgba(239,68,68,0.12), rgba(239,68,68,0.08), transparent)',
+                                }}/>
+                                <div style={{
+                                    position: 'absolute', top: '-2px', left: '-5px',
+                                    width: 0, height: 0,
+                                    borderLeft: '5px solid transparent', borderRight: '5px solid transparent',
+                                    borderTop: '8px solid #ef4444',
+                                    filter: 'drop-shadow(0 0 3px rgba(239,68,68,0.8))',
+                                }}/>
+                                <div style={{
+                                    width: '2px', height: '100%',
+                                    background: 'linear-gradient(180deg, #ef4444, #dc2626)',
+                                    transform: 'translateX(-1px)',
+                                    boxShadow: '0 0 8px rgba(239,68,68,0.5), 0 0 2px rgba(239,68,68,0.8)',
+                                }}/>
                             </div>
                         )}
 
                         {/* Input cursor */}
-                        <div
-                            className="absolute top-0 bottom-0 w-0.5 bg-green-400/60 pointer-events-none z-10"
-                            style={{ left: `${inputCursor * beatWidth}px` }}
-                        />
+                        {!isNotationPlaying && (
+                            <div
+                                className="absolute top-0 bottom-0 pointer-events-none z-10"
+                                style={{
+                                    left: `${inputCursor * beatWidth}px`,
+                                    width: '1px',
+                                    background: 'rgba(52,211,153,0.4)',
+                                    boxShadow: '0 0 6px rgba(52,211,153,0.2)',
+                                }}
+                            />
+                        )}
                     </div>
                 </div>
             </div>
@@ -4185,24 +4545,41 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
             const renderVexFlow = (container: HTMLDivElement | null) => {
                 if (!container) return;
+                // Skip re-render if content hasn't changed (prevents 60fps VexFlow rebuilds during playback)
+                const contentKey = `${pianoNotes.map(n => `${n.note}:${n.start}:${n.duration}`).join(',')}|${notationKeySignature}|${notationClef}|${notationTimeSignature.join('/')}|${measures}`;
+                if (container.dataset.vfKey === contentKey) return;
+                container.dataset.vfKey = contentKey;
                 container.innerHTML = '';
                 staveLayoutRef.current = [];
 
                 const measuresPerLine = 4;
-                const staveWidth = 250;
-                const staveStartX = 10;
-                const lineHeight = notationClef === 'grand' ? 200 : 120;
+                const staveStartX = 50;
+                const pageWidth = 1100;
+                const staveWidth = Math.floor((pageWidth - staveStartX - 30) / measuresPerLine);
+                const lineHeight = notationClef === 'grand' ? 240 : 150;
                 const totalLines = Math.ceil(measures / measuresPerLine);
-                const totalWidth = staveStartX + measuresPerLine * staveWidth + 40;
-                const totalHeight = totalLines * lineHeight + 40;
+                const totalHeight = Math.max(totalLines * lineHeight + 80, 500);
 
                 const renderer = new VFRenderer(container, VFRenderer.Backends.SVG);
-                renderer.resize(totalWidth, totalHeight);
+                renderer.resize(pageWidth, totalHeight);
                 const context = renderer.getContext();
                 context.setFont('Arial', 10);
 
+                // Style SVG for professional appearance
+                const svgEl = container.querySelector('svg');
+                if (svgEl) {
+                    svgEl.style.overflow = 'visible';
+                    // Thicken staff lines and barlines
+                    const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+                    style.textContent = `
+                        .vf-stave .vf-stave-section rect { stroke-width: 0.8; }
+                        line.vf-barline { stroke-width: 1.2 !important; }
+                    `;
+                    svgEl.prepend(style);
+                }
+
                 for (let line = 0; line < totalLines; line++) {
-                    const y = line * lineHeight + 20;
+                    const y = line * lineHeight + 30;
 
                     for (let mInLine = 0; mInLine < measuresPerLine; mInLine++) {
                         const mIdx = line * measuresPerLine + mInLine;
@@ -4220,11 +4597,15 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                 trebleStave.addKeySignature(notationKeySignature);
                             }
                         }
+                        // Add measure number above the stave
+                        if (isFirstInLine || mIdx > 0) {
+                            trebleStave.setMeasure(mIdx + 1);
+                        }
                         trebleStave.setContext(context).draw();
 
                         let bassStave: Stave | null = null;
                         if (notationClef === 'grand') {
-                            bassStave = new Stave(x, y + 80, staveWidth);
+                            bassStave = new Stave(x, y + 100, staveWidth);
                             if (isFirstInLine) bassStave.addClef('bass');
                             if (isFirstMeasure) {
                                 bassStave.addTimeSignature(`${notationTimeSignature[0]}/${notationTimeSignature[1]}`);
@@ -4249,7 +4630,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             });
                             if (bassStave) {
                                 staveLayoutRef.current.push({
-                                    x, y: y + 80, width: staveWidth, measureIdx: mIdx,
+                                    x, y: y + 90, width: staveWidth, measureIdx: mIdx,
                                     clef: 'bass',
                                     topLineY: bassStave.getYForLine(0),
                                     bottomLineY: bassStave.getYForLine(4),
@@ -4628,128 +5009,56 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
             ];
 
             return (
-                <div className="flex-1 flex flex-col overflow-hidden bg-white">
-                    <div className="flex items-center gap-3 px-4 py-2 bg-gray-50 border-b border-gray-200 shrink-0">
-                        <span className="text-xs theme-text-muted font-medium">Key:</span>
-                        <select
-                            value={notationKeySignature}
-                            onChange={(e) => setNotationKeySignature(e.target.value)}
-                            className="px-2 py-1 bg-white border border-gray-300 rounded text-sm text-gray-700"
-                        >
+                <div className="flex-1 flex flex-col overflow-hidden">
+                    {/* Sheet music input toolbar */}
+                    <div className="flex items-center gap-1 px-3 h-8 shrink-0 border-b theme-border theme-bg-secondary">
+                        <select value={notationKeySignature} onChange={(e) => setNotationKeySignature(e.target.value)}
+                            className="px-1.5 py-0.5 rounded text-xs theme-bg-tertiary theme-border border">
                             {['C', 'G', 'D', 'A', 'E', 'B', 'F#', 'Cb', 'F', 'Bb', 'Eb', 'Ab', 'Db', 'Gb'].map(k => (
-                                <option key={k} value={k}>{k} major</option>
+                                <option key={k} value={k}>{k}</option>
                             ))}
                         </select>
-                        <span className="text-xs theme-text-muted font-medium ml-2">Clef:</span>
-                        <select
-                            value={notationClef}
-                            onChange={(e) => setNotationClef(e.target.value as 'treble' | 'bass' | 'grand')}
-                            className="px-2 py-1 bg-white border border-gray-300 rounded text-sm text-gray-700"
-                        >
+                        <select value={notationClef} onChange={(e) => setNotationClef(e.target.value as 'treble' | 'bass' | 'grand')}
+                            className="px-1.5 py-0.5 rounded text-xs theme-bg-tertiary theme-border border">
                             <option value="treble">Treble</option>
                             <option value="bass">Bass</option>
-                            <option value="grand">Grand Staff</option>
+                            <option value="grand">Grand</option>
                         </select>
 
-                        <div className="w-px h-5 bg-gray-300 mx-1"/>
+                        <div className="w-px h-4 theme-bg-tertiary"/>
 
-                        <span className="text-xs theme-text-muted font-medium">Duration:</span>
-                        <div className="flex gap-0.5">
-                            {durationOptions.map(d => (
-                                <button
-                                    key={d.value}
-                                    onClick={() => setInputNoteDuration(d.value)}
-                                    title={d.title}
-                                    className={`w-8 h-8 flex items-center justify-center rounded text-lg border ${
-                                        inputNoteDuration === d.value
-                                            ? 'bg-purple-600 text-white border-purple-700'
-                                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
-                                    }`}
-                                >
-                                    {d.label}
-                                </button>
-                            ))}
-                        </div>
+                        {durationOptions.map(d => (
+                            <button key={d.value} onClick={() => setInputNoteDuration(d.value)} title={d.title}
+                                className={`w-6 h-6 flex items-center justify-center rounded text-sm border ${inputNoteDuration === d.value ? 'bg-purple-600 text-white border-purple-600' : 'theme-bg-tertiary theme-text-muted theme-border theme-hover'}`}>
+                                {d.label}
+                            </button>
+                        ))}
 
-                        <div className="w-px h-5 bg-gray-300 mx-1"/>
+                        <div className="w-px h-4 theme-bg-tertiary"/>
 
-                        <span className="text-xs theme-text-muted font-medium">Oct:</span>
-                        <div className="flex items-center gap-1">
-                            <button
-                                onClick={() => setInputOctave(o => Math.max(1, o - 1))}
-                                className="w-6 h-6 flex items-center justify-center rounded bg-white border border-gray-300 theme-text-muted hover:bg-gray-100 text-xs"
-                            >-</button>
-                            <span className="text-sm font-medium text-gray-700 w-4 text-center">{inputOctave}</span>
-                            <button
-                                onClick={() => setInputOctave(o => Math.min(7, o + 1))}
-                                className="w-6 h-6 flex items-center justify-center rounded bg-white border border-gray-300 theme-text-muted hover:bg-gray-100 text-xs"
-                            >+</button>
-                        </div>
+                        <span className="text-[10px] font-medium theme-text-muted">Oct</span>
+                        <button onClick={() => setInputOctave(o => Math.max(1, o - 1))} className="w-5 h-5 flex items-center justify-center rounded text-xs theme-bg-tertiary theme-hover theme-border border">-</button>
+                        <span className="text-xs font-bold w-3 text-center">{inputOctave}</span>
+                        <button onClick={() => setInputOctave(o => Math.min(7, o + 1))} className="w-5 h-5 flex items-center justify-center rounded text-xs theme-bg-tertiary theme-hover theme-border border">+</button>
 
-                        <div className="w-px h-5 bg-gray-300 mx-1"/>
+                        <div className="w-px h-4 theme-bg-tertiary"/>
 
-                        <span className="text-xs theme-text-muted">Beat: {inputCursor.toFixed(1)}</span>
-                        <button
-                            onClick={() => setInputCursor(0)}
-                            className="text-xs text-purple-600 hover:text-purple-800 underline"
-                        >Reset</button>
-
-                        <div className="w-px h-5 bg-gray-300 mx-1"/>
-                        <button
-                            onClick={() => setInputCursor(prev => prev + inputNoteDuration)}
-                            className="px-2 py-1 rounded text-xs font-medium border border-gray-300 bg-white theme-text-muted hover:bg-gray-100"
-                            title="Advance cursor by one note duration"
-                        >Next Beat</button>
-                    </div>
-
-                    <div className="flex items-center gap-1 px-4 py-2 bg-gray-100 border-b border-gray-200 shrink-0 flex-wrap">
-                        <span className="text-xs theme-text-muted mr-1">Notes:</span>
-                        {sheetNoteNames.map(name => {
-                            const isBlack = name.includes('#');
-                            return (
-                                <React.Fragment key={name}>
-                                    <button
-                                        onClick={() => addSheetNote(name, inputOctave)}
-                                        className="h-10 w-10 rounded font-bold text-sm border border-gray-400 bg-white text-gray-800 hover:bg-purple-100 hover:border-purple-400 active:bg-purple-200 transition-colors"
-                                    >
-                                        {name}{inputOctave}
-                                    </button>
-                                    {name !== 'E' && name !== 'B' && (
-                                        <button
-                                            onClick={() => addSheetNote(name + '#', inputOctave)}
-                                            className="h-8 w-7 rounded text-xs font-bold border theme-border theme-bg-secondary text-white hover:bg-purple-700 active:bg-purple-800 transition-colors -mx-0.5"
-                                        >
-                                            {name}#
-                                        </button>
-                                    )}
-                                </React.Fragment>
-                            );
-                        })}
-                        <div className="w-px h-8 bg-gray-300 mx-2"/>
-                        <button
-                            onClick={addSheetRest}
-                            className="h-10 px-3 rounded text-sm border border-gray-400 bg-white theme-text-muted hover:bg-yellow-50 hover:border-yellow-400 active:bg-yellow-100 transition-colors"
-                            title="Add rest"
-                        >
-                            Rest
-                        </button>
-                        <button
-                            onClick={() => {
-                                if (pianoNotes.length > 0) {
-                                    const last = pianoNotes[pianoNotes.length - 1];
-                                    setPianoNotes(prev => prev.slice(0, -1));
-                                    setInputCursor(last.start);
-                                }
-                            }}
-                            className="h-10 px-3 rounded text-sm border border-gray-400 bg-white theme-text-muted hover:bg-red-50 hover:border-red-400 active:bg-red-100 transition-colors"
-                            title="Undo last note"
-                        >
-                            <Undo size={14}/>
-                        </button>
+                        {sheetNoteNames.map(name => (
+                            <React.Fragment key={name}>
+                                <button onClick={() => addSheetNote(name, inputOctave)}
+                                    className="h-6 w-6 rounded text-xs font-semibold theme-bg-tertiary theme-hover theme-border border">{name}</button>
+                                {name !== 'E' && name !== 'B' && (
+                                    <button onClick={() => addSheetNote(name + '#', inputOctave)}
+                                        className="h-5 w-5 rounded text-[9px] font-semibold -mx-0.5 bg-gray-600 text-gray-200 hover:bg-gray-500 border border-gray-500">{name}#</button>
+                                )}
+                            </React.Fragment>
+                        ))}
+                        <button onClick={addSheetRest} className="h-6 px-2 rounded text-xs font-medium theme-bg-tertiary theme-hover theme-border border" title="Rest">Rest</button>
                     </div>
 
                     <div
-                        className="flex-1 overflow-auto p-6 cursor-crosshair relative"
+                        className="flex-1 overflow-auto cursor-crosshair relative"
+                        ref={sheetMusicScrollRef}
                         onMouseDown={handleStaffMouseDown}
                         onMouseMove={handleStaffMouseMove}
                         onMouseUp={handleStaffMouseUp}
@@ -4757,13 +5066,57 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         onDoubleClick={handleStaffDoubleClick}
                         onContextMenu={handleStaffRightClick}
                         onClick={() => setNoteContextMenu(null)}
-                        title="Drag notes to move, double-click to place new"
+                        title="Double-click to place notes, drag to move"
+                        style={{ background: '#8b8b92', padding: '24px 16px' }}
                     >
-                        <div
-                            key={`vf-${pianoNotes.length}-${notationKeySignature}-${notationClef}-${notationTimeSignature.join('-')}`}
-                            ref={renderVexFlow}
-                            style={{ transform: `scale(${notationZoom})`, transformOrigin: 'top left' }}
-                        />
+                        <div style={{
+                            background: '#fff',
+                            margin: '0 auto',
+                            width: `${(1100 + 90) * notationZoom}px`,
+                            maxWidth: '100%',
+                            minHeight: `${Math.max((Math.max(Math.ceil(measures / 4) * (notationClef === 'grand' ? 240 : 150) + 80, 500)) * notationZoom + 100, 600)}px`,
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04)',
+                            padding: '40px 45px 60px',
+                            position: 'relative',
+                        }}>
+                            <div
+                                ref={renderVexFlow}
+                                style={{ transform: `scale(${notationZoom})`, transformOrigin: 'top left' }}
+                            />
+                        {/* Sheet music playhead — positioned over VexFlow SVG, offset by page padding */}
+                        {(isNotationPlaying || notationPlayhead > 0) && staveLayoutRef.current.length > 0 && (() => {
+                            const currentMeasure = Math.floor(notationPlayhead / beatsPerMeasure);
+                            const beatInMeasure = notationPlayhead - currentMeasure * beatsPerMeasure;
+                            const stave = staveLayoutRef.current.find(s => s.measureIdx === currentMeasure && s.clef !== 'bass');
+                            if (!stave) return null;
+                            const xRatio = beatInMeasure / beatsPerMeasure;
+                            // VexFlow SVG coords + page padding (45px left, 40px top)
+                            const padLeft = 45;
+                            const padTop = 40;
+                            const playX = (stave.x + xRatio * stave.width) * notationZoom + padLeft;
+                            const playTop = (stave.topLineY - 10) * notationZoom + padTop;
+                            const lineH = notationClef === 'grand'
+                                ? ((stave.bottomLineY + 120) - stave.topLineY + 20) * notationZoom
+                                : (stave.bottomLineY - stave.topLineY + 20) * notationZoom;
+                            return (
+                                <div className="absolute pointer-events-none z-20" style={{
+                                    left: `${playX}px`,
+                                    top: `${playTop}px`,
+                                    width: '2.5px',
+                                    height: `${lineH}px`,
+                                    background: 'rgba(59, 130, 246, 0.85)',
+                                    boxShadow: '0 0 6px rgba(59,130,246,0.4)',
+                                    borderRadius: '1px',
+                                }}>
+                                    <div style={{
+                                        position: 'absolute', top: '-6px', left: '-4.75px',
+                                        width: 0, height: 0,
+                                        borderLeft: '6px solid transparent', borderRight: '6px solid transparent',
+                                        borderTop: '6px solid rgba(59, 130, 246, 0.9)',
+                                    }}/>
+                                </div>
+                            );
+                        })()}
                         <div
                             ref={ghostNoteRef}
                             className="absolute pointer-events-none"
@@ -4771,8 +5124,9 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                 display: 'none',
                                 width: 12, height: 12,
                                 borderRadius: '50%',
-                                background: 'rgba(147, 51, 234, 0.5)',
-                                border: '2px solid rgba(147, 51, 234, 0.8)',
+                                background: 'rgba(99, 102, 241, 0.5)',
+                                border: '2px solid rgba(99, 102, 241, 0.8)',
+                                boxShadow: '0 0 6px rgba(99,102,241,0.3)',
                             }}
                         />
                         <div
@@ -4780,10 +5134,12 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             className="absolute pointer-events-none text-xs font-bold"
                             style={{
                                 display: 'none',
-                                color: 'rgba(147, 51, 234, 0.9)',
+                                color: 'rgba(99, 102, 241, 0.9)',
                                 textShadow: '0 0 3px white, 0 0 3px white',
+                                fontFamily: "'SF Mono', monospace",
                             }}
                         />
+                        </div>{/* close page div */}
                     </div>
 
                     {noteContextMenu && (
@@ -4911,6 +5267,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         };
 
         const renderGuitarTab = () => {
+            const tabBeatWidth = 36 * notationZoom;
 
             const derivedTabNotes = pianoNotes.map(n => {
                 const tab = midiToTab(n.note);
@@ -4923,63 +5280,211 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 playNote(midi);
             };
 
-            return (
-                <div className="flex-1 overflow-auto bg-gray-100 p-8">
-                    <div className="bg-white rounded-lg p-6 shadow">
-                        <div className="flex items-center gap-3 mb-4">
-                            <span className="text-sm font-medium">TAB</span>
-                            <span className="text-xs theme-text-muted">Standard Tuning (EADGBE)</span>
-                            <div className="w-px h-4 bg-gray-300"/>
-                            <span className="text-xs theme-text-muted">Beat: {inputCursor.toFixed(1)}</span>
-                            <button
-                                onClick={() => setInputCursor(0)}
-                                className="text-xs text-purple-600 hover:text-purple-800 underline"
-                            >Reset</button>
-                        </div>
+            const stringRowH = 28;
 
-                        <div className="relative font-mono text-sm">
-                            {guitarStrings.map((stringName, stringIdx) => (
-                                <div key={stringIdx} className="flex items-center h-6">
-                                    <span className="w-6 theme-text-muted font-bold">{stringName}</span>
-                                    <div className="flex-1 border-b border-gray-400 relative flex">
-                                        {Array.from({ length: totalBeats }).map((_, beat) => (
-                                            <div
-                                                key={beat}
-                                                className={`w-8 text-center border-r cursor-pointer hover:bg-purple-50 ${beat % beatsPerMeasure === 0 ? 'theme-border' : 'border-gray-300'}`}
-                                                onClick={() => addTabNote(stringIdx, 0, beat)}
-                                            >
-                                                {derivedTabNotes
-                                                    .filter(n => n.string === stringIdx && Math.floor(n.start) === beat)
-                                                    .map((n, i) => (
-                                                        <span key={i} className="text-purple-600 font-bold">{n.fret}</span>
-                                                    ))}
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
+            return (
+                <div className="flex-1 flex flex-col overflow-hidden" style={{ background: '#121218' }}>
+                    {/* Tab toolbar */}
+                    <div className="flex items-center gap-3 px-4 py-1.5 shrink-0" style={{
+                        background: 'linear-gradient(180deg, #252535, #1e1e2c)',
+                        borderBottom: '1px solid rgba(99,102,241,0.15)',
+                    }}>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: 'rgba(165,180,252,0.9)', fontFamily: "'SF Mono', monospace", letterSpacing: '1px' }}>TAB</span>
+                        <span style={{ fontSize: '10px', color: 'rgba(165,180,252,0.4)', fontFamily: "'SF Mono', monospace" }}>Standard (EADGBE)</span>
+                        <div style={{ width: '1px', height: '16px', background: 'rgba(99,102,241,0.15)', margin: '0 4px' }}/>
+                        <span style={{ fontSize: '10px', color: 'rgba(165,180,252,0.5)', fontFamily: "'SF Mono', monospace" }}>Beat {inputCursor.toFixed(1)}</span>
+                        <button onClick={() => setInputCursor(0)}
+                            style={{ fontSize: '10px', color: 'rgba(129,140,248,0.8)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+                            Reset
+                        </button>
+                    </div>
+
+                    {/* Tab notation area */}
+                    <div className="flex-1 flex overflow-hidden">
+                        {/* String labels */}
+                        <div className="flex flex-col justify-center shrink-0" style={{
+                            width: '36px',
+                            borderRight: '2px solid rgba(99,102,241,0.25)',
+                            background: '#16161f',
+                        }}>
+                            {guitarStrings.map((s, i) => (
+                                <div key={i} style={{
+                                    height: `${stringRowH}px`, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    fontSize: '12px', fontWeight: 700, color: 'rgba(165,180,252,0.7)',
+                                    fontFamily: "'SF Mono', 'Courier New', monospace",
+                                    borderBottom: i < 5 ? '1px solid rgba(99,102,241,0.06)' : 'none',
+                                }}>{s}</div>
                             ))}
                         </div>
 
-                        <div className="mt-8 border-t pt-4">
-                            <h4 className="text-sm font-medium mb-2">Click fretboard to add notes (at beat {inputCursor.toFixed(1)}):</h4>
-                            <div className="grid grid-cols-13 gap-px bg-amber-900 p-2 rounded" style={{ gridTemplateColumns: 'auto repeat(12, 1fr)' }}>
-                                {guitarStrings.map((stringName, stringIdx) => (
-                                    <React.Fragment key={stringIdx}>
-                                        <div className="h-6 flex items-center justify-center text-xs text-amber-200 font-bold px-1">{stringName}</div>
-                                        {Array.from({ length: 12 }).map((_, fret) => (
+                        {/* Scrollable tab grid */}
+                        <div className="flex-1 overflow-auto relative" ref={tabScrollRef} style={{ scrollbarWidth: 'thin', scrollbarColor: '#333 #1a1a1a' }}>
+                            <div className="relative" style={{
+                                width: `${totalBeats * tabBeatWidth + 40}px`,
+                                height: `${guitarStrings.length * stringRowH}px`,
+                            }}>
+                                {/* String lines */}
+                                {guitarStrings.map((_, stringIdx) => (
+                                    <div key={stringIdx} className="absolute left-0 right-0" style={{
+                                        top: `${stringIdx * stringRowH + stringRowH / 2}px`,
+                                        height: '1px',
+                                        background: `rgba(165,180,252,${0.12 + stringIdx * 0.01})`,
+                                    }}/>
+                                ))}
+
+                                {/* Measure lines */}
+                                {Array.from({ length: Math.ceil(totalBeats / beatsPerMeasure) + 1 }).map((_, m) => (
+                                    <div key={m} className="absolute" style={{
+                                        left: `${m * beatsPerMeasure * tabBeatWidth}px`,
+                                        top: '0',
+                                        height: `${guitarStrings.length * stringRowH}px`,
+                                        width: m === 0 ? '2px' : '1px',
+                                        background: m === 0 ? 'rgba(99,102,241,0.4)' : 'rgba(99,102,241,0.2)',
+                                    }}/>
+                                ))}
+
+                                {/* Measure numbers */}
+                                {Array.from({ length: Math.ceil(totalBeats / beatsPerMeasure) }).map((_, m) => (
+                                    <div key={m} className="absolute pointer-events-none" style={{
+                                        left: `${m * beatsPerMeasure * tabBeatWidth + 4}px`,
+                                        top: '-16px',
+                                        fontSize: '9px', color: 'rgba(99,102,241,0.4)', fontWeight: 700,
+                                        fontFamily: "'SF Mono', monospace",
+                                    }}>{m + 1}</div>
+                                ))}
+
+                                {/* Beat sub-lines */}
+                                {Array.from({ length: totalBeats }).map((_, beat) => {
+                                    if (beat % beatsPerMeasure === 0) return null;
+                                    return (
+                                        <div key={beat} className="absolute" style={{
+                                            left: `${beat * tabBeatWidth}px`,
+                                            top: '0',
+                                            height: `${guitarStrings.length * stringRowH}px`,
+                                            width: '1px',
+                                            background: 'rgba(255,255,255,0.025)',
+                                        }}/>
+                                    );
+                                })}
+
+                                {/* Fret numbers on tab */}
+                                {derivedTabNotes.map((n, i) => (
+                                    <div key={i}
+                                        className="absolute flex items-center justify-center cursor-pointer"
+                                        style={{
+                                            left: `${n.start * tabBeatWidth - 8}px`,
+                                            top: `${n.string * stringRowH + 4}px`,
+                                            width: '20px', height: '20px',
+                                            background: '#121218',
+                                            fontSize: '13px', fontWeight: 800,
+                                            fontFamily: "'SF Mono', 'Courier New', monospace",
+                                            color: '#818cf8',
+                                            zIndex: 5,
+                                            borderRadius: '2px',
+                                            textShadow: '0 0 6px rgba(129,140,248,0.3)',
+                                        }}
+                                    >
+                                        {n.fret}
+                                    </div>
+                                ))}
+
+                                {/* Click zones for adding notes */}
+                                {guitarStrings.map((_, stringIdx) => (
+                                    <div key={stringIdx} className="absolute left-0 right-0 cursor-crosshair"
+                                        style={{ top: `${stringIdx * stringRowH}px`, height: `${stringRowH}px`, zIndex: 2 }}
+                                        onClick={(e) => {
+                                            const rect = e.currentTarget.parentElement?.getBoundingClientRect();
+                                            if (!rect) return;
+                                            const x = e.clientX - rect.left + (e.currentTarget.parentElement?.parentElement?.scrollLeft || 0);
+                                            const beat = Math.round((x / tabBeatWidth) * 4) / 4;
+                                            addTabNote(stringIdx, 0, beat);
+                                        }}
+                                    />
+                                ))}
+
+                                {/* Playhead */}
+                                {(isNotationPlaying || notationPlayhead > 0) && (
+                                    <div className="absolute pointer-events-none z-20" style={{
+                                        left: `${notationPlayhead * tabBeatWidth}px`,
+                                        top: '-4px',
+                                        height: `${guitarStrings.length * stringRowH + 8}px`,
+                                    }}>
+                                        <div className="absolute" style={{
+                                            left: '-5px', top: '-2px',
+                                            width: 0, height: 0,
+                                            borderLeft: '5px solid transparent', borderRight: '5px solid transparent',
+                                            borderTop: '7px solid #ef4444',
+                                            filter: 'drop-shadow(0 0 3px rgba(239,68,68,0.6))',
+                                        }}/>
+                                        <div style={{
+                                            width: '2px', height: '100%',
+                                            background: 'linear-gradient(180deg, #ef4444, #dc2626)',
+                                            boxShadow: '0 0 8px rgba(239,68,68,0.4), 0 0 2px rgba(239,68,68,0.8)',
+                                            borderRadius: '1px',
+                                        }}/>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Fretboard input */}
+                    <div className="shrink-0" style={{
+                        borderTop: '1px solid rgba(99,102,241,0.1)',
+                        background: '#16161f', padding: '10px 16px',
+                    }}>
+                        <div style={{ fontSize: '10px', color: 'rgba(165,180,252,0.4)', marginBottom: '6px', fontWeight: 500, fontFamily: "'SF Mono', monospace", letterSpacing: '0.5px' }}>
+                            Click fretboard at beat {inputCursor.toFixed(1)}
+                        </div>
+                        <div style={{
+                            display: 'grid', gridTemplateColumns: 'auto repeat(15, 1fr)',
+                            background: 'linear-gradient(180deg, #2a1f18, #1e1610)',
+                            borderRadius: '6px', overflow: 'hidden',
+                            border: '1px solid rgba(139,92,46,0.3)',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.03)',
+                        }}>
+                            {/* Nut */}
+                            <div style={{ gridColumn: '1', gridRow: '1 / span 6', background: 'linear-gradient(90deg, #d4c8a8, #e0d8c0, #d4c8a8)', width: '5px' }}/>
+                            {guitarStrings.map((stringName, stringIdx) => (
+                                <React.Fragment key={stringIdx}>
+                                    <div style={{
+                                        gridColumn: '1', gridRow: stringIdx + 1,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        width: '24px', fontSize: '9px', fontWeight: 700,
+                                        color: 'rgba(212,200,168,0.7)', fontFamily: "'SF Mono', monospace",
+                                    }}>{stringName}</div>
+                                    {Array.from({ length: 15 }).map((_, fret) => {
+                                        const hasDot = [3, 5, 7, 9].includes(fret) && stringIdx === 2;
+                                        const hasDoubleDot = fret === 12 && (stringIdx === 1 || stringIdx === 3);
+                                        return (
                                             <div
                                                 key={fret}
-                                                onClick={() => {
-                                                    addTabNote(stringIdx, fret, inputCursor);
+                                                onClick={() => addTabNote(stringIdx, fret, inputCursor)}
+                                                style={{
+                                                    height: '22px',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    borderRight: '1px solid rgba(139,92,46,0.2)',
+                                                    borderBottom: stringIdx < 5 ? `1px solid rgba(200,180,140,${0.15 - stringIdx * 0.015})` : 'none',
+                                                    cursor: 'pointer',
+                                                    fontSize: '9px', color: 'rgba(200,180,140,0.5)',
+                                                    fontFamily: "'SF Mono', monospace",
+                                                    background: 'transparent',
+                                                    position: 'relative',
                                                 }}
-                                                className="h-6 bg-amber-100 border-r border-gray-400 flex items-center justify-center text-xs cursor-pointer hover:bg-purple-200"
+                                                onMouseEnter={(e) => { (e.target as HTMLElement).style.background = 'rgba(99,102,241,0.2)'; }}
+                                                onMouseLeave={(e) => { (e.target as HTMLElement).style.background = 'transparent'; }}
                                             >
                                                 {fret}
+                                                {(hasDot || hasDoubleDot) && <div style={{
+                                                    position: 'absolute', bottom: '-2px',
+                                                    width: '4px', height: '4px', borderRadius: '50%',
+                                                    background: fret === 12 ? 'rgba(212,200,168,0.5)' : 'rgba(139,92,46,0.5)',
+                                                }}/>}
                                             </div>
-                                        ))}
-                                    </React.Fragment>
-                                ))}
-                            </div>
+                                        );
+                                    })}
+                                </React.Fragment>
+                            ))}
                         </div>
                     </div>
                 </div>
@@ -4988,25 +5493,32 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
         return (
             <div className="flex-1 flex flex-col overflow-hidden">
-                <div className="h-12 border-b theme-border flex items-center px-4 gap-2 theme-bg-secondary">
-                    <button
-                        onClick={() => setNotationView('piano')}
-                        className={`px-3 py-1.5 rounded text-sm flex items-center gap-1 ${notationView === 'piano' ? 'bg-purple-600' : 'theme-bg-tertiary theme-hover'}`}
-                    >
-                        <Piano size={14}/> Piano Roll
+                <div className="h-10 border-b theme-border flex items-center px-3 gap-1 theme-bg-secondary">
+                    <div className="flex items-center rounded-md overflow-hidden border theme-border mr-2">
+                        <button
+                            onClick={() => setNotationView('piano')}
+                            className={`px-3 py-1.5 text-xs flex items-center gap-1.5 border-r theme-border ${notationView === 'piano' ? 'bg-purple-600 text-white' : 'theme-hover theme-text-muted'}`}
+                        >
+                            <Piano size={13}/> Piano Roll
+                        </button>
+                        <button
+                            onClick={() => setNotationView('sheet')}
+                            className={`px-3 py-1.5 text-xs flex items-center gap-1.5 border-r theme-border ${notationView === 'sheet' ? 'bg-purple-600 text-white' : 'theme-hover theme-text-muted'}`}
+                        >
+                            <Music2 size={13}/> Sheet Music
+                        </button>
+                        <button
+                            onClick={() => setNotationView('tab')}
+                            className={`px-3 py-1.5 text-xs flex items-center gap-1.5 ${notationView === 'tab' ? 'bg-purple-600 text-white' : 'theme-hover theme-text-muted'}`}
+                        >
+                            <Guitar size={13}/> Guitar Tab
+                        </button>
+                    </div>
+
+                    <button onClick={() => setShowLibrary(!showLibrary)} className={`px-2.5 py-1.5 rounded text-xs flex items-center gap-1.5 ${showLibrary ? 'bg-purple-600 text-white' : 'theme-bg-tertiary theme-hover'}`} title="Demo Scores Library">
+                        <Library size={13}/> Scores
                     </button>
-                    <button
-                        onClick={() => setNotationView('sheet')}
-                        className={`px-3 py-1.5 rounded text-sm flex items-center gap-1 ${notationView === 'sheet' ? 'bg-purple-600' : 'theme-bg-tertiary theme-hover'}`}
-                    >
-                        <Music2 size={14}/> Sheet Music
-                    </button>
-                    <button
-                        onClick={() => setNotationView('tab')}
-                        className={`px-3 py-1.5 rounded text-sm flex items-center gap-1 ${notationView === 'tab' ? 'bg-purple-600' : 'theme-bg-tertiary theme-hover'}`}
-                    >
-                        <Guitar size={14}/> Guitar Tab
-                    </button>
+
                     <div className="w-px h-6 theme-bg-tertiary mx-2"/>
 
                     <button
@@ -5017,11 +5529,10 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     </button>
                     <button
                         onClick={playNotation}
-                        disabled={pianoNotes.length === 0}
-                        className={`p-2 rounded ${pianoNotes.length > 0 ? (isNotationPlaying ? 'bg-red-600 hover:bg-red-700' : 'bg-purple-600 hover:bg-purple-700') : 'theme-bg-tertiary opacity-50'}`}
+                        className={`p-1.5 rounded ${isNotationPlaying ? 'bg-red-500 hover:bg-red-600 text-white' : 'theme-bg-tertiary theme-hover'}`}
                         title={isNotationPlaying ? 'Stop' : 'Play'}
                     >
-                        {isNotationPlaying ? <Square size={16}/> : <Play size={16}/>}
+                        {isNotationPlaying ? <Square size={14}/> : <Play size={14}/>}
                     </button>
 
                     <div className="w-px h-6 theme-bg-tertiary mx-2"/>
@@ -5056,16 +5567,16 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
                     <div className="w-px h-6 theme-bg-tertiary mx-2"/>
 
-                    <span className="text-xs theme-text-muted">Instrument:</span>
+                    <span className="text-xs theme-text-muted">Sound:</span>
                     <select
                         value={notationInstrument}
                         onChange={(e) => setNotationInstrument(e.target.value as typeof notationInstrument)}
                         className="px-2 py-1 theme-bg-tertiary rounded text-sm"
                     >
-                        <option value="triangle">Piano</option>
-                        <option value="sine">Flute</option>
-                        <option value="square">Organ</option>
-                        <option value="sawtooth">Strings</option>
+                        <option value="triangle">{notationView === 'tab' ? 'Clean' : 'Piano'}</option>
+                        <option value="sine">{notationView === 'tab' ? 'Mellow' : 'Flute'}</option>
+                        <option value="square">{notationView === 'tab' ? 'Drive' : 'Organ'}</option>
+                        <option value="sawtooth">{notationView === 'tab' ? 'Distortion' : 'Strings'}</option>
                     </select>
 
                     <div className="flex-1"/>
@@ -5125,6 +5636,14 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         className={`px-2 py-1 rounded text-xs flex items-center gap-1 ${pianoNotes.length > 0 ? 'theme-bg-tertiary theme-hover' : 'opacity-30'}`} title="Export MIDI">
                         <Download size={12}/> MIDI
                     </button>
+                    <button onClick={exportMusicXML} disabled={pianoNotes.length === 0}
+                        className={`px-2 py-1 rounded text-xs flex items-center gap-1 ${pianoNotes.length > 0 ? 'theme-bg-tertiary theme-hover' : 'opacity-30'}`} title="Export MusicXML (MuseScore)">
+                        <Download size={12}/> XML
+                    </button>
+                    <button onClick={importMusicXML}
+                        className="px-2 py-1 rounded text-xs flex items-center gap-1 theme-bg-tertiary theme-hover" title="Import MusicXML">
+                        <Upload size={12}/> XML
+                    </button>
 
                     <div className="w-px h-6 theme-bg-tertiary mx-1"/>
 
@@ -5144,9 +5663,56 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     </button>
                 </div>
 
-                {notationView === 'piano' && renderPianoRoll()}
-                {notationView === 'sheet' && renderSheetMusic()}
-                {notationView === 'tab' && renderGuitarTab()}
+                {showLibrary ? (
+                    <div className="flex-1 overflow-auto" style={{ background: '#1a1a2e' }}>
+                        <div className="max-w-4xl mx-auto p-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <h2 className="text-lg font-semibold text-white">Score Library</h2>
+                                <button onClick={() => setShowLibrary(false)} className="p-1 rounded hover:bg-white/10">
+                                    <X size={16} className="text-gray-400"/>
+                                </button>
+                            </div>
+
+                            {(['classical', 'folk', 'guitar'] as const).map(cat => (
+                                <div key={cat} className="mb-6">
+                                    <h3 className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: cat === 'classical' ? '#a78bfa' : cat === 'folk' ? '#34d399' : '#f59e0b' }}>
+                                        {cat === 'classical' ? 'Classical' : cat === 'folk' ? 'World Folk' : 'Guitar Masters'}
+                                    </h3>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                                        {demoScores.filter(s => s.category === cat).map((score, i) => (
+                                            <button
+                                                key={i}
+                                                onClick={() => loadDemoScore(score)}
+                                                className="text-left p-3 rounded-lg border transition-colors hover:border-purple-500/50"
+                                                style={{ background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.08)' }}
+                                            >
+                                                <div className="text-sm font-medium text-white truncate">{score.title}</div>
+                                                <div className="text-xs text-gray-400 mt-0.5">{score.composer}</div>
+                                                <div className="flex items-center gap-2 mt-1.5 text-[10px] text-gray-500">
+                                                    <span>{score.region}</span>
+                                                    <span>·</span>
+                                                    <span>{score.year}</span>
+                                                    <span>·</span>
+                                                    <span>{score.key} {score.timeSignature[0]}/{score.timeSignature[1]}</span>
+                                                    <span>·</span>
+                                                    <span>{score.notes.length} notes</span>
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+
+                            <p className="text-[10px] text-gray-600 mt-4">All scores are public domain excerpts. Import full scores via MusicXML from IMSLP or MuseScore.</p>
+                        </div>
+                    </div>
+                ) : (
+                    <>
+                        {notationView === 'piano' && renderPianoRoll()}
+                        {notationView === 'sheet' && renderSheetMusic()}
+                        {notationView === 'tab' && renderGuitarTab()}
+                    </>
+                )}
             </div>
         );
     };

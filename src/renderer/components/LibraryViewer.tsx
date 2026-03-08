@@ -9,6 +9,9 @@ import {
     Heading1, Heading2, Heading3, ListOrdered, Quote, Code, Link,
     Minus, CornerDownLeft, Maximize2, Minimize2, Columns, PanelLeft
 } from 'lucide-react';
+import {
+    NovelEditor, ScreenplayEditor, PoetryEditor, JournalEditor, MangaEditor
+} from 'npcts';
 
 // ─── Types ───
 
@@ -37,6 +40,20 @@ interface WritingProject {
     coverColor: string;
 }
 
+interface MangaPanel {
+    id: string;
+    position: number;
+    imageUrl?: string;
+    description: string;
+}
+
+interface MangaPage {
+    id: string;
+    number: number;
+    layout: 'full' | 'split-horizontal' | 'split-vertical' | 'quad' | 'three-top' | 'three-bottom' | null;
+    panels: MangaPanel[];
+}
+
 interface WritingChapter {
     id: string;
     title: string;
@@ -47,6 +64,7 @@ interface WritingChapter {
     notes: string;
     createdAt: string;
     updatedAt: string;
+    pages?: MangaPage[];
 }
 
 interface WritingCharacter {
@@ -214,13 +232,19 @@ const Grimoire: React.FC<GrimoireProps> = ({ currentPath, onOpenDocument }) => {
 
     // ─── Browse logic ───
     const scanDirectory = useCallback(async (dirPath: string, maxDepth: number = 3): Promise<Document[]> => {
+        if (!dirPath) return [];
         const docs: Document[] = [];
+        const MAX_DOCS = 500;
+        let dirCount = 0;
         const scan = async (path: string, depth: number) => {
-            if (depth > maxDepth) return;
+            if (depth > maxDepth || docs.length >= MAX_DOCS) return;
             try {
                 const items = await (window as any).api?.readDirectory?.(path);
                 if (!items || !Array.isArray(items)) return;
+                // Yield to UI thread every 20 directories so clicks aren't blocked
+                if (++dirCount % 20 === 0) await new Promise(r => setTimeout(r, 0));
                 for (const item of items) {
+                    if (docs.length >= MAX_DOCS) break;
                     if (item.isDirectory) {
                         if (!['node_modules', '.git', '__pycache__', '.next', 'dist', 'build', '.venv', 'venv'].includes(item.name)) {
                             await scan(item.path, depth + 1);
@@ -264,7 +288,10 @@ const Grimoire: React.FC<GrimoireProps> = ({ currentPath, onOpenDocument }) => {
         setLoading(false);
     }, [currentPath, activeSource, scanDirectory]);
 
-    useEffect(() => { loadDocuments(); }, [loadDocuments]);
+    // Load documents when browse tab is active and deps change
+    useEffect(() => {
+        if (activeMode === 'browse') loadDocuments();
+    }, [activeMode, loadDocuments]);
 
     const toggleFavorite = useCallback((path: string) => {
         const next = new Set(favorites);
@@ -305,18 +332,19 @@ const Grimoire: React.FC<GrimoireProps> = ({ currentPath, onOpenDocument }) => {
             type: newProjectType,
             chapters: [{
                 id: generateId(),
-                title: 'Chapter 1',
-                content: '',
+                title: newProjectType === 'poetry' ? 'Poem 1' : newProjectType === 'journal' ? 'Journal' : newProjectType === 'manga' ? 'Volume 1' : newProjectType === 'screenplay' ? 'Act 1' : 'Chapter 1',
+                content: newProjectType === 'screenplay' ? JSON.stringify([{ id: '1', type: 'scene', text: '' }]) : '',
                 number: 1,
                 wordCount: 0,
                 status: 'draft',
                 notes: '',
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
+                ...(newProjectType === 'manga' ? { pages: [] } : {}),
             }],
             characters: [],
             notes: '',
-            wordGoal: newProjectType === 'novel' ? 50000 : newProjectType === 'story' ? 5000 : 0,
+            wordGoal: newProjectType === 'novel' ? 50000 : newProjectType === 'story' ? 5000 : newProjectType === 'screenplay' ? 25000 : newProjectType === 'poetry' ? 1000 : 0,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             coverColor: COVER_COLORS[Math.floor(Math.random() * COVER_COLORS.length)],
@@ -340,16 +368,19 @@ const Grimoire: React.FC<GrimoireProps> = ({ currentPath, onOpenDocument }) => {
 
     const addChapter = useCallback(() => {
         if (!activeProject) return;
+        const n = activeProject.chapters.length + 1;
+        const label = activeProject.type === 'poetry' ? `Poem ${n}` : activeProject.type === 'journal' ? `Journal ${n}` : activeProject.type === 'manga' ? `Volume ${n}` : activeProject.type === 'screenplay' ? `Act ${n}` : `Chapter ${n}`;
         const newChapter: WritingChapter = {
             id: generateId(),
-            title: `Chapter ${activeProject.chapters.length + 1}`,
-            content: '',
-            number: activeProject.chapters.length + 1,
+            title: label,
+            content: activeProject.type === 'screenplay' ? JSON.stringify([{ id: '1', type: 'scene', text: '' }]) : '',
+            number: n,
             wordCount: 0,
             status: 'draft',
             notes: '',
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
+            ...(activeProject.type === 'manga' ? { pages: [] } : {}),
         };
         updateProject(activeProject.id, { chapters: [...activeProject.chapters, newChapter] });
         setActiveChapterId(newChapter.id);
@@ -715,7 +746,9 @@ const Grimoire: React.FC<GrimoireProps> = ({ currentPath, onOpenDocument }) => {
                         <div className="flex-1 overflow-auto">
                             <div className="p-2">
                                 <div className="flex items-center justify-between mb-1">
-                                    <span className="text-[10px] uppercase tracking-wider text-gray-500">Chapters</span>
+                                    <span className="text-[10px] uppercase tracking-wider text-gray-500">
+                                        {activeProject.type === 'poetry' ? 'Poems' : activeProject.type === 'journal' ? 'Journals' : activeProject.type === 'manga' ? 'Volumes' : activeProject.type === 'screenplay' ? 'Acts' : 'Chapters'}
+                                    </span>
                                     <button onClick={addChapter} className="p-0.5 theme-hover rounded"><Plus size={12} /></button>
                                 </div>
                                 {activeProject.chapters.map(ch => (
@@ -778,13 +811,6 @@ const Grimoire: React.FC<GrimoireProps> = ({ currentPath, onOpenDocument }) => {
                                 <input type="text" value={activeChapter.title}
                                     onChange={(e) => updateChapter(activeChapter.id, { title: e.target.value })}
                                     className="text-sm font-medium bg-transparent border-none outline-none flex-1 min-w-0" />
-                                <select value={activeChapter.status}
-                                    onChange={(e) => updateChapter(activeChapter.id, { status: e.target.value as any })}
-                                    className="text-[10px] px-2 py-0.5 theme-bg-tertiary rounded border theme-border">
-                                    <option value="draft">Draft</option>
-                                    <option value="revision">Revision</option>
-                                    <option value="final">Final</option>
-                                </select>
                                 <span className="text-[10px] text-gray-500">{activeChapter.wordCount} words</span>
                             </>
                         )}
@@ -800,18 +826,39 @@ const Grimoire: React.FC<GrimoireProps> = ({ currentPath, onOpenDocument }) => {
 
                     <div className="flex-1 overflow-auto">
                         {writeView === 'chapter' && activeChapter ? (
-                            <div className="max-w-3xl mx-auto p-6">
-                                <textarea
+                            activeProject.type === 'manga' ? (
+                                <MangaEditor
                                     key={activeChapter.id}
-                                    ref={editorRef}
-                                    defaultValue={activeChapter.content}
-                                    onChange={(e) => handleChapterContentChange(e.target.value)}
-                                    placeholder="Begin writing..."
-                                    className="w-full min-h-[70vh] bg-transparent border-none outline-none resize-none text-base leading-relaxed theme-text-primary"
-                                    style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}
-                                    spellCheck
+                                    chapter={activeChapter}
+                                    onUpdateChapter={updateChapter}
                                 />
-                            </div>
+                            ) : activeProject.type === 'screenplay' ? (
+                                <ScreenplayEditor
+                                    key={activeChapter.id}
+                                    chapter={activeChapter}
+                                    onContentChange={handleChapterContentChange}
+                                />
+                            ) : activeProject.type === 'poetry' ? (
+                                <PoetryEditor
+                                    key={activeChapter.id}
+                                    chapter={activeChapter}
+                                    onContentChange={handleChapterContentChange}
+                                />
+                            ) : activeProject.type === 'journal' ? (
+                                <JournalEditor
+                                    key={activeChapter.id}
+                                    chapter={activeChapter}
+                                    onContentChange={handleChapterContentChange}
+                                    onUpdateChapter={updateChapter}
+                                />
+                            ) : (
+                                <NovelEditor
+                                    key={activeChapter.id}
+                                    chapter={activeChapter}
+                                    onContentChange={handleChapterContentChange}
+                                    wordGoal={activeProject.wordGoal}
+                                />
+                            )
                         ) : writeView === 'outline' ? (
                             <div className="max-w-3xl mx-auto p-6">
                                 <h2 className="text-lg font-bold mb-4">Outline</h2>

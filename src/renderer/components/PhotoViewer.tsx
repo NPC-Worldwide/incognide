@@ -217,6 +217,7 @@ const [isDrawingBrush, setIsDrawingBrush] = useState(false);
     const fileInputRef = useRef(null);
     const imageRef = useRef(null);
     const canvasContainerRef = useRef(null);
+    const lastSaveDataRef = useRef<any>(null);
 
     const activeSource = imageSources.find(s => s.id === activeSourceId);
     const sourceImages = (activeSource?.images || []);
@@ -4598,8 +4599,6 @@ const renderDarkRoom = () => {
         }
         await executeGenerativeFill(sel, prompt);
     };
-
-    const lastSaveDataRef = useRef<any>(null);
 
     const getFileParts = () => {
         if (!selectedImage) return null;
