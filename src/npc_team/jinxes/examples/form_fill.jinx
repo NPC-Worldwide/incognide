@@ -1,0 +1,33 @@
+jinx_name: form_fill
+description: >
+  Navigate to a URL in the active browser pane, then fill in a form field and submit.
+  Example: /form_fill url=https://google.com selector="textarea[name=q]" value="npcsh" submit=true
+inputs:
+  - url
+  - selector
+  - value
+  - { submit: false }
+steps:
+  - name: go_to_page
+    engine: incognide
+    action: navigate
+    args:
+      url: "{{ url }}"
+      paneId: active
+
+  - name: wait
+    engine: python
+    code: |
+      import time
+      time.sleep(1)
+      output = "Page loaded"
+
+  - name: fill_field
+    engine: incognide
+    action: browser_type
+    args:
+      selector: "{{ selector }}"
+      text: "{{ value }}"
+      clear: "true"
+      submit: "{{ submit }}"
+      paneId: active

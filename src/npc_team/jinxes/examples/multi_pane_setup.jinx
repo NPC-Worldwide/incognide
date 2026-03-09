@@ -1,0 +1,30 @@
+jinx_name: multi_pane_setup
+description: >
+  Set up a multi-pane workspace: browser on the left, terminal on the right, chat below.
+  Example: /multi_pane_setup url=https://docs.python.org
+inputs:
+  - { url: "https://google.com" }
+steps:
+  - name: open_browser
+    engine: incognide
+    action: open_pane
+    args:
+      type: browser
+      url: "{{ url }}"
+      position: right
+
+  - name: open_terminal
+    engine: incognide
+    action: split_pane
+    args:
+      paneId: active
+      direction: right
+      type: terminal
+
+  - name: open_chat
+    engine: incognide
+    action: split_pane
+    args:
+      paneId: active
+      direction: down
+      type: chat

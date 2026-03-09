@@ -1,0 +1,45 @@
+jinx_name: incognide
+description: Engine jinx for Incognide studio actions. Use as engine in other jinxes to call UI actions.
+inputs:
+  - { action: "" }
+  - { args: "" }
+steps:
+  - name: studio_action
+    engine: python
+    code: |
+      import requests, json as _json
+      _action = context.get('action', '').strip()
+      _args_raw = context.get('args', {})
+      if isinstance(_args_raw, str):
+          try:
+              _args = _json.loads(_args_raw)
+          except Exception:
+              _args = {}
+      else:
+          _args = dict(_args_raw) if _args_raw else {}
+      if not _action:
+          output = 'Error: action is required'
+      else:
+          _port = 5437
+          try:
+              import socket as _sock
+              for _p in [5337, 5437]:
+                  try:
+                      _s = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
+                      _s.settimeout(0.3)
+                      _s.connect(('127.0.0.1', _p))
+                      _s.close()
+                      _port = _p
+                      break
+                  except Exception:
+                      pass
+          except Exception:
+              pass
+          try:
+              _r = requests.post(f'http://127.0.0.1:{_port}/api/studio/action',
+                  json={'action': _action, 'args': _args}, timeout=15)
+              _res = _r.json()
+              output = _json.dumps(_res, indent=2)
+              context['action_result'] = _res
+          except Exception as _e:
+              output = f"Error calling Incognide action '{_action}': {_e}"

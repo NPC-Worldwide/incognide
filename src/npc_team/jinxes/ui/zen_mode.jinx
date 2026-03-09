@@ -1,0 +1,10 @@
+jinx_name: zen_mode
+description: Toggle zen mode (fullscreen) for a pane.
+inputs:
+  - { pane_id: "active" }
+steps:
+  - name: zen_mode
+    engine: incognide
+    action: zen_mode
+    args:
+      paneId: "{{ pane_id }}"

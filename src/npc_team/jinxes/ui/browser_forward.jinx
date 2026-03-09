@@ -1,0 +1,10 @@
+jinx_name: browser_forward
+description: Navigate forward in a browser pane's history.
+inputs:
+  - { pane_id: "active" }
+steps:
+  - name: browser_forward
+    engine: incognide
+    action: browser_forward
+    args:
+      paneId: "{{ pane_id }}"

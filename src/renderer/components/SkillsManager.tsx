@@ -12,6 +12,7 @@ interface SkillsManagerProps {
     currentPath: string;
     embedded?: boolean;
     onOpenJinxEditor?: () => void;
+    initialJinxName?: string;
 }
 
 interface JinxItem {
@@ -113,7 +114,7 @@ function filterJinxes(jinxes: JinxItem[], query: string): JinxItem[] {
     );
 }
 
-const SkillsManager: React.FC<SkillsManagerProps> = ({ currentPath, embedded = true, onOpenJinxEditor }) => {
+const SkillsManager: React.FC<SkillsManagerProps> = ({ currentPath, embedded = true, onOpenJinxEditor, initialJinxName }) => {
 
     const [jinxesByTeam, setJinxesByTeam] = useState<{ npcsh: JinxItem[]; incognide: JinxItem[]; project: JinxItem[] }>({
         npcsh: [], incognide: [], project: [],
@@ -165,6 +166,14 @@ const SkillsManager: React.FC<SkillsManagerProps> = ({ currentPath, embedded = t
     }, [currentPath]);
 
     useEffect(() => { loadAllJinxes(); }, [currentPath]);
+
+    // Auto-select jinx by name when opened from sidebar
+    useEffect(() => {
+        if (!initialJinxName || loading) return;
+        const all = [...jinxesByTeam.project, ...jinxesByTeam.incognide, ...jinxesByTeam.npcsh];
+        const match = all.find(j => j.jinx_name === initialJinxName);
+        if (match) setSelectedJinx(match);
+    }, [initialJinxName, loading, jinxesByTeam]);
 
     const trees = useMemo(() => {
         const filtered = {

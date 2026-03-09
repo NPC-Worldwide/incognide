@@ -1,0 +1,34 @@
+jinx_name: screenshot_and_summarize
+description: >
+  Take a screenshot of the active browser pane and get its text content,
+  then use an LLM to summarize the page.
+  Example: /screenshot_and_summarize
+inputs: []
+steps:
+  - name: get_page
+    engine: incognide
+    action: get_browser_content
+    args:
+      paneId: active
+
+  - name: screenshot
+    engine: incognide
+    action: browser_screenshot
+    args:
+      paneId: active
+
+  - name: summarize
+    engine: python
+    code: |
+      from npcpy.llm_funcs import get_llm_response
+      page_content = context.get('get_page', '')
+      if not page_content or 'Error' in str(page_content):
+          output = 'No browser content found. Open a browser pane first.'
+      else:
+          _model = npc.model if npc else 'gemma3:4b'
+          _provider = npc.provider if npc else 'ollama'
+          resp = get_llm_response(
+              f"Summarize this web page content in 3-5 bullet points:\n\n{page_content[:4000]}",
+              model=_model, provider=_provider
+          )
+          output = resp.get('response', str(resp)) if isinstance(resp, dict) else str(resp)

@@ -782,6 +782,17 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     currentPathRef.current = currentPath;
     const activeContentPaneIdRef = useRef(activeContentPaneId);
     activeContentPaneIdRef.current = activeContentPaneId;
+
+    // Toggle blue outline on active pane via DOM — avoids re-rendering panes
+    useEffect(() => {
+        const prev = document.querySelector('[data-pane-id].pane-active');
+        if (prev) prev.classList.remove('pane-active');
+        if (activeContentPaneId) {
+            const el = document.querySelector(`[data-pane-id="${activeContentPaneId}"]`);
+            if (el) el.classList.add('pane-active');
+        }
+    }, [activeContentPaneId]);
+
     const [editorContextMenuPos, setEditorContextMenuPos] = useState(null);
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
     const [lockedPanes, setLockedPanes] = useState<Set<string>>(() => {
@@ -5110,18 +5121,20 @@ ${contextPrompt}`;
     }, []);
 
     const renderSkillsManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
+        const paneData = contentDataRef.current[nodeId];
         return (
             <SkillsManager
                 currentPath={currentPath}
                 embedded={true}
                 onOpenJinxEditor={() => createJinxPane?.()}
+                initialJinxName={paneData?.initialJinxName}
             />
         );
     }, [currentPath, createJinxPane]);
 
-    const createSkillsManagerPane = useCallback(async () => {
+    const createSkillsManagerPane = useCallback(async (jinxName?: string) => {
         const newPaneId = generateId();
-        contentDataRef.current[newPaneId] = { contentType: 'skills-manager', contentId: 'skills-manager' };
+        contentDataRef.current[newPaneId] = { contentType: 'skills-manager', contentId: 'skills-manager', initialJinxName: jinxName };
         addPaneOrTab(newPaneId);
     }, []);
 

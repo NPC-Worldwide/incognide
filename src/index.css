@@ -205,6 +205,10 @@ body.light-mode {
 .theme-text-muted { color: var(--theme-text-muted) !important; }
 
 .theme-border { border-color: var(--theme-border) !important; }
+.theme-border.pane-active {
+    border-color: #3b82f6 !important;
+    box-shadow: 0 0 0 1px #3b82f6;
+}
 .theme-border-secondary { border-color: var(--theme-border-secondary) !important; }
 
 .theme-button {

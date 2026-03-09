@@ -1,0 +1,10 @@
+jinx_name: get_browser_info
+description: Get info about a browser pane (URL, title).
+inputs:
+  - { pane_id: "active" }
+steps:
+  - name: get_browser_info
+    engine: incognide
+    action: get_browser_info
+    args:
+      paneId: "{{ pane_id }}"

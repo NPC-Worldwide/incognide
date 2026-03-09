@@ -319,8 +319,6 @@ export const LayoutNode = memo(({ node, path, component: componentRef, contentVe
 
         const chatInputProps = getChatInputProps ? getChatInputProps(node.id) : null;
 
-        const isActive = node.id === activeContentPaneId;
-
         const [localDragOver, setLocalDragOver] = useState(false);
         const [localDropSide, setLocalDropSide] = useState<string | null>(null);
         const dragCounterRef = useRef(0);
@@ -1443,7 +1441,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef, contentVe
 
         return (
             <div
-                className={`flex-1 flex flex-col border ${isActive ? 'border-blue-500 ring-1 ring-blue-500' : 'theme-border'}`}
+                className="flex-1 flex flex-col border theme-border"
                 style={{ position: 'relative', overflow: 'hidden' }}
                 data-pane-id={node.id}
                 data-pane-type={contentType}
@@ -1554,5 +1552,5 @@ export const LayoutNode = memo(({ node, path, component: componentRef, contentVe
         );
     }
     return null;
-}, (prev, next) => prev.node === next.node && prev.contentVersion === next.contentVersion && prev.activeContentPaneId === next.activeContentPaneId);
+}, (prev, next) => prev.node === next.node && prev.contentVersion === next.contentVersion);
 

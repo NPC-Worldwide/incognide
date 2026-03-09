@@ -1,0 +1,12 @@
+jinx_name: send_message
+description: Send a message to a chat pane.
+inputs:
+  - message
+  - { pane_id: "active" }
+steps:
+  - name: send_message
+    engine: incognide
+    action: send_message
+    args:
+      message: "{{ message }}"
+      paneId: "{{ pane_id }}"

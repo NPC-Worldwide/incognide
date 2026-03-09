@@ -1,0 +1,27 @@
+jinx_name: web_scrape
+description: >
+  Open a URL in a browser pane, wait for it to load, then extract the page content.
+  Example: /web_scrape url=https://news.ycombinator.com
+inputs:
+  - url
+steps:
+  - name: open_browser
+    engine: incognide
+    action: open_pane
+    args:
+      type: browser
+      url: "{{ url }}"
+      position: right
+
+  - name: wait_for_load
+    engine: python
+    code: |
+      import time
+      time.sleep(2)
+      output = "Waited for page load"
+
+  - name: scrape_content
+    engine: incognide
+    action: get_browser_content
+    args:
+      paneId: active

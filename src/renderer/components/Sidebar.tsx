@@ -13,7 +13,7 @@ import {
     Loader2, ExternalLink, Link, Unlink, Filter, SortAsc, SortDesc, Table, Grid,
     List, Maximize2, Minimize2, Move, RotateCcw, ZoomIn, ZoomOut, Layers, Layout,
     Pause, Server, Mail, Cpu, Wifi, WifiOff, Power, PowerOff, Hash, AtSign, FlaskConical,
-    BrainCircuit, Music
+    BrainCircuit, Music, Square
 } from 'lucide-react';
 import CodeMirror from '@uiw/react-codemirror';
 import { javascript } from '@codemirror/lang-javascript';
@@ -1888,9 +1888,10 @@ const renderSidebarSkillNodes = (nodes: any[], teamKey: string, depth: number): 
             return (
                 <div
                     key={`${teamKey}-${name}-${idx}`}
-                    className="flex items-center gap-1 py-0.5 rounded hover:theme-bg-secondary text-[10px]"
+                    className="flex items-center gap-1 py-0.5 rounded hover:theme-bg-secondary text-[10px] cursor-pointer"
                     style={{ paddingLeft: `${depth * 10 + 6}px` }}
                     title={jinx.description || name}
+                    onClick={() => createSkillsManagerPane?.(name)}
                 >
                     {isSkill
                         ? <BookOpen size={9} className="text-purple-400 flex-shrink-0" />
@@ -6089,6 +6090,13 @@ return (
 
         {!bottomGridCollapsed && !sidebarCollapsed && (
         <div className="flex justify-center items-center gap-2 border-t theme-border" style={{ height: bottomBarHeight }}>
+            <button
+                onClick={() => createSkillsManagerPane?.()}
+                className="p-2 rounded-full hover:bg-teal-500/20 transition-all text-gray-400 hover:text-purple-400"
+                title="Skills & Jinxes"
+            >
+                <Zap size={18} />
+            </button>
             <button
                 onClick={() => setDownloadManagerOpen?.(true)}
                 className="p-2 rounded-full hover:bg-teal-500/20 transition-all text-gray-400 hover:text-blue-400"

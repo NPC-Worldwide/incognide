@@ -1,0 +1,12 @@
+jinx_name: browser_eval
+description: Execute JavaScript code in a browser pane's page context.
+inputs:
+  - code
+  - { pane_id: "active" }
+steps:
+  - name: browser_eval
+    engine: incognide
+    action: browser_eval
+    args:
+      code: "{{ code }}"
+      paneId: "{{ pane_id }}"

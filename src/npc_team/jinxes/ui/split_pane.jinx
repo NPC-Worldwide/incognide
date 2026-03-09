@@ -1,0 +1,16 @@
+jinx_name: split_pane
+description: Split an existing pane to create a new pane next to it. Direction: right, left, up, down.
+inputs:
+  - direction
+  - pane_type
+  - { content_id: "" }
+  - { pane_id: "active" }
+steps:
+  - name: split_pane
+    engine: incognide
+    action: split_pane
+    args:
+      paneId: "{{ pane_id }}"
+      direction: "{{ direction }}"
+      type: "{{ pane_type }}"
+      path: "{{ content_id }}"
