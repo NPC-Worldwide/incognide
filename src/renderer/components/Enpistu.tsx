@@ -3343,7 +3343,6 @@ const renderGitPane = useCallback(({ nodeId }: { nodeId: string }) => {
     gitPushWithUpstream, gitEnableAutoSetupRemote, gitPullAndPush, setPushRejectedPrompt, openFileDiffPane,
     gitCherryPick, gitCherryPickAbort, gitCherryPickContinue, gitRevertCommit, gitResetToCommit, gitLogBranch]);
 
-
 // Render FolderViewer pane (for pane-based folder browsing)
 const renderFolderViewerPane = useCallback(({ nodeId }: { nodeId: string }) => {
     const paneData = contentDataRef.current[nodeId];
@@ -8382,7 +8381,6 @@ const renderMainContent = () => {
                                 <div className="absolute right-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-50 py-1 min-w-[160px]">
                                     <button onClick={() => { createLibraryViewerPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><BookOpen size={14} /> Grimoire</button>
                                     <button onClick={() => { createPhotoViewerPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><Image size={14} /> Vixynt</button>
-                                    <button onClick={() => { startPomodoro(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><Clock size={14} /> {pomodoroActive ? `Pomodoro ${formatPomodoroTime(pomodoroSecondsLeft)}` : 'Pomodoro'}</button>
                                     <button onClick={() => { createScherzoPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><Music size={14} /> Scherzo</button>
                                     <button onClick={() => { createCronDaemonPane(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><Zap size={14} /> Assembly Line</button>
                                 </div>
@@ -8682,6 +8680,7 @@ const renderMainContent = () => {
                         createGraphViewerPane={createGraphViewerPane}
                         createNPCTeamPane={createNPCTeamPane}
                         createJinxPane={createJinxPane}
+                        createSkillsManagerPane={createSkillsManagerPane}
                         height={bottomBarHeight}
                         onStartResize={() => setIsResizingBottomBar(true)}
                         sidebarCollapsed={sidebarCollapsed}
@@ -8735,7 +8734,7 @@ const renderMainContent = () => {
             {topBar}
             <div className="flex-1 flex overflow-hidden" data-tutorial="pane-area">
                 {rootLayoutNode ? (
-                    <LayoutNode node={rootLayoutNode} path={[]} component={layoutComponentRef} contentVersion={contentVersion} />
+                    <LayoutNode node={rootLayoutNode} path={[]} component={layoutComponentRef} />
                 ) : (
                     <div className="flex-1 flex items-center justify-center theme-text-muted">
                         {loading ? "Loading..." : "Drag a conversation or file to start."}
@@ -8763,6 +8762,7 @@ const renderMainContent = () => {
                     createGraphViewerPane={createGraphViewerPane}
                     createNPCTeamPane={createNPCTeamPane}
                     createJinxPane={createJinxPane}
+                    createSkillsManagerPane={createSkillsManagerPane}
                     height={bottomBarHeight}
                     onStartResize={() => setIsResizingBottomBar(true)}
                     sidebarCollapsed={sidebarCollapsed}

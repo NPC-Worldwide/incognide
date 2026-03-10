@@ -6091,13 +6091,6 @@ return (
         {!bottomGridCollapsed && !sidebarCollapsed && (
         <div className="flex justify-center items-center gap-2 border-t theme-border" style={{ height: bottomBarHeight }}>
             <button
-                onClick={() => createSkillsManagerPane?.()}
-                className="p-2 rounded-full hover:bg-teal-500/20 transition-all text-gray-400 hover:text-purple-400"
-                title="Skills & Jinxes"
-            >
-                <Zap size={18} />
-            </button>
-            <button
                 onClick={() => setDownloadManagerOpen?.(true)}
                 className="p-2 rounded-full hover:bg-teal-500/20 transition-all text-gray-400 hover:text-blue-400"
                 title="Download Manager (Alt+D)"

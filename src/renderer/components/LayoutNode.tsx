@@ -177,7 +177,7 @@ export const syncLayoutWithContentData = (layoutNode: any, contentData: Record<s
     return cleanedLayout;
 };
 
-export const LayoutNode = memo(({ node, path, component: componentRef, contentVersion, activeContentPaneId: activePaneIdProp }) => {
+export const LayoutNode = memo(({ node, path, component: componentRef }) => {
 
     const component = componentRef.current;
     if (!node) return null;
@@ -272,7 +272,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef, contentVe
                 {node.children.map((child, index) => (
                     <React.Fragment key={child.id}>
                         <div className="flex overflow-hidden" style={{ flexBasis: `${node.sizes[index]}%` }}>
-                            <LayoutNode node={child} path={[...path, index]} component={componentRef} contentVersion={contentVersion} activeContentPaneId={activePaneIdProp} />
+                            <LayoutNode node={child} path={[...path, index]} component={componentRef} />
                         </div>
                         {index < node.children.length - 1 && (
                             <div
@@ -1552,5 +1552,5 @@ export const LayoutNode = memo(({ node, path, component: componentRef, contentVe
         );
     }
     return null;
-}, (prev, next) => prev.node === next.node && prev.contentVersion === next.contentVersion);
+}, (prev, next) => prev.node === next.node);
 

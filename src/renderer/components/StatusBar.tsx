@@ -35,6 +35,7 @@ interface StatusBarProps {
 
     createNPCTeamPane?: () => void;
     createJinxPane?: () => void;
+    createSkillsManagerPane?: () => void;
 
     height?: number;
     onStartResize?: () => void;
@@ -70,6 +71,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
     createGraphViewerPane,
     createNPCTeamPane,
     createJinxPane,
+    createSkillsManagerPane,
     height = 48,
     onStartResize,
     sidebarCollapsed = false,
@@ -341,9 +343,9 @@ const StatusBar: React.FC<StatusBarProps> = ({
 
                     <button
                         data-tutorial="jinxes-button"
-                        onClick={() => createJinxPane?.()}
+                        onClick={() => createSkillsManagerPane?.()}
                         className={`${btnClass} text-yellow-600 dark:text-yellow-400`}
-                        title="Jinxes"
+                        title="Skills & Jinxes"
                     >
                         <Zap size={20} />
                     </button>
