@@ -335,6 +335,8 @@
     // ==================== Window ====================
     openNewWindow: (path) => invoke('open-new-window', path),
     getWindowCount: () => invoke('get-window-count'),
+    getAllWindowsInfo: () => invoke('get-all-windows-info'),
+    closeWindowById: (windowId) => invoke('close-window-by-id', windowId),
     openInNativeExplorer: (path) => invoke('open-in-native-explorer', path),
     closeWindow: () => invoke('close-window'),
     showItemInFolder: (path) => invoke('show-item-in-folder', path),

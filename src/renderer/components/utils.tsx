@@ -175,6 +175,18 @@ export const useLoadWebsiteHistory = (
                 subdomains: Map<string, { hostname: string; count: number; lastVisited: string; favicon: string }>;
             }>();
 
+            // First pass: collect unique first-path-segments per root domain
+            const domainPathSegments = new Map<string, Set<string>>();
+            response.history.forEach((item: any) => {
+                try {
+                    const url = new URL(item.url);
+                    const root = getRootDomain(url.hostname);
+                    const seg = url.pathname.split('/').filter(Boolean)[0] || '';
+                    if (!domainPathSegments.has(root)) domainPathSegments.set(root, new Set());
+                    if (seg) domainPathSegments.get(root)!.add(seg);
+                } catch {}
+            });
+
             response.history.forEach((item: any) => {
                 try {
                     const url = new URL(item.url);
@@ -192,15 +204,22 @@ export const useLoadWebsiteHistory = (
                     const group = domainGroups.get(root)!;
                     group.totalCount++;
 
-                    if (!group.subdomains.has(hostname)) {
-                        group.subdomains.set(hostname, {
-                            hostname,
+                    // Use hostname + first path segment as subkey when domain has multiple path segments
+                    const pathSegments = domainPathSegments.get(root);
+                    const seg = url.pathname.split('/').filter(Boolean)[0] || '';
+                    const hasMultiplePaths = pathSegments && pathSegments.size > 1;
+                    const subKey = (hasMultiplePaths && seg) ? `${hostname}/${seg}` : hostname;
+                    const displayName = (hasMultiplePaths && seg) ? `${hostname}/${seg}` : hostname;
+
+                    if (!group.subdomains.has(subKey)) {
+                        group.subdomains.set(subKey, {
+                            hostname: displayName,
                             count: 0,
                             lastVisited: item.timestamp,
                             favicon: `https://www.google.com/s2/favicons?domain=${hostname}&sz=32`
                         });
                     }
-                    const sub = group.subdomains.get(hostname)!;
+                    const sub = group.subdomains.get(subKey)!;
                     sub.count++;
                     if (new Date(item.timestamp) > new Date(sub.lastVisited)) {
                         sub.lastVisited = item.timestamp;

@@ -242,6 +242,8 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
     const [altClickMoveCursor, setAltClickMoveCursor] = useState(() => {
         return localStorage.getItem('terminal-alt-click-cursor') !== 'false';
     });
+    const [pasteNotification, setPasteNotification] = useState<{ message: string; isError?: boolean } | null>(null);
+    const pasteNotificationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const paneData = contentDataRef.current[nodeId];
     const terminalId = paneData?.contentId;
@@ -366,6 +368,17 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             term.loadAddon(fitAddon);
             term.open(terminalRef.current);
             xtermInstance.current = term;
+
+            // Restore saved terminal buffer from previous mount (move/de-tab)
+            const savedBuffer = paneData?._terminalBuffer
+                || ((window as any).__terminalBuffers?.[terminalId]);
+            if (savedBuffer) {
+                term.write(savedBuffer.replace(/\n/g, '\r\n'));
+                delete paneData?._terminalBuffer;
+                if ((window as any).__terminalBuffers?.[terminalId]) {
+                    delete (window as any).__terminalBuffers[terminalId];
+                }
+            }
 
             requestAnimationFrame(() => {
                 try { fitAddon.fit(); } catch (e) { /* terminal may not be visible yet */ }
@@ -615,6 +628,15 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
         }
 
         // Handle image paste — save to temp file and type path into terminal
+        const showPasteNotification = (message: string, isError = false) => {
+            if (pasteNotificationTimer.current) clearTimeout(pasteNotificationTimer.current);
+            setPasteNotification({ message, isError });
+            pasteNotificationTimer.current = setTimeout(() => {
+                setPasteNotification(null);
+                pasteNotificationTimer.current = null;
+            }, 3000);
+        };
+
         const handleImagePaste = async (e: ClipboardEvent) => {
             const items = e.clipboardData?.items;
             if (!items) return;
@@ -624,13 +646,19 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             e.stopPropagation();
             const blob = imageItem.getAsFile();
             if (!blob) return;
+
+            if (!(window as any).api?.saveTempFile) {
+                showPasteNotification('Image paste unavailable: saveTempFile API not found', true);
+                return;
+            }
+
             const reader = new FileReader();
             reader.onloadend = async () => {
                 const base64 = (reader.result as string).split(',')[1];
                 const ext = imageItem.type.split('/')[1] || 'png';
                 const fileName = `pasted-image-${Date.now()}.${ext}`;
                 try {
-                    const result = await (window as any).api?.saveTempFile?.({
+                    const result = await (window as any).api.saveTempFile({
                         name: fileName,
                         data: base64,
                         encoding: 'base64'
@@ -638,9 +666,13 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                     if (result?.path && isSessionReady.current) {
                         const bracketedText = '\x1b[200~' + result.path + '\x1b[201~';
                         window.api.writeToTerminal({ id: terminalId, data: bracketedText });
+                        showPasteNotification(`Image saved: ${fileName}`);
+                    } else if (!result?.path) {
+                        showPasteNotification('Image paste failed: no path returned', true);
                     }
                 } catch (err) {
                     console.error('Failed to paste image into terminal:', err);
+                    showPasteNotification(`Image paste failed: ${err instanceof Error ? err.message : 'unknown error'}`, true);
                 }
             };
             reader.readAsDataURL(blob);
@@ -749,7 +781,36 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             resizeObserverRef.current?.disconnect();
             resizeObserverRef.current = null;
             pasteContainer?.removeEventListener('paste', handleImagePaste, true);
-            window.api.closeTerminalSession(terminalId);
+
+            // Save terminal buffer so history survives moves/de-tabs
+            if (xtermInstance.current) {
+                const buf = xtermInstance.current.buffer.active;
+                const lines: string[] = [];
+                for (let i = 0; i < buf.length; i++) {
+                    const line = buf.getLine(i);
+                    if (line) lines.push(line.translateToString(true));
+                }
+                // Store on the pane data (may be same pane or a new one after de-tab)
+                const pd = contentDataRef.current[nodeId];
+                if (pd) pd._terminalBuffer = lines.join('\n');
+                // Also store by terminalId for tab scenarios
+                if (terminalId) {
+                    (window as any).__terminalBuffers = (window as any).__terminalBuffers || {};
+                    (window as any).__terminalBuffers[terminalId] = lines.join('\n');
+                }
+            }
+
+            // Only close PTY if pane is actually gone (not just moving)
+            const tid = terminalId;
+            setTimeout(() => {
+                // Check if any pane still references this terminal session
+                const stillAlive = Object.values(contentDataRef.current).some(
+                    (d: any) => d?.contentType === 'terminal' && d?.contentId === tid
+                );
+                if (!stillAlive) {
+                    window.api.closeTerminalSession(tid);
+                }
+            }, 200);
         };
     }, [terminalId, shellType]);
 
@@ -1186,6 +1247,19 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             )}
 
             <div ref={terminalRef} className="w-full h-full" />
+
+            {pasteNotification && (
+                <div
+                    className={`absolute top-2 right-2 z-30 px-3 py-2 rounded-md shadow-lg text-xs max-w-[320px] truncate border ${
+                        pasteNotification.isError
+                            ? 'bg-red-900/90 text-red-200 border-red-700'
+                            : 'bg-green-900/90 text-green-200 border-green-700'
+                    }`}
+                    style={{ pointerEvents: 'none' }}
+                >
+                    {pasteNotification.message}
+                </div>
+            )}
 
             {contextMenu && (
                 <>

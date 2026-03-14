@@ -1052,6 +1052,7 @@ const LatexViewer = ({
             indentWithTab,
         ]),
         EditorView.lineWrapping,
+        EditorView.contentAttributes.of({ spellcheck: "true" }),
         EditorView.updateListener.of((update) => {
             if (update.view) editorViewRef.current = update.view;
         }),
@@ -1704,11 +1705,12 @@ const LatexViewer = ({
                                     const dir = filePath.substring(0, filePath.lastIndexOf('/'));
                                     setBibFilePath(dir + '/' + e.target.value);
                                 }}
-                                className="h-6 px-1 text-[10px] bg-transparent border theme-border rounded theme-text-secondary focus:outline-none focus:border-yellow-500/50"
+                                className="h-6 px-1 text-[10px] border theme-border rounded theme-text-secondary focus:outline-none focus:border-yellow-500/50"
+                                style={{ backgroundColor: 'var(--theme-bg-secondary)', color: 'var(--theme-text-secondary)' }}
                             >
-                                <option value="">No .bib</option>
+                                <option value="" style={{ backgroundColor: 'var(--theme-bg-secondary)', color: 'var(--theme-text-secondary)' }}>No .bib</option>
                                 {availableBibFiles.map(f => (
-                                    <option key={f} value={f}>{f}</option>
+                                    <option key={f} value={f} style={{ backgroundColor: 'var(--theme-bg-secondary)', color: 'var(--theme-text-secondary)' }}>{f}</option>
                                 ))}
                             </select>
                             {bibEntries.length > 0 && (
@@ -1724,14 +1726,15 @@ const LatexViewer = ({
                     <select
                         value={texEngine}
                         onChange={(e) => { setTexEngine(e.target.value); localStorage.setItem('latex_engine', e.target.value); }}
-                        className="h-7 px-1.5 text-[10px] bg-transparent border theme-border rounded theme-text-secondary focus:outline-none focus:border-blue-500/50"
+                        className="h-7 px-1.5 text-[10px] border theme-border rounded theme-text-secondary focus:outline-none focus:border-blue-500/50"
+                        style={{ backgroundColor: 'var(--theme-bg-secondary)', color: 'var(--theme-text-secondary)' }}
                         title="TeX engine"
                     >
-                        <option value="pdflatex">pdflatex</option>
-                        <option value="lualatex">lualatex</option>
-                        <option value="xelatex">xelatex</option>
-                        <option value="latex">latex</option>
-                        <option value="platex">platex</option>
+                        <option value="pdflatex" style={{ backgroundColor: 'var(--theme-bg-secondary)', color: 'var(--theme-text-secondary)' }}>pdflatex</option>
+                        <option value="lualatex" style={{ backgroundColor: 'var(--theme-bg-secondary)', color: 'var(--theme-text-secondary)' }}>lualatex</option>
+                        <option value="xelatex" style={{ backgroundColor: 'var(--theme-bg-secondary)', color: 'var(--theme-text-secondary)' }}>xelatex</option>
+                        <option value="latex" style={{ backgroundColor: 'var(--theme-bg-secondary)', color: 'var(--theme-text-secondary)' }}>latex</option>
+                        <option value="platex" style={{ backgroundColor: 'var(--theme-bg-secondary)', color: 'var(--theme-text-secondary)' }}>platex</option>
                     </select>
                     <button
                         onClick={() => compile(openPdfOnBuild)}

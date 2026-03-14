@@ -336,6 +336,21 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             return () => emitter.removeEventListener('pane-update', handler);
         }, [node.id]);
 
+        // Clear drag overlay if drag ends anywhere (prevents stuck green/blue indicators)
+        useEffect(() => {
+            const clearDrag = () => {
+                dragCounterRef.current = 0;
+                setLocalDragOver(false);
+                setLocalDropSide(null);
+            };
+            document.addEventListener('dragend', clearDrag);
+            document.addEventListener('drop', clearDrag);
+            return () => {
+                document.removeEventListener('dragend', clearDrag);
+                document.removeEventListener('drop', clearDrag);
+            };
+        }, []);
+
         const onDrop = (e, side) => {
             e.preventDefault();
             e.stopPropagation();
@@ -432,7 +447,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
 
                         closeContentPane(comp.draggedItem.id, comp.draggedItem.nodePath);
 
-                        setRootLayoutNode?.(prev => ({ ...prev }));
+                        forceRender(n => n + 1);
                         comp.setDraggedItem(null);
                         comp.setDropTarget(null);
                         return;
@@ -583,7 +598,11 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                     }
                 }
 
-                setRootLayoutNode?.(prev => ({ ...prev }));
+                forceRender(n => n + 1);
+                // Notify source pane to re-render (it lost a tab)
+                componentRef.current?.paneUpdateEmitter?.dispatchEvent(
+                    new CustomEvent('pane-update', { detail: { paneId: sourceNodeId } })
+                );
                 comp.setDraggedItem(null);
                 comp.setDropTarget(null);
                 return;

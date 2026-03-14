@@ -632,6 +632,14 @@ fakeIpcMain.handle('get-window-count', async () => {
   return 1; // Web mode always has 1 "window"
 });
 
+fakeIpcMain.handle('get-all-windows-info', async () => {
+  return [{ windowId: 1, folderPath: null, title: 'Web Window' }];
+});
+
+fakeIpcMain.handle('close-window-by-id', async () => {
+  return { info: 'close-window-by-id is not supported in web mode' };
+});
+
 fakeIpcMain.handle('close-window', async () => {
   return { info: 'close-window is not supported in web mode' };
 });

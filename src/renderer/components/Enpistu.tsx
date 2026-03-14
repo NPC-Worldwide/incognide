@@ -60,6 +60,7 @@ import FolderViewer from './FolderViewer';
 import PathSwitcher from './PathSwitcher';
 import CronDaemonPanel from './CronDaemonPanel';
 import MemoryManager from './MemoryManager';
+import WindowManagerPane from './WindowManagerPane';
 import SearchPane from './SearchPane';
 import DownloadManager, { getActiveDownloadsCount, setDownloadToastCallback, setDownloadAllCompleteCallback } from './DownloadManager';
 import { LiveProvider, LivePreview, LiveError } from 'react-live';
@@ -277,6 +278,9 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const openModeRef = useRef(openMode);
     openModeRef.current = openMode;
 
+    // Pane update emitter - must be before useLayoutManager so it can notify specific panes
+    const paneUpdateEmitter = useRef(new EventTarget()).current;
+
     // Layout manager from useLayoutManager hook
     const {
         rootLayoutNode, setRootLayoutNode, setRootLayoutNodeQuiet, contentVersion,
@@ -287,7 +291,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         performSplitRef, closeContentPaneRef, updateContentPaneRef,
         updateContentPane, performSplit, closeContentPane,
         findEmptyPaneId, createAndAddPaneNodeToLayout, addPaneOrTab, moveContentPane,
-    } = useLayoutManager({ trackActivity, openModeRef });
+    } = useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter });
 
     const [isEditingPath, setIsEditingPath] = useState(false);
     const [editedPath, setEditedPath] = useState('');
@@ -636,7 +640,6 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const [displayedMessageCount, setDisplayedMessageCount] = useState(10);
     const [loadingMoreMessages, setLoadingMoreMessages] = useState(false);
     const streamToPaneRef = useRef({});
-    const paneUpdateEmitter = useRef(new EventTarget()).current;
     const notifyAllPanes = useCallback(() => {
         for (const paneId of Object.keys(contentDataRef.current)) {
             paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
@@ -3441,6 +3444,11 @@ const renderMemoryManagerPane = useCallback(({ nodeId }: { nodeId: string }) => 
         />
     );
 }, [currentNPC]);
+
+// Render WindowManager pane
+const renderWindowManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
+    return <WindowManagerPane />;
+}, []);
 
 // Render CronDaemonPanel pane (for pane-based viewing)
 const renderCronDaemonPane = useCallback(({ nodeId }: { nodeId: string }) => {
@@ -7461,6 +7469,7 @@ const paneRenderers = useMemo(() => ({
     tilejinx: renderTileJinxPane,
     python: renderTerminalView,
     branches: renderBranchComparisonPane,
+    windowmanager: renderWindowManagerPane,
 }), [
     renderChatView, renderFileEditor, renderTerminalView, renderPdfViewer,
     renderCsvViewer, renderDocxViewer, renderBrowserViewer, renderPptxViewer,
@@ -7471,7 +7480,7 @@ const paneRenderers = useMemo(() => ({
     renderScherzoPane, renderLibraryViewerPane, renderHelpPane, renderGitPane,
     renderFolderViewerPane, renderProjectEnvPane, renderDiskUsagePane, renderMemoryManagerPane,
     renderCronDaemonPane, renderSearchPane, renderMarkdownPreviewPane, renderHtmlPreviewPane,
-    renderTileJinxPane, renderBranchComparisonPane,
+    renderTileJinxPane, renderBranchComparisonPane, renderWindowManagerPane,
 ]);
 
 const layoutComponentApi = useMemo(() => ({

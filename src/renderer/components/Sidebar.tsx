@@ -2334,6 +2334,31 @@ const renderWebsiteList = () => {
                     } catch { return 'other'; }
                 };
 
+                // Build a map of domain -> set of first path segments to know which domains need path subdivision
+                const domainPathSegments = new Map<string, Set<string>>();
+                allItems.forEach(item => {
+                    try {
+                        const u = new URL(item.url);
+                        const domain = getDomain(item.url);
+                        const seg = u.pathname.split('/').filter(Boolean)[0] || '';
+                        if (!domainPathSegments.has(domain)) domainPathSegments.set(domain, new Set());
+                        if (seg) domainPathSegments.get(domain)!.add(seg);
+                    } catch {}
+                });
+
+                const getDomainGroup = (url: string) => {
+                    try {
+                        const u = new URL(url);
+                        const domain = getDomain(url);
+                        const seg = u.pathname.split('/').filter(Boolean)[0] || '';
+                        const segments = domainPathSegments.get(domain);
+                        if (seg && segments && segments.size > 1) {
+                            return `${domain}/${seg}`;
+                        }
+                        return domain;
+                    } catch { return 'other'; }
+                };
+
                 const getTimeGroup = (item: any) => {
                     const ts = new Date(item.timestamp || item.lastVisited || Date.now()).getTime();
                     const now = new Date();
@@ -2444,7 +2469,7 @@ const renderWebsiteList = () => {
                     {groupBy === 'domain' && (() => {
                         const domainGroups = new Map<string, any[]>();
                         allItems.forEach(item => {
-                            const domain = getDomain(item.url);
+                            const domain = getDomainGroup(item.url);
                             if (!domainGroups.has(domain)) domainGroups.set(domain, []);
                             domainGroups.get(domain)!.push(item);
                         });
@@ -2452,13 +2477,14 @@ const renderWebsiteList = () => {
                             .sort((a, b) => b[1].length - a[1].length)
                             .map(([domain, items]) => {
                                 const isExpanded = historyGroupExpanded.has(domain);
+                                const faviconDomain = domain.split('/')[0];
                                 return (
                                     <div key={domain} className="border-b theme-border/50">
                                         {renderWebsiteGroupHeader(
                                             domain, items.length, isExpanded,
                                             () => setHistoryGroupExpanded(prev => { const next = new Set(prev); if (next.has(domain)) next.delete(domain); else next.add(domain); return next; }),
                                             'text-purple-300',
-                                            <img src={`https://www.google.com/s2/favicons?domain=${domain}&sz=32`} alt="" className="w-3.5 h-3.5 flex-shrink-0 rounded" onError={(e: any) => { e.target.style.display = 'none'; }} />
+                                            <img src={`https://www.google.com/s2/favicons?domain=${faviconDomain}&sz=32`} alt="" className="w-3.5 h-3.5 flex-shrink-0 rounded" onError={(e: any) => { e.target.style.display = 'none'; }} />
                                         )}
                                         {isExpanded && items.map(item => renderWebsiteItem(item, { indent: true, showTime: true, showType: true }))}
                                     </div>
@@ -6070,6 +6096,13 @@ return (
 
         {!sidebarCollapsed && (
         <div className="flex items-center border-t theme-border" style={{ height: bottomBarHeight }}>
+            <button
+                onClick={() => createAndAddPaneNodeToLayout?.('windowmanager', 'windowmanager')}
+                className="flex-1 flex items-center justify-center h-full hover:bg-teal-500/20 transition-all border-r border-gray-700"
+                title="Window Manager"
+            >
+                <Layers size={16} className="text-gray-600 dark:text-gray-400" />
+            </button>
             <button
                 onClick={() => setBottomGridCollapsed(!bottomGridCollapsed)}
                 className="flex-1 flex items-center justify-center h-full hover:bg-teal-500/20 transition-all border-r border-gray-700"

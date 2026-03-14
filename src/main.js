@@ -564,8 +564,9 @@ const workspacePathByWindow = new Map();
 ipcMain.on('set-workspace-path', (event, workspacePath) => {
   if (workspacePath && typeof workspacePath === 'string') {
     const windowId = event.sender.id;
-    workspacePathByWindow.set(windowId, workspacePath);
-    log(`[DOWNLOAD] Workspace path for window ${windowId}: ${workspacePath}`);
+    const normalized = workspacePath.replace(/\/+$/, '');
+    workspacePathByWindow.set(windowId, normalized);
+    log(`[DOWNLOAD] Workspace path for window ${windowId}: ${normalized}`);
   }
 });
 
@@ -1677,6 +1678,21 @@ if (!gotTheLock) {
 function createWindow(cliArgs = {}) {
     const { folder, bookmarks, openUrl, blank } = cliArgs;
 
+    // If opening a specific folder, check if a window already has it open
+    if (folder) {
+        const normFolder = folder.replace(/\/+$/, '');
+        for (const [windowId, wsPath] of workspacePathByWindow.entries()) {
+            if (wsPath && wsPath.replace(/\/+$/, '') === normFolder) {
+                const existing = BrowserWindow.getAllWindows().find(w => w.webContents?.id === windowId);
+                if (existing && !existing.isDestroyed()) {
+                    if (existing.isMinimized()) existing.restore();
+                    existing.focus();
+                    return existing;
+                }
+            }
+        }
+    }
+
     const possibleIconPaths = [
         path.resolve(__dirname, '..', 'assets', 'icon.png'),
         path.join(process.resourcesPath || '', 'assets', 'icon.png'),
@@ -2098,11 +2114,49 @@ registerAll({
 });
 
 ipcMain.handle('open-new-window', async (event, initialPath) => {
-  createWindow(initialPath ? { folder: initialPath } : { blank: true });
+  if (initialPath) {
+    // Normalize for comparison (strip trailing slashes)
+    const normPath = initialPath.replace(/\/+$/, '');
+    // Check if a window already has this folder open — focus it instead
+    for (const [windowId, wsPath] of workspacePathByWindow.entries()) {
+      if (wsPath && wsPath.replace(/\/+$/, '') === normPath) {
+        const existing = BrowserWindow.getAllWindows().find(w => w.webContents?.id === windowId);
+        if (existing && !existing.isDestroyed()) {
+          if (existing.isMinimized()) existing.restore();
+          existing.focus();
+          return;
+        }
+      }
+    }
+    createWindow({ folder: initialPath });
+  } else {
+    createWindow({ blank: true });
+  }
 });
 
 ipcMain.handle('get-window-count', async () => {
   return BrowserWindow.getAllWindows().length;
+});
+
+ipcMain.handle('get-all-windows-info', async () => {
+  const allWindows = BrowserWindow.getAllWindows();
+  return allWindows
+    .filter(w => !w.isDestroyed())
+    .map(w => ({
+      windowId: w.webContents?.id ?? w.id,
+      folderPath: workspacePathByWindow.get(w.webContents?.id) || null,
+      title: w.getTitle() || 'Untitled',
+    }));
+});
+
+ipcMain.handle('close-window-by-id', async (_event, windowId) => {
+  const allWindows = BrowserWindow.getAllWindows();
+  const target = allWindows.find(w => !w.isDestroyed() && (w.webContents?.id === windowId || w.id === windowId));
+  if (target) {
+    target.close();
+    return true;
+  }
+  return false;
 });
 
 ipcMain.handle('backend:health', async () => {

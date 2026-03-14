@@ -1,10 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { generateId, findNodePath } from '../components/utils';
-import { syncLayoutWithContentData, collectPaneIds, addPaneToLayout, forceFullRerender } from '../components/LayoutNode';
+import { syncLayoutWithContentData, collectPaneIds, addPaneToLayout } from '../components/LayoutNode';
 
 interface UseLayoutManagerParams {
     trackActivity: (action: string, data?: any) => void;
     openModeRef?: React.MutableRefObject<'pane' | 'tab'>;
+    paneUpdateEmitter?: EventTarget;
 }
 
 export function getConversationStats(messages: any[]) {
@@ -24,7 +25,7 @@ export function getConversationStats(messages: any[]) {
     }, { messageCount: messages.length, inputTokens: 0, outputTokens: 0, totalCost: 0, models: new Set(), agents: new Set(), providers: new Set() });
 }
 
-export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManagerParams) {
+export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter }: UseLayoutManagerParams) {
     const [rootLayoutNode, rawSetRootLayoutNode] = useState<any>(null);
     const [contentVersion, setContentVersion] = useState(0);
 
@@ -108,7 +109,7 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
                 activePaneData.selectedJinx = newPaneData.selectedJinx;
                 activePaneData.chatStats = newPaneData.chatStats;
                 delete contentDataRef.current[newPaneId];
-                setRootLayoutNode((prev: any) => prev ? { ...prev } : prev);
+                paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: activeContentPaneIdRef.current } }));
                 return activeContentPaneIdRef.current;
             }
         }
@@ -231,8 +232,8 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
             paneData.fileContent = null;
         }
 
-        setRootLayoutNode((prev: any) => prev ? forceFullRerender(prev) : prev);
-    }, [trackActivity, getConversationStats]);
+        paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
+    }, [trackActivity, getConversationStats, paneUpdateEmitter]);
 
     const performSplit = useCallback((targetNodePath: number[], side: string, newContentType: string, newContentId: string | null) => {
         if (!targetNodePath) return;
@@ -425,7 +426,7 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
         const singletonTypes = new Set([
             'settings', 'npcteam', 'teammanagement', 'jinx', 'library', 'help',
             'git', 'projectenv', 'diskusage', 'data-labeler', 'graph-viewer',
-            'browsergraph', 'datadash', 'photoviewer', 'scherzo',
+            'browsergraph', 'datadash', 'photoviewer', 'scherzo', 'windowmanager',
         ]);
 
         for (const [paneId, data] of Object.entries(contentDataRef.current)) {
@@ -463,7 +464,7 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
                         data.executionMode = tab.executionMode;
                     }
                     setActiveContentPaneId(paneId);
-                    setRootLayoutNode((prev: any) => prev ? ({ ...prev }) : prev);
+                    paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
                     return paneId;
                 }
             }
