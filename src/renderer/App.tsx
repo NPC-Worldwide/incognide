@@ -33,7 +33,7 @@ const App: React.FC = () => {
 
         if (!result?.needed) {
           const profile = await (window as any).api?.profileGet?.();
-          if (profile && !profile.tutorialComplete) {
+          if (profile && profile.setupComplete && !profile.tutorialComplete) {
             setShowTutorial(true);
           }
         }
@@ -45,10 +45,16 @@ const App: React.FC = () => {
     checkSetup();
   }, []);
 
-  const handleSetupComplete = () => {
+  const handleSetupComplete = async () => {
     setShowSetup(false);
-
-    setShowTutorial(true);
+    try {
+      const profile = await (window as any).api?.profileGet?.();
+      if (!profile?.tutorialComplete) {
+        setShowTutorial(true);
+      }
+    } catch {
+      setShowTutorial(true);
+    }
   };
 
   const handleTutorialComplete = async () => {
@@ -77,7 +83,7 @@ const App: React.FC = () => {
   }
 
   const handleRerunSetup = async () => {
-
+    setShowTutorial(false);
     try {
       await (window as any).api?.profileSave?.({ setupComplete: false, tutorialComplete: false });
     } catch (err) {
@@ -90,7 +96,7 @@ const App: React.FC = () => {
     <AuthWrapper>
       <AiFeatureProvider>
         <Enpistu onRerunSetup={handleRerunSetup} />
-        {showTutorial && <AppTutorial onComplete={handleTutorialComplete} />}
+        {showTutorial && !showSetup && <AppTutorial onComplete={handleTutorialComplete} />}
       </AiFeatureProvider>
     </AuthWrapper>
   );

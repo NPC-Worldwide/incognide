@@ -13,8 +13,8 @@ if __name__ == "__main__":
     default_port = '5437' if is_dev else '5337'
     port = os.environ.get('INCOGNIDE_PORT', default_port)
 
-    # Frontend port follows the pattern: dev=7337, prod=6337
-    frontend_port = '7337' if port == '5437' else '6337'
+    # Frontend port follows the pattern: dev=7337, prod=6337, docker=3000
+    frontend_port = os.environ.get('FRONTEND_PORT', '7337' if port == '5437' else '6337')
 
     mode_str = 'dev' if is_dev else 'prod'
     print(f"Starting Flask server on http://0.0.0.0:{port} ({mode_str} mode)")

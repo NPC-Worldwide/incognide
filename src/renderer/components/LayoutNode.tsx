@@ -355,6 +355,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                             const targetTitle = targetPaneData.contentType === 'browser'
                                 ? (targetPaneData.browserUrl || 'Browser')
                                 : (getFileName(targetPaneData.contentId) || targetPaneData.contentType);
+                            const targetTitle2 = targetPaneData.contentType === 'terminal' ? 'Terminal' : targetTitle;
                             targetPaneData.tabs = [{
                                 id: `tab_${Date.now()}_0`,
                                 contentType: targetPaneData.contentType,
@@ -363,7 +364,8 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                                 fileContent: targetPaneData.fileContent,
                                 fileChanged: targetPaneData.fileChanged,
                                 _scrollTopPos: targetPaneData._scrollTopPos,
-                                title: targetTitle
+                                shellType: targetPaneData.shellType,
+                                title: targetTitle2
                             }];
                             targetPaneData.activeTabIndex = 0;
                         }
@@ -386,9 +388,11 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                             });
                         } else {
 
-                            const sourceTitle = sourcePaneData.contentType === 'browser'
-                                ? (sourcePaneData.browserUrl || 'Browser')
-                                : (getFileName(sourcePaneData.contentId) || sourcePaneData.contentType);
+                            const sourceTitle = sourcePaneData.contentType === 'terminal'
+                                ? 'Terminal'
+                                : sourcePaneData.contentType === 'browser'
+                                    ? (sourcePaneData.browserUrl || 'Browser')
+                                    : (getFileName(sourcePaneData.contentId) || sourcePaneData.contentType);
                             targetPaneData.tabs.push({
                                 id: `tab_${Date.now()}_${targetPaneData.tabs.length}`,
                                 contentType: sourcePaneData.contentType,
@@ -397,6 +401,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                                 fileContent: sourcePaneData.fileContent,
                                 fileChanged: sourcePaneData.fileChanged,
                                 _scrollTopPos: sourcePaneData._scrollTopPos,
+                                shellType: sourcePaneData.shellType,
                                 title: sourceTitle
                             });
                         }
@@ -408,6 +413,10 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
 
                         if (activeTab.contentType === 'browser' && activeTab.browserUrl) {
                             targetPaneData.browserUrl = activeTab.browserUrl;
+                        }
+
+                        if (activeTab.contentType === 'terminal' && activeTab.shellType) {
+                            targetPaneData.shellType = activeTab.shellType;
                         }
 
                         if ((activeTab.contentType === 'editor' || activeTab.contentType === 'latex') && activeTab.fileContent !== undefined) {

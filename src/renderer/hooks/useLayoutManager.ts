@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { generateId, findNodePath } from '../components/utils';
-import { syncLayoutWithContentData, collectPaneIds, addPaneToLayout } from '../components/LayoutNode';
+import { syncLayoutWithContentData, collectPaneIds, addPaneToLayout, forceFullRerender } from '../components/LayoutNode';
 
 interface UseLayoutManagerParams {
     trackActivity: (action: string, data?: any) => void;
@@ -231,7 +231,7 @@ export function useLayoutManager({ trackActivity, openModeRef }: UseLayoutManage
             paneData.fileContent = null;
         }
 
-        setRootLayoutNode((prev: any) => ({ ...prev }));
+        setRootLayoutNode((prev: any) => prev ? forceFullRerender(prev) : prev);
     }, [trackActivity, getConversationStats]);
 
     const performSplit = useCallback((targetNodePath: number[], side: string, newContentType: string, newContentId: string | null) => {

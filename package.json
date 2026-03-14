@@ -1,6 +1,6 @@
 {
   "name": "incognide",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "description": "Explore the unknown, build the future, own your data.",
   "author": "Chris Agostino <info@npcworldwi.de>",
   "main": "src/main.js",
@@ -25,7 +25,13 @@
     "electron:rebuild": "npx electron-rebuild --module-dir . --which-module sqlite3 --force",
     "electron:build": "electron-builder",
     "pack": "npm run build && npm run electron:build",
-    "postinstall": "npm run rebuild"
+    "postinstall": "npm run rebuild",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed"
   },
   "build": {
     "appId": "com.incognide.chat",
@@ -122,7 +128,8 @@
     },
     "linux": {
       "target": [
-        "deb"
+        "deb",
+        "AppImage"
       ],
       "category": "Utility",
       "icon": "assets/icon.png",
@@ -227,7 +234,11 @@
   },
   "devDependencies": {
     "@electron/rebuild": "^3.7.2",
+    "@playwright/test": "^1.58.2",
     "@tailwindcss/typography": "^0.5.16",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.6",
     "@types/react-dom": "^19.2.3",
@@ -240,12 +251,14 @@
     "electron-rebuild": "^3.2.9",
     "eslint": "^9.18.0",
     "eslint-plugin-react": "^7.37.4",
+    "jsdom": "^28.1.0",
     "postcss": "^8.5.1",
     "supabase": "^2.6.8",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.9.3",
     "vite": "^6.2.1",
-    "vite-plugin-static-copy": "^3.1.1"
+    "vite-plugin-static-copy": "^3.1.1",
+    "vitest": "^4.1.0"
   },
   "engines": {
     "node": ">=16"

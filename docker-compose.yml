@@ -1,0 +1,75 @@
+services:
+  incognide:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: incognide-web
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+      - "${BACKEND_PORT:-5437}:5337"
+    volumes:
+      - incognide-data:/data
+      - incognide-npcsh:/root/.npcsh
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - BACKEND_PORT=5337
+      - DATABASE_PATH=/data/npcsh_history.db
+      - NPCSH_BASE=/root/.npcsh
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - OLLAMA_HOST=${OLLAMA_HOST:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+
+  incognide-dev:
+    image: node:20-slim
+    container_name: incognide-dev
+    working_dir: /app
+    profiles:
+      - dev
+    ports:
+      - "7337:7337"
+      - "5437:5437"
+    volumes:
+      - .:/app
+      - dev-node-modules:/app/node_modules
+      - incognide-data:/data
+      - incognide-npcsh:/root/.npcsh
+    environment:
+      - NODE_ENV=development
+      - VITE_PORT=7337
+      - INCOGNIDE_PORT=5437
+      - DATABASE_PATH=/data/npcsh_history.db
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - OLLAMA_HOST=${OLLAMA_HOST:-}
+    command: >
+      bash -c "
+        apt-get update && apt-get install -y python3 python3-pip python3-venv build-essential git curl &&
+        python3 -m venv /opt/venv &&
+        export PATH=/opt/venv/bin:$$PATH &&
+        pip install --no-cache-dir -r requirements.txt &&
+        npm install &&
+        npm run dev -- --host 0.0.0.0 &
+        INCOGNIDE_PORT=5437 python3 incognide_serve.py &
+        wait
+      "
+
+volumes:
+  incognide-data:
+  incognide-npcsh:
+  dev-node-modules:

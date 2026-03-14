@@ -214,6 +214,7 @@ jobs:
 
           if [ "${{ runner.os }}" = "Linux" ]; then
             find dist-electron -name "*.deb" -exec cp {} upload/incognide_${VERSION}_${{ matrix.arch }}.deb \;
+            find dist-electron -name "*.AppImage" -exec cp {} upload/incognide_${VERSION}_${{ matrix.arch }}.AppImage \;
             echo "files=upload/incognide_${VERSION}_${{ matrix.arch }}.deb" >> $GITHUB_OUTPUT
             echo "gcs_path=linux-${{ matrix.arch }}" >> $GITHUB_OUTPUT
           elif [ "${{ runner.os }}" = "Windows" ]; then
@@ -447,6 +448,7 @@ jobs:
             "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "downloads": {
               "linux-x64": "https://storage.googleapis.com/incognide-executables/linux-x64/incognide_${VERSION}_x64.deb",
+              "linux-x64-appimage": "https://storage.googleapis.com/incognide-executables/linux-x64/incognide_${VERSION}_x64.AppImage",
               "windows-x64": "https://storage.googleapis.com/incognide-executables/windows-x64/incognide_${VERSION}_x64.exe",
               "macos-arm64": "https://storage.googleapis.com/incognide-executables/macos-arm64/incognide_${VERSION}_arm64.dmg"
             }
@@ -476,6 +478,7 @@ jobs:
           echo "**Version:** $VERSION" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Download links:" >> $GITHUB_STEP_SUMMARY
-          echo "- **Linux x64:** https://storage.googleapis.com/incognide-executables/linux-x64/incognide_${VERSION}_x64.deb" >> $GITHUB_STEP_SUMMARY
+          echo "- **Linux x64 (deb):** https://storage.googleapis.com/incognide-executables/linux-x64/incognide_${VERSION}_x64.deb" >> $GITHUB_STEP_SUMMARY
+          echo "- **Linux x64 (AppImage):** https://storage.googleapis.com/incognide-executables/linux-x64/incognide_${VERSION}_x64.AppImage" >> $GITHUB_STEP_SUMMARY
           echo "- **Windows x64:** https://storage.googleapis.com/incognide-executables/windows-x64/incognide_${VERSION}_x64.exe" >> $GITHUB_STEP_SUMMARY
           echo "- **macOS ARM64:** https://storage.googleapis.com/incognide-executables/macos-arm64/incognide_${VERSION}_arm64.dmg" >> $GITHUB_STEP_SUMMARY

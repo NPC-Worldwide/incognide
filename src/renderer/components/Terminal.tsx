@@ -368,7 +368,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             xtermInstance.current = term;
 
             requestAnimationFrame(() => {
-                fitAddon.fit();
+                try { fitAddon.fit(); } catch (e) { /* terminal may not be visible yet */ }
             });
 
             term.registerLinkProvider({
@@ -408,7 +408,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                         const wasAtBottom = term.buffer.active?.viewportY === term.buffer.active?.baseY;
                         const scrollOffset = term.buffer.active?.viewportY ?? 0;
 
-                        fitAddon.fit();
+                        try { fitAddon.fit(); } catch (e) { /* terminal may not be visible in tab stack */ }
 
                         if (wasAtBottom) {
                             term.scrollToBottom();

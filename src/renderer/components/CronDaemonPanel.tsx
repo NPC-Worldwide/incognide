@@ -161,7 +161,7 @@ type TimerInfo = { unit: string; next: string; left: string; passed: string };
 type CronEntry = { schedule: string; command: string };
 
 const parseServices = (raw: string): ServiceInfo[] => {
-    if (!raw?.trim()) return [];
+    if (!raw || typeof raw !== 'string' || !raw.trim()) return [];
     return raw.split('\n')
         .filter(l => l.trim() && !l.startsWith('UNIT') && !l.startsWith(' ') && !l.includes('listed.') && !l.includes('loaded units'))
         .map(l => { const p = l.trim().split(/\s+/); return p.length >= 4 ? { unit: p[0].replace('.service',''), load: p[1], active: p[2], sub: p[3], description: p.slice(4).join(' ') } : null; })
@@ -169,7 +169,7 @@ const parseServices = (raw: string): ServiceInfo[] => {
 };
 
 const parseTimers = (raw: string): TimerInfo[] => {
-    if (!raw?.trim()) return [];
+    if (!raw || typeof raw !== 'string' || !raw.trim()) return [];
     return raw.split('\n')
         .filter(l => l.trim() && !l.startsWith('NEXT') && !l.includes('timers listed') && !l.startsWith('Pass'))
         .map(l => {
@@ -182,7 +182,7 @@ const parseTimers = (raw: string): TimerInfo[] => {
 };
 
 const parseCrontab = (raw: string): CronEntry[] => {
-    if (!raw?.trim()) return [];
+    if (!raw || typeof raw !== 'string' || !raw.trim()) return [];
     return raw.split('\n')
         .filter(l => l.trim() && !l.startsWith('#') && !/^(SHELL|PATH|MAILTO|HOME)/.test(l))
         .map(l => { const p = l.trim().split(/\s+/); return p.length >= 6 ? { schedule: p.slice(0,5).join(' '), command: p.slice(5).join(' ') } : null; })

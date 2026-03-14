@@ -622,24 +622,73 @@ app.on('web-contents-created', (event, contents) => {
         || BrowserWindow.getFocusedWindow()
         || BrowserWindow.getAllWindows()[0];
       if (ctxParentWin && !ctxParentWin.isDestroyed()) {
+        const menuTemplate = [];
 
-        const cursorPos = screen.getCursorScreenPoint();
-        const windowBounds = ctxParentWin.getBounds();
+        // Clipboard operations (native roles work through webview isolation)
+        if (isEditable) {
+          menuTemplate.push({ role: 'cut' });
+        }
+        if (selectedText) {
+          menuTemplate.push({ role: 'copy' });
+        }
+        if (isEditable) {
+          menuTemplate.push({ role: 'paste' });
+        }
+        if (isEditable) {
+          menuTemplate.push({ role: 'selectAll' });
+        }
 
-        ctxParentWin.webContents.send('browser-show-context-menu', {
-          x: cursorPos.x - windowBounds.x,
-          y: cursorPos.y - windowBounds.y,
-          selectedText,
-          linkURL,
-          srcURL,
-          pageURL,
-          isEditable,
-          mediaType,
-          canCopy: selectedText.length > 0,
-          canPaste: isEditable,
-          canSaveImage: mediaType === 'image' && srcURL,
-          canSaveLink: !!linkURL,
+        // Separator if we had clipboard items
+        if (menuTemplate.length > 0) {
+          menuTemplate.push({ type: 'separator' });
+        }
+
+        // Link actions
+        if (linkURL) {
+          menuTemplate.push({
+            label: 'Open Link in New Tab',
+            click: () => ctxParentWin.webContents.send('browser-context-action', { action: 'openLink', url: linkURL }),
+          });
+          menuTemplate.push({
+            label: 'Copy Link Address',
+            click: () => { require('electron').clipboard.writeText(linkURL); },
+          });
+          menuTemplate.push({ type: 'separator' });
+        }
+
+        // Image actions
+        if (mediaType === 'image' && srcURL) {
+          menuTemplate.push({
+            label: 'Save Image As...',
+            click: () => ctxParentWin.webContents.send('browser-context-action', { action: 'saveImage', url: srcURL }),
+          });
+          menuTemplate.push({
+            label: 'Copy Image Address',
+            click: () => { require('electron').clipboard.writeText(srcURL); },
+          });
+          menuTemplate.push({ type: 'separator' });
+        }
+
+        // Navigation
+        menuTemplate.push({
+          label: 'Back',
+          enabled: contents.canGoBack(),
+          click: () => contents.goBack(),
         });
+        menuTemplate.push({
+          label: 'Forward',
+          enabled: contents.canGoForward(),
+          click: () => contents.goForward(),
+        });
+        menuTemplate.push({
+          label: 'Reload',
+          click: () => contents.reload(),
+        });
+
+        if (menuTemplate.length > 0) {
+          const menu = Menu.buildFromTemplate(menuTemplate);
+          menu.popup({ window: ctxParentWin });
+        }
       }
     }
   });

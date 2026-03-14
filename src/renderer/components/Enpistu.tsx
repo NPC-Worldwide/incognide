@@ -61,7 +61,7 @@ import PathSwitcher from './PathSwitcher';
 import CronDaemonPanel from './CronDaemonPanel';
 import MemoryManager from './MemoryManager';
 import SearchPane from './SearchPane';
-import DownloadManager, { getActiveDownloadsCount, setDownloadToastCallback } from './DownloadManager';
+import DownloadManager, { getActiveDownloadsCount, setDownloadToastCallback, setDownloadAllCompleteCallback } from './DownloadManager';
 import { LiveProvider, LivePreview, LiveError } from 'react-live';
 // Components for tile jinx runtime rendering
 import GraphViewer from './GraphViewer';
@@ -295,6 +295,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [downloadManagerOpen, setDownloadManagerOpen] = useState(false);
     const [downloadToast, setDownloadToast] = useState<{message: string; filename: string} | null>(null);
+    const [showDownloadCompletePrompt, setShowDownloadCompletePrompt] = useState(false);
     const [updateAvailable, setUpdateAvailable] = useState<{latestVersion: string; releaseUrl: string} | null>(null);
     const [appVersion, setAppVersion] = useState<string>('');
     const [projectEnvEditorOpen, setProjectEnvEditorOpen] = useState(false);
@@ -577,6 +578,9 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
             setDownloadToast({ message, filename });
             // Auto-dismiss after 4 seconds
             setTimeout(() => setDownloadToast(null), 4000);
+        });
+        setDownloadAllCompleteCallback(() => {
+            setShowDownloadCompletePrompt(true);
         });
     }, []);
 
@@ -4199,9 +4203,11 @@ const renderSearchPane = useCallback(({ nodeId, initialQuery }: { nodeId: string
         <SearchPane
             initialQuery={initialQuery || ''}
             currentPath={currentPathRef.current}
+            onOpenFile={(path: string) => handleFileClickRef.current?.(path)}
+            onOpenConversation={(id: string) => createAndAddPaneNodeToLayout('chat', id)}
         />
     );
-}, []);
+}, [createAndAddPaneNodeToLayout]);
 
 const renderBrowserViewer = useCallback(({ nodeId, hasTabBar, onToggleZen, isZenMode }) => {
     return (
@@ -5152,12 +5158,10 @@ ${contextPrompt}`;
         createHelpPaneRef.current = createHelpPane;
     }, [createSettingsPane, createSearchPane, createHelpPane]);
 
-    // Create Git pane
-    const createGitPane = useCallback(async () => {
-        const newPaneId = generateId();
-        contentDataRef.current[newPaneId] = { contentType: 'git', contentId: 'git' };
-        addPaneOrTab(newPaneId);
-    }, []);
+    // Create Git pane (uses createAndAddPaneNodeToLayout for singleton detection and proper layout refresh)
+    const createGitPane = useCallback(() => {
+        createAndAddPaneNodeToLayout('git', 'git');
+    }, [createAndAddPaneNodeToLayout]);
 
     // Create untitled text file directly without modal
     const createUntitledTextFile = useCallback(() => {
@@ -6149,6 +6153,30 @@ ${contextPrompt}`;
         </div>
         <button
             onClick={(e) => { e.stopPropagation(); setDownloadToast(null); }}
+            className="p-1 hover:bg-white/20 rounded"
+        >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        </button>
+    </div>
+)}
+
+{/* Download complete prompt */}
+{showDownloadCompletePrompt && (
+    <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3 px-4 py-3 bg-green-600 text-white rounded-lg shadow-lg animate-in slide-in-from-bottom-5">
+        <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+        </svg>
+        <div className="text-sm font-medium">All downloads complete</div>
+        <button
+            onClick={() => { (window as any).api?.closeWindow?.(); }}
+            className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded text-sm font-medium"
+        >
+            Close App
+        </button>
+        <button
+            onClick={() => setShowDownloadCompletePrompt(false)}
             className="p-1 hover:bg-white/20 rounded"
         >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

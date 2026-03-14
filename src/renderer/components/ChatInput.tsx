@@ -170,7 +170,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
             setEnabledServers(prev => new Set(prev).add(serverPath));
             setMcpToolsLoading(true);
             try {
-                const res = await (window as any).api.listMcpTools({ serverPath, currentPath });
+                const res = await ensureServerAndListTools(serverPath);
                 if (!res.error) {
                     const serverLabel = getFileName(serverPath)?.replace(/\.py$/, '') || serverPath;
                     const newTools = (res.tools || []).map((t: any) => ({
@@ -196,13 +196,31 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         }
     };
 
+    // Try to list tools, auto-starting the server if needed
+    const ensureServerAndListTools = async (serverPath: string): Promise<any> => {
+        const api = (window as any).api;
+        let res = await api.listMcpTools({ serverPath, currentPath });
+        if (res.error || !(res.tools?.length)) {
+            // Server may not be running — attempt to start it
+            try {
+                await api.mcpStartServer?.({ serverPath, currentPath });
+                // Brief wait for server startup
+                await new Promise(r => setTimeout(r, 1500));
+                res = await api.listMcpTools({ serverPath, currentPath });
+            } catch (startErr: any) {
+                console.error('[MCP] Failed to auto-start server:', startErr);
+            }
+        }
+        return res;
+    };
+
     // Legacy single-server loader (kept for backward compat / auto-load)
     const loadToolsForServer = async (serverPath: string) => {
         setEnabledServers(new Set([serverPath]));
         setMcpToolsLoading(true);
         setMcpToolsError(null);
         try {
-            const res = await (window as any).api.listMcpTools({ serverPath, currentPath });
+            const res = await ensureServerAndListTools(serverPath);
             if (res.error) {
                 setMcpToolsError(res.error);
                 setAvailableMcpTools([]);
@@ -216,6 +234,9 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                 }));
                 setAvailableMcpTools(tools);
                 setSelectedMcpTools(tools.map((t: any) => t.function?.name).filter(Boolean));
+                if (!tools.length) {
+                    setMcpToolsError('No tools found. Check that the MCP server is configured correctly.');
+                }
             }
         } catch (err: any) {
             setMcpToolsError(err.message);

@@ -20,6 +20,11 @@ export const setDownloadToastCallback = (cb: (message: string, filename: string)
     toastCallback = cb;
 };
 
+let allCompleteCallback: (() => void) | null = null;
+export const setDownloadAllCompleteCallback = (cb: () => void) => {
+    allCompleteCallback = cb;
+};
+
 interface DownloadManagerProps {
     isOpen: boolean;
     onClose: () => void;
@@ -85,11 +90,19 @@ export const deleteDownload = (id: string) => {
     notifyListeners();
 };
 
+let previousActiveCount = 0;
+
 export const updateDownload = (id: string, updates: Partial<DownloadItem>) => {
     const idx = globalDownloads.findIndex(d => d.id === id);
     if (idx !== -1) {
+        const prevActive = globalDownloads.filter(d => d.status === 'pending' || d.status === 'downloading').length;
         globalDownloads[idx] = { ...globalDownloads[idx], ...updates };
         notifyListeners();
+        const nowActive = globalDownloads.filter(d => d.status === 'pending' || d.status === 'downloading').length;
+        const hasCompleted = globalDownloads.some(d => d.status === 'completed');
+        if (prevActive > 0 && nowActive === 0 && hasCompleted && allCompleteCallback) {
+            allCompleteCallback();
+        }
     }
 };
 

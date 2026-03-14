@@ -369,6 +369,7 @@ const Sidebar = (props: any) => {
 
     // Smart filetype sense: count extensions in folder structure, sort by frequency
     const sortedFileTypes = useMemo(() => {
+        const IGNORED_DIRS = new Set(['node_modules', '.git', '__pycache__', '.venv', 'venv', 'env', 'dist', 'build', '.next', '.nuxt', 'out', '.cache', '.tox', '.mypy_cache', '.pytest_cache', 'site-packages', 'target', 'vendor', 'bower_components', '.svn', '.hg', 'coverage', '.nyc_output', '.gradle', '.idea', '.vscode']);
         const extCounts: Record<string, number> = {};
         const countExts = (struct: any) => {
             if (!struct) return;
@@ -380,7 +381,9 @@ const Sidebar = (props: any) => {
                         extCounts[ext] = (extCounts[ext] || 0) + 1;
                     }
                 } else if (item?.type === 'directory' && item?.children) {
-                    countExts(item.children);
+                    if (!IGNORED_DIRS.has(name) && !name.endsWith('.egg-info')) {
+                        countExts(item.children);
+                    }
                 }
             });
         };
