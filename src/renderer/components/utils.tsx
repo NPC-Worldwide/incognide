@@ -440,6 +440,19 @@ export const useSwitchToPath = (
     return useCallback(async (newPath: string) => {
         if (newPath === currentPath) return;
 
+        // Check if another window already has this folder — focus it instead
+        try {
+            const allWindows = await (window as any).api?.getAllWindowsInfo?.() || [];
+            const normNew = newPath.replace(/\/+$/, '');
+            const alreadyOpen = allWindows.find((w: any) =>
+                w.folderPath && w.folderPath.replace(/\/+$/, '') === normNew
+            );
+            if (alreadyOpen) {
+                await (window as any).api?.openNewWindow?.(newPath);
+                return;
+            }
+        } catch {}
+
         console.log(`[Window ${windowId}] Switching from ${currentPath} to ${newPath}`);
 
         if (currentPath && rootLayoutNode) {

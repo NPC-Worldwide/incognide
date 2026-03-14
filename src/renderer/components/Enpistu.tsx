@@ -8582,7 +8582,19 @@ const renderMainContent = () => {
                                                     {recentPaths.slice(0, 10).map(p => (
                                                         <button
                                                             key={p}
-                                                            onClick={() => setCurrentPath(p)}
+                                                            onClick={async () => {
+                                                                // Check if another window already has this folder open
+                                                                const allWindows = await (window as any).api?.getAllWindowsInfo?.() || [];
+                                                                const alreadyOpen = allWindows.find((w: any) =>
+                                                                    w.folderPath && w.folderPath.replace(/\/+$/, '') === p.replace(/\/+$/, '')
+                                                                );
+                                                                if (alreadyOpen) {
+                                                                    // Focus that window instead
+                                                                    await (window as any).api?.openNewWindow?.(p);
+                                                                } else {
+                                                                    setCurrentPath(p);
+                                                                }
+                                                            }}
                                                             className="flex items-center gap-2 px-3 py-2 rounded theme-hover text-left"
                                                         >
                                                             <Folder size={14} className="text-purple-400 flex-shrink-0" />

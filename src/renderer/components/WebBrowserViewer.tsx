@@ -550,33 +550,61 @@ const WebBrowserViewer = memo(({
     useEffect(() => {
         const webview = webviewRef.current as any;
         if (!webview) return;
-        let cleanup: (() => void) | null = null;
-        const handleDomReady = () => {
-            try {
-                const wc = webview.getWebContents?.();
-                if (!wc) return;
-                const handler = (_event: any, input: any) => {
-                    const isMod = input.modifiers?.includes('control') || input.modifiers?.includes('meta');
-                    if (isMod && input.key?.toLowerCase() === 'f' && input.type === 'keyDown') {
-                        _event.preventDefault();
-                        setShowFindBar(true);
-                        setTimeout(() => {
-                            findInputRef.current?.focus();
-                            findInputRef.current?.select();
-                        }, 50);
-                    }
-                };
-                wc.on('before-input-event', handler);
-                cleanup = () => wc.removeListener('before-input-event', handler);
-            } catch (err) {
 
-                console.warn('[WebBrowser] Could not attach before-input-event:', err);
+        const openFindBar = () => {
+            setShowFindBar(true);
+            setTimeout(() => {
+                findInputRef.current?.focus();
+                findInputRef.current?.select();
+            }, 50);
+        };
+
+        // Method 1: before-input-event on the webview element
+        const handleBeforeInput = (e: any) => {
+            // Electron webview fires this with different shapes depending on version
+            const input = e.input || e.args?.[0] || e.detail;
+            if (!input) return;
+            const isMod = input.control || input.meta;
+            const key = (input.key || '').toLowerCase();
+            if (isMod && key === 'f' && (input.type === 'keyDown' || !input.type)) {
+                if (e.preventDefault) e.preventDefault();
+                openFindBar();
             }
         };
-        webview.addEventListener('dom-ready', handleDomReady);
+        webview.addEventListener('before-input-event', handleBeforeInput);
+
+        // Method 2: Inject a keydown interceptor into the webview page and
+        // communicate back via console.log (works even without nodeIntegration)
+        const injectFindInterceptor = () => {
+            try {
+                webview.executeJavaScript(`
+                    if (!window.__incognideFindHook) {
+                        window.__incognideFindHook = true;
+                        document.addEventListener('keydown', function(e) {
+                            if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                console.log('__INCOGNIDE_CTRL_F__');
+                            }
+                        }, true);
+                    }
+                `).catch(() => {});
+            } catch {}
+        };
+
+        const handleConsoleMessage = (e: any) => {
+            if (e.message === '__INCOGNIDE_CTRL_F__') {
+                openFindBar();
+            }
+        };
+
+        webview.addEventListener('dom-ready', injectFindInterceptor);
+        webview.addEventListener('console-message', handleConsoleMessage);
+
         return () => {
-            webview.removeEventListener('dom-ready', handleDomReady);
-            cleanup?.();
+            webview.removeEventListener('before-input-event', handleBeforeInput);
+            webview.removeEventListener('dom-ready', injectFindInterceptor);
+            webview.removeEventListener('console-message', handleConsoleMessage);
         };
     }, []);
 
