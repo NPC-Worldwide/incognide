@@ -1,6 +1,6 @@
 import { getFileName } from './utils';
 import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
-import { Viewer, Worker, SpecialZoomLevel } from '@react-pdf-viewer/core';
+import { Viewer, Worker, SpecialZoomLevel, ScrollMode, ViewMode } from '@react-pdf-viewer/core';
 import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
 import { zoomPlugin } from '@react-pdf-viewer/zoom';
 import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.js?url';
@@ -640,6 +640,9 @@ const PdfViewer = ({
         window.addEventListener('pdf-refresh', handleRefresh as EventListener);
         return () => window.removeEventListener('pdf-refresh', handleRefresh as EventListener);
     }, [filePath]);
+
+
+
 
     const loadHighlights = useCallback(async () => {
         if (nodeId) {
@@ -1603,14 +1606,10 @@ const PdfViewer = ({
                     <Worker workerUrl={workerUrl}>
                         <Viewer
                             fileUrl={pdfData}
-                            plugins={[defaultLayoutPluginInstance, zoomPluginInstance]}
+                            plugins={[defaultLayoutPluginInstance]}
                             defaultScale={SpecialZoomLevel.PageWidth}
-                            pageLayout={{
-                                transformSize: ({ size }) => ({
-                                    height: size.height + 4,
-                                    width: size.width,
-                                }),
-                            }}
+                            scrollMode={ScrollMode.Vertical}
+                            viewMode={ViewMode.SinglePage}
                             onDocumentLoad={handleDocumentLoad}
                             onZoom={(e) => {
                                 setCurrentScale(e.scale);

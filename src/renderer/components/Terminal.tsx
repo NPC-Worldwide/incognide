@@ -682,8 +682,6 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
 
         let isEffectCancelled = false;
 
-        if (isSessionReady.current) return;
-
         isSessionReady.current = false;
 
         const dataCallback = (_, { id, data }) => {
@@ -729,15 +727,20 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                     isSessionReady.current = true;
                     setActiveShell(result.shell || 'system');
 
-                    fitAddonRef.current?.fit();
-                    window.api.resizeTerminal?.({
-                        id: terminalId,
-                        cols: xtermInstance.current.cols,
-                        rows: xtermInstance.current.rows
+                    requestAnimationFrame(() => {
+                        try { fitAddonRef.current?.fit(); } catch {}
+                        window.api.resizeTerminal?.({
+                            id: terminalId,
+                            cols: xtermInstance.current?.cols || 80,
+                            rows: xtermInstance.current?.rows || 24
+                        });
                     });
                     if (activeContentPaneId === nodeId) {
                         xtermInstance.current.focus();
                     }
+                    // Send Enter to trigger a fresh prompt (in case
+                    // the initial prompt was lost during strict mode re-mount)
+                    window.api.writeToTerminal({ id: terminalId, data: '\r' });
 
                     const hasBeenPrompted = localStorage.getItem(SHELL_PROMPT_KEY);
                     if (!hasBeenPrompted && result.shell === 'system') {
@@ -800,17 +803,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                 }
             }
 
-            // Only close PTY if pane is actually gone (not just moving)
-            const tid = terminalId;
-            setTimeout(() => {
-                // Check if any pane still references this terminal session
-                const stillAlive = Object.values(contentDataRef.current).some(
-                    (d: any) => d?.contentType === 'terminal' && d?.contentId === tid
-                );
-                if (!stillAlive) {
-                    window.api.closeTerminalSession(tid);
-                }
-            }, 200);
+            window.api.closeTerminalSession(terminalId);
         };
     }, [terminalId, shellType]);
 

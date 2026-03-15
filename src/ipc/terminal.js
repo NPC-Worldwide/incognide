@@ -28,21 +28,10 @@ function register(ctx) {
     if (ptyKillTimers.has(id)) {
       clearTimeout(ptyKillTimers.get(id));
       ptyKillTimers.delete(id);
-    }
 
-    // If session is already alive, reuse it (e.g. pane was moved/de-tabbed)
-    if (ptySessions.has(id)) {
-      const session = ptySessions.get(id);
-      // Re-register data listener for the new webContents
-      if (session?.ptyProcess && senderWebContents && !senderWebContents.isDestroyed()) {
-        session.ptyProcess.removeAllListeners('data');
-        session.ptyProcess.onData((data) => {
-          if (!senderWebContents.isDestroyed()) {
-            senderWebContents.send('terminal-data', { id, data });
-          }
-        });
+      if (ptySessions.has(id)) {
+        return { success: true };
       }
-      return { success: true, shell: session?.shell || 'system' };
     }
 
     const workingDir = cwd || os.homedir();
