@@ -189,6 +189,7 @@ jobs:
           fi
 
       - name: Build Electron app (DMG + ZIP for direct distribution)
+        shell: bash
         run: |
           for attempt in 1 2 3; do
             echo "Build attempt $attempt..."
