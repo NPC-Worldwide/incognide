@@ -461,7 +461,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             }
 
             if (comp.draggedItem.type === 'tab') {
-                const { sourceNodeId, tabIndex, contentType: tabContentType, contentId: tabContentId, browserUrl, fileChanged } = comp.draggedItem;
+                const { sourceNodeId, tabIndex, contentType: tabContentType, contentId: tabContentId, browserUrl, fileChanged, _browserId } = comp.draggedItem;
                 const draggedTabId = comp.draggedItem.id;
                 const targetPaneData = contentDataRef.current[node.id];
                 const sourcePaneData = contentDataRef.current[sourceNodeId];
@@ -499,7 +499,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                         ? (browserUrl || tabContentId || 'Browser')
                         : (getFileName(tabContentId) || tabContentType);
                     const dragScrollPos = sourceVirtualData?._scrollTopPos ?? comp.draggedItem._scrollTopPos;
-                    targetPaneData.tabs.push({
+                    const newTab: any = {
                         id: `tab_${Date.now()}_${targetPaneData.tabs.length}`,
                         contentType: tabContentType,
                         contentId: tabContentId,
@@ -508,7 +508,9 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                         fileChanged,
                         _scrollTopPos: dragScrollPos,
                         title: newTabTitle
-                    });
+                    };
+                    if (_browserId) newTab._browserId = _browserId;
+                    targetPaneData.tabs.push(newTab);
                     targetPaneData.activeTabIndex = targetPaneData.tabs.length - 1;
                     targetPaneData.contentType = tabContentType;
                     targetPaneData.contentId = tabContentId;
@@ -518,12 +520,13 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                 } else {
 
                     const existingPaneIds = new Set(Object.keys(contentDataRef.current));
-                    performSplit(path, side, tabContentType, tabContentId);
+                    performSplit(path, side, tabContentType, (tabContentType === 'browser' && browserUrl) ? browserUrl : tabContentId);
 
                     const newPaneId = Object.keys(contentDataRef.current).find(id => !existingPaneIds.has(id));
                     if (newPaneId && contentDataRef.current[newPaneId]) {
-                        if (tabContentType === 'browser' && browserUrl) {
-                            contentDataRef.current[newPaneId].browserUrl = browserUrl;
+                        if (tabContentType === 'browser') {
+                            if (browserUrl) contentDataRef.current[newPaneId].browserUrl = browserUrl;
+                            if (_browserId) contentDataRef.current[newPaneId]._browserId = _browserId;
                         }
                         if (fileContent !== undefined) {
                             contentDataRef.current[newPaneId].fileContent = fileContent;

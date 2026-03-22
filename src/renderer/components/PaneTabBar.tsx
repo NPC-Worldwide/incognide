@@ -202,15 +202,20 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
             const tab = tabs[index];
 
             const paneData = contentDataRef?.current?.[nodeId];
-            const isActiveTab = index === (paneData?.activeTabIndex ?? 0);
-            const browserUrl = tab.contentType === 'browser' && isActiveTab
-                ? (paneData?.browserUrl || tab.browserUrl)
-                : tab.browserUrl;
-
             const virtualData = contentDataRef?.current?.[`${nodeId}_${tab.id}`];
+            const isActiveTab = index === (paneData?.activeTabIndex ?? 0);
+            const browserUrl = tab.contentType === 'browser'
+                ? (isActiveTab
+                    ? (paneData?.browserUrl || virtualData?.browserUrl || tab.browserUrl)
+                    : (virtualData?.browserUrl || tab.browserUrl))
+                : tab.browserUrl;
             const latestFileContent = virtualData?.fileContent ?? tab.fileContent;
             const latestFileChanged = virtualData?.fileChanged ?? tab.fileChanged;
             const latestScrollPos = virtualData?._scrollTopPos ?? tab._scrollTopPos;
+            // Carry browserId so the webview can be parked/adopted without reload
+            const browserId = tab.contentType === 'browser'
+                ? (virtualData?._browserId || paneData?._browserId || tab._browserId)
+                : undefined;
             setTimeout(() => {
                 setDraggedItem({
                     type: 'tab',
@@ -221,6 +226,7 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
                     contentType: tab.contentType,
                     contentId: tab.contentId,
                     browserUrl: browserUrl,
+                    _browserId: browserId,
                     fileContent: latestFileContent,
                     fileChanged: latestFileChanged,
                     _scrollTopPos: latestScrollPos
