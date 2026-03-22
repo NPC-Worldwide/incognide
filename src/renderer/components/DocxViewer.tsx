@@ -111,6 +111,7 @@ const DocxViewer = ({
     const [history, setHistory] = useState<string[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
     const editorRef = useRef<HTMLDivElement>(null);
+    const savedSelectionRef = useRef<Range | null>(null);
     const isUndoRedoRef = useRef(false);
     const [isLoaded, setIsLoaded] = useState(false);
     const lastFilePathRef = useRef<string | null>(null);
@@ -416,6 +417,17 @@ const DocxViewer = ({
         editorRef.current?.focus();
         setTimeout(handleInput, 0);
     }, [handleInput]);
+
+    const restoreSavedSelection = useCallback(() => {
+        if (editorRef.current && savedSelectionRef.current) {
+            editorRef.current.focus();
+            const sel = window.getSelection();
+            if (sel) {
+                sel.removeAllRanges();
+                sel.addRange(savedSelectionRef.current);
+            }
+        }
+    }, []);
 
     const insertAtCursor = useCallback((html: string) => {
         editorRef.current?.focus();
@@ -770,6 +782,10 @@ ${htmlContent}
                 onDragEnd={() => setDraggedItem(null)}
                 onContextMenu={(e) => {
                     e.preventDefault();
+                    const sel = window.getSelection();
+                    if (sel && sel.rangeCount > 0) {
+                        savedSelectionRef.current = sel.getRangeAt(0).cloneRange();
+                    }
                     setDocxContextMenu({ x: e.clientX, y: e.clientY });
                 }}
                 className="px-3 py-2 border-b theme-border theme-bg-secondary cursor-move flex items-center justify-between"
@@ -1197,6 +1213,10 @@ ${htmlContent}
                         onContextMenu={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
+                            const sel = window.getSelection();
+                            if (sel && sel.rangeCount > 0) {
+                                savedSelectionRef.current = sel.getRangeAt(0).cloneRange();
+                            }
                             setDocxContextMenu({ x: e.clientX, y: e.clientY });
                         }}
                         className={`docx-editor outline-none ${viewMode === 'page' ? 'shadow-xl mx-auto' : ''}`}
@@ -1219,31 +1239,32 @@ ${htmlContent}
 
             {docxContextMenu && (
                 <>
-                    <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setDocxContextMenu(null)} />
+                    <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={(e) => { e.preventDefault(); setDocxContextMenu(null); }} />
                     <div
                         className="fixed theme-bg-secondary theme-border border rounded shadow-lg py-1 z-50 text-sm min-w-[160px]"
                         style={{ top: docxContextMenu.y, left: docxContextMenu.x }}
+                        onMouseDown={(e) => e.preventDefault()}
                     >
-                        <button onClick={() => { document.execCommand('cut'); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                        <button onClick={() => {
+                            restoreSavedSelection();
+                            document.execCommand('cut');
+                            setDocxContextMenu(null);
+                        }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
                             <Scissors size={12} /> Cut
                         </button>
-                        <button onClick={() => { document.execCommand('copy'); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                        <button onClick={() => {
+                            restoreSavedSelection();
+                            document.execCommand('copy');
+                            setDocxContextMenu(null);
+                        }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
                             <Clipboard size={12} /> Copy
                         </button>
                         <button onClick={async () => {
                             try {
+                                restoreSavedSelection();
                                 const text = await navigator.clipboard.readText();
                                 if (text && editorRef.current) {
-                                    editorRef.current.focus();
-                                    const sel = window.getSelection();
-                                    if (sel && sel.rangeCount > 0) {
-                                        const range = sel.getRangeAt(0);
-                                        range.deleteContents();
-                                        range.insertNode(document.createTextNode(text));
-                                        range.collapse(false);
-                                    } else {
-                                        document.execCommand('insertText', false, text);
-                                    }
+                                    document.execCommand('insertText', false, text);
                                 }
                             } catch (e) { console.error('Paste failed:', e); }
                             setDocxContextMenu(null);
@@ -1251,23 +1272,41 @@ ${htmlContent}
                             <ClipboardPaste size={12} /> Paste
                         </button>
                         <div className="border-t theme-border my-1" />
-                        <button onClick={() => { execCommand('bold'); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                        <button onClick={() => {
+                            restoreSavedSelection();
+                            execCommand('bold'); setDocxContextMenu(null);
+                        }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
                             <Bold size={12} /> Bold
                         </button>
-                        <button onClick={() => { execCommand('italic'); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                        <button onClick={() => {
+                            restoreSavedSelection();
+                            execCommand('italic'); setDocxContextMenu(null);
+                        }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
                             <Italic size={12} /> Italic
                         </button>
-                        <button onClick={() => { execCommand('underline'); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                        <button onClick={() => {
+                            restoreSavedSelection();
+                            execCommand('underline'); setDocxContextMenu(null);
+                        }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
                             <Underline size={12} /> Underline
                         </button>
-                        <button onClick={() => { execCommand('strikethrough'); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                        <button onClick={() => {
+                            restoreSavedSelection();
+                            execCommand('strikethrough'); setDocxContextMenu(null);
+                        }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
                             <Strikethrough size={12} /> Strikethrough
                         </button>
                         <div className="border-t theme-border my-1" />
-                        <button onClick={() => { execCommand('insertUnorderedList'); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                        <button onClick={() => {
+                            restoreSavedSelection();
+                            execCommand('insertUnorderedList'); setDocxContextMenu(null);
+                        }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
                             <List size={12} /> Bullet List
                         </button>
-                        <button onClick={() => { execCommand('insertOrderedList'); setDocxContextMenu(null); }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
+                        <button onClick={() => {
+                            restoreSavedSelection();
+                            execCommand('insertOrderedList'); setDocxContextMenu(null);
+                        }} className="flex items-center gap-2 px-4 py-1.5 w-full text-left theme-hover text-xs">
                             <ListOrdered size={12} /> Numbered List
                         </button>
                         <div className="border-t theme-border my-1" />

@@ -732,6 +732,29 @@ app.on('web-contents-created', (event, contents) => {
     });
   }
 
+  // Forward clipboard keyboard shortcuts through webview isolation.
+  // Electron's webview isolation can swallow Ctrl+C/V/X before they reach the
+  // guest page. Intercept them here and call the webContents clipboard methods
+  // which operate correctly across the isolation boundary.
+  if (contents.getType() === 'webview') {
+    contents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return;
+      const isMod = input.control || input.meta;
+      if (!isMod || input.alt) return;
+      const key = input.key.toLowerCase();
+
+      if (key === 'c' && !input.shift) {
+        contents.copy();
+      } else if (key === 'x' && !input.shift) {
+        contents.cut();
+      } else if (key === 'v' && !input.shift) {
+        contents.paste();
+      } else if (key === 'a' && !input.shift) {
+        contents.selectAll();
+      }
+    });
+  }
+
   if (contents.getType() === 'webview') {
     contents.setWindowOpenHandler(({ url, disposition }) => {
 

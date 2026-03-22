@@ -3,7 +3,7 @@ import {
     MessageSquare, Terminal, Globe, FileText, File as FileIcon,
     BrainCircuit, Clock, Bot, Zap, Users, Database, ChevronRight, ChevronDown,
     GitBranch, Image, BarChart3, AlertCircle, RefreshCw, Check, Columns, Layers,
-    Activity, Server
+    Activity, Server, Power
 } from 'lucide-react';
 import MemoryIcon from './MemoryIcon';
 import npcPythonLogo from '../../assets/npc-python.png';
@@ -87,6 +87,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
     const aiEnabled = useAiEnabled();
     const [checkingUpdates, setCheckingUpdates] = useState(false);
     const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
+    const [showQuitPrompt, setShowQuitPrompt] = useState(false);
     const [showBackendMenu, setShowBackendMenu] = useState(false);
 
     const [backendStatus, setBackendStatus] = useState<BackendStatus>('unknown');
@@ -160,6 +161,10 @@ const StatusBar: React.FC<StatusBarProps> = ({
                     : 'Checking backend...';
 
     const handleCheckUpdates = async () => {
+        if (downloadProgress !== null && downloadProgress >= 100) {
+            setShowQuitPrompt(true);
+            return;
+        }
         if (checkingUpdates || downloadProgress !== null) return;
         if (updateAvailable) {
 
@@ -173,6 +178,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
                 });
                 if (result?.success) {
                     setDownloadProgress(100);
+                    setShowQuitPrompt(true);
                 } else {
 
                     (window as any).api?.browserOpenExternal?.(updateAvailable.releaseUrl);
@@ -386,7 +392,11 @@ const StatusBar: React.FC<StatusBarProps> = ({
                     className={`${btnClass} ${updateAvailable ? 'text-amber-500' : 'text-gray-400 dark:text-gray-500'}`}
                 >
                     {downloadProgress !== null ? (
-                        <span className="text-[10px] font-mono text-amber-400">{downloadProgress}%</span>
+                        downloadProgress >= 100 ? (
+                            <Check size={16} className="text-green-400" />
+                        ) : (
+                            <span className="text-[10px] font-mono text-amber-400">{downloadProgress}%</span>
+                        )
                     ) : updateAvailable ? (
                         <AlertCircle size={16} />
                     ) : checkingUpdates ? (
@@ -395,12 +405,43 @@ const StatusBar: React.FC<StatusBarProps> = ({
                         <Check size={16} />
                     )}
                 </button>
-                <div className="absolute bottom-full right-0 mb-1 px-2 py-1 bg-gray-900 border border-gray-700 rounded text-[10px] text-gray-300 whitespace-nowrap opacity-0 group-hover/update:opacity-100 pointer-events-none transition-opacity duration-150 z-50">
-                    {updateAvailable
-                        ? `v${appVersion || '?'} → v${updateAvailable.latestVersion} available`
-                        : `v${appVersion || '?'} — up to date`
-                    }
-                </div>
+                {showQuitPrompt && (
+                    <>
+                        <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setShowQuitPrompt(false)} />
+                        <div className="absolute bottom-full right-0 mb-1 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 p-3 min-w-[220px]">
+                            <p className="text-[11px] text-gray-300 mb-2">
+                                Update downloaded. Close the app to install it?
+                            </p>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => {
+                                        (window as any).api?.closeWindow?.();
+                                    }}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-600 hover:bg-green-500 text-white rounded transition-colors"
+                                >
+                                    <Power size={12} />
+                                    Quit & Install
+                                </button>
+                                <button
+                                    onClick={() => setShowQuitPrompt(false)}
+                                    className="px-3 py-1.5 text-xs text-gray-400 hover:text-gray-200 hover:bg-white/10 rounded transition-colors"
+                                >
+                                    Later
+                                </button>
+                            </div>
+                        </div>
+                    </>
+                )}
+                {!showQuitPrompt && (
+                    <div className="absolute bottom-full right-0 mb-1 px-2 py-1 bg-gray-900 border border-gray-700 rounded text-[10px] text-gray-300 whitespace-nowrap opacity-0 group-hover/update:opacity-100 pointer-events-none transition-opacity duration-150 z-50">
+                        {downloadProgress !== null && downloadProgress >= 100
+                            ? 'Update ready — click to show quit prompt'
+                            : updateAvailable
+                                ? `v${appVersion || '?'} → v${updateAvailable.latestVersion} available`
+                                : `v${appVersion || '?'} — up to date`
+                        }
+                    </div>
+                )}
             </div>
             </div>
         </div>

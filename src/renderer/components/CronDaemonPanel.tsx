@@ -168,9 +168,11 @@ const parseServices = (raw: string): ServiceInfo[] => {
         .filter(Boolean) as ServiceInfo[];
 };
 
-const parseTimers = (raw: string): TimerInfo[] => {
-    if (!raw || typeof raw !== 'string' || !raw.trim()) return [];
-    return raw.split('\n')
+const parseTimers = (raw: unknown): TimerInfo[] => {
+    if (typeof raw !== 'string') return [];
+    const trimmed = raw.trim();
+    if (!trimmed) return [];
+    return trimmed.split('\n')
         .filter(l => l.trim() && !l.startsWith('NEXT') && !l.includes('timers listed') && !l.startsWith('Pass'))
         .map(l => {
             const tm = l.match(/(\S+)\.timer/); if (!tm) return null;

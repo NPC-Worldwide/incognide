@@ -633,32 +633,91 @@ const WebBrowserViewer = memo(({
             }, 50);
         };
 
-        // Method 1: before-input-event on the webview element
+        // before-input-event: intercept keyboard shortcuts that don't propagate
+        // through Electron's webview isolation (clipboard ops + find)
         const handleBeforeInput = (e: any) => {
             // Electron webview fires this with different shapes depending on version
             const input = e.input || e.args?.[0] || e.detail;
             if (!input) return;
+            if (input.type !== 'keyDown' && input.type) return;
+
             const isMod = input.control || input.meta;
             const key = (input.key || '').toLowerCase();
-            if (isMod && key === 'f' && (input.type === 'keyDown' || !input.type)) {
+
+            if (!isMod) return;
+
+            // Ctrl/Cmd+F — open find bar
+            if (key === 'f') {
                 if (e.preventDefault) e.preventDefault();
                 openFindBar();
+                return;
+            }
+
+            // Clipboard operations: Ctrl/Cmd+C/V/X/A
+            // Electron webview isolation blocks these from reaching the guest page
+            // natively, so we forward them using the webview's built-in methods
+            // which operate on the guest's focused element / selection.
+            if (key === 'c' && !input.shift) {
+                webview.copy();
+                return;
+            }
+            if (key === 'x' && !input.shift) {
+                webview.cut();
+                return;
+            }
+            if (key === 'v' && !input.shift) {
+                webview.paste();
+                return;
+            }
+            if (key === 'a' && !input.shift) {
+                webview.selectAll();
+                return;
             }
         };
         webview.addEventListener('before-input-event', handleBeforeInput);
 
-        // Method 2: Inject a keydown interceptor into the webview page and
-        // communicate back via console.log (works even without nodeIntegration)
-        const injectFindInterceptor = () => {
+        // Inject keyboard interceptors into the webview page and communicate
+        // back via console.log (works even without nodeIntegration)
+        const injectKeyboardHooks = () => {
             try {
                 webview.executeJavaScript(`
-                    if (!window.__incognideFindHook) {
-                        window.__incognideFindHook = true;
+                    if (!window.__incognideKeyboardHooks) {
+                        window.__incognideKeyboardHooks = true;
                         document.addEventListener('keydown', function(e) {
                             if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
                                 e.preventDefault();
                                 e.stopPropagation();
                                 console.log('__INCOGNIDE_CTRL_F__');
+                            }
+                        }, true);
+
+                        // Clipboard fallback: ensure copy/paste/cut work inside the
+                        // guest page even when Electron's webview isolation intercepts
+                        // the native keyboard events before they reach the page.
+                        document.addEventListener('keydown', function(e) {
+                            if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+                            var key = e.key.toLowerCase();
+                            if (key === 'c' && !e.shiftKey) {
+                                document.execCommand('copy');
+                            } else if (key === 'x' && !e.shiftKey) {
+                                document.execCommand('cut');
+                            } else if (key === 'v' && !e.shiftKey) {
+                                // For paste, try the Clipboard API first (async),
+                                // fall back to execCommand
+                                if (navigator.clipboard && navigator.clipboard.readText) {
+                                    navigator.clipboard.readText().then(function(text) {
+                                        var active = document.activeElement;
+                                        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) {
+                                            document.execCommand('insertText', false, text);
+                                        }
+                                    }).catch(function() {
+                                        document.execCommand('paste');
+                                    });
+                                } else {
+                                    document.execCommand('paste');
+                                }
+                            } else if (key === 'a' && !e.shiftKey) {
+                                document.execCommand('selectAll');
                             }
                         }, true);
                     }
@@ -672,12 +731,12 @@ const WebBrowserViewer = memo(({
             }
         };
 
-        webview.addEventListener('dom-ready', injectFindInterceptor);
+        webview.addEventListener('dom-ready', injectKeyboardHooks);
         webview.addEventListener('console-message', handleConsoleMessage);
 
         return () => {
             webview.removeEventListener('before-input-event', handleBeforeInput);
-            webview.removeEventListener('dom-ready', injectFindInterceptor);
+            webview.removeEventListener('dom-ready', injectKeyboardHooks);
             webview.removeEventListener('console-message', handleConsoleMessage);
         };
     }, []);
