@@ -162,7 +162,8 @@ const SearchPane: React.FC<SearchPaneProps> = ({
         }
     }, []);
 
-    const handleResultClick = (result: SearchResult) => {
+    const handleResultClick = (e: React.MouseEvent, result: SearchResult) => {
+        e.stopPropagation();
         if (result.type === 'file' && result.path && onOpenFile) {
             onOpenFile(result.path);
         } else if (result.type === 'conversation' && result.id && onOpenConversation) {
@@ -280,7 +281,7 @@ const SearchPane: React.FC<SearchPaneProps> = ({
                         {results.map((result, i) => (
                             <button
                                 key={`${result.type}-${result.id || result.path || i}`}
-                                onClick={() => handleResultClick(result)}
+                                onClick={(e) => handleResultClick(e, result)}
                                 className="w-full text-left p-3 bg-gray-800 rounded-lg border border-gray-700 hover:border-blue-500/50 transition-colors"
                             >
                                 <div className="flex items-start gap-3">

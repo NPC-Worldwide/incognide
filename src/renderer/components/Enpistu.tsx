@@ -5950,7 +5950,7 @@ ${contextPrompt}`;
                 {deepSearchResults.map(result => (
                     <button
                         key={result.conversationId}
-                        onClick={() => handleSearchResultSelect(result.conversationId, searchTerm)}
+                        onClick={() => handleConversationSelect(result.conversationId)}
                         className={`flex flex-col gap-1 px-4 py-2 w-full theme-hover text-left rounded-lg transition-all ${
                             activeConversationId === result.conversationId ? 'border-l-2 border-blue-500' : ''
                         }`}
@@ -8857,7 +8857,25 @@ const renderMainContent = () => {
     return (
         <main className={`flex-1 flex flex-col theme-bg-primary ${isDarkMode ? 'dark-mode' : 'light-mode'} overflow-hidden`}>
             {topBar}
-            <div className="flex-1 flex overflow-hidden" data-tutorial="pane-area">
+            <div
+                className="flex-1 flex overflow-hidden"
+                data-tutorial="pane-area"
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // Handle native file drops from OS file manager onto the pane area
+                    const nativeFiles = e.dataTransfer?.files;
+                    if (nativeFiles && nativeFiles.length > 0) {
+                        for (let i = 0; i < nativeFiles.length; i++) {
+                            const filePath = (nativeFiles[i] as any).path;
+                            if (filePath && handleFileClick) {
+                                handleFileClick(filePath);
+                            }
+                        }
+                    }
+                }}
+            >
                 {rootLayoutNode ? (
                     <LayoutNode node={rootLayoutNode} path={[]} component={layoutComponentRef} />
                 ) : (

@@ -3203,17 +3203,24 @@ const renderWebsiteList = () => {
 
               try {
                   console.log("Performing GLOBAL search for:", searchTerm);
-                  const backendResults = await window.api.performSearch({
+                  const backendResults = await (window as any).api?.searchConversations?.({
                       query: searchTerm,
-                      path: currentPath,
-                      global: true,
+                      limit: 50,
                   });
 
-                  if (backendResults && !backendResults.error) {
-                      const sortedResults = (backendResults || []).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                  if (backendResults?.conversations && !backendResults.error) {
+                      const mapped = backendResults.conversations.map((c: any) => ({
+                          conversationId: c.id,
+                          conversationTitle: c.title || c.preview?.slice(0, 50) || 'Conversation',
+                          timestamp: c.created_at ? new Date(c.created_at).getTime() : 0,
+                          matches: c.match ? [{ snippet: c.match }] : (c.preview ? [{ snippet: c.preview }] : []),
+                      }));
+                      const sortedResults = mapped.sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
                       setDeepSearchResults(sortedResults);
+                  } else if (backendResults?.error) {
+                      throw new Error(backendResults.error);
                   } else {
-                      throw new Error(backendResults?.error || "Global search failed.");
+                      setDeepSearchResults([]);
                   }
               } catch (err) {
                   console.error("Error during global search:", err);

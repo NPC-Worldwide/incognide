@@ -355,6 +355,121 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             e.preventDefault();
             e.stopPropagation();
             const comp = componentRef.current;
+
+            // Handle native file drops from OS file manager (Finder, Nautilus, etc.)
+            const nativeFiles = e.dataTransfer?.files;
+            if ((!comp.draggedItem) && nativeFiles && nativeFiles.length > 0 && !lockedPanes.has(node.id)) {
+                const getContentTypeForExt = (filePath: string) => {
+                    const ext = filePath.split('.').pop()?.toLowerCase();
+                    if (ext === 'pdf') return 'pdf';
+                    if (['csv', 'xlsx', 'xls'].includes(ext)) return 'csv';
+                    if (ext === 'pptx') return 'pptx';
+                    if (ext === 'tex') return 'latex';
+                    if (ext === 'ipynb') return 'notebook';
+                    if (ext === 'exp') return 'exp';
+                    if (['docx', 'doc'].includes(ext)) return 'docx';
+                    if (ext === 'mapx') return 'mindmap';
+                    if (ext === 'zip') return 'zip';
+                    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(ext)) return 'image';
+                    if (ext === 'stl') return 'stl';
+                    return 'editor';
+                };
+
+                const filePaths: string[] = [];
+                for (let i = 0; i < nativeFiles.length; i++) {
+                    // Electron File objects have a .path property with the absolute filesystem path
+                    const filePath = (nativeFiles[i] as any).path;
+                    if (filePath) filePaths.push(filePath);
+                }
+
+                if (filePaths.length > 0) {
+                    // First file: open in the drop target pane (respecting drop side)
+                    const firstPath = filePaths[0];
+                    const firstContentType = getContentTypeForExt(firstPath);
+
+                    if (side === 'center') {
+                        const paneData = contentDataRef.current[node.id];
+                        if (paneData) {
+                            // Initialize tabs array if needed
+                            if (!paneData.tabs || paneData.tabs.length === 0) {
+                                const currentTitle = paneData.contentType === 'browser'
+                                    ? (paneData.browserUrl || 'Browser')
+                                    : paneData.contentType === 'terminal'
+                                        ? 'Terminal'
+                                        : (getFileName(paneData.contentId) || paneData.contentType);
+                                paneData.tabs = [{
+                                    id: `tab_${Date.now()}_0`,
+                                    contentType: paneData.contentType,
+                                    contentId: paneData.contentId,
+                                    browserUrl: paneData.browserUrl,
+                                    fileContent: paneData.fileContent,
+                                    fileChanged: paneData.fileChanged,
+                                    _scrollTopPos: paneData._scrollTopPos,
+                                    title: currentTitle
+                                }];
+                                paneData.activeTabIndex = 0;
+                            }
+
+                            // Save current tab state
+                            const currentTabIndex = paneData.activeTabIndex || 0;
+                            if (paneData.tabs[currentTabIndex]) {
+                                const curVd = contentDataRef.current[`${node.id}_${paneData.tabs[currentTabIndex].id}`];
+                                paneData.tabs[currentTabIndex].fileContent = curVd?.fileContent ?? paneData.fileContent;
+                                paneData.tabs[currentTabIndex].fileChanged = curVd?.fileChanged ?? paneData.fileChanged;
+                            }
+
+                            // Add new tab for the dropped file
+                            const newTab = {
+                                id: `tab_${Date.now()}_${paneData.tabs.length}`,
+                                contentType: firstContentType,
+                                contentId: firstPath,
+                                title: getFileName(firstPath) || firstContentType
+                            };
+                            paneData.tabs.push(newTab);
+                            paneData.activeTabIndex = paneData.tabs.length - 1;
+                            paneData.contentType = firstContentType;
+                            paneData.contentId = firstPath;
+                            paneData.fileContent = null;
+                            paneData.fileChanged = false;
+
+                            // Load file content for editor types
+                            if (firstContentType === 'editor') {
+                                (async () => {
+                                    try {
+                                        const response = await (window as any).api.readFileContent(firstPath);
+                                        const fileContent = response.error ? `Error: ${response.error}` : response.content;
+                                        paneData.fileContent = fileContent;
+                                        const tabIndex = paneData.tabs.length - 1;
+                                        if (paneData.tabs[tabIndex]) {
+                                            paneData.tabs[tabIndex].fileContent = fileContent;
+                                        }
+                                        forceRender(n => n + 1);
+                                    } catch (err) {
+                                        console.error('Error loading dropped file content:', err);
+                                    }
+                                })();
+                            }
+
+                            forceRender(n => n + 1);
+                        } else {
+                            updateContentPane(node.id, firstContentType, firstPath);
+                        }
+                    } else {
+                        // Directional drop — split pane
+                        performSplit(path, side, firstContentType, firstPath);
+                    }
+
+                    // Additional files: open in new panes
+                    for (let i = 1; i < filePaths.length; i++) {
+                        const fp = filePaths[i];
+                        const ct = getContentTypeForExt(fp);
+                        comp.createAndAddPaneNodeToLayout(ct, fp);
+                    }
+
+                    return;
+                }
+            }
+
             if (!comp.draggedItem) return;
 
             if (comp.draggedItem.type === 'pane') {

@@ -485,8 +485,15 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
             updateContentPane(targetId, contentType, finalContentId);
         }
 
+        // Ensure the pane re-renders after mount (fixes files opened from command palette
+        // not showing until manual refresh — the pane-update listener may not be set up
+        // yet during the synchronous call, so defer to after React commits the render).
+        setTimeout(() => {
+            paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: targetId } }));
+        }, 0);
+
         return targetId;
-    }, [updateContentPane, addPaneOrTab]);
+    }, [updateContentPane, addPaneOrTab, paneUpdateEmitter]);
 
     const moveContentPane = useCallback((draggedId: string, draggedPath: number[], targetPath: number[], dropSide: string) => {
         setRootLayoutNode((oldRoot: any) => {
