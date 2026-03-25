@@ -127,7 +127,6 @@ const WebBrowserViewer = memo(({
     const paneData = contentDataRef.current[nodeId];
 
     const initialUrlRef = useRef(paneData?.browserUrl || paneData?.contentId || 'about:blank');
-    console.log(`[Browser ${nodeId}] mount: browserUrl=${paneData?.browserUrl}, contentId=${paneData?.contentId}, initial=${initialUrlRef.current}`);
 
     const projectPartition = currentPath
         ? `project-${currentPath.replace(/[^a-zA-Z0-9]/g, '-').substring(0, 50)}`
