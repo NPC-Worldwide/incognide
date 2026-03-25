@@ -568,6 +568,7 @@ const CodeEditorPane = ({
         return saved ? JSON.parse(saved) : ['default', 'vim'];
     });
     const [showKeybindGuide, setShowKeybindGuide] = useState(false);
+    const [diskChangeContent, setDiskChangeContent] = useState<string | null>(null);
 
     useEffect(() => {
         const handleCycleMode = (e: KeyboardEvent) => {
@@ -713,12 +714,12 @@ const CodeEditorPane = ({
                 const diskContent = typeof result === 'string' ? result : result?.content;
                 if (diskContent == null || diskContent === pd.fileContent) return;
                 if (pd.fileChanged) {
-
-                    const reload = window.confirm('This file has been changed on disk. Reload and lose your changes?');
-                    if (!reload) return;
+                    setDiskChangeContent(diskContent);
+                    return;
                 }
                 pd.fileContent = diskContent;
                 pd.fileChanged = false;
+                setDiskChangeContent(null);
                 setRootLayoutNode(p => ({ ...p }));
             } catch (e) {
                 console.error('[FILE-WATCH] Error reloading:', e);
@@ -746,6 +747,32 @@ const CodeEditorPane = ({
 
     return (
         <div className="flex-1 flex flex-col min-h-0 theme-bg-secondary relative">
+            {diskChangeContent !== null && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-900/40 border-b border-yellow-700/50 text-yellow-200 text-xs shrink-0">
+                    <RefreshCw size={12} className="text-yellow-400 shrink-0" />
+                    <span className="flex-1">File changed on disk. Reload and lose your unsaved changes?</span>
+                    <button
+                        onClick={() => {
+                            const pd = contentDataRef.current[nodeId];
+                            if (pd && diskChangeContent != null) {
+                                pd.fileContent = diskChangeContent;
+                                pd.fileChanged = false;
+                                setRootLayoutNode(p => ({ ...p }));
+                            }
+                            setDiskChangeContent(null);
+                        }}
+                        className="px-2 py-0.5 rounded bg-yellow-600/50 hover:bg-yellow-600/80 text-yellow-100 font-medium transition-colors"
+                    >
+                        Reload
+                    </button>
+                    <button
+                        onClick={() => setDiskChangeContent(null)}
+                        className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-gray-300 transition-colors"
+                    >
+                        Ignore
+                    </button>
+                </div>
+            )}
             <div className="flex-1 flex min-h-0">
                 {showBlame && Array.isArray(blameData) && (
                     <div className="w-64 border-r theme-border flex flex-col bg-black/20 overflow-hidden">

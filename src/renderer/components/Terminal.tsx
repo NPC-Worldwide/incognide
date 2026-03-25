@@ -384,6 +384,16 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             requestAnimationFrame(() => {
                 try { fitAddon.fit(); } catch (e) { /* terminal may not be visible yet */ }
             });
+            // Delayed re-fit for when pane layout settles after tab drags/moves
+            setTimeout(() => {
+                try { fitAddon.fit(); } catch {}
+            }, 50);
+            setTimeout(() => {
+                try { fitAddon.fit(); } catch {}
+                if (isSessionReady.current) {
+                    window.api.resizeTerminal?.({ id: terminalId, cols: term.cols, rows: term.rows });
+                }
+            }, 300);
 
             term.registerLinkProvider({
                 provideLinks: (lineNumber: number, callback: (links: any[]) => void) => {
@@ -438,7 +448,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                             });
                         }
                     });
-                }, 100);
+                }, 30);
             });
             resizeObserverRef.current = resizeObserver;
             resizeObserver.observe(terminalRef.current);
@@ -458,7 +468,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                             });
                         }
                     });
-                }, 100);
+                }, 30);
             };
             handleWindowResizeRef.current = handleWindowResize;
             window.addEventListener('resize', handleWindowResize);

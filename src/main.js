@@ -732,6 +732,34 @@ app.on('web-contents-created', (event, contents) => {
     });
   }
 
+  // Handle screen sharing requests from webviews (Google Meet, etc.)
+  if (contents.getType() === 'webview') {
+    contents.session.setDisplayMediaRequestHandler(async (request, callback) => {
+      try {
+        const sources = await desktopCapturer.getSources({ types: ['screen', 'window'] });
+        if (sources.length > 0) {
+          callback({ video: sources[0], audio: 'loopback' });
+        } else {
+          callback({});
+        }
+      } catch (err) {
+        log(`[Screen Share] Error: ${err.message}`);
+        callback({});
+      }
+    });
+  }
+
+  // Handle OAuth/auth callbacks — allow new-window for auth flows
+  if (contents.getType() === 'webview') {
+    contents.setWindowOpenHandler(({ url }) => {
+      // Allow OAuth callbacks and auth flows to open
+      if (url.includes('accounts.google.com') || url.includes('login') || url.includes('auth') || url.includes('oauth') || url.includes('callback')) {
+        return { action: 'allow' };
+      }
+      return { action: 'deny' };
+    });
+  }
+
   // Forward clipboard keyboard shortcuts through webview isolation.
   // Electron's webview isolation can swallow Ctrl+C/V/X before they reach the
   // guest page. Intercept them here and call the webContents clipboard methods
@@ -1808,8 +1836,13 @@ function createWindow(cliArgs = {}) {
           },
           {
             label: 'New Terminal',
-            accelerator: 'CmdOrCtrl+Shift+T',
+            accelerator: isMac ? 'Ctrl+Shift+T' : 'Super+Shift+T',
             click: () => mainWindow.webContents.send('menu-new-terminal')
+          },
+          {
+            label: 'Reopen Closed Tab',
+            accelerator: 'CmdOrCtrl+Shift+T',
+            click: () => mainWindow.webContents.send('menu-reopen-tab')
           },
           {
             label: 'New Browser Tab',

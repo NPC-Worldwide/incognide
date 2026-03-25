@@ -1599,11 +1599,25 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
                 return;
             }
 
-            // Ctrl+Shift+T - New Terminal
-            if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 't' || e.key === 'T')) {
-                e.preventDefault();
-                createNewTerminalRef.current?.();
-                return;
+            // New Terminal: Super+Shift+T (Linux/Win), Ctrl+Shift+T (Mac)
+            // Restore last closed: Ctrl+Shift+T (Linux/Win), Cmd+Shift+T (Mac)
+            if (e.shiftKey && (e.key === 't' || e.key === 'T')) {
+                const isMac = navigator.platform.includes('Mac');
+                const isNewTerminal = isMac ? (e.ctrlKey && !e.metaKey) : (e.metaKey && !e.ctrlKey);
+                const isRestore = isMac ? (e.metaKey && !e.ctrlKey) : (e.ctrlKey && !e.metaKey);
+                if (isNewTerminal) {
+                    e.preventDefault();
+                    createNewTerminalRef.current?.();
+                    return;
+                }
+                if (isRestore) {
+                    e.preventDefault();
+                    const closedTab = closedTabsRef.current.pop();
+                    if (closedTab) {
+                        createAndAddPaneNodeToLayout(closedTab.contentType, closedTab.contentId);
+                    }
+                    return;
+                }
             }
 
             // Ctrl+Shift+C - New Conversation/Chat (but not when in terminal - let terminal handle copy)
@@ -9208,7 +9222,7 @@ const renderMainContent = () => {
                                 case 'docx':
                                     return renderDocxViewer({ nodeId: zenModePaneId });
                                 case 'browser':
-                                    return renderBrowserViewer({ nodeId: zenModePaneId });
+                                    return null; // Browser zen handled via CSS on the pane itself
                                 case 'pptx':
                                     return renderPptxViewer({ nodeId: zenModePaneId });
                                 case 'latex':

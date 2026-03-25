@@ -1600,8 +1600,8 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
 
         return (
             <div
-                className="flex-1 flex flex-col border theme-border"
-                style={{ position: 'relative', overflow: 'hidden' }}
+                className={`flex-1 flex flex-col border theme-border ${zenModePaneId === node.id && contentType === 'browser' ? 'fixed inset-0 z-[200]' : ''}`}
+                style={{ position: zenModePaneId === node.id && contentType === 'browser' ? 'fixed' : 'relative', overflow: 'hidden' }}
                 data-pane-id={node.id}
                 data-pane-type={contentType}
                 onClick={() => componentRef.current.setActiveContentPaneId(node.id)}
