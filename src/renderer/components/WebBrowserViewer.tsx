@@ -6,36 +6,6 @@ const browserStateCache = new Map<string, {
     lastUrl: string;
 }>();
 
-// Persistent webview parking — keeps webviews alive across tab drags/pane moves
-const _webviewGarage = new Map<string, HTMLElement>();
-let _garageContainer: HTMLDivElement | null = null;
-function getGarageContainer(): HTMLDivElement {
-    if (!_garageContainer) {
-        _garageContainer = document.createElement('div');
-        _garageContainer.id = 'webview-garage';
-        _garageContainer.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;pointer-events:none;';
-        document.body.appendChild(_garageContainer);
-    }
-    return _garageContainer;
-}
-
-function getBrowserId(nodeId: string, contentDataRef: any): string {
-    const paneData = contentDataRef.current[nodeId];
-    // Use existing browserId or create one and persist it
-    if (paneData?._browserId) return paneData._browserId;
-    // Check active tab for browserId
-    if (paneData?.tabs) {
-        const activeTab = paneData.tabs[paneData.activeTabIndex ?? 0];
-        if (activeTab?._browserId) {
-            paneData._browserId = activeTab._browserId;
-            return activeTab._browserId;
-        }
-    }
-    const id = `browser_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    if (paneData) paneData._browserId = id;
-    return id;
-}
-
 const WebBrowserViewer = memo(({
     nodeId,
     contentDataRef,
@@ -54,8 +24,6 @@ const WebBrowserViewer = memo(({
     hasTabBar
 }) => {
     const webviewRef = useRef(null);
-    const webviewContainerRef = useRef<HTMLDivElement>(null);
-    const browserIdRef = useRef(getBrowserId(nodeId, contentDataRef));
     const urlInputRef = useRef<HTMLInputElement>(null);
     const [currentUrl, setCurrentUrl] = useState('');
     const [urlInput, setUrlInput] = useState('');
@@ -159,53 +127,12 @@ const WebBrowserViewer = memo(({
     const paneData = contentDataRef.current[nodeId];
 
     const initialUrlRef = useRef(paneData?.browserUrl || paneData?.contentId || 'about:blank');
-    const adoptedRef = useRef(false);
+    console.log(`[Browser ${nodeId}] mount: browserUrl=${paneData?.browserUrl}, contentId=${paneData?.contentId}, initial=${initialUrlRef.current}`);
 
     const projectPartition = currentPath
         ? `project-${currentPath.replace(/[^a-zA-Z0-9]/g, '-').substring(0, 50)}`
         : 'default-browser-session';
     const viewId = sessionMode === 'global' ? 'browser-global' : projectPartition;
-
-    // Adopt a parked webview on mount, park it on unmount
-    useEffect(() => {
-        const bid = browserIdRef.current;
-        const container = webviewContainerRef.current;
-        if (!container) return;
-
-        const parked = _webviewGarage.get(bid);
-        if (parked) {
-            // Adopt: move from garage into our container
-            parked.className = 'absolute inset-0 w-full h-full';
-            parked.style.visibility = 'visible';
-            container.appendChild(parked);
-            webviewRef.current = parked as any;
-            _webviewGarage.delete(bid);
-            adoptedRef.current = true;
-            hasInitializedRef.current = true;
-
-            // Sync state from the live webview
-            try {
-                const url = (parked as any).getURL?.() || (parked as any).src || '';
-                if (url && url !== 'about:blank') {
-                    setCurrentUrl(url);
-                    setUrlInput(url);
-                }
-                setCanGoBack((parked as any).canGoBack?.() || false);
-                setCanGoForward((parked as any).canGoForward?.() || false);
-                setTitle((parked as any).getTitle?.() || 'Browser');
-            } catch {}
-        }
-
-        return () => {
-            // Park: move webview to garage so it stays alive
-            const wv = webviewRef.current as HTMLElement | null;
-            if (wv && wv.parentElement) {
-                const garage = getGarageContainer();
-                garage.appendChild(wv);
-                _webviewGarage.set(bid, wv);
-            }
-        };
-    }, []);
 
     useEffect(() => {
         if (contentDataRef.current[nodeId]) {
@@ -2028,20 +1955,16 @@ const WebBrowserViewer = memo(({
                     </div>
                 )}
 
-                <div ref={webviewContainerRef} className="absolute inset-0 w-full h-full">
-                    {!adoptedRef.current && (
-                        <webview
-                            key={`webview-${viewId}-${webviewKey}`}
-                            ref={webviewRef}
-                            className="absolute inset-0 w-full h-full"
-                            partition={`persist:${viewId}`}
-                            allowpopups="true"
-                            allowusermedia="true"
-                            webpreferences="contextIsolation=no, javascript=yes, webSecurity=yes, allowRunningInsecureContent=no, spellcheck=yes, enableRemoteModule=no"
-                            style={{ visibility: error ? 'hidden' : 'visible', backgroundColor: '#ffffff' }}
-                        />
-                    )}
-                </div>
+                <webview
+                    key={`webview-${viewId}-${webviewKey}`}
+                    ref={webviewRef}
+                    className="absolute inset-0 w-full h-full"
+                    partition={`persist:${viewId}`}
+                    allowpopups="true"
+                    allowusermedia="true"
+                    webpreferences="contextIsolation=no, javascript=yes, webSecurity=yes, allowRunningInsecureContent=no, spellcheck=yes, enableRemoteModule=no"
+                    style={{ visibility: error ? 'hidden' : 'visible', backgroundColor: '#ffffff' }}
+                />
 
                 <div className="webview-resize-overlay absolute inset-0 z-10" />
 

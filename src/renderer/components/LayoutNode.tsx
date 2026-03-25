@@ -576,7 +576,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             }
 
             if (comp.draggedItem.type === 'tab') {
-                const { sourceNodeId, tabIndex, contentType: tabContentType, contentId: tabContentId, browserUrl, fileChanged, _browserId } = comp.draggedItem;
+                const { sourceNodeId, tabIndex, contentType: tabContentType, contentId: tabContentId, browserUrl, fileChanged } = comp.draggedItem;
                 const draggedTabId = comp.draggedItem.id;
                 const targetPaneData = contentDataRef.current[node.id];
                 const sourcePaneData = contentDataRef.current[sourceNodeId];
@@ -624,7 +624,6 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                         _scrollTopPos: dragScrollPos,
                         title: newTabTitle
                     };
-                    if (_browserId) newTab._browserId = _browserId;
                     targetPaneData.tabs.push(newTab);
                     targetPaneData.activeTabIndex = targetPaneData.tabs.length - 1;
                     targetPaneData.contentType = tabContentType;
@@ -639,9 +638,8 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
 
                     const newPaneId = Object.keys(contentDataRef.current).find(id => !existingPaneIds.has(id));
                     if (newPaneId && contentDataRef.current[newPaneId]) {
-                        if (tabContentType === 'browser') {
-                            if (browserUrl) contentDataRef.current[newPaneId].browserUrl = browserUrl;
-                            if (_browserId) contentDataRef.current[newPaneId]._browserId = _browserId;
+                        if (tabContentType === 'browser' && browserUrl) {
+                            contentDataRef.current[newPaneId].browserUrl = browserUrl;
                         }
                         if (fileContent !== undefined) {
                             contentDataRef.current[newPaneId].fileContent = fileContent;
@@ -1600,8 +1598,8 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
 
         return (
             <div
-                className={`flex-1 flex flex-col border theme-border ${zenModePaneId === node.id && contentType === 'browser' ? 'fixed inset-0 z-[200]' : ''}`}
-                style={{ position: zenModePaneId === node.id && contentType === 'browser' ? 'fixed' : 'relative', overflow: 'hidden' }}
+                className="flex-1 flex flex-col border theme-border"
+                style={{ position: 'relative', overflow: 'hidden' }}
                 data-pane-id={node.id}
                 data-pane-type={contentType}
                 onClick={() => componentRef.current.setActiveContentPaneId(node.id)}

@@ -442,6 +442,7 @@ readDocxContent: (filePath) =>
         createTerminalSession: (args) => ipcRenderer.invoke('createTerminalSession', args),
     writeToTerminal: (args) => ipcRenderer.invoke('writeToTerminal', args),
     closeTerminalSession: (id) => ipcRenderer.invoke('closeTerminalSession', id),
+    getTerminalCwd: (id) => ipcRenderer.invoke('getTerminalCwd', { id }),
     onTerminalData: (callback) => {
         const handler = (_, data) => callback(_, data);
         ipcRenderer.on('terminal-data', handler);

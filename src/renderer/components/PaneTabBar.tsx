@@ -212,10 +212,6 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
             const latestFileContent = virtualData?.fileContent ?? tab.fileContent;
             const latestFileChanged = virtualData?.fileChanged ?? tab.fileChanged;
             const latestScrollPos = virtualData?._scrollTopPos ?? tab._scrollTopPos;
-            // Carry browserId so the webview can be parked/adopted without reload
-            const browserId = tab.contentType === 'browser'
-                ? (virtualData?._browserId || paneData?._browserId || tab._browserId)
-                : undefined;
             setTimeout(() => {
                 setDraggedItem({
                     type: 'tab',
@@ -226,7 +222,6 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
                     contentType: tab.contentType,
                     contentId: tab.contentId,
                     browserUrl: browserUrl,
-                    _browserId: browserId,
                     fileContent: latestFileContent,
                     fileChanged: latestFileChanged,
                     _scrollTopPos: latestScrollPos

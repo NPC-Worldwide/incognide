@@ -5295,13 +5295,21 @@ ${contextPrompt}`;
 
     // Listen for terminal clickable file:line paths
     useEffect(() => {
-        const handleTerminalOpenFile = (e: CustomEvent<{ filePath: string; line: number; col: number; currentPath: string }>) => {
-            const { filePath, line, col, currentPath: termCwd } = e.detail;
-            // Resolve relative paths against terminal's cwd
+        const handleTerminalOpenFile = (e: CustomEvent<{ filePath: string; line?: number; col?: number; currentPath?: string; isUrl?: boolean }>) => {
+            const { filePath, line, col, currentPath: termCwd, isUrl } = e.detail;
+
+            // URLs open in a browser pane
+            if (isUrl || filePath.startsWith('http://') || filePath.startsWith('https://')) {
+                createAndAddPaneNodeToLayout({ contentType: 'browser', contentId: filePath, browserUrl: filePath });
+                return;
+            }
+
+            // Resolve relative paths against terminal's actual cwd
             const fullPath = filePath.startsWith('/')
                 ? filePath
                 : `${termCwd || currentPath}/${filePath}`;
             const normalized = normalizePath(fullPath);
+
             // Check if file is already open
             const existingPaneId = Object.keys(contentDataRef.current).find(
                 id => contentDataRef.current[id]?.contentType === 'editor' && contentDataRef.current[id]?.contentId === normalized
@@ -9222,7 +9230,7 @@ const renderMainContent = () => {
                                 case 'docx':
                                     return renderDocxViewer({ nodeId: zenModePaneId });
                                 case 'browser':
-                                    return null; // Browser zen handled via CSS on the pane itself
+                                    return renderBrowserViewer({ nodeId: zenModePaneId });
                                 case 'pptx':
                                     return renderPptxViewer({ nodeId: zenModePaneId });
                                 case 'latex':

@@ -237,6 +237,30 @@ function register(ctx) {
     }
   });
 
+  ipcMain.handle('getTerminalCwd', async (event, { id }) => {
+    const session = ptySessions.get(id);
+    if (!session?.ptyProcess) return { cwd: null };
+    const pid = session.ptyProcess.pid;
+    const platform = process.platform;
+    try {
+      if (platform === 'linux') {
+        const cwd = require('fs').readlinkSync(`/proc/${pid}/cwd`);
+        return { cwd };
+      } else if (platform === 'darwin') {
+        const { execSync } = require('child_process');
+        const cwd = execSync(`lsof -a -p ${pid} -d cwd -Fn 2>/dev/null | tail -1`, { encoding: 'utf8' }).trim().replace(/^n/, '');
+        return { cwd: cwd || null };
+      } else {
+        // Windows: use wmic or powershell
+        const { execSync } = require('child_process');
+        const cwd = execSync(`powershell -Command "(Get-Process -Id ${pid}).Path | Split-Path"`, { encoding: 'utf8' }).trim();
+        return { cwd: cwd || null };
+      }
+    } catch {
+      return { cwd: null };
+    }
+  });
+
   ipcMain.handle('resizeTerminal', (event, { id, cols, rows }) => {
     if (!pty) {
       return { success: false, error: 'Terminal functionality not available' };
