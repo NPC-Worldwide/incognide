@@ -38,6 +38,18 @@ const NQL_FUNCTIONS = [
 
 const NQL_CATEGORIES = [...new Set(NQL_FUNCTIONS.map(f => f.category))];
 
+type OSPlatform = 'linux' | 'darwin' | 'win32';
+const detectPlatform = (): OSPlatform => {
+    const ua = navigator.userAgent.toLowerCase();
+    if (ua.includes('win')) return 'win32';
+    if (ua.includes('mac')) return 'darwin';
+    return 'linux';
+};
+const HOST_PLATFORM: OSPlatform = detectPlatform();
+const IS_LINUX = HOST_PLATFORM === 'linux';
+const IS_MAC = HOST_PLATFORM === 'darwin';
+const IS_WIN = HOST_PLATFORM === 'win32';
+
 const SCHEDULE_PRESETS = [
     { label: 'Every minute', value: '* * * * *' },
     { label: 'Every 5 min', value: '*/5 * * * *' },
@@ -61,11 +73,25 @@ const EXAMPLE_JOBS: { name: string; schedule: string; command: string; desc: str
     { name: 'context_compress', schedule: '0 */12 * * *', command: 'compress', desc: 'Compress conversation context every 12h' },
 ];
 
-const EXAMPLE_DAEMONS: { name: string; command: string; desc: string; npc?: string }[] = [
-    { name: 'downloads-watcher', command: 'inotifywait -m -e create ~/Downloads --format "%f" | while read f; do echo "New: $f"; done', desc: 'Watch ~/Downloads for new files' },
+const EXAMPLE_DAEMONS_LINUX: { name: string; command: string; desc: string; npc?: string }[] = [
+    { name: 'downloads-watcher', command: 'inotifywait -m -e create ~/Downloads --format "%f" | while read f; do echo "New: $f"; done', desc: 'Watch ~/Downloads for new files (requires inotify-tools)' },
     { name: 'log-monitor', command: 'tail -F /var/log/syslog | grep --line-buffered -iE "error|warn|critical"', desc: 'Stream syslog errors in real time' },
-    { name: 'repo-watcher', command: 'inotifywait -mr -e modify,create,delete --exclude "\\.git" . --format "%w%f %e"', desc: 'Watch current directory for file changes' },
+    { name: 'repo-watcher', command: 'inotifywait -mr -e modify,create,delete --exclude "\\.git" . --format "%w%f %e"', desc: 'Watch current directory for file changes (requires inotify-tools)' },
 ];
+
+const EXAMPLE_DAEMONS_MAC: { name: string; command: string; desc: string; npc?: string }[] = [
+    { name: 'downloads-watcher', command: 'fswatch -0 ~/Downloads | while read -d "" f; do echo "New: $f"; done', desc: 'Watch ~/Downloads for new files (requires fswatch)' },
+    { name: 'log-monitor', command: 'log stream --predicate \'eventMessage contains "error" || eventMessage contains "fault"\' --level error', desc: 'Stream system log errors in real time' },
+    { name: 'repo-watcher', command: 'fswatch -r --exclude "\\.git" . | while read -d "" f; do echo "Changed: $f"; done', desc: 'Watch current directory for file changes (requires fswatch)' },
+];
+
+const EXAMPLE_DAEMONS_WIN: { name: string; command: string; desc: string; npc?: string }[] = [
+    { name: 'downloads-watcher', command: 'powershell -Command "$w = New-Object IO.FileSystemWatcher; $w.Path = [Environment]::GetFolderPath(\'UserProfile\') + \'\\Downloads\'; $w.EnableRaisingEvents = $true; Register-ObjectEvent $w Created -Action { Write-Host \\"New: $($Event.SourceEventArgs.Name)\\" }; while($true){Start-Sleep 1}"', desc: 'Watch Downloads folder for new files' },
+    { name: 'log-monitor', command: 'powershell -Command "Get-WinEvent -LogName System -MaxEvents 50 | Where-Object {$_.LevelDisplayName -match \'Error|Warning|Critical\'} | Format-List TimeCreated,Message"', desc: 'Show recent system log errors' },
+    { name: 'repo-watcher', command: 'powershell -Command "$w = New-Object IO.FileSystemWatcher; $w.Path = (Get-Location).Path; $w.IncludeSubdirectories = $true; $w.EnableRaisingEvents = $true; Register-ObjectEvent $w Changed -Action { Write-Host \\"Changed: $($Event.SourceEventArgs.FullPath)\\" }; while($true){Start-Sleep 1}"', desc: 'Watch current directory for file changes' },
+];
+
+const EXAMPLE_DAEMONS = IS_MAC ? EXAMPLE_DAEMONS_MAC : IS_WIN ? EXAMPLE_DAEMONS_WIN : EXAMPLE_DAEMONS_LINUX;
 
 const EXAMPLE_SQL_MODELS: SqlModel[] = [
     {
@@ -159,7 +185,10 @@ ORDER BY runs DESC`,
 type ServiceInfo = { unit: string; load: string; active: string; sub: string; description: string };
 type TimerInfo = { unit: string; next: string; left: string; passed: string };
 type CronEntry = { schedule: string; command: string };
+type LaunchdJob = { label: string; pid: string; status: string; lastExitStatus?: string };
+type WinTask = { taskName: string; status: string; nextRun?: string; lastRun?: string };
 
+// -- Linux: parse systemctl list-units output --
 const parseServices = (raw: string): ServiceInfo[] => {
     if (!raw || typeof raw !== 'string' || !raw.trim()) return [];
     return raw.split('\n')
@@ -168,6 +197,7 @@ const parseServices = (raw: string): ServiceInfo[] => {
         .filter(Boolean) as ServiceInfo[];
 };
 
+// -- Linux: parse systemd timers output --
 const parseTimers = (raw: unknown): TimerInfo[] => {
     if (typeof raw !== 'string') return [];
     const trimmed = raw.trim();
@@ -181,6 +211,43 @@ const parseTimers = (raw: unknown): TimerInfo[] => {
             const next = l.match(/(\w{3}\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s+\w+).*?left/)?.[1] || '';
             return { unit: tm[1], next, left, last: '', passed };
         }).filter(Boolean) as TimerInfo[];
+};
+
+// -- macOS: parse launchctl list output (PID\tStatus\tLabel) --
+const parseLaunchdJobs = (raw: string): LaunchdJob[] => {
+    if (!raw || typeof raw !== 'string' || !raw.trim()) return [];
+    return raw.split('\n')
+        .filter(l => l.trim() && !l.startsWith('PID'))
+        .map(l => {
+            const p = l.trim().split(/\t+/);
+            if (p.length < 3) return null;
+            return { pid: p[0] === '-' ? '' : p[0], status: p[1], label: p[2], lastExitStatus: p[1] };
+        })
+        .filter(Boolean) as LaunchdJob[];
+};
+
+// -- Windows: parse schtasks /query /fo LIST output --
+const parseWindowsTasks = (raw: string): WinTask[] => {
+    if (!raw || typeof raw !== 'string' || !raw.trim()) return [];
+    const tasks: WinTask[] = [];
+    let current: Partial<WinTask> = {};
+    for (const line of raw.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+            if (current.taskName) { tasks.push(current as WinTask); current = {}; }
+            continue;
+        }
+        const colonIdx = trimmed.indexOf(':');
+        if (colonIdx === -1) continue;
+        const key = trimmed.slice(0, colonIdx).trim().toLowerCase();
+        const val = trimmed.slice(colonIdx + 1).trim();
+        if (key === 'taskname') current.taskName = val;
+        else if (key === 'status') current.status = val;
+        else if (key.includes('next run')) current.nextRun = val;
+        else if (key.includes('last run')) current.lastRun = val;
+    }
+    if (current.taskName) tasks.push(current as WinTask);
+    return tasks;
 };
 
 const parseCrontab = (raw: string): CronEntry[] => {
@@ -437,12 +504,19 @@ const CronDaemonPanel = ({
         } catch (e: any) { setError(e.message); }
     };
 
-    const parsedUserCron = useMemo(() => parseCrontab(systemData?.user_crontab || ''), [systemData]);
-    const parsedSysCron = useMemo(() => parseCrontab(systemData?.system_crontab || ''), [systemData]);
-    const parsedTimers = useMemo(() => parseTimers(systemData?.timers || ''), [systemData]);
-    const parsedUserSvcs = useMemo(() => parseServices(systemData?.services || ''), [systemData]);
-    const parsedRunningSvcs = useMemo(() => parseServices(systemDaemons?.services || ''), [systemDaemons]);
-    const parsedDaemonUserSvcs = useMemo(() => parseServices(systemDaemons?.user_services || ''), [systemDaemons]);
+    // Cross-platform: crontab exists on Linux and macOS (but not Windows)
+    const parsedUserCron = useMemo(() => IS_WIN ? [] : parseCrontab(systemData?.user_crontab || ''), [systemData]);
+    const parsedSysCron = useMemo(() => IS_WIN ? [] : parseCrontab(systemData?.system_crontab || ''), [systemData]);
+    // Linux-only: systemd timers and services
+    const parsedTimers = useMemo(() => IS_LINUX ? parseTimers(systemData?.timers || '') : [], [systemData]);
+    const parsedUserSvcs = useMemo(() => IS_LINUX ? parseServices(systemData?.services || '') : [], [systemData]);
+    const parsedRunningSvcs = useMemo(() => IS_LINUX ? parseServices(systemDaemons?.services || '') : [], [systemDaemons]);
+    const parsedDaemonUserSvcs = useMemo(() => IS_LINUX ? parseServices(systemDaemons?.user_services || '') : [], [systemDaemons]);
+    // macOS: launchd jobs
+    const parsedLaunchdJobs = useMemo(() => IS_MAC ? parseLaunchdJobs(systemDaemons?.launchd_jobs || systemDaemons?.services || '') : [], [systemDaemons]);
+    const parsedLaunchdUserJobs = useMemo(() => IS_MAC ? parseLaunchdJobs(systemDaemons?.user_services || '') : [], [systemDaemons]);
+    // Windows: scheduled tasks
+    const parsedWinTasks = useMemo(() => IS_WIN ? parseWindowsTasks(systemDaemons?.scheduled_tasks || systemDaemons?.services || '') : [], [systemDaemons]);
 
     if (!isOpen && !isPane) return null;
 
@@ -677,7 +751,8 @@ const CronDaemonPanel = ({
                             <div>
                                 <label className="text-[10px] text-gray-400 mb-0.5 block">Command</label>
                                 <textarea value={newDaemonCommand} onChange={e => setNewDaemonCommand(e.target.value)}
-                                    placeholder="inotifywait -m -e create ~/Downloads ..." rows={3}
+                                    placeholder={IS_WIN ? 'powershell -Command "..."' : IS_MAC ? 'fswatch ~/Downloads | while read f; do ...' : 'inotifywait -m -e create ~/Downloads ...'}
+                                    rows={3}
                                     className={`${inputCls} resize-y min-h-[60px]`} />
                             </div>
                             <div className="flex gap-2">
@@ -759,7 +834,8 @@ const CronDaemonPanel = ({
                         </Section>
                     )}
 
-                    {parsedSysCron.length > 0 && (
+                    {/* Linux/macOS: /etc/crontab */}
+                    {!IS_WIN && parsedSysCron.length > 0 && (
                         <Section title="/etc/crontab" count={parsedSysCron.length} icon={Cpu} defaultOpen={false}>
                             {parsedSysCron.filter(c => !filter || c.command.toLowerCase().includes(filter.toLowerCase())).map((c, i) => (
                                 <ExpandRow key={i} header={<>
@@ -773,7 +849,8 @@ const CronDaemonPanel = ({
                         </Section>
                     )}
 
-                    {systemData?.cron_d?.length > 0 && (
+                    {/* Linux: /etc/cron.d/ */}
+                    {IS_LINUX && systemData?.cron_d?.length > 0 && (
                         <Section title="/etc/cron.d/" count={systemData.cron_d.length} defaultOpen={false}>
                             {systemData.cron_d.map((f: any, i: number) => (
                                 <ExpandRow key={i} header={<span className="text-xs text-gray-300">{f.name}</span>}>
@@ -783,7 +860,19 @@ const CronDaemonPanel = ({
                         </Section>
                     )}
 
-                    {parsedTimers.length > 0 && (
+                    {/* macOS: LaunchDaemon/LaunchAgent plists */}
+                    {IS_MAC && systemData?.cron_d?.length > 0 && (
+                        <Section title="Launch Plists" count={systemData.cron_d.length} icon={FileText} defaultOpen={false}>
+                            {systemData.cron_d.map((f: any, i: number) => (
+                                <ExpandRow key={i} header={<span className="text-xs text-gray-300">{f.name}</span>}>
+                                    <pre className="text-[10px] font-mono text-gray-400 whitespace-pre-wrap max-h-40 overflow-auto select-all">{f.content}</pre>
+                                </ExpandRow>
+                            ))}
+                        </Section>
+                    )}
+
+                    {/* Linux: Systemd Timers */}
+                    {IS_LINUX && parsedTimers.length > 0 && (
                         <Section title="Systemd Timers" count={parsedTimers.length} icon={Clock}>
                             {parsedTimers.filter(t => !filter || t.unit.toLowerCase().includes(filter.toLowerCase())).map((t, i) => {
                                 const info = serviceInfo[t.unit] || {};
@@ -817,7 +906,8 @@ const CronDaemonPanel = ({
                         </Section>
                     )}
 
-                    {parsedRunningSvcs.length > 0 && (
+                    {/* Linux: System Services (systemd) */}
+                    {IS_LINUX && parsedRunningSvcs.length > 0 && (
                         <Section title="System Services (running)" count={parsedRunningSvcs.length} icon={Cpu}>
                             <div className="max-h-[400px] overflow-y-auto space-y-1">
                                 {parsedRunningSvcs.filter(s => !filter || s.unit.toLowerCase().includes(filter.toLowerCase()) || s.description.toLowerCase().includes(filter.toLowerCase())).map((s, i) => {
@@ -855,7 +945,8 @@ const CronDaemonPanel = ({
                         </Section>
                     )}
 
-                    {(parsedUserSvcs.length > 0 || parsedDaemonUserSvcs.length > 0) && (
+                    {/* Linux: User Services (systemd --user) */}
+                    {IS_LINUX && (parsedUserSvcs.length > 0 || parsedDaemonUserSvcs.length > 0) && (
                         <Section title="User Services" count={parsedUserSvcs.length + parsedDaemonUserSvcs.length} icon={Activity}>
                             <div className="max-h-[400px] overflow-y-auto space-y-1">
                                 {[...parsedUserSvcs, ...parsedDaemonUserSvcs].filter(s => !filter || s.unit.toLowerCase().includes(filter.toLowerCase())).map((s, i) => {
@@ -888,6 +979,77 @@ const CronDaemonPanel = ({
                                     </ExpandRow>
                                     );
                                 })}
+                            </div>
+                        </Section>
+                    )}
+
+                    {/* macOS: Launch Daemons / Agents */}
+                    {IS_MAC && parsedLaunchdJobs.length > 0 && (
+                        <Section title="Launch Daemons" count={parsedLaunchdJobs.length} icon={Cpu}>
+                            <div className="max-h-[400px] overflow-y-auto space-y-1">
+                                {parsedLaunchdJobs.filter(j => !filter || j.label.toLowerCase().includes(filter.toLowerCase())).map((j, i) => (
+                                    <ExpandRow key={i} header={<>
+                                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${j.pid ? 'bg-green-400' : j.status === '0' ? 'bg-gray-500' : 'bg-red-400'}`} />
+                                        <span className="font-mono text-xs text-gray-300 truncate">{j.label}</span>
+                                        <span className={`text-[10px] px-1 py-0.5 rounded ml-auto ${j.pid ? 'bg-green-900/30 text-green-400' : 'bg-gray-800 text-gray-500'}`}>
+                                            {j.pid ? `PID ${j.pid}` : 'stopped'}
+                                        </span>
+                                    </>}>
+                                        <div className="space-y-1">
+                                            <Field label="Label"><span className="font-mono text-[10px] text-gray-300">{j.label}</span></Field>
+                                            {j.pid && <Field label="PID"><span className="text-[10px] text-green-400">{j.pid}</span></Field>}
+                                            <Field label="Exit code"><span className="text-[10px] text-gray-300">{j.lastExitStatus || '0'}</span></Field>
+                                        </div>
+                                    </ExpandRow>
+                                ))}
+                            </div>
+                        </Section>
+                    )}
+
+                    {IS_MAC && parsedLaunchdUserJobs.length > 0 && (
+                        <Section title="User Launch Agents" count={parsedLaunchdUserJobs.length} icon={Activity}>
+                            <div className="max-h-[400px] overflow-y-auto space-y-1">
+                                {parsedLaunchdUserJobs.filter(j => !filter || j.label.toLowerCase().includes(filter.toLowerCase())).map((j, i) => (
+                                    <ExpandRow key={i} header={<>
+                                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${j.pid ? 'bg-green-400' : 'bg-gray-500'}`} />
+                                        <span className="font-mono text-xs text-gray-300 truncate">{j.label}</span>
+                                        <span className={`text-[10px] px-1 py-0.5 rounded ml-auto ${j.pid ? 'bg-green-900/30 text-green-400' : 'bg-gray-800 text-gray-500'}`}>
+                                            {j.pid ? `PID ${j.pid}` : 'stopped'}
+                                        </span>
+                                    </>}>
+                                        <div className="space-y-1">
+                                            <Field label="Label"><span className="font-mono text-[10px] text-gray-300">{j.label}</span></Field>
+                                            {j.pid && <Field label="PID"><span className="text-[10px] text-green-400">{j.pid}</span></Field>}
+                                            <Field label="Exit code"><span className="text-[10px] text-gray-300">{j.lastExitStatus || '0'}</span></Field>
+                                        </div>
+                                    </ExpandRow>
+                                ))}
+                            </div>
+                        </Section>
+                    )}
+
+                    {/* Windows: Scheduled Tasks */}
+                    {IS_WIN && parsedWinTasks.length > 0 && (
+                        <Section title="Scheduled Tasks" count={parsedWinTasks.length} icon={Clock}>
+                            <div className="max-h-[400px] overflow-y-auto space-y-1">
+                                {parsedWinTasks.filter(t => !filter || t.taskName.toLowerCase().includes(filter.toLowerCase())).map((t, i) => (
+                                    <ExpandRow key={i} header={<>
+                                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${t.status === 'Running' ? 'bg-green-400' : t.status === 'Ready' ? 'bg-blue-400' : t.status === 'Disabled' ? 'bg-gray-500' : 'bg-yellow-400'}`} />
+                                        <span className="font-mono text-xs text-gray-300 truncate">{t.taskName}</span>
+                                        <span className={`text-[10px] px-1 py-0.5 rounded ml-auto ${
+                                            t.status === 'Running' ? 'bg-green-900/30 text-green-400' :
+                                            t.status === 'Ready' ? 'bg-blue-900/30 text-blue-400' :
+                                            'bg-gray-800 text-gray-500'
+                                        }`}>{t.status}</span>
+                                    </>}>
+                                        <div className="space-y-1">
+                                            <Field label="Task"><span className="font-mono text-[10px] text-gray-300">{t.taskName}</span></Field>
+                                            <Field label="Status"><span className="text-[10px] text-gray-300">{t.status}</span></Field>
+                                            {t.nextRun && <Field label="Next run"><span className="text-[10px] text-gray-300">{t.nextRun}</span></Field>}
+                                            {t.lastRun && <Field label="Last run"><span className="text-[10px] text-gray-300">{t.lastRun}</span></Field>}
+                                        </div>
+                                    </ExpandRow>
+                                ))}
                             </div>
                         </Section>
                     )}

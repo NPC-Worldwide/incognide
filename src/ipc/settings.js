@@ -365,23 +365,145 @@ function register(ctx) {
     return await callBackendApi(`${BACKEND_URL}/api/cron/status/${encodeURIComponent(jobName)}`);
   });
 
+  // --- Cross-platform crontab helper ---
+  // Linux & macOS have crontab; Windows does not (returns empty).
+  const _getCrontabLocal = () => {
+    const platform = process.platform;
+    const result = {};
+    if (platform === 'win32') {
+      // Windows: no crontab. Return scheduled tasks summary instead.
+      try {
+        result.scheduled_tasks = execSync('schtasks /query /fo LIST', { encoding: 'utf8', timeout: 10000 });
+      } catch {}
+      return result;
+    }
+    // Linux & macOS: user crontab
+    try { result.user_crontab = execSync('crontab -l 2>/dev/null', { encoding: 'utf8', timeout: 5000 }); } catch {}
+    if (platform === 'linux') {
+      // Linux: system crontab, cron.d, systemd timers, systemd user services
+      try { result.system_crontab = fs.readFileSync('/etc/crontab', 'utf8'); } catch {}
+      try {
+        const cronDDir = '/etc/cron.d';
+        if (fs.existsSync(cronDDir)) {
+          result.cron_d = fs.readdirSync(cronDDir)
+            .filter(f => !f.startsWith('.'))
+            .map(f => {
+              try { return { name: f, content: fs.readFileSync(path.join(cronDDir, f), 'utf8') }; }
+              catch { return null; }
+            }).filter(Boolean);
+        }
+      } catch {}
+      try { result.timers = execSync('systemctl list-timers --all --no-pager 2>/dev/null', { encoding: 'utf8', timeout: 5000 }); } catch {}
+      try { result.services = execSync('systemctl --user list-units --type=service --state=running --no-pager 2>/dev/null', { encoding: 'utf8', timeout: 5000 }); } catch {}
+    }
+    // macOS: launchd plist dirs (informational)
+    if (platform === 'darwin') {
+      try {
+        const launchDirs = ['/Library/LaunchDaemons', '/Library/LaunchAgents',
+                            path.join(os.homedir(), 'Library/LaunchAgents')];
+        result.cron_d = [];
+        for (const dir of launchDirs) {
+          if (fs.existsSync(dir)) {
+            const files = fs.readdirSync(dir).filter(f => f.endsWith('.plist'));
+            for (const f of files.slice(0, 20)) {
+              try { result.cron_d.push({ name: `${path.basename(dir)}/${f}`, content: fs.readFileSync(path.join(dir, f), 'utf8') }); }
+              catch {}
+            }
+          }
+        }
+      } catch {}
+    }
+    return result;
+  };
+
+  // --- Cross-platform system daemons helper ---
+  const _getSystemDaemonsLocal = () => {
+    const platform = process.platform;
+    const result = {};
+    if (platform === 'linux') {
+      try { result.services = execSync('systemctl list-units --type=service --state=running --no-pager 2>/dev/null', { encoding: 'utf8', timeout: 5000 }); } catch {}
+      try { result.user_services = execSync('systemctl --user list-units --type=service --no-pager 2>/dev/null', { encoding: 'utf8', timeout: 5000 }); } catch {}
+    } else if (platform === 'darwin') {
+      try { result.launchd_jobs = execSync('launchctl list 2>/dev/null', { encoding: 'utf8', timeout: 5000 }); } catch {}
+      try { result.user_services = execSync('launchctl list 2>/dev/null', { encoding: 'utf8', timeout: 5000 }); } catch {}
+    } else if (platform === 'win32') {
+      try { result.scheduled_tasks = execSync('schtasks /query /fo LIST', { encoding: 'utf8', timeout: 10000 }); } catch {}
+    }
+    // npcsh triggers (cross-platform)
+    try {
+      const triggersDir = path.join(os.homedir(), '.npcsh', 'triggers');
+      if (fs.existsSync(triggersDir)) {
+        result.npcsh_services = fs.readdirSync(triggersDir).filter(f => !f.startsWith('.'));
+      }
+    } catch {}
+    return result;
+  };
+
+  // --- Cross-platform service info helper ---
+  const _getServiceInfoLocal = (unit) => {
+    const platform = process.platform;
+    const result = {};
+    if (platform === 'linux') {
+      try { result.unit_file = execSync(`systemctl cat ${unit} 2>/dev/null`, { encoding: 'utf8', timeout: 5000 }); } catch {}
+      try { result.journal = execSync(`journalctl -u ${unit} --no-pager -n 100 2>/dev/null`, { encoding: 'utf8', timeout: 5000 }); } catch {}
+    } else if (platform === 'darwin') {
+      // unit here is a launchd label
+      try { result.unit_file = execSync(`launchctl print system/${unit} 2>/dev/null || launchctl print gui/$(id -u)/${unit} 2>/dev/null`, { encoding: 'utf8', timeout: 5000 }); } catch {}
+      try {
+        // Try to find the plist file
+        const searchDirs = ['/Library/LaunchDaemons', '/Library/LaunchAgents',
+                            path.join(os.homedir(), 'Library/LaunchAgents')];
+        for (const dir of searchDirs) {
+          const plistPath = path.join(dir, `${unit}.plist`);
+          if (fs.existsSync(plistPath)) {
+            result.unit_file = fs.readFileSync(plistPath, 'utf8');
+            break;
+          }
+        }
+      } catch {}
+    } else if (platform === 'win32') {
+      try { result.unit_file = execSync(`schtasks /query /tn "${unit}" /fo LIST /v`, { encoding: 'utf8', timeout: 5000 }); } catch {}
+    }
+    return result;
+  };
+
   ipcMain.handle('getCrontab', async () => {
-    return await callBackendApi(`${BACKEND_URL}/api/cron/crontab`);
+    try {
+      const r = await callBackendApi(`${BACKEND_URL}/api/cron/crontab`);
+      if (r && !r.error) return r;
+    } catch {}
+    // Fallback: gather crontab data locally
+    return _getCrontabLocal();
   });
 
   ipcMain.handle('getSystemDaemons', async () => {
-    return await callBackendApi(`${BACKEND_URL}/api/cron/daemons`);
+    try {
+      const r = await callBackendApi(`${BACKEND_URL}/api/cron/daemons`);
+      if (r && !r.error) return r;
+    } catch {}
+    // Fallback: gather system daemon data locally
+    return _getSystemDaemonsLocal();
   });
 
   ipcMain.handle('getServiceInfo', async (event, unit) => {
-    return await callBackendApi(`${BACKEND_URL}/api/cron/service-info/${encodeURIComponent(unit)}`);
+    try {
+      const r = await callBackendApi(`${BACKEND_URL}/api/cron/service-info/${encodeURIComponent(unit)}`);
+      if (r && !r.error) return r;
+    } catch {}
+    // Fallback: gather service info locally
+    return _getServiceInfoLocal(unit);
   });
 
   ipcMain.handle('addDaemon', (event, { path: daemonPath, name, command, npc, jinx }) => {
     const id = generateId();
+    const isWindows = process.platform === 'win32';
     try {
-      const proc = spawn(command, { shell: true, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
-      proc.unref();
+      const proc = spawn(command, {
+        shell: isWindows ? 'powershell.exe' : true,
+        detached: !isWindows,
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+      if (!isWindows) proc.unref();
       proc.stdout.on('data', data => console.log(`[Daemon ${name}]: ${data.toString()}`));
       proc.stderr.on('data', data => console.error(`[Daemon ${name} err]: ${data.toString()}`));
       proc.on('exit', (code) => console.log(`[Daemon ${name}] exited ${code}`));
@@ -395,7 +517,19 @@ function register(ctx) {
   ipcMain.handle('removeDaemon', (event, id) => {
     if (daemons.has(id)) {
       const daemon = daemons.get(id);
-      if (daemon.process) daemon.process.kill();
+      if (daemon.process) {
+        try {
+          if (process.platform === 'win32') {
+            // Windows: kill the process tree since detached isn't used
+            try { execSync(`taskkill /PID ${daemon.process.pid} /T /F`, { timeout: 5000 }); }
+            catch { daemon.process.kill(); }
+          } else {
+            // Unix: kill process group if detached, otherwise just kill
+            try { process.kill(-daemon.process.pid, 'SIGTERM'); }
+            catch { daemon.process.kill(); }
+          }
+        } catch { daemon.process.kill(); }
+      }
       daemons.delete(id);
       return { success: true };
     }

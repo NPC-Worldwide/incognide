@@ -261,6 +261,27 @@ jobs:
           done
         shell: bash
 
+      - name: Attach artifacts to GitHub Release (if exists)
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="v${VERSION}"
+          # Check if a release exists for this tag
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG found, attaching artifacts..."
+            for file in upload/*; do
+              if [ -f "$file" ]; then
+                echo "Uploading $(basename "$file") to release $TAG"
+                gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber
+              fi
+            done
+          else
+            echo "No release found for tag $TAG, skipping attachment."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -405,8 +426,8 @@ jobs:
         run: |
           mkdir -p upload
           VERSION="${{ steps.version.outputs.version }}"
-          find dist-electron -name "*.pkg" -exec cp {} upload/incognide_${VERSION}_mas.pkg \;
-          echo "pkg_file=upload/incognide_${VERSION}_mas.pkg" >> $GITHUB_OUTPUT
+          find dist-electron -name "*.pkg" -exec cp {} upload/incognide_${VERSION}_arm64.pkg \;
+          echo "pkg_file=upload/incognide_${VERSION}_arm64.pkg" >> $GITHUB_OUTPUT
 
       - name: Upload MAS artifact
         uses: actions/upload-artifact@v4
@@ -414,6 +435,39 @@ jobs:
           name: incognide-mas-arm64
           path: upload/*.pkg
           retention-days: 30
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Upload MAS pkg to Google Cloud Storage
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          PKG_FILE="upload/incognide_${VERSION}_arm64.pkg"
+          if [ -f "$PKG_FILE" ]; then
+            gsutil cp "$PKG_FILE" gs://incognide-executables/mas-arm64/
+            echo "Uploaded $(basename "$PKG_FILE") to gs://incognide-executables/mas-arm64/"
+          fi
+
+      - name: Attach MAS pkg to GitHub Release (if exists)
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="v${VERSION}"
+          PKG_FILE="upload/incognide_${VERSION}_arm64.pkg"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            if [ -f "$PKG_FILE" ]; then
+              echo "Uploading $(basename "$PKG_FILE") to release $TAG"
+              gh release upload "$TAG" "$PKG_FILE" --repo "$GITHUB_REPOSITORY" --clobber
+            fi
+          else
+            echo "No release found for tag $TAG, skipping attachment."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload to App Store Connect via Transporter
         run: |
