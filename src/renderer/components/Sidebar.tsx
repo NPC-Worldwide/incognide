@@ -6097,58 +6097,48 @@ return (
         {sidebarCollapsed && <div className="flex-1"></div>}
 
         {!sidebarCollapsed && (
-        <div className="flex items-center border-t theme-border" style={{ height: bottomBarHeight }}>
-            <button
-                onClick={() => createAndAddPaneNodeToLayout?.('windowmanager', 'windowmanager')}
-                className="flex-1 flex items-center justify-center h-full hover:bg-teal-500/20 transition-all border-r border-gray-700"
-                title="Window Manager"
-            >
-                <Monitor size={16} className="text-gray-600 dark:text-gray-400" />
-            </button>
-            <button
-                onClick={() => setBottomGridCollapsed(!bottomGridCollapsed)}
-                className="flex-1 flex items-center justify-center h-full hover:bg-teal-500/20 transition-all border-r border-gray-700"
-                title={bottomGridCollapsed ? "Show quick actions" : "Hide quick actions"}
-            >
-                {bottomGridCollapsed ? (
-                    <ChevronUp size={16} className="text-gray-600 dark:text-gray-400" />
-                ) : (
-                    <ChevronDown size={16} className="text-gray-600 dark:text-gray-400" />
-                )}
-            </button>
+        <div className="grid grid-cols-3 divide-x theme-border border-t theme-border" style={{ height: bottomBarHeight }}>
+            {/* Left: Window Manager + theme toggle in submenu */}
+            <div className="relative flex items-center justify-center">
+                <button
+                    onClick={() => createAndAddPaneNodeToLayout?.('windowmanager', 'windowmanager')}
+                    className="w-full h-full flex items-center justify-center hover:bg-teal-500/20 transition-all"
+                    title="Window Manager"
+                >
+                    <Monitor size={16} className="text-gray-600 dark:text-gray-400" />
+                </button>
+                <button
+                    onClick={toggleTheme}
+                    className="absolute top-0 right-0 w-1/2 h-1/2 flex items-center justify-center hover:bg-teal-500/20 rounded-bl transition-colors"
+                    title="Toggle Theme"
+                >
+                    {isDarkMode ? <Moon size={8} className="text-blue-400" /> : <Sun size={8} className="text-yellow-400" />}
+                </button>
+            </div>
+            {/* Center: New window + delete */}
+            <div className="relative flex items-center justify-center">
+                <button
+                    onClick={() => { if ((window as any).api?.openNewWindow) (window as any).api.openNewWindow(''); else window.open(window.location.href, '_blank'); }}
+                    className="w-full h-full flex items-center justify-center hover:bg-teal-500/20 transition-all"
+                    title="New Incognide Window (Alt+N)"
+                >
+                    <img src={npcLogo} alt="Incognide" style={{ width: 16, height: 16 }} className="rounded-full" />
+                </button>
+                <button
+                    onClick={deleteSelectedConversations}
+                    className={`absolute top-0 right-0 w-1/2 h-1/2 flex items-center justify-center hover:bg-teal-500/20 rounded-bl transition-colors ${(selectedFiles?.size > 0 || selectedConvos?.size > 0) ? 'text-red-400' : 'text-gray-500'}`}
+                    title="Delete selected items"
+                >
+                    <Trash size={8} />
+                </button>
+            </div>
+            {/* Right: Collapse sidebar */}
             <button
                 onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                className="flex-1 flex items-center justify-center h-full hover:bg-teal-500/20 transition-all"
+                className="flex items-center justify-center h-full hover:bg-teal-500/20 transition-all"
                 title="Collapse sidebar"
             >
                 <ChevronLeft size={16} className="text-gray-600 dark:text-gray-400" />
-            </button>
-        </div>
-        )}
-
-        {!bottomGridCollapsed && !sidebarCollapsed && (
-        <div className="flex justify-center items-center gap-2 border-t theme-border" style={{ height: bottomBarHeight }}>
-            <button
-                onClick={toggleTheme}
-                className="p-2 rounded-full hover:bg-teal-500/20 transition-all"
-                aria-label="Toggle Theme"
-                title="Toggle Theme"
-            >
-                {isDarkMode ? <Moon size={18} className="text-blue-400" /> : <Sun size={18} className="text-yellow-400" />}
-            </button>
-            <button
-                onClick={deleteSelectedConversations}
-                className={`p-2 rounded-full hover:bg-teal-500/20 transition-all ${(selectedFiles?.size > 0 || selectedConvos?.size > 0) ? 'text-red-400' : 'text-gray-400'}`}
-                title="Delete selected items"
-            >
-                <Trash size={18} />
-            </button>
-            <button
-                onClick={() => { if ((window as any).api?.openNewWindow) (window as any).api.openNewWindow(''); else window.open(window.location.href, '_blank'); }}
-                className="p-2 rounded-full hover:bg-teal-500/20 text-gray-400 hover:text-white transition-all"
-                title="New Incognide Window (Alt+N)"
-            >
-                <img src={npcLogo} alt="Incognide" style={{ width: 18, height: 18 }} className="rounded-full" />
             </button>
         </div>
         )}
