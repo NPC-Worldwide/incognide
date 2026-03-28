@@ -191,12 +191,20 @@ jobs:
       - name: Build Electron app (DMG + ZIP for direct distribution)
         shell: bash
         run: |
+          success=false
           for attempt in 1 2 3; do
             echo "Build attempt $attempt..."
-            npm run electron:build && break
+            if npm run electron:build; then
+              success=true
+              break
+            fi
             echo "Attempt $attempt failed (likely Apple notarization flake), retrying in 15s..."
             sleep 15
           done
+          if [ "$success" != "true" ]; then
+            echo "All 3 build attempts failed"
+            exit 1
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_ARCH: ${{ matrix.arch }}

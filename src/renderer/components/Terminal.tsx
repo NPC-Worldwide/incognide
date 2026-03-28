@@ -578,12 +578,8 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                 }
 
                 if (event.ctrlKey && !event.metaKey && !event.shiftKey && key === 'a') {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x01' });
-                    }
-                    return false;
+                    // Let xterm pass Ctrl+A through to the PTY naturally
+                    return true;
                 }
 
                 if (event.ctrlKey && !event.metaKey && key === 'e') {
