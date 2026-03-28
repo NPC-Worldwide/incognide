@@ -7729,6 +7729,7 @@ const handleFileClick = useCallback(async (filePath: string) => {
     else if (extension === 'tex') contentType = 'latex';
     else if (extension === 'ipynb') contentType = 'notebook';
     else if (extension === 'exp') contentType = 'exp';
+    else if (extension === 'pltx') contentType = 'exp';
     else if (['docx', 'doc'].includes(extension)) contentType = 'docx';
     else if (extension === 'mapx') contentType = 'mindmap';
     else if (extension === 'zip') contentType = 'zip';
@@ -8209,26 +8210,6 @@ const renderMainContent = () => {
                 <HelpCircle size={18} />
             </button>
 
-            {/* DataDash button - after help */}
-            <button
-                onClick={() => createDataDashPane?.()}
-                className="p-2 theme-hover rounded theme-text-muted"
-                title="Data Dashboard"
-                data-tutorial="dashboard-button"
-            >
-                <BarChart3 size={18} />
-            </button>
-
-            {/* Disk Usage Analyzer */}
-            <button
-                onClick={() => createDiskUsagePane?.()}
-                className="p-2 theme-hover rounded theme-text-muted"
-                title="Disk Usage Analyzer"
-                data-tutorial="disk-usage-button"
-            >
-                <HardDrive size={18} />
-            </button>
-
             <button
                 onClick={() => setLayoutPresetModalOpen(true)}
                 className="p-2 theme-hover rounded theme-text-muted"
@@ -8491,15 +8472,6 @@ const renderMainContent = () => {
                         <button onClick={() => createLibraryViewerPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Grimoire"><BookOpen size={18} /></button>
                         <button onClick={() => createPhotoViewerPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Vixynt" data-tutorial="vixynt-button"><Image size={18} /></button>
                         <button onClick={() => createScherzoPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Scherzo" data-tutorial="scherzo-button"><Music size={18} /></button>
-                        <button onClick={() => createCronDaemonPane()} className="p-2 theme-hover rounded theme-text-muted" title="Assembly Line (Cron, Daemons, SQL Models)" data-tutorial="cron-button">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <rect x="5" y="10" width="5" height="12" rx="0.5" />
-                                <circle cx="7.5" cy="6" r="2" /><circle cx="9" cy="3" r="1.5" />
-                                <rect x="12" y="14" width="4" height="8" rx="0.5" />
-                                <rect x="18" y="16" width="3" height="6" rx="0.5" />
-                                <path d="M2 22h20" />
-                            </svg>
-                        </button>
                     </>
                 ) : (
                     <div className="relative">
@@ -8517,43 +8489,11 @@ const renderMainContent = () => {
                                     <button onClick={() => { createLibraryViewerPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><BookOpen size={14} /> Grimoire</button>
                                     <button onClick={() => { createPhotoViewerPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><Image size={14} /> Vixynt</button>
                                     <button onClick={() => { createScherzoPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><Music size={14} /> Scherzo</button>
-                                    <button onClick={() => { createCronDaemonPane(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><Zap size={14} /> Assembly Line</button>
                                 </div>
                             </>
                         )}
                     </div>
                 )}
-                {/* Clock — 3 modes: analog, digital, digital+date */}
-                <span
-                    className="theme-text-muted tabular-nums cursor-pointer hover:text-gray-300 flex-shrink-0"
-                    onClick={() => setClockMode(prev => prev === 'analog' ? 'digital' : prev === 'digital' ? 'digital-date' : 'analog')}
-                    title="Click to cycle clock mode"
-                >
-                    {clockMode === 'analog' ? (
-                        <svg width="18" height="18" viewBox="0 0 20 20" className="inline-block">
-                            <circle cx="10" cy="10" r="9" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.5" />
-                            {/* Hour hand */}
-                            <line
-                                x1="10" y1="10"
-                                x2={10 + 4.5 * Math.sin(((currentTime.getHours() % 12) + currentTime.getMinutes() / 60) * Math.PI / 6)}
-                                y2={10 - 4.5 * Math.cos(((currentTime.getHours() % 12) + currentTime.getMinutes() / 60) * Math.PI / 6)}
-                                stroke="currentColor" strokeWidth="2" strokeLinecap="round"
-                            />
-                            {/* Minute hand */}
-                            <line
-                                x1="10" y1="10"
-                                x2={10 + 6.5 * Math.sin(currentTime.getMinutes() * Math.PI / 30)}
-                                y2={10 - 6.5 * Math.cos(currentTime.getMinutes() * Math.PI / 30)}
-                                stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"
-                            />
-                            <circle cx="10" cy="10" r="1" fill="currentColor" />
-                        </svg>
-                    ) : clockMode === 'digital' ? (
-                        currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                    ) : (
-                        `${currentTime.toLocaleDateString()} ${currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                    )}
-                </span>
             </div>
             </div>
             {/* Resize handle for top bar */}
@@ -8594,6 +8534,7 @@ const renderMainContent = () => {
                             else if (extension === 'tex') contentType = 'latex';
                             else if (extension === 'ipynb') contentType = 'notebook';
     else if (extension === 'exp') contentType = 'exp';
+    else if (extension === 'pltx') contentType = 'exp';
                             else if (['docx', 'doc'].includes(extension)) contentType = 'docx';
                             else if (extension === 'mapx') contentType = 'mindmap';
                             else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(extension)) contentType = 'image';
@@ -8748,7 +8689,7 @@ const renderMainContent = () => {
                                     "Use Ctrl+R to refresh the browser",
                                     "Use Ctrl+J to open the download manager",
                                     "Browser panes can be split for side-by-side viewing",
-                                    `Use ${m}N to create a new folder`,
+                                    `Use ${m}N to create a new text file`,
                                     `Use ${m}O to quickly open any file`,
                                     "Double-click files in the sidebar to open them",
                                     "Supported formats: PDF, CSV, Excel, images, and more",
@@ -8840,6 +8781,12 @@ const renderMainContent = () => {
                         onCollapse={() => { setBottomBarCollapsed(true); localStorage.setItem('incognide_bottomBarCollapsed', 'true'); }}
                         openMode={openMode}
                         onToggleOpenMode={() => { setOpenMode(m => { const next = m === 'pane' ? 'tab' : 'pane'; localStorage.setItem('incognide_openMode', next); return next; }); }}
+                        createDataDashPane={createDataDashPane}
+                        createDiskUsagePane={createDiskUsagePane}
+                        createCronDaemonPane={createCronDaemonPane}
+                        onOpenDownloadManager={() => setDownloadManagerOpen(true)}
+                        isPredictiveTextEnabled={isPredictiveTextEnabled}
+                        setIsPredictiveTextEnabled={setIsPredictiveTextEnabled}
                     />
                 )}
             </main>
@@ -8940,6 +8887,12 @@ const renderMainContent = () => {
                     onCollapse={() => { setBottomBarCollapsed(true); localStorage.setItem('incognide_bottomBarCollapsed', 'true'); }}
                     openMode={openMode}
                     onToggleOpenMode={() => { setOpenMode(m => { const next = m === 'pane' ? 'tab' : 'pane'; localStorage.setItem('incognide_openMode', next); return next; }); }}
+                    createDataDashPane={createDataDashPane}
+                    createDiskUsagePane={createDiskUsagePane}
+                    createCronDaemonPane={createCronDaemonPane}
+                    onOpenDownloadManager={() => setDownloadManagerOpen(true)}
+                    isPredictiveTextEnabled={isPredictiveTextEnabled}
+                    setIsPredictiveTextEnabled={setIsPredictiveTextEnabled}
                 />
             )}
         </main>

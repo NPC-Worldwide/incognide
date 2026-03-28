@@ -5526,7 +5526,8 @@ return (
         )}
 
         <div className={`border-b theme-border flex-shrink-0 relative group/header ${sidebarCollapsed || topBarCollapsed ? 'hidden' : ''}`} style={{ height: topBarHeight }}>
-            <div className="grid grid-cols-4 divide-x theme-border h-full" data-tutorial="creation-tiles">
+            <div className="grid grid-cols-3 divide-x theme-border h-full" data-tutorial="creation-tiles">
+                {/* Terminal with agent selector */}
                 <div className="relative" data-dropdown="terminal" data-tutorial="terminal-button">
                     <button
                         onClick={() => createNewTerminal?.(defaultNewTerminalType)}
@@ -5535,7 +5536,7 @@ return (
                     >
                         {defaultNewTerminalType === 'system' && <Terminal size={18} className="text-green-400" />}
                         {defaultNewTerminalType === 'npcsh' && <Sparkles size={18} className="text-purple-400" />}
-                        {defaultNewTerminalType === 'guac' && <Code2 size={18} className="text-yellow-400" />}
+                        {defaultNewTerminalType !== 'system' && defaultNewTerminalType !== 'npcsh' && <Bot size={18} className="text-cyan-400" />}
                     </button>
                     <button
                         onClick={(e) => { e.stopPropagation(); closeAllDropdowns(); setTerminalDropdownOpen(!terminalDropdownOpen); }}
@@ -5545,7 +5546,7 @@ return (
                         <ChevronDown size={7} className="text-gray-500" />
                     </button>
                     {terminalDropdownOpen && (
-                        <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[9999] py-1 min-w-[110px]">
+                        <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[9999] py-1 min-w-[140px]">
                             <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Right-click to set default</div>
                             <button
                                 onClick={() => { createNewTerminal?.('system'); setTerminalDropdownOpen(false); }}
@@ -5565,56 +5566,26 @@ return (
                                     {defaultNewTerminalType === 'npcsh' && <Star size={8} className="text-yellow-400 ml-auto" />}
                                 </button>
                             )}
-                            {aiEnabled && (
-                                <button
-                                    onClick={() => { createNewTerminal?.('guac'); setTerminalDropdownOpen(false); }}
-                                    onContextMenu={(e) => { e.preventDefault(); setDefaultNewTerminalType('guac'); setTerminalDropdownOpen(false); }}
-                                    className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewTerminalType === 'guac' ? 'bg-yellow-900/30 text-yellow-300' : 'theme-text-primary'}`}
-                                >
-                                    <Code2 size={11} className="text-yellow-400" /><span>guac</span>
-                                    {defaultNewTerminalType === 'guac' && <Star size={8} className="text-yellow-400 ml-auto" />}
-                                </button>
-                            )}
+                            <div className="border-t theme-border my-0.5" />
+                            <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Agents</div>
+                            {(() => {
+                                const agents = JSON.parse(localStorage.getItem('incognide_terminalAgents') || '[{"name":"claude","command":"claude"},{"name":"codex","command":"codex"},{"name":"opencode","command":"opencode"}]');
+                                return agents.map((agent: any, idx: number) => (
+                                    <button
+                                        key={idx}
+                                        onClick={() => { createNewTerminal?.(agent.command); setTerminalDropdownOpen(false); }}
+                                        onContextMenu={(e) => { e.preventDefault(); setDefaultNewTerminalType(agent.command); setTerminalDropdownOpen(false); }}
+                                        className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewTerminalType === agent.command ? 'bg-cyan-900/30 text-cyan-300' : 'theme-text-primary'}`}
+                                    >
+                                        <Bot size={11} className="text-cyan-400" /><span>{agent.name}</span>
+                                        {defaultNewTerminalType === agent.command && <Star size={8} className="text-yellow-400 ml-auto" />}
+                                    </button>
+                                ));
+                            })()}
                         </div>
                     )}
                 </div>
-                <div className="relative" data-dropdown="notebook" data-tutorial="notebook-button">
-                    <button
-                        onClick={() => defaultNewNotebookType === 'notebook' ? createNewNotebook?.() : createNewExperiment?.()}
-                        className="w-full h-full flex items-center justify-center hover:bg-teal-500/20 relative transition-colors"
-                        title={`New ${defaultNewNotebookType === 'notebook' ? 'Notebook' : 'Experiment'}`}
-                    >
-                        {defaultNewNotebookType === 'notebook' ? <FileText size={18} className="text-orange-400" /> : <FlaskConical size={18} className="text-purple-400" />}
-                    </button>
-                    <button
-                        onClick={(e) => { e.stopPropagation(); closeAllDropdowns(); setChatPlusDropdownOpen(!chatPlusDropdownOpen); }}
-                        className="absolute top-0 right-0 w-1/2 h-1/2 flex items-center justify-center theme-hover rounded-bl transition-colors"
-                        title="More options"
-                    >
-                        <ChevronDown size={7} className="text-gray-500" />
-                    </button>
-                    {chatPlusDropdownOpen && (
-                        <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[9999] py-1 min-w-[120px]">
-                            <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Right-click to set default</div>
-                            <button
-                                onClick={() => { createNewNotebook?.(); setChatPlusDropdownOpen(false); }}
-                                onContextMenu={(e) => { e.preventDefault(); setDefaultNewNotebookType('notebook'); setChatPlusDropdownOpen(false); }}
-                                className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewNotebookType === 'notebook' ? 'bg-orange-900/30 text-orange-300' : 'theme-text-primary'}`}
-                            >
-                                <FileText size={11} className="text-orange-400" /><span>Notebook</span>
-                                {defaultNewNotebookType === 'notebook' && <Star size={8} className="text-yellow-400 ml-auto" />}
-                            </button>
-                            <button
-                                onClick={() => { createNewExperiment?.(); setChatPlusDropdownOpen(false); }}
-                                onContextMenu={(e) => { e.preventDefault(); setDefaultNewNotebookType('experiment'); setChatPlusDropdownOpen(false); }}
-                                className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewNotebookType === 'experiment' ? 'bg-purple-900/30 text-purple-300' : 'theme-text-primary'}`}
-                            >
-                                <FlaskConical size={11} className="text-purple-400" /><span>Experiment</span>
-                                {defaultNewNotebookType === 'experiment' && <Star size={8} className="text-yellow-400 ml-auto" />}
-                            </button>
-                        </div>
-                    )}
-                </div>
+                {/* Code file */}
                 <div className="relative" data-dropdown="code-file" data-tutorial="code-file-button">
                     <button
                         onClick={() => createFileWithExtension(defaultCodeFileType)}
@@ -5646,9 +5617,14 @@ return (
                                     {defaultCodeFileType === type.ext && <Star size={8} className="text-yellow-400" />}
                                 </button>
                             ))}
+                            <div className="border-t theme-border my-0.5" />
+                            <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Compute</div>
+                            <button onClick={() => { createNewNotebook?.(); setCodeFileDropdownOpen(false); }} className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs theme-text-primary"><FileText size={11} className="text-orange-400" /><span>Notebook (.ipynb)</span></button>
+                            <button onClick={() => { createNewExperiment?.(); setCodeFileDropdownOpen(false); }} className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs theme-text-primary"><FlaskConical size={11} className="text-purple-400" /><span>Experiment (.exp)</span></button>
                         </div>
                     )}
                 </div>
+                {/* Documents (merged: docx/xlsx/pptx/mapx + notebook/experiment/pltx) */}
                 <div className="relative" data-dropdown="doc" data-tutorial="document-button">
                     <button
                         onClick={() => createNewDocument?.(defaultNewDocumentType)}
@@ -5665,40 +5641,13 @@ return (
                         <ChevronDown size={7} className="text-gray-500" />
                     </button>
                     {docDropdownOpen && (
-                        <div className="absolute right-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[9999] py-1 min-w-[130px]">
-                            <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Right-click to set default</div>
-                            <button
-                                onClick={() => { createNewDocument?.('docx'); setDocDropdownOpen(false); }}
-                                onContextMenu={(e) => { e.preventDefault(); setDefaultNewDocumentType('docx'); setDocDropdownOpen(false); }}
-                                className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewDocumentType === 'docx' ? 'bg-blue-900/30 text-blue-300' : 'theme-text-primary'}`}
-                            >
-                                <FileText size={11} className="text-blue-300" /><span>Word</span>
-                                {defaultNewDocumentType === 'docx' && <Star size={8} className="text-yellow-400 ml-auto" />}
-                            </button>
-                            <button
-                                onClick={() => { createNewDocument?.('xlsx'); setDocDropdownOpen(false); }}
-                                onContextMenu={(e) => { e.preventDefault(); setDefaultNewDocumentType('xlsx'); setDocDropdownOpen(false); }}
-                                className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewDocumentType === 'xlsx' ? 'bg-green-900/30 text-green-300' : 'theme-text-primary'}`}
-                            >
-                                <FileJson size={11} className="text-green-300" /><span>Excel</span>
-                                {defaultNewDocumentType === 'xlsx' && <Star size={8} className="text-yellow-400 ml-auto" />}
-                            </button>
-                            <button
-                                onClick={() => { createNewDocument?.('pptx'); setDocDropdownOpen(false); }}
-                                onContextMenu={(e) => { e.preventDefault(); setDefaultNewDocumentType('pptx'); setDocDropdownOpen(false); }}
-                                className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewDocumentType === 'pptx' ? 'bg-orange-900/30 text-orange-300' : 'theme-text-primary'}`}
-                            >
-                                <BarChart3 size={11} className="text-orange-300" /><span>PowerPoint</span>
-                                {defaultNewDocumentType === 'pptx' && <Star size={8} className="text-yellow-400 ml-auto" />}
-                            </button>
-                            <button
-                                onClick={() => { createNewDocument?.('mapx'); setDocDropdownOpen(false); }}
-                                onContextMenu={(e) => { e.preventDefault(); setDefaultNewDocumentType('mapx'); setDocDropdownOpen(false); }}
-                                className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewDocumentType === 'mapx' ? 'bg-pink-900/30 text-pink-300' : 'theme-text-primary'}`}
-                            >
-                                <Share2 size={11} className="text-pink-300" /><span>Mind Map</span>
-                                {defaultNewDocumentType === 'mapx' && <Star size={8} className="text-yellow-400 ml-auto" />}
-                            </button>
+                        <div className="absolute right-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[9999] py-1 min-w-[140px]">
+                            <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Documents</div>
+                            <button onClick={() => { createNewDocument?.('docx'); setDocDropdownOpen(false); }} className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs theme-text-primary"><FileText size={11} className="text-blue-300" /><span>Word</span></button>
+                            <button onClick={() => { createNewDocument?.('xlsx'); setDocDropdownOpen(false); }} className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs theme-text-primary"><FileJson size={11} className="text-green-300" /><span>Excel</span></button>
+                            <button onClick={() => { createNewDocument?.('pptx'); setDocDropdownOpen(false); }} className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs theme-text-primary"><BarChart3 size={11} className="text-orange-300" /><span>PowerPoint</span></button>
+                            <button onClick={() => { createNewDocument?.('mapx'); setDocDropdownOpen(false); }} className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs theme-text-primary"><Share2 size={11} className="text-pink-300" /><span>Mind Map</span></button>
+                            <button onClick={() => { createNewDocument?.('pltx'); setDocDropdownOpen(false); }} className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs theme-text-primary"><BarChart3 size={11} className="text-cyan-400" /><span>Plot (.pltx)</span></button>
                         </div>
                     )}
                 </div>
@@ -6180,13 +6129,6 @@ return (
         {!bottomGridCollapsed && !sidebarCollapsed && (
         <div className="flex justify-center items-center gap-2 border-t theme-border" style={{ height: bottomBarHeight }}>
             <button
-                onClick={() => setDownloadManagerOpen?.(true)}
-                className="p-2 rounded-full hover:bg-teal-500/20 transition-all text-gray-400 hover:text-blue-400"
-                title="Download Manager (Alt+D)"
-            >
-                <Download size={18} />
-            </button>
-            <button
                 onClick={toggleTheme}
                 className="p-2 rounded-full hover:bg-teal-500/20 transition-all"
                 aria-label="Toggle Theme"
@@ -6194,15 +6136,6 @@ return (
             >
                 {isDarkMode ? <Moon size={18} className="text-blue-400" /> : <Sun size={18} className="text-yellow-400" />}
             </button>
-            {aiEnabled && (
-                <button
-                    onClick={() => setIsPredictiveTextEnabled?.(!isPredictiveTextEnabled)}
-                    className={`p-2 rounded-full transition-all ${isPredictiveTextEnabled ? 'bg-purple-600 text-white' : 'hover:bg-teal-500/20 text-gray-400 hover:text-purple-400'}`}
-                    title={isPredictiveTextEnabled ? "Disable Predictive Text" : "Enable Predictive Text"}
-                >
-                    <BrainCircuit size={18} />
-                </button>
-            )}
             <button
                 onClick={deleteSelectedConversations}
                 className={`p-2 rounded-full hover:bg-teal-500/20 transition-all ${(selectedFiles?.size > 0 || selectedConvos?.size > 0) ? 'text-red-400' : 'text-gray-400'}`}

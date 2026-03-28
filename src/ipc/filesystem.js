@@ -954,6 +954,7 @@ function register(ctx) {
                                '.zip',
                                '.stl',
                                '.rs',
+                               '.pltx',
                               ];
 
     // Merge in user-defined custom extensions

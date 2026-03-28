@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     MessageSquare, Terminal, Globe, FileText, File as FileIcon,
-    BrainCircuit, Clock, Bot, Zap, Users, Database, ChevronRight, ChevronDown,
+    BrainCircuit, Clock, Bot, Zap, Users, Database, ChevronRight, ChevronDown, ChevronUp,
     GitBranch, Image, BarChart3, AlertCircle, RefreshCw, Check, Columns, Layers,
-    Activity, Server, Power
+    Activity, Server, Power, HardDrive, Download, Network
 } from 'lucide-react';
 import MemoryIcon from './MemoryIcon';
 import npcPythonLogo from '../../assets/npc-python.png';
@@ -55,6 +55,13 @@ interface StatusBarProps {
 
     openMode?: 'pane' | 'tab';
     onToggleOpenMode?: () => void;
+
+    createDataDashPane?: () => void;
+    createDiskUsagePane?: () => void;
+    createCronDaemonPane?: () => void;
+    onOpenDownloadManager?: () => void;
+    isPredictiveTextEnabled?: boolean;
+    setIsPredictiveTextEnabled?: (v: boolean) => void;
 }
 
 type BackendStatus = 'ok' | 'unhealthy' | 'unreachable' | 'restarting' | 'unknown';
@@ -83,12 +90,28 @@ const StatusBar: React.FC<StatusBarProps> = ({
     onCollapse,
     openMode = 'pane',
     onToggleOpenMode,
+    createDataDashPane,
+    createDiskUsagePane,
+    createCronDaemonPane,
+    onOpenDownloadManager,
+    isPredictiveTextEnabled,
+    setIsPredictiveTextEnabled,
 }) => {
     const aiEnabled = useAiEnabled();
     const [checkingUpdates, setCheckingUpdates] = useState(false);
     const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
     const [showQuitPrompt, setShowQuitPrompt] = useState(false);
     const [showBackendMenu, setShowBackendMenu] = useState(false);
+    const [showDbSubmenu, setShowDbSubmenu] = useState(false);
+    const [showTeamSubmenu, setShowTeamSubmenu] = useState(false);
+    const [clockMode, setClockMode] = useState<'analog' | 'digital' | 'datetime'>(() => (localStorage.getItem('incognide_clockMode') as any) || 'digital');
+    const [currentTime, setCurrentTime] = useState(new Date());
+
+    useEffect(() => {
+        const interval = setInterval(() => setCurrentTime(new Date()), 1000);
+        return () => clearInterval(interval);
+    }, []);
+    useEffect(() => { localStorage.setItem('incognide_clockMode', clockMode); }, [clockMode]);
 
     const [backendStatus, setBackendStatus] = useState<BackendStatus>('unknown');
     const [backendPid, setBackendPid] = useState<number | null>(null);
@@ -216,105 +239,59 @@ const StatusBar: React.FC<StatusBarProps> = ({
                 </button>
             )}
 
-            <div className="relative group/backend">
-                <div
-                    onClick={() => window.dispatchEvent(new Event('sse-reconnect'))}
-                    onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setShowBackendMenu(true); }}
-                    className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors cursor-pointer hover:bg-white/10 ${
-                        backendStatus === 'ok' ? '' : 'opacity-60'
-                    }`}
-                    title={statusLabel + ' — click to reconnect SSE — right-click for options'}
-                >
-                    <img
-                        src={npcPythonLogo}
-                        alt="npcpy"
-                        className={`w-4 h-4 rounded-sm transition-all ${
-                            backendStatus === 'ok' ? '' : 'grayscale opacity-50'
-                        } ${restarting ? 'animate-pulse' : ''}`}
-                    />
-                    {restarting && <RefreshCw size={10} className="animate-spin text-yellow-400" />}
-                </div>
-                {showBackendMenu && (
+            {/* LEFT: DB Tool with submenu */}
+            <div className="relative">
+                <button onClick={() => createDBToolPane?.()} className={`${btnClass} text-blue-600 dark:text-blue-400`} title="Database Tool">
+                    <Database size={20} />
+                </button>
+                <button onClick={() => { setShowDbSubmenu(!showDbSubmenu); setShowTeamSubmenu(false); }} className="absolute -top-0.5 -right-0.5 w-3 h-3 flex items-center justify-center bg-gray-700 rounded-full hover:bg-gray-600 z-10">
+                    <ChevronUp size={7} className="text-gray-400" />
+                </button>
+                {showDbSubmenu && (
                     <>
-                        <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setShowBackendMenu(false)} />
-                        <div className="absolute bottom-full left-0 mb-1 bg-gray-900 border border-gray-700 rounded shadow-xl z-50 py-1 min-w-[140px]">
-                            <div className="px-3 py-1 text-[10px] text-gray-500 border-b border-gray-700">{statusLabel}</div>
-                            <button
-                                onClick={() => { handleRestart(); setShowBackendMenu(false); }}
-                                disabled={restarting}
-                                className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs text-gray-300 hover:bg-white/10 disabled:opacity-50"
-                            >
-                                <RefreshCw size={12} /> Restart Backend
-                            </button>
+                        <div className="fixed inset-0 z-40" onClick={() => setShowDbSubmenu(false)} />
+                        <div className="absolute bottom-full left-0 mb-1 flex items-center gap-0.5 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 p-1">
+                            <button onClick={() => { createDiskUsagePane?.(); setShowDbSubmenu(false); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-blue-400 transition-colors" title="Disk Usage"><HardDrive size={16} /></button>
+                            <button onClick={() => { createDataDashPane?.(); setShowDbSubmenu(false); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-green-400 transition-colors" title="Data Dashboard"><BarChart3 size={16} /></button>
+                            <button onClick={() => { onOpenDownloadManager?.(); setShowDbSubmenu(false); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-cyan-400 transition-colors" title="Downloads"><Download size={16} /></button>
                         </div>
                     </>
                 )}
             </div>
 
-            <button
-                onClick={() => createDBToolPane?.()}
-                className={`${btnClass} text-blue-600 dark:text-blue-400`}
-                title="Database Tool"
-            >
-                <Database size={20} />
-            </button>
-
-            {aiEnabled && (
-                <button
-                    onClick={() => createMemoryManagerPane?.()}
-                    className={`${btnClass} text-amber-600 dark:text-amber-400 flex items-center gap-1`}
-                    title={pendingMemoryCount > 0 ? `Memory: ${pendingMemoryCount} pending` : "Memory Manager"}
-                >
-                    <MemoryIcon size={20} />
-                    {pendingMemoryCount > 0 && <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>}
+            {/* LEFT: AI Team with submenu */}
+            <div className="relative">
+                <button data-tutorial="team-management-button" onClick={() => createTeamManagementPane?.()} className={`${btnClass} text-indigo-600 dark:text-indigo-400`} title="Team Management">
+                    <Users size={20} />
                 </button>
-            )}
-
-            <button
-                data-tutorial="kg-button"
-                onClick={() => createGraphViewerPane?.()}
-                className={`${btnClass} text-emerald-600 dark:text-emerald-400 flex items-center gap-1`}
-                title={kgGeneration !== null && kgGeneration !== undefined ? `Knowledge Graph (Gen ${kgGeneration})` : "Knowledge Graph"}
-            >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="6" cy="8" r="2.5" />
-                    <circle cx="18" cy="6" r="2" />
-                    <circle cx="12" cy="14" r="3" />
-                    <circle cx="5" cy="18" r="2" />
-                    <circle cx="19" cy="17" r="2.5" />
-                    <line x1="8" y1="9" x2="10" y2="12" />
-                    <line x1="16" y1="7" x2="14" y2="12" />
-                    <line x1="7" y1="17" x2="9.5" y2="15.5" />
-                    <line x1="14.5" y1="15.5" x2="17" y2="16" />
-                    <line x1="7" y1="10" x2="5" y2="16" />
-                </svg>
-                {kgScheduleEnabled && <Clock size={14} />}
-            </button>
+                <button onClick={() => { setShowTeamSubmenu(!showTeamSubmenu); setShowDbSubmenu(false); }} className="absolute -top-0.5 -right-0.5 w-3 h-3 flex items-center justify-center bg-gray-700 rounded-full hover:bg-gray-600 z-10">
+                    <ChevronUp size={7} className="text-gray-400" />
+                </button>
+                {showTeamSubmenu && (
+                    <>
+                        <div className="fixed inset-0 z-40" onClick={() => setShowTeamSubmenu(false)} />
+                        <div className="absolute bottom-full left-0 mb-1 flex items-center gap-0.5 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 p-1">
+                            <button data-tutorial="npc-team-button" onClick={() => { createNPCTeamPane?.(); setShowTeamSubmenu(false); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-cyan-400 transition-colors" title="NPCs"><Bot size={16} /></button>
+                            <button data-tutorial="jinxes-button" onClick={() => { createSkillsManagerPane?.(); setShowTeamSubmenu(false); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-yellow-400 transition-colors" title="Jinxes"><Zap size={16} /></button>
+                            <button onClick={() => { createMcpManagerPane?.(); setShowTeamSubmenu(false); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-cyan-400 transition-colors" title="MCP Servers"><Server size={16} /></button>
+                            <button onClick={() => { createMemoryManagerPane?.(); setShowTeamSubmenu(false); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-amber-400 transition-colors" title={pendingMemoryCount > 0 ? `Memory (${pendingMemoryCount} pending)` : "Memory"}><MemoryIcon size={16} />{pendingMemoryCount > 0 && <span className="absolute -top-1 -right-1 w-1.5 h-1.5 rounded-full bg-amber-500" />}</button>
+                            <button data-tutorial="kg-button" onClick={() => { createGraphViewerPane?.(); setShowTeamSubmenu(false); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-emerald-400 transition-colors" title="Knowledge Graph"><Network size={16} /></button>
+                            <button onClick={() => { createCronDaemonPane?.(); setShowTeamSubmenu(false); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-orange-400 transition-colors" title="Cron / Smokestack"><Activity size={16} /></button>
+                            <button onClick={() => { setIsPredictiveTextEnabled?.(!isPredictiveTextEnabled); setShowTeamSubmenu(false); }} className={`p-1.5 hover:bg-white/10 rounded transition-colors ${isPredictiveTextEnabled ? 'text-blue-400' : 'text-gray-500'}`} title={`Predictive Text: ${isPredictiveTextEnabled ? 'ON' : 'OFF'}`}><BrainCircuit size={16} /></button>
+                        </div>
+                    </>
+                )}
+            </div>
 
             <div className="flex-1" />
 
+            {/* CENTER: Open pane indicators */}
             {onCollapse && (
-                <button
-                    onClick={onCollapse}
-                    className={`${btnClass} text-gray-400 dark:text-gray-500`}
-                    title="Hide status bar"
-                >
-                    <ChevronDown size={16} />
-                </button>
+                <button onClick={onCollapse} className={`${btnClass} text-gray-400 dark:text-gray-500`} title="Hide status bar"><ChevronDown size={16} /></button>
             )}
-
             <div className="flex items-center gap-1">
                 {paneItems.map((pane) => (
-                    <button
-                        key={pane.id}
-                        onClick={() => setActiveContentPaneId(pane.id)}
-                        className={`p-2 rounded transition-colors ${
-                            pane.isActive
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-transparent theme-text-muted hover:opacity-80'
-                        }`}
-                        title={pane.title}
-                    >
+                    <button key={pane.id} onClick={() => setActiveContentPaneId(pane.id)} className={`p-2 rounded transition-colors ${pane.isActive ? 'bg-blue-600 text-white' : 'bg-transparent theme-text-muted hover:opacity-80'}`} title={pane.title}>
                         {pane.type === 'chat' && <MessageSquare size={20} />}
                         {pane.type === 'editor' && <FileIcon size={20} />}
                         {pane.type === 'terminal' && <Terminal size={20} />}
@@ -337,112 +314,74 @@ const StatusBar: React.FC<StatusBarProps> = ({
 
             <div className="flex-1" />
 
-            {aiEnabled && (
-                <div className="flex items-center gap-1">
-                    <button
-                        data-tutorial="npc-team-button"
-                        onClick={() => createNPCTeamPane?.()}
-                        className={`${btnClass} text-cyan-600 dark:text-cyan-400`}
-                        title="NPCs"
-                    >
-                        <Bot size={20} />
-                    </button>
-
-                    <button
-                        data-tutorial="jinxes-button"
-                        onClick={() => createSkillsManagerPane?.()}
-                        className={`${btnClass} text-yellow-600 dark:text-yellow-400`}
-                        title="Skills & Jinxes"
-                    >
-                        <Zap size={20} />
-                    </button>
-
-                    <button
-                        data-tutorial="team-management-button"
-                        onClick={() => createTeamManagementPane?.()}
-                        className={`${btnClass} text-indigo-600 dark:text-indigo-400`}
-                        title="Team Management (NPCs, Jinxes, Databases, MCP, Cron, SQL Models)"
-                    >
-                        <Users size={20} />
-                    </button>
-
-                    <button
-                        onClick={() => createMcpManagerPane?.()}
-                        className={`${btnClass} text-cyan-600 dark:text-cyan-400`}
-                        title="MCP Server Manager"
-                    >
-                        <Server size={20} />
-                    </button>
+            {/* RIGHT: npcpy logo | pane/tab | version | clock */}
+            <div className="relative group/backend">
+                <div
+                    onClick={() => window.dispatchEvent(new Event('sse-reconnect'))}
+                    onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setShowBackendMenu(true); }}
+                    className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors cursor-pointer hover:bg-white/10 ${backendStatus === 'ok' ? '' : 'opacity-60'}`}
+                    title={statusLabel + ' — click to reconnect SSE — right-click for options'}
+                >
+                    <img src={npcPythonLogo} alt="npcpy" className={`w-4 h-4 rounded-sm transition-all ${backendStatus === 'ok' ? '' : 'grayscale opacity-50'} ${restarting ? 'animate-pulse' : ''}`} />
+                    {restarting && <RefreshCw size={10} className="animate-spin text-yellow-400" />}
                 </div>
-            )}
+                {showBackendMenu && (
+                    <>
+                        <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setShowBackendMenu(false)} />
+                        <div className="absolute bottom-full left-0 mb-1 bg-gray-900 border border-gray-700 rounded shadow-xl z-50 py-1 min-w-[140px]">
+                            <div className="px-3 py-1 text-[10px] text-gray-500 border-b border-gray-700">{statusLabel}</div>
+                            <button onClick={() => { handleRestart(); setShowBackendMenu(false); }} disabled={restarting} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs text-gray-300 hover:bg-white/10 disabled:opacity-50">
+                                <RefreshCw size={12} /> Restart Backend
+                            </button>
+                        </div>
+                    </>
+                )}
+            </div>
 
             {onToggleOpenMode && (
-                <button
-                    onClick={onToggleOpenMode}
-                    className={`${btnClass} ${openMode === 'tab' ? 'text-blue-400' : 'text-gray-400 dark:text-gray-500'}`}
-                    title={openMode === 'pane' ? 'New pane mode (click to switch to tab mode)' : 'Tab mode (click to switch to pane mode)'}
-                >
+                <button onClick={onToggleOpenMode} className={`${btnClass} ${openMode === 'tab' ? 'text-blue-400' : 'text-gray-400 dark:text-gray-500'}`} title={openMode === 'pane' ? 'Pane mode' : 'Tab mode'}>
                     {openMode === 'pane' ? <Columns size={16} /> : <Layers size={16} />}
                 </button>
             )}
 
             <div className="relative group/update">
-                <button
-                    onClick={handleCheckUpdates}
-                    className={`${btnClass} ${updateAvailable ? 'text-amber-500' : 'text-gray-400 dark:text-gray-500'}`}
-                >
-                    {downloadProgress !== null ? (
-                        downloadProgress >= 100 ? (
-                            <Check size={16} className="text-green-400" />
-                        ) : (
-                            <span className="text-[10px] font-mono text-amber-400">{downloadProgress}%</span>
-                        )
-                    ) : updateAvailable ? (
-                        <AlertCircle size={16} />
-                    ) : checkingUpdates ? (
-                        <RefreshCw size={16} className="animate-spin" />
-                    ) : (
-                        <Check size={16} />
-                    )}
+                <button onClick={handleCheckUpdates} className={`${btnClass} ${updateAvailable ? 'text-amber-500' : 'text-gray-400 dark:text-gray-500'}`}>
+                    {downloadProgress !== null ? (downloadProgress >= 100 ? <Check size={16} className="text-green-400" /> : <span className="text-[10px] font-mono text-amber-400">{downloadProgress}%</span>) : updateAvailable ? <AlertCircle size={16} /> : checkingUpdates ? <RefreshCw size={16} className="animate-spin" /> : <Check size={16} />}
                 </button>
                 {showQuitPrompt && (
                     <>
                         <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setShowQuitPrompt(false)} />
                         <div className="absolute bottom-full right-0 mb-1 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 p-3 min-w-[220px]">
-                            <p className="text-[11px] text-gray-300 mb-2">
-                                Update downloaded. Close the app to install it?
-                            </p>
+                            <p className="text-[11px] text-gray-300 mb-2">Update downloaded. Close to install?</p>
                             <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => {
-                                        (window as any).api?.closeWindow?.();
-                                    }}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-600 hover:bg-green-500 text-white rounded transition-colors"
-                                >
-                                    <Power size={12} />
-                                    Quit & Install
-                                </button>
-                                <button
-                                    onClick={() => setShowQuitPrompt(false)}
-                                    className="px-3 py-1.5 text-xs text-gray-400 hover:text-gray-200 hover:bg-white/10 rounded transition-colors"
-                                >
-                                    Later
-                                </button>
+                                <button onClick={() => (window as any).api?.closeWindow?.()} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-600 hover:bg-green-500 text-white rounded transition-colors"><Power size={12} /> Quit & Install</button>
+                                <button onClick={() => setShowQuitPrompt(false)} className="px-3 py-1.5 text-xs text-gray-400 hover:text-gray-200 hover:bg-white/10 rounded transition-colors">Later</button>
                             </div>
                         </div>
                     </>
                 )}
                 {!showQuitPrompt && (
                     <div className="absolute bottom-full right-0 mb-1 px-2 py-1 bg-gray-900 border border-gray-700 rounded text-[10px] text-gray-300 whitespace-nowrap opacity-0 group-hover/update:opacity-100 pointer-events-none transition-opacity duration-150 z-50">
-                        {downloadProgress !== null && downloadProgress >= 100
-                            ? 'Update ready — click to show quit prompt'
-                            : updateAvailable
-                                ? `v${appVersion || '?'} → v${updateAvailable.latestVersion} available`
-                                : `v${appVersion || '?'} — up to date`
-                        }
+                        {downloadProgress !== null && downloadProgress >= 100 ? 'Update ready — click to quit & install' : updateAvailable ? `v${appVersion || '?'} → v${updateAvailable.latestVersion} available` : `v${appVersion || '?'} — up to date`}
                     </div>
                 )}
             </div>
+
+            {/* Clock */}
+            <button onClick={() => setClockMode(clockMode === 'analog' ? 'digital' : clockMode === 'digital' ? 'datetime' : 'analog')} className={`${btnClass} text-gray-400 dark:text-gray-500`} title="Click to change clock mode">
+                {clockMode === 'analog' ? (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="12" y1="12" x2="12" y2="6" strokeWidth="2" strokeLinecap="round" transform={`rotate(${(currentTime.getHours() % 12) * 30 + currentTime.getMinutes() * 0.5}, 12, 12)`} />
+                        <line x1="12" y1="12" x2="12" y2="4" strokeWidth="1.5" strokeLinecap="round" transform={`rotate(${currentTime.getMinutes() * 6}, 12, 12)`} />
+                    </svg>
+                ) : (
+                    <span className="text-[10px] font-mono whitespace-nowrap">
+                        {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {clockMode === 'datetime' && <span className="text-gray-600 ml-1">{currentTime.toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>}
+                    </span>
+                )}
+            </button>
             </div>
         </div>
     );
