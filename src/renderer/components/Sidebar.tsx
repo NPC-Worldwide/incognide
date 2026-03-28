@@ -6097,49 +6097,17 @@ return (
         {sidebarCollapsed && <div className="flex-1"></div>}
 
         {!sidebarCollapsed && (
-        <div className="grid grid-cols-3 divide-x theme-border border-t theme-border" style={{ height: bottomBarHeight }}>
-            {/* Left: Window Manager + theme toggle in submenu */}
-            <div className="relative flex items-center justify-center">
-                <button
-                    onClick={() => createAndAddPaneNodeToLayout?.('windowmanager', 'windowmanager')}
-                    className="w-full h-full flex items-center justify-center hover:bg-teal-500/20 transition-all"
-                    title="Window Manager"
-                >
-                    <Monitor size={16} className="text-gray-600 dark:text-gray-400" />
-                </button>
-                <button
-                    onClick={toggleTheme}
-                    className="absolute top-0 right-0 w-1/2 h-1/2 flex items-center justify-center hover:bg-teal-500/20 rounded-bl transition-colors"
-                    title="Toggle Theme"
-                >
-                    {isDarkMode ? <Moon size={8} className="text-blue-400" /> : <Sun size={8} className="text-yellow-400" />}
-                </button>
+        <div className="border-t theme-border">
+            <div className="grid grid-cols-3 divide-x theme-border" style={{ height: bottomBarHeight }}>
+                <button onClick={() => createAndAddPaneNodeToLayout?.('windowmanager', 'windowmanager')} className="flex items-center justify-center hover:bg-teal-500/20 transition-all" title="Window Manager"><Monitor size={16} className="text-gray-600 dark:text-gray-400" /></button>
+                <button onClick={() => { if ((window as any).api?.openNewWindow) (window as any).api.openNewWindow(''); else window.open(window.location.href, '_blank'); }} className="flex items-center justify-center hover:bg-teal-500/20 transition-all" title="New Window (Alt+N)"><img src={npcLogo} alt="Incognide" style={{ width: 16, height: 16 }} className="rounded-full" /></button>
+                <button onClick={toggleTheme} className="flex items-center justify-center hover:bg-teal-500/20 transition-all" title="Toggle Theme">{isDarkMode ? <Moon size={16} className="text-blue-400" /> : <Sun size={16} className="text-yellow-400" />}</button>
             </div>
-            {/* Center: New window + delete */}
-            <div className="relative flex items-center justify-center">
-                <button
-                    onClick={() => { if ((window as any).api?.openNewWindow) (window as any).api.openNewWindow(''); else window.open(window.location.href, '_blank'); }}
-                    className="w-full h-full flex items-center justify-center hover:bg-teal-500/20 transition-all"
-                    title="New Incognide Window (Alt+N)"
-                >
-                    <img src={npcLogo} alt="Incognide" style={{ width: 16, height: 16 }} className="rounded-full" />
-                </button>
-                <button
-                    onClick={deleteSelectedConversations}
-                    className={`absolute top-0 right-0 w-1/2 h-1/2 flex items-center justify-center hover:bg-teal-500/20 rounded-bl transition-colors ${(selectedFiles?.size > 0 || selectedConvos?.size > 0) ? 'text-red-400' : 'text-gray-500'}`}
-                    title="Delete selected items"
-                >
-                    <Trash size={8} />
-                </button>
+            <div className="grid grid-cols-3 divide-x theme-border border-t theme-border" style={{ height: bottomBarHeight }}>
+                <button onClick={deleteSelectedConversations} className={`flex items-center justify-center hover:bg-teal-500/20 transition-all ${(selectedFiles?.size > 0 || selectedConvos?.size > 0) ? 'text-red-400' : 'text-gray-400'}`} title="Delete selected"><Trash size={16} /></button>
+                <button onClick={() => createSettingsPane?.()} className="flex items-center justify-center hover:bg-teal-500/20 transition-all text-gray-400" title="Settings"><Settings size={16} /></button>
+                <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="flex items-center justify-center hover:bg-teal-500/20 transition-all" title="Collapse sidebar"><ChevronLeft size={16} className="text-gray-600 dark:text-gray-400" /></button>
             </div>
-            {/* Right: Collapse sidebar */}
-            <button
-                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                className="flex items-center justify-center h-full hover:bg-teal-500/20 transition-all"
-                title="Collapse sidebar"
-            >
-                <ChevronLeft size={16} className="text-gray-600 dark:text-gray-400" />
-            </button>
         </div>
         )}
 
