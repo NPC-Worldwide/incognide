@@ -6105,7 +6105,7 @@ return (
             </div>
             <div className="grid grid-cols-3 divide-x theme-border border-t theme-border" style={{ height: bottomBarHeight }}>
                 <button onClick={deleteSelectedConversations} className={`flex items-center justify-center hover:bg-teal-500/20 transition-all ${(selectedFiles?.size > 0 || selectedConvos?.size > 0) ? 'text-red-400' : 'text-gray-400'}`} title="Delete selected"><Trash size={16} /></button>
-                <button onClick={() => createSettingsPane?.()} className="flex items-center justify-center hover:bg-teal-500/20 transition-all text-gray-400" title="Settings"><Settings size={16} /></button>
+                <button onClick={() => setBottomGridCollapsed(!bottomGridCollapsed)} className="flex items-center justify-center hover:bg-teal-500/20 transition-all" title={bottomGridCollapsed ? "Show quick actions" : "Hide quick actions"}>{bottomGridCollapsed ? <ChevronUp size={16} className="text-gray-600 dark:text-gray-400" /> : <ChevronDown size={16} className="text-gray-600 dark:text-gray-400" />}</button>
                 <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="flex items-center justify-center hover:bg-teal-500/20 transition-all" title="Collapse sidebar"><ChevronLeft size={16} className="text-gray-600 dark:text-gray-400" /></button>
             </div>
         </div>
