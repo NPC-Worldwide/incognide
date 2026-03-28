@@ -61,6 +61,7 @@ import PathSwitcher from './PathSwitcher';
 import CronDaemonPanel from './CronDaemonPanel';
 import MemoryManager from './MemoryManager';
 import WindowManagerPane from './WindowManagerPane';
+import AccountPane from './AccountPane';
 import SearchPane from './SearchPane';
 import DownloadManager, { getActiveDownloadsCount, setDownloadToastCallback, setDownloadAllCompleteCallback } from './DownloadManager';
 import { LiveProvider, LivePreview, LiveError } from 'react-live';
@@ -3518,6 +3519,16 @@ const renderMemoryManagerPane = useCallback(({ nodeId }: { nodeId: string }) => 
 const renderWindowManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return <WindowManagerPane />;
 }, []);
+
+const renderAccountPane = useCallback(({ nodeId }: { nodeId: string }) => {
+    return <AccountPane nodeId={nodeId} />;
+}, []);
+
+const createAccountPane = useCallback(async () => {
+    const newPaneId = generateId();
+    contentDataRef.current[newPaneId] = { contentType: 'account', contentId: 'account' };
+    createAndAddPaneNodeToLayout('account', 'account');
+}, [createAndAddPaneNodeToLayout]);
 
 // Render CronDaemonPanel pane (for pane-based viewing)
 const renderCronDaemonPane = useCallback(({ nodeId }: { nodeId: string }) => {
@@ -7547,6 +7558,7 @@ const paneRenderers = useMemo(() => ({
     python: renderTerminalView,
     branches: renderBranchComparisonPane,
     windowmanager: renderWindowManagerPane,
+    account: renderAccountPane,
 }), [
     renderChatView, renderFileEditor, renderTerminalView, renderPdfViewer,
     renderCsvViewer, renderDocxViewer, renderBrowserViewer, renderPptxViewer,

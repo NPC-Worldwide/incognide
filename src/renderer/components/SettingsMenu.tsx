@@ -1612,7 +1612,6 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
 
     const AI_SETTINGS_TABS = ['models', 'voice', 'providers'];
     const allTabs = [
-        { id: 'account', name: 'Account' },
         { id: 'global', name: 'Global Settings' },
         { id: 'theme', name: 'Theme' },
         { id: 'shortcuts', name: 'Keyboard Shortcuts' },
@@ -1652,20 +1651,6 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                {activeTab === 'account' && (
-                    <div className="space-y-4">
-                        <h3 className="text-lg font-medium text-white">Account & Sync</h3>
-                        <p className="text-sm text-gray-400">Sign in to sync your settings, conversations, and files across devices.</p>
-                        <div className="max-w-sm">
-                            {import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ? (
-                                <UserMenu />
-                            ) : (
-                                <p className="text-xs text-gray-500">Account sync is not configured.</p>
-                            )}
-                        </div>
-                    </div>
-                )}
-
                 {activeTab === 'global' && (
                     <>
                         <div className="border border-gray-700 rounded-lg p-3">
