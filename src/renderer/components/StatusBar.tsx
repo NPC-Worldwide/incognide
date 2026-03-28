@@ -375,21 +375,6 @@ const StatusBar: React.FC<StatusBarProps> = ({
                 )}
             </div>
 
-            {/* Clock */}
-            <button onClick={() => setClockMode(clockMode === 'analog' ? 'digital' : clockMode === 'digital' ? 'datetime' : 'analog')} className={`${btnClass} text-gray-400 dark:text-gray-500`} title="Click to change clock mode">
-                {clockMode === 'analog' ? (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                        <circle cx="12" cy="12" r="10" />
-                        <line x1="12" y1="12" x2="12" y2="6" strokeWidth="2" strokeLinecap="round" transform={`rotate(${(currentTime.getHours() % 12) * 30 + currentTime.getMinutes() * 0.5}, 12, 12)`} />
-                        <line x1="12" y1="12" x2="12" y2="4" strokeWidth="1.5" strokeLinecap="round" transform={`rotate(${currentTime.getMinutes() * 6}, 12, 12)`} />
-                    </svg>
-                ) : (
-                    <span className="text-[10px] font-mono whitespace-nowrap">
-                        {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        {clockMode === 'datetime' && <span className="text-gray-600 ml-1">{currentTime.toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>}
-                    </span>
-                )}
-            </button>
             </div>
         </div>
     );
