@@ -239,6 +239,15 @@ const StatusBar: React.FC<StatusBarProps> = ({
                 </button>
             )}
 
+            {/* LEFT: Predictive Text toggle */}
+            <button
+                onClick={() => setIsPredictiveTextEnabled?.(!isPredictiveTextEnabled)}
+                className={`${btnClass} ${isPredictiveTextEnabled ? 'text-purple-400' : 'text-gray-500'}`}
+                title={isPredictiveTextEnabled ? "Disable Predictive Text" : "Enable Predictive Text"}
+            >
+                <BrainCircuit size={20} />
+            </button>
+
             {/* LEFT: DB Tool with submenu */}
             <div className="relative">
                 <button onClick={() => createDBToolPane?.()} className={`${btnClass} text-blue-600 dark:text-blue-400`} title="Database Tool">
@@ -277,7 +286,6 @@ const StatusBar: React.FC<StatusBarProps> = ({
                             <button onClick={() => { createMemoryManagerPane?.(); setShowTeamSubmenu(false); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-amber-400 transition-colors relative" title={pendingMemoryCount > 0 ? `Memory (${pendingMemoryCount} pending)` : "Memory"}><MemoryIcon size={16} />{pendingMemoryCount > 0 && <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />}</button>
                             <button data-tutorial="kg-button" onClick={() => { createGraphViewerPane?.(); setShowTeamSubmenu(false); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-emerald-400 transition-colors" title="Knowledge Graph"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="8" r="2.5" /><circle cx="18" cy="6" r="2" /><circle cx="12" cy="14" r="3" /><circle cx="5" cy="18" r="2" /><circle cx="19" cy="17" r="2.5" /><line x1="8" y1="9" x2="10" y2="12" /><line x1="16" y1="7" x2="14" y2="12" /><line x1="7" y1="17" x2="9.5" y2="15.5" /><line x1="14.5" y1="15.5" x2="17" y2="16" /><line x1="7" y1="10" x2="5" y2="16" /></svg></button>
                             <button onClick={() => { createCronDaemonPane?.(); setShowTeamSubmenu(false); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-orange-400 transition-colors" title="Cron / Smokestack"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="10" width="5" height="12" rx="0.5" /><circle cx="7.5" cy="6" r="2" /><circle cx="9" cy="3" r="1.5" /><rect x="12" y="14" width="4" height="8" rx="0.5" /><rect x="18" y="16" width="3" height="6" rx="0.5" /><path d="M2 22h20" /></svg></button>
-                            <button onClick={() => { setIsPredictiveTextEnabled?.(!isPredictiveTextEnabled); setShowTeamSubmenu(false); }} className={`p-1.5 hover:bg-white/10 rounded transition-colors ${isPredictiveTextEnabled ? 'text-blue-400' : 'text-gray-500'}`} title={`Predictive Text: ${isPredictiveTextEnabled ? 'ON' : 'OFF'}`}><BrainCircuit size={16} /></button>
                         </div>
                     </>
                 )}
