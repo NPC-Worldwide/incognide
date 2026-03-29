@@ -69,9 +69,7 @@
       "gatekeeperAssess": false,
       "entitlements": "resources/entitlements.mac.plist",
       "entitlementsInherit": "resources/entitlements.mac.inherit.plist",
-      "notarize": {
-        "teamId": "YBX53ARDF2"
-      },
+      "notarize": true,
       "extendInfo": {
         "NSCameraUsageDescription": "This app needs camera access for video calls and media capture.",
         "NSMicrophoneUsageDescription": "This app needs microphone access for audio recording and voice input.",
