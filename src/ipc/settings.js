@@ -443,18 +443,21 @@ function register(ctx) {
   const _getServiceInfoLocal = (unit) => {
     const platform = process.platform;
     const result = {};
+    // Sanitize unit name to prevent command injection — allow only alphanumeric, dots, hyphens, underscores
+    const safeUnit = String(unit).replace(/[^a-zA-Z0-9._\-]/g, '');
+    if (!safeUnit) return result;
     if (platform === 'linux') {
-      try { result.unit_file = execSync(`systemctl cat ${unit} 2>/dev/null`, { encoding: 'utf8', timeout: 5000 }); } catch {}
-      try { result.journal = execSync(`journalctl -u ${unit} --no-pager -n 100 2>/dev/null`, { encoding: 'utf8', timeout: 5000 }); } catch {}
+      try { result.unit_file = execSync(`systemctl cat ${safeUnit} 2>/dev/null`, { encoding: 'utf8', timeout: 5000 }); } catch {}
+      try { result.journal = execSync(`journalctl -u ${safeUnit} --no-pager -n 100 2>/dev/null`, { encoding: 'utf8', timeout: 5000 }); } catch {}
     } else if (platform === 'darwin') {
       // unit here is a launchd label
-      try { result.unit_file = execSync(`launchctl print system/${unit} 2>/dev/null || launchctl print gui/$(id -u)/${unit} 2>/dev/null`, { encoding: 'utf8', timeout: 5000 }); } catch {}
+      try { result.unit_file = execSync(`launchctl print system/${safeUnit} 2>/dev/null || launchctl print gui/$(id -u)/${safeUnit} 2>/dev/null`, { encoding: 'utf8', timeout: 5000 }); } catch {}
       try {
         // Try to find the plist file
         const searchDirs = ['/Library/LaunchDaemons', '/Library/LaunchAgents',
                             path.join(os.homedir(), 'Library/LaunchAgents')];
         for (const dir of searchDirs) {
-          const plistPath = path.join(dir, `${unit}.plist`);
+          const plistPath = path.join(dir, `${safeUnit}.plist`);
           if (fs.existsSync(plistPath)) {
             result.unit_file = fs.readFileSync(plistPath, 'utf8');
             break;
@@ -462,7 +465,7 @@ function register(ctx) {
         }
       } catch {}
     } else if (platform === 'win32') {
-      try { result.unit_file = execSync(`schtasks /query /tn "${unit}" /fo LIST /v`, { encoding: 'utf8', timeout: 5000 }); } catch {}
+      try { result.unit_file = execSync(`schtasks /query /tn "${safeUnit}" /fo LIST /v`, { encoding: 'utf8', timeout: 5000 }); } catch {}
     }
     return result;
   };

@@ -477,10 +477,12 @@ const WebBrowserViewer = memo(({
 
         };
         const handleDidFailLoad = (e) => {
-            if (e.errorCode !== -3) {
-                setLoading(false);
-                setError(`Failed to load page (Error ${e.errorCode}: ${e.validatedURL})`);
-            }
+            // -3 = aborted (ignore), also ignore sub-frame failures (e.g. Google cookie rotation)
+            if (e.errorCode === -3 || e.isMainFrame === false) return;
+            // Ignore Google's RotateCookiesPage failures — background cookie exchange for multi-account sessions
+            if (e.validatedURL && e.validatedURL.includes('accounts.google.com/RotateCookiesPage')) return;
+            setLoading(false);
+            setError(`Failed to load page (Error ${e.errorCode}: ${e.validatedURL})`);
         };
 
         const handleWebviewContextMenu = (e) => {

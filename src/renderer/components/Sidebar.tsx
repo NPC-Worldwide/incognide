@@ -5569,7 +5569,9 @@ return (
                             <div className="border-t theme-border my-0.5" />
                             <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Agents</div>
                             {(() => {
-                                const agents = JSON.parse(localStorage.getItem('incognide_terminalAgents') || '[{"name":"claude","command":"claude"},{"name":"codex","command":"codex"},{"name":"opencode","command":"opencode"}]');
+                                let agents;
+                                try { agents = JSON.parse(localStorage.getItem('incognide_terminalAgents') || '[]'); } catch { agents = []; }
+                                if (!agents.length) agents = [{"name":"npcsh","command":"npcsh"},{"name":"opencode","command":"opencode"},{"name":"nanocoder","command":"nanocoder"},{"name":"claude","command":"claude"}];
                                 return agents.map((agent: any, idx: number) => (
                                     <button
                                         key={idx}
