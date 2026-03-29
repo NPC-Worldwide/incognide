@@ -197,7 +197,6 @@ const parseServices = (raw: string): ServiceInfo[] => {
         .filter(Boolean) as ServiceInfo[];
 };
 
-// -- Linux: parse systemd timers output --
 const parseTimers = (raw: unknown): TimerInfo[] => {
     if (typeof raw !== 'string') return [];
     const trimmed = raw.trim();
