@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 import { useUser, useAuth as useClerkAuth, useClerk } from '@clerk/clerk-react';
 import { deriveKey, setEncryptionKey, clearEncryptionKey, hasEncryptionKey } from '../utils/encryption';
 
-const API_BASE_URL = 'https://api.incognide.com';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.incognide.com';
 
 interface User {
     id: string;
@@ -37,6 +37,8 @@ interface AuthContextType {
     signOut: () => Promise<void>;
     refreshUser: () => Promise<void>;
     getToken: () => Promise<string | null>;
+    openSignIn: () => void;
+    openUserProfile: () => void;
     error: string | null;
 }
 
@@ -53,6 +55,8 @@ const AuthContext = createContext<AuthContextType>({
     signOut: async () => {},
     refreshUser: async () => {},
     getToken: async () => null,
+    openSignIn: () => {},
+    openUserProfile: () => {},
     error: null,
 });
 
@@ -338,6 +342,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 signOut,
                 refreshUser,
                 getToken,
+                openSignIn: () => clerk.openSignIn(),
+                openUserProfile: () => clerk.openUserProfile(),
                 error
             }}
         >

@@ -2037,13 +2037,13 @@ function createWindow(cliArgs = {}) {
         responseHeaders: {
           ...details.responseHeaders,
           'Content-Security-Policy': [
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://js.stripe.com; " +
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://js.stripe.com https://*.clerk.accounts.dev https://clerk.app.incognide.com; " +
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://js.stripe.com https://fonts.googleapis.com; " +
         "style-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://js.stripe.com https://fonts.googleapis.com; " +
         "img-src 'self' data: file: media: blob: http: https:; " +
         "font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com; " +
         `connect-src 'self' file: media: http://localhost:${FRONTEND_PORT} http://127.0.0.1:${BACKEND_PORT} ${BACKEND_URL} blob: ws: wss: https://* http://*; ` +
-        "frame-src 'self' file: data: blob: media: chrome-extension: https://js.stripe.com https://m.stripe.network https://checkout.stripe.com; " +
+        "frame-src 'self' file: data: blob: media: chrome-extension: https://js.stripe.com https://m.stripe.network https://checkout.stripe.com https://*.clerk.accounts.dev https://clerk.app.incognide.com; " +
         "object-src 'self' file: data: blob: media: chrome-extension:; " +
         "worker-src 'self' blob: data:; " +
         "media-src 'self' data: file: blob: http: https:;"
