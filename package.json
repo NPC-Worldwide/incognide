@@ -10,6 +10,7 @@
     "dist/assets/",
     "src/",
     "assets/icon.png"
+    
   ],
   "scripts": {
     "generate-icons": "electron-icon-builder --input=./assets/icon.png --output=./build",
@@ -40,6 +41,13 @@
       "buildResources": "assets",
       "output": "dist-electron"
     },
+    "fileAssociations": [
+    {"ext": "pdf", "name": "PDF Document"},
+    {"ext": ["txt", "md"], "name": "Text Document"},
+    {"ext": ["png", "jpg", "jpeg", "gif", "svg"], "name": "Image"},
+    {"ext": ["mp4", "avi", "mkv"], "name": "Video"},
+    {"ext": ["js", "ts", "py", "html", "css", "json"], "name": "Code"}
+    ],
     "files": [
       "dist/**/*",
       "src/**/*",

@@ -590,6 +590,9 @@ function getWorkspacePathForWebContents(webContents) {
   const paths = Array.from(workspacePathByWindow.values());
   return paths.length > 0 ? paths[paths.length - 1] : app.getPath('downloads');
 }
+app.setAsDefaultProtocolClient('incognide')
+app.on('open-file', (event, path) => handleFileOpen(path))
+app.on('second-instance', (event, argv) => parseFileArgs(argv))
 
 app.on('web-contents-created', (event, contents) => {
 
