@@ -49,6 +49,7 @@ import ExpViewer from './ExpViewer';
 import PicViewer from './PicViewer';
 import StlViewer from './StlViewer';
 import MindMapViewer from './MindMapViewer';
+import CartoglyphIcon from './CartoglyphIcon';
 import ZipViewer from './ZipViewer';
 import Scherzo from './Scherzo';
 import DiskUsageAnalyzer from './DiskUsageAnalyzer';
@@ -3249,6 +3250,21 @@ const renderMindMapViewer = useCallback(({ nodeId }) => {
     );
 }, [rootLayoutNode, closeContentPane]);
 
+// Render Cartoglyph (GIS mapping) pane — same component, standalone mode
+const renderCartoglyphPane = useCallback(({ nodeId }) => {
+    return (
+        <MindMapViewer
+            nodeId={nodeId}
+            contentDataRef={contentDataRef}
+            findNodePath={findNodePath}
+            rootLayoutNode={rootLayoutNode}
+            setDraggedItem={setDraggedItem}
+            setPaneContextMenu={setPaneContextMenu}
+            closeContentPane={closeContentPane}
+        />
+    );
+}, [rootLayoutNode, closeContentPane]);
+
 // Render DataLabeler pane (for pane-based viewing)
 const renderDataLabelerPane = useCallback(({ nodeId }) => {
     return (
@@ -4085,6 +4101,13 @@ const renderMessageContextMenu = () => null;
     const createScherzoPane = useCallback(async () => {
         const newPaneId = generateId();
         contentDataRef.current[newPaneId] = { contentType: 'scherzo', contentId: 'scherzo' };
+        addPaneOrTab(newPaneId);
+    }, []);
+
+    // Create Cartoglyph (GIS mapping) pane
+    const createCartoglyphPane = useCallback(async () => {
+        const newPaneId = generateId();
+        contentDataRef.current[newPaneId] = { contentType: 'cartoglyph', contentId: 'cartoglyph' };
         addPaneOrTab(newPaneId);
     }, []);
 
@@ -7552,6 +7575,7 @@ const paneRenderers = useMemo(() => ({
     image: renderPicViewer,
     stl: renderStlViewer,
     mindmap: renderMindMapViewer,
+    cartoglyph: renderCartoglyphPane,
     zip: renderZipViewer,
     'data-labeler': renderDataLabelerPane,
     'graph-viewer': renderGraphViewerPane,
@@ -7586,7 +7610,7 @@ const paneRenderers = useMemo(() => ({
     renderChatView, renderFileEditor, renderTerminalView, renderPdfViewer,
     renderCsvViewer, renderDocxViewer, renderBrowserViewer, renderPptxViewer,
     renderLatexViewer, renderNotebookViewer, renderExpViewer, renderPicViewer, renderStlViewer,
-    renderMindMapViewer, renderZipViewer, renderDataLabelerPane, renderGraphViewerPane,
+    renderMindMapViewer, renderCartoglyphPane, renderZipViewer, renderDataLabelerPane, renderGraphViewerPane,
     renderBrowserGraphPane, renderDataDashPane, renderDBToolPane, renderNPCTeamPane,
     renderJinxPane, renderTeamManagementPane, renderMcpManagerPane, renderSkillsManagerPane, renderSettingsPane, renderPhotoViewerPane,
     renderScherzoPane, renderLibraryViewerPane, renderHelpPane, renderGitPane,
@@ -7766,7 +7790,7 @@ const handleFileClick = useCallback(async (filePath: string) => {
     else if (extension === 'exp') contentType = 'exp';
     else if (extension === 'pltx') contentType = 'exp';
     else if (['docx', 'doc'].includes(extension)) contentType = 'docx';
-    else if (extension === 'mapx') contentType = 'mindmap';
+    else if (['mapx', 'geojson', 'kml', 'kmz', 'gpx', 'shp'].includes(extension)) contentType = 'cartoglyph';
     else if (extension === 'zip') contentType = 'zip';
     else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(extension)) contentType = 'image';
     else if (extension === 'stl') contentType = 'stl';
@@ -8527,6 +8551,7 @@ const renderMainContent = () => {
                         <button onClick={() => createLibraryViewerPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Grimoire"><BookOpen size={18} /></button>
                         <button onClick={() => createPhotoViewerPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Vixynt" data-tutorial="vixynt-button"><Image size={18} /></button>
                         <button onClick={() => createScherzoPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Scherzo" data-tutorial="scherzo-button"><Music size={18} /></button>
+                        <button onClick={() => createCartoglyphPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Cartoglyph" data-tutorial="cartoglyph-button"><CartoglyphIcon size={18} /></button>
                     </>
                 ) : (
                     <div className="relative">
@@ -8544,6 +8569,7 @@ const renderMainContent = () => {
                                     <button onClick={() => { createLibraryViewerPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><BookOpen size={14} /> Grimoire</button>
                                     <button onClick={() => { createPhotoViewerPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><Image size={14} /> Vixynt</button>
                                     <button onClick={() => { createScherzoPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><Music size={14} /> Scherzo</button>
+                                    <button onClick={() => { createCartoglyphPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><CartoglyphIcon size={14} /> Cartoglyph</button>
                                 </div>
                             </>
                         )}
@@ -8591,7 +8617,7 @@ const renderMainContent = () => {
     else if (extension === 'exp') contentType = 'exp';
     else if (extension === 'pltx') contentType = 'exp';
                             else if (['docx', 'doc'].includes(extension)) contentType = 'docx';
-                            else if (extension === 'mapx') contentType = 'mindmap';
+                            else if (['mapx', 'geojson', 'kml', 'kmz', 'gpx', 'shp'].includes(extension)) contentType = 'cartoglyph';
                             else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(extension)) contentType = 'image';
                             else if (extension === 'stl') contentType = 'stl';
                             else contentType = 'editor';
@@ -9113,6 +9139,7 @@ const renderMainContent = () => {
         createSettingsPane={createSettingsPane}
         createPhotoViewerPane={createPhotoViewerPane}
         createScherzoPane={createScherzoPane}
+        createCartoglyphPane={createCartoglyphPane}
         createProjectEnvPane={createProjectEnvPane}
         createDiskUsagePane={createDiskUsagePane}
         createLibraryViewerPane={createLibraryViewerPane}
@@ -9249,6 +9276,8 @@ const renderMainContent = () => {
                                     return renderStlViewer({ nodeId: zenModePaneId });
                                 case 'mindmap':
                                     return renderMindMapViewer({ nodeId: zenModePaneId });
+                                case 'cartoglyph':
+                                    return renderCartoglyphPane({ nodeId: zenModePaneId });
                                 case 'notebook':
                                     return renderNotebookViewer({ nodeId: zenModePaneId });
                                 case 'exp':
