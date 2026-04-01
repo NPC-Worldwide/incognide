@@ -46,7 +46,7 @@ interface GitPaneProps {
     gitLogBranch: (branchName: string) => Promise<any[]>;
 }
 
-const GitPane: React.FC<GitPaneProps> = React.memo(({
+const GitPane: React.FC<GitPaneProps> = ({
     nodeId,
     gitStatus,
     gitModalTab,
@@ -613,8 +613,6 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
             </div>
         </div>
     );
-});
-
-GitPane.displayName = 'GitPane';
+};
 
 export default GitPane;
