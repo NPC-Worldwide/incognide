@@ -13,7 +13,7 @@ import type {
 } from 'npcts';
 import {
     GISMapView, featuresToGeoJSON, geoJSONToFeatures,
-    BASEMAPS, LAYER_COLORS, DEFAULT_PROJECT,
+    BASEMAPS, LAYER_COLORS, DEFAULT_PROJECT, REFERENCE_LAYERS,
     MindMapViewer as NpctsMindMapViewer
 } from 'npcts';
 
@@ -76,9 +76,15 @@ const CartoglyphPane = ({
     const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(null);
     const [hasChanges, setHasChanges] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
-    const [sidebarTab, setSidebarTab] = useState<'layers' | 'properties' | 'osint'>('layers');
+    const [sidebarTab, setSidebarTab] = useState<'layers' | 'properties' | 'osint' | 'overlays'>('layers');
+    const [activeOverlays, setActiveOverlays] = useState<Set<string>>(new Set());
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [activeLayerId, setActiveLayerId] = useState('default');
+
+    // OSINT auto-cache
+    const [osintCache, setOsintCache] = useState<Record<string, { results: any[]; bbox: string }>>({});
+    const [osintVisible, setOsintVisible] = useState<Set<string>>(new Set());
+    const [osintLoading, setOsintLoading] = useState<Set<string>>(new Set());
 
     // Search
     const [searchQuery, setSearchQuery] = useState('');
@@ -102,6 +108,99 @@ const CartoglyphPane = ({
 
     const mapRef = useRef<L.Map | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // OSINT preset categories
+    const OSINT_PRESETS: Record<string, { label: string; query: string; color: string; category: string }> = useMemo(() => ({
+        hospitals: { label: 'Hospitals', query: 'amenity=hospital', color: '#ef4444', category: 'emergency' },
+        police: { label: 'Police', query: 'amenity=police', color: '#3b82f6', category: 'emergency' },
+        fire_stations: { label: 'Fire Stations', query: 'amenity=fire_station', color: '#f97316', category: 'emergency' },
+        pharmacies: { label: 'Pharmacies', query: 'amenity=pharmacy', color: '#10b981', category: 'emergency' },
+        schools: { label: 'Schools', query: 'amenity=school', color: '#8b5cf6', category: 'civic' },
+        banks: { label: 'Banks', query: 'amenity=bank', color: '#eab308', category: 'civic' },
+        embassies: { label: 'Embassies', query: 'amenity=embassy', color: '#06b6d4', category: 'civic' },
+        prisons: { label: 'Prisons', query: 'amenity=prison', color: '#64748b', category: 'civic' },
+        government: { label: 'Government', query: 'office=government', color: '#a855f7', category: 'civic' },
+        military: { label: 'Military', query: 'military=yes', color: '#78716c', category: 'security' },
+        cameras: { label: 'Surveillance', query: 'man_made=surveillance', color: '#f43f5e', category: 'security' },
+        cell_towers: { label: 'Cell Towers', query: 'telecom=mast', color: '#d946ef', category: 'infrastructure' },
+        power_plants: { label: 'Power Plants', query: 'power=plant', color: '#facc15', category: 'infrastructure' },
+        gas_stations: { label: 'Gas Stations', query: 'amenity=fuel', color: '#fb923c', category: 'infrastructure' },
+        water_towers: { label: 'Water Towers', query: 'man_made=water_tower', color: '#38bdf8', category: 'infrastructure' },
+        helipads: { label: 'Helipads', query: 'aeroway=helipad', color: '#a3e635', category: 'transport' },
+        hotels: { label: 'Hotels', query: 'tourism=hotel', color: '#c084fc', category: 'commercial' },
+        restaurants: { label: 'Restaurants', query: 'amenity=restaurant', color: '#fb7185', category: 'commercial' },
+        bridges: { label: 'Bridges', query: 'man_made=bridge', color: '#94a3b8', category: 'infrastructure' },
+        dams: { label: 'Dams', query: 'waterway=dam', color: '#22d3ee', category: 'infrastructure' },
+    }), []);
+
+    // Fetch a single OSINT category for current viewport
+    const fetchOsintCategory = useCallback(async (key: string) => {
+        const preset = OSINT_PRESETS[key];
+        if (!preset || !mapRef.current) return;
+        const bounds = mapRef.current.getBounds();
+        const bbox = `${bounds.getSouth().toFixed(2)},${bounds.getWest().toFixed(2)},${bounds.getNorth().toFixed(2)},${bounds.getEast().toFixed(2)}`;
+        // Skip if already cached for this bbox
+        if (osintCache[key]?.bbox === bbox) return;
+        setOsintLoading(prev => new Set(prev).add(key));
+        try {
+            const parts = preset.query.split('=');
+            const tagFilter = parts[1] ? `["${parts[0]}"="${parts[1]}"]` : `["${parts[0]}"]`;
+            const s = bounds.getSouth(), w = bounds.getWest(), n = bounds.getNorth(), e = bounds.getEast();
+            const q = `[out:json][timeout:25];(node${tagFilter}(${s},${w},${n},${e});way${tagFilter}(${s},${w},${n},${e}););out center body 200;`;
+            const resp = await fetch('https://overpass-api.de/api/interpreter', {
+                method: 'POST',
+                body: `data=${encodeURIComponent(q)}`,
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            });
+            if (!resp.ok) throw new Error(`Overpass ${resp.status}`);
+            const data = await resp.json();
+            const results = (data.elements || []).map((el: any) => ({
+                lat: el.lat || el.center?.lat,
+                lng: el.lon || el.center?.lon,
+                name: el.tags?.name || `${el.type}/${el.id}`,
+                tags: el.tags || {},
+            })).filter((r: any) => r.lat && r.lng);
+            setOsintCache(prev => ({ ...prev, [key]: { results, bbox } }));
+        } catch (err) {
+            console.error(`OSINT fetch ${key}:`, err);
+        } finally {
+            setOsintLoading(prev => { const s = new Set(prev); s.delete(key); return s; });
+        }
+    }, [OSINT_PRESETS, osintCache]);
+
+    // Toggle an OSINT layer — fetch if needed, then show/hide
+    const toggleOsintLayer = useCallback((key: string) => {
+        setOsintVisible(prev => {
+            const next = new Set(prev);
+            if (next.has(key)) { next.delete(key); } else { next.add(key); fetchOsintCategory(key); }
+            return next;
+        });
+    }, [fetchOsintCategory]);
+
+    // Re-fetch visible OSINT layers when map moves significantly
+    const lastOsintFetchBbox = useRef<string>('');
+    const osintRefreshTimer = useRef<any>(null);
+
+    const scheduleOsintRefresh = useCallback(() => {
+        if (osintRefreshTimer.current) clearTimeout(osintRefreshTimer.current);
+        osintRefreshTimer.current = setTimeout(() => {
+            if (!mapRef.current || osintVisible.size === 0) return;
+            const bounds = mapRef.current.getBounds();
+            const bbox = `${bounds.getSouth().toFixed(1)},${bounds.getWest().toFixed(1)},${bounds.getNorth().toFixed(1)},${bounds.getEast().toFixed(1)}`;
+            if (bbox === lastOsintFetchBbox.current) return;
+            lastOsintFetchBbox.current = bbox;
+            osintVisible.forEach(key => fetchOsintCategory(key));
+        }, 2000);
+    }, [osintVisible, fetchOsintCategory]);
+
+    // Hook into map move
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!map) return;
+        const handler = () => scheduleOsintRefresh();
+        map.on('moveend', handler);
+        return () => { map.off('moveend', handler); };
+    }, [scheduleOsintRefresh]);
 
     // Mind Map state
     const [mindMapData, setMindMapData] = useState<MindMapData | null>(null);
@@ -230,13 +329,15 @@ const CartoglyphPane = ({
 
     // ---- OSINT ----
 
-    const fetchOSINT = useCallback(async () => {
-        if (!osintQuery.trim()) return;
+    const fetchOSINT = useCallback(async (queryOverride?: string, typeOverride?: 'nominatim' | 'overpass') => {
+        const q = queryOverride || osintQuery;
+        const t = typeOverride || osintType;
+        if (!q.trim()) return;
         setIsOsintLoading(true);
         setOsintResults([]);
         try {
-            if (osintType === 'nominatim') {
-                const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(osintQuery)}&limit=20&addressdetails=1`, {
+            if (t === 'nominatim') {
+                const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=20&addressdetails=1`, {
                     headers: { 'User-Agent': 'Incognide-Cartoglyph/1.0' },
                 });
                 const data = await resp.json();
@@ -250,7 +351,7 @@ const CartoglyphPane = ({
                 if (!bounds) { setIsOsintLoading(false); return; }
                 const s = bounds.getSouth(), w = bounds.getWest(), n = bounds.getNorth(), e = bounds.getEast();
                 // Parse "key=value" format from user
-                const parts = osintQuery.split('=');
+                const parts = q.split('=');
                 const key = parts[0]?.trim();
                 const val = parts[1]?.trim();
                 const tagFilter = val ? `["${key}"="${val}"]` : `["${key}"]`;
@@ -478,10 +579,10 @@ const CartoglyphPane = ({
                     {!sidebarCollapsed && (
                         <div className="w-60 border-r theme-border flex flex-col theme-bg-secondary overflow-hidden">
                             <div className="flex border-b theme-border">
-                                {(['layers', 'properties', 'osint'] as const).map(tab => (
+                                {(['layers', 'properties', 'overlays', 'osint'] as const).map(tab => (
                                     <button key={tab} onClick={() => setSidebarTab(tab)}
                                         className={`flex-1 px-2 py-1.5 text-xs transition-colors ${sidebarTab === tab ? 'text-emerald-400 border-b-2 border-emerald-400' : 'theme-text-muted hover:theme-text-primary'}`}>
-                                        {tab === 'layers' ? 'Layers' : tab === 'properties' ? 'Props' : 'OSINT'}
+                                        {tab === 'layers' ? 'Layers' : tab === 'properties' ? 'Props' : tab === 'overlays' ? 'Ref' : 'OSINT'}
                                     </button>
                                 ))}
                             </div>
@@ -561,24 +662,82 @@ const CartoglyphPane = ({
                                     <div className="text-xs theme-text-muted text-center mt-8"><Navigation size={24} className="mx-auto mb-2 opacity-50" /><p>Select a feature</p></div>
                                 )}
 
+                                {sidebarTab === 'overlays' && (
+                                    <div className="space-y-3">
+                                        <p className="text-[10px] theme-text-muted">Toggle reference layers from Natural Earth, OpenStreetMap, and other open data sources.</p>
+                                        {Object.entries(
+                                            Object.entries(REFERENCE_LAYERS).reduce((acc, [k, v]) => {
+                                                (acc[v.category] = acc[v.category] || []).push([k, v]);
+                                                return acc;
+                                            }, {} as Record<string, [string, any][]>)
+                                        ).map(([category, layers]) => (
+                                            <div key={category}>
+                                                <span className="text-[10px] theme-text-muted uppercase tracking-wider font-medium">{category}</span>
+                                                <div className="mt-1 space-y-0.5">
+                                                    {layers.map(([key, layer]: [string, any]) => (
+                                                        <label key={key} className="flex items-center gap-2 px-1.5 py-1 rounded hover:theme-bg-tertiary cursor-pointer text-xs">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={activeOverlays.has(key)}
+                                                                onChange={() => setActiveOverlays(prev => {
+                                                                    const next = new Set(prev);
+                                                                    if (next.has(key)) next.delete(key); else next.add(key);
+                                                                    return next;
+                                                                })}
+                                                                className="accent-emerald-500"
+                                                            />
+                                                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: layer.style?.color || layer.style?.fillColor || '#666' }} />
+                                                            <span className="theme-text-primary">{layer.name}</span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {activeOverlays.size > 0 && (
+                                            <button onClick={() => setActiveOverlays(new Set())} className="text-[10px] text-red-400 hover:text-red-300">Clear all overlays</button>
+                                        )}
+                                    </div>
+                                )}
+
                                 {sidebarTab === 'osint' && (
                                     <div className="space-y-3">
-                                        <div>
-                                            <label className="text-[10px] theme-text-muted block mb-1">Source</label>
-                                            <div className="flex gap-1">
-                                                <button onClick={() => setOsintType('nominatim')} className={`flex-1 px-2 py-1 text-xs rounded ${osintType === 'nominatim' ? 'bg-emerald-600 text-white' : 'theme-bg-tertiary theme-text-muted'}`}>Nominatim</button>
-                                                <button onClick={() => setOsintType('overpass')} className={`flex-1 px-2 py-1 text-xs rounded ${osintType === 'overpass' ? 'bg-emerald-600 text-white' : 'theme-bg-tertiary theme-text-muted'}`}>Overpass</button>
+                                        <p className="text-[10px] theme-text-muted">Toggle OSM data layers for current viewport. Auto-refreshes when you pan.</p>
+
+                                        {/* OSINT toggleable layers by category */}
+                                        {Object.entries(
+                                            Object.entries(OSINT_PRESETS).reduce((acc, [k, v]) => {
+                                                (acc[v.category] = acc[v.category] || []).push([k, v]);
+                                                return acc;
+                                            }, {} as Record<string, [string, any][]>)
+                                        ).map(([category, items]) => (
+                                            <div key={category}>
+                                                <span className="text-[10px] theme-text-muted uppercase tracking-wider font-medium">{category}</span>
+                                                <div className="mt-1 space-y-0.5">
+                                                    {items.map(([key, preset]: [string, any]) => (
+                                                        <label key={key} className="flex items-center gap-2 px-1.5 py-1 rounded hover:theme-bg-tertiary cursor-pointer text-xs">
+                                                            <input type="checkbox" checked={osintVisible.has(key)} onChange={() => toggleOsintLayer(key)} className="accent-emerald-500" />
+                                                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: preset.color }} />
+                                                            <span className="theme-text-primary flex-1">{preset.label}</span>
+                                                            {osintLoading.has(key) && <span className="text-[9px] text-emerald-400 animate-pulse">loading</span>}
+                                                            {osintCache[key] && <span className="text-[9px] theme-text-muted">{osintCache[key].results.length}</span>}
+                                                        </label>
+                                                    ))}
+                                                </div>
                                             </div>
-                                        </div>
-                                        <div>
-                                            <label className="text-[10px] theme-text-muted block mb-1">{osintType === 'nominatim' ? 'Search query' : 'Tag (key=value)'}</label>
+                                        ))}
+
+                                        {osintVisible.size > 0 && (
+                                            <button onClick={() => { setOsintVisible(new Set()); }} className="text-[10px] text-red-400 hover:text-red-300">Clear all OSINT layers</button>
+                                        )}
+
+                                        <div className="border-t theme-border pt-2">
+                                            <label className="text-[10px] theme-text-muted block mb-1">Custom Overpass query</label>
                                             <div className="flex gap-1">
                                                 <input type="text" value={osintQuery} onChange={(e) => setOsintQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && fetchOSINT()}
-                                                    placeholder={osintType === 'nominatim' ? 'hospitals in Berlin' : 'amenity=hospital'}
+                                                    placeholder="amenity=hospital"
                                                     className="flex-1 px-2 py-1 text-xs theme-bg-tertiary theme-text-primary border theme-border rounded focus:outline-none focus:border-emerald-500" />
-                                                <button onClick={fetchOSINT} disabled={isOsintLoading} className="px-2 py-1 text-xs bg-emerald-600 text-white rounded disabled:opacity-50">{isOsintLoading ? '...' : 'Fetch'}</button>
+                                                <button onClick={() => fetchOSINT()} disabled={isOsintLoading} className="px-2 py-1 text-xs bg-emerald-600 text-white rounded disabled:opacity-50">{isOsintLoading ? '...' : 'Fetch'}</button>
                                             </div>
-                                            {osintType === 'overpass' && <p className="text-[10px] theme-text-muted mt-1">Searches within current map view. Examples: amenity=hospital, building=yes, highway=primary</p>}
                                         </div>
                                         {osintResults.length > 0 && (
                                             <div>
@@ -621,6 +780,12 @@ const CartoglyphPane = ({
                         selectedFeatureId={selectedFeatureId}
                         onSelectFeature={setSelectedFeatureId}
                         mapRef={mapRef}
+                        activeOverlays={activeOverlays}
+                        osintLayers={Array.from(osintVisible).filter(k => osintCache[k]).map(k => ({
+                            key: k,
+                            color: OSINT_PRESETS[k]?.color || '#f59e0b',
+                            markers: osintCache[k].results,
+                        }))}
                     />
                 </div>
             )}
