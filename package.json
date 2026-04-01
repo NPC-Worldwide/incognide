@@ -10,7 +10,6 @@
     "dist/assets/",
     "src/",
     "assets/icon.png"
-    
   ],
   "scripts": {
     "generate-icons": "electron-icon-builder --input=./assets/icon.png --output=./build",
@@ -42,11 +41,46 @@
       "output": "dist-electron"
     },
     "fileAssociations": [
-    {"ext": "pdf", "name": "PDF Document"},
-    {"ext": ["txt", "md"], "name": "Text Document"},
-    {"ext": ["png", "jpg", "jpeg", "gif", "svg"], "name": "Image"},
-    {"ext": ["mp4", "avi", "mkv"], "name": "Video"},
-    {"ext": ["js", "ts", "py", "html", "css", "json"], "name": "Code"}
+      {
+        "ext": "pdf",
+        "name": "PDF Document"
+      },
+      {
+        "ext": [
+          "txt",
+          "md"
+        ],
+        "name": "Text Document"
+      },
+      {
+        "ext": [
+          "png",
+          "jpg",
+          "jpeg",
+          "gif",
+          "svg"
+        ],
+        "name": "Image"
+      },
+      {
+        "ext": [
+          "mp4",
+          "avi",
+          "mkv"
+        ],
+        "name": "Video"
+      },
+      {
+        "ext": [
+          "js",
+          "ts",
+          "py",
+          "html",
+          "css",
+          "json"
+        ],
+        "name": "Code"
+      }
     ],
     "files": [
       "dist/**/*",
@@ -216,7 +250,7 @@
     "mammoth": "^1.11.0",
     "node-cron": "^4.2.1",
     "node-fetch": "^2.7.0",
-    "npcts": "^0.1.15",
+    "npcts": "^0.1.16",
     "npm": "^11.3.0",
     "os": "^0.1.2",
     "path": "^0.12.7",

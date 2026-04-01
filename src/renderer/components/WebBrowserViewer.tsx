@@ -654,20 +654,8 @@ const WebBrowserViewer = memo(({
                             } else if (key === 'x' && !e.shiftKey) {
                                 document.execCommand('cut');
                             } else if (key === 'v' && !e.shiftKey) {
-                                // For paste, try the Clipboard API first (async),
-                                // fall back to execCommand
-                                if (navigator.clipboard && navigator.clipboard.readText) {
-                                    navigator.clipboard.readText().then(function(text) {
-                                        var active = document.activeElement;
-                                        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) {
-                                            document.execCommand('insertText', false, text);
-                                        }
-                                    }).catch(function() {
-                                        document.execCommand('paste');
-                                    });
-                                } else {
-                                    document.execCommand('paste');
-                                }
+                                // Paste is handled by before-input-event -> webview.paste()
+                                // Do NOT also paste here or it will double-paste
                             } else if (key === 'a' && !e.shiftKey) {
                                 document.execCommand('selectAll');
                             }
