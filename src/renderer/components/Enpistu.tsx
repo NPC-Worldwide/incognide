@@ -950,6 +950,29 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         };
     }, []);
 
+    // Listen for file open from OS (double-click, open-with, CLI file arg)
+    useEffect(() => {
+        const api = window as any;
+        if (!api.api?.onOpenFileFromOS) return;
+
+        const unsubscribe = api.api.onOpenFileFromOS((data: { filePath: string; contentType: string }) => {
+            if (data?.filePath) {
+                console.log('[FILE-OPEN] Opening file from OS:', data.filePath, 'as', data.contentType);
+                const newPaneId = generateId();
+                contentDataRef.current[newPaneId] = {
+                    contentType: data.contentType,
+                    contentId: data.filePath,
+                    title: getFileName(data.filePath) || 'File'
+                };
+                addPaneOrTab(newPaneId);
+            }
+        });
+
+        return () => {
+            if (unsubscribe) unsubscribe();
+        };
+    }, []);
+
     // Menu bar event handlers - use refs to access latest function versions
     useEffect(() => {
         const api = window as any;

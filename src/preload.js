@@ -195,6 +195,12 @@ readDocxContent: (filePath) =>
         return () => ipcRenderer.removeListener('open-url-in-browser', handler);
     },
 
+    onOpenFileFromOS: (callback) => {
+        const handler = (_, data) => callback(data);
+        ipcRenderer.on('open-file-from-os', handler);
+        return () => ipcRenderer.removeListener('open-file-from-os', handler);
+    },
+
     onOpenFolderPicker: (callback) => {
         const handler = () => callback();
         ipcRenderer.on('open-folder-picker', handler);
