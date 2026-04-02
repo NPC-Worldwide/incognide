@@ -3428,6 +3428,7 @@ const renderGitPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return (
         <GitPane
             nodeId={nodeId}
+            currentPath={currentPath}
             gitStatus={gitStatus}
             gitModalTab={gitModalTab}
             gitDiffContent={gitDiffContent}
