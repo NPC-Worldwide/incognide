@@ -50,6 +50,8 @@ import PicViewer from './PicViewer';
 import StlViewer from './StlViewer';
 import MindMapViewer from './MindMapViewer';
 import CartoglyphIcon from './CartoglyphIcon';
+import RadioTowerIcon from './RadioTowerIcon';
+import { RadioPane } from 'npcts';
 import ZipViewer from './ZipViewer';
 import Scherzo from './Scherzo';
 import DiskUsageAnalyzer from './DiskUsageAnalyzer';
@@ -3265,6 +3267,17 @@ const renderCartoglyphPane = useCallback(({ nodeId }) => {
     );
 }, [rootLayoutNode, closeContentPane]);
 
+// Render Radio pane
+const renderRadioPane = useCallback(({ nodeId }: { nodeId: string }) => {
+    return (
+        <RadioPane
+            onClose={() => closeContentPane?.(nodeId, findNodePath?.(rootLayoutNode, nodeId) || [])}
+            fetchFn={(url: string, options?: any) => (window as any).api?.proxyFetch?.(url, options)}
+            listPortsFn={() => (window as any).api?.listSerialPorts?.()}
+        />
+    );
+}, [rootLayoutNode, closeContentPane]);
+
 // Render DataLabeler pane (for pane-based viewing)
 const renderDataLabelerPane = useCallback(({ nodeId }) => {
     return (
@@ -4108,6 +4121,13 @@ const renderMessageContextMenu = () => null;
     const createCartoglyphPane = useCallback(async () => {
         const newPaneId = generateId();
         contentDataRef.current[newPaneId] = { contentType: 'cartoglyph', contentId: 'cartoglyph' };
+        addPaneOrTab(newPaneId);
+    }, []);
+
+    // Create Radio pane
+    const createRadioPane = useCallback(async () => {
+        const newPaneId = generateId();
+        contentDataRef.current[newPaneId] = { contentType: 'radio', contentId: 'radio' };
         addPaneOrTab(newPaneId);
     }, []);
 
@@ -7576,6 +7596,7 @@ const paneRenderers = useMemo(() => ({
     stl: renderStlViewer,
     mindmap: renderMindMapViewer,
     cartoglyph: renderCartoglyphPane,
+    radio: renderRadioPane,
     zip: renderZipViewer,
     'data-labeler': renderDataLabelerPane,
     'graph-viewer': renderGraphViewerPane,
@@ -7610,7 +7631,7 @@ const paneRenderers = useMemo(() => ({
     renderChatView, renderFileEditor, renderTerminalView, renderPdfViewer,
     renderCsvViewer, renderDocxViewer, renderBrowserViewer, renderPptxViewer,
     renderLatexViewer, renderNotebookViewer, renderExpViewer, renderPicViewer, renderStlViewer,
-    renderMindMapViewer, renderCartoglyphPane, renderZipViewer, renderDataLabelerPane, renderGraphViewerPane,
+    renderMindMapViewer, renderCartoglyphPane, renderRadioPane, renderZipViewer, renderDataLabelerPane, renderGraphViewerPane,
     renderBrowserGraphPane, renderDataDashPane, renderDBToolPane, renderNPCTeamPane,
     renderJinxPane, renderTeamManagementPane, renderMcpManagerPane, renderSkillsManagerPane, renderSettingsPane, renderPhotoViewerPane,
     renderScherzoPane, renderLibraryViewerPane, renderHelpPane, renderGitPane,
@@ -8552,6 +8573,7 @@ const renderMainContent = () => {
                         <button onClick={() => createPhotoViewerPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Vixynt" data-tutorial="vixynt-button"><Image size={18} /></button>
                         <button onClick={() => createScherzoPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Scherzo" data-tutorial="scherzo-button"><Music size={18} /></button>
                         <button onClick={() => createCartoglyphPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Cartoglyph" data-tutorial="cartoglyph-button"><CartoglyphIcon size={18} /></button>
+                        <button onClick={() => createRadioPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Radio" data-tutorial="radio-button"><RadioTowerIcon size={18} /></button>
                     </>
                 ) : (
                     <div className="relative">
@@ -8570,6 +8592,7 @@ const renderMainContent = () => {
                                     <button onClick={() => { createPhotoViewerPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><Image size={14} /> Vixynt</button>
                                     <button onClick={() => { createScherzoPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><Music size={14} /> Scherzo</button>
                                     <button onClick={() => { createCartoglyphPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><CartoglyphIcon size={14} /> Cartoglyph</button>
+                                    <button onClick={() => { createRadioPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><RadioTowerIcon size={14} /> Radio</button>
                                 </div>
                             </>
                         )}

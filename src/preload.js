@@ -6,6 +6,8 @@ const BACKEND_PORT = process.env.INCOGNIDE_PORT || DEFAULT_PORT;
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
 
 contextBridge.exposeInMainWorld('api', {
+proxyFetch: (url, options) => ipcRenderer.invoke('proxy-fetch', url, options),
+listSerialPorts: () => ipcRenderer.invoke('list-serial-ports'),
 textPredict: (data) => ipcRenderer.invoke('text-predict', data),
 
 readCsvContent: (filePath) =>

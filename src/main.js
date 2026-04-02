@@ -2297,6 +2297,38 @@ registerAll({
   NPCSH_BASE,
 });
 
+// Generic proxy fetch — bypasses CORS for renderer requests to external APIs
+ipcMain.handle('proxy-fetch', async (_event, url, options = {}) => {
+  try {
+    const resp = await fetch(url, {
+      method: options.method || 'GET',
+      headers: options.headers || {},
+      body: options.body || undefined,
+    });
+    const contentType = resp.headers.get('content-type') || '';
+    let data;
+    if (contentType.includes('json')) {
+      data = await resp.json();
+    } else {
+      data = await resp.text();
+    }
+    return { ok: resp.ok, status: resp.status, data };
+  } catch (err) {
+    return { ok: false, status: 0, error: err.message };
+  }
+});
+
+// List serial ports (for radio connections)
+ipcMain.handle('list-serial-ports', async () => {
+  try {
+    const { SerialPort } = require('serialport');
+    const ports = await SerialPort.list();
+    return ports.map(p => ({ path: p.path, manufacturer: p.manufacturer, vendorId: p.vendorId, productId: p.productId }));
+  } catch (err) {
+    return [];
+  }
+});
+
 ipcMain.handle('open-new-window', async (event, initialPath, options) => {
   if (initialPath) {
     // Normalize for comparison (strip trailing slashes)

@@ -3,19 +3,36 @@ import {
     Save, Download, Upload, Plus, Trash2, X, Eye, Edit2, Layers,
     Search, Navigation, Ruler, FileJson, Globe, MapPin,
     ChevronDown, ChevronRight, EyeOff, Route, Hexagon, Circle,
-    LocateFixed, Copy, Network, Map as MapIcon
+    LocateFixed, Copy, Network, Map as MapIcon, BookOpen
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+
+// Hide Leaflet attribution watermark
+const leafletStyle = document.createElement('style');
+leafletStyle.textContent = '.leaflet-control-attribution { display: none !important; }';
+document.head.appendChild(leafletStyle);
 import type {
     GISProject, GeoFeature, MapLayer, DrawMode, GISMapViewProps,
     MindMapData
 } from 'npcts';
 import {
     GISMapView, featuresToGeoJSON, geoJSONToFeatures,
-    BASEMAPS, LAYER_COLORS, DEFAULT_PROJECT, REFERENCE_LAYERS,
+    BASEMAPS, LAYER_COLORS, DEFAULT_PROJECT, REFERENCE_LAYERS, TILE_OVERLAYS,
     MindMapViewer as NpctsMindMapViewer
 } from 'npcts';
+import { demoMaps } from './cartoglyphLibrary';
+
+// ---- Proxy fetch through Electron main process (bypasses CORS) ----
+async function proxyFetch(url: string, options?: any): Promise<Response> {
+    const api = (window as any).api;
+    if (api?.proxyFetch) {
+        const result = await api.proxyFetch(url, options);
+        const data = typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
+        return new Response(data, { status: result.status, headers: { 'content-type': 'application/json' } });
+    }
+    return fetch(url, options);
+}
 
 // ---- Legacy .mapx conversion ----
 
@@ -78,6 +95,7 @@ const CartoglyphPane = ({
     const [isSaving, setIsSaving] = useState(false);
     const [sidebarTab, setSidebarTab] = useState<'layers' | 'properties' | 'osint' | 'overlays'>('layers');
     const [activeOverlays, setActiveOverlays] = useState<Set<string>>(new Set());
+    const [activeTileOverlays, setActiveTileOverlays] = useState<Set<string>>(new Set());
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [activeLayerId, setActiveLayerId] = useState('default');
 
@@ -101,6 +119,7 @@ const CartoglyphPane = ({
     const [showExportMenu, setShowExportMenu] = useState(false);
     const [showBasemapMenu, setShowBasemapMenu] = useState(false);
     const [showImportMenu, setShowImportMenu] = useState(false);
+    const [showSamplesMenu, setShowSamplesMenu] = useState(false);
 
     // Feature editing
     const [editingFeatureName, setEditingFeatureName] = useState<string | null>(null);
@@ -147,7 +166,7 @@ const CartoglyphPane = ({
             const tagFilter = parts[1] ? `["${parts[0]}"="${parts[1]}"]` : `["${parts[0]}"]`;
             const s = bounds.getSouth(), w = bounds.getWest(), n = bounds.getNorth(), e = bounds.getEast();
             const q = `[out:json][timeout:25];(node${tagFilter}(${s},${w},${n},${e});way${tagFilter}(${s},${w},${n},${e}););out center body 200;`;
-            const resp = await fetch('https://overpass-api.de/api/interpreter', {
+            const resp = await proxyFetch('https://overpass-api.de/api/interpreter', {
                 method: 'POST',
                 body: `data=${encodeURIComponent(q)}`,
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -299,7 +318,7 @@ const CartoglyphPane = ({
         if (!searchQuery.trim()) return;
         setIsSearching(true);
         try {
-            const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=8`, {
+            const resp = await proxyFetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=8`, {
                 headers: { 'User-Agent': 'Incognide-Cartoglyph/1.0' },
             });
             setSearchResults(await resp.json());
@@ -337,7 +356,7 @@ const CartoglyphPane = ({
         setOsintResults([]);
         try {
             if (t === 'nominatim') {
-                const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=20&addressdetails=1`, {
+                const resp = await proxyFetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=20&addressdetails=1`, {
                     headers: { 'User-Agent': 'Incognide-Cartoglyph/1.0' },
                 });
                 const data = await resp.json();
@@ -356,7 +375,7 @@ const CartoglyphPane = ({
                 const val = parts[1]?.trim();
                 const tagFilter = val ? `["${key}"="${val}"]` : `["${key}"]`;
                 const query = `[out:json][timeout:25];(node${tagFilter}(${s},${w},${n},${e});way${tagFilter}(${s},${w},${n},${e}););out center body 50;`;
-                const resp = await fetch('https://overpass-api.de/api/interpreter', {
+                const resp = await proxyFetch('https://overpass-api.de/api/interpreter', {
                     method: 'POST',
                     body: `data=${encodeURIComponent(query)}`,
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -399,17 +418,24 @@ const CartoglyphPane = ({
         try {
             if (ext === 'geojson' || ext === 'json') {
                 features = geoJSONToFeatures(JSON.parse(text), newLayerId, layerColor);
-            } else if (ext === 'kml') {
+            } else if (ext === 'kml' || ext === 'kmz') {
                 features = geoJSONToFeatures(await parseKML(text), newLayerId, layerColor);
-            } else if (ext === 'csv') {
+            } else if (ext === 'gpx') {
+                const { gpx: gpxParser } = await import('@tmcw/togeojson');
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(text, 'text/xml');
+                const geojson = gpxParser(doc);
+                features = geoJSONToFeatures(geojson, newLayerId, layerColor);
+            } else if (ext === 'csv' || ext === 'tsv') {
                 const lines = text.trim().split('\n');
-                const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+                const sep = ext === 'tsv' ? '\t' : ',';
+                const headers = lines[0].split(sep).map(h => h.trim().toLowerCase());
                 const latIdx = headers.findIndex(h => ['lat', 'latitude', 'y'].includes(h));
                 const lngIdx = headers.findIndex(h => ['lng', 'lon', 'longitude', 'x'].includes(h));
                 const nameIdx = headers.findIndex(h => ['name', 'label', 'title'].includes(h));
                 if (latIdx >= 0 && lngIdx >= 0) {
                     features = lines.slice(1).map((line, i) => {
-                        const cols = line.split(',').map(c => c.trim());
+                        const cols = line.split(sep).map(c => c.trim());
                         const lat = parseFloat(cols[latIdx]), lng = parseFloat(cols[lngIdx]);
                         if (isNaN(lat) || isNaN(lng)) return null;
                         return { id: `csv_${Date.now()}_${i}`, type: 'marker' as const, name: nameIdx >= 0 ? cols[nameIdx] : `Point ${i + 1}`, coordinates: [lat, lng] as [number, number], color: layerColor, visible: true, layerId: newLayerId, properties: Object.fromEntries(headers.map((h, hi) => [h, cols[hi]])) };
@@ -504,7 +530,7 @@ const CartoglyphPane = ({
                                 <button onClick={handleSearch} disabled={isSearching} className="p-1 theme-hover rounded theme-text-muted"><Search size={14} /></button>
                             </div>
                             {searchResults.length > 0 && (
-                                <div className="absolute right-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-50 max-h-60 overflow-y-auto w-80">
+                                <div className="absolute right-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[10000] max-h-60 overflow-y-auto w-80">
                                     {searchResults.map((r: any, i: number) => (
                                         <div key={i} className="flex items-center gap-1 px-2 py-1.5 hover:theme-bg-tertiary text-xs border-b theme-border last:border-0">
                                             <button onClick={() => goToResult(r)} className="flex-1 text-left theme-text-primary truncate">{r.display_name}</button>
@@ -516,34 +542,81 @@ const CartoglyphPane = ({
                         </div>
                         <div className="h-4 w-px theme-border-color bg-current opacity-30" />
 
-                        {/* Basemap */}
+                        {/* Samples */}
                         <div className="relative">
-                            <button onClick={() => setShowBasemapMenu(!showBasemapMenu)} className="p-1.5 theme-hover rounded theme-text-muted" title="Basemap"><Globe size={14} /></button>
-                            {showBasemapMenu && (
+                            <button onClick={() => setShowSamplesMenu(!showSamplesMenu)} className="p-1.5 theme-hover rounded theme-text-muted" title="Sample Maps"><BookOpen size={14} /></button>
+                            {showSamplesMenu && (
                                 <>
-                                    <div className="fixed inset-0 z-40" onMouseDown={() => setShowBasemapMenu(false)} />
-                                    <div className="absolute right-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-50 py-1 min-w-[140px]">
-                                        {Object.entries(BASEMAPS).map(([key, bm]) => (
-                                            <button key={key} onClick={() => { updateProject(prev => ({ ...prev, basemap: key })); setShowBasemapMenu(false); }}
-                                                className={`flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs transition-colors ${project.basemap === key ? 'text-emerald-400 theme-bg-tertiary' : 'theme-text-primary hover:theme-bg-tertiary'}`}>{bm.name}</button>
-                                        ))}
+                                    <div className="fixed inset-0 z-[9999]" onMouseDown={() => setShowSamplesMenu(false)} />
+                                    <div className="absolute right-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[10000] py-1 min-w-[280px] max-h-80 overflow-y-auto">
+                                        <div className="px-3 py-1 text-[10px] theme-text-muted border-b theme-border">Load a sample map</div>
+                                        {['travel', 'history', 'nature', 'infrastructure', 'intelligence'].map(cat => {
+                                            const maps = demoMaps.filter(m => m.category === cat);
+                                            if (maps.length === 0) return null;
+                                            return (
+                                                <div key={cat}>
+                                                    <div className="px-3 pt-2 pb-0.5 text-[10px] theme-text-muted uppercase tracking-wider">{cat}</div>
+                                                    {maps.map(m => (
+                                                        <button key={m.title} onClick={() => {
+                                                            setProject(m.project);
+                                                            setHasChanges(false);
+                                                            setShowSamplesMenu(false);
+                                                            setTimeout(() => mapRef.current?.setView(m.center, m.zoom), 100);
+                                                        }} className="flex flex-col px-3 py-1.5 w-full text-left hover:theme-bg-tertiary">
+                                                            <span className="text-xs theme-text-primary font-medium">{m.title}</span>
+                                                            <span className="text-[10px] theme-text-muted">{m.description} &middot; {m.featureCount} features</span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 </>
                             )}
                         </div>
+
 
                         {/* Import */}
                         <div className="relative">
                             <button onClick={() => setShowImportMenu(!showImportMenu)} className="p-1.5 theme-hover rounded theme-text-muted" title="Import"><Upload size={14} /></button>
                             {showImportMenu && (
                                 <>
-                                    <div className="fixed inset-0 z-40" onMouseDown={() => setShowImportMenu(false)} />
-                                    <div className="absolute right-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-50 py-1 min-w-[160px]">
-                                        <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary"><FileJson size={12} /> GeoJSON / KML / CSV / MAPX</button>
+                                    <div className="fixed inset-0 z-[9999]" onMouseDown={() => setShowImportMenu(false)} />
+                                    <div className="absolute right-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[10000] py-1 min-w-[260px]">
+                                        <div className="px-3 py-1 text-[10px] theme-text-muted border-b theme-border">Import from file</div>
+                                        <button onClick={() => { fileInputRef.current?.setAttribute('accept', '.geojson,.json'); fileInputRef.current?.click(); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary">
+                                            <FileJson size={12} className="text-blue-400" /> <div><span className="font-medium">GeoJSON</span><br /><span className="text-[10px] theme-text-muted">Points, lines, polygons — ArcGIS/QGIS standard</span></div>
+                                        </button>
+                                        <button onClick={() => { fileInputRef.current?.setAttribute('accept', '.kml,.kmz'); fileInputRef.current?.click(); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary">
+                                            <Globe size={12} className="text-green-400" /> <div><span className="font-medium">KML</span><br /><span className="text-[10px] theme-text-muted">Google Earth, Google Maps export</span></div>
+                                        </button>
+                                        <button onClick={() => { fileInputRef.current?.setAttribute('accept', '.gpx'); fileInputRef.current?.click(); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary">
+                                            <Route size={12} className="text-orange-400" /> <div><span className="font-medium">GPX</span><br /><span className="text-[10px] theme-text-muted">GPS tracks — Garmin, Strava, AllTrails</span></div>
+                                        </button>
+                                        <button onClick={() => { fileInputRef.current?.setAttribute('accept', '.csv,.tsv'); fileInputRef.current?.click(); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary">
+                                            <Layers size={12} className="text-yellow-400" /> <div><span className="font-medium">CSV / TSV</span><br /><span className="text-[10px] theme-text-muted">Spreadsheet with lat, lng, name columns</span></div>
+                                        </button>
+                                        <button onClick={() => { fileInputRef.current?.setAttribute('accept', '.mapx'); fileInputRef.current?.click(); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary">
+                                            <MapIcon size={12} className="text-emerald-400" /> <div><span className="font-medium">MAPX Project</span><br /><span className="text-[10px] theme-text-muted">Cartoglyph native project file</span></div>
+                                        </button>
+                                        <div className="border-t theme-border my-1" />
+                                        <div className="px-3 py-1 text-[10px] theme-text-muted border-b theme-border">Download template</div>
+                                        <button onClick={() => {
+                                            const csv = 'name,lat,lng,description\nExample Point,40.7128,-74.0060,New York City\nAnother Point,34.0522,-118.2437,Los Angeles\n';
+                                            const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'template_points.csv'; a.click(); setShowImportMenu(false);
+                                        }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-muted hover:theme-bg-tertiary">
+                                            <Download size={12} /> CSV template (points)
+                                        </button>
+                                        <button onClick={() => {
+                                            const geojson = JSON.stringify({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [-74.006, 40.7128] }, properties: { name: 'New York City' } }, { type: 'Feature', geometry: { type: 'LineString', coordinates: [[-74.006, 40.7128], [-118.2437, 34.0522]] }, properties: { name: 'NYC to LA' } }] }, null, 2);
+                                            const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([geojson], { type: 'application/json' })); a.download = 'template.geojson'; a.click(); setShowImportMenu(false);
+                                        }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-muted hover:theme-bg-tertiary">
+                                            <Download size={12} /> GeoJSON template (point + line)
+                                        </button>
                                     </div>
                                 </>
                             )}
-                            <input ref={fileInputRef} type="file" accept=".geojson,.json,.kml,.csv,.mapx,.gpx" className="hidden" onChange={handleFileImport} />
+                            <input ref={fileInputRef} type="file" accept=".geojson,.json,.kml,.csv,.mapx,.gpx,.kmz,.tsv" className="hidden" onChange={handleFileImport} />
                         </div>
 
                         {/* Export */}
@@ -551,11 +624,47 @@ const CartoglyphPane = ({
                             <button onClick={() => setShowExportMenu(!showExportMenu)} className="p-1.5 theme-hover rounded theme-text-muted" title="Export"><Download size={14} /></button>
                             {showExportMenu && (
                                 <>
-                                    <div className="fixed inset-0 z-40" onMouseDown={() => setShowExportMenu(false)} />
-                                    <div className="absolute right-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-50 py-1 min-w-[160px]">
-                                        <button onClick={exportGeoJSON} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary"><FileJson size={12} /> GeoJSON</button>
-                                        <button onClick={exportKML} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary"><Globe size={12} /> KML</button>
-                                        <button onClick={exportProject} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary"><Save size={12} /> MAPX Project</button>
+                                    <div className="fixed inset-0 z-[9999]" onMouseDown={() => setShowExportMenu(false)} />
+                                    <div className="absolute right-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[10000] py-1 min-w-[260px]">
+                                        <div className="px-3 py-1 text-[10px] theme-text-muted border-b theme-border">Export {project.features.length} features</div>
+                                        <button onClick={exportGeoJSON} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary">
+                                            <FileJson size={12} className="text-blue-400" /> <div><span className="font-medium">GeoJSON</span><br /><span className="text-[10px] theme-text-muted">Universal GIS format — open in ArcGIS, QGIS, Mapbox</span></div>
+                                        </button>
+                                        <button onClick={exportKML} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary">
+                                            <Globe size={12} className="text-green-400" /> <div><span className="font-medium">KML</span><br /><span className="text-[10px] theme-text-muted">Google Earth / Google Maps</span></div>
+                                        </button>
+                                        <button onClick={() => {
+                                            const markers = project.features.filter(f => f.visible && f.type === 'marker');
+                                            const lines = ['name,lat,lng,type,color,layer'];
+                                            markers.forEach(f => {
+                                                const c = f.coordinates as [number, number];
+                                                lines.push(`"${f.name.replace(/"/g, '""')}",${c[0]},${c[1]},${f.type},${f.color},${f.layerId}`);
+                                            });
+                                            const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' })); a.download = `${project.name.replace(/\s+/g, '_')}.csv`; a.click(); setShowExportMenu(false);
+                                        }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary">
+                                            <Layers size={12} className="text-yellow-400" /> <div><span className="font-medium">CSV</span><br /><span className="text-[10px] theme-text-muted">Spreadsheet — markers only, with coordinates</span></div>
+                                        </button>
+                                        <button onClick={() => {
+                                            const geojson = featuresToGeoJSON(project.features.filter(f => f.visible));
+                                            let gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Cartoglyph">\n`;
+                                            geojson.features.forEach((f: any) => {
+                                                if (f.geometry.type === 'Point') {
+                                                    gpx += `  <wpt lat="${f.geometry.coordinates[1]}" lon="${f.geometry.coordinates[0]}"><name>${f.properties?.name || ''}</name></wpt>\n`;
+                                                } else if (f.geometry.type === 'LineString') {
+                                                    gpx += `  <trk><name>${f.properties?.name || ''}</name><trkseg>\n`;
+                                                    f.geometry.coordinates.forEach((c: number[]) => { gpx += `    <trkpt lat="${c[1]}" lon="${c[0]}"/>\n`; });
+                                                    gpx += `  </trkseg></trk>\n`;
+                                                }
+                                            });
+                                            gpx += `</gpx>`;
+                                            const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([gpx], { type: 'application/gpx+xml' })); a.download = `${project.name.replace(/\s+/g, '_')}.gpx`; a.click(); setShowExportMenu(false);
+                                        }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary">
+                                            <Route size={12} className="text-orange-400" /> <div><span className="font-medium">GPX</span><br /><span className="text-[10px] theme-text-muted">GPS exchange — Garmin, hiking apps, Strava</span></div>
+                                        </button>
+                                        <div className="border-t theme-border my-1" />
+                                        <button onClick={exportProject} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary">
+                                            <MapIcon size={12} className="text-emerald-400" /> <div><span className="font-medium">MAPX Project</span><br /><span className="text-[10px] theme-text-muted">Full project — layers, features, settings</span></div>
+                                        </button>
                                     </div>
                                 </>
                             )}
@@ -664,7 +773,22 @@ const CartoglyphPane = ({
 
                                 {sidebarTab === 'overlays' && (
                                     <div className="space-y-3">
-                                        <p className="text-[10px] theme-text-muted">Toggle reference layers from Natural Earth, OpenStreetMap, and other open data sources.</p>
+                                        <p className="text-[10px] theme-text-muted">Toggle tile overlays and reference layers.</p>
+
+                                        {/* Tile overlays */}
+                                        <div>
+                                            <span className="text-[10px] theme-text-muted uppercase tracking-wider font-medium">tile overlays</span>
+                                            <div className="mt-1 space-y-0.5">
+                                                {Object.entries(TILE_OVERLAYS).map(([key, overlay]) => (
+                                                    <label key={key} className="flex items-center gap-2 px-1.5 py-1 rounded hover:theme-bg-tertiary cursor-pointer text-xs">
+                                                        <input type="checkbox" checked={activeTileOverlays.has(key)}
+                                                            onChange={() => setActiveTileOverlays(prev => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; })}
+                                                            className="accent-emerald-500" />
+                                                        <span className="theme-text-primary">{overlay.name}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
                                         {Object.entries(
                                             Object.entries(REFERENCE_LAYERS).reduce((acc, [k, v]) => {
                                                 (acc[v.category] = acc[v.category] || []).push([k, v]);
@@ -694,7 +818,7 @@ const CartoglyphPane = ({
                                             </div>
                                         ))}
                                         {activeOverlays.size > 0 && (
-                                            <button onClick={() => setActiveOverlays(new Set())} className="text-[10px] text-red-400 hover:text-red-300">Clear all overlays</button>
+                                            <button onClick={() => { setActiveOverlays(new Set()); setActiveTileOverlays(new Set()); }} className="text-[10px] text-red-400 hover:text-red-300">Clear all overlays</button>
                                         )}
                                     </div>
                                 )}
@@ -781,6 +905,7 @@ const CartoglyphPane = ({
                         onSelectFeature={setSelectedFeatureId}
                         mapRef={mapRef}
                         activeOverlays={activeOverlays}
+                        activeTileOverlays={activeTileOverlays}
                         osintLayers={Array.from(osintVisible).filter(k => osintCache[k]).map(k => ({
                             key: k,
                             color: OSINT_PRESETS[k]?.color || '#f59e0b',

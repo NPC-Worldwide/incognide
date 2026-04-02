@@ -3,7 +3,7 @@ import {
     BarChart3, Loader, X, ServerCrash, MessageSquare, Bot,
     ChevronDown, ChevronRight, Database, Table, LineChart, BarChart as BarChartIcon,
     Star, Trash2, Play, Copy, Download, Plus, Settings2, Edit, Terminal, Globe,
-    GitBranch, Brain, Zap, Clock, ChevronsRight, Repeat, ListFilter, File as FileIcon,
+    GitBranch, Brain, Zap, Radio, Clock, ChevronsRight, Repeat, ListFilter, File as FileIcon,
     Image as ImageIcon, Tag, Folder, Users, Settings, Images, BookOpen,
     FolderCog, HardDrive, Tags, Network, LayoutDashboard, Share2, Maximize2, Minimize2,
     FlaskConical, HelpCircle, Search, Music, Save, ZoomIn, ZoomOut, RotateCw, RefreshCw,
@@ -1210,6 +1210,9 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
         } else if (contentType === 'cartoglyph') {
             headerIcon = <Globe size={14} className="text-emerald-400" />;
             headerTitle = 'Cartoglyph';
+        } else if (contentType === 'radio') {
+            headerIcon = <Radio size={14} className="text-orange-400" />;
+            headerTitle = 'Radio';
         } else if (contentType === 'markdown-preview') {
             headerIcon = <FileIcon size={14} className="text-blue-400" />;
             headerTitle = `Preview: ${getFileName(contentId) || 'Markdown'}`;
