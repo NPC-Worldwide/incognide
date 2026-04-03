@@ -1473,7 +1473,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
             if (executionMode !== 'tool_agent') return;
             setMcpToolsLoading(true);
             setMcpToolsError(null);
-            const res = await window.api.listMcpTools({ serverPath: mcpServerPath, currentPath });
+            const res = await window.api.listMcpTools({ serverPath: mcpServerPath, currentPath: currentPath || '~' });
             setMcpToolsLoading(false);
             if (res.error) {
                 setMcpToolsError(res.error);
@@ -7304,8 +7304,8 @@ const setPaneExecutionMode = useCallback(async (paneId: string, mode: string) =>
     }
 
     // Load MCP servers when switching to tool_agent mode
-    if (mode === 'tool_agent' && currentPath) {
-        const res = await window.api.getMcpServers(currentPath);
+    if (mode === 'tool_agent') {
+        const res = await window.api.getMcpServers(currentPath || '~');
         if (res && Array.isArray(res.servers)) {
             setAvailableMcpServers(res.servers);
             if (!res.servers.find(s => s.serverPath === mcpServerPath) && res.servers.length > 0) {
