@@ -5817,6 +5817,8 @@ ${contextPrompt}`;
                         localStorage.removeItem(LAST_ACTIVE_PATH_KEY);
                     }
                 }
+                // Still fetch models even without a workspace folder
+                await fetchModels(null, setModelsLoading, setModelsError, setAvailableModels);
                 setLoading(false);
                 return;
             }
