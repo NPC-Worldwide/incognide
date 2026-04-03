@@ -1097,6 +1097,8 @@ app.whenReady().then(async () => {
       PYTHONUNBUFFERED: '1',
       PYTHONIOENCODING: 'utf-8',
       HOME: os.homedir(),
+      NPCSH_BASE: path.join(os.homedir(), '.npcsh'),
+      INCOGNIDE_DATA_DIR: path.join(os.homedir(), '.npcsh', 'incognide', 'data'),
     };
 
     backendProcess = spawnBackendProcess(_backendPath, _spawnArgs, 'bundled', _backendEnv);

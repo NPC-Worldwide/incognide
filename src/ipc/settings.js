@@ -1703,7 +1703,7 @@ function register(ctx) {
 
   ipcMain.handle('saveGlobalSettings', async (event, { global_settings, global_vars }) => {
     try {
-        await fetch(`${BACKEND_URL}/api/settings/global`, {
+        const response = await fetch(`${BACKEND_URL}/api/settings/global`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
@@ -1712,10 +1712,15 @@ function register(ctx) {
                 global_vars: global_vars,
             })
         });
+        if (!response.ok) {
+            const text = await response.text();
+            console.error(`[SETTINGS] Save failed: HTTP ${response.status} — ${text}`);
+            return { error: `Backend returned ${response.status}: ${text}` };
+        }
         return { success: true };
     } catch (err) {
-        console.error('Error saving global settings in main:', err);
-        return { error: err.message };
+        console.error('[SETTINGS] Error saving global settings:', err);
+        return { error: `Could not reach backend to save settings: ${err.message}` };
     }
   });
 
@@ -1946,33 +1951,48 @@ function register(ctx) {
     try {
         const homeDir = os.homedir();
 
-        const defaultDirs = [
+        const appData = process.env.APPDATA || path.join(homeDir, 'AppData', 'Roaming');
+        const localAppData = process.env.LOCALAPPDATA || path.join(homeDir, 'AppData', 'Local');
 
+        const defaultDirs = [
+            // HuggingFace
             path.join(homeDir, '.cache', 'huggingface', 'hub'),
 
+            // LM Studio — macOS/Linux paths
             path.join(homeDir, '.cache', 'lm-studio', 'models'),
             path.join(homeDir, 'lm-studio', 'models'),
             path.join(homeDir, '.lmstudio', 'models'),
             path.join(homeDir, '.local', 'share', 'lmstudio', 'models'),
+            // LM Studio — Windows paths
+            path.join(appData, 'LM Studio', 'models'),
+            path.join(localAppData, 'LM Studio', 'models'),
+            path.join(homeDir, '.lmstudio', 'models'),
 
+            // llama.cpp
             path.join(homeDir, 'llama.cpp', 'models'),
             path.join(homeDir, '.llama.cpp', 'models'),
             path.join(homeDir, '.local', 'share', 'llama.cpp', 'models'),
 
+            // KoboldCPP
             path.join(homeDir, 'koboldcpp', 'models'),
             path.join(homeDir, '.koboldcpp', 'models'),
             path.join(homeDir, '.local', 'share', 'koboldcpp', 'models'),
 
+            // Ollama
             path.join(homeDir, '.ollama', 'models', 'blobs'),
 
+            // GPT4All
             path.join(homeDir, '.cache', 'gpt4all'),
             path.join(homeDir, '.local', 'share', 'gpt4all'),
+            path.join(localAppData, 'nomic.ai', 'GPT4All'),
 
+            // npcsh / generic
             path.join(homeDir, '.npcsh', 'models', 'gguf'),
             path.join(homeDir, '.npcsh', 'models'),
             path.join(homeDir, 'models'),
             path.join(homeDir, 'Models'),
 
+            // oobabooga
             path.join(homeDir, 'text-generation-webui', 'models'),
         ];
 
@@ -2013,14 +2033,18 @@ function register(ctx) {
                                             path: fullPath,
                                             size: stats.size,
                                             modified_at: stats.mtime.toISOString(),
-                                            source: dir.includes('.cache/huggingface') ? 'HuggingFace' :
-                                                    dir.includes('lm-studio') || dir.includes('lmstudio') ? 'LM Studio' :
-                                                    dir.includes('llama.cpp') ? 'llama.cpp' :
-                                                    dir.includes('koboldcpp') ? 'KoboldCPP' :
-                                                    dir.includes('ollama') ? 'Ollama' :
-                                                    dir.includes('gpt4all') ? 'GPT4All' :
-                                                    dir.includes('text-generation-webui') ? 'oobabooga' :
-                                                    'Local'
+                                            source: (() => {
+                                                    // Normalize to forward slashes for matching (Windows uses backslashes)
+                                                    const d = dir.replace(/\\/g, '/').toLowerCase();
+                                                    if (d.includes('huggingface')) return 'HuggingFace';
+                                                    if (d.includes('lm-studio') || d.includes('lmstudio')) return 'LM Studio';
+                                                    if (d.includes('llama.cpp')) return 'llama.cpp';
+                                                    if (d.includes('koboldcpp')) return 'KoboldCPP';
+                                                    if (d.includes('ollama')) return 'Ollama';
+                                                    if (d.includes('gpt4all')) return 'GPT4All';
+                                                    if (d.includes('text-generation-webui')) return 'oobabooga';
+                                                    return 'Local';
+                                                })()
                                         });
                                     }
                                 }
