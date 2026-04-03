@@ -302,12 +302,12 @@ export const loadAvailableNPCs = async (
     setNpcsError: (error: string | null) => void,
     setAvailableNPCs: (npcs: any[]) => void
 ) => {
-    if (!currentPath) return [];
+    const pathToUse = currentPath || '~';
     setNpcsLoading(true);
     setNpcsError(null);
     try {
 
-        const projectResponse = await window.api.getNPCTeamProject(currentPath);
+        const projectResponse = await window.api.getNPCTeamProject(pathToUse);
         const projectNPCs = projectResponse.npcs || [];
 
         const globalResponse = await window.api.getNPCTeamGlobal('npcsh');
