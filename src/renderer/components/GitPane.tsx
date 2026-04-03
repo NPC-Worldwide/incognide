@@ -178,7 +178,8 @@ const GitPane: React.FC<GitPaneProps> = ({
                         {tab.charAt(0).toUpperCase() + tab.slice(1)}
                     </button>
                 ))}
-                <button
+                {/* GitForest tab — hidden until network has more peers */}
+                {false && <button
                     onClick={() => setShowForest(true)}
                     className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
                         showForest
@@ -187,7 +188,7 @@ const GitPane: React.FC<GitPaneProps> = ({
                     }`}
                 >
                     <Globe size={13} /> Forest
-                </button>
+                </button>}
             </div>
 
             <div className="flex-1 overflow-auto p-4">
