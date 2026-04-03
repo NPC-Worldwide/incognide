@@ -1954,46 +1954,49 @@ function register(ctx) {
         const appData = process.env.APPDATA || path.join(homeDir, 'AppData', 'Roaming');
         const localAppData = process.env.LOCALAPPDATA || path.join(homeDir, 'AppData', 'Local');
 
+        // Scan well-known model directories across all platforms
+        // Windows: %USERPROFILE% = C:\Users\<name>, %APPDATA% = ...\AppData\Roaming, %LOCALAPPDATA% = ...\AppData\Local
+        // macOS/Linux: ~ = /Users/<name> or /home/<name>
+        const ollamaModels = process.env.OLLAMA_MODELS || path.join(homeDir, '.ollama', 'models');
+        const hfCache = process.env.HF_HOME || process.env.HUGGINGFACE_HUB_CACHE || path.join(homeDir, '.cache', 'huggingface', 'hub');
+
         const defaultDirs = [
-            // HuggingFace
-            path.join(homeDir, '.cache', 'huggingface', 'hub'),
+            // HuggingFace — all platforms use ~/.cache/huggingface/hub
+            hfCache,
 
-            // LM Studio — macOS/Linux paths
+            // LM Studio — all platforms use ~/.cache/lm-studio/models
             path.join(homeDir, '.cache', 'lm-studio', 'models'),
-            path.join(homeDir, 'lm-studio', 'models'),
-            path.join(homeDir, '.lmstudio', 'models'),
-            path.join(homeDir, '.local', 'share', 'lmstudio', 'models'),
-            // LM Studio — Windows paths
-            path.join(appData, 'LM Studio', 'models'),
-            path.join(localAppData, 'LM Studio', 'models'),
             path.join(homeDir, '.lmstudio', 'models'),
 
-            // llama.cpp
+            // Ollama — all platforms use ~/.ollama/models (env: OLLAMA_MODELS)
+            path.join(ollamaModels, 'blobs'),
+
+            // GPT4All — Linux: ~/.local/share/gpt4all, Windows: %LOCALAPPDATA%/nomic.ai/GPT4All
+            path.join(homeDir, '.local', 'share', 'gpt4all'),
+            path.join(localAppData, 'nomic.ai', 'GPT4All', 'models'),
+            path.join(localAppData, 'nomic.ai', 'GPT4All'),
+
+            // Jan.ai — ~/jan/models
+            path.join(homeDir, 'jan', 'models'),
+
+            // Msty — %APPDATA%/Msty/models
+            path.join(appData, 'Msty', 'models'),
+
+            // llama.cpp — relative to install, check common spots
             path.join(homeDir, 'llama.cpp', 'models'),
-            path.join(homeDir, '.llama.cpp', 'models'),
             path.join(homeDir, '.local', 'share', 'llama.cpp', 'models'),
 
             // KoboldCPP
             path.join(homeDir, 'koboldcpp', 'models'),
-            path.join(homeDir, '.koboldcpp', 'models'),
-            path.join(homeDir, '.local', 'share', 'koboldcpp', 'models'),
 
-            // Ollama
-            path.join(homeDir, '.ollama', 'models', 'blobs'),
-
-            // GPT4All
-            path.join(homeDir, '.cache', 'gpt4all'),
-            path.join(homeDir, '.local', 'share', 'gpt4all'),
-            path.join(localAppData, 'nomic.ai', 'GPT4All'),
+            // oobabooga
+            path.join(homeDir, 'text-generation-webui', 'models'),
 
             // npcsh / generic
             path.join(homeDir, '.npcsh', 'models', 'gguf'),
             path.join(homeDir, '.npcsh', 'models'),
             path.join(homeDir, 'models'),
             path.join(homeDir, 'Models'),
-
-            // oobabooga
-            path.join(homeDir, 'text-generation-webui', 'models'),
         ];
 
         const dirsToScan = directory
@@ -2041,8 +2044,10 @@ function register(ctx) {
                                                     if (d.includes('llama.cpp')) return 'llama.cpp';
                                                     if (d.includes('koboldcpp')) return 'KoboldCPP';
                                                     if (d.includes('ollama')) return 'Ollama';
-                                                    if (d.includes('gpt4all')) return 'GPT4All';
+                                                    if (d.includes('gpt4all') || d.includes('nomic.ai')) return 'GPT4All';
                                                     if (d.includes('text-generation-webui')) return 'oobabooga';
+                                                    if (d.includes('/jan/')) return 'Jan';
+                                                    if (d.includes('msty')) return 'Msty';
                                                     return 'Local';
                                                 })()
                                         });
