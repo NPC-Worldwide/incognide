@@ -2939,7 +2939,7 @@ const handleAICodeAction = useCallback(async (type: string, selectedText: string
         conversationId: conversation.id,
         model: currentModel,
         provider: currentProvider,
-        executionMode: 'chat'
+        executionMode: 'tool_agent'
     });
 }, [currentModel, currentProvider, currentPath]);
 
@@ -4548,7 +4548,7 @@ const handleBrowserDialogNavigate = (url) => {
         const targetPaneId = options?.paneId ?? activeContentPaneId;
 
         // Get pane-specific execution mode and selectedJinx
-        const paneExecMode = targetPaneId ? (contentDataRef.current[targetPaneId]?.executionMode || 'chat') : 'chat';
+        const paneExecMode = targetPaneId ? (contentDataRef.current[targetPaneId]?.executionMode || 'tool_agent') : 'tool_agent';
         const paneSelectedJinx = targetPaneId ? (contentDataRef.current[targetPaneId]?.selectedJinx || null) : null;
 
         const isJinxMode = paneExecMode !== 'chat' && paneSelectedJinx;
@@ -5817,9 +5817,23 @@ ${contextPrompt}`;
                         localStorage.removeItem(LAST_ACTIVE_PATH_KEY);
                     }
                 }
-                // Still fetch models and NPCs even without a workspace folder
+                // Still fetch models, NPCs, and MCP tools even without a workspace folder
                 await fetchModels(null, setModelsLoading, setModelsError, setAvailableModels);
                 await loadAvailableNPCs(null, setNpcsLoading, setNpcsError, setAvailableNPCs);
+                // Auto-start MCP server and load tools for agent mode
+                try {
+                    const mcpRes = await window.api.getMcpServers('~');
+                    if (mcpRes?.servers?.length > 0) {
+                        setAvailableMcpServers(mcpRes.servers);
+                        const incognideServer = mcpRes.servers.find((s: any) => s.serverPath?.includes('incognide'));
+                        if (incognideServer) setMcpServerPath(incognideServer.serverPath);
+                    }
+                    const toolsRes = await window.api.listMcpTools({ serverPath: mcpServerPath, currentPath: '~' });
+                    if (toolsRes?.tools) {
+                        setAvailableMcpTools(toolsRes.tools);
+                        setSelectedMcpTools(toolsRes.tools.map((t: any) => t.function?.name).filter(Boolean));
+                    }
+                } catch {}
                 setLoading(false);
                 return;
             }
@@ -6152,7 +6166,7 @@ ${contextPrompt}`;
             }
             case 'pycharm': {
                 const editor = mkPane('editor', { isUntitled: true });
-                const chat = mkPane('chat', { executionMode: 'chat' });
+                const chat = mkPane('chat', { executionMode: 'tool_agent' });
                 const term = mkPane('terminal');
                 activeId = editor.id;
                 layout = mkSplit('horizontal', [60, 40], [
@@ -6175,7 +6189,7 @@ ${contextPrompt}`;
             case 'matlab': {
                 const editor = mkPane('editor', { isUntitled: true });
                 const term = mkPane('terminal');
-                const chat = mkPane('chat', { executionMode: 'chat' });
+                const chat = mkPane('chat', { executionMode: 'tool_agent' });
                 activeId = editor.id;
                 layout = mkSplit('horizontal', [70, 30], [
                     mkSplit('vertical', [65, 35], [editor, term]),
@@ -6196,7 +6210,7 @@ ${contextPrompt}`;
             }
             case 'cursor': {
                 const editor = mkPane('editor', { isUntitled: true });
-                const chat = mkPane('chat', { executionMode: 'chat' });
+                const chat = mkPane('chat', { executionMode: 'tool_agent' });
                 activeId = editor.id;
                 layout = mkSplit('horizontal', [60, 40], [editor, chat]);
                 break;
@@ -6223,7 +6237,7 @@ ${contextPrompt}`;
             }
             case 'research': {
                 const browser = mkPane('browser');
-                const chat = mkPane('chat', { executionMode: 'chat' });
+                const chat = mkPane('chat', { executionMode: 'tool_agent' });
                 const term = mkPane('terminal');
                 activeId = browser.id;
                 layout = mkSplit('vertical', [70, 30], [
@@ -6235,7 +6249,7 @@ ${contextPrompt}`;
             case 'data-science': {
                 const editor = mkPane('editor', { isUntitled: true });
                 const term = mkPane('terminal');
-                const chat = mkPane('chat', { executionMode: 'chat' });
+                const chat = mkPane('chat', { executionMode: 'tool_agent' });
                 activeId = editor.id;
                 layout = mkSplit('vertical', [60, 40], [
                     mkSplit('horizontal', [50, 50], [editor, term]),
@@ -7324,7 +7338,7 @@ const getPaneSelectedJinx = useCallback((paneId: string) => {
 
 const setPaneSelectedJinx = useCallback((paneId: string, jinx: any) => {
     if (!contentDataRef.current[paneId]) {
-        contentDataRef.current[paneId] = { executionMode: 'chat', selectedJinx: jinx, showJinxDropdown: false };
+        contentDataRef.current[paneId] = { executionMode: 'tool_agent', selectedJinx: jinx, showJinxDropdown: false };
     } else {
         contentDataRef.current[paneId].selectedJinx = jinx;
     }
@@ -7339,7 +7353,7 @@ const getPaneShowJinxDropdown = useCallback((paneId: string) => {
 
 const setPaneShowJinxDropdown = useCallback((paneId: string, show: boolean) => {
     if (!contentDataRef.current[paneId]) {
-        contentDataRef.current[paneId] = { executionMode: 'chat', selectedJinx: null, showJinxDropdown: show };
+        contentDataRef.current[paneId] = { executionMode: 'tool_agent', selectedJinx: null, showJinxDropdown: show };
     } else {
         contentDataRef.current[paneId].showJinxDropdown = show;
     }
