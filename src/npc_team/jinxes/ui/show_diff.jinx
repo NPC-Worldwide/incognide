@@ -1,4 +1,4 @@
-name: show_diff
+jinx_name: show_diff
 description: Show a diff comparison between two text contents
 parameters:
   original:

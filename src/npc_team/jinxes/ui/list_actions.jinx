@@ -1,4 +1,4 @@
-name: list_actions
+jinx_name: list_actions
 description: List all available studio actions
 steps:
   - action: list_actions

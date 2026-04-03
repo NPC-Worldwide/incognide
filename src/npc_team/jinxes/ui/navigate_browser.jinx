@@ -1,4 +1,4 @@
-name: navigate_browser
+jinx_name: navigate_browser
 description: Navigate a browser pane to a URL
 parameters:
   paneId:
