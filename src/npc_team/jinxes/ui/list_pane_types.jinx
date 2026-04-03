@@ -1,0 +1,4 @@
+name: list_pane_types
+description: List all available pane types that can be opened
+steps:
+  - action: list_pane_types

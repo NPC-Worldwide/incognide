@@ -1,0 +1,10 @@
+name: request_approval
+description: Request user approval before performing an action
+parameters:
+  message:
+    type: string
+    description: The approval message to display
+    required: true
+steps:
+  - action: confirm
+    message: "{{ message }}"
