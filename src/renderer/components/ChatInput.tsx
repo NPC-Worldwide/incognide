@@ -373,10 +373,10 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     }, [disableThinking]);
 
     const [useKgSearch, setUseKgSearch] = useState(() => {
-        try { return localStorage.getItem('incognide-use-kg-search') === 'true'; } catch { return false; }
+        try { const v = localStorage.getItem('incognide-use-kg-search'); return v === null ? true : v === 'true'; } catch { return true; }
     });
     const [useMemorySearch, setUseMemorySearch] = useState(() => {
-        try { return localStorage.getItem('incognide-use-memory-search') === 'true'; } catch { return false; }
+        try { const v = localStorage.getItem('incognide-use-memory-search'); return v === null ? true : v === 'true'; } catch { return true; }
     });
 
     useEffect(() => {
