@@ -20,21 +20,23 @@ steps:
       if not _action:
           output = 'Error: action is required'
       else:
-          _port = 5437
-          try:
-              import socket as _sock
-              for _p in [5337, 5437]:
-                  try:
-                      _s = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
-                      _s.settimeout(0.3)
-                      _s.connect(('127.0.0.1', _p))
-                      _s.close()
-                      _port = _p
-                      break
-                  except Exception:
-                      pass
-          except Exception:
-              pass
+          _port = int(os.environ.get('INCOGNIDE_PORT', 0))
+          if not _port:
+              _port = 5437
+              try:
+                  import socket as _sock
+                  for _p in [5437, 5337]:
+                      try:
+                          _s = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
+                          _s.settimeout(0.3)
+                          _s.connect(('127.0.0.1', _p))
+                          _s.close()
+                          _port = _p
+                          break
+                      except Exception:
+                          pass
+              except Exception:
+                  pass
           try:
               _r = requests.post(f'http://127.0.0.1:{_port}/api/studio/action',
                   json={'action': _action, 'args': _args}, timeout=15)
