@@ -29,8 +29,27 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
-        run: npm install
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          npm install
+          npm install @rollup/rollup-linux-x64-gnu --save-optional
+        env:
+          npm_config_optional: true
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          npm install
+          npm install @rollup/rollup-win32-x64-msvc --save-optional
+        env:
+          npm_config_optional: true
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          npm install
+          npm install @rollup/rollup-darwin-arm64 --save-optional
         env:
           npm_config_optional: true
 
