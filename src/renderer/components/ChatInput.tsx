@@ -373,10 +373,10 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     }, [disableThinking]);
 
     const [useKgSearch, setUseKgSearch] = useState(() => {
-        try { return localStorage.getItem('incognide-use-kg-search') === 'true'; } catch { return false; }
+        try { const v = localStorage.getItem('incognide-use-kg-search'); return v === null ? true : v === 'true'; } catch { return true; }
     });
     const [useMemorySearch, setUseMemorySearch] = useState(() => {
-        try { return localStorage.getItem('incognide-use-memory-search') === 'true'; } catch { return false; }
+        try { const v = localStorage.getItem('incognide-use-memory-search'); return v === null ? true : v === 'true'; } catch { return true; }
     });
 
     useEffect(() => {
@@ -1078,7 +1078,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                             value={localInput}
                             onChange={(e) => setLocalInput(e.target.value)}
                             onKeyDown={(e) => {
-                                if (!isStreaming && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                                     e.preventDefault();
 
                                     const shouldBroadcast = broadcastMode && onBroadcast && selectedModels.length > 0 && selectedNPCs.length > 0 && (selectedModels.length > 1 || selectedNPCs.length > 1);
@@ -1194,7 +1194,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                                                     placeholder={placeholder}
                                                                     className="w-full text-sm bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 focus:outline-none focus:border-purple-500/50 focus:bg-white/10 transition-all resize-none placeholder-gray-500"
                                                                     rows={3}
-                                                                    disabled={isStreaming}
+                                                                    disabled={false}
                                                                 />
                                                             ) : (
                                                                 <input
@@ -1208,7 +1208,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                                                     }))}
                                                                     placeholder={placeholder}
                                                                     className="w-full text-sm bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 focus:outline-none focus:border-purple-500/50 focus:bg-white/10 transition-all placeholder-gray-500"
-                                                                    disabled={isStreaming}
+                                                                    disabled={false}
                                                                 />
                                                             )}
                                                         </div>
@@ -1335,13 +1335,13 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                 })}
                                 <button
                                     onClick={toggleRecording}
-                                    disabled={isStreaming}
+                                    disabled={false}
                                     className={`p-1 rounded theme-hover opacity-50 group-hover:opacity-100 ${isStreaming ? 'opacity-30' : ''} ${isRecording ? 'text-red-500 animate-pulse' : usedVoiceInput ? 'text-green-400' : 'theme-text-muted hover:theme-text-primary'}`}
                                     title={isRecording ? "Stop recording" : usedVoiceInput ? "Voice mode - response will be spoken" : "Start voice input"}
                                 >
                                     {isRecording ? <MicOff size={16} /> : <Mic size={16} />}
                                 </button>
-                                <button onClick={handleAttachFileClick} disabled={isStreaming} className={`p-1 theme-text-muted hover:theme-text-primary rounded theme-hover opacity-50 group-hover:opacity-100 ${isStreaming ? 'opacity-30' : ''}`} title="Attach file">
+                                <button onClick={handleAttachFileClick} disabled={false} className={`p-1 theme-text-muted hover:theme-text-primary rounded theme-hover opacity-50 group-hover:opacity-100 `} title="Attach file">
                                     <Paperclip size={16} />
                                 </button>
                             </div>
@@ -1510,7 +1510,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                                                             <input
                                                                                 type="checkbox"
                                                                                 checked={checked}
-                                                                                disabled={isStreaming}
+                                                                                disabled={false}
                                                                                 onClick={(e) => e.stopPropagation()}
                                                                                 onChange={() => {
                                                                                     setSelectedMcpTools((prev: string[]) =>
@@ -1816,7 +1816,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                                             [selectedJinx.name]: { ...prev[selectedJinx.name], [inp.name]: e.target.value }
                                                         }))}
                                                         className="w-full text-xs theme-bg-tertiary border border-purple-500/20 rounded px-2 py-1.5 theme-text-primary focus:border-purple-500/50 focus:outline-none"
-                                                        disabled={isStreaming}
+                                                        disabled={false}
                                                     />
                                                 </div>
                                             );

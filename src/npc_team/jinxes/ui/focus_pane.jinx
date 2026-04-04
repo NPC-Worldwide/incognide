@@ -1,0 +1,10 @@
+jinx_name: focus_pane
+description: Focus an existing pane by its ID, bringing it to the foreground
+parameters:
+  paneId:
+    type: string
+    description: The ID of the pane to focus
+    required: true
+steps:
+  - action: focus_pane
+    paneId: "{{ paneId }}"

@@ -4,6 +4,7 @@ import {
     CreditCard, Shield, CheckCircle, Key, Lock, Unlock
 } from 'lucide-react';
 import { useAuth } from './AuthProvider';
+import { useSync } from '../hooks/useSync';
 
 interface AccountPaneProps {
     nodeId: string;
@@ -11,6 +12,7 @@ interface AccountPaneProps {
 
 const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
     const auth = useAuth();
+    const { syncStatus, lastSyncTime, pendingChanges, triggerSync, syncFrequency, setSyncFrequency } = useSync();
     const [passphrase, setPassphrase] = useState('');
     const [passphraseError, setPassphraseError] = useState('');
     const [settingUp, setSettingUp] = useState(false);
@@ -102,7 +104,7 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                                 </div>
                                 <p className="text-sm mb-1">Not signed in</p>
                                 <p className="text-xs theme-text-muted mb-4">Sign in to encrypt and sync your data across devices.</p>
-                                <button onClick={() => (window as any).__clerk_open_sign_in?.()} className="inline-flex items-center gap-2 px-5 py-2.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium">
+                                <button onClick={() => auth.openSignIn()} className="inline-flex items-center gap-2 px-5 py-2.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium">
                                     <LogIn size={16} /> Sign In
                                 </button>
                             </div>
@@ -187,7 +189,10 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                                     <p className="text-xs theme-text-muted">{auth.user?.isPremium ? 'Full access, 10GB sync storage' : '200MB sync storage'}</p>
                                 </div>
                             </div>
-                            <button className="flex items-center gap-2 px-4 py-2 text-sm theme-bg-tertiary hover:bg-white/10 rounded-lg transition-colors">
+                            <button
+                                onClick={() => auth.openUserProfile()}
+                                className="flex items-center gap-2 px-4 py-2 text-sm theme-bg-tertiary hover:bg-white/10 rounded-lg transition-colors"
+                            >
                                 <CreditCard size={14} /> {auth.user?.isPremium ? 'Manage' : 'Upgrade'}
                             </button>
                         </div>
@@ -204,8 +209,16 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                             <div className="flex items-center gap-3">
                                 {auth.isEncryptionReady ? <Cloud size={18} className="text-blue-400" /> : <CloudOff size={18} className="theme-text-muted" />}
                                 <div>
-                                    <p className="text-sm">{auth.isEncryptionReady ? 'Sync enabled' : 'Unlock encryption to sync'}</p>
-                                    <p className="text-xs theme-text-muted">Conversations, bookmarks, history, and memories</p>
+                                    <p className="text-sm">
+                                        {syncStatus === 'syncing' ? 'Syncing...' :
+                                         syncStatus === 'synced' ? 'Synced' :
+                                         syncStatus === 'error' ? 'Sync error' :
+                                         syncStatus === 'pending' ? `${pendingChanges} pending` :
+                                         auth.isEncryptionReady ? 'Sync enabled' : 'Unlock encryption to sync'}
+                                    </p>
+                                    <p className="text-xs theme-text-muted">
+                                        {lastSyncTime ? `Last synced ${lastSyncTime.toLocaleString()}` : 'Conversations, bookmarks, history, and memories'}
+                                    </p>
                                 </div>
                             </div>
                             {auth.device && (
@@ -214,9 +227,27 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                                 </div>
                             )}
                             {auth.isEncryptionReady && (
-                                <button className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300">
-                                    <RefreshCw size={12} /> Sync Now
-                                </button>
+                                <div className="flex items-center gap-3 border-t theme-border pt-3">
+                                    <button
+                                        onClick={() => triggerSync()}
+                                        disabled={syncStatus === 'syncing'}
+                                        className={`flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 ${syncStatus === 'syncing' ? 'opacity-50' : ''}`}
+                                    >
+                                        <RefreshCw size={12} className={syncStatus === 'syncing' ? 'animate-spin' : ''} /> Sync Now
+                                    </button>
+                                    <select
+                                        value={syncFrequency}
+                                        onChange={(e) => setSyncFrequency(e.target.value as any)}
+                                        className="text-xs theme-bg-tertiary theme-text-primary rounded px-2 py-1 border theme-border"
+                                    >
+                                        <option value="1m">Every 1m</option>
+                                        <option value="10m">Every 10m</option>
+                                        <option value="30m">Every 30m</option>
+                                        <option value="1h">Every 1h</option>
+                                        <option value="24h">Every 24h</option>
+                                        <option value="manual">Manual only</option>
+                                    </select>
+                                </div>
                             )}
                         </div>
                     </div>

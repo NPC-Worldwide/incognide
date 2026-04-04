@@ -13,7 +13,6 @@ interface TutorialStep {
 }
 
 const TUTORIAL_STEPS: TutorialStep[] = [
-
     {
         selector: '[data-tutorial="sidebar"]',
         title: 'Sidebar',
@@ -28,11 +27,10 @@ const TUTORIAL_STEPS: TutorialStep[] = [
         paths: ['no-ai', 'cloud-ai', 'local-ai'],
         position: 'bottom',
     },
-
     {
         selector: '[data-tutorial="creation-tiles"]',
         title: 'Quick Create',
-        description: 'Four creation buttons for the things you use most. Click for the default action, use the dropdown arrow for more options. Right-click any option to set it as the default.',
+        description: 'Three creation buttons for the things you use most. Click for the default action, use the dropdown arrow for more options. Right-click any option to set it as the default.',
         paths: ['no-ai', 'cloud-ai', 'local-ai'],
         position: 'bottom',
     },
@@ -40,13 +38,6 @@ const TUTORIAL_STEPS: TutorialStep[] = [
         selector: '[data-tutorial="terminal-button"]',
         title: 'Terminal',
         description: 'Open a system terminal, or use the dropdown for npcsh (AI-powered shell). Terminals run in panes alongside your other work.',
-        paths: ['no-ai', 'cloud-ai', 'local-ai'],
-        position: 'bottom',
-    },
-    {
-        selector: '[data-tutorial="notebook-button"]',
-        title: 'Notebooks & Experiments',
-        description: 'Create Jupyter-style notebooks for interactive coding with inline outputs. Or create experiments to run and track repeatable workflows.',
         paths: ['no-ai', 'cloud-ai', 'local-ai'],
         position: 'bottom',
     },
@@ -64,7 +55,6 @@ const TUTORIAL_STEPS: TutorialStep[] = [
         paths: ['no-ai', 'cloud-ai', 'local-ai'],
         position: 'bottom',
     },
-
     {
         selector: '[data-tutorial="file-browser"]',
         title: 'File Browser',
@@ -89,46 +79,58 @@ const TUTORIAL_STEPS: TutorialStep[] = [
     {
         selector: '[data-tutorial="browser-section"]',
         title: 'Web Browser',
-        description: 'Built-in web browser with tab management. Browse the web, save bookmarks, and view sites side-by-side with your code. Click the globe icon to open a new browser pane.',
+        description: 'Built-in web browser with tab management. Browse the web, save bookmarks, and view sites side-by-side with your code.',
         paths: ['no-ai', 'cloud-ai', 'local-ai'],
         position: 'right',
     },
-
+    {
+        selector: '[data-tutorial="search-bar"]',
+        title: 'Local Search',
+        description: 'Search your project files and conversation history. Hit Enter to open a dedicated search pane with results across your workspace.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'bottom',
+    },
+    {
+        selector: '[data-tutorial="web-search-bar"]',
+        title: 'Web Search',
+        description: 'Search the web directly from the toolbar. Uses your configured search providers to find results online.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'bottom',
+    },
     {
         selector: '[data-tutorial="vixynt-button"]',
         title: 'Vixynt — Image Studio',
-        description: 'Generate images from text prompts, edit photos with AI-powered tools, apply generative fill, and manage your image library. Supports multiple generation models and providers.',
+        description: 'Generate images from text prompts, edit photos with AI-powered tools, apply generative fill, and manage your image library.',
         paths: ['cloud-ai', 'local-ai'],
         position: 'bottom',
     },
     {
         selector: '[data-tutorial="scherzo-button"]',
         title: 'Scherzo — Audio Studio',
-        description: 'Multi-track audio editor with waveform visualization. Record, trim, mix clips, and generate audio with AI. Supports drag-and-drop clips on a timeline.',
+        description: 'Multi-track audio editor with waveform visualization. Record, trim, mix clips, and generate audio with AI.',
         paths: ['cloud-ai', 'local-ai'],
         position: 'bottom',
     },
     {
-        selector: '[data-tutorial="disk-usage-button"]',
-        title: 'Disk Usage Analyzer',
-        description: 'Visual breakdown of what\'s using space in your project. Drill into folders, identify large files, and keep your workspace lean.',
+        selector: '[data-tutorial="cartoglyph-button"]',
+        title: 'Cartoglyph — GIS Mapping',
+        description: 'Full GIS mapping pane with Leaflet. Five basemaps, drawing tools, import/export GeoJSON and KML, OSINT data from Overpass and Nominatim, reference layers from Natural Earth, and sample maps to explore.',
         paths: ['no-ai', 'cloud-ai', 'local-ai'],
         position: 'bottom',
     },
     {
-        selector: '[data-tutorial="cron-button"]',
-        title: 'Assembly Line',
-        description: 'Schedule recurring tasks with cron jobs, run persistent daemons, and manage SQL models. Assign NPC agents or jinxes to automate workflows on a schedule.',
+        selector: '[data-tutorial="radio-button"]',
+        title: 'Radio',
+        description: 'Ham radio operations pane. Repeater search via RepeaterBook, APRS tracking, live HF propagation data, QSO logging with ADIF export, serial port connection for CAT/TNC/Meshtastic, and digital mode references.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'bottom',
+    },
+    {
+        selector: '[data-tutorial="conversations"]',
+        title: 'Chat with AI Agents',
+        description: 'Chat with any model from any provider. Default mode is Agent with MCP tools connected — your agents can open panes, browse the web, and control the workspace. Send messages even while the agent is working.',
         paths: ['cloud-ai', 'local-ai'],
-        position: 'bottom',
-    },
-
-    {
-        selector: '[data-tutorial="kg-button"]',
-        title: 'Knowledge Graph',
-        description: 'Your personal knowledge base. Add concepts and facts, see how they connect. View as a force graph, table, tree, or grouped cards. Search, filter, and organize.',
-        paths: ['no-ai', 'cloud-ai', 'local-ai'],
-        position: 'top',
+        position: 'right',
     },
     {
         selector: '[data-tutorial="settings-button"]',
@@ -145,38 +147,9 @@ const TUTORIAL_STEPS: TutorialStep[] = [
         position: 'right',
     },
     {
-        selector: '[data-tutorial="dashboard-button"]',
-        title: 'Data Dashboard',
-        description: 'Visualize your data with charts and tables. Load CSVs, query databases, and build interactive dashboards from your project data.',
-        paths: ['no-ai', 'cloud-ai', 'local-ai'],
-        position: 'right',
-    },
-    {
-        selector: '[data-tutorial="search-bar"]',
-        title: 'Local Search',
-        description: 'Search your project files and conversation history. Hit Enter to open a dedicated search pane with results across your workspace.',
-        paths: ['no-ai', 'cloud-ai', 'local-ai'],
-        position: 'bottom',
-    },
-    {
-        selector: '[data-tutorial="web-search-bar"]',
-        title: 'Web Search',
-        description: 'Search the web directly from the toolbar. Uses your configured search providers to find results online — separate from the local file search next to it.',
-        paths: ['no-ai', 'cloud-ai', 'local-ai'],
-        position: 'bottom',
-    },
-
-    {
-        selector: '[data-tutorial="conversations"]',
-        title: 'Chat with AI Models',
-        description: 'Chat with any model from any provider — scoped to your current directory. History persists per project. Drag files into chat for context. Switch models and NPC agents per conversation.',
-        paths: ['cloud-ai', 'local-ai'],
-        position: 'right',
-    },
-    {
         selector: '[data-tutorial="npc-team-button"]',
         title: 'NPCs',
-        description: 'Your AI agents — each NPC has a personality, model, and specialized jinxes (tools). Ledbi (pronounced like Irish "Levi") is your default UI assistant. Add, edit, or remove NPCs to build your ideal team.',
+        description: 'Your AI agents — each NPC has a personality, model, and specialized jinxes (tools). Ledbi is your default UI assistant. Add, edit, or remove NPCs to build your ideal team.',
         paths: ['cloud-ai', 'local-ai'],
         position: 'top',
     },
@@ -190,7 +163,7 @@ const TUTORIAL_STEPS: TutorialStep[] = [
     {
         selector: '[data-tutorial="team-management-button"]',
         title: 'Team Context',
-        description: 'Configure your team\'s shared context — the forenpc, project description, databases, MCP servers, and custom key-value pairs. Manage project-level vs. global context.',
+        description: 'Configure your team\'s shared context — the forenpc, project description, databases, MCP servers, and custom key-value pairs.',
         paths: ['cloud-ai', 'local-ai'],
         position: 'top',
     },

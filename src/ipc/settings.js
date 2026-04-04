@@ -1703,7 +1703,7 @@ function register(ctx) {
 
   ipcMain.handle('saveGlobalSettings', async (event, { global_settings, global_vars }) => {
     try {
-        await fetch(`${BACKEND_URL}/api/settings/global`, {
+        const response = await fetch(`${BACKEND_URL}/api/settings/global`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
@@ -1712,10 +1712,15 @@ function register(ctx) {
                 global_vars: global_vars,
             })
         });
+        if (!response.ok) {
+            const text = await response.text();
+            console.error(`[SETTINGS] Save failed: HTTP ${response.status} — ${text}`);
+            return { error: `Backend returned ${response.status}: ${text}` };
+        }
         return { success: true };
     } catch (err) {
-        console.error('Error saving global settings in main:', err);
-        return { error: err.message };
+        console.error('[SETTINGS] Error saving global settings:', err);
+        return { error: `Could not reach backend to save settings: ${err.message}` };
     }
   });
 
@@ -1946,34 +1951,52 @@ function register(ctx) {
     try {
         const homeDir = os.homedir();
 
+        const appData = process.env.APPDATA || path.join(homeDir, 'AppData', 'Roaming');
+        const localAppData = process.env.LOCALAPPDATA || path.join(homeDir, 'AppData', 'Local');
+
+        // Scan well-known model directories across all platforms
+        // Windows: %USERPROFILE% = C:\Users\<name>, %APPDATA% = ...\AppData\Roaming, %LOCALAPPDATA% = ...\AppData\Local
+        // macOS/Linux: ~ = /Users/<name> or /home/<name>
+        const ollamaModels = process.env.OLLAMA_MODELS || path.join(homeDir, '.ollama', 'models');
+        const hfCache = process.env.HF_HOME || process.env.HUGGINGFACE_HUB_CACHE || path.join(homeDir, '.cache', 'huggingface', 'hub');
+
         const defaultDirs = [
+            // HuggingFace — all platforms use ~/.cache/huggingface/hub
+            hfCache,
 
-            path.join(homeDir, '.cache', 'huggingface', 'hub'),
-
+            // LM Studio — all platforms use ~/.cache/lm-studio/models
             path.join(homeDir, '.cache', 'lm-studio', 'models'),
-            path.join(homeDir, 'lm-studio', 'models'),
             path.join(homeDir, '.lmstudio', 'models'),
-            path.join(homeDir, '.local', 'share', 'lmstudio', 'models'),
 
+            // Ollama — all platforms use ~/.ollama/models (env: OLLAMA_MODELS)
+            path.join(ollamaModels, 'blobs'),
+
+            // GPT4All — Linux: ~/.local/share/gpt4all, Windows: %LOCALAPPDATA%/nomic.ai/GPT4All
+            path.join(homeDir, '.local', 'share', 'gpt4all'),
+            path.join(localAppData, 'nomic.ai', 'GPT4All', 'models'),
+            path.join(localAppData, 'nomic.ai', 'GPT4All'),
+
+            // Jan.ai — ~/jan/models
+            path.join(homeDir, 'jan', 'models'),
+
+            // Msty — %APPDATA%/Msty/models
+            path.join(appData, 'Msty', 'models'),
+
+            // llama.cpp — relative to install, check common spots
             path.join(homeDir, 'llama.cpp', 'models'),
-            path.join(homeDir, '.llama.cpp', 'models'),
             path.join(homeDir, '.local', 'share', 'llama.cpp', 'models'),
 
+            // KoboldCPP
             path.join(homeDir, 'koboldcpp', 'models'),
-            path.join(homeDir, '.koboldcpp', 'models'),
-            path.join(homeDir, '.local', 'share', 'koboldcpp', 'models'),
 
-            path.join(homeDir, '.ollama', 'models', 'blobs'),
+            // oobabooga
+            path.join(homeDir, 'text-generation-webui', 'models'),
 
-            path.join(homeDir, '.cache', 'gpt4all'),
-            path.join(homeDir, '.local', 'share', 'gpt4all'),
-
+            // npcsh / generic
             path.join(homeDir, '.npcsh', 'models', 'gguf'),
             path.join(homeDir, '.npcsh', 'models'),
             path.join(homeDir, 'models'),
             path.join(homeDir, 'Models'),
-
-            path.join(homeDir, 'text-generation-webui', 'models'),
         ];
 
         const dirsToScan = directory
@@ -2013,14 +2036,20 @@ function register(ctx) {
                                             path: fullPath,
                                             size: stats.size,
                                             modified_at: stats.mtime.toISOString(),
-                                            source: dir.includes('.cache/huggingface') ? 'HuggingFace' :
-                                                    dir.includes('lm-studio') || dir.includes('lmstudio') ? 'LM Studio' :
-                                                    dir.includes('llama.cpp') ? 'llama.cpp' :
-                                                    dir.includes('koboldcpp') ? 'KoboldCPP' :
-                                                    dir.includes('ollama') ? 'Ollama' :
-                                                    dir.includes('gpt4all') ? 'GPT4All' :
-                                                    dir.includes('text-generation-webui') ? 'oobabooga' :
-                                                    'Local'
+                                            source: (() => {
+                                                    // Normalize to forward slashes for matching (Windows uses backslashes)
+                                                    const d = dir.replace(/\\/g, '/').toLowerCase();
+                                                    if (d.includes('huggingface')) return 'HuggingFace';
+                                                    if (d.includes('lm-studio') || d.includes('lmstudio')) return 'LM Studio';
+                                                    if (d.includes('llama.cpp')) return 'llama.cpp';
+                                                    if (d.includes('koboldcpp')) return 'KoboldCPP';
+                                                    if (d.includes('ollama')) return 'Ollama';
+                                                    if (d.includes('gpt4all') || d.includes('nomic.ai')) return 'GPT4All';
+                                                    if (d.includes('text-generation-webui')) return 'oobabooga';
+                                                    if (d.includes('/jan/')) return 'Jan';
+                                                    if (d.includes('msty')) return 'Msty';
+                                                    return 'Local';
+                                                })()
                                         });
                                     }
                                 }

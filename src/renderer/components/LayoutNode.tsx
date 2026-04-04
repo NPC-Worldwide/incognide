@@ -3,7 +3,7 @@ import {
     BarChart3, Loader, X, ServerCrash, MessageSquare, Bot,
     ChevronDown, ChevronRight, Database, Table, LineChart, BarChart as BarChartIcon,
     Star, Trash2, Play, Copy, Download, Plus, Settings2, Edit, Terminal, Globe,
-    GitBranch, Brain, Zap, Clock, ChevronsRight, Repeat, ListFilter, File as FileIcon,
+    GitBranch, Brain, Zap, Radio, Clock, ChevronsRight, Repeat, ListFilter, File as FileIcon,
     Image as ImageIcon, Tag, Folder, Users, Settings, Images, BookOpen,
     FolderCog, HardDrive, Tags, Network, LayoutDashboard, Share2, Maximize2, Minimize2,
     FlaskConical, HelpCircle, Search, Music, Save, ZoomIn, ZoomOut, RotateCw, RefreshCw,
@@ -368,7 +368,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                     if (ext === 'ipynb') return 'notebook';
                     if (ext === 'exp') return 'exp';
                     if (['docx', 'doc'].includes(ext)) return 'docx';
-                    if (ext === 'mapx') return 'mindmap';
+                    if (['mapx', 'geojson', 'kml', 'kmz', 'gpx', 'shp'].includes(ext)) return 'cartoglyph';
                     if (ext === 'zip') return 'zip';
                     if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(ext)) return 'image';
                     if (ext === 'stl') return 'stl';
@@ -736,7 +736,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                 else if (['docx', 'doc'].includes(ext)) contentType = 'docx';
                 else if (ext === 'pptx') contentType = 'pptx';
                 else if (ext === 'tex') contentType = 'latex';
-                else if (ext === 'mindmap') contentType = 'mindmap';
+                else if (['mapx', 'geojson', 'kml', 'kmz', 'gpx', 'shp', 'mindmap'].includes(ext)) contentType = 'cartoglyph';
                 else if (ext === 'zip') contentType = 'zip';
                 else contentType = 'editor';
             } else if (comp.draggedItem.type === 'browser') {
@@ -1207,6 +1207,12 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
         } else if (contentType === 'mindmap') {
             headerIcon = <Brain size={14} className="text-rose-400" />;
             headerTitle = 'Map Document';
+        } else if (contentType === 'cartoglyph') {
+            headerIcon = <Globe size={14} className="text-emerald-400" />;
+            headerTitle = 'Cartoglyph';
+        } else if (contentType === 'radio') {
+            headerIcon = <Radio size={14} className="text-orange-400" />;
+            headerTitle = 'Radio';
         } else if (contentType === 'markdown-preview') {
             headerIcon = <FileIcon size={14} className="text-blue-400" />;
             headerTitle = `Preview: ${getFileName(contentId) || 'Markdown'}`;

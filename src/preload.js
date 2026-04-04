@@ -6,6 +6,8 @@ const BACKEND_PORT = process.env.INCOGNIDE_PORT || DEFAULT_PORT;
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
 
 contextBridge.exposeInMainWorld('api', {
+proxyFetch: (url, options) => ipcRenderer.invoke('proxy-fetch', url, options),
+listSerialPorts: () => ipcRenderer.invoke('list-serial-ports'),
 textPredict: (data) => ipcRenderer.invoke('text-predict', data),
 
 readCsvContent: (filePath) =>
@@ -138,6 +140,8 @@ readDocxContent: (filePath) =>
     getDirectoryContentsRecursive: (path) => ipcRenderer.invoke('get-directory-contents-recursive', path),
     searchFiles: (data) => ipcRenderer.invoke('search-files', data),
     searchConversations: (data) => ipcRenderer.invoke('search-conversations', data),
+    syncExportData: (data) => ipcRenderer.invoke('sync:export-data', data),
+    syncImportData: (data) => ipcRenderer.invoke('sync:import-data', data),
     analyzeDiskUsage: (path) => ipcRenderer.invoke('analyze-disk-usage', path),
     showPdf: (args) => ipcRenderer.send('show-pdf', args),
     updatePdfBounds: (bounds) => ipcRenderer.send('update-pdf-bounds', bounds),
@@ -191,6 +195,12 @@ readDocxContent: (filePath) =>
         const handler = (_, data) => callback(data);
         ipcRenderer.on('open-url-in-browser', handler);
         return () => ipcRenderer.removeListener('open-url-in-browser', handler);
+    },
+
+    onOpenFileFromOS: (callback) => {
+        const handler = (_, data) => callback(data);
+        ipcRenderer.on('open-file-from-os', handler);
+        return () => ipcRenderer.removeListener('open-file-from-os', handler);
     },
 
     onOpenFolderPicker: (callback) => {

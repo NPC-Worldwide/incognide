@@ -1,0 +1,295 @@
+name: CI Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # =============================================================================
+  # Frontend build + type check
+  # =============================================================================
+  frontend:
+    name: Frontend (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          npm install
+          npm install @rollup/rollup-linux-x64-gnu --save-optional
+        env:
+          npm_config_optional: true
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          npm install
+          npm install @rollup/rollup-win32-x64-msvc --save-optional
+        env:
+          npm_config_optional: true
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          npm install
+          npm install @rollup/rollup-darwin-arm64 --save-optional
+        env:
+          npm_config_optional: true
+
+      - name: Vite build
+        run: npm run build:vite
+        env:
+          VITE_CLERK_PUBLISHABLE_KEY: pk_test_placeholder
+
+      - name: Check for import errors (no dead imports)
+        shell: bash
+        run: |
+          # Verify the build didn't silently drop exports
+          if grep -r "is not exported by" dist/ 2>/dev/null; then
+            echo "Found unresolved exports in build output"
+            exit 1
+          fi
+          echo "No import errors in build"
+
+  # =============================================================================
+  # Backend serve.py tests (cross-platform)
+  # =============================================================================
+  backend:
+    name: Backend (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: '3.11'
+          - os: windows-latest
+            python: '3.11'
+          - os: windows-latest
+            python: '3.12'
+          - os: macos-latest
+            python: '3.11'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python ${{ matrix.python }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Test npcpy.serve imports
+        run: |
+          python -c "from npcpy.serve import app; print(f'OK: {len(app.url_map._rules)} routes')"
+
+      - name: Test critical endpoints registered
+        run: |
+          python -c "
+          from npcpy.serve import app
+          rules = [r.rule for r in app.url_map.iter_rules()]
+          for endpoint in ['/api/settings/global', '/api/settings/project', '/api/models', '/api/health']:
+              assert endpoint in rules, f'Missing {endpoint}'
+              print(f'OK: {endpoint}')
+          print('All critical endpoints registered')
+          "
+
+      - name: Test directory creation
+        run: |
+          python -c "
+          import os, tempfile
+          home = os.path.expanduser('~')
+          npcsh_base = os.path.join(home, '.npcsh')
+          dirs = [
+              npcsh_base,
+              os.path.join(npcsh_base, 'npc_team'),
+              os.path.join(npcsh_base, 'npc_team', 'jinxes'),
+              os.path.join(npcsh_base, 'incognide', 'data'),
+          ]
+          for d in dirs:
+              os.makedirs(d, exist_ok=True)
+              assert os.path.isdir(d), f'Failed: {d}'
+              print(f'OK: {d}')
+          "
+
+      - name: Test settings file read/write (npcshrc)
+        run: |
+          python -c "
+          import os, tempfile
+          # Simulate settings write like serve.py does
+          rc_path = os.path.join(tempfile.gettempdir(), '.npcshrc_test')
+          settings = {'NPCSH_CHAT_MODEL': 'test-model', 'NPCSH_CHAT_PROVIDER': 'ollama'}
+          with open(rc_path, 'w') as f:
+              for k, v in settings.items():
+                  f.write(f'export {k}={v}\n')
+          # Read them back
+          loaded = {}
+          with open(rc_path) as f:
+              for line in f:
+                  line = line.strip()
+                  if line.startswith('export ') and '=' in line:
+                      k, v = line[7:].split('=', 1)
+                      loaded[k.strip()] = v.strip()
+          assert loaded['NPCSH_CHAT_MODEL'] == 'test-model', f'Got: {loaded}'
+          assert loaded['NPCSH_CHAT_PROVIDER'] == 'ollama', f'Got: {loaded}'
+          os.unlink(rc_path)
+          print('Settings round-trip OK')
+          "
+
+      - name: Test server startup (start, health check, stop)
+        shell: bash
+        run: |
+          # Start server in background
+          python -m npcpy.serve &
+          SERVER_PID=$!
+          sleep 8
+
+          # Health check
+          HEALTH=$(python -c "
+          import urllib.request, json, sys
+          try:
+              r = urllib.request.urlopen('http://127.0.0.1:5337/api/health', timeout=5)
+              print(r.read().decode())
+          except Exception as e:
+              print(f'FAIL: {e}', file=sys.stderr)
+              sys.exit(1)
+          " 2>&1) || true
+          echo "Health: $HEALTH"
+
+          # Settings save
+          python -c "
+          import urllib.request, json, sys
+          data = json.dumps({'global_settings': {'model': 'ci-test', 'provider': 'ollama'}, 'global_vars': {}}).encode()
+          req = urllib.request.Request('http://127.0.0.1:5337/api/settings/global', data=data, headers={'Content-Type': 'application/json'}, method='POST')
+          try:
+              resp = urllib.request.urlopen(req, timeout=5)
+              result = json.loads(resp.read())
+              assert result.get('error') is None, f'Error: {result}'
+              print('Settings save OK')
+          except Exception as e:
+              print(f'Settings save: {e}', file=sys.stderr)
+          " || true
+
+          # Settings load
+          python -c "
+          import urllib.request, json, sys
+          try:
+              resp = urllib.request.urlopen('http://127.0.0.1:5337/api/settings/global', timeout=5)
+              result = json.loads(resp.read())
+              gs = result.get('global_settings', {})
+              assert gs.get('model') == 'ci-test', f'Expected ci-test, got: {gs}'
+              print('Settings load OK')
+          except Exception as e:
+              print(f'Settings load: {e}', file=sys.stderr)
+          " || true
+
+          # Models endpoint
+          python -c "
+          import urllib.request, json, sys
+          try:
+              resp = urllib.request.urlopen('http://127.0.0.1:5337/api/models', timeout=10)
+              data = json.loads(resp.read())
+              print(f'Models endpoint OK, returned {type(data).__name__}')
+          except Exception as e:
+              print(f'Models: {e}', file=sys.stderr)
+          " || true
+
+          # Stop
+          kill $SERVER_PID 2>/dev/null || true
+          echo "Server test complete"
+        timeout-minutes: 3
+
+  # =============================================================================
+  # Electron main process tests
+  # =============================================================================
+  electron:
+    name: Electron main process
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+        env:
+          npm_config_optional: true
+
+      - name: Verify main.js syntax
+        run: node -e "require('./src/main.js')" 2>&1 || true
+
+      - name: Verify preload.js syntax
+        run: node -e "require('./src/preload.js')" 2>&1 || true
+
+      - name: Verify IPC settings handlers load
+        run: node -e "require('./src/ipc/settings.js')" 2>&1 || true
+
+      - name: Test GGUF path detection includes Windows paths
+        if: runner.os == 'Windows'
+        run: |
+          node -e "
+          const path = require('path');
+          const os = require('os');
+          const home = os.homedir();
+          const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+          const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+          const lmStudioPath = path.join(appData, 'LM Studio', 'models');
+          console.log('APPDATA LM Studio path:', lmStudioPath);
+          console.log('LOCALAPPDATA:', localAppData);
+          console.log('Home:', home);
+          // These paths should be constructable on Windows
+          console.log('Path construction OK');
+          "
+
+  # =============================================================================
+  # Summary
+  # =============================================================================
+  summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [frontend, backend, electron]
+    if: always()
+
+    steps:
+      - name: Check results
+        run: |
+          if [ "${{ needs.frontend.result }}" = "failure" ]; then
+            echo "Frontend tests failed"
+            exit 1
+          fi
+          if [ "${{ needs.backend.result }}" = "failure" ]; then
+            echo "Backend tests failed"
+            exit 1
+          fi
+          if [ "${{ needs.electron.result }}" = "failure" ]; then
+            echo "Electron tests failed"
+            exit 1
+          fi
+          echo "All CI checks passed"

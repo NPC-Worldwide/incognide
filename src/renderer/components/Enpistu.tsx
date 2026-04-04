@@ -49,6 +49,9 @@ import ExpViewer from './ExpViewer';
 import PicViewer from './PicViewer';
 import StlViewer from './StlViewer';
 import MindMapViewer from './MindMapViewer';
+import CartoglyphIcon from './CartoglyphIcon';
+import RadioTowerIcon from './RadioTowerIcon';
+import { RadioPane } from 'npcts';
 import ZipViewer from './ZipViewer';
 import Scherzo from './Scherzo';
 import DiskUsageAnalyzer from './DiskUsageAnalyzer';
@@ -950,6 +953,29 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         };
     }, []);
 
+    // Listen for file open from OS (double-click, open-with, CLI file arg)
+    useEffect(() => {
+        const api = window as any;
+        if (!api.api?.onOpenFileFromOS) return;
+
+        const unsubscribe = api.api.onOpenFileFromOS((data: { filePath: string; contentType: string }) => {
+            if (data?.filePath) {
+                console.log('[FILE-OPEN] Opening file from OS:', data.filePath, 'as', data.contentType);
+                const newPaneId = generateId();
+                contentDataRef.current[newPaneId] = {
+                    contentType: data.contentType,
+                    contentId: data.filePath,
+                    title: getFileName(data.filePath) || 'File'
+                };
+                addPaneOrTab(newPaneId);
+            }
+        });
+
+        return () => {
+            if (unsubscribe) unsubscribe();
+        };
+    }, []);
+
     // Menu bar event handlers - use refs to access latest function versions
     useEffect(() => {
         const api = window as any;
@@ -1447,7 +1473,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
             if (executionMode !== 'tool_agent') return;
             setMcpToolsLoading(true);
             setMcpToolsError(null);
-            const res = await window.api.listMcpTools({ serverPath: mcpServerPath, currentPath });
+            const res = await window.api.listMcpTools({ serverPath: mcpServerPath, currentPath: currentPath || '~' });
             setMcpToolsLoading(false);
             if (res.error) {
                 setMcpToolsError(res.error);
@@ -2913,7 +2939,7 @@ const handleAICodeAction = useCallback(async (type: string, selectedText: string
         conversationId: conversation.id,
         model: currentModel,
         provider: currentProvider,
-        executionMode: 'chat'
+        executionMode: 'tool_agent'
     });
 }, [currentModel, currentProvider, currentPath]);
 
@@ -3226,6 +3252,32 @@ const renderMindMapViewer = useCallback(({ nodeId }) => {
     );
 }, [rootLayoutNode, closeContentPane]);
 
+// Render Cartoglyph (GIS mapping) pane — same component, standalone mode
+const renderCartoglyphPane = useCallback(({ nodeId }) => {
+    return (
+        <MindMapViewer
+            nodeId={nodeId}
+            contentDataRef={contentDataRef}
+            findNodePath={findNodePath}
+            rootLayoutNode={rootLayoutNode}
+            setDraggedItem={setDraggedItem}
+            setPaneContextMenu={setPaneContextMenu}
+            closeContentPane={closeContentPane}
+        />
+    );
+}, [rootLayoutNode, closeContentPane]);
+
+// Render Radio pane
+const renderRadioPane = useCallback(({ nodeId }: { nodeId: string }) => {
+    return (
+        <RadioPane
+            onClose={() => closeContentPane?.(nodeId, findNodePath?.(rootLayoutNode, nodeId) || [])}
+            fetchFn={(url: string, options?: any) => (window as any).api?.proxyFetch?.(url, options)}
+            listPortsFn={() => (window as any).api?.listSerialPorts?.()}
+        />
+    );
+}, [rootLayoutNode, closeContentPane]);
+
 // Render DataLabeler pane (for pane-based viewing)
 const renderDataLabelerPane = useCallback(({ nodeId }) => {
     return (
@@ -3376,6 +3428,7 @@ const renderGitPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return (
         <GitPane
             nodeId={nodeId}
+            currentPath={currentPath}
             gitStatus={gitStatus}
             gitModalTab={gitModalTab}
             gitDiffContent={gitDiffContent}
@@ -4065,6 +4118,20 @@ const renderMessageContextMenu = () => null;
         addPaneOrTab(newPaneId);
     }, []);
 
+    // Create Cartoglyph (GIS mapping) pane
+    const createCartoglyphPane = useCallback(async () => {
+        const newPaneId = generateId();
+        contentDataRef.current[newPaneId] = { contentType: 'cartoglyph', contentId: 'cartoglyph' };
+        addPaneOrTab(newPaneId);
+    }, []);
+
+    // Create Radio pane
+    const createRadioPane = useCallback(async () => {
+        const newPaneId = generateId();
+        contentDataRef.current[newPaneId] = { contentType: 'radio', contentId: 'radio' };
+        addPaneOrTab(newPaneId);
+    }, []);
+
     // Create LibraryViewer pane
     const createLibraryViewerPane = useCallback(async () => {
         const newPaneId = generateId();
@@ -4481,7 +4548,7 @@ const handleBrowserDialogNavigate = (url) => {
         const targetPaneId = options?.paneId ?? activeContentPaneId;
 
         // Get pane-specific execution mode and selectedJinx
-        const paneExecMode = targetPaneId ? (contentDataRef.current[targetPaneId]?.executionMode || 'chat') : 'chat';
+        const paneExecMode = targetPaneId ? (contentDataRef.current[targetPaneId]?.executionMode || 'tool_agent') : 'tool_agent';
         const paneSelectedJinx = targetPaneId ? (contentDataRef.current[targetPaneId]?.selectedJinx || null) : null;
 
         const isJinxMode = paneExecMode !== 'chat' && paneSelectedJinx;
@@ -5750,6 +5817,23 @@ ${contextPrompt}`;
                         localStorage.removeItem(LAST_ACTIVE_PATH_KEY);
                     }
                 }
+                // Still fetch models, NPCs, and MCP tools even without a workspace folder
+                await fetchModels(null, setModelsLoading, setModelsError, setAvailableModels);
+                await loadAvailableNPCs(null, setNpcsLoading, setNpcsError, setAvailableNPCs);
+                // Auto-start MCP server and load tools for agent mode
+                try {
+                    const mcpRes = await window.api.getMcpServers('~');
+                    if (mcpRes?.servers?.length > 0) {
+                        setAvailableMcpServers(mcpRes.servers);
+                        const incognideServer = mcpRes.servers.find((s: any) => s.serverPath?.includes('incognide'));
+                        if (incognideServer) setMcpServerPath(incognideServer.serverPath);
+                    }
+                    const toolsRes = await window.api.listMcpTools({ serverPath: mcpServerPath, currentPath: '~' });
+                    if (toolsRes?.tools) {
+                        setAvailableMcpTools(toolsRes.tools);
+                        setSelectedMcpTools(toolsRes.tools.map((t: any) => t.function?.name).filter(Boolean));
+                    }
+                } catch {}
                 setLoading(false);
                 return;
             }
@@ -6082,7 +6166,7 @@ ${contextPrompt}`;
             }
             case 'pycharm': {
                 const editor = mkPane('editor', { isUntitled: true });
-                const chat = mkPane('chat', { executionMode: 'chat' });
+                const chat = mkPane('chat', { executionMode: 'tool_agent' });
                 const term = mkPane('terminal');
                 activeId = editor.id;
                 layout = mkSplit('horizontal', [60, 40], [
@@ -6105,7 +6189,7 @@ ${contextPrompt}`;
             case 'matlab': {
                 const editor = mkPane('editor', { isUntitled: true });
                 const term = mkPane('terminal');
-                const chat = mkPane('chat', { executionMode: 'chat' });
+                const chat = mkPane('chat', { executionMode: 'tool_agent' });
                 activeId = editor.id;
                 layout = mkSplit('horizontal', [70, 30], [
                     mkSplit('vertical', [65, 35], [editor, term]),
@@ -6126,7 +6210,7 @@ ${contextPrompt}`;
             }
             case 'cursor': {
                 const editor = mkPane('editor', { isUntitled: true });
-                const chat = mkPane('chat', { executionMode: 'chat' });
+                const chat = mkPane('chat', { executionMode: 'tool_agent' });
                 activeId = editor.id;
                 layout = mkSplit('horizontal', [60, 40], [editor, chat]);
                 break;
@@ -6153,7 +6237,7 @@ ${contextPrompt}`;
             }
             case 'research': {
                 const browser = mkPane('browser');
-                const chat = mkPane('chat', { executionMode: 'chat' });
+                const chat = mkPane('chat', { executionMode: 'tool_agent' });
                 const term = mkPane('terminal');
                 activeId = browser.id;
                 layout = mkSplit('vertical', [70, 30], [
@@ -6165,7 +6249,7 @@ ${contextPrompt}`;
             case 'data-science': {
                 const editor = mkPane('editor', { isUntitled: true });
                 const term = mkPane('terminal');
-                const chat = mkPane('chat', { executionMode: 'chat' });
+                const chat = mkPane('chat', { executionMode: 'tool_agent' });
                 activeId = editor.id;
                 layout = mkSplit('vertical', [60, 40], [
                     mkSplit('horizontal', [50, 50], [editor, term]),
@@ -7234,8 +7318,8 @@ const setPaneExecutionMode = useCallback(async (paneId: string, mode: string) =>
     }
 
     // Load MCP servers when switching to tool_agent mode
-    if (mode === 'tool_agent' && currentPath) {
-        const res = await window.api.getMcpServers(currentPath);
+    if (mode === 'tool_agent') {
+        const res = await window.api.getMcpServers(currentPath || '~');
         if (res && Array.isArray(res.servers)) {
             setAvailableMcpServers(res.servers);
             if (!res.servers.find(s => s.serverPath === mcpServerPath) && res.servers.length > 0) {
@@ -7254,7 +7338,7 @@ const getPaneSelectedJinx = useCallback((paneId: string) => {
 
 const setPaneSelectedJinx = useCallback((paneId: string, jinx: any) => {
     if (!contentDataRef.current[paneId]) {
-        contentDataRef.current[paneId] = { executionMode: 'chat', selectedJinx: jinx, showJinxDropdown: false };
+        contentDataRef.current[paneId] = { executionMode: 'tool_agent', selectedJinx: jinx, showJinxDropdown: false };
     } else {
         contentDataRef.current[paneId].selectedJinx = jinx;
     }
@@ -7269,7 +7353,7 @@ const getPaneShowJinxDropdown = useCallback((paneId: string) => {
 
 const setPaneShowJinxDropdown = useCallback((paneId: string, show: boolean) => {
     if (!contentDataRef.current[paneId]) {
-        contentDataRef.current[paneId] = { executionMode: 'chat', selectedJinx: null, showJinxDropdown: show };
+        contentDataRef.current[paneId] = { executionMode: 'tool_agent', selectedJinx: null, showJinxDropdown: show };
     } else {
         contentDataRef.current[paneId].showJinxDropdown = show;
     }
@@ -7529,6 +7613,8 @@ const paneRenderers = useMemo(() => ({
     image: renderPicViewer,
     stl: renderStlViewer,
     mindmap: renderMindMapViewer,
+    cartoglyph: renderCartoglyphPane,
+    radio: renderRadioPane,
     zip: renderZipViewer,
     'data-labeler': renderDataLabelerPane,
     'graph-viewer': renderGraphViewerPane,
@@ -7563,7 +7649,7 @@ const paneRenderers = useMemo(() => ({
     renderChatView, renderFileEditor, renderTerminalView, renderPdfViewer,
     renderCsvViewer, renderDocxViewer, renderBrowserViewer, renderPptxViewer,
     renderLatexViewer, renderNotebookViewer, renderExpViewer, renderPicViewer, renderStlViewer,
-    renderMindMapViewer, renderZipViewer, renderDataLabelerPane, renderGraphViewerPane,
+    renderMindMapViewer, renderCartoglyphPane, renderRadioPane, renderZipViewer, renderDataLabelerPane, renderGraphViewerPane,
     renderBrowserGraphPane, renderDataDashPane, renderDBToolPane, renderNPCTeamPane,
     renderJinxPane, renderTeamManagementPane, renderMcpManagerPane, renderSkillsManagerPane, renderSettingsPane, renderPhotoViewerPane,
     renderScherzoPane, renderLibraryViewerPane, renderHelpPane, renderGitPane,
@@ -7743,7 +7829,7 @@ const handleFileClick = useCallback(async (filePath: string) => {
     else if (extension === 'exp') contentType = 'exp';
     else if (extension === 'pltx') contentType = 'exp';
     else if (['docx', 'doc'].includes(extension)) contentType = 'docx';
-    else if (extension === 'mapx') contentType = 'mindmap';
+    else if (['mapx', 'geojson', 'kml', 'kmz', 'gpx', 'shp'].includes(extension)) contentType = 'cartoglyph';
     else if (extension === 'zip') contentType = 'zip';
     else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(extension)) contentType = 'image';
     else if (extension === 'stl') contentType = 'stl';
@@ -8504,6 +8590,8 @@ const renderMainContent = () => {
                         <button onClick={() => createLibraryViewerPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Grimoire"><BookOpen size={18} /></button>
                         <button onClick={() => createPhotoViewerPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Vixynt" data-tutorial="vixynt-button"><Image size={18} /></button>
                         <button onClick={() => createScherzoPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Scherzo" data-tutorial="scherzo-button"><Music size={18} /></button>
+                        <button onClick={() => createCartoglyphPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Cartoglyph" data-tutorial="cartoglyph-button"><CartoglyphIcon size={18} /></button>
+                        <button onClick={() => createRadioPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Radio" data-tutorial="radio-button"><RadioTowerIcon size={18} /></button>
                     </>
                 ) : (
                     <div className="relative">
@@ -8521,6 +8609,8 @@ const renderMainContent = () => {
                                     <button onClick={() => { createLibraryViewerPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><BookOpen size={14} /> Grimoire</button>
                                     <button onClick={() => { createPhotoViewerPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><Image size={14} /> Vixynt</button>
                                     <button onClick={() => { createScherzoPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><Music size={14} /> Scherzo</button>
+                                    <button onClick={() => { createCartoglyphPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><CartoglyphIcon size={14} /> Cartoglyph</button>
+                                    <button onClick={() => { createRadioPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><RadioTowerIcon size={14} /> Radio</button>
                                 </div>
                             </>
                         )}
@@ -8568,7 +8658,7 @@ const renderMainContent = () => {
     else if (extension === 'exp') contentType = 'exp';
     else if (extension === 'pltx') contentType = 'exp';
                             else if (['docx', 'doc'].includes(extension)) contentType = 'docx';
-                            else if (extension === 'mapx') contentType = 'mindmap';
+                            else if (['mapx', 'geojson', 'kml', 'kmz', 'gpx', 'shp'].includes(extension)) contentType = 'cartoglyph';
                             else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(extension)) contentType = 'image';
                             else if (extension === 'stl') contentType = 'stl';
                             else contentType = 'editor';
@@ -9090,6 +9180,7 @@ const renderMainContent = () => {
         createSettingsPane={createSettingsPane}
         createPhotoViewerPane={createPhotoViewerPane}
         createScherzoPane={createScherzoPane}
+        createCartoglyphPane={createCartoglyphPane}
         createProjectEnvPane={createProjectEnvPane}
         createDiskUsagePane={createDiskUsagePane}
         createLibraryViewerPane={createLibraryViewerPane}
@@ -9226,6 +9317,8 @@ const renderMainContent = () => {
                                     return renderStlViewer({ nodeId: zenModePaneId });
                                 case 'mindmap':
                                     return renderMindMapViewer({ nodeId: zenModePaneId });
+                                case 'cartoglyph':
+                                    return renderCartoglyphPane({ nodeId: zenModePaneId });
                                 case 'notebook':
                                     return renderNotebookViewer({ nodeId: zenModePaneId });
                                 case 'exp':

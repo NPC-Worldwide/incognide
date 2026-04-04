@@ -132,6 +132,10 @@ const getTabTitle = (tab: Tab): string => {
             return 'Vixynt';
         case 'scherzo':
             return 'Scherzo';
+        case 'cartoglyph':
+            return 'Cartoglyph';
+        case 'radio':
+            return 'Radio';
         case 'library':
             return 'Library';
         case 'projectenv':

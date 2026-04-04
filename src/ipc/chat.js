@@ -1128,6 +1128,130 @@ function register(ctx) {
       return { conversations: [], error: err.message };
     }
   });
+
+  // ---- Sync: export data from npcsh_history.db ----
+
+  ipcMain.handle('sync:export-data', async (_, { since, fullDump }) => {
+    const sinceTs = (fullDump || !since) ? '1970-01-01T00:00:00.000Z' : since;
+    return new Promise((resolve, reject) => {
+      const db = new sqlite3.Database(dbPath);
+
+      const result = { conversations: [], messages: [], bookmarks: [], history: [] };
+      const msgLimit = fullDump ? 50000 : 5000;
+      const bmLimit = fullDump ? 10000 : 500;
+      const histLimit = fullDump ? 10000 : 1000;
+
+      db.all(
+        `SELECT DISTINCT conversation_id, directory_path,
+                MIN(timestamp) as created_at, MAX(timestamp) as updated_at
+         FROM conversation_history
+         WHERE timestamp > ?
+         GROUP BY conversation_id
+         ORDER BY updated_at DESC LIMIT 5000`,
+        [sinceTs],
+        (err, rows) => {
+          if (!err && rows) result.conversations = rows;
+
+          db.all(
+            `SELECT message_id, timestamp, role, content, conversation_id,
+                    directory_path, model, provider, npc, team,
+                    reasoning_content, tool_calls, tool_results,
+                    parent_message_id, branch_id, input_tokens, output_tokens, cost
+             FROM conversation_history
+             WHERE timestamp > ?
+             ORDER BY timestamp ASC LIMIT ${msgLimit}`,
+            [sinceTs],
+            (err2, msgRows) => {
+              if (!err2 && msgRows) result.messages = msgRows;
+
+              db.all(
+                `SELECT id, title, url, folder_path, is_global, timestamp
+                 FROM bookmarks ORDER BY timestamp DESC LIMIT ${bmLimit}`,
+                [],
+                (err3, bmRows) => {
+                  if (!err3 && bmRows) result.bookmarks = bmRows;
+
+                  db.all(
+                    `SELECT id, title, url, folder_path, visit_count, last_visited
+                     FROM browser_history
+                     WHERE last_visited > ?
+                     ORDER BY last_visited DESC LIMIT ${histLimit}`,
+                    [sinceTs],
+                    (err4, histRows) => {
+                      db.close();
+                      if (!err4 && histRows) result.history = histRows;
+                      resolve(result);
+                    }
+                  );
+                }
+              );
+            }
+          );
+        }
+      );
+    });
+  });
+
+  ipcMain.handle('sync:import-data', async (_, { conversations, messages, bookmarks, history }) => {
+    return new Promise((resolve, reject) => {
+      const db = new sqlite3.Database(dbPath);
+      let imported = { conversations: 0, messages: 0, bookmarks: 0, history: 0 };
+
+      db.serialize(() => {
+        // Import messages (conversations are implicit from messages)
+        if (messages && messages.length) {
+          const stmt = db.prepare(
+            `INSERT OR IGNORE INTO conversation_history
+             (message_id, timestamp, role, content, conversation_id,
+              directory_path, model, provider, npc, team,
+              reasoning_content, tool_calls, tool_results,
+              parent_message_id, branch_id, input_tokens, output_tokens, cost)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          );
+          for (const m of messages) {
+            stmt.run(
+              m.message_id, m.timestamp, m.role, m.content, m.conversation_id,
+              m.directory_path, m.model, m.provider, m.npc, m.team,
+              m.reasoning_content, m.tool_calls, m.tool_results,
+              m.parent_message_id, m.branch_id || 'main',
+              m.input_tokens, m.output_tokens, m.cost
+            );
+            imported.messages++;
+          }
+          stmt.finalize();
+        }
+
+        if (bookmarks && bookmarks.length) {
+          const stmt = db.prepare(
+            `INSERT OR IGNORE INTO bookmarks (title, url, folder_path, is_global, timestamp)
+             VALUES (?, ?, ?, ?, ?)`
+          );
+          for (const b of bookmarks) {
+            stmt.run(b.title, b.url, b.folder_path, b.is_global || 0, b.timestamp);
+            imported.bookmarks++;
+          }
+          stmt.finalize();
+        }
+
+        if (history && history.length) {
+          const stmt = db.prepare(
+            `INSERT OR IGNORE INTO browser_history (title, url, folder_path, visit_count, last_visited)
+             VALUES (?, ?, ?, ?, ?)`
+          );
+          for (const h of history) {
+            stmt.run(h.title, h.url, h.folder_path, h.visit_count || 1, h.last_visited);
+            imported.history++;
+          }
+          stmt.finalize();
+        }
+
+        db.close((err) => {
+          if (err) reject(err);
+          else resolve(imported);
+        });
+      });
+    });
+  });
 }
 
 module.exports = { register };

@@ -1,50 +1,74 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
-import { Save, Download, Plus, Trash2, X, Edit, Link, Unlink, Palette, Eye, Edit2, ArrowRight, ArrowLeft, GitBranch, Map, Network, Workflow } from 'lucide-react';
-import ForceGraph2D from 'react-force-graph-2d';
+import React, { useState, useEffect, useCallback, useRef, useMemo, memo, lazy, Suspense } from 'react';
+import {
+    Save, Download, Upload, Plus, Trash2, X, Eye, Edit2, Layers,
+    Search, Navigation, Ruler, FileJson, Globe, MapPin,
+    ChevronDown, ChevronRight, EyeOff, Route, Hexagon, Circle,
+    LocateFixed, Copy, Network, Map as MapIcon, BookOpen
+} from 'lucide-react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
-type MapType = 'freeform' | 'flowchart' | 'coordinate' | 'hierarchy';
+// Hide Leaflet attribution watermark
+const leafletStyle = document.createElement('style');
+leafletStyle.textContent = '.leaflet-control-attribution { display: none !important; }';
+document.head.appendChild(leafletStyle);
+import type {
+    GISProject, GeoFeature, MapLayer, DrawMode, GISMapViewProps,
+    MindMapData
+} from 'npcts';
+import {
+    GISMapView, featuresToGeoJSON, geoJSONToFeatures,
+    BASEMAPS, LAYER_COLORS, DEFAULT_PROJECT, REFERENCE_LAYERS, TILE_OVERLAYS,
+    MindMapViewer as NpctsMindMapViewer
+} from 'npcts';
+import { demoMaps } from './cartoglyphLibrary';
 
-interface MindMapNode {
-    id: string;
-    label: string;
-    x: number;
-    y: number;
-    color: string;
-    parentId: string | null;
-
-    lat?: number;
-    lng?: number;
-
-    nodeType?: 'start' | 'end' | 'process' | 'decision' | 'default';
-
-    level?: number;
+// ---- Proxy fetch through Electron main process (bypasses CORS) ----
+async function proxyFetch(url: string, options?: any): Promise<Response> {
+    const api = (window as any).api;
+    if (api?.proxyFetch) {
+        const result = await api.proxyFetch(url, options);
+        const data = typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
+        return new Response(data, { status: result.status, headers: { 'content-type': 'application/json' } });
+    }
+    return fetch(url, options);
 }
 
-interface MindMapLink {
-    source: string;
-    target: string;
-    label?: string;
+// ---- Legacy .mapx conversion ----
+
+function convertLegacyMapx(data: any): GISProject {
+    const features: GeoFeature[] = (data.nodes || []).map((n: any) => ({
+        id: n.id,
+        type: 'marker' as const,
+        name: n.label || 'Node',
+        coordinates: [n.lat || n.y || 0, n.lng || n.x || 0] as [number, number],
+        color: n.color || '#3b82f6',
+        visible: true,
+        layerId: 'default',
+        properties: {},
+    }));
+    return {
+        ...DEFAULT_PROJECT,
+        name: data.name || 'Imported Map',
+        layers: [{ id: 'default', name: 'Imported', visible: true, color: '#3b82f6', features: features.map(f => f.id), locked: false }],
+        features,
+    };
 }
 
-interface MindMapData {
-    name: string;
-    mapType: MapType;
-    nodes: MindMapNode[];
-    links: MindMapLink[];
+// ---- KML parsing ----
 
-    bounds?: { minLat: number; maxLat: number; minLng: number; maxLng: number };
+async function parseKML(text: string): Promise<any> {
+    const { kml } = await import('@tmcw/togeojson');
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(text, 'text/xml');
+    return kml(doc);
 }
 
-const NODE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
+// ---- Main wrapper component ----
 
-const MAP_TYPE_INFO: Record<MapType, { label: string; description: string; icon: any }> = {
-    freeform: { label: 'Free Association', description: 'Free-form mind map with no structure', icon: Network },
-    flowchart: { label: 'Flowchart', description: 'Process flow with decisions and steps', icon: Workflow },
-    coordinate: { label: 'Coordinate Map', description: 'Spatial map with queryable coordinates', icon: Map },
-    hierarchy: { label: 'Hierarchy', description: 'Tree structure with parent-child relationships', icon: GitBranch },
-};
+type ActiveTab = 'gis' | 'mindmap';
 
-const MindMapViewer = ({
+const CartoglyphPane = ({
     nodeId,
     contentDataRef,
     findNodePath,
@@ -52,868 +76,862 @@ const MindMapViewer = ({
     setDraggedItem,
     setPaneContextMenu,
     closeContentPane
+}: {
+    nodeId: string;
+    contentDataRef: React.MutableRefObject<Record<string, any>>;
+    findNodePath: any;
+    rootLayoutNode: any;
+    setDraggedItem: any;
+    setPaneContextMenu: any;
+    closeContentPane: any;
 }) => {
-    const [nodes, setNodes] = useState<MindMapNode[]>([]);
-    const [links, setLinks] = useState<MindMapLink[]>([]);
-    const [mapName, setMapName] = useState('Untitled Mind Map');
-    const [mapType, setMapType] = useState<MapType>('freeform');
-    const [selectedNode, setSelectedNode] = useState<string | null>(null);
-    const [newNodeLabel, setNewNodeLabel] = useState('');
-    const [editingNode, setEditingNode] = useState<string | null>(null);
-    const [editLabel, setEditLabel] = useState('');
+    const [activeTab, setActiveTab] = useState<ActiveTab>('gis');
+
+    // GIS state
+    const [project, setProject] = useState<GISProject>({ ...DEFAULT_PROJECT });
+    const [mode, setMode] = useState<DrawMode>('select');
+    const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(null);
     const [hasChanges, setHasChanges] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
-    const [linkMode, setLinkMode] = useState<{ active: boolean; sourceId: string | null }>({ active: false, sourceId: null });
-    const [isEditMode, setIsEditMode] = useState(true);
-    const [pendingNodePosition, setPendingNodePosition] = useState<{ x: number; y: number } | null>(null);
-    const [showQuickAdd, setShowQuickAdd] = useState(false);
-    const [quickAddLabel, setQuickAddLabel] = useState('');
-    const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId?: string; canvasX?: number; canvasY?: number } | null>(null);
-    const graphRef = useRef<any>();
-    const containerRef = useRef<HTMLDivElement>(null);
+    const [sidebarTab, setSidebarTab] = useState<'layers' | 'properties' | 'osint' | 'overlays'>('layers');
+    const [activeOverlays, setActiveOverlays] = useState<Set<string>>(new Set());
+    const [activeTileOverlays, setActiveTileOverlays] = useState<Set<string>>(new Set());
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const [activeLayerId, setActiveLayerId] = useState('default');
 
-    const paneData = contentDataRef.current[nodeId];
-    const filePath = paneData?.contentId;
+    // OSINT auto-cache
+    const [osintCache, setOsintCache] = useState<Record<string, { results: any[]; bbox: string }>>({});
+    const [osintVisible, setOsintVisible] = useState<Set<string>>(new Set());
+    const [osintLoading, setOsintLoading] = useState<Set<string>>(new Set());
 
+    // Search
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState<any[]>([]);
+    const [isSearching, setIsSearching] = useState(false);
+
+    // OSINT
+    const [osintQuery, setOsintQuery] = useState('');
+    const [osintResults, setOsintResults] = useState<any[]>([]);
+    const [isOsintLoading, setIsOsintLoading] = useState(false);
+    const [osintType, setOsintType] = useState<'nominatim' | 'overpass'>('nominatim');
+
+    // Menus
+    const [showExportMenu, setShowExportMenu] = useState(false);
+    const [showBasemapMenu, setShowBasemapMenu] = useState(false);
+    const [showImportMenu, setShowImportMenu] = useState(false);
+    const [showSamplesMenu, setShowSamplesMenu] = useState(false);
+
+    // Feature editing
+    const [editingFeatureName, setEditingFeatureName] = useState<string | null>(null);
+    const [editNameValue, setEditNameValue] = useState('');
+
+    const mapRef = useRef<L.Map | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // OSINT preset categories
+    const OSINT_PRESETS: Record<string, { label: string; query: string; color: string; category: string }> = useMemo(() => ({
+        hospitals: { label: 'Hospitals', query: 'amenity=hospital', color: '#ef4444', category: 'emergency' },
+        police: { label: 'Police', query: 'amenity=police', color: '#3b82f6', category: 'emergency' },
+        fire_stations: { label: 'Fire Stations', query: 'amenity=fire_station', color: '#f97316', category: 'emergency' },
+        pharmacies: { label: 'Pharmacies', query: 'amenity=pharmacy', color: '#10b981', category: 'emergency' },
+        schools: { label: 'Schools', query: 'amenity=school', color: '#8b5cf6', category: 'civic' },
+        banks: { label: 'Banks', query: 'amenity=bank', color: '#eab308', category: 'civic' },
+        embassies: { label: 'Embassies', query: 'amenity=embassy', color: '#06b6d4', category: 'civic' },
+        prisons: { label: 'Prisons', query: 'amenity=prison', color: '#64748b', category: 'civic' },
+        government: { label: 'Government', query: 'office=government', color: '#a855f7', category: 'civic' },
+        military: { label: 'Military', query: 'military=yes', color: '#78716c', category: 'security' },
+        cameras: { label: 'Surveillance', query: 'man_made=surveillance', color: '#f43f5e', category: 'security' },
+        cell_towers: { label: 'Cell Towers', query: 'telecom=mast', color: '#d946ef', category: 'infrastructure' },
+        power_plants: { label: 'Power Plants', query: 'power=plant', color: '#facc15', category: 'infrastructure' },
+        gas_stations: { label: 'Gas Stations', query: 'amenity=fuel', color: '#fb923c', category: 'infrastructure' },
+        water_towers: { label: 'Water Towers', query: 'man_made=water_tower', color: '#38bdf8', category: 'infrastructure' },
+        helipads: { label: 'Helipads', query: 'aeroway=helipad', color: '#a3e635', category: 'transport' },
+        hotels: { label: 'Hotels', query: 'tourism=hotel', color: '#c084fc', category: 'commercial' },
+        restaurants: { label: 'Restaurants', query: 'amenity=restaurant', color: '#fb7185', category: 'commercial' },
+        bridges: { label: 'Bridges', query: 'man_made=bridge', color: '#94a3b8', category: 'infrastructure' },
+        dams: { label: 'Dams', query: 'waterway=dam', color: '#22d3ee', category: 'infrastructure' },
+    }), []);
+
+    // Fetch a single OSINT category for current viewport
+    const fetchOsintCategory = useCallback(async (key: string) => {
+        const preset = OSINT_PRESETS[key];
+        if (!preset || !mapRef.current) return;
+        const bounds = mapRef.current.getBounds();
+        const bbox = `${bounds.getSouth().toFixed(2)},${bounds.getWest().toFixed(2)},${bounds.getNorth().toFixed(2)},${bounds.getEast().toFixed(2)}`;
+        // Skip if already cached for this bbox
+        if (osintCache[key]?.bbox === bbox) return;
+        setOsintLoading(prev => new Set(prev).add(key));
+        try {
+            const parts = preset.query.split('=');
+            const tagFilter = parts[1] ? `["${parts[0]}"="${parts[1]}"]` : `["${parts[0]}"]`;
+            const s = bounds.getSouth(), w = bounds.getWest(), n = bounds.getNorth(), e = bounds.getEast();
+            const q = `[out:json][timeout:25];(node${tagFilter}(${s},${w},${n},${e});way${tagFilter}(${s},${w},${n},${e}););out center body 200;`;
+            const resp = await proxyFetch('https://overpass-api.de/api/interpreter', {
+                method: 'POST',
+                body: `data=${encodeURIComponent(q)}`,
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            });
+            if (!resp.ok) throw new Error(`Overpass ${resp.status}`);
+            const data = await resp.json();
+            const results = (data.elements || []).map((el: any) => ({
+                lat: el.lat || el.center?.lat,
+                lng: el.lon || el.center?.lon,
+                name: el.tags?.name || `${el.type}/${el.id}`,
+                tags: el.tags || {},
+            })).filter((r: any) => r.lat && r.lng);
+            setOsintCache(prev => ({ ...prev, [key]: { results, bbox } }));
+        } catch (err) {
+            console.error(`OSINT fetch ${key}:`, err);
+        } finally {
+            setOsintLoading(prev => { const s = new Set(prev); s.delete(key); return s; });
+        }
+    }, [OSINT_PRESETS, osintCache]);
+
+    // Toggle an OSINT layer — fetch if needed, then show/hide
+    const toggleOsintLayer = useCallback((key: string) => {
+        setOsintVisible(prev => {
+            const next = new Set(prev);
+            if (next.has(key)) { next.delete(key); } else { next.add(key); fetchOsintCategory(key); }
+            return next;
+        });
+    }, [fetchOsintCategory]);
+
+    // Re-fetch visible OSINT layers when map moves significantly
+    const lastOsintFetchBbox = useRef<string>('');
+    const osintRefreshTimer = useRef<any>(null);
+
+    const scheduleOsintRefresh = useCallback(() => {
+        if (osintRefreshTimer.current) clearTimeout(osintRefreshTimer.current);
+        osintRefreshTimer.current = setTimeout(() => {
+            if (!mapRef.current || osintVisible.size === 0) return;
+            const bounds = mapRef.current.getBounds();
+            const bbox = `${bounds.getSouth().toFixed(1)},${bounds.getWest().toFixed(1)},${bounds.getNorth().toFixed(1)},${bounds.getEast().toFixed(1)}`;
+            if (bbox === lastOsintFetchBbox.current) return;
+            lastOsintFetchBbox.current = bbox;
+            osintVisible.forEach(key => fetchOsintCategory(key));
+        }, 2000);
+    }, [osintVisible, fetchOsintCategory]);
+
+    // Hook into map move
     useEffect(() => {
-        const loadMindMap = async () => {
-            if (!filePath) return;
+        const map = mapRef.current;
+        if (!map) return;
+        const handler = () => scheduleOsintRefresh();
+        map.on('moveend', handler);
+        return () => { map.off('moveend', handler); };
+    }, [scheduleOsintRefresh]);
 
+    // Mind Map state
+    const [mindMapData, setMindMapData] = useState<MindMapData | null>(null);
+
+    const paneData = contentDataRef?.current?.[nodeId];
+    const filePath = paneData?.contentId;
+    const isStandalone = !filePath || filePath === 'cartoglyph' || filePath === 'mindmap-standalone';
+
+    // Load project
+    useEffect(() => {
+        if (isStandalone) return;
+        const load = async () => {
             try {
-
-                if (filePath.endsWith('.mapx')) {
-                    const response = await (window as any).api?.loadMap?.(filePath);
-                    if (response && !response.error) {
-                        setMapName(response.name || 'Untitled Mind Map');
-                        setMapType(response.mapType || 'freeform');
-                        setNodes(response.nodes || []);
-                        setLinks(response.links || []);
-                        return;
-                    }
-                }
-
                 const response = await (window as any).api?.readFile?.(filePath);
                 if (response && !response.error) {
                     const content = response.content || response;
-
-                    try {
-                        const data: MindMapData = JSON.parse(content);
-                        setMapName(data.name || 'Untitled Mind Map');
-                        setMapType(data.mapType || 'freeform');
-                        setNodes(data.nodes || []);
-                        setLinks(data.links || []);
-                    } catch {
-
-                        console.log('File may be YAML format, attempting backend load');
+                    const data = JSON.parse(content);
+                    if (data.version === 2) {
+                        setProject(data);
+                        setActiveTab('gis');
+                    } else if (data.mapType || data.nodes) {
+                        // Legacy mind map format
+                        setMindMapData(data);
+                        setProject(convertLegacyMapx(data));
+                        setActiveTab('mindmap');
                     }
                 }
             } catch (err) {
-                console.error('Error loading mind map:', err);
+                console.error('Error loading map:', err);
             }
         };
-        loadMindMap();
-    }, [filePath]);
+        load();
+    }, [filePath, isStandalone]);
 
-    const saveMindMap = useCallback(async () => {
-        if (!filePath) return;
+    // Save
+    const saveProject = useCallback(async () => {
+        if (isStandalone) return;
         setIsSaving(true);
-
         try {
-            const data: MindMapData = { name: mapName, mapType, nodes, links };
-
-            if (filePath.endsWith('.mapx')) {
-                const response = await (window as any).api?.saveMap?.({
-                    map: data,
-                    filePath,
-
-                    yaml_format: {
-                        map_name: mapName,
-                        map_type: mapType,
-                        nodes: nodes.map(n => ({
-                            id: n.id,
-                            label: n.label,
-                            position: { x: n.x, y: n.y },
-                            color: n.color,
-                            parent_id: n.parentId,
-                            ...(n.lat !== undefined && { lat: n.lat }),
-                            ...(n.lng !== undefined && { lng: n.lng }),
-                            ...(n.nodeType && { node_type: n.nodeType }),
-                            ...(n.level !== undefined && { level: n.level }),
-                        })),
-                        links: links.map(l => ({
-                            source: l.source,
-                            target: l.target,
-                            ...(l.label && { label: l.label }),
-                        })),
-                    }
-                });
-
-                if (response?.error) {
-                    console.error('Error saving map via API:', response.error);
-
-                    await (window as any).api?.writeFile?.(filePath, JSON.stringify(data, null, 2));
-                }
-            } else {
-
-                await (window as any).api?.writeFile?.(filePath, JSON.stringify(data, null, 2));
-            }
-
+            await (window as any).api?.writeFile?.(filePath, JSON.stringify(project, null, 2));
             setHasChanges(false);
         } catch (err) {
-            console.error('Error saving mind map:', err);
+            console.error('Error saving:', err);
         } finally {
             setIsSaving(false);
         }
-    }, [filePath, mapName, mapType, nodes, links]);
+    }, [filePath, project, isStandalone]);
 
-    const handleCanvasDoubleClick = useCallback((event: React.MouseEvent) => {
-        if (!isEditMode) return;
-
-        const container = containerRef.current;
-        if (!container) return;
-
-        const rect = container.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-        const y = event.clientY - rect.top;
-
-        setPendingNodePosition({ x, y });
-        setShowQuickAdd(true);
-        setQuickAddLabel('');
-    }, [isEditMode]);
-
-    const handleQuickAddNode = useCallback(() => {
-        if (!quickAddLabel.trim() || !pendingNodePosition) return;
-
-        const id = `node_${Date.now()}`;
-        const color = NODE_COLORS[nodes.length % NODE_COLORS.length];
-
-        const newNode: MindMapNode = {
-            id,
-            label: quickAddLabel.trim(),
-            x: pendingNodePosition.x,
-            y: pendingNodePosition.y,
-            color,
-            parentId: selectedNode,
-            level: selectedNode ? (nodes.find(n => n.id === selectedNode)?.level || 0) + 1 : 0,
-        };
-
-        setNodes(prev => [...prev, newNode]);
-
-        if (selectedNode) {
-            setLinks(prev => [...prev, { source: selectedNode, target: id }]);
-        }
-
-        setQuickAddLabel('');
-        setShowQuickAdd(false);
-        setPendingNodePosition(null);
-        setSelectedNode(id);
-        setHasChanges(true);
-    }, [quickAddLabel, pendingNodePosition, selectedNode, nodes]);
-
-    const handleCanvasContextMenu = useCallback((event: React.MouseEvent) => {
-        event.preventDefault();
-        if (!isEditMode) return;
-
-        const container = containerRef.current;
-        if (!container) return;
-
-        const rect = container.getBoundingClientRect();
-        const canvasX = event.clientX - rect.left;
-        const canvasY = event.clientY - rect.top;
-
-        setContextMenu({
-            x: event.clientX,
-            y: event.clientY,
-            canvasX,
-            canvasY
-        });
-    }, [isEditMode]);
-
-    const handleNodeRightClick = useCallback((node: any, event: MouseEvent) => {
-        event.preventDefault();
-        if (!isEditMode) return;
-
-        setContextMenu({
-            x: event.clientX,
-            y: event.clientY,
-            nodeId: node.id
-        });
-    }, [isEditMode]);
-
-    const handleContextMenuAddNode = useCallback((connectToSelected: boolean = false) => {
-        if (!contextMenu) return;
-
-        const id = `node_${Date.now()}`;
-        const color = NODE_COLORS[nodes.length % NODE_COLORS.length];
-
-        let x = contextMenu.canvasX || 200;
-        let y = contextMenu.canvasY || 200;
-
-        const newNode: MindMapNode = {
-            id,
-            label: 'New Node',
-            x,
-            y,
-            color,
-            parentId: connectToSelected ? selectedNode : null,
-            level: connectToSelected && selectedNode ? (nodes.find(n => n.id === selectedNode)?.level || 0) + 1 : 0,
-        };
-
-        setNodes(prev => [...prev, newNode]);
-
-        if (connectToSelected && selectedNode) {
-            setLinks(prev => [...prev, { source: selectedNode, target: id }]);
-        }
-
-        setContextMenu(null);
-        setSelectedNode(id);
-        setEditingNode(id);
-        setEditLabel('New Node');
-        setHasChanges(true);
-    }, [contextMenu, selectedNode, nodes]);
-
-    const handleAddConnectedNode = useCallback(() => {
-        if (!contextMenu?.nodeId) return;
-
-        const parentNode = nodes.find(n => n.id === contextMenu.nodeId);
-        if (!parentNode) return;
-
-        const id = `node_${Date.now()}`;
-        const color = NODE_COLORS[nodes.length % NODE_COLORS.length];
-
-        const childCount = links.filter(l => l.source === contextMenu.nodeId).length;
-        const angle = (childCount * 60 + 30) * (Math.PI / 180);
-        const x = parentNode.x + Math.cos(angle) * 150;
-        const y = parentNode.y + Math.sin(angle) * 120;
-
-        const newNode: MindMapNode = {
-            id,
-            label: 'New Node',
-            x,
-            y,
-            color,
-            parentId: contextMenu.nodeId,
-            level: (parentNode.level || 0) + 1,
-        };
-
-        setNodes(prev => [...prev, newNode]);
-        setLinks(prev => [...prev, { source: contextMenu.nodeId!, target: id }]);
-
-        setContextMenu(null);
-        setSelectedNode(id);
-        setEditingNode(id);
-        setEditLabel('New Node');
-        setHasChanges(true);
-    }, [contextMenu, nodes, links]);
-
-    const handleStartLinking = useCallback(() => {
-        if (!contextMenu?.nodeId) return;
-        setLinkMode({ active: true, sourceId: contextMenu.nodeId });
-        setContextMenu(null);
-    }, [contextMenu]);
-
-    const handleAddNode = useCallback((parentId: string | null = null) => {
-        if (!newNodeLabel.trim()) return;
-        const id = `node_${Date.now()}`;
-        const color = NODE_COLORS[nodes.length % NODE_COLORS.length];
-
-        let x = 400, y = 200;
-        if (parentId) {
-            const parent = nodes.find(n => n.id === parentId);
-            if (parent) {
-                const childCount = links.filter(l => l.source === parentId).length;
-                const angle = (childCount * 45 + 45) * (Math.PI / 180);
-                x = parent.x + Math.cos(angle) * 150;
-                y = parent.y + Math.sin(angle) * 100;
-            }
-        } else {
-            x = 200 + Math.random() * 400;
-            y = 100 + Math.random() * 200;
-        }
-
-        const newNode: MindMapNode = { id, label: newNodeLabel.trim(), x, y, color, parentId };
-        setNodes(prev => [...prev, newNode]);
-
-        if (parentId) {
-            setLinks(prev => [...prev, { source: parentId, target: id }]);
-        }
-
-        setNewNodeLabel('');
-        setSelectedNode(id);
-        setHasChanges(true);
-    }, [newNodeLabel, nodes, links]);
-
-    const handleDeleteNode = useCallback((nodeId: string) => {
-        const getDescendants = (id: string): string[] => {
-            const children = links.filter(l => l.source === id).map(l => l.target);
-            return [id, ...children.flatMap(getDescendants)];
-        };
-        const toDelete = new Set(getDescendants(nodeId));
-
-        setNodes(prev => prev.filter(n => !toDelete.has(n.id)));
-        setLinks(prev => prev.filter(l => !toDelete.has(l.source) && !toDelete.has(l.target)));
-        if (selectedNode && toDelete.has(selectedNode)) {
-            setSelectedNode(null);
-        }
-        setHasChanges(true);
-    }, [links, selectedNode]);
-
-    const handleUpdateNode = useCallback((nodeId: string, updates: Partial<MindMapNode>) => {
-        setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, ...updates } : n));
-        setHasChanges(true);
-    }, []);
-
-    const startEditingNode = useCallback((nodeId: string) => {
-        const node = nodes.find(n => n.id === nodeId);
-        if (node) {
-            setEditingNode(nodeId);
-            setEditLabel(node.label);
-        }
-    }, [nodes]);
-
-    const saveEditedLabel = useCallback(() => {
-        if (editingNode && editLabel.trim()) {
-            handleUpdateNode(editingNode, { label: editLabel.trim() });
-        }
-        setEditingNode(null);
-        setEditLabel('');
-    }, [editingNode, editLabel, handleUpdateNode]);
-
-    const handleLinkClick = useCallback((nodeId: string) => {
-        if (!linkMode.active) return;
-
-        if (!linkMode.sourceId) {
-            setLinkMode({ active: true, sourceId: nodeId });
-        } else if (linkMode.sourceId !== nodeId) {
-
-            const existingLink = links.find(l =>
-                (l.source === linkMode.sourceId && l.target === nodeId) ||
-                (l.source === nodeId && l.target === linkMode.sourceId)
-            );
-
-            if (existingLink) {
-
-                setLinks(prev => prev.filter(l => l !== existingLink));
-            } else {
-
-                setLinks(prev => [...prev, { source: linkMode.sourceId!, target: nodeId }]);
-            }
-            setLinkMode({ active: false, sourceId: null });
+    const updateProject = useCallback((updater: (prev: GISProject) => GISProject) => {
+        setProject(prev => {
+            const next = updater(prev);
             setHasChanges(true);
-        }
-    }, [linkMode, links]);
-
-    const handleRemoveLink = useCallback((sourceId: string, targetId: string) => {
-        setLinks(prev => prev.filter(l => !(l.source === sourceId && l.target === targetId)));
-        setHasChanges(true);
+            return next;
+        });
     }, []);
 
-    const getNodeEdges = useCallback((nodeId: string) => {
-        const outgoing = links.filter(l => l.source === nodeId);
-        const incoming = links.filter(l => l.target === nodeId);
-        return { outgoing, incoming };
-    }, [links]);
+    // ---- Feature/Layer ops ----
 
-    const graphData = useMemo(() => ({
-        nodes: nodes.map(n => ({ ...n, val: n.parentId ? 6 : 10 })),
-        links: links.map(l => ({ ...l }))
-    }), [nodes, links]);
+    const updateFeature = useCallback((id: string, updates: Partial<GeoFeature>) => {
+        updateProject(prev => ({ ...prev, features: prev.features.map(f => f.id === id ? { ...f, ...updates } : f) }));
+    }, [updateProject]);
 
-    const selectedNodeData = nodes.find(n => n.id === selectedNode);
-    const selectedNodeEdges = selectedNode ? getNodeEdges(selectedNode) : { outgoing: [], incoming: [] };
+    const deleteFeature = useCallback((id: string) => {
+        updateProject(prev => ({
+            ...prev,
+            features: prev.features.filter(f => f.id !== id),
+            layers: prev.layers.map(l => ({ ...l, features: l.features.filter(fid => fid !== id) })),
+        }));
+        if (selectedFeatureId === id) setSelectedFeatureId(null);
+    }, [updateProject, selectedFeatureId]);
+
+    const addLayer = useCallback(() => {
+        const id = `layer_${Date.now()}`;
+        const color = LAYER_COLORS[project.layers.length % LAYER_COLORS.length];
+        updateProject(prev => ({ ...prev, layers: [...prev.layers, { id, name: `Layer ${prev.layers.length + 1}`, visible: true, color, features: [], locked: false }] }));
+        setActiveLayerId(id);
+    }, [updateProject, project.layers.length]);
+
+    const deleteLayer = useCallback((layerId: string) => {
+        if (project.layers.length <= 1) return;
+        updateProject(prev => ({
+            ...prev,
+            features: prev.features.filter(f => f.layerId !== layerId),
+            layers: prev.layers.filter(l => l.id !== layerId),
+        }));
+        if (activeLayerId === layerId) setActiveLayerId(project.layers.find(l => l.id !== layerId)?.id || 'default');
+    }, [updateProject, project.layers, activeLayerId]);
+
+    const toggleLayerVisibility = useCallback((layerId: string) => {
+        updateProject(prev => ({ ...prev, layers: prev.layers.map(l => l.id === layerId ? { ...l, visible: !l.visible } : l) }));
+    }, [updateProject]);
+
+    // ---- Search ----
+
+    const handleSearch = useCallback(async () => {
+        if (!searchQuery.trim()) return;
+        setIsSearching(true);
+        try {
+            const resp = await proxyFetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=8`, {
+                headers: { 'User-Agent': 'Incognide-Cartoglyph/1.0' },
+            });
+            setSearchResults(await resp.json());
+        } catch (err) { console.error('Search error:', err); }
+        finally { setIsSearching(false); }
+    }, [searchQuery]);
+
+    const goToResult = useCallback((r: any) => {
+        mapRef.current?.setView([parseFloat(r.lat), parseFloat(r.lon)], 14);
+        setSearchResults([]);
+        setSearchQuery('');
+    }, []);
+
+    const addResultAsMarker = useCallback((r: any) => {
+        const lat = parseFloat(r.lat), lng = parseFloat(r.lon);
+        const id = `feat_${Date.now()}`;
+        const layer = project.layers.find(l => l.id === activeLayerId);
+        updateProject(prev => ({
+            ...prev,
+            features: [...prev.features, { id, type: 'marker' as const, name: r.display_name?.split(',')[0] || 'Location', coordinates: [lat, lng] as [number, number], color: layer?.color || '#3b82f6', visible: true, layerId: activeLayerId, properties: { source: 'nominatim', display_name: r.display_name } }],
+            layers: prev.layers.map(l => l.id === activeLayerId ? { ...l, features: [...l.features, id] } : l),
+        }));
+        mapRef.current?.setView([lat, lng], 14);
+        setSearchResults([]);
+        setSearchQuery('');
+    }, [activeLayerId, project.layers, updateProject]);
+
+    // ---- OSINT ----
+
+    const fetchOSINT = useCallback(async (queryOverride?: string, typeOverride?: 'nominatim' | 'overpass') => {
+        const q = queryOverride || osintQuery;
+        const t = typeOverride || osintType;
+        if (!q.trim()) return;
+        setIsOsintLoading(true);
+        setOsintResults([]);
+        try {
+            if (t === 'nominatim') {
+                const resp = await proxyFetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=20&addressdetails=1`, {
+                    headers: { 'User-Agent': 'Incognide-Cartoglyph/1.0' },
+                });
+                const data = await resp.json();
+                setOsintResults(data.map((r: any) => ({
+                    id: r.osm_id, name: r.display_name?.split(',')[0], fullName: r.display_name,
+                    lat: parseFloat(r.lat), lng: parseFloat(r.lon), type: r.type, category: r.class, source: 'nominatim',
+                })));
+            } else {
+                // Overpass — use proper QL format
+                const bounds = mapRef.current?.getBounds();
+                if (!bounds) { setIsOsintLoading(false); return; }
+                const s = bounds.getSouth(), w = bounds.getWest(), n = bounds.getNorth(), e = bounds.getEast();
+                // Parse "key=value" format from user
+                const parts = q.split('=');
+                const key = parts[0]?.trim();
+                const val = parts[1]?.trim();
+                const tagFilter = val ? `["${key}"="${val}"]` : `["${key}"]`;
+                const query = `[out:json][timeout:25];(node${tagFilter}(${s},${w},${n},${e});way${tagFilter}(${s},${w},${n},${e}););out center body 50;`;
+                const resp = await proxyFetch('https://overpass-api.de/api/interpreter', {
+                    method: 'POST',
+                    body: `data=${encodeURIComponent(query)}`,
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                });
+                if (!resp.ok) throw new Error(`Overpass returned ${resp.status}`);
+                const data = await resp.json();
+                setOsintResults((data.elements || []).map((el: any) => ({
+                    id: el.id, name: el.tags?.name || `${el.type}/${el.id}`,
+                    fullName: Object.entries(el.tags || {}).map(([k, v]) => `${k}=${v}`).join(', '),
+                    lat: el.lat || el.center?.lat, lng: el.lon || el.center?.lon,
+                    type: el.type, category: el.tags?.amenity || el.tags?.shop || el.tags?.building || 'unknown', source: 'overpass',
+                })));
+            }
+        } catch (err) { console.error('OSINT fetch error:', err); }
+        finally { setIsOsintLoading(false); }
+    }, [osintQuery, osintType]);
+
+    const addOsintResult = useCallback((r: any) => {
+        if (!r.lat || !r.lng) return;
+        const id = `osint_${Date.now()}_${r.id}`;
+        const layer = project.layers.find(l => l.id === activeLayerId);
+        updateProject(prev => ({
+            ...prev,
+            features: [...prev.features, { id, type: 'marker' as const, name: r.name, coordinates: [r.lat, r.lng] as [number, number], color: '#f59e0b', visible: true, layerId: activeLayerId, properties: { source: r.source, category: r.category } }],
+            layers: prev.layers.map(l => l.id === activeLayerId ? { ...l, features: [...l.features, id] } : l),
+        }));
+    }, [activeLayerId, project.layers, updateProject]);
+
+    // ---- Import/Export ----
+
+    const handleFileImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const text = await file.text();
+        const ext = file.name.split('.').pop()?.toLowerCase();
+        const layerColor = LAYER_COLORS[project.layers.length % LAYER_COLORS.length];
+        const newLayerId = `import_${Date.now()}`;
+        let features: GeoFeature[] = [];
+
+        try {
+            if (ext === 'geojson' || ext === 'json') {
+                features = geoJSONToFeatures(JSON.parse(text), newLayerId, layerColor);
+            } else if (ext === 'kml' || ext === 'kmz') {
+                features = geoJSONToFeatures(await parseKML(text), newLayerId, layerColor);
+            } else if (ext === 'gpx') {
+                const { gpx: gpxParser } = await import('@tmcw/togeojson');
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(text, 'text/xml');
+                const geojson = gpxParser(doc);
+                features = geoJSONToFeatures(geojson, newLayerId, layerColor);
+            } else if (ext === 'csv' || ext === 'tsv') {
+                const lines = text.trim().split('\n');
+                const sep = ext === 'tsv' ? '\t' : ',';
+                const headers = lines[0].split(sep).map(h => h.trim().toLowerCase());
+                const latIdx = headers.findIndex(h => ['lat', 'latitude', 'y'].includes(h));
+                const lngIdx = headers.findIndex(h => ['lng', 'lon', 'longitude', 'x'].includes(h));
+                const nameIdx = headers.findIndex(h => ['name', 'label', 'title'].includes(h));
+                if (latIdx >= 0 && lngIdx >= 0) {
+                    features = lines.slice(1).map((line, i) => {
+                        const cols = line.split(sep).map(c => c.trim());
+                        const lat = parseFloat(cols[latIdx]), lng = parseFloat(cols[lngIdx]);
+                        if (isNaN(lat) || isNaN(lng)) return null;
+                        return { id: `csv_${Date.now()}_${i}`, type: 'marker' as const, name: nameIdx >= 0 ? cols[nameIdx] : `Point ${i + 1}`, coordinates: [lat, lng] as [number, number], color: layerColor, visible: true, layerId: newLayerId, properties: Object.fromEntries(headers.map((h, hi) => [h, cols[hi]])) };
+                    }).filter(Boolean) as GeoFeature[];
+                }
+            } else if (ext === 'mapx') {
+                const data = JSON.parse(text);
+                features = convertLegacyMapx(data).features.map(f => ({ ...f, layerId: newLayerId }));
+            }
+        } catch (err) { console.error('Import error:', err); return; }
+
+        if (features.length > 0) {
+            updateProject(prev => ({
+                ...prev,
+                layers: [...prev.layers, { id: newLayerId, name: file.name.replace(/\.[^.]+$/, ''), visible: true, color: layerColor, features: features.map(f => f.id), locked: false }],
+                features: [...prev.features, ...features],
+            }));
+            const coords: [number, number][] = [];
+            features.forEach(f => { if (Array.isArray(f.coordinates[0])) (f.coordinates as [number, number][]).forEach(c => coords.push(c)); else coords.push(f.coordinates as [number, number]); });
+            if (coords.length > 0 && mapRef.current) mapRef.current.fitBounds(L.latLngBounds(coords.map(c => [c[0], c[1]])), { padding: [50, 50] });
+        }
+        setShowImportMenu(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    }, [project.layers.length, updateProject]);
+
+    const exportGeoJSON = useCallback(() => {
+        const blob = new Blob([JSON.stringify(featuresToGeoJSON(project.features.filter(f => f.visible)), null, 2)], { type: 'application/json' });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${project.name.replace(/\s+/g, '_')}.geojson`; a.click();
+        setShowExportMenu(false);
+    }, [project]);
+
+    const exportKML = useCallback(async () => {
+        const { default: tokmlFn } = await import('tokml');
+        const kmlString = tokmlFn(featuresToGeoJSON(project.features.filter(f => f.visible)));
+        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([kmlString], { type: 'application/vnd.google-earth.kml+xml' })); a.download = `${project.name.replace(/\s+/g, '_')}.kml`; a.click();
+        setShowExportMenu(false);
+    }, [project]);
+
+    const exportProject = useCallback(() => {
+        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' })); a.download = `${project.name.replace(/\s+/g, '_')}.mapx`; a.click();
+        setShowExportMenu(false);
+    }, [project]);
+
+    const selectedFeature = project.features.find(f => f.id === selectedFeatureId);
+
+    const modeButtons: { m: DrawMode; icon: any; label: string }[] = [
+        { m: 'select', icon: Navigation, label: 'Select' },
+        { m: 'marker', icon: MapPin, label: 'Marker' },
+        { m: 'line', icon: Route, label: 'Line' },
+        { m: 'polygon', icon: Hexagon, label: 'Polygon' },
+        { m: 'circle', icon: Circle, label: 'Circle' },
+        { m: 'measure', icon: Ruler, label: 'Measure' },
+    ];
 
     return (
-        <div className="h-full flex flex-col bg-gray-900">
-            <div className="flex-shrink-0 border-b border-gray-700 p-2 flex items-center gap-2 bg-gray-800">
-                <input
-                    type="text"
-                    value={mapName}
-                    onChange={(e) => { setMapName(e.target.value); setHasChanges(true); }}
-                    className="px-2 py-1 text-sm bg-gray-700 text-white border border-gray-600 rounded focus:border-cyan-500 focus:outline-none w-40"
-                />
-                <div className="h-4 w-px bg-gray-600" />
-                <select
-                    value={mapType}
-                    onChange={(e) => { setMapType(e.target.value as MapType); setHasChanges(true); }}
-                    className="px-2 py-1 text-xs bg-gray-700 text-white border border-gray-600 rounded focus:border-cyan-500 focus:outline-none"
-                    title="Map Type"
-                >
-                    {Object.entries(MAP_TYPE_INFO).map(([type, info]) => (
-                        <option key={type} value={type}>{info.label}</option>
-                    ))}
-                </select>
-                <div className="h-4 w-px bg-gray-600" />
-                <button
-                    onClick={saveMindMap}
-                    disabled={isSaving || !hasChanges}
-                    className="p-1.5 rounded hover:bg-gray-700 text-gray-400 hover:text-white disabled:opacity-50 transition-colors"
-                    title="Save"
-                >
-                    <Save size={18} />
-                </button>
-                <div className="h-4 w-px bg-gray-600" />
-                <div className="flex items-center gap-1 px-1 py-0.5 bg-gray-800 rounded border border-gray-600">
-                    <button
-                        onClick={() => setIsEditMode(false)}
-                        className={`px-2 py-1 rounded text-xs flex items-center gap-1 transition-colors ${!isEditMode ? 'bg-cyan-600 text-white' : 'text-gray-400 hover:text-white'}`}
-                        title="View mode - Select nodes to see properties"
-                    >
-                        <Eye size={14} /> View
+        <div className="h-full flex flex-col theme-bg-primary">
+            {/* Tab bar + toolbar */}
+            <div className="flex-shrink-0 border-b theme-border px-1.5 py-1 flex items-center gap-1.5 theme-bg-secondary">
+                {/* Tab switcher */}
+                <div className="flex items-center gap-0.5 px-1 py-0.5 theme-bg-tertiary rounded border theme-border mr-2">
+                    <button onClick={() => setActiveTab('gis')} className={`px-2 py-1 rounded text-xs flex items-center gap-1 transition-colors ${activeTab === 'gis' ? 'bg-emerald-600 text-white' : 'theme-text-muted hover:theme-text-primary'}`}>
+                        <MapIcon size={12} /> GIS Map
                     </button>
-                    <button
-                        onClick={() => setIsEditMode(true)}
-                        className={`px-2 py-1 rounded text-xs flex items-center gap-1 transition-colors ${isEditMode ? 'bg-orange-600 text-white' : 'text-gray-400 hover:text-white'}`}
-                        title="Edit mode - Double-click canvas to add nodes"
-                    >
-                        <Edit2 size={14} /> Edit
+                    <button onClick={() => setActiveTab('mindmap')} className={`px-2 py-1 rounded text-xs flex items-center gap-1 transition-colors ${activeTab === 'mindmap' ? 'bg-emerald-600 text-white' : 'theme-text-muted hover:theme-text-primary'}`}>
+                        <Network size={12} /> Mind Map
                     </button>
                 </div>
-                <div className="h-4 w-px bg-gray-600" />
-                {isEditMode && (
-                    <button
-                        onClick={() => setLinkMode({ active: !linkMode.active, sourceId: null })}
-                        className={`p-1.5 rounded transition-colors ${linkMode.active ? 'bg-cyan-600 text-white' : 'hover:bg-gray-700 text-gray-400 hover:text-white'}`}
-                        title={linkMode.active ? 'Cancel linking' : 'Link/unlink nodes'}
-                    >
-                        <Link size={18} />
-                    </button>
-                )}
-                <div className="flex-1" />
-                {isEditMode && <span className="text-[10px] text-gray-500">Double-click canvas to add node</span>}
-                <span className="text-xs text-gray-500 ml-2">
-                    {nodes.length} nodes, {links.length} links
-                    {hasChanges && <span className="text-yellow-500 ml-2">*</span>}
-                </span>
-                <button onClick={() => closeContentPane?.(nodeId, findNodePath?.(rootLayoutNode, nodeId) || [])} className="p-1.5 rounded hover:bg-gray-700 text-gray-400 hover:text-white transition-colors">
-                    <X size={18} />
-                </button>
-            </div>
 
-            <div className="flex-1 flex">
-                <div className="w-64 border-r border-gray-700 p-3 flex flex-col gap-3 bg-gray-800/50">
-                    <div className="border border-gray-700 rounded-lg p-2 bg-gray-900/50">
-                        <div className="flex items-center gap-2 mb-1">
-                            {(() => {
-                                const Icon = MAP_TYPE_INFO[mapType].icon;
-                                return <Icon size={14} className="text-cyan-400" />;
-                            })()}
-                            <span className="text-xs font-medium text-white">{MAP_TYPE_INFO[mapType].label}</span>
-                        </div>
-                        <p className="text-[10px] text-gray-400">{MAP_TYPE_INFO[mapType].description}</p>
-                        {mapType === 'coordinate' && (
-                            <p className="text-[10px] text-cyan-400 mt-1">Nodes can have lat/lng for spatial queries</p>
-                        )}
-                        {mapType === 'flowchart' && (
-                            <p className="text-[10px] text-cyan-400 mt-1">Use node types: start, end, process, decision</p>
-                        )}
-                    </div>
+                {activeTab === 'gis' && (
+                    <>
+                        <input type="text" value={project.name} onChange={(e) => updateProject(prev => ({ ...prev, name: e.target.value }))}
+                            className="px-2 py-1 text-sm theme-bg-tertiary theme-text-primary border theme-border rounded focus:border-emerald-500 focus:outline-none w-32" />
+                        <div className="h-4 w-px theme-border-color bg-current opacity-30" />
 
-                    {isEditMode && (
-                        <div>
-                            <label className="text-xs text-gray-400 mb-1 block">Add Node (or double-click canvas)</label>
-                            <div className="flex gap-1">
-                                <input
-                                    type="text"
-                                    value={newNodeLabel}
-                                    onChange={(e) => setNewNodeLabel(e.target.value)}
-                                    placeholder="Node text..."
-                                    className="flex-1 px-2 py-1.5 text-sm bg-gray-900 text-white border border-gray-600 rounded focus:border-cyan-500 focus:outline-none"
-                                    onKeyDown={(e) => e.key === 'Enter' && handleAddNode(selectedNode)}
-                                />
-                                <button
-                                    onClick={() => handleAddNode(selectedNode)}
-                                    disabled={!newNodeLabel.trim()}
-                                    className="px-2 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded disabled:opacity-50 transition-colors"
-                                    title={selectedNode ? 'Add as child' : 'Add root node'}
-                                >
-                                    <Plus size={16} />
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {selectedNodeData && (
-                        <div className="border border-gray-700 rounded-lg p-2 bg-gray-900/50">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-xs text-gray-400">Selected Node</span>
-                                <button onClick={() => setSelectedNode(null)} className="text-gray-500 hover:text-white">
-                                    <X size={12} />
-                                </button>
-                            </div>
-
-                            {isEditMode && editingNode === selectedNode ? (
-                                <div className="flex gap-1 mb-2">
-                                    <input
-                                        type="text"
-                                        value={editLabel}
-                                        onChange={(e) => setEditLabel(e.target.value)}
-                                        className="flex-1 px-2 py-1 text-sm bg-gray-800 text-white border border-gray-600 rounded focus:border-cyan-500 focus:outline-none"
-                                        onKeyDown={(e) => e.key === 'Enter' && saveEditedLabel()}
-                                        autoFocus
-                                    />
-                                    <button onClick={saveEditedLabel} className="px-2 py-1 bg-green-600 hover:bg-green-500 text-white rounded text-xs">OK</button>
-                                </div>
-                            ) : (
-                                <p className="text-sm text-white mb-2 truncate" title={selectedNodeData.label}>{selectedNodeData.label}</p>
-                            )}
-
-                            {isEditMode && (
-                                <>
-                                    <div className="flex gap-1 mb-2">
-                                        <button
-                                            onClick={() => startEditingNode(selectedNode)}
-                                            className="flex-1 p-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-xs flex items-center justify-center gap-1 transition-colors"
-                                        >
-                                            <Edit size={12} /> Edit
-                                        </button>
-                                        <button
-                                            onClick={() => handleDeleteNode(selectedNode)}
-                                            className="p-1.5 bg-red-600 hover:bg-red-500 text-white rounded transition-colors"
-                                            title="Delete"
-                                        >
-                                            <Trash2 size={14} />
-                                        </button>
-                                    </div>
-
-                                    <div className="mb-2">
-                                        <label className="text-xs text-gray-400 mb-1 block">Color</label>
-                                        <div className="flex gap-1 flex-wrap">
-                                            {NODE_COLORS.map(color => (
-                                                <button
-                                                    key={color}
-                                                    onClick={() => handleUpdateNode(selectedNode, { color })}
-                                                    className={`w-5 h-5 rounded ${selectedNodeData.color === color ? 'ring-2 ring-white' : ''}`}
-                                                    style={{ backgroundColor: color }}
-                                                />
-                                            ))}
-                                        </div>
-                                    </div>
-                                </>
-                            )}
-
-                            <div className="border-t border-gray-700 pt-2 mt-2">
-                                <label className="text-xs text-gray-400 mb-1 block">Properties</label>
-                                <div className="text-xs space-y-0.5">
-                                    <div className="flex justify-between"><span className="text-gray-500">ID:</span><span className="text-gray-300 font-mono">{selectedNodeData.id.slice(0, 12)}</span></div>
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-gray-500">Color:</span>
-                                        <span className="w-4 h-4 rounded" style={{ backgroundColor: selectedNodeData.color }} />
-                                    </div>
-                                    <div className="flex justify-between"><span className="text-gray-500">Position:</span><span className="text-gray-300">({Math.round(selectedNodeData.x)}, {Math.round(selectedNodeData.y)})</span></div>
-                                </div>
-                            </div>
-
-                            <div className="border-t border-gray-700 pt-2 mt-2">
-                                <label className="text-xs text-gray-400 mb-1 block">
-                                    Connections ({selectedNodeEdges.outgoing.length + selectedNodeEdges.incoming.length})
-                                </label>
-
-                                {selectedNodeEdges.outgoing.length > 0 && (
-                                    <div className="mb-2">
-                                        <span className="text-[10px] text-gray-500 flex items-center gap-1 mb-1"><ArrowRight size={10} /> Outgoing</span>
-                                        <div className="space-y-1">
-                                            {selectedNodeEdges.outgoing.map((link, i) => {
-                                                const targetNode = nodes.find(n => n.id === link.target);
-                                                return (
-                                                    <div key={i} className="flex items-center gap-1 text-xs bg-gray-800 rounded px-2 py-1">
-                                                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: targetNode?.color }} />
-                                                        <span className="text-gray-300 truncate flex-1">{targetNode?.label || link.target}</span>
-                                                        {isEditMode && (
-                                                            <button
-                                                                onClick={() => handleRemoveLink(link.source, link.target)}
-                                                                className="p-0.5 text-red-400 hover:text-red-300 hover:bg-red-900/30 rounded"
-                                                                title="Remove link"
-                                                            >
-                                                                <X size={12} />
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {selectedNodeEdges.incoming.length > 0 && (
-                                    <div>
-                                        <span className="text-[10px] text-gray-500 flex items-center gap-1 mb-1"><ArrowLeft size={10} /> Incoming</span>
-                                        <div className="space-y-1">
-                                            {selectedNodeEdges.incoming.map((link, i) => {
-                                                const sourceNode = nodes.find(n => n.id === link.source);
-                                                return (
-                                                    <div key={i} className="flex items-center gap-1 text-xs bg-gray-800 rounded px-2 py-1">
-                                                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: sourceNode?.color }} />
-                                                        <span className="text-gray-300 truncate flex-1">{sourceNode?.label || link.source}</span>
-                                                        {isEditMode && (
-                                                            <button
-                                                                onClick={() => handleRemoveLink(link.source, link.target)}
-                                                                className="p-0.5 text-red-400 hover:text-red-300 hover:bg-red-900/30 rounded"
-                                                                title="Remove link"
-                                                            >
-                                                                <X size={12} />
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {selectedNodeEdges.outgoing.length === 0 && selectedNodeEdges.incoming.length === 0 && (
-                                    <p className="text-xs text-gray-500 italic">No connections</p>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                    {linkMode.active && (
-                        <div className="border border-cyan-600 rounded-lg p-2 bg-cyan-900/30">
-                            <p className="text-xs text-cyan-400">
-                                {linkMode.sourceId
-                                    ? `Click another node to link/unlink from "${nodes.find(n => n.id === linkMode.sourceId)?.label}"`
-                                    : 'Click a node to start linking'}
-                            </p>
-                            <button
-                                onClick={() => setLinkMode({ active: false, sourceId: null })}
-                                className="mt-1 text-xs text-cyan-500 hover:text-cyan-300"
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                    )}
-
-                    <div className="flex-1 overflow-y-auto">
-                        <label className="text-xs text-gray-400 mb-1 block">All Nodes ({nodes.length})</label>
-                        <div className="space-y-1">
-                            {nodes.map(node => (
-                                <button
-                                    key={node.id}
-                                    onClick={() => linkMode.active ? handleLinkClick(node.id) : setSelectedNode(node.id)}
-                                    className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 transition-colors ${
-                                        selectedNode === node.id ? 'bg-cyan-600 text-white' : 'text-gray-300 hover:bg-gray-700'
-                                    }`}
-                                >
-                                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: node.color }} />
-                                    <span className="truncate">{node.label}</span>
+                        {/* Mode buttons */}
+                        <div className="flex items-center gap-0.5 px-1 py-0.5 theme-bg-tertiary rounded border theme-border">
+                            {modeButtons.map(({ m, icon: Icon, label }) => (
+                                <button key={m} onClick={() => setMode(m)} title={label}
+                                    className={`px-1.5 py-1 rounded text-xs flex items-center gap-1 transition-colors ${mode === m ? 'bg-emerald-600 text-white' : 'theme-text-muted hover:theme-text-primary'}`}>
+                                    <Icon size={14} />
                                 </button>
                             ))}
                         </div>
-                    </div>
-                </div>
+                        <div className="flex-1" />
 
-                <div
-                    ref={containerRef}
-                    className="flex-1 bg-gray-900 relative"
-                    onDoubleClick={handleCanvasDoubleClick}
-                    onContextMenu={handleCanvasContextMenu}
-                >
-                    {nodes.length === 0 ? (
-                        <div
-                            className="h-full flex flex-col items-center justify-center text-gray-500"
-                            onDoubleClick={handleCanvasDoubleClick}
-                        >
-                            <svg className="w-16 h-16 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                            </svg>
-                            <p>Start building your mind map</p>
-                            <p className="text-xs mt-1">{isEditMode ? 'Double-click or right-click to add a node' : 'Switch to Edit mode to add nodes'}</p>
-                        </div>
-                    ) : (
-                        <ForceGraph2D
-                            ref={graphRef}
-                            graphData={graphData}
-                            nodeLabel={(node: any) => node.label}
-                            nodeVal={(node: any) => node.val}
-                            nodeColor={(node: any) => {
-                                if (linkMode.sourceId === node.id) return '#fbbf24';
-                                if (selectedNode === node.id) return '#f59e0b';
-                                return node.color;
-                            }}
-                            nodeCanvasObject={(node: any, ctx, globalScale) => {
-                                const label = node.label;
-                                const fontSize = 12 / globalScale;
-                                ctx.font = `${fontSize}px Sans-Serif`;
-                                const textWidth = ctx.measureText(label).width;
-                                const bckgDimensions = [textWidth + fontSize * 0.8, fontSize * 1.4];
-
-                                let fillColor = node.color;
-                                if (linkMode.sourceId === node.id) fillColor = '#fbbf24';
-                                else if (selectedNode === node.id) fillColor = '#f59e0b';
-
-                                ctx.fillStyle = fillColor;
-                                ctx.beginPath();
-                                ctx.roundRect(
-                                    node.x - bckgDimensions[0] / 2,
-                                    node.y - bckgDimensions[1] / 2,
-                                    bckgDimensions[0],
-                                    bckgDimensions[1],
-                                    4
-                                );
-                                ctx.fill();
-
-                                ctx.textAlign = 'center';
-                                ctx.textBaseline = 'middle';
-                                ctx.fillStyle = '#fff';
-                                ctx.fillText(label, node.x, node.y);
-                            }}
-                            linkWidth={2}
-                            linkColor={() => 'rgba(255,255,255,0.3)'}
-                            linkDirectionalArrowLength={6}
-                            linkDirectionalArrowRelPos={0.9}
-                            onNodeClick={(node: any) => {
-                                if (linkMode.active) {
-                                    handleLinkClick(node.id);
-                                } else {
-                                    setSelectedNode(node.id);
-                                }
-                            }}
-                            onNodeRightClick={handleNodeRightClick}
-                            onNodeDragEnd={(node: any) => {
-                                handleUpdateNode(node.id, { x: node.x, y: node.y });
-                            }}
-                            enableNodeDrag={!linkMode.active}
-                            backgroundColor="transparent"
-                        />
-                    )}
-
-                    {showQuickAdd && pendingNodePosition && (
-                        <div
-                            className="absolute bg-gray-800 border border-cyan-500 rounded-lg shadow-xl p-3 z-50"
-                            style={{
-                                left: Math.min(pendingNodePosition.x, (containerRef.current?.clientWidth || 300) - 220),
-                                top: Math.min(pendingNodePosition.y, (containerRef.current?.clientHeight || 200) - 100)
-                            }}
-                        >
-                            <div className="flex items-center gap-2 mb-2">
-                                <Plus size={14} className="text-cyan-400" />
-                                <span className="text-xs text-white font-medium">Quick Add Node</span>
-                                <button
-                                    onClick={() => { setShowQuickAdd(false); setPendingNodePosition(null); }}
-                                    className="ml-auto text-gray-400 hover:text-white"
-                                >
-                                    <X size={12} />
-                                </button>
+                        {/* Search */}
+                        <div className="relative">
+                            <div className="flex items-center gap-1">
+                                <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()} placeholder="Search places..."
+                                    className="px-2 py-1 text-xs theme-bg-tertiary theme-text-primary border theme-border rounded focus:border-emerald-500 focus:outline-none w-40" />
+                                <button onClick={handleSearch} disabled={isSearching} className="p-1 theme-hover rounded theme-text-muted"><Search size={14} /></button>
                             </div>
-                            <input
-                                type="text"
-                                value={quickAddLabel}
-                                onChange={(e) => setQuickAddLabel(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') handleQuickAddNode();
-                                    if (e.key === 'Escape') { setShowQuickAdd(false); setPendingNodePosition(null); }
-                                }}
-                                placeholder="Node label..."
-                                className="w-48 px-2 py-1.5 text-sm bg-gray-900 text-white border border-gray-600 rounded focus:border-cyan-500 focus:outline-none"
-                                autoFocus
-                            />
-                            {selectedNode && (
-                                <p className="text-[10px] text-cyan-400 mt-1">
-                                    Will link to: {nodes.find(n => n.id === selectedNode)?.label}
-                                </p>
-                            )}
-                            <div className="flex gap-1 mt-2">
-                                <button
-                                    onClick={handleQuickAddNode}
-                                    disabled={!quickAddLabel.trim()}
-                                    className="flex-1 px-2 py-1 text-xs bg-cyan-600 hover:bg-cyan-500 text-white rounded disabled:opacity-50 transition-colors"
-                                >
-                                    Add
-                                </button>
-                                <button
-                                    onClick={() => { setShowQuickAdd(false); setPendingNodePosition(null); }}
-                                    className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {contextMenu && (
-                        <>
-                            <div
-                                className="fixed inset-0 z-40 bg-transparent"
-                                onMouseDown={() => setContextMenu(null)}
-                            />
-                            <div
-                                className="fixed bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 z-50 min-w-[160px]"
-                                style={{ top: contextMenu.y, left: contextMenu.x }}
-                            >
-                                {contextMenu.nodeId ? (
-
-                                    <>
-                                        <div className="px-3 py-1 text-[10px] text-gray-500 border-b border-gray-700">
-                                            Node: {nodes.find(n => n.id === contextMenu.nodeId)?.label}
+                            {searchResults.length > 0 && (
+                                <div className="absolute right-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[10000] max-h-60 overflow-y-auto w-80">
+                                    {searchResults.map((r: any, i: number) => (
+                                        <div key={i} className="flex items-center gap-1 px-2 py-1.5 hover:theme-bg-tertiary text-xs border-b theme-border last:border-0">
+                                            <button onClick={() => goToResult(r)} className="flex-1 text-left theme-text-primary truncate">{r.display_name}</button>
+                                            <button onClick={() => addResultAsMarker(r)} className="p-1 text-emerald-400 hover:text-emerald-300" title="Add as marker"><Plus size={12} /></button>
                                         </div>
-                                        <button
-                                            onClick={handleAddConnectedNode}
-                                            className="flex items-center gap-2 px-3 py-2 w-full text-left hover:bg-gray-700 text-sm text-white"
-                                        >
-                                            <Plus size={14} className="text-green-400" />
-                                            Add Connected Node
-                                        </button>
-                                        <button
-                                            onClick={handleStartLinking}
-                                            className="flex items-center gap-2 px-3 py-2 w-full text-left hover:bg-gray-700 text-sm text-white"
-                                        >
-                                            <Link size={14} className="text-cyan-400" />
-                                            Link to Another Node
-                                        </button>
-                                        <button
-                                            onClick={() => {
-                                                startEditingNode(contextMenu.nodeId!);
-                                                setContextMenu(null);
-                                            }}
-                                            className="flex items-center gap-2 px-3 py-2 w-full text-left hover:bg-gray-700 text-sm text-white"
-                                        >
-                                            <Edit size={14} className="text-yellow-400" />
-                                            Edit Label
-                                        </button>
-                                        <div className="border-t border-gray-700 my-1" />
-                                        <button
-                                            onClick={() => {
-                                                handleDeleteNode(contextMenu.nodeId!);
-                                                setContextMenu(null);
-                                            }}
-                                            className="flex items-center gap-2 px-3 py-2 w-full text-left hover:bg-gray-700 text-sm text-red-400"
-                                        >
-                                            <Trash2 size={14} />
-                                            Delete Node
-                                        </button>
-                                    </>
-                                ) : (
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        <div className="h-4 w-px theme-border-color bg-current opacity-30" />
 
-                                    <>
-                                        <button
-                                            onClick={() => handleContextMenuAddNode(false)}
-                                            className="flex items-center gap-2 px-3 py-2 w-full text-left hover:bg-gray-700 text-sm text-white"
-                                        >
-                                            <Plus size={14} className="text-green-400" />
-                                            Add Node Here
+                        {/* Samples */}
+                        <div className="relative">
+                            <button onClick={() => setShowSamplesMenu(!showSamplesMenu)} className="p-1.5 theme-hover rounded theme-text-muted" title="Sample Maps"><BookOpen size={14} /></button>
+                            {showSamplesMenu && (
+                                <>
+                                    <div className="fixed inset-0 z-[9999]" onMouseDown={() => setShowSamplesMenu(false)} />
+                                    <div className="absolute right-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[10000] py-1 min-w-[280px] max-h-80 overflow-y-auto">
+                                        <div className="px-3 py-1 text-[10px] theme-text-muted border-b theme-border">Load a sample map</div>
+                                        {['travel', 'history', 'nature', 'infrastructure', 'intelligence'].map(cat => {
+                                            const maps = demoMaps.filter(m => m.category === cat);
+                                            if (maps.length === 0) return null;
+                                            return (
+                                                <div key={cat}>
+                                                    <div className="px-3 pt-2 pb-0.5 text-[10px] theme-text-muted uppercase tracking-wider">{cat}</div>
+                                                    {maps.map(m => (
+                                                        <button key={m.title} onClick={() => {
+                                                            setProject(m.project);
+                                                            setHasChanges(false);
+                                                            setShowSamplesMenu(false);
+                                                            setTimeout(() => mapRef.current?.setView(m.center, m.zoom), 100);
+                                                        }} className="flex flex-col px-3 py-1.5 w-full text-left hover:theme-bg-tertiary">
+                                                            <span className="text-xs theme-text-primary font-medium">{m.title}</span>
+                                                            <span className="text-[10px] theme-text-muted">{m.description} &middot; {m.featureCount} features</span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
+
+                        {/* Import */}
+                        <div className="relative">
+                            <button onClick={() => setShowImportMenu(!showImportMenu)} className="p-1.5 theme-hover rounded theme-text-muted" title="Import"><Upload size={14} /></button>
+                            {showImportMenu && (
+                                <>
+                                    <div className="fixed inset-0 z-[9999]" onMouseDown={() => setShowImportMenu(false)} />
+                                    <div className="absolute right-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[10000] py-1 min-w-[260px]">
+                                        <div className="px-3 py-1 text-[10px] theme-text-muted border-b theme-border">Import from file</div>
+                                        <button onClick={() => { fileInputRef.current?.setAttribute('accept', '.geojson,.json'); fileInputRef.current?.click(); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary">
+                                            <FileJson size={12} className="text-blue-400" /> <div><span className="font-medium">GeoJSON</span><br /><span className="text-[10px] theme-text-muted">Points, lines, polygons — ArcGIS/QGIS standard</span></div>
                                         </button>
-                                        {selectedNode && (
-                                            <button
-                                                onClick={() => handleContextMenuAddNode(true)}
-                                                className="flex items-center gap-2 px-3 py-2 w-full text-left hover:bg-gray-700 text-sm text-white"
-                                            >
-                                                <Link size={14} className="text-cyan-400" />
-                                                Add & Link to Selected
-                                            </button>
+                                        <button onClick={() => { fileInputRef.current?.setAttribute('accept', '.kml,.kmz'); fileInputRef.current?.click(); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary">
+                                            <Globe size={12} className="text-green-400" /> <div><span className="font-medium">KML</span><br /><span className="text-[10px] theme-text-muted">Google Earth, Google Maps export</span></div>
+                                        </button>
+                                        <button onClick={() => { fileInputRef.current?.setAttribute('accept', '.gpx'); fileInputRef.current?.click(); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary">
+                                            <Route size={12} className="text-orange-400" /> <div><span className="font-medium">GPX</span><br /><span className="text-[10px] theme-text-muted">GPS tracks — Garmin, Strava, AllTrails</span></div>
+                                        </button>
+                                        <button onClick={() => { fileInputRef.current?.setAttribute('accept', '.csv,.tsv'); fileInputRef.current?.click(); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary">
+                                            <Layers size={12} className="text-yellow-400" /> <div><span className="font-medium">CSV / TSV</span><br /><span className="text-[10px] theme-text-muted">Spreadsheet with lat, lng, name columns</span></div>
+                                        </button>
+                                        <button onClick={() => { fileInputRef.current?.setAttribute('accept', '.mapx'); fileInputRef.current?.click(); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary">
+                                            <MapIcon size={12} className="text-emerald-400" /> <div><span className="font-medium">MAPX Project</span><br /><span className="text-[10px] theme-text-muted">Cartoglyph native project file</span></div>
+                                        </button>
+                                        <div className="border-t theme-border my-1" />
+                                        <div className="px-3 py-1 text-[10px] theme-text-muted border-b theme-border">Download template</div>
+                                        <button onClick={() => {
+                                            const csv = 'name,lat,lng,description\nExample Point,40.7128,-74.0060,New York City\nAnother Point,34.0522,-118.2437,Los Angeles\n';
+                                            const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'template_points.csv'; a.click(); setShowImportMenu(false);
+                                        }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-muted hover:theme-bg-tertiary">
+                                            <Download size={12} /> CSV template (points)
+                                        </button>
+                                        <button onClick={() => {
+                                            const geojson = JSON.stringify({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [-74.006, 40.7128] }, properties: { name: 'New York City' } }, { type: 'Feature', geometry: { type: 'LineString', coordinates: [[-74.006, 40.7128], [-118.2437, 34.0522]] }, properties: { name: 'NYC to LA' } }] }, null, 2);
+                                            const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([geojson], { type: 'application/json' })); a.download = 'template.geojson'; a.click(); setShowImportMenu(false);
+                                        }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-muted hover:theme-bg-tertiary">
+                                            <Download size={12} /> GeoJSON template (point + line)
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                            <input ref={fileInputRef} type="file" accept=".geojson,.json,.kml,.csv,.mapx,.gpx,.kmz,.tsv" className="hidden" onChange={handleFileImport} />
+                        </div>
+
+                        {/* Export */}
+                        <div className="relative">
+                            <button onClick={() => setShowExportMenu(!showExportMenu)} className="p-1.5 theme-hover rounded theme-text-muted" title="Export"><Download size={14} /></button>
+                            {showExportMenu && (
+                                <>
+                                    <div className="fixed inset-0 z-[9999]" onMouseDown={() => setShowExportMenu(false)} />
+                                    <div className="absolute right-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[10000] py-1 min-w-[260px]">
+                                        <div className="px-3 py-1 text-[10px] theme-text-muted border-b theme-border">Export {project.features.length} features</div>
+                                        <button onClick={exportGeoJSON} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary">
+                                            <FileJson size={12} className="text-blue-400" /> <div><span className="font-medium">GeoJSON</span><br /><span className="text-[10px] theme-text-muted">Universal GIS format — open in ArcGIS, QGIS, Mapbox</span></div>
+                                        </button>
+                                        <button onClick={exportKML} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary">
+                                            <Globe size={12} className="text-green-400" /> <div><span className="font-medium">KML</span><br /><span className="text-[10px] theme-text-muted">Google Earth / Google Maps</span></div>
+                                        </button>
+                                        <button onClick={() => {
+                                            const markers = project.features.filter(f => f.visible && f.type === 'marker');
+                                            const lines = ['name,lat,lng,type,color,layer'];
+                                            markers.forEach(f => {
+                                                const c = f.coordinates as [number, number];
+                                                lines.push(`"${f.name.replace(/"/g, '""')}",${c[0]},${c[1]},${f.type},${f.color},${f.layerId}`);
+                                            });
+                                            const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' })); a.download = `${project.name.replace(/\s+/g, '_')}.csv`; a.click(); setShowExportMenu(false);
+                                        }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary">
+                                            <Layers size={12} className="text-yellow-400" /> <div><span className="font-medium">CSV</span><br /><span className="text-[10px] theme-text-muted">Spreadsheet — markers only, with coordinates</span></div>
+                                        </button>
+                                        <button onClick={() => {
+                                            const geojson = featuresToGeoJSON(project.features.filter(f => f.visible));
+                                            let gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Cartoglyph">\n`;
+                                            geojson.features.forEach((f: any) => {
+                                                if (f.geometry.type === 'Point') {
+                                                    gpx += `  <wpt lat="${f.geometry.coordinates[1]}" lon="${f.geometry.coordinates[0]}"><name>${f.properties?.name || ''}</name></wpt>\n`;
+                                                } else if (f.geometry.type === 'LineString') {
+                                                    gpx += `  <trk><name>${f.properties?.name || ''}</name><trkseg>\n`;
+                                                    f.geometry.coordinates.forEach((c: number[]) => { gpx += `    <trkpt lat="${c[1]}" lon="${c[0]}"/>\n`; });
+                                                    gpx += `  </trkseg></trk>\n`;
+                                                }
+                                            });
+                                            gpx += `</gpx>`;
+                                            const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([gpx], { type: 'application/gpx+xml' })); a.download = `${project.name.replace(/\s+/g, '_')}.gpx`; a.click(); setShowExportMenu(false);
+                                        }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary">
+                                            <Route size={12} className="text-orange-400" /> <div><span className="font-medium">GPX</span><br /><span className="text-[10px] theme-text-muted">GPS exchange — Garmin, hiking apps, Strava</span></div>
+                                        </button>
+                                        <div className="border-t theme-border my-1" />
+                                        <button onClick={exportProject} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-primary hover:theme-bg-tertiary">
+                                            <MapIcon size={12} className="text-emerald-400" /> <div><span className="font-medium">MAPX Project</span><br /><span className="text-[10px] theme-text-muted">Full project — layers, features, settings</span></div>
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
+                        {!isStandalone && (
+                            <button onClick={saveProject} disabled={isSaving || !hasChanges} className="p-1.5 theme-hover rounded theme-text-muted disabled:opacity-50" title="Save"><Save size={14} /></button>
+                        )}
+                        <span className="text-xs theme-text-muted">{project.features.length} feat{hasChanges && <span className="text-yellow-500 ml-1">*</span>}</span>
+                    </>
+                )}
+
+                <div className="flex-1" />
+                <button onClick={() => closeContentPane?.(nodeId, findNodePath?.(rootLayoutNode, nodeId) || [])} className="p-1.5 theme-hover rounded theme-text-muted"><X size={14} /></button>
+            </div>
+
+            {/* Content */}
+            {activeTab === 'gis' && (
+                <div className="flex-1 flex overflow-hidden">
+                    {/* Sidebar */}
+                    {!sidebarCollapsed && (
+                        <div className="w-60 border-r theme-border flex flex-col theme-bg-secondary overflow-hidden">
+                            <div className="flex border-b theme-border">
+                                {(['layers', 'properties', 'overlays', 'osint'] as const).map(tab => (
+                                    <button key={tab} onClick={() => setSidebarTab(tab)}
+                                        className={`flex-1 px-2 py-1.5 text-xs transition-colors ${sidebarTab === tab ? 'text-emerald-400 border-b-2 border-emerald-400' : 'theme-text-muted hover:theme-text-primary'}`}>
+                                        {tab === 'layers' ? 'Layers' : tab === 'properties' ? 'Props' : tab === 'overlays' ? 'Ref' : 'OSINT'}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-2">
+                                {sidebarTab === 'layers' && (
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs font-medium theme-text-primary">Layers</span>
+                                            <button onClick={addLayer} className="p-1 theme-hover rounded text-emerald-400"><Plus size={14} /></button>
+                                        </div>
+                                        {project.layers.map(layer => (
+                                            <div key={layer.id} className={`border theme-border rounded p-2 ${activeLayerId === layer.id ? 'border-emerald-500/50 theme-bg-tertiary' : ''}`}>
+                                                <div className="flex items-center gap-1.5">
+                                                    <button onClick={() => toggleLayerVisibility(layer.id)} className="theme-text-muted hover:theme-text-primary">{layer.visible ? <Eye size={12} /> : <EyeOff size={12} />}</button>
+                                                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: layer.color }} />
+                                                    <button onClick={() => setActiveLayerId(layer.id)} className={`flex-1 text-left text-xs truncate ${activeLayerId === layer.id ? 'text-emerald-400 font-medium' : 'theme-text-primary'}`}>{layer.name}</button>
+                                                    <span className="text-[10px] theme-text-muted">{layer.features.length}</span>
+                                                    {project.layers.length > 1 && <button onClick={() => deleteLayer(layer.id)} className="p-0.5 text-red-400/50 hover:text-red-400"><Trash2 size={10} /></button>}
+                                                </div>
+                                                {activeLayerId === layer.id && (
+                                                    <div className="mt-1.5 space-y-0.5 max-h-40 overflow-y-auto">
+                                                        {project.features.filter(f => f.layerId === layer.id).map(f => (
+                                                            <button key={f.id} onClick={() => { setSelectedFeatureId(f.id); setSidebarTab('properties'); if (f.type === 'marker' && mapRef.current) mapRef.current.setView(f.coordinates as [number, number], mapRef.current.getZoom()); }}
+                                                                className={`w-full text-left px-1.5 py-1 rounded text-[11px] flex items-center gap-1.5 ${selectedFeatureId === f.id ? 'bg-emerald-600/30 text-emerald-300' : 'theme-text-muted hover:theme-bg-tertiary'}`}>
+                                                                {f.type === 'marker' ? <MapPin size={10} /> : f.type === 'line' ? <Route size={10} /> : f.type === 'polygon' ? <Hexagon size={10} /> : <Circle size={10} />}
+                                                                <span className="truncate">{f.name}</span>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {sidebarTab === 'properties' && selectedFeature && (
+                                    <div className="space-y-3">
+                                        <div>
+                                            <label className="text-[10px] theme-text-muted block mb-1">Name</label>
+                                            {editingFeatureName === selectedFeature.id ? (
+                                                <div className="flex gap-1">
+                                                    <input type="text" value={editNameValue} onChange={(e) => setEditNameValue(e.target.value)}
+                                                        onKeyDown={(e) => { if (e.key === 'Enter') { updateFeature(selectedFeature.id, { name: editNameValue }); setEditingFeatureName(null); } if (e.key === 'Escape') setEditingFeatureName(null); }}
+                                                        className="flex-1 px-1.5 py-0.5 text-xs theme-bg-tertiary theme-text-primary border theme-border rounded focus:outline-none" autoFocus />
+                                                    <button onClick={() => { updateFeature(selectedFeature.id, { name: editNameValue }); setEditingFeatureName(null); }} className="text-xs text-emerald-400">OK</button>
+                                                </div>
+                                            ) : (
+                                                <button onClick={() => { setEditingFeatureName(selectedFeature.id); setEditNameValue(selectedFeature.name); }} className="text-sm theme-text-primary hover:text-emerald-400 text-left w-full truncate">{selectedFeature.name}</button>
+                                            )}
+                                        </div>
+                                        <div><label className="text-[10px] theme-text-muted block mb-1">Type</label><span className="text-xs theme-text-primary capitalize">{selectedFeature.type}</span></div>
+                                        <div>
+                                            <label className="text-[10px] theme-text-muted block mb-1">Color</label>
+                                            <div className="flex gap-1 flex-wrap">{LAYER_COLORS.map(c => (<button key={c} onClick={() => updateFeature(selectedFeature.id, { color: c })} className={`w-5 h-5 rounded ${selectedFeature.color === c ? 'ring-2 ring-white' : ''}`} style={{ backgroundColor: c }} />))}</div>
+                                        </div>
+                                        {selectedFeature.type === 'marker' && (
+                                            <div><label className="text-[10px] theme-text-muted block mb-1">Coordinates</label><span className="text-xs theme-text-primary font-mono">{(selectedFeature.coordinates as [number, number])[0].toFixed(6)}, {(selectedFeature.coordinates as [number, number])[1].toFixed(6)}</span></div>
                                         )}
-                                    </>
+                                        {Object.keys(selectedFeature.properties).filter(k => !k.startsWith('_')).length > 0 && (
+                                            <div>
+                                                <label className="text-[10px] theme-text-muted block mb-1">Properties</label>
+                                                <div className="space-y-0.5 max-h-32 overflow-y-auto">
+                                                    {Object.entries(selectedFeature.properties).filter(([k]) => !k.startsWith('_')).map(([k, v]) => (
+                                                        <div key={k} className="flex text-[11px]"><span className="theme-text-muted w-20 truncate flex-shrink-0">{k}:</span><span className="theme-text-primary truncate">{String(v)}</span></div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        <div className="pt-2 border-t theme-border flex gap-1">
+                                            <button onClick={() => navigator.clipboard.writeText(JSON.stringify(featuresToGeoJSON([selectedFeature]), null, 2))}
+                                                className="flex-1 px-2 py-1 text-xs theme-bg-tertiary theme-text-primary rounded hover:theme-bg-primary flex items-center justify-center gap-1"><Copy size={10} /> GeoJSON</button>
+                                            <button onClick={() => deleteFeature(selectedFeature.id)} className="px-2 py-1 text-xs bg-red-600/20 text-red-400 rounded hover:bg-red-600/30"><Trash2 size={10} /></button>
+                                        </div>
+                                    </div>
+                                )}
+                                {sidebarTab === 'properties' && !selectedFeature && (
+                                    <div className="text-xs theme-text-muted text-center mt-8"><Navigation size={24} className="mx-auto mb-2 opacity-50" /><p>Select a feature</p></div>
+                                )}
+
+                                {sidebarTab === 'overlays' && (
+                                    <div className="space-y-3">
+                                        <p className="text-[10px] theme-text-muted">Toggle tile overlays and reference layers.</p>
+
+                                        {/* Tile overlays */}
+                                        <div>
+                                            <span className="text-[10px] theme-text-muted uppercase tracking-wider font-medium">tile overlays</span>
+                                            <div className="mt-1 space-y-0.5">
+                                                {Object.entries(TILE_OVERLAYS).map(([key, overlay]) => (
+                                                    <label key={key} className="flex items-center gap-2 px-1.5 py-1 rounded hover:theme-bg-tertiary cursor-pointer text-xs">
+                                                        <input type="checkbox" checked={activeTileOverlays.has(key)}
+                                                            onChange={() => setActiveTileOverlays(prev => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; })}
+                                                            className="accent-emerald-500" />
+                                                        <span className="theme-text-primary">{overlay.name}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        {Object.entries(
+                                            Object.entries(REFERENCE_LAYERS).reduce((acc, [k, v]) => {
+                                                (acc[v.category] = acc[v.category] || []).push([k, v]);
+                                                return acc;
+                                            }, {} as Record<string, [string, any][]>)
+                                        ).map(([category, layers]) => (
+                                            <div key={category}>
+                                                <span className="text-[10px] theme-text-muted uppercase tracking-wider font-medium">{category}</span>
+                                                <div className="mt-1 space-y-0.5">
+                                                    {layers.map(([key, layer]: [string, any]) => (
+                                                        <label key={key} className="flex items-center gap-2 px-1.5 py-1 rounded hover:theme-bg-tertiary cursor-pointer text-xs">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={activeOverlays.has(key)}
+                                                                onChange={() => setActiveOverlays(prev => {
+                                                                    const next = new Set(prev);
+                                                                    if (next.has(key)) next.delete(key); else next.add(key);
+                                                                    return next;
+                                                                })}
+                                                                className="accent-emerald-500"
+                                                            />
+                                                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: layer.style?.color || layer.style?.fillColor || '#666' }} />
+                                                            <span className="theme-text-primary">{layer.name}</span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {activeOverlays.size > 0 && (
+                                            <button onClick={() => { setActiveOverlays(new Set()); setActiveTileOverlays(new Set()); }} className="text-[10px] text-red-400 hover:text-red-300">Clear all overlays</button>
+                                        )}
+                                    </div>
+                                )}
+
+                                {sidebarTab === 'osint' && (
+                                    <div className="space-y-3">
+                                        <p className="text-[10px] theme-text-muted">Toggle OSM data layers for current viewport. Auto-refreshes when you pan.</p>
+
+                                        {/* OSINT toggleable layers by category */}
+                                        {Object.entries(
+                                            Object.entries(OSINT_PRESETS).reduce((acc, [k, v]) => {
+                                                (acc[v.category] = acc[v.category] || []).push([k, v]);
+                                                return acc;
+                                            }, {} as Record<string, [string, any][]>)
+                                        ).map(([category, items]) => (
+                                            <div key={category}>
+                                                <span className="text-[10px] theme-text-muted uppercase tracking-wider font-medium">{category}</span>
+                                                <div className="mt-1 space-y-0.5">
+                                                    {items.map(([key, preset]: [string, any]) => (
+                                                        <label key={key} className="flex items-center gap-2 px-1.5 py-1 rounded hover:theme-bg-tertiary cursor-pointer text-xs">
+                                                            <input type="checkbox" checked={osintVisible.has(key)} onChange={() => toggleOsintLayer(key)} className="accent-emerald-500" />
+                                                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: preset.color }} />
+                                                            <span className="theme-text-primary flex-1">{preset.label}</span>
+                                                            {osintLoading.has(key) && <span className="text-[9px] text-emerald-400 animate-pulse">loading</span>}
+                                                            {osintCache[key] && <span className="text-[9px] theme-text-muted">{osintCache[key].results.length}</span>}
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+
+                                        {osintVisible.size > 0 && (
+                                            <button onClick={() => { setOsintVisible(new Set()); }} className="text-[10px] text-red-400 hover:text-red-300">Clear all OSINT layers</button>
+                                        )}
+
+                                        <div className="border-t theme-border pt-2">
+                                            <label className="text-[10px] theme-text-muted block mb-1">Custom Overpass query</label>
+                                            <div className="flex gap-1">
+                                                <input type="text" value={osintQuery} onChange={(e) => setOsintQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && fetchOSINT()}
+                                                    placeholder="amenity=hospital"
+                                                    className="flex-1 px-2 py-1 text-xs theme-bg-tertiary theme-text-primary border theme-border rounded focus:outline-none focus:border-emerald-500" />
+                                                <button onClick={() => fetchOSINT()} disabled={isOsintLoading} className="px-2 py-1 text-xs bg-emerald-600 text-white rounded disabled:opacity-50">{isOsintLoading ? '...' : 'Fetch'}</button>
+                                            </div>
+                                        </div>
+                                        {osintResults.length > 0 && (
+                                            <div>
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <span className="text-[10px] theme-text-muted">{osintResults.length} results</span>
+                                                    <button onClick={() => osintResults.forEach(r => addOsintResult(r))} className="text-[10px] text-emerald-400">Add all</button>
+                                                </div>
+                                                <div className="space-y-1 max-h-60 overflow-y-auto">
+                                                    {osintResults.map((r: any, i: number) => (
+                                                        <div key={i} className="flex items-start gap-1.5 p-1.5 theme-bg-tertiary rounded text-[11px]">
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className="theme-text-primary truncate font-medium">{r.name}</p>
+                                                                <p className="theme-text-muted truncate">{r.category} &middot; {r.lat?.toFixed(4)}, {r.lng?.toFixed(4)}</p>
+                                                            </div>
+                                                            <button onClick={() => { if (r.lat && r.lng) mapRef.current?.setView([r.lat, r.lng], 16); }} className="p-1 theme-text-muted hover:text-emerald-400" title="Go to"><LocateFixed size={10} /></button>
+                                                            <button onClick={() => addOsintResult(r)} className="p-1 theme-text-muted hover:text-emerald-400" title="Add"><Plus size={10} /></button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
                             </div>
-                        </>
+                        </div>
                     )}
+
+                    {/* Sidebar toggle */}
+                    <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                        className="w-4 flex-shrink-0 flex items-center justify-center theme-bg-secondary border-r theme-border hover:theme-bg-tertiary">
+                        {sidebarCollapsed ? <ChevronRight size={10} /> : <ChevronDown size={10} className="rotate-90" />}
+                    </button>
+
+                    {/* Map */}
+                    <GISMapView
+                        project={project}
+                        onProjectChange={updateProject}
+                        mode={mode}
+                        onModeChange={setMode}
+                        selectedFeatureId={selectedFeatureId}
+                        onSelectFeature={setSelectedFeatureId}
+                        mapRef={mapRef}
+                        activeOverlays={activeOverlays}
+                        activeTileOverlays={activeTileOverlays}
+                        osintLayers={Array.from(osintVisible).filter(k => osintCache[k]).map(k => ({
+                            key: k,
+                            color: OSINT_PRESETS[k]?.color || '#f59e0b',
+                            markers: osintCache[k].results,
+                        }))}
+                    />
                 </div>
-            </div>
+            )}
+
+            {activeTab === 'mindmap' && (
+                <div className="flex-1 overflow-hidden">
+                    <NpctsMindMapViewer
+                        initialData={mindMapData || undefined}
+                        onChange={(data) => setMindMapData(data)}
+                        onSave={async (data) => {
+                            if (!isStandalone && filePath) {
+                                await (window as any).api?.writeFile?.(filePath, JSON.stringify(data, null, 2));
+                            }
+                        }}
+                        defaultEditMode={true}
+                    />
+                </div>
+            )}
         </div>
     );
 };
 
-const arePropsEqual = (prevProps: any, nextProps: any) => {
-    return prevProps.nodeId === nextProps.nodeId;
-};
-
-export default memo(MindMapViewer, arePropsEqual);
+const arePropsEqual = (prevProps: any, nextProps: any) => prevProps.nodeId === nextProps.nodeId;
+export default memo(CartoglyphPane, arePropsEqual);

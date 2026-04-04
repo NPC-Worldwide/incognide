@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { RefreshCw, GitBranch, RotateCcw, Cherry, AlertTriangle } from 'lucide-react';
+import { RefreshCw, GitBranch, RotateCcw, Cherry, AlertTriangle, Globe } from 'lucide-react';
+import GitForestPanel from './GitForestPanel';
 
 interface GitPaneProps {
     nodeId: string;
+    currentPath: string;
     gitStatus: any;
     gitModalTab: 'status' | 'diff' | 'branches' | 'history';
     gitDiffContent: { staged: string; unstaged: string } | null;
@@ -46,8 +48,9 @@ interface GitPaneProps {
     gitLogBranch: (branchName: string) => Promise<any[]>;
 }
 
-const GitPane: React.FC<GitPaneProps> = React.memo(({
+const GitPane: React.FC<GitPaneProps> = ({
     nodeId,
+    currentPath,
     gitStatus,
     gitModalTab,
     gitDiffContent,
@@ -90,6 +93,7 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
     gitResetToCommit,
     gitLogBranch,
 }) => {
+    const [showForest, setShowForest] = useState(false);
     const [resetConfirm, setResetConfirm] = useState<{ hash: string; mode: 'soft' | 'mixed' | 'hard' } | null>(null);
     const [actionFeedback, setActionFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
     const [cherryPickSource, setCherryPickSource] = useState<string | null>(null);
@@ -159,13 +163,14 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
                     <button
                         key={tab}
                         onClick={() => {
+                            setShowForest(false);
                             setGitModalTab(tab);
                             if (tab === 'diff') loadGitDiff();
                             if (tab === 'branches') loadGitBranches();
                             if (tab === 'history') { loadGitHistory(); loadGitBranches(); }
                         }}
                         className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                            gitModalTab === tab
+                            !showForest && gitModalTab === tab
                                 ? 'border-purple-500 text-purple-400'
                                 : 'border-transparent theme-text-muted hover:theme-text-primary'
                         }`}
@@ -173,10 +178,23 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
                         {tab.charAt(0).toUpperCase() + tab.slice(1)}
                     </button>
                 ))}
+                {/* GitForest tab — hidden until network has more peers */}
+                {false && <button
+                    onClick={() => setShowForest(true)}
+                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+                        showForest
+                            ? 'border-purple-500 text-purple-400'
+                            : 'border-transparent theme-text-muted hover:theme-text-primary'
+                    }`}
+                >
+                    <Globe size={13} /> Forest
+                </button>}
             </div>
 
             <div className="flex-1 overflow-auto p-4">
-                {!gitStatus ? (
+                {showForest ? (
+                    <GitForestPanel currentPath={currentPath} />
+                ) : !gitStatus ? (
                     <div className="text-center theme-text-muted py-8">No git repository in this directory</div>
                 ) : gitModalTab === 'status' ? (
 
@@ -613,8 +631,6 @@ const GitPane: React.FC<GitPaneProps> = React.memo(({
             </div>
         </div>
     );
-});
-
-GitPane.displayName = 'GitPane';
+};
 
 export default GitPane;

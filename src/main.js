@@ -591,6 +591,131 @@ function getWorkspacePathForWebContents(webContents) {
   return paths.length > 0 ? paths[paths.length - 1] : app.getPath('downloads');
 }
 
+// File opening handlers for system-level file associations (#195)
+let pendingFileOpen = null;
+
+function getContentTypeFromExtension(filePath) {
+  const ext = filePath.split('.').pop()?.toLowerCase() || '';
+  const mimeTypes = {
+    'pdf': 'pdf',
+    'csv': 'csv',
+    'xlsx': 'csv',
+    'xls': 'csv',
+    'pptx': 'pptx',
+    'tex': 'latex',
+    'ipynb': 'notebook',
+    'exp': 'exp',
+    'pltx': 'exp',
+    'docx': 'docx',
+    'doc': 'docx',
+    'mapx': 'mindmap',
+    'zip': 'zip',
+    'stl': 'stl',
+    'txt': 'editor',
+    'md': 'markdown-preview',
+    'json': 'editor',
+    'js': 'editor',
+    'ts': 'editor',
+    'jsx': 'editor',
+    'tsx': 'editor',
+    'py': 'editor',
+    'rs': 'editor',
+    'go': 'editor',
+    'html': 'html',
+    'css': 'editor',
+    'png': 'image',
+    'jpg': 'image',
+    'jpeg': 'image',
+    'gif': 'image',
+    'webp': 'image',
+    'bmp': 'image',
+    'svg': 'image',
+    'mp4': 'image',  // Video handled by PhotoViewer
+    'mov': 'image',
+    'webm': 'image',
+    'avi': 'image',
+    'mkv': 'image',
+    'm4v': 'image'
+  };
+  return mimeTypes[ext] || 'editor';
+}
+
+function handleFileOpen(filePath) {
+  log(`[FILE-OPEN] Received file open request: ${filePath}`);
+  
+  const windows = BrowserWindow.getAllWindows();
+  if (windows.length === 0) {
+    // Store for when window is created
+    pendingFileOpen = filePath;
+    log(`[FILE-OPEN] No windows open, storing for later: ${filePath}`);
+    return;
+  }
+  
+  const mainWindow = BrowserWindow.getFocusedWindow() || 
+    (lastActiveWindow && !lastActiveWindow.isDestroyed() ? lastActiveWindow : null) ||
+    windows[0];
+  
+  const contentType = getContentTypeFromExtension(filePath);
+  log(`[FILE-OPEN] Opening ${filePath} as type: ${contentType}`);
+  
+  // Send to renderer to open the file
+  mainWindow.webContents.send('open-file-from-os', {
+    filePath: filePath,
+    contentType: contentType
+  });
+  
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.focus();
+}
+
+function parseFileArgs(argv) {
+  log(`[FILE-ARGS] Parsing command line args: ${JSON.stringify(argv)}`);
+  
+  // Look for file paths in argv (skip first two which are exec path and script)
+  const args = argv.slice(1);
+  
+  for (const arg of args) {
+    // Skip flags
+    if (arg.startsWith('-') || arg.startsWith('--')) continue;
+    
+    // Skip URLs (handled by deep link)
+    if (arg.startsWith('http://') || arg.startsWith('https://') || arg.startsWith('file://')) continue;
+    
+    // Check if it's a file path
+    if (fs.existsSync(arg) && fs.statSync(arg).isFile()) {
+      log(`[FILE-ARGS] Found file in args: ${arg}`);
+      handleFileOpen(arg);
+      return;
+    }
+  }
+  
+  // Also check for --folder argument
+  const folderArg = argv.find(arg => arg.startsWith('--folder='));
+  if (folderArg) {
+    const folderPath = folderArg.replace('--folder=', '');
+    log(`[FILE-ARGS] Found folder arg: ${folderPath}`);
+    // Folder switching is handled elsewhere
+    return;
+  }
+}
+
+// Process any pending file open after window is ready
+function processPendingFileOpen(mainWindow) {
+  if (pendingFileOpen) {
+    log(`[FILE-OPEN] Processing pending file: ${pendingFileOpen}`);
+    const contentType = getContentTypeFromExtension(pendingFileOpen);
+    mainWindow.webContents.send('open-file-from-os', {
+      filePath: pendingFileOpen,
+      contentType: contentType
+    });
+    pendingFileOpen = null;
+  }
+}
+
+app.setAsDefaultProtocolClient('incognide')
+app.on('open-file', (event, path) => { event.preventDefault(); handleFileOpen(path); })
+app.on('second-instance', (event, argv) => parseFileArgs(argv))
+
 app.on('web-contents-created', (event, contents) => {
 
   contents.on('context-menu', async (e, params) => {
@@ -972,6 +1097,8 @@ app.whenReady().then(async () => {
       PYTHONUNBUFFERED: '1',
       PYTHONIOENCODING: 'utf-8',
       HOME: os.homedir(),
+      NPCSH_BASE: path.join(os.homedir(), '.npcsh'),
+      INCOGNIDE_DATA_DIR: path.join(os.homedir(), '.npcsh', 'incognide', 'data'),
     };
 
     backendProcess = spawnBackendProcess(_backendPath, _spawnArgs, 'bundled', _backendEnv);
@@ -2037,13 +2164,13 @@ function createWindow(cliArgs = {}) {
         responseHeaders: {
           ...details.responseHeaders,
           'Content-Security-Policy': [
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://js.stripe.com; " +
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://js.stripe.com https://*.clerk.accounts.dev https://clerk.app.incognide.com; " +
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://js.stripe.com https://fonts.googleapis.com; " +
         "style-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://js.stripe.com https://fonts.googleapis.com; " +
         "img-src 'self' data: file: media: blob: http: https:; " +
         "font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com; " +
         `connect-src 'self' file: media: http://localhost:${FRONTEND_PORT} http://127.0.0.1:${BACKEND_PORT} ${BACKEND_URL} blob: ws: wss: https://* http://*; ` +
-        "frame-src 'self' file: data: blob: media: chrome-extension: https://js.stripe.com https://m.stripe.network https://checkout.stripe.com; " +
+        "frame-src 'self' file: data: blob: media: chrome-extension: https://js.stripe.com https://m.stripe.network https://checkout.stripe.com https://*.clerk.accounts.dev https://clerk.app.incognide.com; " +
         "object-src 'self' file: data: blob: media: chrome-extension:; " +
         "worker-src 'self' blob: data:; " +
         "media-src 'self' data: file: blob: http: https:;"
@@ -2125,6 +2252,9 @@ function createWindow(cliArgs = {}) {
         mainWindow.webContents.send('open-url-in-browser', { url: pendingUrl });
       }
 
+      // Process any file that was opened before the window was ready
+      processPendingFileOpen(mainWindow);
+
       startInterceptFileWatcher();
     });
 }
@@ -2167,6 +2297,38 @@ registerAll({
   ensureTablesExist,
   appDir: __dirname,
   NPCSH_BASE,
+});
+
+// Generic proxy fetch — bypasses CORS for renderer requests to external APIs
+ipcMain.handle('proxy-fetch', async (_event, url, options = {}) => {
+  try {
+    const resp = await fetch(url, {
+      method: options.method || 'GET',
+      headers: options.headers || {},
+      body: options.body || undefined,
+    });
+    const contentType = resp.headers.get('content-type') || '';
+    let data;
+    if (contentType.includes('json')) {
+      data = await resp.json();
+    } else {
+      data = await resp.text();
+    }
+    return { ok: resp.ok, status: resp.status, data };
+  } catch (err) {
+    return { ok: false, status: 0, error: err.message };
+  }
+});
+
+// List serial ports (for radio connections)
+ipcMain.handle('list-serial-ports', async () => {
+  try {
+    const { SerialPort } = require('serialport');
+    const ports = await SerialPort.list();
+    return ports.map(p => ({ path: p.path, manufacturer: p.manufacturer, vendorId: p.vendorId, productId: p.productId }));
+  } catch (err) {
+    return [];
+  }
 });
 
 ipcMain.handle('open-new-window', async (event, initialPath, options) => {

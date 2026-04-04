@@ -138,7 +138,7 @@ jobs:
       - name: Build frontend
         run: npm run build:vite
         env:
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
 
       - name: Rebuild native modules for Electron (Linux/macOS)
         if: runner.os != 'Windows'
@@ -362,7 +362,7 @@ jobs:
       - name: Build frontend
         run: npm run build:vite
         env:
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
 
       - name: Rebuild native modules for Electron
         run: |

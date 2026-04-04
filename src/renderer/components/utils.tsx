@@ -302,12 +302,12 @@ export const loadAvailableNPCs = async (
     setNpcsError: (error: string | null) => void,
     setAvailableNPCs: (npcs: any[]) => void
 ) => {
-    if (!currentPath) return [];
+    const pathToUse = currentPath || '~';
     setNpcsLoading(true);
     setNpcsError(null);
     try {
 
-        const projectResponse = await window.api.getNPCTeamProject(currentPath);
+        const projectResponse = await window.api.getNPCTeamProject(pathToUse);
         const projectNPCs = projectResponse.npcs || [];
 
         const globalResponse = await window.api.getNPCTeamGlobal('npcsh');
@@ -654,11 +654,11 @@ export const fetchModels = async (
     setModelsError: (error: string | null) => void,
     setAvailableModels: (models: any[]) => void
 ) => {
-    if (!currentPath) return [];
+    const pathToUse = currentPath || '~';
     setModelsLoading(true);
     setModelsError(null);
     try {
-        const response = await window.api.getAvailableModels(currentPath);
+        const response = await window.api.getAvailableModels(pathToUse);
         if (response?.models && Array.isArray(response.models)) {
             setAvailableModels(response.models);
             return response.models;
