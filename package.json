@@ -41,46 +41,23 @@
       "output": "dist-electron"
     },
     "fileAssociations": [
-      {
-        "ext": "pdf",
-        "name": "PDF Document"
-      },
-      {
-        "ext": [
-          "txt",
-          "md"
-        ],
-        "name": "Text Document"
-      },
-      {
-        "ext": [
-          "png",
-          "jpg",
-          "jpeg",
-          "gif",
-          "svg"
-        ],
-        "name": "Image"
-      },
-      {
-        "ext": [
-          "mp4",
-          "avi",
-          "mkv"
-        ],
-        "name": "Video"
-      },
-      {
-        "ext": [
-          "js",
-          "ts",
-          "py",
-          "html",
-          "css",
-          "json"
-        ],
-        "name": "Code"
-      }
+      {"ext": "pdf", "name": "PDF Document"},
+      {"ext": "txt", "name": "Text Document"},
+      {"ext": "md", "name": "Markdown Document"},
+      {"ext": "png", "name": "Image"},
+      {"ext": "jpg", "name": "Image"},
+      {"ext": "jpeg", "name": "Image"},
+      {"ext": "gif", "name": "Image"},
+      {"ext": "svg", "name": "Image"},
+      {"ext": "mp4", "name": "Video"},
+      {"ext": "avi", "name": "Video"},
+      {"ext": "mkv", "name": "Video"},
+      {"ext": "js", "name": "Code"},
+      {"ext": "ts", "name": "Code"},
+      {"ext": "py", "name": "Code"},
+      {"ext": "html", "name": "Code"},
+      {"ext": "css", "name": "Code"},
+      {"ext": "json", "name": "Code"}
     ],
     "files": [
       "dist/**/*",
