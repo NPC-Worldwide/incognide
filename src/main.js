@@ -1091,20 +1091,40 @@ app.whenReady().then(async () => {
 
     log(`Using backend path: ${_backendPath}${_spawnArgs.length ? ' ' + _spawnArgs.join(' ') : ''}`);
 
-    _backendEnv = {
-      ...process.env,
-      INCOGNIDE_PORT: String(BACKEND_PORT),
-      FLASK_DEBUG: '1',
-      PYTHONUNBUFFERED: '1',
-      PYTHONIOENCODING: 'utf-8',
-      HOME: os.homedir(),
-      NPCSH_BASE: path.join(os.homedir(), '.npcsh'),
-      INCOGNIDE_DATA_DIR: path.join(os.homedir(), '.npcsh', 'incognide', 'data'),
-    };
+    // Check if backend is already running on the port before spawning
+    let backendAlreadyRunning = false;
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 2000);
+      const response = await fetch(`${BACKEND_URL}/api/health`, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (response.ok) {
+        log(`Backend already running on ${BACKEND_URL} - skipping spawn`);
+        backendAlreadyRunning = true;
+        _backendStartupError = null;
+      }
+    } catch (e) {
+      log(`No existing backend found on ${BACKEND_URL}, will spawn new one`);
+    }
 
-    backendProcess = spawnBackendProcess(_backendPath, _spawnArgs, 'bundled', _backendEnv);
+    let serverReady = backendAlreadyRunning;
 
-    let serverReady = await waitForServer();
+    if (!backendAlreadyRunning) {
+      _backendEnv = {
+        ...process.env,
+        INCOGNIDE_PORT: String(BACKEND_PORT),
+        FLASK_DEBUG: '1',
+        PYTHONUNBUFFERED: '1',
+        PYTHONIOENCODING: 'utf-8',
+        HOME: os.homedir(),
+        NPCSH_BASE: path.join(os.homedir(), '.npcsh'),
+        INCOGNIDE_DATA_DIR: path.join(os.homedir(), '.npcsh', 'incognide', 'data'),
+      };
+
+      backendProcess = spawnBackendProcess(_backendPath, _spawnArgs, 'bundled', _backendEnv);
+
+      serverReady = await waitForServer();
+    }
 
     if (!serverReady && backendProcess.exitCode !== null && backendProcess.exitCode !== 0) {
       log('Bundled backend failed to start — attempting fallback to system Python...');
