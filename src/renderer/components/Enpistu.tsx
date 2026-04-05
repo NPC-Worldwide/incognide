@@ -61,7 +61,6 @@ import LibraryViewer from './LibraryViewer';
 import HelpViewer from './HelpViewer';
 import FolderViewer from './FolderViewer';
 import PathSwitcher from './PathSwitcher';
-import TopBarPathBreadcrumb from './TopBarPathBreadcrumb';
 import WorkspaceSwitchWarning from './WorkspaceSwitchWarning';
 import LogsViewer from './LogsViewer';
 import CronDaemonPanel from './CronDaemonPanel';
@@ -6392,6 +6391,7 @@ ${contextPrompt}`;
     <LogsViewer onClose={() => setLogsViewerOpen(false)} />
 )}
 
+
 {/* Download toast notification */}
 {downloadToast && (
     <div
@@ -8394,13 +8394,31 @@ const renderMainContent = () => {
                 <LayoutGrid size={18} />
             </button>
 
-            {/* Workspace path breadcrumb - VS Code style, only show when a folder is open */}
-            {currentPath && currentPath !== baseDir && (
-                <TopBarPathBreadcrumb
-                    currentPath={currentPath}
-                    onPathChange={switchToPath}
-                />
-            )}
+            {/* Top bar path + command palette trigger */}
+            <div className="flex items-center rounded bg-black/30 border border-transparent hover:border-gray-600 transition-all overflow-hidden">
+                {/* Path part - opens folder picker */}
+                <button
+                    onClick={handleOpenFolderPicker}
+                    className="flex items-center gap-2 px-3 py-1 hover:bg-white/10 transition-all text-left"
+                    title="Click to open a different folder"
+                >
+                    <Folder size={14} className="theme-text-muted" />
+                    <span className="text-xs theme-text-primary truncate max-w-[300px]">
+                        {currentPath || 'No folder selected'}
+                    </span>
+                </button>
+                {/* Divider */}
+                <div className="w-px h-4 bg-gray-600" />
+                {/* Command part - opens command palette */}
+                <button
+                    onClick={() => setCommandPaletteOpen(true)}
+                    className="flex items-center gap-2 px-3 py-1 hover:bg-white/10 transition-all"
+                    title="Open command palette (Ctrl+Shift+P)"
+                >
+                    <Terminal size={14} className="theme-text-muted" />
+                    <span className="text-[10px] theme-text-muted">Ctrl+Shift+P</span>
+                </button>
+            </div>
 
             <div className="flex-1" />
 
