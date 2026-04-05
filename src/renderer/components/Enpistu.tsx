@@ -8394,7 +8394,18 @@ const renderMainContent = () => {
                 <LayoutGrid size={18} />
             </button>
 
-            {/* Top bar path + command palette trigger */}
+            <div className="flex-1" />
+
+            {/* Collapse top bar */}
+            <button
+                onClick={() => { setTopBarCollapsed(true); localStorage.setItem('incognide_topBarCollapsed', 'true'); }}
+                className="p-1.5 theme-hover rounded theme-text-muted"
+                title="Hide top bar"
+            >
+                <ChevronUp size={14} />
+            </button>
+
+            {/* Top bar path + command palette trigger - CENTERED */}
             <div className="flex items-center rounded bg-black/30 border border-transparent hover:border-gray-600 transition-all overflow-hidden">
                 {/* Path part - opens folder picker */}
                 <button
@@ -8424,15 +8435,6 @@ const renderMainContent = () => {
             </div>
 
             <div className="flex-1" />
-
-            {/* Collapse top bar */}
-            <button
-                onClick={() => { setTopBarCollapsed(true); localStorage.setItem('incognide_topBarCollapsed', 'true'); }}
-                className="p-1.5 theme-hover rounded theme-text-muted"
-                title="Hide top bar"
-            >
-                <ChevronUp size={14} />
-            </button>
 
             {/* App Search — collapses to icon button when top bar is narrow, expands inline on click */}
             {topBarWidth < 900 ? (
