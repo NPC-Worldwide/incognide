@@ -8394,19 +8394,10 @@ const renderMainContent = () => {
                 <LayoutGrid size={18} />
             </button>
 
-            {/* Workspace path breadcrumb */}
+            {/* Workspace path breadcrumb - VS Code style */}
             <TopBarPathBreadcrumb
                 currentPath={currentPath || baseDir}
-                baseDir={baseDir}
                 onPathChange={switchToPath}
-                onOpenFolderPicker={async () => {
-                    try {
-                        const result = await (window as any).api.open_directory_picker();
-                        if (result) switchToPath(result);
-                    } catch (err) {
-                        console.error('Failed to open folder picker:', err);
-                    }
-                }}
             />
 
             <div className="flex-1" />
