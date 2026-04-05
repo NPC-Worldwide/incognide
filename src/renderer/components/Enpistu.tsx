@@ -61,6 +61,9 @@ import LibraryViewer from './LibraryViewer';
 import HelpViewer from './HelpViewer';
 import FolderViewer from './FolderViewer';
 import PathSwitcher from './PathSwitcher';
+import TopBarPathBreadcrumb from './TopBarPathBreadcrumb';
+import WorkspaceSwitchWarning from './WorkspaceSwitchWarning';
+import LogsViewer from './LogsViewer';
 import CronDaemonPanel from './CronDaemonPanel';
 import MemoryManager from './MemoryManager';
 import WindowManagerPane from './WindowManagerPane';
@@ -482,6 +485,11 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     } = useGitOperations({ currentPath });
 
     const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
+    const [workspaceSwitchWarning, setWorkspaceSwitchWarning] = useState<{
+        isOpen: boolean;
+        newPath: string;
+    }>({ isOpen: false, newPath: '' });
+    const [logsViewerOpen, setLogsViewerOpen] = useState(false);
     const [graphViewerOpen, setGraphViewerOpen] = useState(false);
     const [dataLabelerOpen, setDataLabelerOpen] = useState(false);
     // Sidebar/resize state from useSidebarResize hook
@@ -1352,7 +1360,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     // Resize useEffects now handled by useSidebarResize hook
 
     // Path switching hook
-    const switchToPath = useSwitchToPath(
+    const switchToPathBase = useSwitchToPath(
         windowId,
         currentPath,
         rootLayoutNode,
@@ -1366,6 +1374,58 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         setCurrentPath
     );
 
+    // Helper to count active panes and check for terminals/chats
+    const getActivePaneInfo = useCallback(() => {
+        const countPanes = (node: any): { total: number; hasTerminal: boolean; hasChat: boolean } => {
+            if (!node) return { total: 0, hasTerminal: false, hasChat: false };
+            if (node.type === 'leaf') {
+                const isTerminal = node.contentType === 'terminal';
+                const isChat = node.contentType === 'chat';
+                return { total: 1, hasTerminal: isTerminal, hasChat: isChat };
+            }
+            if (node.children && Array.isArray(node.children)) {
+                return node.children.reduce((acc: any, child: any) => {
+                    const childInfo = countPanes(child);
+                    return {
+                        total: acc.total + childInfo.total,
+                        hasTerminal: acc.hasTerminal || childInfo.hasTerminal,
+                        hasChat: acc.hasChat || childInfo.hasChat,
+                    };
+                }, { total: 0, hasTerminal: false, hasChat: false });
+            }
+            return { total: 0, hasTerminal: false, hasChat: false };
+        };
+        return countPanes(rootLayoutNode);
+    }, [rootLayoutNode]);
+
+    // Wrapper for switchToPath that warns about active panes
+    const switchToPath = useCallback(async (newPath: string) => {
+        if (newPath === currentPath) return;
+
+        const paneInfo = getActivePaneInfo();
+        // Warn if there are multiple panes OR any terminals
+        if (paneInfo.total > 1 || paneInfo.hasTerminal) {
+            setWorkspaceSwitchWarning({ isOpen: true, newPath });
+            return;
+        }
+
+        // No warning needed, switch directly
+        await switchToPathBase(newPath);
+    }, [currentPath, getActivePaneInfo, switchToPathBase]);
+
+    // Handle confirmed workspace switch
+    const handleConfirmWorkspaceSwitch = useCallback(async () => {
+        const newPath = workspaceSwitchWarning.newPath;
+        setWorkspaceSwitchWarning({ isOpen: false, newPath: '' });
+        await switchToPathBase(newPath);
+    }, [workspaceSwitchWarning.newPath, switchToPathBase]);
+
+    // Handle open in new window
+    const handleOpenInNewWindow = useCallback(async () => {
+        const newPath = workspaceSwitchWarning.newPath;
+        setWorkspaceSwitchWarning({ isOpen: false, newPath: '' });
+        await (window as any).api?.openNewWindow?.(newPath);
+    }, [workspaceSwitchWarning.newPath]);
 
     const jinxesToDisplay = useMemo(() => {
         if (favoriteJinxes.size === 0 || showAllJinxes) return availableJinxes;
@@ -6314,6 +6374,24 @@ ${contextPrompt}`;
     currentPath={currentPath}
 />
 
+{/* Workspace switch warning dialog */}
+<WorkspaceSwitchWarning
+    isOpen={workspaceSwitchWarning.isOpen}
+    onClose={() => setWorkspaceSwitchWarning({ isOpen: false, newPath: '' })}
+    currentPath={currentPath || ''}
+    newPath={workspaceSwitchWarning.newPath}
+    activePaneCount={getActivePaneInfo().total}
+    hasTerminals={getActivePaneInfo().hasTerminal}
+    hasChats={getActivePaneInfo().hasChat}
+    onSwitchAnyway={handleConfirmWorkspaceSwitch}
+    onOpenInNewWindow={handleOpenInNewWindow}
+/>
+
+{/* Logs viewer */}
+{logsViewerOpen && (
+    <LogsViewer onClose={() => setLogsViewerOpen(false)} />
+)}
+
 {/* Download toast notification */}
 {downloadToast && (
     <div
@@ -8316,6 +8394,21 @@ const renderMainContent = () => {
                 <LayoutGrid size={18} />
             </button>
 
+            {/* Workspace path breadcrumb */}
+            <TopBarPathBreadcrumb
+                currentPath={currentPath || baseDir}
+                baseDir={baseDir}
+                onPathChange={switchToPath}
+                onOpenFolderPicker={async () => {
+                    try {
+                        const result = await (window as any).api.open_directory_picker();
+                        if (result) switchToPath(result);
+                    } catch (err) {
+                        console.error('Failed to open folder picker:', err);
+                    }
+                }}
+            />
+
             <div className="flex-1" />
 
             {/* Collapse top bar */}
@@ -8909,6 +9002,7 @@ const renderMainContent = () => {
                         onOpenDownloadManager={() => setDownloadManagerOpen(true)}
                         isPredictiveTextEnabled={isPredictiveTextEnabled}
                         setIsPredictiveTextEnabled={setIsPredictiveTextEnabled}
+                        onOpenLogsViewer={() => setLogsViewerOpen(true)}
                     />
                 )}
             </main>
@@ -9015,6 +9109,7 @@ const renderMainContent = () => {
                     onOpenDownloadManager={() => setDownloadManagerOpen(true)}
                     isPredictiveTextEnabled={isPredictiveTextEnabled}
                     setIsPredictiveTextEnabled={setIsPredictiveTextEnabled}
+                    onOpenLogsViewer={() => setLogsViewerOpen(true)}
                 />
             )}
         </main>
