@@ -8398,7 +8398,10 @@ const renderMainContent = () => {
             <div className="flex items-center rounded bg-black/30 border border-transparent hover:border-gray-600 transition-all overflow-hidden">
                 {/* Path part - opens folder picker */}
                 <button
-                    onClick={handleOpenFolderPicker}
+                    onClick={async () => {
+                        const selectedPath = await (window as any).api?.open_directory_picker?.();
+                        if (selectedPath) setCurrentPath(selectedPath);
+                    }}
                     className="flex items-center gap-2 px-3 py-1 hover:bg-white/10 transition-all text-left"
                     title="Click to open a different folder"
                 >
