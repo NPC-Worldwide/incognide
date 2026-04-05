@@ -10,6 +10,125 @@ const sqlite3 = require('sqlite3');
 
 const dbPath = path.join(os.homedir(), 'npcsh_history.db');
 
+/**
+ * Categorize backend errors into user-friendly messages
+ */
+function categorizeBackendError(error) {
+  const errorStr = String(error?.message || error || '');
+  const errorCode = error?.code || '';
+
+  // Connection errors
+  if (errorCode === 'ECONNREFUSED' || errorStr.includes('ECONNREFUSED')) {
+    return {
+      userMessage: 'Cannot connect to AI backend. The backend server may not be running.',
+      category: 'connection',
+      suggestion: 'Try restarting the backend from the status bar menu.',
+      original: errorStr,
+    };
+  }
+
+  if (errorCode === 'ETIMEDOUT' || errorStr.includes('ETIMEDOUT') || errorStr.includes('timeout')) {
+    return {
+      userMessage: 'Request timed out. The AI service may be overloaded or the model may be too slow.',
+      category: 'timeout',
+      suggestion: 'Try again or use a smaller/faster model.',
+      original: errorStr,
+    };
+  }
+
+  if (errorCode === 'ENOTFOUND' || errorStr.includes('ENOTFOUND')) {
+    return {
+      userMessage: 'Cannot reach the AI service. Check your network connection.',
+      category: 'network',
+      suggestion: 'Verify your internet connection and try again.',
+      original: errorStr,
+    };
+  }
+
+  // HTTP status errors
+  if (errorStr.includes('401') || errorStr.includes('Unauthorized')) {
+    return {
+      userMessage: 'Authentication failed. Your API key may be invalid or expired.',
+      category: 'auth',
+      suggestion: 'Check your API key in Settings.',
+      original: errorStr,
+    };
+  }
+
+  if (errorStr.includes('403') || errorStr.includes('Forbidden')) {
+    return {
+      userMessage: 'Access denied. You may not have permission to use this model.',
+      category: 'auth',
+      suggestion: 'Check your API key permissions or try a different model.',
+      original: errorStr,
+    };
+  }
+
+  if (errorStr.includes('429') || errorStr.includes('rate limit') || errorStr.includes('Too Many Requests')) {
+    return {
+      userMessage: 'Rate limit exceeded. Wait a moment before trying again.',
+      category: 'rate_limit',
+      suggestion: 'Wait a few seconds and retry your request.',
+      original: errorStr,
+    };
+  }
+
+  if (errorStr.includes('500') || errorStr.includes('Internal Server Error')) {
+    return {
+      userMessage: 'The AI service encountered an error. Try again in a moment.',
+      category: 'server_error',
+      suggestion: 'This is usually temporary. Try again shortly.',
+      original: errorStr,
+    };
+  }
+
+  if (errorStr.includes('503') || errorStr.includes('Service Unavailable')) {
+    return {
+      userMessage: 'The AI service is temporarily unavailable.',
+      category: 'server_error',
+      suggestion: 'The service may be overloaded. Try again shortly.',
+      original: errorStr,
+    };
+  }
+
+  // Model errors
+  if (errorStr.includes('model not found') || errorStr.includes('Model not found') || errorStr.includes('does not exist')) {
+    return {
+      userMessage: 'The selected AI model is not available.',
+      category: 'model',
+      suggestion: 'Select a different model from the model picker.',
+      original: errorStr,
+    };
+  }
+
+  if (errorStr.includes('context length') || errorStr.includes('token limit') || errorStr.includes('too long')) {
+    return {
+      userMessage: 'The conversation is too long for this model.',
+      category: 'context',
+      suggestion: 'Start a new conversation or use a model with larger context.',
+      original: errorStr,
+    };
+  }
+
+  // Backend not started
+  if (errorStr.includes('Backend returned no stream') || errorStr.includes('Failed to set up stream')) {
+    return {
+      userMessage: 'Unable to connect to the AI backend.',
+      category: 'connection',
+      suggestion: 'Check if the backend is running in the status bar.',
+      original: errorStr,
+    };
+  }
+
+  // Default fallback
+  return {
+    userMessage: 'An error occurred while processing your request.',
+    category: 'unknown',
+    suggestion: 'Check the logs for more details.',
+    original: errorStr,
+  };
+}
+
 function parseNpcshrc() {
   const rcPath = path.join(os.homedir(), '.npcshrc');
   const result = {};
@@ -472,9 +591,13 @@ function register(ctx) {
         stream.on('error', (err) => {
           log(`[Main Process] Stream ${capturedStreamId} error:`, err.message);
           if (!event.sender.isDestroyed()) {
+              const categorized = categorizeBackendError(err);
               event.sender.send('stream-error', {
                 streamId: capturedStreamId,
-                error: err.message
+                error: categorized.userMessage,
+                category: categorized.category,
+                suggestion: categorized.suggestion,
+                original: categorized.original,
               });
           }
           activeStreams.delete(capturedStreamId);
@@ -485,13 +608,17 @@ function register(ctx) {
 
     } catch (err) {
       log(`[Main Process] Error setting up stream ${currentStreamId}:`, err.message);
+      const categorized = categorizeBackendError(err);
       if (event.sender && !event.sender.isDestroyed()) {
           event.sender.send('stream-error', {
             streamId: currentStreamId,
-            error: `Failed to set up stream: ${err.message}`
+            error: categorized.userMessage,
+            category: categorized.category,
+            suggestion: categorized.suggestion,
+            original: categorized.original,
           });
       }
-      return { error: `Failed to set up stream: ${err.message}`, streamId: currentStreamId };
+      return { error: categorized.userMessage, streamId: currentStreamId };
     }
   });
 
@@ -549,9 +676,13 @@ function register(ctx) {
 
         stream.on('error', (err) => {
             if (!event.sender.isDestroyed()) {
+                const categorized = categorizeBackendError(err);
                 event.sender.send('stream-error', {
                     streamId: currentStreamId,
-                    error: err.message
+                    error: categorized.userMessage,
+                    category: categorized.category,
+                    suggestion: categorized.suggestion,
+                    original: categorized.original,
                 });
             }
             activeStreams.delete(currentStreamId);
@@ -560,13 +691,17 @@ function register(ctx) {
         return { streamId: currentStreamId };
 
     } catch (err) {
+        const categorized = categorizeBackendError(err);
         if (event.sender && !event.sender.isDestroyed()) {
             event.sender.send('stream-error', {
                 streamId: currentStreamId,
-                error: err.message
+                error: categorized.userMessage,
+                category: categorized.category,
+                suggestion: categorized.suggestion,
+                original: categorized.original,
             });
         }
-        return { error: err.message, streamId: currentStreamId };
+        return { error: categorized.userMessage, streamId: currentStreamId };
     }
   });
 

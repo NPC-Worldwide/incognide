@@ -1313,8 +1313,9 @@ function register(ctx) {
 
     return new Promise((resolve) => {
 
-      const args = ['-m', 'pip', 'install', '--upgrade', `npcpy[${safeExtras}]`];
-      log(`[SETUP] Installing npcpy: ${pythonPath} ${args.join(' ')}`);
+      // Install npcpy with extras AND npcsh explicitly (npcsh is not a dependency of npcpy)
+      const args = ['-m', 'pip', 'install', '--upgrade', `npcpy[${safeExtras}]`, 'npcsh'];
+      log(`[SETUP] Installing npcpy and npcsh: ${pythonPath} ${args.join(' ')}`);
 
       const proc = spawn(pythonPath, args, {
         env: { ...process.env }
@@ -1355,6 +1356,45 @@ function register(ctx) {
         resolve({ success: false, error: err.message });
       });
     });
+  });
+
+  ipcMain.handle('setup:verifyDependencies', async (event, { pythonPath }) => {
+    if (!pythonPath) {
+      return { success: false, error: 'No Python path provided' };
+    }
+
+    const dependencies = [
+      { name: 'npcpy', importCheck: 'import npcpy; print(npcpy.__version__)' },
+      { name: 'npcsh', importCheck: 'import npcsh; print("ok")' },
+      { name: 'flask', importCheck: 'import flask; print(flask.__version__)' },
+    ];
+
+    const results = [];
+    for (const dep of dependencies) {
+      try {
+        const { execSync } = require('child_process');
+        const output = execSync(`"${pythonPath}" -c "${dep.importCheck}"`, {
+          encoding: 'utf8',
+          timeout: 10000,
+          windowsHide: true,
+        }).trim();
+        results.push({ name: dep.name, installed: true, version: output });
+        log(`[SETUP] Verified ${dep.name}: ${output}`);
+      } catch (err) {
+        results.push({ name: dep.name, installed: false, error: err.message });
+        log(`[SETUP] Missing dependency ${dep.name}: ${err.message}`);
+      }
+    }
+
+    const allInstalled = results.every(r => r.installed);
+    const missing = results.filter(r => !r.installed).map(r => r.name);
+
+    return {
+      success: allInstalled,
+      results,
+      missing,
+      error: allInstalled ? null : `Missing dependencies: ${missing.join(', ')}`,
+    };
   });
 
   ipcMain.handle('setup:complete', async (event, { pythonPath }) => {

@@ -265,10 +265,18 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     };
 
     const completeSetup = async (path: string) => {
-        setInstallOutput(prev => [...prev, 'Saving configuration...']);
+        setInstallOutput(prev => [...prev, 'Verifying dependencies...']);
 
         try {
+            // Step 1: Verify all dependencies are installed
+            const verifyResult = await (window as any).api?.setupVerifyDependencies?.(path);
+            if (verifyResult && !verifyResult.success) {
+                throw new Error(verifyResult.error || `Missing dependencies: ${verifyResult.missing?.join(', ')}`);
+            }
+            setInstallOutput(prev => [...prev, 'Dependencies verified: npcpy, npcsh, flask']);
 
+            // Step 2: Save profile configuration
+            setInstallOutput(prev => [...prev, 'Saving configuration...']);
             const aiEnabled = userPath !== 'no-ai';
             await (window as any).api?.profileSave?.({
                 path: userPath,
@@ -286,20 +294,32 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 }
             }
 
+            // Step 3: Start the backend
+            setInstallOutput(prev => [...prev, 'Starting backend...']);
+            const restartResult = await (window as any).api?.setupRestartBackend?.();
+            if (!restartResult?.success) {
+                setInstallOutput(prev => [...prev, `Warning: Backend startup issue - ${restartResult?.error || 'unknown error'}`]);
+                setInstallOutput(prev => [...prev, 'Continuing setup - backend may start on next launch']);
+            } else {
+                setInstallOutput(prev => [...prev, 'Backend started successfully!']);
+
+                // Step 4: Verify backend health
+                setInstallOutput(prev => [...prev, 'Verifying backend health...']);
+                const healthResult = await (window as any).api?.backendHealth?.();
+                if (healthResult?.status !== 'ok') {
+                    setInstallOutput(prev => [...prev, `Warning: Backend health check returned ${healthResult?.status || 'unknown'}`]);
+                } else {
+                    setInstallOutput(prev => [...prev, 'Backend health check passed!']);
+                }
+            }
+
+            // Step 5: Mark setup complete (only after backend verification)
             const result = await (window as any).api?.setupComplete?.(path);
             if (!result?.success) {
                 throw new Error(result?.error || 'Failed to complete setup');
             }
 
-            setInstallOutput(prev => [...prev, 'Starting backend...']);
-
-            const restartResult = await (window as any).api?.setupRestartBackend?.();
-            if (!restartResult?.success) {
-                setInstallOutput(prev => [...prev, 'Note: Backend will start on next app launch']);
-            } else {
-                setInstallOutput(prev => [...prev, 'Backend started successfully!']);
-            }
-
+            // Step 6: Deploy NPC team
             setInstallOutput(prev => [...prev, 'Setting up NPC team...']);
             try {
                 await (window as any).api?.deployNpcTeam?.();

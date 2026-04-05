@@ -442,6 +442,7 @@ let backendProcess = null;
 let _backendPath = null;
 let _spawnArgs = [];
 let _backendEnv = null;
+let _backendStartupError = null;
 
 function killBackendProcess() {
   if (backendProcess) {
@@ -1124,7 +1125,14 @@ app.whenReady().then(async () => {
     }
 
     if (!serverReady) {
-      log('Backend server failed to start - check backend.log for details');
+      const errorMsg = 'Backend server failed to start - check backend.log for details';
+      log(errorMsg);
+      _backendStartupError = {
+        message: errorMsg,
+        pythonPath: _backendPath,
+        exitCode: backendProcess?.exitCode,
+        timestamp: new Date().toISOString(),
+      };
 
       try {
         log('Attempting direct npcsh initialization...');
@@ -1135,11 +1143,19 @@ app.whenReady().then(async () => {
         log('Direct npcsh initialization completed');
       } catch (initErr) {
         log(`Direct npcsh initialization failed: ${initErr.message}`);
+        _backendStartupError.initError = initErr.message;
       }
+    } else {
+      _backendStartupError = null;
     }
   } catch (err) {
     log(`Error spawning backend server: ${err.message}`);
     console.error('Error spawning backend server:', err);
+    _backendStartupError = {
+      message: err.message,
+      pythonPath: _backendPath,
+      timestamp: new Date().toISOString(),
+    };
   }
 
   await ensureBaseDir();
@@ -2211,6 +2227,13 @@ function createWindow(cliArgs = {}) {
     const cliWorkspaceArgs = { folder, bookmarks, openUrl };
 
     mainWindow.webContents.on('did-finish-load', async () => {
+      // Send startup error notification if backend failed to start
+      if (_backendStartupError) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        mainWindow.webContents.send('backend:startup-error', _backendStartupError);
+        log('[STARTUP] Sent backend startup error notification to renderer');
+      }
+
       if (blank) {
         await new Promise(resolve => setTimeout(resolve, 100));
         mainWindow.webContents.send('blank-window');
@@ -2487,12 +2510,50 @@ ipcMain.handle('backend:health', async () => {
     clearTimeout(timeout);
     if (response.ok) {
       const data = await response.json();
-      return { status: 'ok', pid: backendProcess?.pid || null, ...data };
+      return {
+        status: 'ok',
+        pid: backendProcess?.pid || null,
+        backendProcess: {
+          running: backendProcess !== null && backendProcess.exitCode === null,
+          pid: backendProcess?.pid || null,
+          exitCode: backendProcess?.exitCode,
+        },
+        pythonPath: _backendPath,
+        backendUrl: BACKEND_URL,
+        timestamp: new Date().toISOString(),
+        ...data
+      };
     }
-    return { status: 'unhealthy', error: `HTTP ${response.status}` };
+    return {
+      status: 'unhealthy',
+      error: `HTTP ${response.status}`,
+      backendProcess: {
+        running: backendProcess !== null && backendProcess.exitCode === null,
+        pid: backendProcess?.pid || null,
+        exitCode: backendProcess?.exitCode,
+      },
+      pythonPath: _backendPath,
+      backendUrl: BACKEND_URL,
+      timestamp: new Date().toISOString(),
+    };
   } catch (err) {
-    return { status: 'unreachable', error: err.message, pid: backendProcess?.pid || null };
+    return {
+      status: 'unreachable',
+      error: err.message,
+      backendProcess: {
+        running: backendProcess !== null && backendProcess.exitCode === null,
+        pid: backendProcess?.pid || null,
+        exitCode: backendProcess?.exitCode,
+      },
+      pythonPath: _backendPath,
+      backendUrl: BACKEND_URL,
+      timestamp: new Date().toISOString(),
+    };
   }
+});
+
+ipcMain.handle('backend:getStartupError', async () => {
+  return _backendStartupError;
 });
 
 ipcMain.handle('backend:restart', async () => {
