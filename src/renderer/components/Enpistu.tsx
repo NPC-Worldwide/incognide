@@ -8394,44 +8394,45 @@ const renderMainContent = () => {
                 <LayoutGrid size={18} />
             </button>
 
-            <div className="flex-1" />
-
-            {/* Collapse top bar */}
-            <button
-                onClick={() => { setTopBarCollapsed(true); localStorage.setItem('incognide_topBarCollapsed', 'true'); }}
-                className="p-1.5 theme-hover rounded theme-text-muted"
-                title="Hide top bar"
-            >
-                <ChevronUp size={14} />
-            </button>
-
-            {/* Top bar path + command palette trigger - CENTERED */}
-            <div className="flex items-center rounded bg-black/30 border border-transparent hover:border-gray-600 transition-all overflow-hidden">
-                {/* Path part - opens folder picker */}
+            {/* Center group - absolutely positioned for true center */}
+            <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
+                {/* Collapse top bar */}
                 <button
-                    onClick={async () => {
-                        const selectedPath = await (window as any).api?.open_directory_picker?.();
-                        if (selectedPath) setCurrentPath(selectedPath);
-                    }}
-                    className="flex items-center gap-2 px-3 py-1 hover:bg-white/10 transition-all text-left"
-                    title="Click to open a different folder"
+                    onClick={() => { setTopBarCollapsed(true); localStorage.setItem('incognide_topBarCollapsed', 'true'); }}
+                    className="p-1.5 theme-hover rounded theme-text-muted"
+                    title="Hide top bar"
                 >
-                    <Folder size={14} className="theme-text-muted" />
-                    <span className="text-xs theme-text-primary truncate max-w-[300px]">
-                        {currentPath || 'No folder selected'}
-                    </span>
+                    <ChevronUp size={14} />
                 </button>
-                {/* Divider */}
-                <div className="w-px h-4 bg-gray-600" />
-                {/* Command part - opens command palette */}
-                <button
-                    onClick={() => setCommandPaletteOpen(true)}
-                    className="flex items-center gap-2 px-3 py-1 hover:bg-white/10 transition-all"
-                    title="Open command palette (Ctrl+Shift+P)"
-                >
-                    <Terminal size={14} className="theme-text-muted" />
-                    <span className="text-[10px] theme-text-muted">Ctrl+Shift+P</span>
-                </button>
+
+                {/* Path + command palette trigger */}
+                <div className="flex items-center rounded bg-black/30 border border-transparent hover:border-gray-600 transition-all overflow-hidden">
+                    {/* Path part - opens folder picker */}
+                    <button
+                        onClick={async () => {
+                            const selectedPath = await (window as any).api?.open_directory_picker?.();
+                            if (selectedPath) setCurrentPath(selectedPath);
+                        }}
+                        className="flex items-center gap-2 px-3 py-1 hover:bg-white/10 transition-all text-left"
+                        title="Click to open a different folder"
+                    >
+                        <Folder size={14} className="theme-text-muted" />
+                        <span className="text-xs theme-text-primary truncate max-w-[300px]">
+                            {currentPath || 'No folder selected'}
+                        </span>
+                    </button>
+                    {/* Divider */}
+                    <div className="w-px h-4 bg-gray-600" />
+                    {/* Command part - opens command palette */}
+                    <button
+                        onClick={() => setCommandPaletteOpen(true)}
+                        className="flex items-center gap-2 px-3 py-1 hover:bg-white/10 transition-all"
+                        title="Open command palette (Ctrl+Shift+P)"
+                    >
+                        <Terminal size={14} className="theme-text-muted" />
+                        <span className="text-[10px] theme-text-muted">Ctrl+Shift+P</span>
+                    </button>
+                </div>
             </div>
 
             <div className="flex-1" />
