@@ -8394,11 +8394,13 @@ const renderMainContent = () => {
                 <LayoutGrid size={18} />
             </button>
 
-            {/* Workspace path breadcrumb - VS Code style */}
-            <TopBarPathBreadcrumb
-                currentPath={currentPath || baseDir}
-                onPathChange={switchToPath}
-            />
+            {/* Workspace path breadcrumb - VS Code style, only show when a folder is open */}
+            {currentPath && currentPath !== baseDir && (
+                <TopBarPathBreadcrumb
+                    currentPath={currentPath}
+                    onPathChange={switchToPath}
+                />
+            )}
 
             <div className="flex-1" />
 
