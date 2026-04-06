@@ -527,15 +527,63 @@ async function waitForServer(maxAttempts = 120, delay = 1000) {
 }
 function scheduleCronJob(job) {
   if (job.task) job.task.stop();
-  job.task = cron.schedule(job.schedule, () => {
+  job.task = cron.schedule(job.schedule, async () => {
+    console.log(`[cron] ${job.id}: ${job.command}`);
+    const logDir = path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team', 'logs');
+    const logFile = path.join(logDir, `${job.id}.log`);
+    try { await fsPromises.mkdir(logDir, { recursive: true }); } catch {}
 
-    console.log(`Executing cron job ${job.id}: ${job.command}`);
+    // Resolve jinx file path from command name
+    const parts = job.command.replace(/^\//, '').split(/\s+/);
+    const jinxName = parts[0];
+    const jinxArgs = parts.slice(1);
 
-    const child = spawn(job.command, { shell: true });
-    child.stdout.on('data', data => console.log(`Cron job output: ${data}`));
-    child.stderr.on('data', data => console.error(`Cron job error: ${data}`));
+    // Search for the jinx file in npc_team dirs
+    const searchDirs = [
+      path.join(os.homedir(), '.npcsh', 'npc_team', 'jinxes'),
+      path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team', 'jinxes'),
+    ];
+    let jinxFile = null;
+    for (const dir of searchDirs) {
+      try {
+        const found = findJinxFile(dir, jinxName);
+        if (found) { jinxFile = found; break; }
+      } catch {}
+    }
+
+    if (!jinxFile) {
+      const errMsg = `[cron] ${job.id}: jinx '${jinxName}' not found`;
+      console.error(errMsg);
+      await fsPromises.writeFile(logFile, errMsg + '\n');
+      return;
+    }
+
+    // Execute jinx file directly (shebang handles routing)
+    const child = spawn(jinxFile, jinxArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
+    let output = '';
+    child.stdout.on('data', d => { output += d; });
+    child.stderr.on('data', d => { output += d; });
+    child.on('close', async (code) => {
+      console.log(`[cron] ${job.id} exited ${code}`);
+      await fsPromises.writeFile(logFile, output);
+    });
   }, { scheduled: true });
   return job.task;
+}
+
+function findJinxFile(dir, name) {
+  if (!fs.existsSync(dir)) return null;
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const e of entries) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) {
+      const found = findJinxFile(full, name);
+      if (found) return found;
+    } else if (e.name === `${name}.jinx`) {
+      return full;
+    }
+  }
+  return null;
 }
 
 async function ensureBaseDir() {

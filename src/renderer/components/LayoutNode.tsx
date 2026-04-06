@@ -1083,7 +1083,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                     const savedMode = localStorage.getItem('incognideExecutionMode');
                     extraChatProps = {
                         chatMessages: { messages: [], allMessages: [], displayedMessageCount: 20 },
-                        executionMode: savedMode ? JSON.parse(savedMode) : 'chat',
+                        executionMode: savedMode ? JSON.parse(savedMode) : 'tool_agent',
                         selectedJinx: null,
                         chatStats: { messageCount: 0, inputTokens: 0, outputTokens: 0, totalCost: 0, models: new Set(), agents: new Set(), providers: new Set() },
                     };

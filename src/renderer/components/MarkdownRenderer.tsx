@@ -22,15 +22,15 @@ const detectTabularData = (content: string): { isTabular: boolean; data: any[] |
     }
 
     const lines = trimmed.split('\n').filter(l => l.trim());
-    if (lines.length >= 2) {
-
-        const delimiters = [',', '\t', '|'];
+    if (lines.length >= 3) {
+        const delimiters = ['\t', '|'];
         for (const delimiter of delimiters) {
             const counts = lines.map(line => (line.match(new RegExp(`\\${delimiter}`, 'g')) || []).length);
             const firstCount = counts[0];
 
-            if (firstCount > 0 && counts.every(c => c === firstCount)) {
-                const headers = lines[0].split(delimiter).map(h => h.trim());
+            if (firstCount >= 2 && counts.every(c => c === firstCount)) {
+                const headers = lines[0].split(delimiter).map(h => h.trim()).filter(Boolean);
+                if (headers.length < 2 || headers.some(h => h.length > 60)) continue;
                 const rows = lines.slice(1).map(line => {
                     const cells = line.split(delimiter).map(c => c.trim());
                     const row: Record<string, string> = {};

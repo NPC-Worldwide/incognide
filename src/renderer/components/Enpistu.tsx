@@ -675,7 +675,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         selectedModel: '',
         selectedNPC: ''
     });
-    const [mcpServerPath, setMcpServerPath] = useState('python -m npcpy.mcp_server --team ~/.npcsh/incognide/npc_team');
+    const [mcpServerPath, setMcpServerPath] = useState('');
     const [selectedMcpTools, setSelectedMcpTools] = useState([]);
     const [availableMcpTools, setAvailableMcpTools] = useState([]);
     const [mcpToolsLoading, setMcpToolsLoading] = useState(false);
@@ -7398,7 +7398,7 @@ ${contextPrompt}`;
 
 // Per-pane execution mode getter/setter
 const getPaneExecutionMode = useCallback((paneId: string) => {
-    return contentDataRef.current[paneId]?.executionMode || 'chat';
+    return contentDataRef.current[paneId]?.executionMode || 'tool_agent';
 }, []);
 
 const setPaneExecutionMode = useCallback(async (paneId: string, mode: string) => {
