@@ -63,6 +63,7 @@ interface StatusBarProps {
     isPredictiveTextEnabled?: boolean;
     setIsPredictiveTextEnabled?: (v: boolean) => void;
     onOpenLogsViewer?: () => void;
+    createBackendPane?: () => void;
 }
 
 type BackendStatus = 'ok' | 'unhealthy' | 'unreachable' | 'restarting' | 'unknown';
@@ -98,6 +99,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
     isPredictiveTextEnabled,
     setIsPredictiveTextEnabled,
     onOpenLogsViewer,
+    createBackendPane,
 }) => {
     const aiEnabled = useAiEnabled();
     const [checkingUpdates, setCheckingUpdates] = useState(false);
@@ -327,10 +329,10 @@ const StatusBar: React.FC<StatusBarProps> = ({
             {/* RIGHT: npcpy logo | pane/tab | version | clock */}
             <div className="relative group/backend">
                 <div
-                    onClick={() => window.dispatchEvent(new Event('sse-reconnect'))}
+                    onClick={() => createBackendPane?.()}
                     onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setShowBackendMenu(true); }}
                     className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors cursor-pointer hover:bg-white/10 ${backendStatus === 'ok' ? '' : 'opacity-60'}`}
-                    title={statusLabel + ' — click to reconnect SSE — right-click for options'}
+                    title={statusLabel + ' — click for backend panel — right-click for quick options'}
                 >
                     <img src={npcPythonLogo} alt="npcpy" className={`w-4 h-4 rounded-sm transition-all ${backendStatus === 'ok' ? '' : 'grayscale opacity-50'} ${restarting ? 'animate-pulse' : ''}`} />
                     {restarting && <RefreshCw size={10} className="animate-spin text-yellow-400" />}

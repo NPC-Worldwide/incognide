@@ -37,6 +37,7 @@ import McpManager from './McpManager';
 import SkillsManager from './SkillsManager';
 import MarkdownRenderer from './MarkdownRenderer';
 import DataDash from './DataDash';
+import BackendPane from './BackendPane';
 import CodeEditor from './CodeEditor';
 import TerminalView from './Terminal';
 import PdfViewer, { loadPdfHighlightsForActivePane } from './PdfViewer';
@@ -3426,6 +3427,11 @@ const renderDataDashPane = useCallback(({ nodeId }: { nodeId: string }) => {
     );
 }, [analysisContext, currentPath, currentModel, currentProvider, currentNPC, messageLabels, setMessageLabels, conversationLabels, setConversationLabels]);
 
+// Render Backend pane
+const renderBackendPane = useCallback(({ nodeId }: { nodeId: string }) => {
+    return <BackendPane />;
+}, []);
+
 // Render PhotoViewer pane (for pane-based viewing)
 const renderPhotoViewerPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return (
@@ -4135,6 +4141,13 @@ const renderMessageContextMenu = () => null;
     const createDataDashPane = useCallback(async () => {
         const newPaneId = generateId();
         contentDataRef.current[newPaneId] = { contentType: 'datadash', contentId: 'datadash' };
+        addPaneOrTab(newPaneId);
+    }, []);
+
+    // Create Backend pane
+    const createBackendPane = useCallback(async () => {
+        const newPaneId = generateId();
+        contentDataRef.current[newPaneId] = { contentType: 'backend', contentId: 'backend' };
         addPaneOrTab(newPaneId);
     }, []);
 
@@ -7698,6 +7711,7 @@ const paneRenderers = useMemo(() => ({
     'graph-viewer': renderGraphViewerPane,
     browsergraph: renderBrowserGraphPane,
     datadash: renderDataDashPane,
+    backend: renderBackendPane,
     dbtool: renderDBToolPane,
     npcteam: renderNPCTeamPane,
     jinx: renderJinxPane,
@@ -8394,53 +8408,42 @@ const renderMainContent = () => {
                 <LayoutGrid size={18} />
             </button>
 
-            {/* Center group - absolutely positioned for true center */}
-            <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
-                {/* Collapse top bar */}
-                <button
-                    onClick={() => { setTopBarCollapsed(true); localStorage.setItem('incognide_topBarCollapsed', 'true'); }}
-                    className="p-1.5 theme-hover rounded theme-text-muted"
-                    title="Hide top bar"
-                >
-                    <ChevronUp size={14} />
-                </button>
-
-                {/* Path + command palette trigger */}
-                <div className="flex items-center rounded bg-black/30 border border-transparent hover:border-gray-600 transition-all overflow-hidden">
-                    {/* Path part - opens folder picker */}
-                    <button
-                        onClick={async () => {
-                            const selectedPath = await (window as any).api?.open_directory_picker?.();
-                            if (selectedPath) setCurrentPath(selectedPath);
-                        }}
-                        className="flex items-center gap-2 px-3 py-1 hover:bg-white/10 transition-all text-left"
-                        title="Click to open a different folder"
-                    >
-                        <Folder size={14} className="theme-text-muted" />
-                        <span className="text-xs theme-text-primary truncate max-w-[300px]">
-                            {currentPath || 'No folder selected'}
-                        </span>
-                    </button>
-                    {/* Divider */}
-                    <div className="w-px h-4 bg-gray-600" />
-                    {/* Command part - opens command palette */}
-                    <button
-                        onClick={() => setCommandPaletteOpen(true)}
-                        className="flex items-center gap-2 px-3 py-1 hover:bg-white/10 transition-all"
-                        title="Open command palette (Ctrl+Shift+P)"
-                    >
-                        <Terminal size={14} className="theme-text-muted" />
-                        <span className="text-[10px] theme-text-muted">Ctrl+Shift+P</span>
-                    </button>
-                </div>
-            </div>
+            <button
+                onClick={() => { setTopBarCollapsed(true); localStorage.setItem('incognide_topBarCollapsed', 'true'); }}
+                className="p-1 theme-hover rounded theme-text-muted"
+                title="Hide top bar"
+            >
+                <ChevronUp size={14} />
+            </button>
 
             <div className="flex-1" />
+
+            {/* Folder picker + cmd palette - directly left of search bars */}
+            <button
+                onClick={async () => {
+                    const selectedPath = await (window as any).api?.open_directory_picker?.();
+                    if (selectedPath) setCurrentPath(selectedPath);
+                }}
+                className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-black/30 hover:bg-black/50 text-left"
+                title="Click to open a different folder"
+            >
+                <Folder size={12} className="theme-text-muted" />
+                <span className="text-[11px] theme-text-primary truncate max-w-[200px]">
+                    {currentPath ? currentPath.split(/[\\/]/).pop() : 'No folder'}
+                </span>
+            </button>
+            <button
+                onClick={() => setCommandPaletteOpen(true)}
+                className="p-1.5 theme-hover rounded theme-text-muted"
+                title="Command palette (Ctrl+Shift+P)"
+            >
+                <Sparkles size={14} />
+            </button>
 
             {/* App Search — collapses to icon button when top bar is narrow, expands inline on click */}
             {topBarWidth < 900 ? (
                 searchExpanded ? (
-                    <div className="flex items-center gap-2 w-40 px-2 py-1 bg-black/40 border border-blue-400 rounded ring-1 ring-blue-400/30 transition-all">
+                    <div className="flex items-center gap-2 w-32 px-2 py-1 bg-black/40 border border-blue-400 rounded ring-1 ring-blue-400/30 transition-all">
                         <Search size={14} className="text-blue-400 flex-shrink-0" />
                         <input
                             ref={collapsedSearchRef}
@@ -8480,7 +8483,7 @@ const renderMainContent = () => {
             ) : (
             <div
                 data-tutorial="search-bar"
-                className="flex items-center gap-2 w-40 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400/30 transition-all"
+                className="flex items-center gap-2 w-32 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400/30 transition-all"
             >
                 {/* Custom app search icon - magnifying glass with document */}
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400 flex-shrink-0">
@@ -8538,7 +8541,7 @@ const renderMainContent = () => {
             {/* Web Search — collapses to icon button when top bar is narrow, expands inline on click */}
             {topBarWidth < 900 ? (
                 webSearchExpanded ? (
-                    <div className="flex items-center gap-2 w-40 px-2 py-1 bg-black/40 border border-cyan-400 rounded ring-1 ring-cyan-400/30 transition-all">
+                    <div className="flex items-center gap-2 w-32 px-2 py-1 bg-black/40 border border-cyan-400 rounded ring-1 ring-cyan-400/30 transition-all">
                         <Globe size={14} className="text-cyan-400 flex-shrink-0" />
                         <input
                             ref={collapsedWebSearchRef}
@@ -8577,7 +8580,7 @@ const renderMainContent = () => {
                     </button>
                 )
             ) : (
-            <div data-tutorial="web-search-bar" className="flex items-center gap-2 w-40 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-cyan-400 focus-within:ring-1 focus-within:ring-cyan-400/30 transition-all">
+            <div data-tutorial="web-search-bar" className="flex items-center gap-2 w-32 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-cyan-400 focus-within:ring-1 focus-within:ring-cyan-400/30 transition-all">
                 <Globe size={14} className="text-cyan-400 flex-shrink-0" />
                 <input
                     type="text"
@@ -9020,6 +9023,7 @@ const renderMainContent = () => {
                         isPredictiveTextEnabled={isPredictiveTextEnabled}
                         setIsPredictiveTextEnabled={setIsPredictiveTextEnabled}
                         onOpenLogsViewer={() => setLogsViewerOpen(true)}
+                        createBackendPane={createBackendPane}
                     />
                 )}
             </main>
@@ -9127,6 +9131,7 @@ const renderMainContent = () => {
                     isPredictiveTextEnabled={isPredictiveTextEnabled}
                     setIsPredictiveTextEnabled={setIsPredictiveTextEnabled}
                     onOpenLogsViewer={() => setLogsViewerOpen(true)}
+                        createBackendPane={createBackendPane}
                 />
             )}
         </main>
@@ -9441,6 +9446,8 @@ const renderMainContent = () => {
                                     return renderGraphViewerPane({ nodeId: zenModePaneId });
                                 case 'datadash':
                                     return renderDataDashPane({ nodeId: zenModePaneId });
+                                case 'backend':
+                                    return renderBackendPane({ nodeId: zenModePaneId });
                                 case 'photoviewer':
                                     return renderPhotoViewerPane({ nodeId: zenModePaneId });
                                 case 'library':
