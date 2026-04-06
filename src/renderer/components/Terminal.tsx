@@ -481,7 +481,19 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                 if (resizeTimeout) clearTimeout(resizeTimeout);
                 resizeTimeout = setTimeout(() => {
                     requestAnimationFrame(() => {
+                        // Preserve scroll position during resize
+                        const wasAtBottom = term.buffer.active?.viewportY === term.buffer.active?.baseY;
+                        const scrollOffset = term.buffer.active?.viewportY ?? 0;
+
                         try { fitAddon.fit(); } catch {}
+
+                        // Restore scroll position
+                        if (wasAtBottom) {
+                            term.scrollToBottom();
+                        } else if (scrollOffset !== term.buffer.active?.viewportY) {
+                            term.scrollToLine(scrollOffset);
+                        }
+
                         if (isSessionReady.current) {
                             window.api.resizeTerminal?.({
                                 id: terminalId,
@@ -900,7 +912,16 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             xtermInstance.current.options.drawBoldTextInBrightColors = drawBoldTextInBrightColors;
             xtermInstance.current.options.minimumContrastRatio = minimumContrastRatio;
             xtermInstance.current.options.bellStyle = bellStyle;
+
+            // Preserve scroll position during settings-triggered resize
+            const wasAtBottom = xtermInstance.current.buffer.active?.viewportY === xtermInstance.current.buffer.active?.baseY;
+            const scrollOffset = xtermInstance.current.buffer.active?.viewportY ?? 0;
             fitAddonRef.current?.fit();
+            if (wasAtBottom) {
+                xtermInstance.current.scrollToBottom();
+            } else if (scrollOffset !== xtermInstance.current.buffer.active?.viewportY) {
+                xtermInstance.current.scrollToLine(scrollOffset);
+            }
 
             localStorage.setItem('terminal-font-size', String(fontSize));
             localStorage.setItem('terminal-font-family', fontFamily);

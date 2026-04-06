@@ -1,6 +1,6 @@
 {
   "name": "incognide",
-  "version": "0.1.21",
+  "version": "0.1.22",
   "description": "Explore the unknown, build the future, own your data.",
   "author": "Chris Agostino <info@npcworldwi.de>",
   "main": "src/main.js",
@@ -41,23 +41,74 @@
       "output": "dist-electron"
     },
     "fileAssociations": [
-      {"ext": "pdf", "name": "PDF Document"},
-      {"ext": "txt", "name": "Text Document"},
-      {"ext": "md", "name": "Markdown Document"},
-      {"ext": "png", "name": "Image"},
-      {"ext": "jpg", "name": "Image"},
-      {"ext": "jpeg", "name": "Image"},
-      {"ext": "gif", "name": "Image"},
-      {"ext": "svg", "name": "Image"},
-      {"ext": "mp4", "name": "Video"},
-      {"ext": "avi", "name": "Video"},
-      {"ext": "mkv", "name": "Video"},
-      {"ext": "js", "name": "Code"},
-      {"ext": "ts", "name": "Code"},
-      {"ext": "py", "name": "Code"},
-      {"ext": "html", "name": "Code"},
-      {"ext": "css", "name": "Code"},
-      {"ext": "json", "name": "Code"}
+      {
+        "ext": "pdf",
+        "name": "PDF Document"
+      },
+      {
+        "ext": "txt",
+        "name": "Text Document"
+      },
+      {
+        "ext": "md",
+        "name": "Markdown Document"
+      },
+      {
+        "ext": "png",
+        "name": "Image"
+      },
+      {
+        "ext": "jpg",
+        "name": "Image"
+      },
+      {
+        "ext": "jpeg",
+        "name": "Image"
+      },
+      {
+        "ext": "gif",
+        "name": "Image"
+      },
+      {
+        "ext": "svg",
+        "name": "Image"
+      },
+      {
+        "ext": "mp4",
+        "name": "Video"
+      },
+      {
+        "ext": "avi",
+        "name": "Video"
+      },
+      {
+        "ext": "mkv",
+        "name": "Video"
+      },
+      {
+        "ext": "js",
+        "name": "Code"
+      },
+      {
+        "ext": "ts",
+        "name": "Code"
+      },
+      {
+        "ext": "py",
+        "name": "Code"
+      },
+      {
+        "ext": "html",
+        "name": "Code"
+      },
+      {
+        "ext": "css",
+        "name": "Code"
+      },
+      {
+        "ext": "json",
+        "name": "Code"
+      }
     ],
     "files": [
       "dist/**/*",

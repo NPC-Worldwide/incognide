@@ -3,7 +3,7 @@ import {
     MessageSquare, Terminal, Globe, FileText, File as FileIcon,
     BrainCircuit, Clock, Bot, Zap, Users, Database, ChevronRight, ChevronDown, ChevronUp,
     GitBranch, Image, BarChart3, AlertCircle, RefreshCw, Check, Columns, Layers,
-    Activity, Server, Power, HardDrive, Download, Network
+    Activity, Server, Power, HardDrive, Download, Network, ScrollText
 } from 'lucide-react';
 import MemoryIcon from './MemoryIcon';
 import npcPythonLogo from '../../assets/npc-python.png';
@@ -62,6 +62,8 @@ interface StatusBarProps {
     onOpenDownloadManager?: () => void;
     isPredictiveTextEnabled?: boolean;
     setIsPredictiveTextEnabled?: (v: boolean) => void;
+    onOpenLogsViewer?: () => void;
+    createBackendPane?: () => void;
 }
 
 type BackendStatus = 'ok' | 'unhealthy' | 'unreachable' | 'restarting' | 'unknown';
@@ -96,6 +98,8 @@ const StatusBar: React.FC<StatusBarProps> = ({
     onOpenDownloadManager,
     isPredictiveTextEnabled,
     setIsPredictiveTextEnabled,
+    onOpenLogsViewer,
+    createBackendPane,
 }) => {
     const aiEnabled = useAiEnabled();
     const [checkingUpdates, setCheckingUpdates] = useState(false);
@@ -325,10 +329,10 @@ const StatusBar: React.FC<StatusBarProps> = ({
             {/* RIGHT: npcpy logo | pane/tab | version | clock */}
             <div className="relative group/backend">
                 <div
-                    onClick={() => window.dispatchEvent(new Event('sse-reconnect'))}
+                    onClick={() => createBackendPane?.()}
                     onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setShowBackendMenu(true); }}
                     className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors cursor-pointer hover:bg-white/10 ${backendStatus === 'ok' ? '' : 'opacity-60'}`}
-                    title={statusLabel + ' — click to reconnect SSE — right-click for options'}
+                    title={statusLabel + ' — click for backend panel — right-click for quick options'}
                 >
                     <img src={npcPythonLogo} alt="npcpy" className={`w-4 h-4 rounded-sm transition-all ${backendStatus === 'ok' ? '' : 'grayscale opacity-50'} ${restarting ? 'animate-pulse' : ''}`} />
                     {restarting && <RefreshCw size={10} className="animate-spin text-yellow-400" />}
@@ -340,6 +344,9 @@ const StatusBar: React.FC<StatusBarProps> = ({
                             <div className="px-3 py-1 text-[10px] text-gray-500 border-b border-gray-700">{statusLabel}</div>
                             <button onClick={() => { handleRestart(); setShowBackendMenu(false); }} disabled={restarting} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs text-gray-300 hover:bg-white/10 disabled:opacity-50">
                                 <RefreshCw size={12} /> Restart Backend
+                            </button>
+                            <button onClick={() => { onOpenLogsViewer?.(); setShowBackendMenu(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs text-gray-300 hover:bg-white/10">
+                                <ScrollText size={12} /> View Logs
                             </button>
                         </div>
                     </>

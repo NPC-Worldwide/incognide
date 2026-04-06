@@ -442,6 +442,7 @@ let backendProcess = null;
 let _backendPath = null;
 let _spawnArgs = [];
 let _backendEnv = null;
+let _backendStartupError = null;
 
 function killBackendProcess() {
   if (backendProcess) {
@@ -1090,20 +1091,40 @@ app.whenReady().then(async () => {
 
     log(`Using backend path: ${_backendPath}${_spawnArgs.length ? ' ' + _spawnArgs.join(' ') : ''}`);
 
-    _backendEnv = {
-      ...process.env,
-      INCOGNIDE_PORT: String(BACKEND_PORT),
-      FLASK_DEBUG: '1',
-      PYTHONUNBUFFERED: '1',
-      PYTHONIOENCODING: 'utf-8',
-      HOME: os.homedir(),
-      NPCSH_BASE: path.join(os.homedir(), '.npcsh'),
-      INCOGNIDE_DATA_DIR: path.join(os.homedir(), '.npcsh', 'incognide', 'data'),
-    };
+    // Check if backend is already running on the port before spawning
+    let backendAlreadyRunning = false;
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 2000);
+      const response = await fetch(`${BACKEND_URL}/api/health`, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (response.ok) {
+        log(`Backend already running on ${BACKEND_URL} - skipping spawn`);
+        backendAlreadyRunning = true;
+        _backendStartupError = null;
+      }
+    } catch (e) {
+      log(`No existing backend found on ${BACKEND_URL}, will spawn new one`);
+    }
 
-    backendProcess = spawnBackendProcess(_backendPath, _spawnArgs, 'bundled', _backendEnv);
+    let serverReady = backendAlreadyRunning;
 
-    let serverReady = await waitForServer();
+    if (!backendAlreadyRunning) {
+      _backendEnv = {
+        ...process.env,
+        INCOGNIDE_PORT: String(BACKEND_PORT),
+        FLASK_DEBUG: '1',
+        PYTHONUNBUFFERED: '1',
+        PYTHONIOENCODING: 'utf-8',
+        HOME: os.homedir(),
+        NPCSH_BASE: path.join(os.homedir(), '.npcsh'),
+        INCOGNIDE_DATA_DIR: path.join(os.homedir(), '.npcsh', 'incognide', 'data'),
+      };
+
+      backendProcess = spawnBackendProcess(_backendPath, _spawnArgs, 'bundled', _backendEnv);
+
+      serverReady = await waitForServer();
+    }
 
     if (!serverReady && backendProcess.exitCode !== null && backendProcess.exitCode !== 0) {
       log('Bundled backend failed to start — attempting fallback to system Python...');
@@ -1124,7 +1145,14 @@ app.whenReady().then(async () => {
     }
 
     if (!serverReady) {
-      log('Backend server failed to start - check backend.log for details');
+      const errorMsg = 'Backend server failed to start - check backend.log for details';
+      log(errorMsg);
+      _backendStartupError = {
+        message: errorMsg,
+        pythonPath: _backendPath,
+        exitCode: backendProcess?.exitCode,
+        timestamp: new Date().toISOString(),
+      };
 
       try {
         log('Attempting direct npcsh initialization...');
@@ -1135,11 +1163,19 @@ app.whenReady().then(async () => {
         log('Direct npcsh initialization completed');
       } catch (initErr) {
         log(`Direct npcsh initialization failed: ${initErr.message}`);
+        _backendStartupError.initError = initErr.message;
       }
+    } else {
+      _backendStartupError = null;
     }
   } catch (err) {
     log(`Error spawning backend server: ${err.message}`);
     console.error('Error spawning backend server:', err);
+    _backendStartupError = {
+      message: err.message,
+      pythonPath: _backendPath,
+      timestamp: new Date().toISOString(),
+    };
   }
 
   await ensureBaseDir();
@@ -2211,6 +2247,13 @@ function createWindow(cliArgs = {}) {
     const cliWorkspaceArgs = { folder, bookmarks, openUrl };
 
     mainWindow.webContents.on('did-finish-load', async () => {
+      // Send startup error notification if backend failed to start
+      if (_backendStartupError) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        mainWindow.webContents.send('backend:startup-error', _backendStartupError);
+        log('[STARTUP] Sent backend startup error notification to renderer');
+      }
+
       if (blank) {
         await new Promise(resolve => setTimeout(resolve, 100));
         mainWindow.webContents.send('blank-window');
@@ -2487,12 +2530,50 @@ ipcMain.handle('backend:health', async () => {
     clearTimeout(timeout);
     if (response.ok) {
       const data = await response.json();
-      return { status: 'ok', pid: backendProcess?.pid || null, ...data };
+      return {
+        status: 'ok',
+        pid: backendProcess?.pid || null,
+        backendProcess: {
+          running: backendProcess !== null && backendProcess.exitCode === null,
+          pid: backendProcess?.pid || null,
+          exitCode: backendProcess?.exitCode,
+        },
+        pythonPath: _backendPath,
+        backendUrl: BACKEND_URL,
+        timestamp: new Date().toISOString(),
+        ...data
+      };
     }
-    return { status: 'unhealthy', error: `HTTP ${response.status}` };
+    return {
+      status: 'unhealthy',
+      error: `HTTP ${response.status}`,
+      backendProcess: {
+        running: backendProcess !== null && backendProcess.exitCode === null,
+        pid: backendProcess?.pid || null,
+        exitCode: backendProcess?.exitCode,
+      },
+      pythonPath: _backendPath,
+      backendUrl: BACKEND_URL,
+      timestamp: new Date().toISOString(),
+    };
   } catch (err) {
-    return { status: 'unreachable', error: err.message, pid: backendProcess?.pid || null };
+    return {
+      status: 'unreachable',
+      error: err.message,
+      backendProcess: {
+        running: backendProcess !== null && backendProcess.exitCode === null,
+        pid: backendProcess?.pid || null,
+        exitCode: backendProcess?.exitCode,
+      },
+      pythonPath: _backendPath,
+      backendUrl: BACKEND_URL,
+      timestamp: new Date().toISOString(),
+    };
   }
+});
+
+ipcMain.handle('backend:getStartupError', async () => {
+  return _backendStartupError;
 });
 
 ipcMain.handle('backend:restart', async () => {

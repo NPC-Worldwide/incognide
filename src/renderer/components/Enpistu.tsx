@@ -37,6 +37,7 @@ import McpManager from './McpManager';
 import SkillsManager from './SkillsManager';
 import MarkdownRenderer from './MarkdownRenderer';
 import DataDash from './DataDash';
+import BackendPane from './BackendPane';
 import CodeEditor from './CodeEditor';
 import TerminalView from './Terminal';
 import PdfViewer, { loadPdfHighlightsForActivePane } from './PdfViewer';
@@ -61,6 +62,8 @@ import LibraryViewer from './LibraryViewer';
 import HelpViewer from './HelpViewer';
 import FolderViewer from './FolderViewer';
 import PathSwitcher from './PathSwitcher';
+import WorkspaceSwitchWarning from './WorkspaceSwitchWarning';
+import LogsViewer from './LogsViewer';
 import CronDaemonPanel from './CronDaemonPanel';
 import MemoryManager from './MemoryManager';
 import WindowManagerPane from './WindowManagerPane';
@@ -482,6 +485,11 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     } = useGitOperations({ currentPath });
 
     const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
+    const [workspaceSwitchWarning, setWorkspaceSwitchWarning] = useState<{
+        isOpen: boolean;
+        newPath: string;
+    }>({ isOpen: false, newPath: '' });
+    const [logsViewerOpen, setLogsViewerOpen] = useState(false);
     const [graphViewerOpen, setGraphViewerOpen] = useState(false);
     const [dataLabelerOpen, setDataLabelerOpen] = useState(false);
     // Sidebar/resize state from useSidebarResize hook
@@ -1352,7 +1360,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     // Resize useEffects now handled by useSidebarResize hook
 
     // Path switching hook
-    const switchToPath = useSwitchToPath(
+    const switchToPathBase = useSwitchToPath(
         windowId,
         currentPath,
         rootLayoutNode,
@@ -1366,6 +1374,58 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         setCurrentPath
     );
 
+    // Helper to count active panes and check for terminals/chats
+    const getActivePaneInfo = useCallback(() => {
+        const countPanes = (node: any): { total: number; hasTerminal: boolean; hasChat: boolean } => {
+            if (!node) return { total: 0, hasTerminal: false, hasChat: false };
+            if (node.type === 'leaf') {
+                const isTerminal = node.contentType === 'terminal';
+                const isChat = node.contentType === 'chat';
+                return { total: 1, hasTerminal: isTerminal, hasChat: isChat };
+            }
+            if (node.children && Array.isArray(node.children)) {
+                return node.children.reduce((acc: any, child: any) => {
+                    const childInfo = countPanes(child);
+                    return {
+                        total: acc.total + childInfo.total,
+                        hasTerminal: acc.hasTerminal || childInfo.hasTerminal,
+                        hasChat: acc.hasChat || childInfo.hasChat,
+                    };
+                }, { total: 0, hasTerminal: false, hasChat: false });
+            }
+            return { total: 0, hasTerminal: false, hasChat: false };
+        };
+        return countPanes(rootLayoutNode);
+    }, [rootLayoutNode]);
+
+    // Wrapper for switchToPath that warns about active panes
+    const switchToPath = useCallback(async (newPath: string) => {
+        if (newPath === currentPath) return;
+
+        const paneInfo = getActivePaneInfo();
+        // Warn if there are multiple panes OR any terminals
+        if (paneInfo.total > 1 || paneInfo.hasTerminal) {
+            setWorkspaceSwitchWarning({ isOpen: true, newPath });
+            return;
+        }
+
+        // No warning needed, switch directly
+        await switchToPathBase(newPath);
+    }, [currentPath, getActivePaneInfo, switchToPathBase]);
+
+    // Handle confirmed workspace switch
+    const handleConfirmWorkspaceSwitch = useCallback(async () => {
+        const newPath = workspaceSwitchWarning.newPath;
+        setWorkspaceSwitchWarning({ isOpen: false, newPath: '' });
+        await switchToPathBase(newPath);
+    }, [workspaceSwitchWarning.newPath, switchToPathBase]);
+
+    // Handle open in new window
+    const handleOpenInNewWindow = useCallback(async () => {
+        const newPath = workspaceSwitchWarning.newPath;
+        setWorkspaceSwitchWarning({ isOpen: false, newPath: '' });
+        await (window as any).api?.openNewWindow?.(newPath);
+    }, [workspaceSwitchWarning.newPath]);
 
     const jinxesToDisplay = useMemo(() => {
         if (favoriteJinxes.size === 0 || showAllJinxes) return availableJinxes;
@@ -3367,6 +3427,11 @@ const renderDataDashPane = useCallback(({ nodeId }: { nodeId: string }) => {
     );
 }, [analysisContext, currentPath, currentModel, currentProvider, currentNPC, messageLabels, setMessageLabels, conversationLabels, setConversationLabels]);
 
+// Render Backend pane
+const renderBackendPane = useCallback(({ nodeId }: { nodeId: string }) => {
+    return <BackendPane />;
+}, []);
+
 // Render PhotoViewer pane (for pane-based viewing)
 const renderPhotoViewerPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return (
@@ -4076,6 +4141,13 @@ const renderMessageContextMenu = () => null;
     const createDataDashPane = useCallback(async () => {
         const newPaneId = generateId();
         contentDataRef.current[newPaneId] = { contentType: 'datadash', contentId: 'datadash' };
+        addPaneOrTab(newPaneId);
+    }, []);
+
+    // Create Backend pane
+    const createBackendPane = useCallback(async () => {
+        const newPaneId = generateId();
+        contentDataRef.current[newPaneId] = { contentType: 'backend', contentId: 'backend' };
         addPaneOrTab(newPaneId);
     }, []);
 
@@ -6314,6 +6386,25 @@ ${contextPrompt}`;
     currentPath={currentPath}
 />
 
+{/* Workspace switch warning dialog */}
+<WorkspaceSwitchWarning
+    isOpen={workspaceSwitchWarning.isOpen}
+    onClose={() => setWorkspaceSwitchWarning({ isOpen: false, newPath: '' })}
+    currentPath={currentPath || ''}
+    newPath={workspaceSwitchWarning.newPath}
+    activePaneCount={getActivePaneInfo().total}
+    hasTerminals={getActivePaneInfo().hasTerminal}
+    hasChats={getActivePaneInfo().hasChat}
+    onSwitchAnyway={handleConfirmWorkspaceSwitch}
+    onOpenInNewWindow={handleOpenInNewWindow}
+/>
+
+{/* Logs viewer */}
+{logsViewerOpen && (
+    <LogsViewer onClose={() => setLogsViewerOpen(false)} />
+)}
+
+
 {/* Download toast notification */}
 {downloadToast && (
     <div
@@ -7620,6 +7711,7 @@ const paneRenderers = useMemo(() => ({
     'graph-viewer': renderGraphViewerPane,
     browsergraph: renderBrowserGraphPane,
     datadash: renderDataDashPane,
+    backend: renderBackendPane,
     dbtool: renderDBToolPane,
     npcteam: renderNPCTeamPane,
     jinx: renderJinxPane,
@@ -8316,21 +8408,42 @@ const renderMainContent = () => {
                 <LayoutGrid size={18} />
             </button>
 
-            <div className="flex-1" />
-
-            {/* Collapse top bar */}
             <button
                 onClick={() => { setTopBarCollapsed(true); localStorage.setItem('incognide_topBarCollapsed', 'true'); }}
-                className="p-1.5 theme-hover rounded theme-text-muted"
+                className="p-1 theme-hover rounded theme-text-muted"
                 title="Hide top bar"
             >
                 <ChevronUp size={14} />
             </button>
 
+            <div className="flex-1" />
+
+            {/* Folder picker + cmd palette - directly left of search bars */}
+            <button
+                onClick={async () => {
+                    const selectedPath = await (window as any).api?.open_directory_picker?.();
+                    if (selectedPath) setCurrentPath(selectedPath);
+                }}
+                className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-black/30 hover:bg-black/50 text-left"
+                title="Click to open a different folder"
+            >
+                <Folder size={12} className="theme-text-muted" />
+                <span className="text-[11px] theme-text-primary truncate max-w-[200px]">
+                    {currentPath ? currentPath.split(/[\\/]/).pop() : 'No folder'}
+                </span>
+            </button>
+            <button
+                onClick={() => setCommandPaletteOpen(true)}
+                className="p-1.5 theme-hover rounded theme-text-muted"
+                title="Command palette (Ctrl+Shift+P)"
+            >
+                <Sparkles size={14} />
+            </button>
+
             {/* App Search — collapses to icon button when top bar is narrow, expands inline on click */}
             {topBarWidth < 900 ? (
                 searchExpanded ? (
-                    <div className="flex items-center gap-2 w-40 px-2 py-1 bg-black/40 border border-blue-400 rounded ring-1 ring-blue-400/30 transition-all">
+                    <div className="flex items-center gap-2 w-32 px-2 py-1 bg-black/40 border border-blue-400 rounded ring-1 ring-blue-400/30 transition-all">
                         <Search size={14} className="text-blue-400 flex-shrink-0" />
                         <input
                             ref={collapsedSearchRef}
@@ -8370,7 +8483,7 @@ const renderMainContent = () => {
             ) : (
             <div
                 data-tutorial="search-bar"
-                className="flex items-center gap-2 w-40 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400/30 transition-all"
+                className="flex items-center gap-2 w-32 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400/30 transition-all"
             >
                 {/* Custom app search icon - magnifying glass with document */}
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400 flex-shrink-0">
@@ -8428,7 +8541,7 @@ const renderMainContent = () => {
             {/* Web Search — collapses to icon button when top bar is narrow, expands inline on click */}
             {topBarWidth < 900 ? (
                 webSearchExpanded ? (
-                    <div className="flex items-center gap-2 w-40 px-2 py-1 bg-black/40 border border-cyan-400 rounded ring-1 ring-cyan-400/30 transition-all">
+                    <div className="flex items-center gap-2 w-32 px-2 py-1 bg-black/40 border border-cyan-400 rounded ring-1 ring-cyan-400/30 transition-all">
                         <Globe size={14} className="text-cyan-400 flex-shrink-0" />
                         <input
                             ref={collapsedWebSearchRef}
@@ -8467,7 +8580,7 @@ const renderMainContent = () => {
                     </button>
                 )
             ) : (
-            <div data-tutorial="web-search-bar" className="flex items-center gap-2 w-40 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-cyan-400 focus-within:ring-1 focus-within:ring-cyan-400/30 transition-all">
+            <div data-tutorial="web-search-bar" className="flex items-center gap-2 w-32 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-cyan-400 focus-within:ring-1 focus-within:ring-cyan-400/30 transition-all">
                 <Globe size={14} className="text-cyan-400 flex-shrink-0" />
                 <input
                     type="text"
@@ -8909,6 +9022,8 @@ const renderMainContent = () => {
                         onOpenDownloadManager={() => setDownloadManagerOpen(true)}
                         isPredictiveTextEnabled={isPredictiveTextEnabled}
                         setIsPredictiveTextEnabled={setIsPredictiveTextEnabled}
+                        onOpenLogsViewer={() => setLogsViewerOpen(true)}
+                        createBackendPane={createBackendPane}
                     />
                 )}
             </main>
@@ -9015,6 +9130,8 @@ const renderMainContent = () => {
                     onOpenDownloadManager={() => setDownloadManagerOpen(true)}
                     isPredictiveTextEnabled={isPredictiveTextEnabled}
                     setIsPredictiveTextEnabled={setIsPredictiveTextEnabled}
+                    onOpenLogsViewer={() => setLogsViewerOpen(true)}
+                        createBackendPane={createBackendPane}
                 />
             )}
         </main>
@@ -9329,6 +9446,8 @@ const renderMainContent = () => {
                                     return renderGraphViewerPane({ nodeId: zenModePaneId });
                                 case 'datadash':
                                     return renderDataDashPane({ nodeId: zenModePaneId });
+                                case 'backend':
+                                    return renderBackendPane({ nodeId: zenModePaneId });
                                 case 'photoviewer':
                                     return renderPhotoViewerPane({ nodeId: zenModePaneId });
                                 case 'library':

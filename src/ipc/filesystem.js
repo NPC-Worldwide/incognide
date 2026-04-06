@@ -1351,47 +1351,76 @@ function register(ctx) {
       try {
           if (!query || !searchPath) return { files: [] };
 
-          const excludeDirs = ['node_modules', '.git', '__pycache__', '.venv', 'venv', 'dist', 'build'];
-          const cmd = `grep -r -n -i --binary-files=without-match ${excludeDirs.map(d => `--exclude-dir=${d}`).join(' ')} -m 3 -- ${JSON.stringify(query)} ${JSON.stringify(searchPath)} 2>/dev/null | head -500`;
+          const excludeDirs = new Set(['node_modules', '.git', '__pycache__', '.venv', 'venv', 'dist', 'build', '.cache', 'AppData', '.npm', '.nvm']);
+          const excludeExts = new Set(['.exe', '.dll', '.so', '.dylib', '.bin', '.dat', '.db', '.sqlite', '.pack', '.idx', '.png', '.jpg', '.jpeg', '.gif', '.ico', '.mp3', '.mp4', '.zip', '.tar', '.gz', '.7z', '.rar']);
+          const results = [];
+          const queryLower = query.toLowerCase();
+          let filesChecked = 0;
+          const maxFiles = 5000;
 
-          return new Promise((resolve) => {
-              const proc = spawn('sh', ['-c', cmd]);
-              let output = '';
-              proc.stdout.on('data', (d) => { output += d.toString(); });
-              proc.stderr.on('data', () => {});
-              proc.on('close', () => {
-                  const lines = output.trim().split('\n').filter(Boolean);
-                  const fileMap = {};
+          const walkDir = async (dir, depth = 0) => {
+              if (depth > 10 || results.length >= limit || filesChecked >= maxFiles) return;
 
-                  for (const line of lines) {
-                      const match = line.match(/^(.+?):(\d+):(.*)$/);
-                      if (!match) continue;
-                      const [, filePath, lineNum, content] = match;
-                      if (!fileMap[filePath]) {
-                          fileMap[filePath] = {
-                              name: path.basename(filePath),
-                              path: filePath,
-                              matches: []
-                          };
+              let entries;
+              try {
+                  entries = await fs.promises.readdir(dir, { withFileTypes: true });
+              } catch (e) {
+                  return; // Permission denied or other error
+              }
+
+              for (const entry of entries) {
+                  if (results.length >= limit || filesChecked >= maxFiles) break;
+
+                  const fullPath = path.join(dir, entry.name);
+
+                  if (entry.isDirectory()) {
+                      if (!excludeDirs.has(entry.name.toLowerCase()) && !entry.name.startsWith('.')) {
+                          await walkDir(fullPath, depth + 1);
                       }
-                      if (fileMap[filePath].matches.length < 3) {
-                          fileMap[filePath].matches.push({
-                              line: parseInt(lineNum),
-                              content: content.trim().slice(0, 200)
-                          });
+                  } else if (entry.isFile()) {
+                      const ext = path.extname(entry.name).toLowerCase();
+                      if (excludeExts.has(ext)) continue;
+
+                      filesChecked++;
+                      try {
+                          const stat = await fs.promises.stat(fullPath);
+                          if (stat.size > 1024 * 1024) continue; // Skip files > 1MB
+
+                          const content = await fs.promises.readFile(fullPath, 'utf-8');
+                          const lines = content.split('\n');
+                          const matches = [];
+
+                          for (let i = 0; i < lines.length && matches.length < 3; i++) {
+                              if (lines[i].toLowerCase().includes(queryLower)) {
+                                  matches.push({ line: i + 1, content: lines[i].trim().slice(0, 200) });
+                              }
+                          }
+
+                          if (matches.length > 0) {
+                              results.push({
+                                  name: entry.name,
+                                  path: fullPath,
+                                  snippet: matches.map(m => `L${m.line}: ${m.content}`).join('\n'),
+                                  match: matches[0]?.content || ''
+                              });
+                          }
+                      } catch (e) {
+                          // Binary file or read error - skip
                       }
                   }
+              }
+          };
 
-                  const results = Object.values(fileMap).slice(0, limit).map((f) => ({
-                      name: f.name,
-                      path: f.path,
-                      snippet: f.matches.map(m => `L${m.line}: ${m.content}`).join('\n'),
-                      match: f.matches[0]?.content || ''
-                  }));
-
-                  resolve({ files: results });
-              });
+          await walkDir(searchPath);
+          // Sort: non-hidden first, then by path length (shorter = closer to root)
+          results.sort((a, b) => {
+              const aHidden = a.name.startsWith('.') || a.path.includes('\\.') || a.path.includes('/.');
+              const bHidden = b.name.startsWith('.') || b.path.includes('\\.') || b.path.includes('/.');
+              if (aHidden !== bHidden) return aHidden ? 1 : -1;
+              return a.path.length - b.path.length;
           });
+          console.log(`[SEARCH_FILES] Found ${results.length} files for "${query}" in ${searchPath} (checked ${filesChecked} files)`);
+          return { files: results };
       } catch (err) {
           console.error('[SEARCH_FILES] Error:', err);
           return { files: [], error: err.message };

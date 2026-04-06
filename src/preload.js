@@ -606,6 +606,7 @@ onTerminalClosed: (callback) => {
     setupDetectPython: () => ipcRenderer.invoke('setup:detectPython'),
     setupCreateVenv: () => ipcRenderer.invoke('setup:createVenv'),
     setupInstallNpcpy: (pythonPath, extras) => ipcRenderer.invoke('setup:installNpcpy', { pythonPath, extras }),
+    setupVerifyDependencies: (pythonPath) => ipcRenderer.invoke('setup:verifyDependencies', { pythonPath }),
     setupComplete: (pythonPath) => ipcRenderer.invoke('setup:complete', { pythonPath }),
     setupSkip: () => ipcRenderer.invoke('setup:skip'),
     setupReset: () => ipcRenderer.invoke('setup:reset'),
@@ -614,6 +615,13 @@ onTerminalClosed: (callback) => {
         const handler = (event, data) => callback(data);
         ipcRenderer.on('setup:installProgress', handler);
         return () => ipcRenderer.removeListener('setup:installProgress', handler);
+    },
+
+    backendGetStartupError: () => ipcRenderer.invoke('backend:getStartupError'),
+    onBackendStartupError: (callback) => {
+        const handler = (_, data) => callback(data);
+        ipcRenderer.on('backend:startup-error', handler);
+        return () => ipcRenderer.removeListener('backend:startup-error', handler);
     },
 
     generativeFill: async (params) => {
