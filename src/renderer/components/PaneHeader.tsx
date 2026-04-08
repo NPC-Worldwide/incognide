@@ -86,7 +86,7 @@ export const PaneHeader = React.memo(({
                         value={editedFileName}
                         onChange={(e) => setEditedFileName?.(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        onBlur={() => onCancelRename?.()}
+                        onBlur={() => setTimeout(() => onConfirmRename?.(), 100)}
                         className="px-1 py-0.5 text-xs theme-bg-tertiary theme-border border rounded outline-none focus:ring-1 focus:ring-blue-500"
                         style={{ width: '120px' }}
                         onClick={(e) => e.stopPropagation()}
