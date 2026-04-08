@@ -323,6 +323,9 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
         const [localDropSide, setLocalDropSide] = useState<string | null>(null);
         const dragCounterRef = useRef(0);
         const [, forceRender] = useState(0);
+        const [localRenaming, setLocalRenaming] = useState(false);
+        const [localEditName, setLocalEditName] = useState('');
+        const localRenameRef = useRef<HTMLInputElement>(null);
 
         useEffect(() => {
             const emitter = componentRef.current?.paneUpdateEmitter;
@@ -1648,15 +1651,22 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                         fileChanged={paneData?.fileChanged || activeTab?.fileChanged}
                         onSave={() => { if (paneData?.onSave) paneData.onSave(); }}
                         onStartRename={() => {
-                            setRenamingPaneId(node.id);
-                            setEditedFileName(getFileName(contentId) || headerTitle || '');
+                            setLocalRenaming(true);
+                            setLocalEditName(getFileName(contentId) || headerTitle || '');
                         }}
 
-                        isRenaming={renamingPaneId === node.id}
-                        editedFileName={editedFileName}
-                        setEditedFileName={setEditedFileName}
-                        onConfirmRename={() => handleConfirmRename?.(node.id, contentId)}
-                        onCancelRename={() => setRenamingPaneId(null)}
+                        isRenaming={localRenaming}
+                        editedFileName={localEditName}
+                        setEditedFileName={setLocalEditName}
+                        onConfirmRename={(newName?: string) => {
+                            const name = newName || localEditName;
+                            setLocalRenaming(false);
+                            if (name) {
+                                setEditedFileName(name);
+                                handleConfirmRename?.(node.id, contentId, name);
+                            }
+                        }}
+                        onCancelRename={() => setLocalRenaming(false)}
                         filePath={contentId}
                         onRunScript={onRunScript}
 

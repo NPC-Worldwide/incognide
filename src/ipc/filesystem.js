@@ -82,6 +82,12 @@ function register(ctx) {
     }
   });
 
+  ipcMain.handle('show-save-dialog', async (event, options) => {
+    const result = await dialog.showSaveDialog(options || {});
+    if (result.canceled || !result.filePath) return null;
+    return result.filePath;
+  });
+
   ipcMain.handle('show-open-dialog', async (event, options) => {
     const result = await dialog.showOpenDialog(options);
 

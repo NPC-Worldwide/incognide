@@ -597,6 +597,10 @@ const LatexViewer = ({
     const paneData = contentDataRef.current[nodeId];
     const filePath = paneData?.contentId;
 
+    const [isLocalRenaming, setIsLocalRenaming] = useState(false);
+    const [localEditName, setLocalEditName] = useState(x27x27);
+    const renameInputRef = useRef<HTMLInputElement>(null);
+
     const [content, setContentRaw] = useState(() => paneData?.fileContent || '');
     const [hasChangesRaw, setHasChangesRaw] = useState(() => paneData?.fileChanged || false);
     const hasChanges = hasChangesRaw;
@@ -1542,9 +1546,9 @@ const LatexViewer = ({
                 ref={toolbarRef}
                 className="flex items-center gap-0.5 px-1 h-10 flex-shrink-0 theme-bg-secondary border-b theme-border"
                 style={{ cursor: 'move' }}
-                draggable={renamingPaneId !== nodeId}
+                draggable={!isLocalRenaming}
                 onDragStart={(e) => {
-                    if (renamingPaneId === nodeId) { e.preventDefault(); return; }
+                    if (isLocalRenaming) { e.preventDefault(); return; }
                     const nodePath = findNodePath(rootLayoutNode, nodeId);
                     e.dataTransfer.effectAllowed = 'move';
                     e.dataTransfer.setData('application/json', JSON.stringify({ type: 'pane', id: nodeId, nodePath }));
@@ -1569,7 +1573,7 @@ const LatexViewer = ({
                     </button>
                 )}
 
-                {renamingPaneId === nodeId ? (
+                {isLocalRenaming ? (
                     <div
                         className="flex items-center gap-1 flex-shrink-0 px-1"
                         onMouseDown={(e) => e.stopPropagation()}
@@ -1578,30 +1582,29 @@ const LatexViewer = ({
                     >
                         <input
                             type="text"
-                            value={editedFileName}
-                            onChange={(e) => setEditedFileName(e.target.value)}
+                            defaultValue={localEditName} ref={renameInputRef}
                             onKeyDown={(e) => {
                                 e.stopPropagation();
-                                if (e.key === 'Enter') handleConfirmRename?.(nodeId, filePath);
-                                if (e.key === 'Escape') setRenamingPaneId(null);
+                                if (e.key === 'Enter') { const n = renameInputRef.current?.value || ''; setEditedFileName(n); handleConfirmRename?.(nodeId, filePath, n); setIsLocalRenaming(false); }
+                                if (e.key === 'Escape') setIsLocalRenaming(false);
                             }}
                             className="px-1 py-0.5 text-[11px] theme-bg-primary theme-text-primary border theme-border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                             style={{ width: '120px' }}
                             autoFocus
                         />
-                        <button onClick={() => handleConfirmRename?.(nodeId, filePath)} className="p-0.5 theme-hover rounded text-green-400"><Check size={10} /></button>
-                        <button onClick={() => setRenamingPaneId(null)} className="p-0.5 theme-hover rounded text-red-400"><X size={10} /></button>
+                        <button onClick={() => { const n = renameInputRef.current?.value || ''; setEditedFileName(n); handleConfirmRename?.(nodeId, filePath, n); setIsLocalRenaming(false); }} className="p-0.5 theme-hover rounded text-green-400"><Check size={10} /></button>
+                        <button onClick={() => setIsLocalRenaming(false)} className="p-0.5 theme-hover rounded text-red-400"><X size={10} /></button>
                     </div>
                 ) : (
                     <div className="flex items-center gap-0.5 flex-shrink-0 px-1 min-w-0">
                         <span
                             className="text-[11px] font-semibold theme-text-primary truncate max-w-[120px] cursor-default"
-                            onDoubleClick={(e) => { e.stopPropagation(); e.preventDefault(); setRenamingPaneId(nodeId); setEditedFileName(getFileName(filePath) || ''); }}
+                            onDoubleClick={(e) => { e.stopPropagation(); e.preventDefault(); setIsLocalRenaming(true); setLocalEditName(getFileName(filePath) || '');; }}
                         >
                             {getFileName(filePath) || 'LaTeX'}{hasChanges ? ' *' : ''}
                         </span>
                         <button
-                            onClick={(e) => { e.stopPropagation(); setRenamingPaneId(nodeId); setEditedFileName(getFileName(filePath) || ''); }}
+                            onClick={(e) => { e.stopPropagation(); setIsLocalRenaming(true); setLocalEditName(getFileName(filePath) || '');; }}
                             className="p-0.5 theme-hover rounded opacity-40 hover:opacity-100 flex-shrink-0"
                             title="Rename file"
                         ><Pencil size={9} /></button>

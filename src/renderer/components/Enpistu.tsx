@@ -3176,6 +3176,7 @@ const renderDocxViewer = useCallback(({ nodeId, onToggleZen, isZenMode, onClose,
         <DocxViewer
             nodeId={nodeId}
             contentDataRef={contentDataRef}
+            currentPath={currentPath}
             findNodePath={findNodePath}
             rootLayoutNode={rootLayoutNode}
             setDraggedItem={setDraggedItem}
@@ -3191,7 +3192,7 @@ const renderDocxViewer = useCallback(({ nodeId, onToggleZen, isZenMode, onClose,
             handleConfirmRename={handleConfirmRename}
         />
     );
-}, [closeContentPane]);
+}, [closeContentPane, currentPath]);
 
 const renderPptxViewer = useCallback(({ nodeId, onToggleZen, isZenMode, onClose, renamingPaneId, setRenamingPaneId, editedFileName, setEditedFileName, handleConfirmRename }) => {
     return (
@@ -3213,7 +3214,7 @@ const renderPptxViewer = useCallback(({ nodeId, onToggleZen, isZenMode, onClose,
             handleConfirmRename={handleConfirmRename}
         />
     );
-}, [rootLayoutNode, closeContentPane]);
+}, [rootLayoutNode, closeContentPane, currentPath]);
 
 const renderLatexViewer = useCallback(({ nodeId, onToggleZen, isZenMode, onClose, renamingPaneId, setRenamingPaneId, editedFileName, setEditedFileName, handleConfirmRename }) => {
     return (
@@ -3236,7 +3237,7 @@ const renderLatexViewer = useCallback(({ nodeId, onToggleZen, isZenMode, onClose
             handleConfirmRename={handleConfirmRename}
         />
     );
-}, [rootLayoutNode, closeContentPane, performSplit]);
+}, [rootLayoutNode, closeContentPane, performSplit, currentPath]);
 
 const renderNotebookViewer = useCallback(({ nodeId }) => {
     return (
@@ -3956,14 +3957,16 @@ const renderMessageContextMenu = () => null;
     };
 
     // Handle file rename from PaneHeader
-    const handleConfirmRename = useCallback(async (paneId: string, oldFilePath: string) => {
-        if (!editedFileName || !oldFilePath) {
+    const handleConfirmRename = useCallback(async (paneId: string, oldFilePath: string, newName?: string) => {
+        console.log('[RENAME] handleConfirmRename called:', { paneId, oldFilePath, newName, editedFileName });
+        const nameToUse = newName || editedFileName;
+        if (!nameToUse || !oldFilePath) {
             setRenamingPaneId(null);
             return;
         }
 
         const directory = oldFilePath.substring(0, oldFilePath.lastIndexOf('/'));
-        const newFilePath = normalizePath(`${directory}/${editedFileName}`);
+        const newFilePath = normalizePath(`${directory}/${nameToUse}`);
 
         if (newFilePath === oldFilePath) {
             setRenamingPaneId(null);
@@ -3971,12 +3974,40 @@ const renderMessageContextMenu = () => null;
         }
 
         try {
-            const result = await window.api.renameFile(oldFilePath, newFilePath);
-            if (result?.error) throw new Error(result.error);
+            // Try to rename on disk — may fail for untitled files that don't exist yet
+            try {
+                const result = await window.api.renameFile(oldFilePath, newFilePath);
+                if (result?.error) console.warn('Rename on disk failed:', result.error);
+            } catch (diskErr) {
+                console.warn('Rename on disk failed:', diskErr);
+            }
 
-            // Update the content pane with new file path
+            // Always update the content pane with new file path
+            // paneId might be a virtual tab ID (e.g. "paneId_tab_xxx") — find the real pane
+            const realPaneId = paneId.includes('_tab_') ? paneId.split('_tab_')[0] : paneId;
+
+            // Update virtual pane data if exists
             if (contentDataRef.current[paneId]) {
                 contentDataRef.current[paneId].contentId = newFilePath;
+                contentDataRef.current[paneId].title = nameToUse;
+            }
+
+            // Update real pane data
+            const realPane = contentDataRef.current[realPaneId];
+            if (realPane) {
+                if (realPane.contentId === oldFilePath) {
+                    realPane.contentId = newFilePath;
+                    realPane.title = nameToUse;
+                }
+                // Update matching tab
+                if (realPane.tabs) {
+                    for (const tab of realPane.tabs) {
+                        if (tab.contentId === oldFilePath) {
+                            tab.contentId = newFilePath;
+                            tab.title = nameToUse;
+                        }
+                    }
+                }
             }
 
             // Refresh directory structure directly
@@ -3987,6 +4018,7 @@ const renderMessageContextMenu = () => null;
                 }
             }
             notifyAllPanes();
+            setRootLayoutNode(p => ({...p}));
         } catch (err: any) {
             setError(`Failed to rename file: ${err.message}`);
         } finally {
@@ -4033,7 +4065,7 @@ const renderMessageContextMenu = () => null;
     const createNewExperiment = useCallback(async () => {
         try {
             const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.npcsh`;
-            const tmpDir = normalizePath(`${npcshHome}/incognide/tmp`);
+            const tmpDir = normalizePath(`${npcshHome}/tmp`);
             await window.api.ensureDir?.(tmpDir).catch(() => {});
             const filepath = normalizePath(`${tmpDir}/experiment-${Date.now()}.exp`);
             const emptyExp = {
@@ -4433,7 +4465,7 @@ const handleBrowserDialogNavigate = (url) => {
     const createNewJupyterNotebook = useCallback(async () => {
         try {
             const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.npcsh`;
-            const tmpDir = normalizePath(`${npcshHome}/incognide/tmp`);
+            const tmpDir = normalizePath(`${npcshHome}/tmp`);
             await window.api.ensureDir?.(tmpDir).catch(() => {});
             const filepath = normalizePath(`${tmpDir}/notebook-${Date.now()}.ipynb`);
             const emptyNotebook = {
@@ -5446,23 +5478,16 @@ ${contextPrompt}`;
             const filename = `untitled-${Date.now()}.${ext}`;
             // Use a temp dir so user's directories stay clean
             const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.npcsh`;
-            const tmpDir = normalizePath(`${npcshHome}/incognide/tmp`);
+            const tmpDir = normalizePath(`${npcshHome}/tmp`);
             await window.api.ensureDir?.(tmpDir).catch(() => {});
-            // Clean up old temp files before creating new one
-            try {
-                const existing = await window.api.readDirectory?.(tmpDir);
-                if (Array.isArray(existing)) {
-                    for (const f of existing) {
-                        if (f.name?.startsWith('untitled-')) {
-                            await window.api.deleteFile?.(f.path || normalizePath(`${tmpDir}/${f.name}`)).catch(() => {});
-                        }
-                    }
-                }
-            } catch {}
             const filepath = normalizePath(`${tmpDir}/${filename}`);
             if (docType === 'mapx') {
                 const initialMindMap = { nodes: [{ id: 'root', label: 'Central Idea', x: 400, y: 300, color: '#3b82f6' }], links: [] };
                 await window.api.writeFileContent(filepath, JSON.stringify(initialMindMap, null, 2));
+            } else if (docType === 'docx') {
+                await window.api.writeDocxContent(filepath, '<p></p>');
+            } else if (docType === 'pptx') {
+                await window.api.writeFileContent(filepath, '');
             } else {
                 await window.api.writeFileContent(filepath, '');
             }
