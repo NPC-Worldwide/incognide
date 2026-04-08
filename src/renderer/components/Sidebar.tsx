@@ -407,8 +407,11 @@ const Sidebar = (props: any) => {
 
     const createFileWithExtension = (ext: string) => {
         setCodeFileDropdownOpen(false);
-        if (createUntitledTextFile) {
-            createUntitledTextFile();
+        const docTypes = { docx: 'docx', xlsx: 'xlsx', pptx: 'pptx', tex: 'tex', csv: 'csv' };
+        if (docTypes[ext] && createNewDocument) {
+            createNewDocument(docTypes[ext]);
+        } else if (createUntitledTextFile) {
+            createUntitledTextFile(ext);
         }
     };
 
@@ -5526,38 +5529,23 @@ return (
                     {terminalDropdownOpen && (
                         <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[9999] py-1 min-w-[140px]">
                             <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Right-click to set default</div>
-                            <button
-                                onClick={() => { createNewTerminal?.('system'); setTerminalDropdownOpen(false); }}
-                                onContextMenu={(e) => { e.preventDefault(); setDefaultNewTerminalType('system'); setTerminalDropdownOpen(false); }}
-                                className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewTerminalType === 'system' ? 'bg-green-900/30 text-green-300' : 'theme-text-primary'}`}
-                            >
-                                <Terminal size={11} className="text-green-400" /><span>Bash</span>
-                                {defaultNewTerminalType === 'system' && <Star size={8} className="text-yellow-400 ml-auto" />}
-                            </button>
-                            {aiEnabled && (
-                                <button
-                                    onClick={() => { createNewTerminal?.('npcsh'); setTerminalDropdownOpen(false); }}
-                                    onContextMenu={(e) => { e.preventDefault(); setDefaultNewTerminalType('npcsh'); setTerminalDropdownOpen(false); }}
-                                    className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewTerminalType === 'npcsh' ? 'bg-purple-900/30 text-purple-300' : 'theme-text-primary'}`}
-                                >
-                                    <Sparkles size={11} className="text-purple-400" /><span>npcsh</span>
-                                    {defaultNewTerminalType === 'npcsh' && <Star size={8} className="text-yellow-400 ml-auto" />}
-                                </button>
-                            )}
-                            <div className="border-t theme-border my-0.5" />
-                            <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Agents</div>
                             {(() => {
+                                const allTerminals = [
+                                    { name: 'Bash', command: 'system' },
+                                    { name: 'npcsh', command: 'npcsh' },
+                                ];
                                 let agents;
                                 try { agents = JSON.parse(localStorage.getItem('incognide_terminalAgents') || '[]'); } catch { agents = []; }
-                                if (!agents.length) agents = [{"name":"npcsh","command":"npcsh"},{"name":"opencode","command":"opencode"},{"name":"nanocoder","command":"nanocoder"},{"name":"claude","command":"claude"}];
-                                return agents.map((agent: any, idx: number) => (
+                                if (!agents.length) agents = [{"name":"opencode","command":"opencode"},{"name":"nanocoder","command":"nanocoder"}];
+                                const all = [...allTerminals, ...agents.filter((a: any) => a.command !== 'system' && a.command !== 'npcsh')];
+                                return all.map((item: any, idx: number) => (
                                     <button
                                         key={idx}
-                                        onClick={() => { createNewTerminal?.(agent.command); setTerminalDropdownOpen(false); }}
-                                        onContextMenu={(e) => { e.preventDefault(); setDefaultNewTerminalType(agent.command); setTerminalDropdownOpen(false); }}
-                                        className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewTerminalType === agent.command ? 'bg-cyan-900/30 text-cyan-300' : 'theme-text-primary'}`}
+                                        onClick={() => { createNewTerminal?.(item.command); setTerminalDropdownOpen(false); }}
+                                        onContextMenu={(e) => { e.preventDefault(); setDefaultNewTerminalType(item.command); setTerminalDropdownOpen(false); }}
+                                        className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewTerminalType === item.command ? 'bg-green-900/30 text-green-300' : 'theme-text-primary'}`}
                                     >
-                                        <Bot size={11} className="text-cyan-400" /><span>{agent.name}</span>
+                                        <Terminal size={11} /><span>{item.name}</span>
                                         {defaultNewTerminalType === agent.command && <Star size={8} className="text-yellow-400 ml-auto" />}
                                     </button>
                                 ));

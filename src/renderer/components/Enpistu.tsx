@@ -3199,6 +3199,7 @@ const renderPptxViewer = useCallback(({ nodeId, onToggleZen, isZenMode, onClose,
         <PptxViewer
             nodeId={nodeId}
             contentDataRef={contentDataRef}
+            currentPath={currentPath}
             findNodePath={findNodePath}
             rootLayoutNode={rootLayoutNode}
             setDraggedItem={setDraggedItem}
@@ -3221,6 +3222,7 @@ const renderLatexViewer = useCallback(({ nodeId, onToggleZen, isZenMode, onClose
         <LatexViewer
             nodeId={nodeId}
             contentDataRef={contentDataRef}
+            currentPath={currentPath}
             findNodePath={findNodePath}
             rootLayoutNode={rootLayoutNode}
             setDraggedItem={setDraggedItem}
@@ -3960,12 +3962,14 @@ const renderMessageContextMenu = () => null;
     const handleConfirmRename = useCallback(async (paneId: string, oldFilePath: string, newName?: string) => {
         console.log('[RENAME] handleConfirmRename called:', { paneId, oldFilePath, newName, editedFileName });
         const nameToUse = newName || editedFileName;
-        if (!nameToUse || !oldFilePath) {
+        if (!nameToUse) {
             setRenamingPaneId(null);
             return;
         }
 
-        const directory = oldFilePath.substring(0, oldFilePath.lastIndexOf('/'));
+        const realPaneData = contentDataRef.current[paneId] || contentDataRef.current[paneId.split('_tab_')[0]];
+        const isUntitled = !oldFilePath || oldFilePath.includes('/tmp/') || realPaneData?.isUntitled;
+        const directory = isUntitled && currentPath ? currentPath : (oldFilePath ? oldFilePath.substring(0, oldFilePath.lastIndexOf('/')) : currentPath || '');
         const newFilePath = normalizePath(`${directory}/${nameToUse}`);
 
         if (newFilePath === oldFilePath) {
@@ -3974,36 +3978,53 @@ const renderMessageContextMenu = () => null;
         }
 
         try {
-            // Try to rename on disk — may fail for untitled files that don't exist yet
-            try {
-                const result = await window.api.renameFile(oldFilePath, newFilePath);
-                if (result?.error) console.warn('Rename on disk failed:', result.error);
-            } catch (diskErr) {
-                console.warn('Rename on disk failed:', diskErr);
+            if (isUntitled) {
+                // For untitled files, save current content to the new path
+                const pData = realPaneData || contentDataRef.current[paneId];
+                if (pData?.fileContent !== undefined) {
+                    await window.api.writeFileContent(newFilePath, pData.fileContent || '');
+                }
+                if (pData) pData.isUntitled = false;
+            } else if (oldFilePath) {
+                // Rename existing file on disk
+                try {
+                    const result = await window.api.renameFile(oldFilePath, newFilePath);
+                    if (result?.error) console.warn('Rename on disk failed:', result.error);
+                } catch (diskErr) {
+                    console.warn('Rename on disk failed:', diskErr);
+                }
             }
 
             // Always update the content pane with new file path
             // paneId might be a virtual tab ID (e.g. "paneId_tab_xxx") — find the real pane
             const realPaneId = paneId.includes('_tab_') ? paneId.split('_tab_')[0] : paneId;
 
+            // Detect content type from new extension
+            const ext = nameToUse.split('.').pop()?.toLowerCase();
+            const extTypeMap: Record<string, string> = { tex: 'latex', csv: 'csv', xlsx: 'csv', xls: 'csv', docx: 'docx', pptx: 'pptx', pdf: 'pdf', ipynb: 'notebook', md: 'editor', py: 'editor', js: 'editor', ts: 'editor', tsx: 'editor', jsx: 'editor', json: 'editor', txt: 'editor' };
+            const newContentType = ext ? extTypeMap[ext] : undefined;
+
             // Update virtual pane data if exists
             if (contentDataRef.current[paneId]) {
                 contentDataRef.current[paneId].contentId = newFilePath;
                 contentDataRef.current[paneId].title = nameToUse;
+                if (newContentType) contentDataRef.current[paneId].contentType = newContentType;
             }
 
             // Update real pane data
             const realPane = contentDataRef.current[realPaneId];
             if (realPane) {
-                if (realPane.contentId === oldFilePath) {
+                if (!oldFilePath || realPane.contentId === oldFilePath) {
                     realPane.contentId = newFilePath;
                     realPane.title = nameToUse;
+                    if (newContentType) realPane.contentType = newContentType;
                 }
                 // Update matching tab
                 if (realPane.tabs) {
                     for (const tab of realPane.tabs) {
-                        if (tab.contentId === oldFilePath) {
+                        if (!oldFilePath || tab.contentId === oldFilePath) {
                             tab.contentId = newFilePath;
+                            if (newContentType) tab.contentType = newContentType;
                             tab.title = nameToUse;
                         }
                     }
@@ -5388,12 +5409,22 @@ ${contextPrompt}`;
     }, [createAndAddPaneNodeToLayout]);
 
     // Create untitled text file directly without modal
-    const createUntitledTextFile = useCallback(() => {
+    const createUntitledTextFile = useCallback(async (ext?: string) => {
+        const extension = ext || 'txt';
+        const extTypeMap: Record<string, string> = { tex: 'latex', csv: 'csv', xlsx: 'csv', docx: 'docx', pptx: 'pptx' };
+        const contentType = extTypeMap[extension] || 'editor';
+        const filename = `untitled-${Date.now()}.${extension}`;
+        const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.npcsh`;
+        const tmpDir = normalizePath(`${npcshHome}/tmp`);
+        await window.api.ensureDir?.(tmpDir).catch(() => {});
+        const filepath = normalizePath(`${tmpDir}/${filename}`);
+        const initialContent = extension === 'tex' ? '\\documentclass{article}\n\\begin{document}\n\n\\end{document}\n' : '';
+        await window.api.writeFileContent(filepath, initialContent);
         const newPaneId = generateId();
         contentDataRef.current[newPaneId] = {
-            contentType: 'editor',
-            contentId: '',
-            fileContent: '',
+            contentType,
+            contentId: filepath,
+            fileContent: initialContent,
             isUntitled: true
         };
         addPaneOrTab(newPaneId);
@@ -5471,10 +5502,10 @@ ${contextPrompt}`;
         return () => window.removeEventListener('terminal-open-file', handleTerminalOpenFile as EventListener);
     }, [currentPath, createAndAddPaneNodeToLayout, setActiveContentPaneId]);
 
-    const createNewDocument = async (docType: 'docx' | 'xlsx' | 'pptx' | 'mapx') => {
+    const createNewDocument = async (docType: 'docx' | 'xlsx' | 'pptx' | 'mapx' | 'tex') => {
         try {
             const ext = docType === 'mapx' ? 'mapx' : docType;
-            const contentType = ext === 'xlsx' ? 'csv' : ext === 'mapx' ? 'mindmap' : ext;
+            const contentType = ext === 'xlsx' ? 'csv' : ext === 'mapx' ? 'mindmap' : ext === 'tex' ? 'latex' : ext;
             const filename = `untitled-${Date.now()}.${ext}`;
             // Use a temp dir so user's directories stay clean
             const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.npcsh`;
@@ -5486,9 +5517,17 @@ ${contextPrompt}`;
                 await window.api.writeFileContent(filepath, JSON.stringify(initialMindMap, null, 2));
             } else if (docType === 'docx') {
                 await window.api.writeDocxContent(filepath, '<p></p>');
+            } else if (docType === 'xlsx') {
+                // Create valid empty xlsx
+                const XLSX = await import('xlsx');
+                const wb = XLSX.utils.book_new();
+                const ws = XLSX.utils.aoa_to_sheet([['']]);
+                XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+                const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                await window.api.writeFileBuffer(filepath, new Uint8Array(wbout));
+            } else if (docType === 'tex') {
+                await window.api.writeFileContent(filepath, '\\documentclass{article}\n\\begin{document}\n\n\\end{document}\n');
             } else if (docType === 'pptx') {
-                await window.api.writeFileContent(filepath, '');
-            } else {
                 await window.api.writeFileContent(filepath, '');
             }
             createAndAddPaneNodeToLayout({ contentType, contentId: filepath, isUntitled: true });

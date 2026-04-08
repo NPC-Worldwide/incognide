@@ -752,12 +752,32 @@ const CsvViewer = ({
 
     const saveSpreadsheet = useCallback(async () => {
         try {
-            if (isXlsx && workbook) {
+            const currentFilePath = contentDataRef.current[nodeId]?.contentId || filePath;
+            const isUntitled = currentFilePath.includes('/tmp/') || contentDataRef.current[nodeId]?.isUntitled;
+
+            let savePath = currentFilePath;
+            if (isUntitled) {
+                const defaultName = getFileName(currentFilePath) || (isXlsx ? 'spreadsheet.xlsx' : 'spreadsheet.csv');
+                savePath = await (window as any).api?.showSaveDialog?.({
+                    defaultPath: currentPath ? `${currentPath}/${defaultName}` : defaultName,
+                    filters: isXlsx
+                        ? [{ name: 'Excel', extensions: ['xlsx'] }, { name: 'CSV', extensions: ['csv'] }]
+                        : [{ name: 'CSV', extensions: ['csv'] }, { name: 'Excel', extensions: ['xlsx'] }],
+                });
+                if (!savePath) return;
+                if (contentDataRef.current[nodeId]) {
+                    contentDataRef.current[nodeId].contentId = savePath;
+                    contentDataRef.current[nodeId].isUntitled = false;
+                    contentDataRef.current[nodeId].title = getFileName(savePath);
+                }
+            }
+
+            if ((isXlsx || savePath.endsWith('.xlsx')) && workbook) {
                 const sheetData = [headers, ...data];
                 workbook.Sheets[activeSheet] = XLSX.utils.aoa_to_sheet(sheetData);
                 const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'binary' });
-                const blob = new Blob([s2ab(wbout)], { type: 'application/octet-stream' });
-                await window.api.writeFileContent(filePath, await blob.arrayBuffer(), 'binary');
+                const buf = s2ab(wbout);
+                await window.api.writeFileBuffer(savePath, new Uint8Array(buf));
             } else {
                 const csvContent = [
                     headers.join(','),
@@ -772,13 +792,45 @@ const CsvViewer = ({
                     )
                 ].join('\n');
 
-                await window.api.writeFileContent(filePath, csvContent);
+                await window.api.writeFileContent(savePath, csvContent);
             }
             setHasChanges(false);
         } catch (err) {
             setError(err.message);
         }
-    }, [isXlsx, workbook, headers, data, activeSheet, filePath]);
+    }, [isXlsx, workbook, headers, data, activeSheet, filePath, currentPath, nodeId, contentDataRef]);
+
+    const handleRenameAndSave = useCallback(async (newName: string) => {
+        if (!newName) return;
+        const currentFilePath = contentDataRef.current[nodeId]?.contentId || filePath;
+        const isUntitled = currentFilePath.includes('/tmp/') || contentDataRef.current[nodeId]?.isUntitled;
+        if (isUntitled && currentPath) {
+            const savePath = `${currentPath}/${newName}`;
+            try {
+                if (isXlsx && workbook) {
+                    const sheetData = [headers, ...data];
+                    workbook.Sheets[activeSheet] = XLSX.utils.aoa_to_sheet(sheetData);
+                    const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'binary' });
+                    const buf = s2ab(wbout);
+                    await (window as any).api.writeFileBuffer(savePath, new Uint8Array(buf));
+                } else {
+                    const csvContent = [headers.join(','), ...data.map(row => row.map(cell => { const s = String(cell ?? ''); return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s; }).join(','))].join('\n');
+                    await (window as any).api.writeFileContent(savePath, csvContent);
+                }
+                if (contentDataRef.current[nodeId]) {
+                    contentDataRef.current[nodeId].contentId = savePath;
+                    contentDataRef.current[nodeId].isUntitled = false;
+                    contentDataRef.current[nodeId].title = newName;
+                }
+                setHasChanges(false);
+            } catch (err) {
+                console.error('Save after rename failed:', err);
+            }
+        }
+        setEditedFileName(newName);
+        handleConfirmRename?.(nodeId, currentFilePath, newName);
+        setIsLocalRenaming(false);
+    }, [filePath, currentPath, nodeId, contentDataRef, handleConfirmRename, setEditedFileName, isXlsx, workbook, headers, data, activeSheet]);
 
     const s2ab = (s) => {
         const buf = new ArrayBuffer(s.length);
@@ -890,8 +942,8 @@ const CsvViewer = ({
                     for (let i = 0; i < s.length; i++) view[i] = s.charCodeAt(i) & 0xFF;
                     return buf;
                 };
-                const blob = new Blob([s2ab(wbout)], { type: 'application/octet-stream' });
-                await window.api.writeFileContent(`${baseName}_export.xlsx`, await blob.arrayBuffer(), 'binary');
+                const buf = s2ab(wbout);
+                await window.api.writeFileBuffer(`${baseName}_export.xlsx`, new Uint8Array(buf));
             }
         } catch (err) {
             setError(err.message);
@@ -1487,14 +1539,14 @@ const CsvViewer = ({
                                 defaultValue={localEditName} ref={renameInputRef}
                                 onKeyDown={(e) => {
                                     e.stopPropagation();
-                                    if (e.key === 'Enter') { const n = renameInputRef.current?.value || ''; setEditedFileName(n); handleConfirmRename?.(nodeId, filePath, n); setIsLocalRenaming(false); }
+                                    if (e.key === 'Enter') { handleRenameAndSave(renameInputRef.current?.value || ''); }
                                     if (e.key === 'Escape') setIsLocalRenaming(false);
                                 }}
                                 className="px-1 py-0.5 text-xs theme-bg-primary theme-text-primary border theme-border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                                 style={{ flex: 1, minWidth: 0 }}
                                 autoFocus
                             />
-                            <button onClick={() => { const n = renameInputRef.current?.value || ''; setEditedFileName(n); handleConfirmRename?.(nodeId, filePath, n); setIsLocalRenaming(false); }} className="p-0.5 theme-hover rounded text-green-400"><Check size={12} /></button>
+                            <button onClick={() => handleRenameAndSave(renameInputRef.current?.value || '')} className="p-0.5 theme-hover rounded text-green-400"><Check size={12} /></button>
                             <button onClick={() => setIsLocalRenaming(false)} className="p-0.5 theme-hover rounded text-red-400"><X size={12} /></button>
                         </div>
                     ) : (

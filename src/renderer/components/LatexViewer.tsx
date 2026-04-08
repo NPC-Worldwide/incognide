@@ -579,6 +579,7 @@ const editorThemeLight = EditorView.theme({
 const LatexViewer = ({
     nodeId,
     contentDataRef,
+    currentPath,
     findNodePath,
     rootLayoutNode,
     setDraggedItem,
@@ -1309,13 +1310,54 @@ const LatexViewer = ({
         if (target) goToLine(target.line);
     }, [sectionOutline, goToLine]);
 
+    const handleRenameAndSave = useCallback(async (newName) => {
+        if (!newName) return;
+        const currentFilePath = contentDataRef.current[nodeId]?.contentId || filePath;
+        const isUntitled = currentFilePath.includes('/tmp/') || contentDataRef.current[nodeId]?.isUntitled;
+        if (isUntitled && currentPath) {
+            const savePath = `${currentPath}/${newName}`;
+            try {
+                await (window as any).api.writeFileContent(savePath, content);
+                if (contentDataRef.current[nodeId]) {
+                    contentDataRef.current[nodeId].contentId = savePath;
+                    contentDataRef.current[nodeId].isUntitled = false;
+                    contentDataRef.current[nodeId].title = newName;
+                }
+                setHasChanges(false);
+            } catch (err) {
+                console.error('Save after rename failed:', err);
+            }
+        }
+        setEditedFileName(newName);
+        handleConfirmRename?.(nodeId, currentFilePath, newName);
+        setIsLocalRenaming(false);
+    }, [filePath, currentPath, nodeId, contentDataRef, handleConfirmRename, setEditedFileName, content]);
+
     const save = useCallback(async () => {
         if (!hasChanges) return;
+        const currentFilePath = contentDataRef.current[nodeId]?.contentId || filePath;
+        const isUntitled = currentFilePath.includes('/tmp/') || contentDataRef.current[nodeId]?.isUntitled;
+
+        let savePath = currentFilePath;
+        if (isUntitled) {
+            const defaultName = getFileName(currentFilePath) || 'document.tex';
+            savePath = await (window as any).api?.showSaveDialog?.({
+                defaultPath: currentPath ? `${currentPath}/${defaultName}` : defaultName,
+                filters: [{ name: 'LaTeX', extensions: ['tex'] }, { name: 'All Files', extensions: ['*'] }],
+            });
+            if (!savePath) return;
+            if (contentDataRef.current[nodeId]) {
+                contentDataRef.current[nodeId].contentId = savePath;
+                contentDataRef.current[nodeId].isUntitled = false;
+                contentDataRef.current[nodeId].title = getFileName(savePath);
+            }
+        }
+
         setIsSaving(true);
         setError(null);
         try {
             selfWritingRef.current = true;
-            await (window as any).api.writeFileContent(filePath, content);
+            await (window as any).api.writeFileContent(savePath, content);
             setHasChanges(false);
             setShowSavedFlash(true);
             setTimeout(() => setShowSavedFlash(false), 1500);
@@ -1326,7 +1368,7 @@ const LatexViewer = ({
         } finally {
             setIsSaving(false);
         }
-    }, [hasChanges, content, filePath]);
+    }, [hasChanges, content, filePath, currentPath, nodeId, contentDataRef]);
 
     useEffect(() => {
         if (!hasChanges || !filePath || isSaving) return;
@@ -1585,14 +1627,14 @@ const LatexViewer = ({
                             defaultValue={localEditName} ref={renameInputRef}
                             onKeyDown={(e) => {
                                 e.stopPropagation();
-                                if (e.key === 'Enter') { const n = renameInputRef.current?.value || ''; setEditedFileName(n); handleConfirmRename?.(nodeId, filePath, n); setIsLocalRenaming(false); }
+                                if (e.key === 'Enter') { handleRenameAndSave(renameInputRef.current?.value || ''); }
                                 if (e.key === 'Escape') setIsLocalRenaming(false);
                             }}
                             className="px-1 py-0.5 text-[11px] theme-bg-primary theme-text-primary border theme-border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                             style={{ width: '120px' }}
                             autoFocus
                         />
-                        <button onClick={() => { const n = renameInputRef.current?.value || ''; setEditedFileName(n); handleConfirmRename?.(nodeId, filePath, n); setIsLocalRenaming(false); }} className="p-0.5 theme-hover rounded text-green-400"><Check size={10} /></button>
+                        <button onClick={() => handleRenameAndSave(renameInputRef.current?.value || '')} className="p-0.5 theme-hover rounded text-green-400"><Check size={10} /></button>
                         <button onClick={() => setIsLocalRenaming(false)} className="p-0.5 theme-hover rounded text-red-400"><X size={10} /></button>
                     </div>
                 ) : (
