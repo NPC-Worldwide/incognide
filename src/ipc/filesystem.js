@@ -867,14 +867,7 @@ function register(ctx) {
       return { success: true, error: null };
     } catch (err) {
       console.error('Error writing docx:', err);
-      // Fallback: write as HTML with .docx extension (Word can open it)
-      try {
-        const wrappedHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${html}</body></html>`;
-        await fsPromises.writeFile(filePath, wrappedHtml, 'utf8');
-        return { success: true, error: null, fallback: true };
-      } catch (fallbackErr) {
-        return { success: false, error: fallbackErr.message };
-      }
+      return { success: false, error: err.message };
     }
   });
 
