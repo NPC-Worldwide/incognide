@@ -197,6 +197,9 @@ readDocxContent: (filePath) =>
         return () => ipcRenderer.removeListener('open-url-in-browser', handler);
     },
 
+    onBrowserSwipeBack: (callback) => { const h = () => callback(); ipcRenderer.on('browser-swipe-back', h); return () => ipcRenderer.removeListener('browser-swipe-back', h); },
+    onBrowserSwipeForward: (callback) => { const h = () => callback(); ipcRenderer.on('browser-swipe-forward', h); return () => ipcRenderer.removeListener('browser-swipe-forward', h); },
+
     onOpenFileFromOS: (() => {
         let pending = null;
         ipcRenderer.on('open-file-from-os', (_, data) => {

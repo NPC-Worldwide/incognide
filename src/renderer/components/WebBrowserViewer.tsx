@@ -755,6 +755,14 @@ const WebBrowserViewer = memo(({
     const handleForward = useCallback(() => webviewRef.current?.goForward(), []);
     const handleRefresh = useCallback(() => webviewRef.current?.reload(), []);
 
+    // Mac trackpad swipe gestures
+    useEffect(() => {
+        const api = (window as any).api;
+        const offBack = api?.onBrowserSwipeBack?.(() => handleBack());
+        const offForward = api?.onBrowserSwipeForward?.(() => handleForward());
+        return () => { offBack?.(); offForward?.(); };
+    }, [handleBack, handleForward]);
+
     useEffect(() => {
         const container = document.querySelector(`[data-pane-id="${nodeId}"]`);
         if (!container) return;
