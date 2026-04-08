@@ -647,14 +647,15 @@ const renderFineTuneModal = () => {
       const updatedSources = await Promise.all(
         sourcesToLoad.map(async (source) => {
           try {
-
             await window.api?.ensureDirectory?.(source.path);
-            const images = await window.api?.readDirectoryImages?.(source.path) || [];
-            console.log(images);
-            return { ...source, images };
+            const result = await window.api?.readDirectoryImages?.(source.path) || [];
+            // Handle both old (string[]) and new ({ images, deeperFolders }) formats
+            const images = Array.isArray(result) ? result : (result.images || []).map((img: any) => typeof img === 'string' ? img : img.url);
+            const deeperFolders = Array.isArray(result) ? [] : (result.deeperFolders || []);
+            return { ...source, images, deeperFolders };
           } catch (err) {
             console.error('Source load failed:', source, err);
-            return { ...source, images: [] };
+            return { ...source, images: [], deeperFolders: [] };
           }
         })
       );
@@ -680,11 +681,13 @@ const renderFineTuneModal = () => {
                     initialSources.map(async (source) => {
                         try {
                             await window.api?.ensureDirectory?.(source.path);
-                            const images = await window.api?.readDirectoryImages?.(source.path) || [];
-                            return { ...source, images };
+                            const result = await window.api?.readDirectoryImages?.(source.path) || [];
+                            const images = Array.isArray(result) ? result : (result.images || []).map((img: any) => typeof img === 'string' ? img : img.url);
+                            const deeperFolders = Array.isArray(result) ? [] : (result.deeperFolders || []);
+                            return { ...source, images, deeperFolders };
                         } catch (err) {
                             console.error('Source load failed:', source, err);
-                            return { ...source, images: [] };
+                            return { ...source, images: [], deeperFolders: [] };
                         }
                     })
                 );
@@ -4461,6 +4464,9 @@ const handleCanvasMouseDown = (e) => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
+        ctx.globalCompositeOperation = editorTool === 'eraser' ? 'destination-out' : 'source-over';
+        ctx.strokeStyle = editorTool === 'eraser' ? 'rgba(0,0,0,1)' : brushColor;
+        ctx.lineWidth = brushSize;
         ctx.lineTo(x, y);
         ctx.stroke();
         return;
@@ -4503,6 +4509,13 @@ const handleCanvasMouseUp = () => {
     console.log('selectionPoints:', selectionPoints);
 
     setDrawingSelection(false);
+    if (isDrawingBrush) {
+        const canvas = canvasRef.current;
+        if (canvas) {
+            const ctx = canvas.getContext('2d');
+            ctx.globalCompositeOperation = 'source-over';
+        }
+    }
     setIsDrawingBrush(false);
     setIsDraggingSelection(false);
 

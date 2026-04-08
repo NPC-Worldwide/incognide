@@ -7,7 +7,7 @@ import {
     ListFilter, ArrowDown,X, Wrench, FileText, Code2, FileJson, Paperclip,
     Send, BarChart3,Minimize2,  Maximize2, MessageCircle, BrainCircuit, Star, Origami, ChevronDown, ChevronUp,
     Clock, FolderTree, Search, HardDrive, Brain, GitBranch, Activity, Tag, Sparkles, Code, BookOpen, User, FolderOpen,
-    RefreshCw, RotateCcw, Check, KeyRound, Bot, Zap, HelpCircle, AlertCircle, MoreVertical, LayoutGrid
+    RefreshCw, RotateCcw, Check, KeyRound, Bot, Zap, HelpCircle, AlertCircle, MoreVertical, LayoutGrid, ExternalLink
 } from 'lucide-react';
 
 import { Icon } from 'lucide-react';
@@ -3494,55 +3494,10 @@ const renderGitPane = useCallback(({ nodeId }: { nodeId: string }) => {
         <GitPane
             nodeId={nodeId}
             currentPath={currentPath}
-            gitStatus={gitStatus}
-            gitModalTab={gitModalTab}
-            gitDiffContent={gitDiffContent}
-            gitBranches={gitBranches}
-            gitCommitHistory={gitCommitHistory}
-            gitCommitMessage={gitCommitMessage}
-            gitNewBranchName={gitNewBranchName}
-            gitSelectedCommit={gitSelectedCommit}
-            gitError={gitError}
-            gitLoading={gitLoading}
-            noUpstreamPrompt={noUpstreamPrompt}
-            setGitCommitMessage={setGitCommitMessage}
-            setGitNewBranchName={setGitNewBranchName}
-            setGitModalTab={setGitModalTab}
-            setNoUpstreamPrompt={setNoUpstreamPrompt}
-            loadGitStatus={loadGitStatus}
-            loadGitDiff={loadGitDiff}
-            loadGitBranches={loadGitBranches}
-            loadGitHistory={loadGitHistory}
-            loadCommitDetails={loadCommitDetails}
-            gitStageFile={gitStageFile}
-            gitDiscardFile={gitDiscardFile}
-            gitUnstageFile={gitUnstageFile}
-            gitCommitChanges={gitCommitChanges}
-            gitPushChanges={gitPushChanges}
-            gitPullChanges={gitPullChanges}
-            gitCreateBranch={gitCreateBranch}
-            gitCheckoutBranch={gitCheckoutBranch}
-            gitDeleteBranch={gitDeleteBranch}
-            gitPushWithUpstream={gitPushWithUpstream}
-            gitEnableAutoSetupRemote={gitEnableAutoSetupRemote}
-            gitPullAndPush={gitPullAndPush}
-            pushRejectedPrompt={pushRejectedPrompt}
-            setPushRejectedPrompt={setPushRejectedPrompt}
             openFileDiffPane={openFileDiffPane}
-            gitCherryPick={gitCherryPick}
-            gitCherryPickAbort={gitCherryPickAbort}
-            gitCherryPickContinue={gitCherryPickContinue}
-            gitRevertCommit={gitRevertCommit}
-            gitResetToCommit={gitResetToCommit}
-            gitLogBranch={gitLogBranch}
         />
     );
-}, [gitStatus, gitModalTab, gitDiffContent, gitBranches, gitCommitHistory, gitCommitMessage, gitNewBranchName, gitSelectedCommit, gitError,
-    gitLoading, noUpstreamPrompt, pushRejectedPrompt,
-    loadGitStatus, loadGitDiff, loadGitBranches, loadGitHistory, loadCommitDetails,
-    gitStageFile, gitDiscardFile, gitUnstageFile, gitCommitChanges, gitPushChanges, gitPullChanges, gitCreateBranch, gitCheckoutBranch, gitDeleteBranch,
-    gitPushWithUpstream, gitEnableAutoSetupRemote, gitPullAndPush, setPushRejectedPrompt, openFileDiffPane,
-    gitCherryPick, gitCherryPickAbort, gitCherryPickContinue, gitRevertCommit, gitResetToCommit, gitLogBranch]);
+}, [currentPath, openFileDiffPane]);
 
 // Render FolderViewer pane (for pane-based folder browsing)
 const renderFolderViewerPane = useCallback(({ nodeId }: { nodeId: string }) => {
@@ -5302,6 +5257,7 @@ ${contextPrompt}`;
 
     // Render Team Management pane (embedded version for pane layout)
     const renderTeamManagementPane = useCallback(({ nodeId }: { nodeId: string }) => {
+        const paneData = contentDataRef.current[nodeId] || {};
         return (
             <TeamManagement
                 isOpen={true}
@@ -5312,9 +5268,13 @@ ${contextPrompt}`;
                     createNewConversation();
                 }}
                 embedded={true}
+                npcList={availableNPCs}
+                jinxList={availableJinxes}
+                currentNpc={currentNPC}
+                initialTab={paneData.initialTab}
             />
         );
-    }, [currentPath, createNewConversation]);
+    }, [currentPath, createNewConversation, availableNPCs, availableJinxes, currentNPC]);
 
     // Create Team Management pane
     const createTeamManagementPane = useCallback(async () => {
@@ -8704,7 +8664,6 @@ const renderMainContent = () => {
                         <button onClick={() => createPhotoViewerPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Vixynt" data-tutorial="vixynt-button"><Image size={18} /></button>
                         <button onClick={() => createScherzoPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Scherzo" data-tutorial="scherzo-button"><Music size={18} /></button>
                         <button onClick={() => createCartoglyphPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Cartoglyph" data-tutorial="cartoglyph-button"><CartoglyphIcon size={18} /></button>
-                        <button onClick={() => createRadioPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Radio" data-tutorial="radio-button"><RadioTowerIcon size={18} /></button>
                     </>
                 ) : (
                     <div className="relative">
@@ -8723,7 +8682,6 @@ const renderMainContent = () => {
                                     <button onClick={() => { createPhotoViewerPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><Image size={14} /> Vixynt</button>
                                     <button onClick={() => { createScherzoPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><Music size={14} /> Scherzo</button>
                                     <button onClick={() => { createCartoglyphPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><CartoglyphIcon size={14} /> Cartoglyph</button>
-                                    <button onClick={() => { createRadioPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><RadioTowerIcon size={14} /> Radio</button>
                                 </div>
                             </>
                         )}
@@ -8993,23 +8951,12 @@ const renderMainContent = () => {
                 ) : (
                     <StatusBar
                         createDBToolPane={createDBToolPane}
-                        createTeamManagementPane={createTeamManagementPane}
-                        createMcpManagerPane={createMcpManagerPane}
                         paneItems={[]}
                         setActiveContentPaneId={setActiveContentPaneId}
-                        pendingMemoryCount={pendingMemoryCount}
-                        createMemoryManagerPane={createMemoryManagerPane}
-                        kgGeneration={kgGeneration}
-                        createGraphViewerPane={createGraphViewerPane}
-                        createNPCTeamPane={createNPCTeamPane}
-                        createJinxPane={createJinxPane}
-                        createSkillsManagerPane={createSkillsManagerPane}
                         height={bottomBarHeight}
                         onStartResize={() => setIsResizingBottomBar(true)}
                         sidebarCollapsed={sidebarCollapsed}
                         onExpandSidebar={() => setSidebarCollapsed(false)}
-                        topBarCollapsed={topBarCollapsed}
-                        onExpandTopBar={() => { setTopBarCollapsed(false); localStorage.setItem('incognide_topBarCollapsed', 'false'); }}
                         appVersion={appVersion}
                         updateAvailable={updateAvailable}
                         onCheckForUpdates={checkForUpdates}
@@ -9018,10 +8965,7 @@ const renderMainContent = () => {
                         onToggleOpenMode={() => { setOpenMode(m => { const next = m === 'pane' ? 'tab' : 'pane'; localStorage.setItem('incognide_openMode', next); return next; }); }}
                         createDataDashPane={createDataDashPane}
                         createDiskUsagePane={createDiskUsagePane}
-                        createCronDaemonPane={createCronDaemonPane}
                         onOpenDownloadManager={() => setDownloadManagerOpen(true)}
-                        isPredictiveTextEnabled={isPredictiveTextEnabled}
-                        setIsPredictiveTextEnabled={setIsPredictiveTextEnabled}
                         onOpenLogsViewer={() => setLogsViewerOpen(true)}
                         createBackendPane={createBackendPane}
                     />
@@ -9101,23 +9045,12 @@ const renderMainContent = () => {
             ) : (
                 <StatusBar
                     createDBToolPane={createDBToolPane}
-                    createTeamManagementPane={createTeamManagementPane}
-                    createMcpManagerPane={createMcpManagerPane}
                     paneItems={paneItems}
                     setActiveContentPaneId={setActiveContentPaneId}
-                    pendingMemoryCount={pendingMemoryCount}
-                    createMemoryManagerPane={createMemoryManagerPane}
-                    kgGeneration={kgGeneration}
-                    createGraphViewerPane={createGraphViewerPane}
-                    createNPCTeamPane={createNPCTeamPane}
-                    createJinxPane={createJinxPane}
-                    createSkillsManagerPane={createSkillsManagerPane}
                     height={bottomBarHeight}
                     onStartResize={() => setIsResizingBottomBar(true)}
                     sidebarCollapsed={sidebarCollapsed}
                     onExpandSidebar={() => setSidebarCollapsed(false)}
-                    topBarCollapsed={topBarCollapsed}
-                    onExpandTopBar={() => { setTopBarCollapsed(false); localStorage.setItem('incognide_topBarCollapsed', 'false'); }}
                     appVersion={appVersion}
                     updateAvailable={updateAvailable}
                     onCheckForUpdates={checkForUpdates}
@@ -9126,12 +9059,9 @@ const renderMainContent = () => {
                     onToggleOpenMode={() => { setOpenMode(m => { const next = m === 'pane' ? 'tab' : 'pane'; localStorage.setItem('incognide_openMode', next); return next; }); }}
                     createDataDashPane={createDataDashPane}
                     createDiskUsagePane={createDiskUsagePane}
-                    createCronDaemonPane={createCronDaemonPane}
                     onOpenDownloadManager={() => setDownloadManagerOpen(true)}
-                    isPredictiveTextEnabled={isPredictiveTextEnabled}
-                    setIsPredictiveTextEnabled={setIsPredictiveTextEnabled}
                     onOpenLogsViewer={() => setLogsViewerOpen(true)}
-                        createBackendPane={createBackendPane}
+                    createBackendPane={createBackendPane}
                 />
             )}
         </main>
@@ -9364,6 +9294,29 @@ const renderMainContent = () => {
             isOpen={commandPaletteOpen}
             onClose={() => setCommandPaletteOpen(false)}
             onFileSelect={handleFileClick}
+            onCommand={(cmdId: string) => {
+                const paneMap: Record<string, string> = {
+                    chat: 'chat', terminal: 'terminal', browser: 'browser',
+                    vixynt: 'vixynt', scherzo: 'scherzo', cartoglyph: 'cartoglyph',
+                    radio: 'radio', editor: 'editor', word: 'word', ppt: 'ppt',
+                    excel: 'spreadsheet', git: 'git', teammanagement: 'teammanagement',
+                    logs: 'logs', settings: 'settings', help: 'help',
+                    downloads: 'downloads', 'disk-usage': 'disk-usage',
+                    'data-dash': 'datadash',
+                };
+                if (cmdId.startsWith('team:')) {
+                    const tab = cmdId.split(':')[1];
+                    const newPaneId = generateId();
+                    contentDataRef.current[newPaneId] = { contentType: 'teammanagement', contentId: 'teammanagement', initialTab: tab };
+                    addPaneOrTab(newPaneId);
+                } else if (cmdId === 'action:pomodoro') {
+                    setPomodoroActive(true);
+                } else if (paneMap[cmdId]) {
+                    const newPaneId = generateId();
+                    contentDataRef.current[newPaneId] = { contentType: paneMap[cmdId], contentId: paneMap[cmdId] };
+                    addPaneOrTab(newPaneId);
+                }
+            }}
             currentPath={currentPath}
             folderStructure={folderStructure}
         />

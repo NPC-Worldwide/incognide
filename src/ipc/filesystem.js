@@ -890,20 +890,36 @@ function register(ctx) {
   // Read directory images
   // ============================================
 
-  ipcMain.handle('readDirectoryImages', async (_, dirPath) => {
+  ipcMain.handle('readDirectoryImages', async (_, dirPath, maxDepth) => {
+    const depth = typeof maxDepth === 'number' ? maxDepth : 2;
+    const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
+    const results = [];
+    const subdirs = [];
+
+    async function scanDir(dir, currentDepth) {
+      try {
+        const entries = await fsPromises.readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.name.startsWith('.')) continue;
+          const full = path.join(dir, entry.name);
+          if (entry.isFile() && imageExtensions.some(ext => entry.name.toLowerCase().endsWith(ext))) {
+            results.push({ url: `media://${full}`, path: full, folder: dir });
+          } else if (entry.isDirectory() && currentDepth < depth) {
+            await scanDir(full, currentDepth + 1);
+          } else if (entry.isDirectory() && currentDepth >= depth) {
+            subdirs.push(full);
+          }
+        }
+      } catch {}
+    }
+
     try {
       const fullPath = expandHomeDir(dirPath);
-      const files = await fsPromises.readdir(fullPath);
-      const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
-      return files
-        .filter(file => imageExtensions.some(ext => file.toLowerCase().endsWith(ext)))
-        .map(file => {
-          const filePath = path.join(fullPath, file);
-          return `media://${filePath}`;
-        });
+      await scanDir(fullPath, 0);
+      return { images: results, deeperFolders: subdirs };
     } catch (error) {
-      console.error('Error reading directory:', error);
-      return [];
+      console.error('Error reading directory images:', error);
+      return { images: [], deeperFolders: [] };
     }
   });
 

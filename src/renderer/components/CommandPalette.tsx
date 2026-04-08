@@ -7,10 +7,53 @@ interface FileItem {
     type: 'file' | 'directory';
 }
 
+interface PaneCommand {
+    id: string;
+    label: string;
+    aliases: string[];
+    icon: string;
+    category: 'pane' | 'team' | 'action';
+}
+
+const PANE_COMMANDS: PaneCommand[] = [
+    { id: 'chat', label: 'Chat', aliases: ['/chat', '/agent'], icon: '💬', category: 'pane' },
+    { id: 'terminal', label: 'Terminal', aliases: ['/term', '/cmd', '/terminal'], icon: '🖥️', category: 'pane' },
+    { id: 'browser', label: 'Browser', aliases: ['/brows', '/browser', '/web'], icon: '🌐', category: 'pane' },
+    { id: 'vixynt', label: 'Vixynt', aliases: ['/vix', '/vixynt', '/image'], icon: '🎨', category: 'pane' },
+    { id: 'scherzo', label: 'Scherzo', aliases: ['/scher', '/scherzo', '/audio', '/music'], icon: '🎵', category: 'pane' },
+    { id: 'cartoglyph', label: 'Cartoglyph', aliases: ['/carto', '/map', '/gis'], icon: '🗺️', category: 'pane' },
+    { id: 'cartoglyph', label: 'Radio', aliases: ['/radio', '/ham'], icon: '📡', category: 'pane' },
+    { id: 'editor', label: 'Editor', aliases: ['/edit', '/editor'], icon: '📝', category: 'pane' },
+    { id: 'word', label: 'Word', aliases: ['/word', '/doc'], icon: '📄', category: 'pane' },
+    { id: 'ppt', label: 'PowerPoint', aliases: ['/ppt', '/slides'], icon: '📊', category: 'pane' },
+    { id: 'excel', label: 'Excel', aliases: ['/xls', '/excel', '/sheets'], icon: '📈', category: 'pane' },
+    { id: 'git', label: 'Git', aliases: ['/git'], icon: '🔀', category: 'pane' },
+    { id: 'teammanagement', label: 'Team', aliases: ['/team'], icon: '👥', category: 'pane' },
+    { id: 'logs', label: 'Logs', aliases: ['/logs'], icon: '📋', category: 'pane' },
+    { id: 'settings', label: 'Settings', aliases: ['/settings', '/prefs'], icon: '⚙️', category: 'pane' },
+    { id: 'downloads', label: 'Downloads', aliases: ['/downl', '/downloads'], icon: '⬇️', category: 'pane' },
+    { id: 'disk-usage', label: 'Disk Usage', aliases: ['/disk'], icon: '💾', category: 'pane' },
+    { id: 'data-dash', label: 'Data Dash', aliases: ['/data', '/db', '/dash'], icon: '📊', category: 'pane' },
+    { id: 'help', label: 'Help', aliases: ['/help'], icon: '❓', category: 'pane' },
+    // Team management submenus
+    { id: 'team:npcs', label: 'NPCs', aliases: ['/npcs', '/npc'], icon: '👤', category: 'team' },
+    { id: 'team:context', label: 'Context', aliases: ['/context', '/ctx'], icon: '📋', category: 'team' },
+    { id: 'team:jinxes', label: 'Jinxes', aliases: ['/jinxes', '/jinx'], icon: '🔧', category: 'team' },
+    { id: 'team:memory', label: 'Memory', aliases: ['/memory', '/mem'], icon: '🧠', category: 'team' },
+    { id: 'team:knowledge', label: 'Knowledge', aliases: ['/knowledge', '/kg'], icon: '🔗', category: 'team' },
+    { id: 'team:cron', label: 'Cron', aliases: ['/cron', '/jobs'], icon: '⏰', category: 'team' },
+    { id: 'team:mcp', label: 'MCP', aliases: ['/mcp'], icon: '🔌', category: 'team' },
+    { id: 'team:models', label: 'SQL Models', aliases: ['/sql', '/models'], icon: '🗃️', category: 'team' },
+    { id: 'team:databases', label: 'Databases', aliases: ['/databases', '/nql'], icon: '🗄️', category: 'team' },
+    // Actions
+    { id: 'action:pomodoro', label: 'Pomodoro', aliases: ['/pomo', '/pomodoro'], icon: '🍅', category: 'action' },
+];
+
 interface CommandPaletteProps {
     isOpen: boolean;
     onClose: () => void;
     onFileSelect: (filePath: string) => void;
+    onCommand?: (commandId: string) => void;
     currentPath: string;
     folderStructure: any;
 }
@@ -98,6 +141,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     isOpen,
     onClose,
     onFileSelect,
+    onCommand,
     currentPath,
     folderStructure,
 }) => {
@@ -106,13 +150,32 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     const inputRef = useRef<HTMLInputElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
 
+    const isCommandMode = query.startsWith('/');
+
+    const filteredCommands = useMemo(() => {
+        if (!isCommandMode) return [];
+        const q = query.toLowerCase();
+        return PANE_COMMANDS.filter(cmd =>
+            cmd.aliases.some(a => a.startsWith(q)) ||
+            cmd.label.toLowerCase().includes(q.slice(1))
+        ).sort((a, b) => {
+            const aExact = a.aliases.some(al => al === q);
+            const bExact = b.aliases.some(al => al === q);
+            if (aExact !== bExact) return aExact ? -1 : 1;
+            const aStarts = a.aliases.some(al => al.startsWith(q));
+            const bStarts = b.aliases.some(al => al.startsWith(q));
+            if (aStarts !== bStarts) return aStarts ? -1 : 1;
+            return a.label.localeCompare(b.label);
+        });
+    }, [query, isCommandMode]);
+
     const allFiles = useMemo(() => {
         return flattenFiles(folderStructure, currentPath).filter(f => f.type === 'file');
     }, [folderStructure, currentPath]);
 
     const filteredFiles = useMemo(() => {
+        if (isCommandMode) return [];
         if (!query.trim()) {
-
             return allFiles.slice(0, 50);
         }
 
@@ -133,7 +196,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             .slice(0, 50);
 
         return results.map(r => ({ ...r.file, indices: r.indices, usePathIndices: r.usePathIndices }));
-    }, [allFiles, query]);
+    }, [allFiles, query, isCommandMode]);
+
+    const totalItems = isCommandMode ? filteredCommands.length : filteredFiles.length;
 
     useEffect(() => {
         setSelectedIndex(0);
@@ -160,7 +225,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         switch (e.key) {
             case 'ArrowDown':
                 e.preventDefault();
-                setSelectedIndex(i => Math.min(i + 1, filteredFiles.length - 1));
+                setSelectedIndex(i => Math.min(i + 1, totalItems - 1));
                 break;
             case 'ArrowUp':
                 e.preventDefault();
@@ -168,7 +233,12 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 break;
             case 'Enter':
                 e.preventDefault();
-                if (filteredFiles[selectedIndex]) {
+                if (isCommandMode) {
+                    if (filteredCommands[selectedIndex]) {
+                        onCommand?.(filteredCommands[selectedIndex].id);
+                        onClose();
+                    }
+                } else if (filteredFiles[selectedIndex]) {
                     onFileSelect(filteredFiles[selectedIndex].path);
                     onClose();
                 }
@@ -178,7 +248,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 onClose();
                 break;
         }
-    }, [filteredFiles, selectedIndex, onFileSelect, onClose]);
+    }, [filteredFiles, filteredCommands, selectedIndex, onFileSelect, onCommand, onClose, isCommandMode, totalItems]);
 
     if (!isOpen) return null;
 
@@ -227,7 +297,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        placeholder="Search files by name..."
+                        placeholder="Search files... (type / for commands)"
                         style={{
                             width: '100%',
                             padding: '12px 16px',
@@ -248,7 +318,39 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                         overflow: 'auto',
                     }}
                 >
-                    {filteredFiles.length === 0 ? (
+                    {isCommandMode ? (
+                        filteredCommands.length === 0 ? (
+                            <div style={{ padding: '24px', textAlign: 'center', color: '#6c7086' }}>
+                                No matching commands
+                            </div>
+                        ) : (
+                            filteredCommands.map((cmd, index) => (
+                                <div
+                                    key={cmd.id}
+                                    onClick={() => { onCommand?.(cmd.id); onClose(); }}
+                                    style={{
+                                        padding: '10px 16px',
+                                        cursor: 'pointer',
+                                        backgroundColor: index === selectedIndex ? '#313244' : 'transparent',
+                                        borderLeft: index === selectedIndex ? '3px solid #89b4fa' : '3px solid transparent',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '12px',
+                                    }}
+                                    onMouseEnter={() => setSelectedIndex(index)}
+                                >
+                                    <span style={{ fontSize: '18px' }}>{cmd.icon}</span>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ color: '#cdd6f4', fontWeight: 500 }}>{cmd.label}</div>
+                                        <div style={{ color: '#6c7086', fontSize: '12px' }}>
+                                            {cmd.aliases.join(' ')}
+                                            {cmd.category === 'team' && <span style={{ marginLeft: 8, color: '#9399b2' }}>Team</span>}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        )
+                    ) : filteredFiles.length === 0 ? (
                         <div style={{ padding: '24px', textAlign: 'center', color: '#6c7086' }}>
                             {query ? 'No files found' : 'No files in workspace'}
                         </div>

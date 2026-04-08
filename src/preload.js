@@ -447,6 +447,12 @@ readDocxContent: (filePath) =>
     memory_scope: (args) => ipcRenderer.invoke('memory:scope', args),
     memory_approve: (args) => ipcRenderer.invoke('memory:approve', args),
 
+    logActivity: (args) => ipcRenderer.invoke('activity:log', args),
+    getActivities: (args) => ipcRenderer.invoke('activity:list', args),
+    logAutocomplete: (args) => ipcRenderer.invoke('autocomplete:log', args),
+    getAutocompleteStats: (args) => ipcRenderer.invoke('autocomplete:stats', args),
+    getAutocompleteTraining: (args) => ipcRenderer.invoke('autocomplete:training', args),
+
     resizeTerminal: (data) => ipcRenderer.invoke('resizeTerminal', data),
 
         createTerminalSession: (args) => ipcRenderer.invoke('createTerminalSession', args),

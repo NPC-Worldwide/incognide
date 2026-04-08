@@ -1,107 +1,288 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, GitBranch, RotateCcw, Cherry, AlertTriangle, Globe } from 'lucide-react';
 import GitForestPanel from './GitForestPanel';
 
 interface GitPaneProps {
     nodeId: string;
     currentPath: string;
-    gitStatus: any;
-    gitModalTab: 'status' | 'diff' | 'branches' | 'history';
-    gitDiffContent: { staged: string; unstaged: string } | null;
-    gitBranches: any;
-    gitCommitHistory: any[];
-    gitCommitMessage: string;
-    gitNewBranchName: string;
-    gitSelectedCommit: any;
-    gitError: string | null;
-    gitLoading: boolean;
-    noUpstreamPrompt: { branch: string; command: string } | null;
-    setGitCommitMessage: (msg: string) => void;
-    setGitNewBranchName: (name: string) => void;
-    setGitModalTab: (tab: 'status' | 'diff' | 'branches' | 'history') => void;
-    setNoUpstreamPrompt: (prompt: { branch: string; command: string } | null) => void;
-    loadGitStatus: () => void;
-    loadGitDiff: () => void;
-    loadGitBranches: () => void;
-    loadGitHistory: () => void;
-    loadCommitDetails: (hash: string) => void;
-    gitStageFile: (file: string) => void;
-    gitDiscardFile: (file: string) => void;
-    gitUnstageFile: (file: string) => void;
-    gitCommitChanges: () => void;
-    gitPushChanges: () => void;
-    gitPullChanges: () => void;
-    gitCreateBranch: () => void;
-    gitCheckoutBranch: (branch: string) => void;
-    gitDeleteBranch: (branch: string) => void;
-    gitPushWithUpstream: () => void;
-    gitEnableAutoSetupRemote: () => void;
-    gitPullAndPush: () => void;
-    pushRejectedPrompt: boolean;
-    setPushRejectedPrompt: (v: boolean) => void;
     openFileDiffPane: (filePath: string, status: string) => void;
-    gitCherryPick: (commitHash: string) => Promise<any>;
-    gitCherryPickAbort: () => void;
-    gitCherryPickContinue: () => void;
-    gitRevertCommit: (commitHash: string) => Promise<any>;
-    gitResetToCommit: (commitHash: string, mode?: 'soft' | 'mixed' | 'hard') => Promise<any>;
-    gitLogBranch: (branchName: string) => Promise<any[]>;
 }
 
-const GitPane: React.FC<GitPaneProps> = ({
-    nodeId,
-    currentPath,
-    gitStatus,
-    gitModalTab,
-    gitDiffContent,
-    gitBranches,
-    gitCommitHistory,
-    gitCommitMessage,
-    gitNewBranchName,
-    gitSelectedCommit,
-    gitError,
-    gitLoading,
-    noUpstreamPrompt,
-    setGitCommitMessage,
-    setGitNewBranchName,
-    setGitModalTab,
-    setNoUpstreamPrompt,
-    loadGitStatus,
-    loadGitDiff,
-    loadGitBranches,
-    loadGitHistory,
-    loadCommitDetails,
-    gitStageFile,
-    gitDiscardFile,
-    gitUnstageFile,
-    gitCommitChanges,
-    gitPushChanges,
-    gitPullChanges,
-    gitCreateBranch,
-    gitCheckoutBranch,
-    gitDeleteBranch,
-    gitPushWithUpstream,
-    gitEnableAutoSetupRemote,
-    gitPullAndPush,
-    pushRejectedPrompt,
-    setPushRejectedPrompt,
-    openFileDiffPane,
-    gitCherryPick,
-    gitCherryPickAbort,
-    gitCherryPickContinue,
-    gitRevertCommit,
-    gitResetToCommit,
-    gitLogBranch,
-}) => {
+const GitPane: React.FC<GitPaneProps> = ({ nodeId, currentPath, openFileDiffPane }) => {
+    const [activeTab, setActiveTab] = useState<'status' | 'diff' | 'branches' | 'history'>('status');
+    const [gitStatus, setGitStatus] = useState<any>(null);
+    const [gitDiffContent, setGitDiffContent] = useState<{ staged: string; unstaged: string } | null>(null);
+    const [gitBranches, setGitBranches] = useState<any>(null);
+    const [gitCommitHistory, setGitCommitHistory] = useState<any[]>([]);
+    const [gitCommitMessage, setGitCommitMessage] = useState('');
+    const [gitNewBranchName, setGitNewBranchName] = useState('');
+    const [gitSelectedCommit, setGitSelectedCommit] = useState<any>(null);
+    const [gitError, setGitError] = useState<string | null>(null);
+    const [gitLoading, setGitLoading] = useState(false);
+    const [noUpstreamPrompt, setNoUpstreamPrompt] = useState<{ branch: string; command: string } | null>(null);
+    const [pushRejectedPrompt, setPushRejectedPrompt] = useState(false);
     const [showForest, setShowForest] = useState(false);
     const [resetConfirm, setResetConfirm] = useState<{ hash: string; mode: 'soft' | 'mixed' | 'hard' } | null>(null);
     const [actionFeedback, setActionFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
     const [cherryPickSource, setCherryPickSource] = useState<string | null>(null);
     const [cherryPickSourceCommits, setCherryPickSourceCommits] = useState<any[]>([]);
 
+    const api = (window as any).api;
+
     const showFeedback = (type: 'success' | 'error', message: string) => {
         setActionFeedback({ type, message });
         setTimeout(() => setActionFeedback(null), 3000);
+    };
+
+    const loadGitStatus = useCallback(async () => {
+        if (!currentPath) return;
+        try {
+            const result = await api?.gitStatus?.(currentPath);
+            setGitStatus(result);
+            setGitError(null);
+        } catch (err: any) {
+            setGitError(err.message);
+        }
+    }, [currentPath]);
+
+    const loadGitDiff = useCallback(async () => {
+        if (!currentPath) return;
+        try {
+            const result = await api?.gitDiffAll?.(currentPath);
+            setGitDiffContent(result);
+        } catch (err: any) {
+            setGitError(err.message);
+        }
+    }, [currentPath]);
+
+    const loadGitBranches = useCallback(async () => {
+        if (!currentPath) return;
+        try {
+            const result = await api?.gitBranches?.(currentPath);
+            setGitBranches(result);
+        } catch (err: any) {
+            setGitError(err.message);
+        }
+    }, [currentPath]);
+
+    const loadGitHistory = useCallback(async () => {
+        if (!currentPath) return;
+        try {
+            const result = await api?.gitLog?.(currentPath);
+            setGitCommitHistory(result?.commits || []);
+        } catch (err: any) {
+            setGitError(err.message);
+        }
+    }, [currentPath]);
+
+    const loadCommitDetails = useCallback(async (hash: string) => {
+        if (!currentPath) return;
+        try {
+            const result = await api?.gitShowCommit?.(currentPath, hash);
+            setGitSelectedCommit(result);
+        } catch (err: any) {
+            setGitError(err.message);
+        }
+    }, [currentPath]);
+
+    const gitStageFile = useCallback(async (file: string) => {
+        setGitLoading(true);
+        try {
+            await api?.gitStageFile?.(currentPath, file);
+            await loadGitStatus();
+        } finally { setGitLoading(false); }
+    }, [currentPath, loadGitStatus]);
+
+    const gitDiscardFile = useCallback(async (file: string) => {
+        setGitLoading(true);
+        try {
+            await api?.gitDiscardFile?.(currentPath, file);
+            await loadGitStatus();
+        } finally { setGitLoading(false); }
+    }, [currentPath, loadGitStatus]);
+
+    const gitUnstageFile = useCallback(async (file: string) => {
+        setGitLoading(true);
+        try {
+            await api?.gitUnstageFile?.(currentPath, file);
+            await loadGitStatus();
+        } finally { setGitLoading(false); }
+    }, [currentPath, loadGitStatus]);
+
+    const gitCommitChanges = useCallback(async () => {
+        if (!gitCommitMessage.trim()) return;
+        setGitLoading(true);
+        try {
+            await api?.gitCommit?.(currentPath, gitCommitMessage.trim());
+            setGitCommitMessage('');
+            await loadGitStatus();
+        } catch (err: any) {
+            setGitError(err.message);
+        } finally { setGitLoading(false); }
+    }, [currentPath, gitCommitMessage, loadGitStatus]);
+
+    const gitPushChanges = useCallback(async () => {
+        setGitLoading(true);
+        try {
+            const result = await api?.gitPush?.(currentPath);
+            if (result?.error?.includes('no upstream') || result?.noUpstream) {
+                const branch = gitStatus?.branch || 'main';
+                setNoUpstreamPrompt({ branch, command: `git push -u origin ${branch}` });
+            } else if (result?.error?.includes('rejected') || result?.rejected) {
+                setPushRejectedPrompt(true);
+            }
+            await loadGitStatus();
+        } catch (err: any) {
+            if (err.message?.includes('no upstream')) {
+                const branch = gitStatus?.branch || 'main';
+                setNoUpstreamPrompt({ branch, command: `git push -u origin ${branch}` });
+            } else {
+                setGitError(err.message);
+            }
+        } finally { setGitLoading(false); }
+    }, [currentPath, loadGitStatus, gitStatus]);
+
+    const gitPullChanges = useCallback(async () => {
+        setGitLoading(true);
+        try {
+            await api?.gitPull?.(currentPath);
+            await loadGitStatus();
+        } catch (err: any) {
+            setGitError(err.message);
+        } finally { setGitLoading(false); }
+    }, [currentPath, loadGitStatus]);
+
+    const gitCreateBranch = useCallback(async () => {
+        if (!gitNewBranchName.trim()) return;
+        setGitLoading(true);
+        try {
+            await api?.gitCreateBranch?.(currentPath, gitNewBranchName);
+            setGitNewBranchName('');
+            await loadGitBranches();
+        } catch (err: any) {
+            setGitError(err.message);
+        } finally { setGitLoading(false); }
+    }, [currentPath, gitNewBranchName, loadGitBranches]);
+
+    const gitCheckoutBranch = useCallback(async (branch: string) => {
+        setGitLoading(true);
+        try {
+            await api?.gitCheckout?.(currentPath, branch);
+            await loadGitStatus();
+            await loadGitBranches();
+        } catch (err: any) {
+            setGitError(err.message);
+        } finally { setGitLoading(false); }
+    }, [currentPath, loadGitStatus, loadGitBranches]);
+
+    const gitDeleteBranch = useCallback(async (branch: string) => {
+        setGitLoading(true);
+        try {
+            await api?.gitDeleteBranch?.(currentPath, branch);
+            await loadGitBranches();
+        } catch (err: any) {
+            setGitError(err.message);
+        } finally { setGitLoading(false); }
+    }, [currentPath, loadGitBranches]);
+
+    const gitPushWithUpstream = useCallback(async () => {
+        setGitLoading(true);
+        try {
+            await api?.gitPushSetUpstream?.(currentPath, noUpstreamPrompt?.branch);
+            setNoUpstreamPrompt(null);
+            await loadGitStatus();
+        } catch (err: any) {
+            setGitError(err.message);
+        } finally { setGitLoading(false); }
+    }, [currentPath, noUpstreamPrompt, loadGitStatus]);
+
+    const gitEnableAutoSetupRemote = useCallback(async () => {
+        setGitLoading(true);
+        try {
+            await api?.gitSetAutoSetupRemote?.();
+            await api?.gitPush?.(currentPath);
+            setNoUpstreamPrompt(null);
+            await loadGitStatus();
+        } catch (err: any) {
+            setGitError(err.message);
+        } finally { setGitLoading(false); }
+    }, [currentPath, loadGitStatus]);
+
+    const gitPullAndPush = useCallback(async () => {
+        setGitLoading(true);
+        try {
+            await api?.gitPull?.(currentPath);
+            await api?.gitPush?.(currentPath);
+            setPushRejectedPrompt(false);
+            await loadGitStatus();
+        } catch (err: any) {
+            setGitError(err.message);
+        } finally { setGitLoading(false); }
+    }, [currentPath, loadGitStatus]);
+
+    const gitCherryPick = useCallback(async (hash: string) => {
+        setGitLoading(true);
+        try {
+            const result = await api?.gitCherryPick?.(currentPath, hash);
+            await loadGitStatus();
+            await loadGitHistory();
+            return result;
+        } catch (err: any) {
+            return { error: err.message };
+        } finally { setGitLoading(false); }
+    }, [currentPath, loadGitStatus, loadGitHistory]);
+
+    const gitCherryPickAbort = useCallback(async () => {
+        try { await api?.gitCherryPickAbort?.(currentPath); await loadGitStatus(); } catch {}
+    }, [currentPath, loadGitStatus]);
+
+    const gitCherryPickContinue = useCallback(async () => {
+        try { await api?.gitCherryPickContinue?.(currentPath); await loadGitStatus(); await loadGitHistory(); } catch {}
+    }, [currentPath, loadGitStatus, loadGitHistory]);
+
+    const gitRevertCommit = useCallback(async (hash: string) => {
+        setGitLoading(true);
+        try {
+            const result = await api?.gitRevert?.(currentPath, hash);
+            await loadGitStatus();
+            await loadGitHistory();
+            return result;
+        } catch (err: any) {
+            return { error: err.message };
+        } finally { setGitLoading(false); }
+    }, [currentPath, loadGitStatus, loadGitHistory]);
+
+    const gitResetToCommit = useCallback(async (hash: string, mode: 'soft' | 'mixed' | 'hard' = 'mixed') => {
+        setGitLoading(true);
+        try {
+            const result = await api?.gitResetToCommit?.(currentPath, hash, mode);
+            await loadGitStatus();
+            await loadGitHistory();
+            return result;
+        } catch (err: any) {
+            return { error: err.message };
+        } finally { setGitLoading(false); }
+    }, [currentPath, loadGitStatus, loadGitHistory]);
+
+    const gitLogBranch = useCallback(async (branchName: string) => {
+        try {
+            const result = await api?.gitLogBranch?.(currentPath, branchName);
+            return result?.commits || [];
+        } catch { return []; }
+    }, [currentPath]);
+
+    // Initial load
+    useEffect(() => {
+        loadGitStatus();
+    }, [loadGitStatus]);
+
+    const handleTabClick = (tab: 'status' | 'diff' | 'branches' | 'history') => {
+        setShowForest(false);
+        setActiveTab(tab);
+        if (tab === 'status') loadGitStatus();
+        if (tab === 'diff') loadGitDiff();
+        if (tab === 'branches') loadGitBranches();
+        if (tab === 'history') { loadGitHistory(); loadGitBranches(); }
     };
 
     const handleCherryPick = async (hash: string) => {
@@ -117,21 +298,15 @@ const GitPane: React.FC<GitPaneProps> = ({
 
     const handleRevert = async (hash: string) => {
         const result = await gitRevertCommit(hash);
-        if (result?.success) {
-            showFeedback('success', `Reverted ${hash.slice(0, 7)}`);
-        } else {
-            showFeedback('error', result?.error || 'Revert failed');
-        }
+        if (result?.success) showFeedback('success', `Reverted ${hash.slice(0, 7)}`);
+        else showFeedback('error', result?.error || 'Revert failed');
     };
 
     const handleReset = async () => {
         if (!resetConfirm) return;
         const result = await gitResetToCommit(resetConfirm.hash, resetConfirm.mode);
-        if (result?.success) {
-            showFeedback('success', `Reset (${resetConfirm.mode}) to ${resetConfirm.hash.slice(0, 7)}`);
-        } else {
-            showFeedback('error', result?.error || 'Reset failed');
-        }
+        if (result?.success) showFeedback('success', `Reset (${resetConfirm.mode}) to ${resetConfirm.hash.slice(0, 7)}`);
+        else showFeedback('error', result?.error || 'Reset failed');
         setResetConfirm(null);
     };
 
@@ -140,6 +315,7 @@ const GitPane: React.FC<GitPaneProps> = ({
         const commits = await gitLogBranch(branchName);
         setCherryPickSourceCommits(commits);
     };
+
     return (
         <div className="flex flex-col h-full theme-bg-primary overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b theme-border">
@@ -162,15 +338,9 @@ const GitPane: React.FC<GitPaneProps> = ({
                 {(['status', 'diff', 'branches', 'history'] as const).map(tab => (
                     <button
                         key={tab}
-                        onClick={() => {
-                            setShowForest(false);
-                            setGitModalTab(tab);
-                            if (tab === 'diff') loadGitDiff();
-                            if (tab === 'branches') loadGitBranches();
-                            if (tab === 'history') { loadGitHistory(); loadGitBranches(); }
-                        }}
+                        onClick={() => handleTabClick(tab)}
                         className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                            !showForest && gitModalTab === tab
+                            !showForest && activeTab === tab
                                 ? 'border-purple-500 text-purple-400'
                                 : 'border-transparent theme-text-muted hover:theme-text-primary'
                         }`}
@@ -178,17 +348,6 @@ const GitPane: React.FC<GitPaneProps> = ({
                         {tab.charAt(0).toUpperCase() + tab.slice(1)}
                     </button>
                 ))}
-                {/* GitForest tab — hidden until network has more peers */}
-                {false && <button
-                    onClick={() => setShowForest(true)}
-                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
-                        showForest
-                            ? 'border-purple-500 text-purple-400'
-                            : 'border-transparent theme-text-muted hover:theme-text-primary'
-                    }`}
-                >
-                    <Globe size={13} /> Forest
-                </button>}
             </div>
 
             <div className="flex-1 overflow-auto p-4">
@@ -196,7 +355,7 @@ const GitPane: React.FC<GitPaneProps> = ({
                     <GitForestPanel currentPath={currentPath} />
                 ) : !gitStatus ? (
                     <div className="text-center theme-text-muted py-8">No git repository in this directory</div>
-                ) : gitModalTab === 'status' ? (
+                ) : activeTab === 'status' ? (
 
                     <div className="space-y-4">
                         <div className="flex items-center gap-4 text-sm">
@@ -277,29 +436,13 @@ const GitPane: React.FC<GitPaneProps> = ({
                                 className="w-full px-3 py-2 text-sm theme-bg-primary border theme-border rounded-lg resize-none h-20"
                             />
                             <div className="flex gap-2 mt-2">
-                                <button
-                                    onClick={gitCommitChanges}
-                                    disabled={!gitCommitMessage.trim() || (gitStatus.staged || []).length === 0}
-                                    className="px-3 py-1.5 text-xs bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg"
-                                >
-                                    Commit
-                                </button>
-                                <button
-                                    onClick={gitPushChanges}
-                                    className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 rounded-lg"
-                                >
-                                    Push
-                                </button>
-                                <button
-                                    onClick={gitPullChanges}
-                                    className="px-3 py-1.5 text-xs bg-purple-600 hover:bg-purple-500 rounded-lg"
-                                >
-                                    Pull
-                                </button>
+                                <button onClick={gitCommitChanges} disabled={!gitCommitMessage.trim() || (gitStatus.staged || []).length === 0} className="px-3 py-1.5 text-xs bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg">Commit</button>
+                                <button onClick={gitPushChanges} className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 rounded-lg">Push</button>
+                                <button onClick={gitPullChanges} className="px-3 py-1.5 text-xs bg-purple-600 hover:bg-purple-500 rounded-lg">Pull</button>
                             </div>
                         </div>
                     </div>
-                ) : gitModalTab === 'diff' ? (
+                ) : activeTab === 'diff' ? (
 
                     <div className="space-y-2">
                         {gitDiffContent ? (
@@ -317,24 +460,12 @@ const GitPane: React.FC<GitPaneProps> = ({
                             <div className="text-center theme-text-muted py-8">No diff available</div>
                         )}
                     </div>
-                ) : gitModalTab === 'branches' ? (
+                ) : activeTab === 'branches' ? (
 
                     <div className="space-y-4">
                         <div className="flex gap-2">
-                            <input
-                                type="text"
-                                placeholder="New branch name..."
-                                value={gitNewBranchName}
-                                onChange={(e) => setGitNewBranchName(e.target.value)}
-                                className="flex-1 px-3 py-2 text-sm theme-bg-secondary border theme-border rounded-lg"
-                            />
-                            <button
-                                onClick={gitCreateBranch}
-                                disabled={!gitNewBranchName.trim()}
-                                className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 disabled:opacity-50 rounded-lg"
-                            >
-                                Create
-                            </button>
+                            <input type="text" placeholder="New branch name..." value={gitNewBranchName} onChange={(e) => setGitNewBranchName(e.target.value)} className="flex-1 px-3 py-2 text-sm theme-bg-secondary border theme-border rounded-lg" />
+                            <button onClick={gitCreateBranch} disabled={!gitNewBranchName.trim()} className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 disabled:opacity-50 rounded-lg">Create</button>
                         </div>
 
                         <div>
@@ -344,32 +475,15 @@ const GitPane: React.FC<GitPaneProps> = ({
                             </div>
                             <div className="space-y-1">
                                 {gitBranches?.all?.filter((branch: string) => !branch.startsWith('remotes/')).map((branch: string) => (
-                                    <div
-                                        key={branch}
-                                        className={`flex items-center justify-between p-2 rounded text-sm group ${
-                                            branch === gitBranches.current ? 'bg-purple-900/30 border border-purple-500/30' : 'hover:bg-white/5'
-                                        }`}
-                                    >
+                                    <div key={branch} className={`flex items-center justify-between p-2 rounded text-sm group ${branch === gitBranches.current ? 'bg-purple-900/30 border border-purple-500/30' : 'hover:bg-white/5'}`}>
                                         <div className="flex items-center gap-2">
                                             {branch === gitBranches.current && <span className="text-purple-400">●</span>}
-                                            <span className={branch === gitBranches.current ? 'text-purple-400 font-medium' : 'theme-text-primary'}>
-                                                {branch}
-                                            </span>
+                                            <span className={branch === gitBranches.current ? 'text-purple-400 font-medium' : 'theme-text-primary'}>{branch}</span>
                                         </div>
                                         {branch !== gitBranches.current && (
                                             <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button
-                                                    onClick={() => gitCheckoutBranch(branch)}
-                                                    className="text-xs text-blue-400 hover:text-blue-300 px-2 py-0.5 rounded hover:bg-blue-900/30"
-                                                >
-                                                    Checkout
-                                                </button>
-                                                <button
-                                                    onClick={() => gitDeleteBranch(branch)}
-                                                    className="text-xs text-red-400 hover:text-red-300 px-2 py-0.5 rounded hover:bg-red-900/30"
-                                                >
-                                                    Delete
-                                                </button>
+                                                <button onClick={() => gitCheckoutBranch(branch)} className="text-xs text-blue-400 hover:text-blue-300 px-2 py-0.5 rounded hover:bg-blue-900/30">Checkout</button>
+                                                <button onClick={() => gitDeleteBranch(branch)} className="text-xs text-red-400 hover:text-red-300 px-2 py-0.5 rounded hover:bg-red-900/30">Delete</button>
                                             </div>
                                         )}
                                     </div>
@@ -385,17 +499,9 @@ const GitPane: React.FC<GitPaneProps> = ({
                                 </div>
                                 <div className="space-y-1 max-h-48 overflow-y-auto">
                                     {gitBranches?.all?.filter((branch: string) => branch.startsWith('remotes/')).map((branch: string) => (
-                                        <div
-                                            key={branch}
-                                            className="flex items-center justify-between p-2 rounded text-sm group hover:bg-white/5"
-                                        >
+                                        <div key={branch} className="flex items-center justify-between p-2 rounded text-sm group hover:bg-white/5">
                                             <span className="theme-text-muted text-xs">{branch.replace('remotes/', '')}</span>
-                                            <button
-                                                onClick={() => gitCheckoutBranch(branch.replace('remotes/origin/', ''))}
-                                                className="text-xs text-blue-400 hover:text-blue-300 opacity-0 group-hover:opacity-100"
-                                            >
-                                                Checkout
-                                            </button>
+                                            <button onClick={() => gitCheckoutBranch(branch.replace('remotes/origin/', ''))} className="text-xs text-blue-400 hover:text-blue-300 opacity-0 group-hover:opacity-100">Checkout</button>
                                         </div>
                                     ))}
                                 </div>
@@ -422,13 +528,11 @@ const GitPane: React.FC<GitPaneProps> = ({
                             </div>
                         )}
                     </div>
-                ) : gitModalTab === 'history' ? (
+                ) : activeTab === 'history' ? (
 
                     <div className="flex flex-col gap-3 h-full min-h-[400px]">
                         {actionFeedback && (
-                            <div className={`px-3 py-2 rounded text-xs flex items-center gap-2 ${
-                                actionFeedback.type === 'success' ? 'bg-green-900/40 text-green-400 border border-green-500/30' : 'bg-red-900/40 text-red-400 border border-red-500/30'
-                            }`}>
+                            <div className={`px-3 py-2 rounded text-xs flex items-center gap-2 ${actionFeedback.type === 'success' ? 'bg-green-900/40 text-green-400 border border-green-500/30' : 'bg-red-900/40 text-red-400 border border-red-500/30'}`}>
                                 {actionFeedback.type === 'error' && <AlertTriangle size={12} />}
                                 {actionFeedback.message}
                                 {actionFeedback.type === 'error' && actionFeedback.message.includes('conflict') && (
@@ -448,18 +552,12 @@ const GitPane: React.FC<GitPaneProps> = ({
                                     {resetConfirm.mode === 'hard' && <span className="text-red-400 font-medium">This will discard all changes!</span>}
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <select
-                                        value={resetConfirm.mode}
-                                        onChange={(e) => setResetConfirm({ ...resetConfirm, mode: e.target.value as 'soft' | 'mixed' | 'hard' })}
-                                        className="text-[10px] px-1.5 py-0.5 theme-bg-primary border theme-border rounded"
-                                    >
+                                    <select value={resetConfirm.mode} onChange={(e) => setResetConfirm({ ...resetConfirm, mode: e.target.value as 'soft' | 'mixed' | 'hard' })} className="text-[10px] px-1.5 py-0.5 theme-bg-primary border theme-border rounded">
                                         <option value="soft">Soft (keep staged)</option>
                                         <option value="mixed">Mixed (unstage, keep files)</option>
                                         <option value="hard">Hard (discard everything)</option>
                                     </select>
-                                    <button onClick={handleReset} className={`px-2 py-0.5 rounded text-white text-[10px] ${resetConfirm.mode === 'hard' ? 'bg-red-600 hover:bg-red-500' : 'bg-amber-600 hover:bg-amber-500'}`}>
-                                        Confirm Reset
-                                    </button>
+                                    <button onClick={handleReset} className={`px-2 py-0.5 rounded text-white text-[10px] ${resetConfirm.mode === 'hard' ? 'bg-red-600 hover:bg-red-500' : 'bg-amber-600 hover:bg-amber-500'}`}>Confirm Reset</button>
                                     <button onClick={() => setResetConfirm(null)} className="px-2 py-0.5 bg-gray-600 hover:bg-gray-500 rounded text-white text-[10px]">Cancel</button>
                                 </div>
                             </div>
@@ -489,14 +587,7 @@ const GitPane: React.FC<GitPaneProps> = ({
                                                 <span className="text-purple-400 font-mono mr-2">{commit.hash?.slice(0, 7)}</span>
                                                 <span className="theme-text-primary truncate">{commit.message}</span>
                                             </div>
-                                            <button
-                                                onClick={() => handleCherryPick(commit.hash)}
-                                                disabled={gitLoading}
-                                                className="flex-shrink-0 px-2 py-0.5 text-[10px] bg-pink-600 hover:bg-pink-500 disabled:opacity-50 rounded text-white opacity-0 group-hover:opacity-100"
-                                                title="Cherry-pick this commit"
-                                            >
-                                                Pick
-                                            </button>
+                                            <button onClick={() => handleCherryPick(commit.hash)} disabled={gitLoading} className="flex-shrink-0 px-2 py-0.5 text-[10px] bg-pink-600 hover:bg-pink-500 disabled:opacity-50 rounded text-white opacity-0 group-hover:opacity-100" title="Cherry-pick this commit">Pick</button>
                                         </div>
                                     ))}
                                 </div>
@@ -507,22 +598,12 @@ const GitPane: React.FC<GitPaneProps> = ({
                             <div className="w-1/2 theme-bg-secondary rounded-lg p-3 flex flex-col">
                                 <div className="flex items-center justify-between mb-2">
                                     <span className="text-xs font-medium theme-text-muted">Commits</span>
-                                    <button onClick={loadGitHistory} className="text-xs theme-text-muted hover:theme-text-primary">
-                                        <RefreshCw size={12} />
-                                    </button>
+                                    <button onClick={loadGitHistory} className="text-xs theme-text-muted hover:theme-text-primary"><RefreshCw size={12} /></button>
                                 </div>
                                 <div className="flex-1 overflow-y-auto space-y-1">
                                     {gitCommitHistory?.length > 0 ? gitCommitHistory.map((commit: any, idx: number) => (
-                                        <div
-                                            key={commit.hash}
-                                            className={`relative p-2 rounded text-xs hover:bg-white/5 transition-colors group ${
-                                                gitSelectedCommit?.hash === commit.hash ? 'bg-purple-900/30 border border-purple-500/30' : ''
-                                            }`}
-                                        >
-                                            <button
-                                                onClick={() => loadCommitDetails(commit.hash)}
-                                                className="w-full text-left"
-                                            >
+                                        <div key={commit.hash} className={`relative p-2 rounded text-xs hover:bg-white/5 transition-colors group ${gitSelectedCommit?.hash === commit.hash ? 'bg-purple-900/30 border border-purple-500/30' : ''}`}>
+                                            <button onClick={() => loadCommitDetails(commit.hash)} className="w-full text-left">
                                                 <div className="flex items-center gap-2">
                                                     <span className="text-purple-400 font-mono">{commit.hash?.slice(0, 7)}</span>
                                                     <span className="theme-text-muted">{new Date(commit.date).toLocaleDateString()}</span>
@@ -533,30 +614,9 @@ const GitPane: React.FC<GitPaneProps> = ({
                                             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                 {idx > 0 && (
                                                     <>
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); handleCherryPick(commit.hash); }}
-                                                            disabled={gitLoading}
-                                                            className="px-1.5 py-0.5 text-[10px] bg-pink-600/80 hover:bg-pink-500 disabled:opacity-50 rounded text-white"
-                                                            title="Cherry-pick this commit"
-                                                        >
-                                                            Pick
-                                                        </button>
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); handleRevert(commit.hash); }}
-                                                            disabled={gitLoading}
-                                                            className="px-1.5 py-0.5 text-[10px] bg-amber-600/80 hover:bg-amber-500 disabled:opacity-50 rounded text-white"
-                                                            title="Revert this commit"
-                                                        >
-                                                            Revert
-                                                        </button>
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); setResetConfirm({ hash: commit.hash, mode: 'mixed' }); }}
-                                                            disabled={gitLoading}
-                                                            className="px-1.5 py-0.5 text-[10px] bg-red-600/80 hover:bg-red-500 disabled:opacity-50 rounded text-white"
-                                                            title="Reset to this commit"
-                                                        >
-                                                            Reset
-                                                        </button>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleCherryPick(commit.hash); }} disabled={gitLoading} className="px-1.5 py-0.5 text-[10px] bg-pink-600/80 hover:bg-pink-500 disabled:opacity-50 rounded text-white" title="Cherry-pick">Pick</button>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleRevert(commit.hash); }} disabled={gitLoading} className="px-1.5 py-0.5 text-[10px] bg-amber-600/80 hover:bg-amber-500 disabled:opacity-50 rounded text-white" title="Revert">Revert</button>
+                                                        <button onClick={(e) => { e.stopPropagation(); setResetConfirm({ hash: commit.hash, mode: 'mixed' }); }} disabled={gitLoading} className="px-1.5 py-0.5 text-[10px] bg-red-600/80 hover:bg-red-500 disabled:opacity-50 rounded text-white" title="Reset">Reset</button>
                                                     </>
                                                 )}
                                             </div>
@@ -578,51 +638,25 @@ const GitPane: React.FC<GitPaneProps> = ({
                                             <div className="theme-text-primary mt-2 whitespace-pre-wrap">{gitSelectedCommit.message}</div>
                                         </div>
                                         <div className="flex flex-wrap gap-1.5 mb-3 pb-3 border-b theme-border">
-                                            <button
-                                                onClick={() => handleCherryPick(gitSelectedCommit.hash)}
-                                                disabled={gitLoading}
-                                                className="flex items-center gap-1 px-2 py-1 text-[11px] bg-pink-600 hover:bg-pink-500 disabled:opacity-50 rounded text-white"
-                                            >
-                                                <Cherry size={10} /> Cherry-pick
-                                            </button>
-                                            <button
-                                                onClick={() => handleRevert(gitSelectedCommit.hash)}
-                                                disabled={gitLoading}
-                                                className="flex items-center gap-1 px-2 py-1 text-[11px] bg-amber-600 hover:bg-amber-500 disabled:opacity-50 rounded text-white"
-                                            >
-                                                <RotateCcw size={10} /> Revert
-                                            </button>
-                                            <button
-                                                onClick={() => setResetConfirm({ hash: gitSelectedCommit.hash, mode: 'mixed' })}
-                                                disabled={gitLoading}
-                                                className="flex items-center gap-1 px-2 py-1 text-[11px] bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded text-white"
-                                            >
-                                                <GitBranch size={10} /> Reset to here
-                                            </button>
+                                            <button onClick={() => handleCherryPick(gitSelectedCommit.hash)} disabled={gitLoading} className="flex items-center gap-1 px-2 py-1 text-[11px] bg-pink-600 hover:bg-pink-500 disabled:opacity-50 rounded text-white"><Cherry size={10} /> Cherry-pick</button>
+                                            <button onClick={() => handleRevert(gitSelectedCommit.hash)} disabled={gitLoading} className="flex items-center gap-1 px-2 py-1 text-[11px] bg-amber-600 hover:bg-amber-500 disabled:opacity-50 rounded text-white"><RotateCcw size={10} /> Revert</button>
+                                            <button onClick={() => setResetConfirm({ hash: gitSelectedCommit.hash, mode: 'mixed' })} disabled={gitLoading} className="flex items-center gap-1 px-2 py-1 text-[11px] bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded text-white"><AlertTriangle size={10} /> Reset</button>
                                         </div>
                                         {gitSelectedCommit.diff && (
-                                            <pre className="text-xs font-mono overflow-auto p-2 bg-black/30 rounded whitespace-pre-wrap">
+                                            <pre className="text-[10px] font-mono whitespace-pre-wrap overflow-auto">
                                                 {gitSelectedCommit.diff.split('\n').map((line: string, i: number) => (
-                                                    <div
-                                                        key={i}
-                                                        className={
-                                                            line.startsWith('+') && !line.startsWith('+++') ? 'text-green-400 bg-green-900/20' :
-                                                            line.startsWith('-') && !line.startsWith('---') ? 'text-red-400 bg-red-900/20' :
-                                                            line.startsWith('@@') ? 'text-cyan-400' :
-                                                            line.startsWith('diff ') ? 'text-purple-400 font-bold mt-2' :
-                                                            'theme-text-muted'
-                                                        }
-                                                    >
-                                                        {line}
-                                                    </div>
+                                                    <div key={i} className={
+                                                        line.startsWith('+') && !line.startsWith('+++') ? 'text-green-400' :
+                                                        line.startsWith('-') && !line.startsWith('---') ? 'text-red-400' :
+                                                        line.startsWith('@@') ? 'text-blue-400' :
+                                                        'theme-text-muted'
+                                                    }>{line}</div>
                                                 ))}
                                             </pre>
                                         )}
                                     </div>
                                 ) : (
-                                    <div className="flex-1 flex items-center justify-center theme-text-muted text-sm">
-                                        Select a commit to view details
-                                    </div>
+                                    <div className="flex-1 flex items-center justify-center theme-text-muted text-xs">Select a commit</div>
                                 )}
                             </div>
                         </div>

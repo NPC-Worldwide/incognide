@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     MessageSquare, Terminal, Globe, FileText, File as FileIcon,
-    BrainCircuit, Clock, Bot, Zap, Users, Database, ChevronRight, ChevronDown, ChevronUp,
+    BrainCircuit, Bot, Zap, Users, Database, ChevronRight, ChevronDown,
     GitBranch, Image, BarChart3, AlertCircle, RefreshCw, Check, Columns, Layers,
-    Activity, Server, Power, HardDrive, Download, Network, ScrollText
+    Power, HardDrive, Download, ScrollText
 } from 'lucide-react';
-import MemoryIcon from './MemoryIcon';
 import npcPythonLogo from '../../assets/npc-python.png';
 import { useAiEnabled } from './AiFeatureContext';
 
@@ -17,51 +16,24 @@ interface PaneItem {
 }
 
 interface StatusBarProps {
-
     createDBToolPane?: () => void;
-
-    createTeamManagementPane?: () => void;
-
-    createMcpManagerPane?: () => void;
-
     paneItems: PaneItem[];
     setActiveContentPaneId: (id: string) => void;
-
-    pendingMemoryCount?: number;
-    createMemoryManagerPane?: () => void;
-
-    kgGeneration?: number | null;
-    kgScheduleEnabled?: boolean;
-    createGraphViewerPane?: () => void;
-
-    createNPCTeamPane?: () => void;
-    createJinxPane?: () => void;
-    createSkillsManagerPane?: () => void;
-
     height?: number;
     onStartResize?: () => void;
-
     sidebarCollapsed?: boolean;
     onExpandSidebar?: () => void;
-
     topBarCollapsed?: boolean;
     onExpandTopBar?: () => void;
-
     appVersion?: string;
     updateAvailable?: { latestVersion: string; releaseUrl: string } | null;
     onCheckForUpdates?: () => Promise<void>;
-
     onCollapse?: () => void;
-
     openMode?: 'pane' | 'tab';
     onToggleOpenMode?: () => void;
-
     createDataDashPane?: () => void;
     createDiskUsagePane?: () => void;
-    createCronDaemonPane?: () => void;
     onOpenDownloadManager?: () => void;
-    isPredictiveTextEnabled?: boolean;
-    setIsPredictiveTextEnabled?: (v: boolean) => void;
     onOpenLogsViewer?: () => void;
     createBackendPane?: () => void;
 }
@@ -70,18 +42,8 @@ type BackendStatus = 'ok' | 'unhealthy' | 'unreachable' | 'restarting' | 'unknow
 
 const StatusBar: React.FC<StatusBarProps> = ({
     createDBToolPane,
-    createTeamManagementPane,
-    createMcpManagerPane,
     paneItems,
     setActiveContentPaneId,
-    pendingMemoryCount = 0,
-    createMemoryManagerPane,
-    kgGeneration,
-    kgScheduleEnabled = false,
-    createGraphViewerPane,
-    createNPCTeamPane,
-    createJinxPane,
-    createSkillsManagerPane,
     height = 48,
     onStartResize,
     sidebarCollapsed = false,
@@ -94,10 +56,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
     onToggleOpenMode,
     createDataDashPane,
     createDiskUsagePane,
-    createCronDaemonPane,
     onOpenDownloadManager,
-    isPredictiveTextEnabled,
-    setIsPredictiveTextEnabled,
     onOpenLogsViewer,
     createBackendPane,
 }) => {
@@ -106,8 +65,6 @@ const StatusBar: React.FC<StatusBarProps> = ({
     const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
     const [showQuitPrompt, setShowQuitPrompt] = useState(false);
     const [showBackendMenu, setShowBackendMenu] = useState(false);
-    const [showDbSubmenu, setShowDbSubmenu] = useState(false);
-    const [showTeamSubmenu, setShowTeamSubmenu] = useState(false);
     const [clockMode, setClockMode] = useState<'analog' | 'digital' | 'datetime'>(() => (localStorage.getItem('incognide_clockMode') as any) || 'digital');
     const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -243,57 +200,25 @@ const StatusBar: React.FC<StatusBarProps> = ({
                 </button>
             )}
 
-            {/* LEFT: Predictive Text toggle */}
-            <button
-                onClick={() => setIsPredictiveTextEnabled?.(!isPredictiveTextEnabled)}
-                className={`${btnClass} ${isPredictiveTextEnabled ? 'text-purple-400' : 'text-gray-500'}`}
-                title={isPredictiveTextEnabled ? "Disable Predictive Text" : "Enable Predictive Text"}
-            >
-                <BrainCircuit size={20} />
+            {/* LEFT: Database */}
+            <button data-tutorial="db-tool-button" onClick={() => createDBToolPane?.()} className={`${btnClass} text-blue-600 dark:text-blue-400`} title="Database Tool">
+                <Database size={20} />
             </button>
 
-            {/* LEFT: DB Tool with submenu */}
-            <div className="relative">
-                <button onClick={() => createDBToolPane?.()} className={`${btnClass} text-blue-600 dark:text-blue-400`} title="Database Tool">
-                    <Database size={20} />
-                </button>
-                <button onClick={() => { setShowDbSubmenu(!showDbSubmenu); setShowTeamSubmenu(false); }} className="absolute -top-0.5 -right-0.5 w-3 h-3 flex items-center justify-center bg-gray-700 rounded-full hover:bg-gray-600 z-10">
-                    <ChevronUp size={7} className="text-gray-400" />
-                </button>
-                {showDbSubmenu && (
-                    <>
-                        <div className="fixed inset-0 z-40" onClick={() => setShowDbSubmenu(false)} />
-                        <div className="absolute bottom-full left-0 mb-1 flex items-center gap-0.5 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 p-1">
-                            <button onClick={() => { createDiskUsagePane?.(); setShowDbSubmenu(false); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-blue-400 transition-colors" title="Disk Usage"><HardDrive size={16} /></button>
-                            <button onClick={() => { createDataDashPane?.(); setShowDbSubmenu(false); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-green-400 transition-colors" title="Data Dashboard"><BarChart3 size={16} /></button>
-                            <button onClick={() => { onOpenDownloadManager?.(); setShowDbSubmenu(false); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-cyan-400 transition-colors" title="Downloads"><Download size={16} /></button>
-                        </div>
-                    </>
-                )}
-            </div>
+            {/* LEFT: Downloads */}
+            <button onClick={() => onOpenDownloadManager?.()} className={`${btnClass} text-cyan-600 dark:text-cyan-400`} title="Downloads">
+                <Download size={20} />
+            </button>
 
-            {/* LEFT: AI Team with submenu */}
-            <div className="relative">
-                <button data-tutorial="team-management-button" onClick={() => createTeamManagementPane?.()} className={`${btnClass} text-indigo-600 dark:text-indigo-400`} title="Team Management">
-                    <Users size={20} />
-                </button>
-                <button onClick={() => { setShowTeamSubmenu(!showTeamSubmenu); setShowDbSubmenu(false); }} className="absolute -top-0.5 -right-0.5 w-3 h-3 flex items-center justify-center bg-gray-700 rounded-full hover:bg-gray-600 z-10">
-                    <ChevronUp size={7} className="text-gray-400" />
-                </button>
-                {showTeamSubmenu && (
-                    <>
-                        <div className="fixed inset-0 z-40" onClick={() => setShowTeamSubmenu(false)} />
-                        <div className="absolute bottom-full left-0 mb-1 flex items-center gap-0.5 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 p-1">
-                            <button data-tutorial="npc-team-button" onClick={() => { createNPCTeamPane?.(); setShowTeamSubmenu(false); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-cyan-400 transition-colors" title="NPCs"><Bot size={16} /></button>
-                            <button data-tutorial="jinxes-button" onClick={() => { createSkillsManagerPane?.(); setShowTeamSubmenu(false); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-yellow-400 transition-colors" title="Jinxes"><Zap size={16} /></button>
-                            <button onClick={() => { createMcpManagerPane?.(); setShowTeamSubmenu(false); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-cyan-400 transition-colors" title="MCP Servers"><Server size={16} /></button>
-                            <button onClick={() => { createMemoryManagerPane?.(); setShowTeamSubmenu(false); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-amber-400 transition-colors relative" title={pendingMemoryCount > 0 ? `Memory (${pendingMemoryCount} pending)` : "Memory"}><MemoryIcon size={16} />{pendingMemoryCount > 0 && <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />}</button>
-                            <button data-tutorial="kg-button" onClick={() => { createGraphViewerPane?.(); setShowTeamSubmenu(false); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-emerald-400 transition-colors" title="Knowledge Graph"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="8" r="2.5" /><circle cx="18" cy="6" r="2" /><circle cx="12" cy="14" r="3" /><circle cx="5" cy="18" r="2" /><circle cx="19" cy="17" r="2.5" /><line x1="8" y1="9" x2="10" y2="12" /><line x1="16" y1="7" x2="14" y2="12" /><line x1="7" y1="17" x2="9.5" y2="15.5" /><line x1="14.5" y1="15.5" x2="17" y2="16" /><line x1="7" y1="10" x2="5" y2="16" /></svg></button>
-                            <button onClick={() => { createCronDaemonPane?.(); setShowTeamSubmenu(false); }} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-orange-400 transition-colors" title="Cron / Smokestack"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="10" width="5" height="12" rx="0.5" /><circle cx="7.5" cy="6" r="2" /><circle cx="9" cy="3" r="1.5" /><rect x="12" y="14" width="4" height="8" rx="0.5" /><rect x="18" y="16" width="3" height="6" rx="0.5" /><path d="M2 22h20" /></svg></button>
-                        </div>
-                    </>
-                )}
-            </div>
+            {/* LEFT: Data Dashboard */}
+            <button onClick={() => createDataDashPane?.()} className={`${btnClass} text-green-600 dark:text-green-400`} title="Data Dashboard">
+                <BarChart3 size={20} />
+            </button>
+
+            {/* LEFT: Disk Usage */}
+            <button onClick={() => createDiskUsagePane?.()} className={`${btnClass} text-gray-500 dark:text-gray-400`} title="Disk Usage">
+                <HardDrive size={20} />
+            </button>
 
             <div className="flex-1" />
 

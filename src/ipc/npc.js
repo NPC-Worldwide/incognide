@@ -851,6 +851,7 @@ function register(ctx) {
   });
 
   ipcMain.handle('mcp:listTools', async (event, { serverPath, conversationId, npc, selected, currentPath } = {}) => {
+    if (!serverPath) return { tools: [], error: null };
     try {
       const params = new URLSearchParams();
       if (serverPath) params.append('mcpServerPath', serverPath);
@@ -1100,6 +1101,44 @@ function register(ctx) {
     if (directory_path) params.append('directory_path', directory_path);
     if (status) params.append('status', status);
     return await callBackendApi(`${BACKEND_URL}/api/memory/scope?${params.toString()}`);
+  });
+
+  ipcMain.handle('activity:log', async (event, data) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/activity/log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      return await res.json();
+    } catch (err) { return { error: err.message }; }
+  });
+
+  ipcMain.handle('activity:list', async (event, data = {}) => {
+    const params = new URLSearchParams();
+    if (data.type) params.append('type', data.type);
+    if (data.limit) params.append('limit', data.limit);
+    if (data.directoryPath) params.append('directoryPath', data.directoryPath);
+    if (data.sessionId) params.append('sessionId', data.sessionId);
+    return await callBackendApi(`${BACKEND_URL}/api/activity/list?${params.toString()}`);
+  });
+
+  ipcMain.handle('autocomplete:log', async (event, data) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/autocomplete/log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      return await res.json();
+    } catch (err) { return { error: err.message }; }
+  });
+
+  ipcMain.handle('autocomplete:stats', async (event, data = {}) => {
+    const params = new URLSearchParams();
+    if (data.type) params.append('type', data.type);
+    if (data.npc) params.append('npc', data.npc);
+    return await callBackendApi(`${BACKEND_URL}/api/autocomplete/stats?${params.toString()}`);
+  });
+
+  ipcMain.handle('autocomplete:training', async (event, data = {}) => {
+    const params = new URLSearchParams();
+    if (data.type) params.append('type', data.type);
+    if (data.acceptedOnly) params.append('acceptedOnly', 'true');
+    if (data.limit) params.append('limit', data.limit);
+    return await callBackendApi(`${BACKEND_URL}/api/autocomplete/training?${params.toString()}`);
   });
 
   ipcMain.handle('memory:approve', async (event, { approvals }) => {

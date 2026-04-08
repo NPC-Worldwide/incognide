@@ -19,7 +19,7 @@ import type {
 import {
     GISMapView, featuresToGeoJSON, geoJSONToFeatures,
     BASEMAPS, LAYER_COLORS, DEFAULT_PROJECT, REFERENCE_LAYERS, TILE_OVERLAYS,
-    MindMapViewer as NpctsMindMapViewer
+    MindMapViewer as NpctsMindMapViewer, RadioPane
 } from 'npcts';
 import { demoMaps } from './cartoglyphLibrary';
 
@@ -66,7 +66,7 @@ async function parseKML(text: string): Promise<any> {
 
 // ---- Main wrapper component ----
 
-type ActiveTab = 'gis' | 'mindmap';
+type ActiveTab = 'gis' | 'mindmap' | 'radio';
 
 const CartoglyphPane = ({
     nodeId,
@@ -502,6 +502,9 @@ const CartoglyphPane = ({
                     <button onClick={() => setActiveTab('mindmap')} className={`px-2 py-1 rounded text-xs flex items-center gap-1 transition-colors ${activeTab === 'mindmap' ? 'bg-emerald-600 text-white' : 'theme-text-muted hover:theme-text-primary'}`}>
                         <Network size={12} /> Mind Map
                     </button>
+                    <button onClick={() => setActiveTab('radio')} className={`px-2 py-1 rounded text-xs flex items-center gap-1 transition-colors ${activeTab === 'radio' ? 'bg-emerald-600 text-white' : 'theme-text-muted hover:theme-text-primary'}`}>
+                        <Navigation size={12} /> Radio
+                    </button>
                 </div>
 
                 {activeTab === 'gis' && (
@@ -926,6 +929,45 @@ const CartoglyphPane = ({
                             }
                         }}
                         defaultEditMode={true}
+                    />
+                </div>
+            )}
+
+            {activeTab === 'radio' && (
+                <div className="flex-1 overflow-hidden">
+                    <RadioPane
+                        fetchFn={async (url: string, options?: any) => {
+                            const api = (window as any).api;
+                            if (api?.proxyFetch) {
+                                const result = await api.proxyFetch(url, options);
+                                return { ok: result.status >= 200 && result.status < 300, status: result.status, data: result.data, error: result.error };
+                            }
+                            try {
+                                const resp = await fetch(url, options);
+                                const ct = resp.headers.get('content-type') || '';
+                                const data = ct.includes('json') ? await resp.json() : await resp.text();
+                                return { ok: resp.ok, status: resp.status, data };
+                            } catch (err: any) {
+                                return { ok: false, status: 0, data: null, error: err.message };
+                            }
+                        }}
+                        onShowOnMap={(markers) => {
+                            const newFeatures: GeoFeature[] = markers.map((m, i) => ({
+                                id: `radio_${Date.now()}_${i}`,
+                                type: 'marker' as const,
+                                name: m.label,
+                                coordinates: [m.lat, m.lng] as [number, number],
+                                color: m.color || '#10b981',
+                                visible: true,
+                                layerId: 'default',
+                                properties: { source: 'radio' },
+                            }));
+                            updateProject(prev => ({
+                                ...prev,
+                                features: [...prev.features, ...newFeatures],
+                            }));
+                            setActiveTab('gis');
+                        }}
                     />
                 </div>
             )}
