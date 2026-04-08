@@ -1591,7 +1591,7 @@ const WebBrowserViewer = memo(({
 
                 <div className="flex-1 flex items-center min-w-0 px-1 gap-1">
                     <GripVertical size={12} className="flex-shrink-0 theme-text-muted" />
-                    <div className="flex-1 max-w-[60%] flex items-center gap-1 min-w-0 theme-bg-secondary rounded px-1.5 py-1">
+                    <div className="flex-1 max-w-[60%] flex items-center gap-1 min-w-0 theme-bg-secondary rounded px-2 py-1.5">
                         {isSecure ? <Lock size={12} className="text-green-400 flex-shrink-0" /> : <Globe size={12} className="text-gray-400 flex-shrink-0" />}
                         <input ref={urlInputRef} type="text" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleNavigate()} onContextMenu={(e) => e.stopPropagation()} placeholder="Search or enter URL..." className="flex-1 bg-transparent text-xs theme-text-primary outline-none min-w-0" onDragStart={(e) => e.stopPropagation()} draggable={false} />
                     </div>
