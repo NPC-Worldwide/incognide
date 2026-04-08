@@ -66,7 +66,7 @@ async function parseKML(text: string): Promise<any> {
 
 // ---- Main wrapper component ----
 
-type ActiveTab = 'gis' | 'mindmap' | 'radio';
+type ActiveTab = 'gis' | 'mindmap' | 'radio' | 'data';
 
 const CartoglyphPane = ({
     nodeId,
@@ -504,6 +504,9 @@ const CartoglyphPane = ({
                     </button>
                     <button onClick={() => setActiveTab('radio')} className={`px-2 py-1 rounded text-xs flex items-center gap-1 transition-colors ${activeTab === 'radio' ? 'bg-emerald-600 text-white' : 'theme-text-muted hover:theme-text-primary'}`}>
                         <Navigation size={12} /> Radio
+                    </button>
+                    <button onClick={() => setActiveTab('data')} className={`px-2 py-1 rounded text-xs flex items-center gap-1 transition-colors ${activeTab === 'data' ? 'bg-emerald-600 text-white' : 'theme-text-muted hover:theme-text-primary'}`}>
+                        <Download size={12} /> Data
                     </button>
                 </div>
 

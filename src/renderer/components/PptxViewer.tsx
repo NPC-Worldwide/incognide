@@ -611,7 +611,7 @@ const PptxViewer = ({
   const filePath = paneData?.contentId;
 
     const [isLocalRenaming, setIsLocalRenaming] = useState(false);
-    const [localEditName, setLocalEditName] = useState(x27x27);
+    const [localEditName, setLocalEditName] = useState('');
     const renameInputRef = useRef<HTMLInputElement>(null);
 
   const [slideWidth, setSlideWidth] = useState(960);

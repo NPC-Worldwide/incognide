@@ -854,7 +854,11 @@ function register(ctx) {
 
   ipcMain.handle('write-file-content', async (_, filePath, content) => {
     try {
-      await fsPromises.writeFile(filePath, content, 'utf8');
+      if (content instanceof ArrayBuffer || (content && content.byteLength !== undefined)) {
+        await fsPromises.writeFile(filePath, Buffer.from(content));
+      } else {
+        await fsPromises.writeFile(filePath, content, 'utf8');
+      }
       return { success: true, error: null };
     } catch (err) {
       console.error('Error writing file:', err);
