@@ -856,6 +856,28 @@ function register(ctx) {
     }
   });
 
+  ipcMain.handle('write-docx-content', async (_, filePath, html, opts = {}) => {
+    try {
+      const HTMLtoDOCX = require('html-to-docx');
+      const buffer = await HTMLtoDOCX(html, null, {
+        table: { row: { cantSplit: true } },
+        ...opts
+      });
+      await fsPromises.writeFile(filePath, buffer);
+      return { success: true, error: null };
+    } catch (err) {
+      console.error('Error writing docx:', err);
+      // Fallback: write as HTML with .docx extension (Word can open it)
+      try {
+        const wrappedHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${html}</body></html>`;
+        await fsPromises.writeFile(filePath, wrappedHtml, 'utf8');
+        return { success: true, error: null, fallback: true };
+      } catch (fallbackErr) {
+        return { success: false, error: fallbackErr.message };
+      }
+    }
+  });
+
   // Save data to a temp file (for clipboard paste of images/large text)
   ipcMain.handle('save-temp-file', async (_, { name, data, encoding }) => {
     try {
