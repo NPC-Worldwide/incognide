@@ -974,6 +974,112 @@ const CartoglyphPane = ({
                     />
                 </div>
             )}
+
+            {activeTab === 'data' && (
+                <div className="flex-1 overflow-auto p-4">
+                    <div className="space-y-4">
+                        <h3 className="text-sm font-semibold theme-text-primary">Open Geospatial Data Sources</h3>
+                        <p className="text-xs theme-text-muted">Browse and import open data into your GIS project</p>
+
+                        {[
+                            {
+                                name: 'Natural Earth', category: 'Boundaries & Culture', icon: '🌍',
+                                desc: 'Countries, states, coastlines, rivers, populated places (1:10m/50m/110m)',
+                                datasets: [
+                                    { label: 'Countries (110m)', url: 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson' },
+                                    { label: 'States/Provinces (50m)', url: 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_1_states_provinces.geojson' },
+                                    { label: 'Populated Places (50m)', url: 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_populated_places.geojson' },
+                                    { label: 'Rivers (50m)', url: 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_rivers_lake_centerlines.geojson' },
+                                    { label: 'Lakes (50m)', url: 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_lakes.geojson' },
+                                    { label: 'Coastline (110m)', url: 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_coastline.geojson' },
+                                ],
+                            },
+                            {
+                                name: 'OpenStreetMap (Overpass)', category: 'Infrastructure & POI', icon: '🗺️',
+                                desc: 'Roads, buildings, amenities, land use — query by area',
+                                datasets: [
+                                    { label: 'Hospitals (viewport)', overpass: '[out:json];node["amenity"="hospital"]({{bbox}});out;' },
+                                    { label: 'Schools (viewport)', overpass: '[out:json];node["amenity"="school"]({{bbox}});out;' },
+                                    { label: 'Restaurants (viewport)', overpass: '[out:json];node["amenity"="restaurant"]({{bbox}});out;' },
+                                    { label: 'Charging Stations (viewport)', overpass: '[out:json];node["amenity"="charging_station"]({{bbox}});out;' },
+                                    { label: 'Airports (global)', overpass: '[out:json];node["aeroway"="aerodrome"]["iata"]({{bbox}});out;' },
+                                    { label: 'Power Plants (viewport)', overpass: '[out:json];way["power"="plant"]({{bbox}});out center;' },
+                                ],
+                            },
+                            {
+                                name: 'GEBCO', category: 'Elevation & Bathymetry', icon: '🌊',
+                                desc: 'Global ocean depth + land elevation (15 arc-second grid)',
+                                datasets: [
+                                    { label: 'GEBCO Grid Viewer', link: 'https://download.gebco.net/' },
+                                ],
+                            },
+                            {
+                                name: 'CHIRPS', category: 'Climate & Weather', icon: '🌧️',
+                                desc: 'Global precipitation data (0.05° daily, 1981-present)',
+                                datasets: [
+                                    { label: 'CHIRPS Data Portal', link: 'https://data.chc.ucsb.edu/products/CHIRPS-2.0/' },
+                                ],
+                            },
+                            {
+                                name: 'Open-Elevation', category: 'Elevation API', icon: '⛰️',
+                                desc: 'Free elevation lookups from SRTM data',
+                                datasets: [
+                                    { label: 'Elevation API', link: 'https://api.open-elevation.com/api/v1/lookup' },
+                                ],
+                            },
+                            {
+                                name: 'GeoJSON.io Samples', category: 'Example Data', icon: '📐',
+                                desc: 'Quick test datasets',
+                                datasets: [
+                                    { label: 'US States', url: 'https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json' },
+                                    { label: 'World Airports', url: 'https://raw.githubusercontent.com/jpatokal/openflights/master/data/airports.json' },
+                                ],
+                            },
+                        ].map((source) => (
+                            <div key={source.name} className="theme-bg-secondary rounded-lg p-3 border theme-border">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-lg">{source.icon}</span>
+                                    <div>
+                                        <div className="text-sm font-medium theme-text-primary">{source.name}</div>
+                                        <div className="text-[10px] theme-text-muted">{source.category}</div>
+                                    </div>
+                                </div>
+                                <p className="text-xs theme-text-muted mb-2">{source.desc}</p>
+                                <div className="flex flex-wrap gap-1">
+                                    {source.datasets.map((ds: any) => (
+                                        <button
+                                            key={ds.label}
+                                            onClick={async () => {
+                                                if (ds.url) {
+                                                    try {
+                                                        const resp = await proxyFetch(ds.url);
+                                                        const data = await resp.json();
+                                                        const features = geoJSONToFeatures(data);
+                                                        updateProject(prev => ({ ...prev, features: [...prev.features, ...features] }));
+                                                        setActiveTab('gis');
+                                                    } catch (err) {
+                                                        console.error('Failed to load dataset:', err);
+                                                    }
+                                                } else if (ds.overpass) {
+                                                    // Would need current map bounds — for now open in browser
+                                                    const url = `https://overpass-turbo.eu/?Q=${encodeURIComponent(ds.overpass)}`;
+                                                    window.open(url, '_blank');
+                                                } else if (ds.link) {
+                                                    window.open(ds.link, '_blank');
+                                                }
+                                            }}
+                                            className="px-2 py-1 text-[10px] rounded border theme-border theme-hover theme-text-secondary flex items-center gap-1"
+                                        >
+                                            {ds.url ? <Download size={10} /> : ds.overpass ? <Search size={10} /> : <Globe size={10} />}
+                                            {ds.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
