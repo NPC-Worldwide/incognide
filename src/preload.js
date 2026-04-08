@@ -197,11 +197,26 @@ readDocxContent: (filePath) =>
         return () => ipcRenderer.removeListener('open-url-in-browser', handler);
     },
 
-    onOpenFileFromOS: (callback) => {
-        const handler = (_, data) => callback(data);
-        ipcRenderer.on('open-file-from-os', handler);
-        return () => ipcRenderer.removeListener('open-file-from-os', handler);
-    },
+    onOpenFileFromOS: (() => {
+        let pending = null;
+        ipcRenderer.on('open-file-from-os', (_, data) => {
+            if (pending === 'SUBSCRIBED') {
+                // already subscribed, will be handled by the live handler
+            } else {
+                pending = data;
+            }
+        });
+        return (callback) => {
+            const handler = (_, data) => callback(data);
+            ipcRenderer.on('open-file-from-os', handler);
+            // Flush any event that arrived before subscription
+            if (pending && pending !== 'SUBSCRIBED') {
+                callback(pending);
+            }
+            pending = 'SUBSCRIBED';
+            return () => ipcRenderer.removeListener('open-file-from-os', handler);
+        };
+    })(),
 
     onOpenFolderPicker: (callback) => {
         const handler = () => callback();

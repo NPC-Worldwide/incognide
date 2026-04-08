@@ -340,7 +340,20 @@ const WebBrowserViewer = memo(({
         const paneData = contentDataRef.current[nodeId];
         if (paneData?.tabs && paneData.activeTabIndex !== undefined) {
             const activeTab = paneData.tabs[paneData.activeTabIndex];
-            currentTabIdRef.current = activeTab?.id || null;
+            const newTabId = activeTab?.id || null;
+            if (newTabId && newTabId !== currentTabIdRef.current) {
+                currentTabIdRef.current = newTabId;
+                const webview = webviewRef.current;
+                if (webview && activeTab?.browserUrl && activeTab.browserUrl !== currentUrl) {
+                    const url = activeTab.browserUrl;
+                    setCurrentUrl(url);
+                    setUrlInput(url === 'about:blank' ? '' : url);
+                    setTitle(activeTab.browserTitle || 'New Tab');
+                    webview.src = url;
+                }
+            } else {
+                currentTabIdRef.current = newTabId;
+            }
         } else {
             currentTabIdRef.current = null;
         }
@@ -464,15 +477,16 @@ const WebBrowserViewer = memo(({
 
             if (contentDataRef.current[nodeId]) {
                 contentDataRef.current[nodeId].browserTitle = newTitle;
+                contentDataRef.current[nodeId].title = newTitle;
 
                 const paneData = contentDataRef.current[nodeId];
                 if (paneData?.tabs && currentTabIdRef.current) {
-
                     const tabToUpdate = paneData.tabs.find(t => t.id === currentTabIdRef.current);
                     if (tabToUpdate && tabToUpdate.contentType === 'browser') {
                         tabToUpdate.browserTitle = newTitle;
                     }
                 }
+                setRootLayoutNode(p => ({ ...p }));
             }
 
         };
