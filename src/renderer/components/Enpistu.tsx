@@ -91,6 +91,7 @@ import { Modal, Tabs, Card, Button, Input, Select, createWindowApiDatabaseClient
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, PointElement, LineElement);
 import * as LucideIcons from 'lucide-react';
 import { useActivityTracker } from './ActivityTracker';
+import ActivityTrackerDashboard from './ActivityTracker';
 import {
     serializeWorkspace,
     saveWorkspaceToStorage,
@@ -3595,6 +3596,10 @@ const renderWindowManagerPane = useCallback(({ nodeId }: { nodeId: string }) => 
 
 const renderAccountPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return <AccountPane nodeId={nodeId} />;
+}, []);
+
+const renderActivityPane = useCallback(({ nodeId }: { nodeId: string }) => {
+    return <ActivityTrackerDashboard />;
 }, []);
 
 const createAccountPane = useCallback(async () => {
@@ -7697,6 +7702,7 @@ const paneRenderers = useMemo(() => ({
     branches: renderBranchComparisonPane,
     windowmanager: renderWindowManagerPane,
     account: renderAccountPane,
+    activity: renderActivityPane,
 }), [
     renderChatView, renderFileEditor, renderTerminalView, renderPdfViewer,
     renderCsvViewer, renderDocxViewer, renderBrowserViewer, renderPptxViewer,

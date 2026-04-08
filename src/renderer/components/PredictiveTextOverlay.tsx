@@ -98,6 +98,7 @@ export const PredictiveTextOverlay = ({
             }
             setPredictionSuggestion('');
             setPredictionTargetElement(null);
+            try { (window as any).api?.logAutocomplete?.({ type: 'text', inputContext: '', suggestion: suggestionToInsert, accepted: true }); } catch {}
         }
     }, [predictionSuggestion, predictionTargetElement, setPredictionSuggestion, setPredictionTargetElement]);
 
@@ -110,6 +111,7 @@ export const PredictiveTextOverlay = ({
                 handleAcceptSuggestion();
             } else if (e.key === 'Escape') {
                 e.preventDefault();
+                try { (window as any).api?.logAutocomplete?.({ type: 'text', inputContext: '', suggestion: predictionSuggestion, accepted: false }); } catch {}
                 setPredictionSuggestion('');
                 setPredictionTargetElement(null);
             }

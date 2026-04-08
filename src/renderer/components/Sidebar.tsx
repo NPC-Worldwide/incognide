@@ -4458,8 +4458,9 @@ onDragStart={(e) => {
                     </div>
                     <button
                         onClick={(e) => { e.stopPropagation(); setIsPredictiveTextEnabled?.(!isPredictiveTextEnabled); }}
+                        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); createAndAddPaneNodeToLayout?.({ contentType: 'activity', contentId: 'activity' }); }}
                         className={`ml-auto flex items-center justify-center w-8 py-4 -my-4 transition-all hover:bg-gray-700/40`}
-                        title={isPredictiveTextEnabled ? "Disable Autocomplete" : "Enable Autocomplete"}
+                        title={isPredictiveTextEnabled ? "Disable Autocomplete (right-click: Activity Viewer)" : "Enable Autocomplete (right-click: Activity Viewer)"}
                     >
                         <BrainCircuit size={12} className={isPredictiveTextEnabled ? 'text-purple-400' : 'text-gray-400'} />
                     </button>
