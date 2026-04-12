@@ -8621,8 +8621,24 @@ const renderMainContent = () => {
                     </button>
                 )
             ) : (
-            <div data-tutorial="web-search-bar" className="flex items-center gap-1 w-44 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-cyan-400 focus-within:ring-1 focus-within:ring-cyan-400/30 transition-all">
-                <Globe size={14} className="text-cyan-400 flex-shrink-0" />
+            <div data-tutorial="web-search-bar" className="flex items-center gap-2 w-32 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-cyan-400 focus-within:ring-1 focus-within:ring-cyan-400/30 transition-all">
+                <div className="relative flex-shrink-0">
+                    <Globe size={14} className="text-cyan-400 pointer-events-none" />
+                    <select
+                        value={webSearchProvider}
+                        onChange={(e) => {
+                            setWebSearchProvider(e.target.value);
+                            localStorage.setItem('npc-browser-search-engine', e.target.value);
+                            window.dispatchEvent(new CustomEvent('search-engine-changed', { detail: e.target.value }));
+                        }}
+                        title={`Search engine: ${WEB_SEARCH_PROVIDERS[webSearchProvider as WebSearchProvider]?.name || webSearchProvider}`}
+                        className="absolute inset-0 opacity-0 cursor-pointer"
+                    >
+                        {Object.entries(WEB_SEARCH_PROVIDERS).map(([k, v]) => (
+                            <option key={k} value={k}>{v.name}</option>
+                        ))}
+                    </select>
+                </div>
                 <input
                     type="text"
                     value={webSearchTerm}
@@ -8638,20 +8654,6 @@ const renderMainContent = () => {
                     }}
                     className="flex-1 bg-transparent text-gray-100 text-xs focus:outline-none min-w-0"
                 />
-                <select
-                    value={webSearchProvider}
-                    onChange={(e) => {
-                        setWebSearchProvider(e.target.value);
-                        localStorage.setItem('npc-browser-search-engine', e.target.value);
-                        window.dispatchEvent(new CustomEvent('search-engine-changed', { detail: e.target.value }));
-                    }}
-                    title="Default search engine"
-                    className="bg-transparent text-gray-300 text-[10px] focus:outline-none cursor-pointer border-l border-gray-700 pl-1 ml-0.5"
-                >
-                    {Object.entries(WEB_SEARCH_PROVIDERS).map(([k, v]) => (
-                        <option key={k} value={k} className="bg-black">{v.name}</option>
-                    ))}
-                </select>
             </div>
             )}
 
