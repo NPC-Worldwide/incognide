@@ -737,6 +737,15 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const [searchExpanded, setSearchExpanded] = useState(false);
     const [webSearchExpanded, setWebSearchExpanded] = useState(false);
     const [engineMenuOpen, setEngineMenuOpen] = useState(false);
+    const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
+    const SEARCH_SCOPES: Record<string, string> = {
+        all: 'All',
+        files: 'Files',
+        memories: 'Memories',
+        conversations: 'Conversations',
+        knowledge: 'Knowledge',
+    };
+    const [searchScope, setSearchScope] = useState<string>(() => localStorage.getItem('npc-local-search-scope') || 'all');
     const collapsedSearchRef = useRef<HTMLInputElement>(null);
     const collapsedWebSearchRef = useRef<HTMLInputElement>(null);
 
@@ -4149,9 +4158,9 @@ const renderMessageContextMenu = () => null;
     }, []);
 
     // Create Search pane
-    const createSearchPane = useCallback(async (initialQuery?: string) => {
+    const createSearchPane = useCallback(async (initialQuery?: string, scope?: string) => {
         const newPaneId = generateId();
-        contentDataRef.current[newPaneId] = { contentType: 'search', contentId: 'search', initialQuery: initialQuery || '' };
+        contentDataRef.current[newPaneId] = { contentType: 'search', contentId: 'search', initialQuery: initialQuery || '', searchScope: scope || 'files' };
         addPaneOrTab(newPaneId);
     }, []);
 
@@ -8525,14 +8534,45 @@ const renderMainContent = () => {
             ) : (
             <div
                 data-tutorial="search-bar"
-                className="flex items-center gap-2 w-32 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400/30 transition-all"
+                className="flex items-center gap-2 w-40 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400/30 transition-all"
             >
-                {/* Custom app search icon - magnifying glass with document */}
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400 flex-shrink-0">
-                    <circle cx="10" cy="10" r="6" />
-                    <line x1="14.5" y1="14.5" x2="20" y2="20" />
-                    <rect x="7" y="7" width="6" height="6" rx="1" className="opacity-50" strokeWidth="1.5" />
-                </svg>
+                <div className="relative flex-shrink-0">
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setScopeMenuOpen(prev => !prev); }}
+                        title={`Search scope: ${SEARCH_SCOPES[searchScope] || 'All'}`}
+                        className="flex items-center gap-0.5 theme-hover rounded px-0.5 py-0.5 cursor-pointer"
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400">
+                            <circle cx="10" cy="10" r="6" />
+                            <line x1="14.5" y1="14.5" x2="20" y2="20" />
+                            <rect x="7" y="7" width="6" height="6" rx="1" className="opacity-50" strokeWidth="1.5" />
+                        </svg>
+                        <ChevronDown size={10} className="text-gray-400" />
+                    </button>
+                    {scopeMenuOpen && (
+                        <>
+                            <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setScopeMenuOpen(false)} />
+                            <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded-lg shadow-xl z-50 min-w-[160px] py-1">
+                                <div className="px-3 py-1 text-[10px] theme-text-muted uppercase tracking-wide">Search In</div>
+                                {Object.entries(SEARCH_SCOPES).sort(([a], [b]) => (a === searchScope ? -1 : b === searchScope ? 1 : 0)).map(([k, v]) => (
+                                    <button
+                                        key={k}
+                                        onClick={() => {
+                                            setSearchScope(k);
+                                            localStorage.setItem('npc-local-search-scope', k);
+                                            setScopeMenuOpen(false);
+                                        }}
+                                        className={`flex items-center justify-between w-full px-3 py-1.5 text-xs text-left theme-hover ${searchScope === k ? 'text-blue-400' : 'theme-text-primary'}`}
+                                    >
+                                        <span>{v}</span>
+                                        {searchScope === k && <Check size={12} />}
+                                    </button>
+                                ))}
+                            </div>
+                        </>
+                    )}
+                </div>
                 <input
                     ref={searchInputRef}
                     type="text"
@@ -8549,10 +8589,11 @@ const renderMainContent = () => {
                     onKeyDown={(e) => {
                         if (e.key === 'Enter' && searchTerm.trim()) {
                             e.preventDefault();
-                            createSearchPane(searchTerm.trim());
+                            createSearchPane(searchTerm.trim(), searchScope);
                             setSearchTerm('');
                         }
                     }}
+                    placeholder={searchScope === 'all' ? 'Search...' : SEARCH_SCOPES[searchScope]}
                     className="flex-1 bg-transparent text-gray-100 text-xs focus:outline-none min-w-0"
                 />
                 {(deepSearchResults.length > 0 || messageSearchResults.length > 0) && (
@@ -8638,7 +8679,7 @@ const renderMainContent = () => {
                             <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setEngineMenuOpen(false)} />
                             <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded-lg shadow-xl z-50 min-w-[140px] py-1">
                                 <div className="px-3 py-1 text-[10px] theme-text-muted uppercase tracking-wide">Search Engine</div>
-                                {Object.entries(WEB_SEARCH_PROVIDERS).map(([k, v]) => (
+                                {Object.entries(WEB_SEARCH_PROVIDERS).sort(([a], [b]) => (a === webSearchProvider ? -1 : b === webSearchProvider ? 1 : 0)).map(([k, v]) => (
                                     <button
                                         key={k}
                                         onClick={() => {
