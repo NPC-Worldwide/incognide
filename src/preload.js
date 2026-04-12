@@ -271,6 +271,10 @@ readDocxContent: (filePath) =>
         ipcRenderer.on('menu-toggle-sidebar', callback);
         return () => ipcRenderer.removeListener('menu-toggle-sidebar', callback);
     },
+    onMenuToggleHideUI: (callback) => {
+        ipcRenderer.on('menu-toggle-hide-ui', callback);
+        return () => ipcRenderer.removeListener('menu-toggle-hide-ui', callback);
+    },
     onMenuNewWindow: (callback) => {
         ipcRenderer.on('menu-new-window', callback);
         return () => ipcRenderer.removeListener('menu-new-window', callback);

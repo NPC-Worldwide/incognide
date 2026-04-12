@@ -2149,6 +2149,11 @@ function createWindow(cliArgs = {}) {
             accelerator: 'CmdOrCtrl+B',
             click: () => mainWindow.webContents.send('menu-toggle-sidebar')
           },
+          {
+            label: 'Hide UI',
+            accelerator: 'CmdOrCtrl+F11',
+            click: () => mainWindow.webContents.send('menu-toggle-hide-ui')
+          },
           { type: 'separator' },
           { role: 'reload' },
           { role: 'forceReload' },
