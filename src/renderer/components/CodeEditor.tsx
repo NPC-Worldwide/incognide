@@ -587,6 +587,26 @@ const CodeEditorPane = ({
         return () => window.removeEventListener('keydown', handleCycleMode, true);
     }, [keybindMode, enabledModes]);
 
+    // Auto-load file content if pane has a path but no content (e.g. opened from OS file association)
+    useEffect(() => {
+        const pd = contentDataRef.current[nodeId];
+        if (pd?.contentId && !pd.isUntitled && pd.fileContent === undefined) {
+            (async () => {
+                try {
+                    const result = await (window as any).api.readFileContent(pd.contentId);
+                    const content = typeof result === 'string' ? result : result?.content;
+                    if (content != null) {
+                        pd.fileContent = content;
+                        pd.fileChanged = false;
+                        setRootLayoutNode(p => ({ ...p }));
+                    }
+                } catch (e) {
+                    console.error('[CodeEditor] Auto-load failed:', e);
+                }
+            })();
+        }
+    }, [nodeId]);
+
     if (!paneData) return null;
 
     const { contentId: filePath, fileContent, fileChanged } = paneData;

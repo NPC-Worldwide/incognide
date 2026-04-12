@@ -79,22 +79,39 @@ export const PaneHeader = React.memo(({
             <span style={{ flexShrink: 0 }}>{icon}</span>
 
             {isRenaming ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: '1 1 0', minWidth: 0 }}>
                     <input
                         ref={inputRef}
                         type="text"
-                        value={editedFileName}
-                        onChange={(e) => setEditedFileName?.(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        onBlur={() => onCancelRename?.()}
+                        defaultValue={editedFileName}
+                        onKeyDown={(e) => {
+                            e.stopPropagation();
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                const newName = inputRef.current?.value || '';
+                                setEditedFileName?.(newName);
+                                onConfirmRename?.(newName);
+                            } else if (e.key === 'Escape') {
+                                e.preventDefault();
+                                onCancelRename?.();
+                            }
+                        }}
+                        onBlur={(e) => {
+                            // Don't cancel if clicking the confirm button
+                            const related = e.relatedTarget as HTMLElement;
+                            if (related?.closest?.('[data-rename-confirm]')) return;
+                            onCancelRename?.();
+                        }}
                         className="px-1 py-0.5 text-xs theme-bg-tertiary theme-border border rounded outline-none focus:ring-1 focus:ring-blue-500"
-                        style={{ width: '120px' }}
+                        style={{ flex: 1, minWidth: 0 }}
                         onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
                     />
                     <button
-                        onClick={(e) => { e.stopPropagation(); onConfirmRename?.(); }}
+                        data-rename-confirm
+                        onClick={(e) => { e.stopPropagation(); const n = inputRef.current?.value || ''; setEditedFileName?.(n); onConfirmRename?.(n); }}
                         onMouseDown={(e) => e.preventDefault()}
-                        className="p-0.5 theme-hover rounded text-green-400"
+                        className="p-0.5 theme-hover rounded text-green-400 flex-shrink-0"
                     >
                         <Check size={12} />
                     </button>
@@ -112,6 +129,7 @@ export const PaneHeader = React.memo(({
                     title="Double-click to rename"
                     onDoubleClick={(e) => {
                         e.stopPropagation();
+                        console.log('[RENAME] double-click fired, onStartRename:', !!onStartRename);
                         if (onStartRename) {
                             onStartRename();
                         }
@@ -142,6 +160,12 @@ export const PaneHeader = React.memo(({
     return (
         <div
             draggable={!isRenaming && !panesLocked}
+            onDoubleClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                console.log('[RENAME] outer div double-click, onStartRename:', !!onStartRename);
+                if (onStartRename && !isRenaming) onStartRename();
+            }}
             onDragStart={(e) => {
                 if (isRenaming || panesLocked) {
                     e.preventDefault();

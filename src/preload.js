@@ -197,11 +197,29 @@ readDocxContent: (filePath) =>
         return () => ipcRenderer.removeListener('open-url-in-browser', handler);
     },
 
-    onOpenFileFromOS: (callback) => {
-        const handler = (_, data) => callback(data);
-        ipcRenderer.on('open-file-from-os', handler);
-        return () => ipcRenderer.removeListener('open-file-from-os', handler);
-    },
+    onBrowserSwipeBack: (callback) => { const h = () => callback(); ipcRenderer.on('browser-swipe-back', h); return () => ipcRenderer.removeListener('browser-swipe-back', h); },
+    onBrowserSwipeForward: (callback) => { const h = () => callback(); ipcRenderer.on('browser-swipe-forward', h); return () => ipcRenderer.removeListener('browser-swipe-forward', h); },
+
+    onOpenFileFromOS: (() => {
+        let pending = null;
+        ipcRenderer.on('open-file-from-os', (_, data) => {
+            if (pending === 'SUBSCRIBED') {
+                // already subscribed, will be handled by the live handler
+            } else {
+                pending = data;
+            }
+        });
+        return (callback) => {
+            const handler = (_, data) => callback(data);
+            ipcRenderer.on('open-file-from-os', handler);
+            // Flush any event that arrived before subscription
+            if (pending && pending !== 'SUBSCRIBED') {
+                callback(pending);
+            }
+            pending = 'SUBSCRIBED';
+            return () => ipcRenderer.removeListener('open-file-from-os', handler);
+        };
+    })(),
 
     onOpenFolderPicker: (callback) => {
         const handler = () => callback();
@@ -252,6 +270,10 @@ readDocxContent: (filePath) =>
     onMenuToggleSidebar: (callback) => {
         ipcRenderer.on('menu-toggle-sidebar', callback);
         return () => ipcRenderer.removeListener('menu-toggle-sidebar', callback);
+    },
+    onMenuToggleHideUI: (callback) => {
+        ipcRenderer.on('menu-toggle-hide-ui', callback);
+        return () => ipcRenderer.removeListener('menu-toggle-hide-ui', callback);
     },
     onMenuNewWindow: (callback) => {
         ipcRenderer.on('menu-new-window', callback);
@@ -446,6 +468,12 @@ readDocxContent: (filePath) =>
     memory_pending: (args) => ipcRenderer.invoke('memory:pending', args),
     memory_scope: (args) => ipcRenderer.invoke('memory:scope', args),
     memory_approve: (args) => ipcRenderer.invoke('memory:approve', args),
+
+    logActivity: (args) => ipcRenderer.invoke('activity:log', args),
+    getActivities: (args) => ipcRenderer.invoke('activity:list', args),
+    logAutocomplete: (args) => ipcRenderer.invoke('autocomplete:log', args),
+    getAutocompleteStats: (args) => ipcRenderer.invoke('autocomplete:stats', args),
+    getAutocompleteTraining: (args) => ipcRenderer.invoke('autocomplete:training', args),
 
     resizeTerminal: (data) => ipcRenderer.invoke('resizeTerminal', data),
 

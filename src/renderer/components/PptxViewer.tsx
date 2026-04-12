@@ -562,6 +562,7 @@ const pptxStateCache = new Map<string, {
 const PptxViewer = ({
   nodeId,
   contentDataRef,
+  currentPath,
   findNodePath,
   rootLayoutNode,
   setDraggedItem,
@@ -609,6 +610,10 @@ const PptxViewer = ({
 
   const paneData = contentDataRef.current[nodeId];
   const filePath = paneData?.contentId;
+
+    const [isLocalRenaming, setIsLocalRenaming] = useState(false);
+    const [localEditName, setLocalEditName] = useState('');
+    const renameInputRef = useRef<HTMLInputElement>(null);
 
   const [slideWidth, setSlideWidth] = useState(960);
   const [slideHeight, setSlideHeight] = useState(540);
@@ -1531,9 +1536,60 @@ const PptxViewer = ({
   }, [activeSlide, slides.length, idx]);
 
   // Save
+  const handleRenameAndSave = useCallback(async (newName) => {
+    if (!newName) return;
+    const currentFilePath = contentDataRef.current[nodeId]?.contentId || filePath;
+    const isUntitled = currentFilePath.includes('/tmp/') || contentDataRef.current[nodeId]?.isUntitled;
+    if (isUntitled && currentPath && zip && presDoc && presRelsDoc) {
+      const savePath = currentPath + '/' + newName;
+      try {
+        for (const slide of slides) {
+          if (slide.doc && slide.relsDoc) {
+            zip.file(slide.name, new XMLSerializer().serializeToString(slide.doc));
+            const relsPath = `ppt/slides/_rels/${slide.name.split('/').pop()}.rels`;
+            zip.file(relsPath, new XMLSerializer().serializeToString(slide.relsDoc));
+          }
+        }
+        zip.file('ppt/presentation.xml', new XMLSerializer().serializeToString(presDoc));
+        zip.file('ppt/_rels/presentation.xml.rels', new XMLSerializer().serializeToString(presRelsDoc));
+        const output = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+        await (window as any).api.writeFileBuffer(savePath, output);
+        if (contentDataRef.current[nodeId]) {
+          contentDataRef.current[nodeId].contentId = savePath;
+          contentDataRef.current[nodeId].isUntitled = false;
+          contentDataRef.current[nodeId].title = newName;
+        }
+        setHasChanges(false);
+      } catch (err) {
+        console.error('Save after rename failed:', err);
+      }
+    }
+    setEditedFileName(newName);
+    handleConfirmRename?.(nodeId, currentFilePath, newName);
+    setIsLocalRenaming(false);
+  }, [filePath, currentPath, nodeId, contentDataRef, handleConfirmRename, setEditedFileName, zip, presDoc, presRelsDoc, slides]);
+
   const save = useCallback(async () => {
     if (!zip || !presDoc || !presRelsDoc || !hasChanges) return;
     try {
+      const currentFilePath = contentDataRef.current[nodeId]?.contentId || filePath;
+      const isUntitled = currentFilePath.includes('/tmp/') || contentDataRef.current[nodeId]?.isUntitled;
+
+      let savePath = currentFilePath;
+      if (isUntitled) {
+        const defaultName = getFileName(currentFilePath) || 'presentation.pptx';
+        savePath = await (window as any).api?.showSaveDialog?.({
+          defaultPath: currentPath ? `${currentPath}/${defaultName}` : defaultName,
+          filters: [{ name: 'PowerPoint', extensions: ['pptx'] }],
+        });
+        if (!savePath) return;
+        if (contentDataRef.current[nodeId]) {
+          contentDataRef.current[nodeId].contentId = savePath;
+          contentDataRef.current[nodeId].isUntitled = false;
+          contentDataRef.current[nodeId].title = getFileName(savePath);
+        }
+      }
+
       for (const slide of slides) {
         if (slide.doc && slide.relsDoc) {
           zip.file(slide.name, new XMLSerializer().serializeToString(slide.doc));
@@ -1545,13 +1601,13 @@ const PptxViewer = ({
       zip.file('ppt/_rels/presentation.xml.rels', new XMLSerializer().serializeToString(presRelsDoc));
 
       const output = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
-      await window.api.writeFileBuffer(filePath, output);
+      await window.api.writeFileBuffer(savePath, output);
       setHasChanges(false);
     } catch (e: any) {
       console.error('[PPTX] Save error:', e);
       setErr(`Save failed: ${e.message}`);
     }
-  }, [zip, presDoc, presRelsDoc, slides, filePath, hasChanges]);
+  }, [zip, presDoc, presRelsDoc, slides, filePath, hasChanges, currentPath, nodeId, contentDataRef]);
 
   // Presentation mode
   const enterPresentation = useCallback(() => {
@@ -2083,9 +2139,9 @@ const PptxViewer = ({
     >
       {/* Header */}
       <div
-        draggable={renamingPaneId !== nodeId}
+        draggable={!isLocalRenaming}
         onDragStart={(e) => {
-          if (renamingPaneId === nodeId) { e.preventDefault(); return; }
+          if (isLocalRenaming) { e.preventDefault(); return; }
           e.dataTransfer.effectAllowed = 'move';
           const nodePath = findNodePath?.(rootLayoutNode, nodeId) || [];
           e.dataTransfer.setData('application/json', JSON.stringify({ type: 'pane', id: nodeId, nodePath }));
@@ -2098,7 +2154,7 @@ const PptxViewer = ({
         }}
         className="px-3 py-2 border-b theme-border theme-bg-secondary cursor-move flex items-center justify-between"
       >
-        {renamingPaneId === nodeId ? (
+        {isLocalRenaming ? (
           <div
             className="flex items-center gap-1"
             onMouseDown={(e) => e.stopPropagation()}
@@ -2107,30 +2163,29 @@ const PptxViewer = ({
           >
             <input
               type="text"
-              value={editedFileName}
-              onChange={(e) => setEditedFileName(e.target.value)}
+              defaultValue={localEditName} ref={renameInputRef}
               onKeyDown={(e) => {
                 e.stopPropagation();
-                if (e.key === 'Enter') handleConfirmRename?.(nodeId, filePath);
-                if (e.key === 'Escape') setRenamingPaneId(null);
+                if (e.key === 'Enter') { handleRenameAndSave(renameInputRef.current?.value || ''); }
+                if (e.key === 'Escape') setIsLocalRenaming(false);
               }}
               className="px-1 py-0.5 text-xs theme-bg-primary theme-text-primary border theme-border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              style={{ width: '140px' }}
+              style={{ flex: 1, minWidth: 0 }}
               autoFocus
             />
-            <button onClick={() => handleConfirmRename?.(nodeId, filePath)} className="p-0.5 theme-hover rounded text-green-400"><Check size={12} /></button>
-            <button onClick={() => setRenamingPaneId(null)} className="p-0.5 theme-hover rounded text-red-400"><X size={12} /></button>
+            <button onClick={() => handleRenameAndSave(renameInputRef.current?.value || '')} className="p-0.5 theme-hover rounded text-green-400"><Check size={12} /></button>
+            <button onClick={() => setIsLocalRenaming(false)} className="p-0.5 theme-hover rounded text-red-400"><X size={12} /></button>
           </div>
         ) : (
           <div className="flex items-center gap-1 min-w-0">
             <span
               className="text-sm font-medium truncate cursor-default"
-              onDoubleClick={(e) => { e.stopPropagation(); e.preventDefault(); setRenamingPaneId(nodeId); setEditedFileName(getFileName(filePath) || ''); }}
+              onDoubleClick={(e) => { e.stopPropagation(); e.preventDefault(); setIsLocalRenaming(true); setLocalEditName(getFileName(filePath) || '');; }}
             >
               {getFileName(filePath) || 'Presentation'}{hasChanges ? ' *' : ''}
             </span>
             <button
-              onClick={(e) => { e.stopPropagation(); setRenamingPaneId(nodeId); setEditedFileName(getFileName(filePath) || ''); }}
+              onClick={(e) => { e.stopPropagation(); setIsLocalRenaming(true); setLocalEditName(getFileName(filePath) || '');; }}
               className="p-0.5 theme-hover rounded opacity-40 hover:opacity-100 flex-shrink-0"
               title="Rename file"
             ><Pencil size={11} /></button>

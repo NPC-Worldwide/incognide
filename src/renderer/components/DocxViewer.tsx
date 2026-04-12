@@ -87,6 +87,7 @@ const TEMPLATES = [
 const DocxViewer = ({
     nodeId,
     contentDataRef,
+    currentPath,
     findNodePath,
     rootLayoutNode,
     setDraggedItem,
@@ -103,6 +104,10 @@ const DocxViewer = ({
 }) => {
     const paneData = contentDataRef.current[nodeId];
     const filePath = paneData?.contentId;
+
+    const [isLocalRenaming, setIsLocalRenaming] = useState(false);
+    const [localEditName, setLocalEditName] = useState('');
+    const renameInputRef = useRef<HTMLInputElement>(null);
 
     const [htmlContent, setHtmlContent] = useState('');
     const [error, setError] = useState(null);
@@ -160,6 +165,31 @@ const DocxViewer = ({
 
     const [currentFont, setCurrentFont] = useState('Calibri');
     const [currentFontSize, setCurrentFontSize] = useState('12');
+
+    const handleRenameAndSave = useCallback(async (newName: string) => {
+        if (!newName) return;
+        const currentFilePath = contentDataRef.current[nodeId]?.contentId || filePath;
+        const isUntitled = currentFilePath.includes('/tmp/') || contentDataRef.current[nodeId]?.isUntitled;
+        if (isUntitled) {
+            const saveDir = currentPath || currentFilePath.substring(0, currentFilePath.lastIndexOf('/'));
+            const newPath = `${saveDir}/${newName}`;
+            try {
+                const content = editorRef.current?.innerHTML || '';
+                await (window as any).api.writeDocxContent(newPath, content, { font: currentFont });
+                if (contentDataRef.current[nodeId]) {
+                    contentDataRef.current[nodeId].contentId = newPath;
+                    contentDataRef.current[nodeId].isUntitled = false;
+                    contentDataRef.current[nodeId].title = newName;
+                }
+                setHasChanges(false);
+            } catch (err) {
+                console.error('Save after rename failed:', err);
+            }
+        }
+        setEditedFileName(newName);
+        handleConfirmRename?.(nodeId, currentFilePath, newName);
+        setIsLocalRenaming(false);
+    }, [filePath, currentPath, nodeId, contentDataRef, currentFont, handleConfirmRename, setEditedFileName]);
 
     const [docFonts, setDocFonts] = useState<{ default: string; heading: string; all: string[] } | null>(null);
 
@@ -361,17 +391,50 @@ const DocxViewer = ({
 
     const saveDocument = useCallback(async () => {
         if (!hasChanges || !editorRef.current) return;
+        // Re-read filePath from contentData in case it was renamed
+        const currentFilePath = contentDataRef.current[nodeId]?.contentId || filePath;
+        const isUntitled = currentFilePath.includes('/tmp/') || contentDataRef.current[nodeId]?.isUntitled;
+
+        // For untitled files, prompt Save As to workspace folder
+        if (isUntitled) {
+            const defaultName = getFileName(currentFilePath) || 'document.docx';
+            const newPath = await (window as any).api?.showSaveDialog?.({
+                defaultPath: currentPath ? `${currentPath}/${defaultName}` : defaultName,
+                filters: [{ name: 'Word Document', extensions: ['docx'] }, { name: 'HTML', extensions: ['html'] }],
+            });
+            if (!newPath) return;
+            setIsSaving(true);
+            try {
+                const content = editorRef.current.innerHTML;
+                await (window as any).api.writeDocxContent(newPath, content, { font: currentFont });
+                // Update pane to point to new file
+                if (contentDataRef.current[nodeId]) {
+                    contentDataRef.current[nodeId].contentId = newPath;
+                    contentDataRef.current[nodeId].isUntitled = false;
+                    contentDataRef.current[nodeId].title = getFileName(newPath);
+                }
+                docxContentCache.set(newPath, { html: content, hasChanges: false });
+                setHtmlContent(content);
+                setHasChanges(false);
+            } catch (err) {
+                setError(err.message);
+            } finally {
+                setIsSaving(false);
+            }
+            return;
+        }
+
         setIsSaving(true);
         try {
             const content = editorRef.current.innerHTML;
-            if (filePath.endsWith('.docx')) {
-                await window.api.writeDocxContent(filePath, content, { font: currentFont });
+            if (currentFilePath.endsWith('.docx')) {
+                await (window as any).api.writeDocxContent(currentFilePath, content, { font: currentFont });
             } else {
-                await window.api.writeFileContent(filePath, content);
+                await (window as any).api.writeFileContent(currentFilePath, content);
             }
 
-            const existing = docxContentCache.get(filePath);
-            docxContentCache.set(filePath, { ...existing, html: content, hasChanges: false });
+            const existing = docxContentCache.get(currentFilePath);
+            docxContentCache.set(currentFilePath, { ...existing, html: content, hasChanges: false });
             setHtmlContent(content);
             setHasChanges(false);
         } catch (err) {
@@ -771,9 +834,9 @@ ${htmlContent}
         <div className="h-full flex flex-col theme-bg-secondary overflow-hidden">
             {/* Header Bar */}
             <div
-                draggable={renamingPaneId !== nodeId}
+                draggable={!isLocalRenaming}
                 onDragStart={(e) => {
-                    if (renamingPaneId === nodeId) { e.preventDefault(); return; }
+                    if (isLocalRenaming) { e.preventDefault(); return; }
                     e.dataTransfer.effectAllowed = 'move';
                     const nodePath = findNodePath(rootLayoutNode, nodeId);
                     e.dataTransfer.setData('application/json', JSON.stringify({ type: 'pane', id: nodeId, nodePath }));
@@ -790,34 +853,34 @@ ${htmlContent}
                 }}
                 className="px-3 py-2 border-b theme-border theme-bg-secondary cursor-move flex items-center justify-between"
             >
-                {renamingPaneId === nodeId ? (
+                {isLocalRenaming ? (
                     <div
-                        className="flex items-center gap-1"
+                        className="flex items-center gap-1 flex-1 min-w-0"
                         onMouseDown={(e) => e.stopPropagation()}
                         onClick={(e) => e.stopPropagation()}
                         onKeyDown={(e) => e.stopPropagation()}
                     >
                         <input
                             type="text"
-                            value={editedFileName}
-                            onChange={(e) => setEditedFileName(e.target.value)}
+                            defaultValue={localEditName}
+                            ref={renameInputRef}
                             onKeyDown={(e) => {
                                 e.stopPropagation();
-                                if (e.key === 'Enter') handleConfirmRename?.(nodeId, filePath);
-                                if (e.key === 'Escape') setRenamingPaneId(null);
+                                if (e.key === 'Enter') { handleRenameAndSave(renameInputRef.current?.value || ''); }
+                                if (e.key === 'Escape') setIsLocalRenaming(false);
                             }}
-                            className="px-1 py-0.5 text-xs theme-bg-primary theme-text-primary border theme-border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            style={{ width: '140px' }}
+                            className="px-1 py-0.5 text-sm theme-bg-primary theme-text-primary border theme-border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            style={{ flex: 1, minWidth: 0 }}
                             autoFocus
                         />
                         <button
-                            onClick={() => handleConfirmRename?.(nodeId, filePath)}
+                            onClick={() => handleRenameAndSave(renameInputRef.current?.value || '')}
                             className="p-0.5 theme-hover rounded text-green-400"
                         >
                             <Check size={12} />
                         </button>
                         <button
-                            onClick={() => setRenamingPaneId(null)}
+                            onClick={() => setIsLocalRenaming(false)}
                             className="p-0.5 theme-hover rounded text-red-400"
                         >
                             <X size={12} />
@@ -827,14 +890,14 @@ ${htmlContent}
                     <div className="flex items-center gap-1 min-w-0">
                         <span
                             className="text-sm font-medium truncate cursor-default"
-                            onDoubleClick={(e) => { e.stopPropagation(); e.preventDefault(); setRenamingPaneId(nodeId); setEditedFileName(getFileName(filePath) || ''); }}
+                            onDoubleClick={(e) => { e.stopPropagation(); e.preventDefault(); setIsLocalRenaming(true); setLocalEditName(getFileName(filePath) || ''); }}
                         >
                             {getFileName(filePath) || 'Document'}{hasChanges ? ' *' : ''}
                         </span>
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
-                                setRenamingPaneId(nodeId);
+                                setIsLocalRenaming(true); setLocalEditName(getFileName(filePath) || '');
                                 setEditedFileName(getFileName(filePath) || '');
                             }}
                             className="p-0.5 theme-hover rounded opacity-40 hover:opacity-100 flex-shrink-0"

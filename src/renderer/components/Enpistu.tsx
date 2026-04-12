@@ -7,7 +7,7 @@ import {
     ListFilter, ArrowDown,X, Wrench, FileText, Code2, FileJson, Paperclip,
     Send, BarChart3,Minimize2,  Maximize2, MessageCircle, BrainCircuit, Star, Origami, ChevronDown, ChevronUp,
     Clock, FolderTree, Search, HardDrive, Brain, GitBranch, Activity, Tag, Sparkles, Code, BookOpen, User, FolderOpen,
-    RefreshCw, RotateCcw, Check, KeyRound, Bot, Zap, HelpCircle, AlertCircle, MoreVertical, LayoutGrid
+    RefreshCw, RotateCcw, Check, KeyRound, Bot, Zap, HelpCircle, AlertCircle, MoreVertical, LayoutGrid, ExternalLink
 } from 'lucide-react';
 
 import { Icon } from 'lucide-react';
@@ -91,6 +91,7 @@ import { Modal, Tabs, Card, Button, Input, Select, createWindowApiDatabaseClient
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, PointElement, LineElement);
 import * as LucideIcons from 'lucide-react';
 import { useActivityTracker } from './ActivityTracker';
+import ActivityTrackerDashboard from './ActivityTracker';
 import {
     serializeWorkspace,
     saveWorkspaceToStorage,
@@ -675,7 +676,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         selectedModel: '',
         selectedNPC: ''
     });
-    const [mcpServerPath, setMcpServerPath] = useState('python -m npcpy.mcp_server --team ~/.npcsh/incognide/npc_team');
+    const [mcpServerPath, setMcpServerPath] = useState('');
     const [selectedMcpTools, setSelectedMcpTools] = useState([]);
     const [availableMcpTools, setAvailableMcpTools] = useState([]);
     const [mcpToolsLoading, setMcpToolsLoading] = useState(false);
@@ -735,6 +736,16 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const [topBarWidth, setTopBarWidth] = useState(1000);
     const [searchExpanded, setSearchExpanded] = useState(false);
     const [webSearchExpanded, setWebSearchExpanded] = useState(false);
+    const [engineMenuOpen, setEngineMenuOpen] = useState(false);
+    const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
+    const SEARCH_SCOPES: Record<string, string> = {
+        all: 'All',
+        files: 'Files',
+        memories: 'Memories',
+        conversations: 'Conversations',
+        knowledge: 'Knowledge',
+    };
+    const [searchScope, setSearchScope] = useState<string>(() => localStorage.getItem('npc-local-search-scope') || 'all');
     const collapsedSearchRef = useRef<HTMLInputElement>(null);
     const collapsedWebSearchRef = useRef<HTMLInputElement>(null);
 
@@ -1089,6 +1100,17 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         if (api.api?.onMenuToggleSidebar) {
             cleanups.push(api.api.onMenuToggleSidebar(() => {
                 setSidebarCollapsed(prev => !prev);
+            }));
+        }
+        if (api.api?.onMenuToggleHideUI) {
+            cleanups.push(api.api.onMenuToggleHideUI(() => {
+                const anyVisible = !topBarCollapsed || !sidebarCollapsed || !bottomBarCollapsed;
+                const next = anyVisible;
+                setTopBarCollapsed(next);
+                setSidebarCollapsed(next);
+                setBottomBarCollapsed(next);
+                localStorage.setItem('incognide_topBarCollapsed', String(next));
+                localStorage.setItem('incognide_bottomBarCollapsed', String(next));
             }));
         }
 
@@ -3175,6 +3197,7 @@ const renderDocxViewer = useCallback(({ nodeId, onToggleZen, isZenMode, onClose,
         <DocxViewer
             nodeId={nodeId}
             contentDataRef={contentDataRef}
+            currentPath={currentPath}
             findNodePath={findNodePath}
             rootLayoutNode={rootLayoutNode}
             setDraggedItem={setDraggedItem}
@@ -3190,13 +3213,14 @@ const renderDocxViewer = useCallback(({ nodeId, onToggleZen, isZenMode, onClose,
             handleConfirmRename={handleConfirmRename}
         />
     );
-}, [closeContentPane]);
+}, [closeContentPane, currentPath]);
 
 const renderPptxViewer = useCallback(({ nodeId, onToggleZen, isZenMode, onClose, renamingPaneId, setRenamingPaneId, editedFileName, setEditedFileName, handleConfirmRename }) => {
     return (
         <PptxViewer
             nodeId={nodeId}
             contentDataRef={contentDataRef}
+            currentPath={currentPath}
             findNodePath={findNodePath}
             rootLayoutNode={rootLayoutNode}
             setDraggedItem={setDraggedItem}
@@ -3212,13 +3236,14 @@ const renderPptxViewer = useCallback(({ nodeId, onToggleZen, isZenMode, onClose,
             handleConfirmRename={handleConfirmRename}
         />
     );
-}, [rootLayoutNode, closeContentPane]);
+}, [rootLayoutNode, closeContentPane, currentPath]);
 
 const renderLatexViewer = useCallback(({ nodeId, onToggleZen, isZenMode, onClose, renamingPaneId, setRenamingPaneId, editedFileName, setEditedFileName, handleConfirmRename }) => {
     return (
         <LatexViewer
             nodeId={nodeId}
             contentDataRef={contentDataRef}
+            currentPath={currentPath}
             findNodePath={findNodePath}
             rootLayoutNode={rootLayoutNode}
             setDraggedItem={setDraggedItem}
@@ -3235,7 +3260,7 @@ const renderLatexViewer = useCallback(({ nodeId, onToggleZen, isZenMode, onClose
             handleConfirmRename={handleConfirmRename}
         />
     );
-}, [rootLayoutNode, closeContentPane, performSplit]);
+}, [rootLayoutNode, closeContentPane, performSplit, currentPath]);
 
 const renderNotebookViewer = useCallback(({ nodeId }) => {
     return (
@@ -3494,55 +3519,10 @@ const renderGitPane = useCallback(({ nodeId }: { nodeId: string }) => {
         <GitPane
             nodeId={nodeId}
             currentPath={currentPath}
-            gitStatus={gitStatus}
-            gitModalTab={gitModalTab}
-            gitDiffContent={gitDiffContent}
-            gitBranches={gitBranches}
-            gitCommitHistory={gitCommitHistory}
-            gitCommitMessage={gitCommitMessage}
-            gitNewBranchName={gitNewBranchName}
-            gitSelectedCommit={gitSelectedCommit}
-            gitError={gitError}
-            gitLoading={gitLoading}
-            noUpstreamPrompt={noUpstreamPrompt}
-            setGitCommitMessage={setGitCommitMessage}
-            setGitNewBranchName={setGitNewBranchName}
-            setGitModalTab={setGitModalTab}
-            setNoUpstreamPrompt={setNoUpstreamPrompt}
-            loadGitStatus={loadGitStatus}
-            loadGitDiff={loadGitDiff}
-            loadGitBranches={loadGitBranches}
-            loadGitHistory={loadGitHistory}
-            loadCommitDetails={loadCommitDetails}
-            gitStageFile={gitStageFile}
-            gitDiscardFile={gitDiscardFile}
-            gitUnstageFile={gitUnstageFile}
-            gitCommitChanges={gitCommitChanges}
-            gitPushChanges={gitPushChanges}
-            gitPullChanges={gitPullChanges}
-            gitCreateBranch={gitCreateBranch}
-            gitCheckoutBranch={gitCheckoutBranch}
-            gitDeleteBranch={gitDeleteBranch}
-            gitPushWithUpstream={gitPushWithUpstream}
-            gitEnableAutoSetupRemote={gitEnableAutoSetupRemote}
-            gitPullAndPush={gitPullAndPush}
-            pushRejectedPrompt={pushRejectedPrompt}
-            setPushRejectedPrompt={setPushRejectedPrompt}
             openFileDiffPane={openFileDiffPane}
-            gitCherryPick={gitCherryPick}
-            gitCherryPickAbort={gitCherryPickAbort}
-            gitCherryPickContinue={gitCherryPickContinue}
-            gitRevertCommit={gitRevertCommit}
-            gitResetToCommit={gitResetToCommit}
-            gitLogBranch={gitLogBranch}
         />
     );
-}, [gitStatus, gitModalTab, gitDiffContent, gitBranches, gitCommitHistory, gitCommitMessage, gitNewBranchName, gitSelectedCommit, gitError,
-    gitLoading, noUpstreamPrompt, pushRejectedPrompt,
-    loadGitStatus, loadGitDiff, loadGitBranches, loadGitHistory, loadCommitDetails,
-    gitStageFile, gitDiscardFile, gitUnstageFile, gitCommitChanges, gitPushChanges, gitPullChanges, gitCreateBranch, gitCheckoutBranch, gitDeleteBranch,
-    gitPushWithUpstream, gitEnableAutoSetupRemote, gitPullAndPush, setPushRejectedPrompt, openFileDiffPane,
-    gitCherryPick, gitCherryPickAbort, gitCherryPickContinue, gitRevertCommit, gitResetToCommit, gitLogBranch]);
+}, [currentPath, openFileDiffPane]);
 
 // Render FolderViewer pane (for pane-based folder browsing)
 const renderFolderViewerPane = useCallback(({ nodeId }: { nodeId: string }) => {
@@ -3640,6 +3620,10 @@ const renderWindowManagerPane = useCallback(({ nodeId }: { nodeId: string }) => 
 
 const renderAccountPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return <AccountPane nodeId={nodeId} />;
+}, []);
+
+const renderActivityPane = useCallback(({ nodeId }: { nodeId: string }) => {
+    return <ActivityTrackerDashboard />;
 }, []);
 
 const createAccountPane = useCallback(async () => {
@@ -3996,14 +3980,18 @@ const renderMessageContextMenu = () => null;
     };
 
     // Handle file rename from PaneHeader
-    const handleConfirmRename = useCallback(async (paneId: string, oldFilePath: string) => {
-        if (!editedFileName || !oldFilePath) {
+    const handleConfirmRename = useCallback(async (paneId: string, oldFilePath: string, newName?: string) => {
+        console.log('[RENAME] handleConfirmRename called:', { paneId, oldFilePath, newName, editedFileName });
+        const nameToUse = newName || editedFileName;
+        if (!nameToUse) {
             setRenamingPaneId(null);
             return;
         }
 
-        const directory = oldFilePath.substring(0, oldFilePath.lastIndexOf('/'));
-        const newFilePath = normalizePath(`${directory}/${editedFileName}`);
+        const realPaneData = contentDataRef.current[paneId] || contentDataRef.current[paneId.split('_tab_')[0]];
+        const isUntitled = !oldFilePath || oldFilePath.includes('/tmp/') || realPaneData?.isUntitled;
+        const directory = isUntitled && currentPath ? currentPath : (oldFilePath ? oldFilePath.substring(0, oldFilePath.lastIndexOf('/')) : currentPath || '');
+        const newFilePath = normalizePath(`${directory}/${nameToUse}`);
 
         if (newFilePath === oldFilePath) {
             setRenamingPaneId(null);
@@ -4011,12 +3999,57 @@ const renderMessageContextMenu = () => null;
         }
 
         try {
-            const result = await window.api.renameFile(oldFilePath, newFilePath);
-            if (result?.error) throw new Error(result.error);
+            if (isUntitled) {
+                // For untitled files, save current content to the new path
+                const pData = realPaneData || contentDataRef.current[paneId];
+                if (pData?.fileContent !== undefined) {
+                    await window.api.writeFileContent(newFilePath, pData.fileContent || '');
+                }
+                if (pData) pData.isUntitled = false;
+            } else if (oldFilePath) {
+                // Rename existing file on disk
+                try {
+                    const result = await window.api.renameFile(oldFilePath, newFilePath);
+                    if (result?.error) console.warn('Rename on disk failed:', result.error);
+                } catch (diskErr) {
+                    console.warn('Rename on disk failed:', diskErr);
+                }
+            }
 
-            // Update the content pane with new file path
+            // Always update the content pane with new file path
+            // paneId might be a virtual tab ID (e.g. "paneId_tab_xxx") — find the real pane
+            const realPaneId = paneId.includes('_tab_') ? paneId.split('_tab_')[0] : paneId;
+
+            // Detect content type from new extension
+            const ext = nameToUse.split('.').pop()?.toLowerCase();
+            const extTypeMap: Record<string, string> = { tex: 'latex', csv: 'csv', xlsx: 'csv', xls: 'csv', docx: 'docx', pptx: 'pptx', pdf: 'pdf', ipynb: 'notebook', md: 'editor', py: 'editor', js: 'editor', ts: 'editor', tsx: 'editor', jsx: 'editor', json: 'editor', txt: 'editor' };
+            const newContentType = ext ? extTypeMap[ext] : undefined;
+
+            // Update virtual pane data if exists
             if (contentDataRef.current[paneId]) {
                 contentDataRef.current[paneId].contentId = newFilePath;
+                contentDataRef.current[paneId].title = nameToUse;
+                if (newContentType) contentDataRef.current[paneId].contentType = newContentType;
+            }
+
+            // Update real pane data
+            const realPane = contentDataRef.current[realPaneId];
+            if (realPane) {
+                if (!oldFilePath || realPane.contentId === oldFilePath) {
+                    realPane.contentId = newFilePath;
+                    realPane.title = nameToUse;
+                    if (newContentType) realPane.contentType = newContentType;
+                }
+                // Update matching tab
+                if (realPane.tabs) {
+                    for (const tab of realPane.tabs) {
+                        if (!oldFilePath || tab.contentId === oldFilePath) {
+                            tab.contentId = newFilePath;
+                            if (newContentType) tab.contentType = newContentType;
+                            tab.title = nameToUse;
+                        }
+                    }
+                }
             }
 
             // Refresh directory structure directly
@@ -4027,6 +4060,7 @@ const renderMessageContextMenu = () => null;
                 }
             }
             notifyAllPanes();
+            setRootLayoutNode(p => ({...p}));
         } catch (err: any) {
             setError(`Failed to rename file: ${err.message}`);
         } finally {
@@ -4073,7 +4107,7 @@ const renderMessageContextMenu = () => null;
     const createNewExperiment = useCallback(async () => {
         try {
             const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.npcsh`;
-            const tmpDir = normalizePath(`${npcshHome}/incognide/tmp`);
+            const tmpDir = normalizePath(`${npcshHome}/tmp`);
             await window.api.ensureDir?.(tmpDir).catch(() => {});
             const filepath = normalizePath(`${tmpDir}/experiment-${Date.now()}.exp`);
             const emptyExp = {
@@ -4124,9 +4158,9 @@ const renderMessageContextMenu = () => null;
     }, []);
 
     // Create Search pane
-    const createSearchPane = useCallback(async (initialQuery?: string) => {
+    const createSearchPane = useCallback(async (initialQuery?: string, scope?: string) => {
         const newPaneId = generateId();
-        contentDataRef.current[newPaneId] = { contentType: 'search', contentId: 'search', initialQuery: initialQuery || '' };
+        contentDataRef.current[newPaneId] = { contentType: 'search', contentId: 'search', initialQuery: initialQuery || '', searchScope: scope || 'files' };
         addPaneOrTab(newPaneId);
     }, []);
 
@@ -4473,7 +4507,7 @@ const handleBrowserDialogNavigate = (url) => {
     const createNewJupyterNotebook = useCallback(async () => {
         try {
             const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.npcsh`;
-            const tmpDir = normalizePath(`${npcshHome}/incognide/tmp`);
+            const tmpDir = normalizePath(`${npcshHome}/tmp`);
             await window.api.ensureDir?.(tmpDir).catch(() => {});
             const filepath = normalizePath(`${tmpDir}/notebook-${Date.now()}.ipynb`);
             const emptyNotebook = {
@@ -5302,6 +5336,7 @@ ${contextPrompt}`;
 
     // Render Team Management pane (embedded version for pane layout)
     const renderTeamManagementPane = useCallback(({ nodeId }: { nodeId: string }) => {
+        const paneData = contentDataRef.current[nodeId] || {};
         return (
             <TeamManagement
                 isOpen={true}
@@ -5312,9 +5347,13 @@ ${contextPrompt}`;
                     createNewConversation();
                 }}
                 embedded={true}
+                npcList={availableNPCs}
+                jinxList={availableJinxes}
+                currentNpc={currentNPC}
+                initialTab={paneData.initialTab}
             />
         );
-    }, [currentPath, createNewConversation]);
+    }, [currentPath, createNewConversation, availableNPCs, availableJinxes, currentNPC]);
 
     // Create Team Management pane
     const createTeamManagementPane = useCallback(async () => {
@@ -5391,12 +5430,22 @@ ${contextPrompt}`;
     }, [createAndAddPaneNodeToLayout]);
 
     // Create untitled text file directly without modal
-    const createUntitledTextFile = useCallback(() => {
+    const createUntitledTextFile = useCallback(async (ext?: string) => {
+        const extension = ext || 'txt';
+        const extTypeMap: Record<string, string> = { tex: 'latex', csv: 'csv', xlsx: 'csv', docx: 'docx', pptx: 'pptx' };
+        const contentType = extTypeMap[extension] || 'editor';
+        const filename = `untitled-${Date.now()}.${extension}`;
+        const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.npcsh`;
+        const tmpDir = normalizePath(`${npcshHome}/tmp`);
+        await window.api.ensureDir?.(tmpDir).catch(() => {});
+        const filepath = normalizePath(`${tmpDir}/${filename}`);
+        const initialContent = extension === 'tex' ? '\\documentclass{article}\n\\begin{document}\n\n\\end{document}\n' : '';
+        await window.api.writeFileContent(filepath, initialContent);
         const newPaneId = generateId();
         contentDataRef.current[newPaneId] = {
-            contentType: 'editor',
-            contentId: '',
-            fileContent: '',
+            contentType,
+            contentId: filepath,
+            fileContent: initialContent,
             isUntitled: true
         };
         addPaneOrTab(newPaneId);
@@ -5474,31 +5523,32 @@ ${contextPrompt}`;
         return () => window.removeEventListener('terminal-open-file', handleTerminalOpenFile as EventListener);
     }, [currentPath, createAndAddPaneNodeToLayout, setActiveContentPaneId]);
 
-    const createNewDocument = async (docType: 'docx' | 'xlsx' | 'pptx' | 'mapx') => {
+    const createNewDocument = async (docType: 'docx' | 'xlsx' | 'pptx' | 'mapx' | 'tex') => {
         try {
             const ext = docType === 'mapx' ? 'mapx' : docType;
-            const contentType = ext === 'xlsx' ? 'csv' : ext === 'mapx' ? 'mindmap' : ext;
+            const contentType = ext === 'xlsx' ? 'csv' : ext === 'mapx' ? 'mindmap' : ext === 'tex' ? 'latex' : ext;
             const filename = `untitled-${Date.now()}.${ext}`;
             // Use a temp dir so user's directories stay clean
             const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.npcsh`;
-            const tmpDir = normalizePath(`${npcshHome}/incognide/tmp`);
+            const tmpDir = normalizePath(`${npcshHome}/tmp`);
             await window.api.ensureDir?.(tmpDir).catch(() => {});
-            // Clean up old temp files before creating new one
-            try {
-                const existing = await window.api.readDirectory?.(tmpDir);
-                if (Array.isArray(existing)) {
-                    for (const f of existing) {
-                        if (f.name?.startsWith('untitled-')) {
-                            await window.api.deleteFile?.(f.path || normalizePath(`${tmpDir}/${f.name}`)).catch(() => {});
-                        }
-                    }
-                }
-            } catch {}
             const filepath = normalizePath(`${tmpDir}/${filename}`);
             if (docType === 'mapx') {
                 const initialMindMap = { nodes: [{ id: 'root', label: 'Central Idea', x: 400, y: 300, color: '#3b82f6' }], links: [] };
                 await window.api.writeFileContent(filepath, JSON.stringify(initialMindMap, null, 2));
-            } else {
+            } else if (docType === 'docx') {
+                await window.api.writeDocxContent(filepath, '<p></p>');
+            } else if (docType === 'xlsx') {
+                // Create valid empty xlsx
+                const XLSX = await import('xlsx');
+                const wb = XLSX.utils.book_new();
+                const ws = XLSX.utils.aoa_to_sheet([['']]);
+                XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+                const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                await window.api.writeFileBuffer(filepath, new Uint8Array(wbout));
+            } else if (docType === 'tex') {
+                await window.api.writeFileContent(filepath, '\\documentclass{article}\n\\begin{document}\n\n\\end{document}\n');
+            } else if (docType === 'pptx') {
                 await window.api.writeFileContent(filepath, '');
             }
             createAndAddPaneNodeToLayout({ contentType, contentId: filepath, isUntitled: true });
@@ -7398,7 +7448,7 @@ ${contextPrompt}`;
 
 // Per-pane execution mode getter/setter
 const getPaneExecutionMode = useCallback((paneId: string) => {
-    return contentDataRef.current[paneId]?.executionMode || 'chat';
+    return contentDataRef.current[paneId]?.executionMode || 'tool_agent';
 }, []);
 
 const setPaneExecutionMode = useCallback(async (paneId: string, mode: string) => {
@@ -7737,6 +7787,7 @@ const paneRenderers = useMemo(() => ({
     branches: renderBranchComparisonPane,
     windowmanager: renderWindowManagerPane,
     account: renderAccountPane,
+    activity: renderActivityPane,
 }), [
     renderChatView, renderFileEditor, renderTerminalView, renderPdfViewer,
     renderCsvViewer, renderDocxViewer, renderBrowserViewer, renderPptxViewer,
@@ -8483,14 +8534,45 @@ const renderMainContent = () => {
             ) : (
             <div
                 data-tutorial="search-bar"
-                className="flex items-center gap-2 w-32 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400/30 transition-all"
+                className="flex items-center gap-2 w-40 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400/30 transition-all"
             >
-                {/* Custom app search icon - magnifying glass with document */}
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400 flex-shrink-0">
-                    <circle cx="10" cy="10" r="6" />
-                    <line x1="14.5" y1="14.5" x2="20" y2="20" />
-                    <rect x="7" y="7" width="6" height="6" rx="1" className="opacity-50" strokeWidth="1.5" />
-                </svg>
+                <div className="relative flex-shrink-0">
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setScopeMenuOpen(prev => !prev); }}
+                        title={`Search scope: ${SEARCH_SCOPES[searchScope] || 'All'}`}
+                        className="flex items-center gap-0.5 theme-hover rounded px-0.5 py-0.5 cursor-pointer"
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400">
+                            <circle cx="10" cy="10" r="6" />
+                            <line x1="14.5" y1="14.5" x2="20" y2="20" />
+                            <rect x="7" y="7" width="6" height="6" rx="1" className="opacity-50" strokeWidth="1.5" />
+                        </svg>
+                        <ChevronDown size={10} className="text-gray-400" />
+                    </button>
+                    {scopeMenuOpen && (
+                        <>
+                            <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setScopeMenuOpen(false)} />
+                            <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded-lg shadow-xl z-50 min-w-[160px] py-1">
+                                <div className="px-3 py-1 text-[10px] theme-text-muted uppercase tracking-wide">Search In</div>
+                                {Object.entries(SEARCH_SCOPES).sort(([a], [b]) => (a === searchScope ? -1 : b === searchScope ? 1 : 0)).map(([k, v]) => (
+                                    <button
+                                        key={k}
+                                        onClick={() => {
+                                            setSearchScope(k);
+                                            localStorage.setItem('npc-local-search-scope', k);
+                                            setScopeMenuOpen(false);
+                                        }}
+                                        className={`flex items-center justify-between w-full px-3 py-1.5 text-xs text-left theme-hover ${searchScope === k ? 'text-blue-400' : 'theme-text-primary'}`}
+                                    >
+                                        <span>{v}</span>
+                                        {searchScope === k && <Check size={12} />}
+                                    </button>
+                                ))}
+                            </div>
+                        </>
+                    )}
+                </div>
                 <input
                     ref={searchInputRef}
                     type="text"
@@ -8507,10 +8589,11 @@ const renderMainContent = () => {
                     onKeyDown={(e) => {
                         if (e.key === 'Enter' && searchTerm.trim()) {
                             e.preventDefault();
-                            createSearchPane(searchTerm.trim());
+                            createSearchPane(searchTerm.trim(), searchScope);
                             setSearchTerm('');
                         }
                     }}
+                    placeholder={searchScope === 'all' ? 'Search...' : SEARCH_SCOPES[searchScope]}
                     className="flex-1 bg-transparent text-gray-100 text-xs focus:outline-none min-w-0"
                 />
                 {(deepSearchResults.length > 0 || messageSearchResults.length > 0) && (
@@ -8581,7 +8664,40 @@ const renderMainContent = () => {
                 )
             ) : (
             <div data-tutorial="web-search-bar" className="flex items-center gap-2 w-32 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-cyan-400 focus-within:ring-1 focus-within:ring-cyan-400/30 transition-all">
-                <Globe size={14} className="text-cyan-400 flex-shrink-0" />
+                <div className="relative flex-shrink-0">
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setEngineMenuOpen(prev => !prev); }}
+                        title={`Search engine: ${WEB_SEARCH_PROVIDERS[webSearchProvider as WebSearchProvider]?.name || webSearchProvider}`}
+                        className="flex items-center gap-0.5 theme-hover rounded px-0.5 py-0.5 cursor-pointer"
+                    >
+                        <Globe size={14} className="text-cyan-400" />
+                        <ChevronDown size={10} className="text-gray-400" />
+                    </button>
+                    {engineMenuOpen && (
+                        <>
+                            <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setEngineMenuOpen(false)} />
+                            <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded-lg shadow-xl z-50 min-w-[140px] py-1">
+                                <div className="px-3 py-1 text-[10px] theme-text-muted uppercase tracking-wide">Search Engine</div>
+                                {Object.entries(WEB_SEARCH_PROVIDERS).sort(([a], [b]) => (a === webSearchProvider ? -1 : b === webSearchProvider ? 1 : 0)).map(([k, v]) => (
+                                    <button
+                                        key={k}
+                                        onClick={() => {
+                                            setWebSearchProvider(k);
+                                            localStorage.setItem('npc-browser-search-engine', k);
+                                            window.dispatchEvent(new CustomEvent('search-engine-changed', { detail: k }));
+                                            setEngineMenuOpen(false);
+                                        }}
+                                        className={`flex items-center justify-between w-full px-3 py-1.5 text-xs text-left theme-hover ${webSearchProvider === k ? 'text-cyan-400' : 'theme-text-primary'}`}
+                                    >
+                                        <span>{v.name}</span>
+                                        {webSearchProvider === k && <Check size={12} />}
+                                    </button>
+                                ))}
+                            </div>
+                        </>
+                    )}
+                </div>
                 <input
                     type="text"
                     value={webSearchTerm}
@@ -8589,7 +8705,7 @@ const renderMainContent = () => {
                     onKeyDown={(e) => {
                         if (e.key === 'Enter' && webSearchTerm.trim()) {
                             e.preventDefault();
-                            const provider = WEB_SEARCH_PROVIDERS[webSearchProvider];
+                            const provider = WEB_SEARCH_PROVIDERS[webSearchProvider as WebSearchProvider];
                             const url = provider.url + encodeURIComponent(webSearchTerm.trim());
                             createNewBrowser(url);
                             setWebSearchTerm('');
@@ -8704,7 +8820,6 @@ const renderMainContent = () => {
                         <button onClick={() => createPhotoViewerPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Vixynt" data-tutorial="vixynt-button"><Image size={18} /></button>
                         <button onClick={() => createScherzoPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Scherzo" data-tutorial="scherzo-button"><Music size={18} /></button>
                         <button onClick={() => createCartoglyphPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Cartoglyph" data-tutorial="cartoglyph-button"><CartoglyphIcon size={18} /></button>
-                        <button onClick={() => createRadioPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Radio" data-tutorial="radio-button"><RadioTowerIcon size={18} /></button>
                     </>
                 ) : (
                     <div className="relative">
@@ -8723,7 +8838,6 @@ const renderMainContent = () => {
                                     <button onClick={() => { createPhotoViewerPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><Image size={14} /> Vixynt</button>
                                     <button onClick={() => { createScherzoPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><Music size={14} /> Scherzo</button>
                                     <button onClick={() => { createCartoglyphPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><CartoglyphIcon size={14} /> Cartoglyph</button>
-                                    <button onClick={() => { createRadioPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><RadioTowerIcon size={14} /> Radio</button>
                                 </div>
                             </>
                         )}
@@ -8993,23 +9107,12 @@ const renderMainContent = () => {
                 ) : (
                     <StatusBar
                         createDBToolPane={createDBToolPane}
-                        createTeamManagementPane={createTeamManagementPane}
-                        createMcpManagerPane={createMcpManagerPane}
                         paneItems={[]}
                         setActiveContentPaneId={setActiveContentPaneId}
-                        pendingMemoryCount={pendingMemoryCount}
-                        createMemoryManagerPane={createMemoryManagerPane}
-                        kgGeneration={kgGeneration}
-                        createGraphViewerPane={createGraphViewerPane}
-                        createNPCTeamPane={createNPCTeamPane}
-                        createJinxPane={createJinxPane}
-                        createSkillsManagerPane={createSkillsManagerPane}
                         height={bottomBarHeight}
                         onStartResize={() => setIsResizingBottomBar(true)}
                         sidebarCollapsed={sidebarCollapsed}
                         onExpandSidebar={() => setSidebarCollapsed(false)}
-                        topBarCollapsed={topBarCollapsed}
-                        onExpandTopBar={() => { setTopBarCollapsed(false); localStorage.setItem('incognide_topBarCollapsed', 'false'); }}
                         appVersion={appVersion}
                         updateAvailable={updateAvailable}
                         onCheckForUpdates={checkForUpdates}
@@ -9018,10 +9121,7 @@ const renderMainContent = () => {
                         onToggleOpenMode={() => { setOpenMode(m => { const next = m === 'pane' ? 'tab' : 'pane'; localStorage.setItem('incognide_openMode', next); return next; }); }}
                         createDataDashPane={createDataDashPane}
                         createDiskUsagePane={createDiskUsagePane}
-                        createCronDaemonPane={createCronDaemonPane}
                         onOpenDownloadManager={() => setDownloadManagerOpen(true)}
-                        isPredictiveTextEnabled={isPredictiveTextEnabled}
-                        setIsPredictiveTextEnabled={setIsPredictiveTextEnabled}
                         onOpenLogsViewer={() => setLogsViewerOpen(true)}
                         createBackendPane={createBackendPane}
                     />
@@ -9101,23 +9201,12 @@ const renderMainContent = () => {
             ) : (
                 <StatusBar
                     createDBToolPane={createDBToolPane}
-                    createTeamManagementPane={createTeamManagementPane}
-                    createMcpManagerPane={createMcpManagerPane}
                     paneItems={paneItems}
                     setActiveContentPaneId={setActiveContentPaneId}
-                    pendingMemoryCount={pendingMemoryCount}
-                    createMemoryManagerPane={createMemoryManagerPane}
-                    kgGeneration={kgGeneration}
-                    createGraphViewerPane={createGraphViewerPane}
-                    createNPCTeamPane={createNPCTeamPane}
-                    createJinxPane={createJinxPane}
-                    createSkillsManagerPane={createSkillsManagerPane}
                     height={bottomBarHeight}
                     onStartResize={() => setIsResizingBottomBar(true)}
                     sidebarCollapsed={sidebarCollapsed}
                     onExpandSidebar={() => setSidebarCollapsed(false)}
-                    topBarCollapsed={topBarCollapsed}
-                    onExpandTopBar={() => { setTopBarCollapsed(false); localStorage.setItem('incognide_topBarCollapsed', 'false'); }}
                     appVersion={appVersion}
                     updateAvailable={updateAvailable}
                     onCheckForUpdates={checkForUpdates}
@@ -9126,12 +9215,9 @@ const renderMainContent = () => {
                     onToggleOpenMode={() => { setOpenMode(m => { const next = m === 'pane' ? 'tab' : 'pane'; localStorage.setItem('incognide_openMode', next); return next; }); }}
                     createDataDashPane={createDataDashPane}
                     createDiskUsagePane={createDiskUsagePane}
-                    createCronDaemonPane={createCronDaemonPane}
                     onOpenDownloadManager={() => setDownloadManagerOpen(true)}
-                    isPredictiveTextEnabled={isPredictiveTextEnabled}
-                    setIsPredictiveTextEnabled={setIsPredictiveTextEnabled}
                     onOpenLogsViewer={() => setLogsViewerOpen(true)}
-                        createBackendPane={createBackendPane}
+                    createBackendPane={createBackendPane}
                 />
             )}
         </main>
@@ -9364,6 +9450,29 @@ const renderMainContent = () => {
             isOpen={commandPaletteOpen}
             onClose={() => setCommandPaletteOpen(false)}
             onFileSelect={handleFileClick}
+            onCommand={(cmdId: string) => {
+                const paneMap: Record<string, string> = {
+                    chat: 'chat', terminal: 'terminal', browser: 'browser',
+                    vixynt: 'vixynt', scherzo: 'scherzo', cartoglyph: 'cartoglyph',
+                    radio: 'radio', editor: 'editor', word: 'word', ppt: 'ppt',
+                    excel: 'spreadsheet', git: 'git', teammanagement: 'teammanagement',
+                    logs: 'logs', settings: 'settings', help: 'help',
+                    downloads: 'downloads', 'disk-usage': 'disk-usage',
+                    'data-dash': 'datadash',
+                };
+                if (cmdId.startsWith('team:')) {
+                    const tab = cmdId.split(':')[1];
+                    const newPaneId = generateId();
+                    contentDataRef.current[newPaneId] = { contentType: 'teammanagement', contentId: 'teammanagement', initialTab: tab };
+                    addPaneOrTab(newPaneId);
+                } else if (cmdId === 'action:pomodoro') {
+                    setPomodoroActive(true);
+                } else if (paneMap[cmdId]) {
+                    const newPaneId = generateId();
+                    contentDataRef.current[newPaneId] = { contentType: paneMap[cmdId], contentId: paneMap[cmdId] };
+                    addPaneOrTab(newPaneId);
+                }
+            }}
             currentPath={currentPath}
             folderStructure={folderStructure}
         />

@@ -75,7 +75,11 @@ export const useActivityTracker = () => {
         };
 
         try {
-            await (window as any).api?.trackActivity?.(activity);
+            await (window as any).api?.logActivity?.({
+                type: activity.type,
+                data: activity.data,
+                sessionId: activity.sessionId,
+            });
         } catch (err) {
             console.error('Failed to track activity:', err);
         }

@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import {
     Folder, File, Globe, ChevronRight, Settings, Edit,
     Terminal, Image, Trash, Users, Plus, Minus, ArrowUp, MessageSquare,
-    X, Wrench, FileText, FileJson, BarChart3, Code2, HardDrive, ChevronDown, ChevronUp, ChevronLeft,
+    X, Wrench, FileText, FileJson, BarChart3, Code2, HardDrive, ChevronDown, ChevronUp, ChevronLeft, Columns,
     Sun, Moon, FileStack, Share2, Bot, Zap, GitBranch, Tag, KeyRound, Database, Network,
     Star, Clock, Activity, Lock, Archive, BookOpen, Sparkles, Box, GripVertical, Play,
     Search, RefreshCw, Download, Upload, Copy, Check, AlertCircle, Info, Eye, EyeOff,
@@ -407,8 +407,11 @@ const Sidebar = (props: any) => {
 
     const createFileWithExtension = (ext: string) => {
         setCodeFileDropdownOpen(false);
-        if (createUntitledTextFile) {
-            createUntitledTextFile();
+        const docTypes = { docx: 'docx', xlsx: 'xlsx', pptx: 'pptx', tex: 'tex', csv: 'csv' };
+        if (docTypes[ext] && createNewDocument) {
+            createNewDocument(docTypes[ext]);
+        } else if (createUntitledTextFile) {
+            createUntitledTextFile(ext);
         }
     };
 
@@ -2313,9 +2316,10 @@ const renderWebsiteList = () => {
         );
     };
 
-    const renderWebsiteGroupHeader = (label: string, count: number, isExpanded: boolean, onToggle: () => void, color: string, icon?: React.ReactNode) => (
+    const renderWebsiteGroupHeader = (label: string, count: number, isExpanded: boolean, onToggle: () => void, color: string, icon?: React.ReactNode, contextDomain?: string) => (
         <button
             onClick={onToggle}
+            onContextMenu={contextDomain ? (e) => { e.preventDefault(); e.stopPropagation(); setWebsiteContextMenu({ x: e.clientX, y: e.clientY, url: `https://${contextDomain}`, title: contextDomain }); } : undefined}
             className={`flex items-center gap-1.5 px-2 py-1 w-full text-left hover:bg-white/5 transition-all ${isExpanded ? 'bg-white/[0.03]' : ''}`}
         >
             <ChevronRight size={10} className={`text-gray-400 flex-shrink-0 transform transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
@@ -2353,7 +2357,7 @@ const renderWebsiteList = () => {
                     try {
                         const u = new URL(item.url);
                         const domain = getDomain(item.url);
-                        const seg = u.pathname.split('/').filter(Boolean)[0] || '';
+                        const seg = (u.pathname.split('/').filter(Boolean)[0] || '').toLowerCase();
                         if (!domainPathSegments.has(domain)) domainPathSegments.set(domain, new Set());
                         if (seg) domainPathSegments.get(domain)!.add(seg);
                     } catch {}
@@ -2363,7 +2367,7 @@ const renderWebsiteList = () => {
                     try {
                         const u = new URL(url);
                         const domain = getDomain(url);
-                        const seg = u.pathname.split('/').filter(Boolean)[0] || '';
+                        const seg = (u.pathname.split('/').filter(Boolean)[0] || '').toLowerCase();
                         const segments = domainPathSegments.get(domain);
                         if (seg && segments && segments.size > 1) {
                             return `${domain}/${seg}`;
@@ -2412,12 +2416,12 @@ const renderWebsiteList = () => {
                                     {!openBrowsersCollapsed && filteredBrowsers.map(b => renderWebsiteItem(b, { showDomain: true }))}
                                 </div>
                             )}
-                            {filteredBookmarks.length > 0 && (
-                                <div className="border-b theme-border">
-                                    {renderWebsiteGroupHeader('Bookmarks', filteredBookmarks.length, !bookmarksCollapsed, () => setBookmarksCollapsed(!bookmarksCollapsed), 'text-yellow-400', <Star size={10} className="text-yellow-400" />)}
-                                    {!bookmarksCollapsed && filteredBookmarks.map(b => renderWebsiteItem(b, { showDomain: true }))}
-                                </div>
-                            )}
+                            <div className="border-b theme-border">
+                                {renderWebsiteGroupHeader('Bookmarks', filteredBookmarks.length, !bookmarksCollapsed, () => setBookmarksCollapsed(!bookmarksCollapsed), 'text-yellow-400', <Star size={10} className="text-yellow-400" />)}
+                                {!bookmarksCollapsed && (filteredBookmarks.length > 0 ? filteredBookmarks.map(b => renderWebsiteItem(b, { showDomain: true })) : (
+                                    <div className="px-4 py-2 text-[10px] text-gray-500">No bookmarks yet — right-click a site to add</div>
+                                ))}
+                            </div>
                             {filteredCommon.length > 0 && (
                                 <div className="border-b theme-border">
                                     {renderWebsiteGroupHeader('Frequent', filteredCommon.length, !commonSitesCollapsed, () => setCommonSitesCollapsed(!commonSitesCollapsed), 'text-green-400', <Activity size={10} className="text-green-400" />)}
@@ -2480,26 +2484,56 @@ const renderWebsiteList = () => {
                     )}
 
                     {groupBy === 'domain' && (() => {
-                        const domainGroups = new Map<string, any[]>();
+                        // Group by root domain, then by path segment within
+                        const rootGroups = new Map<string, Map<string, any[]>>();
                         allItems.forEach(item => {
-                            const domain = getDomainGroup(item.url);
-                            if (!domainGroups.has(domain)) domainGroups.set(domain, []);
-                            domainGroups.get(domain)!.push(item);
+                            const domain = getDomain(item.url);
+                            const seg = (() => { try { return (new URL(item.url).pathname.split('/').filter(Boolean)[0] || '').toLowerCase(); } catch { return ''; } })();
+                            if (!rootGroups.has(domain)) rootGroups.set(domain, new Map());
+                            const segKey = seg || '_root';
+                            const segMap = rootGroups.get(domain)!;
+                            if (!segMap.has(segKey)) segMap.set(segKey, []);
+                            segMap.get(segKey)!.push(item);
                         });
-                        return Array.from(domainGroups.entries())
-                            .sort((a, b) => b[1].length - a[1].length)
-                            .map(([domain, items]) => {
+                        return Array.from(rootGroups.entries())
+                            .sort((a, b) => {
+                                const aCount = Array.from(a[1].values()).reduce((s, v) => s + v.length, 0);
+                                const bCount = Array.from(b[1].values()).reduce((s, v) => s + v.length, 0);
+                                return bCount - aCount;
+                            })
+                            .map(([domain, segMap]) => {
+                                const totalCount = Array.from(segMap.values()).reduce((s, v) => s + v.length, 0);
                                 const isExpanded = historyGroupExpanded.has(domain);
-                                const faviconDomain = domain.split('/')[0];
+                                const segments = Array.from(segMap.entries()).sort((a, b) => b[1].length - a[1].length);
+                                const hasSubgroups = segments.length > 1 || (segments.length === 1 && segments[0][0] !== '_root');
                                 return (
                                     <div key={domain} className="border-b theme-border/50">
                                         {renderWebsiteGroupHeader(
-                                            domain, items.length, isExpanded,
+                                            domain, totalCount, isExpanded,
                                             () => setHistoryGroupExpanded(prev => { const next = new Set(prev); if (next.has(domain)) next.delete(domain); else next.add(domain); return next; }),
                                             'text-purple-300',
-                                            <img src={`https://www.google.com/s2/favicons?domain=${faviconDomain}&sz=32`} alt="" className="w-3.5 h-3.5 flex-shrink-0 rounded" onError={(e: any) => { e.target.style.display = 'none'; }} />
+                                            <img src={`https://www.google.com/s2/favicons?domain=${domain}&sz=32`} alt="" className="w-3.5 h-3.5 flex-shrink-0 rounded" onError={(e: any) => { e.target.style.display = 'none'; }} />,
+                                            domain
                                         )}
-                                        {isExpanded && items.map(item => renderWebsiteItem(item, { indent: true, showTime: true, showType: true }))}
+                                        {isExpanded && hasSubgroups && segments.map(([seg, items]) => {
+                                            const segLabel = seg === '_root' ? domain : `/${seg}`;
+                                            const segKey = `${domain}/${seg}`;
+                                            const segExpanded = historyGroupExpanded.has(segKey);
+                                            return (
+                                                <div key={segKey}>
+                                                    <button
+                                                        onClick={() => setHistoryGroupExpanded(prev => { const next = new Set(prev); if (next.has(segKey)) next.delete(segKey); else next.add(segKey); return next; })}
+                                                        className="flex items-center gap-1.5 pl-6 pr-1.5 py-0.5 w-full text-left hover:bg-white/5 transition-all"
+                                                    >
+                                                        <ChevronRight size={8} className={`text-gray-500 flex-shrink-0 transition-transform ${segExpanded ? 'rotate-90' : ''}`} />
+                                                        <span className="text-[10px] text-gray-400 truncate flex-1">{segLabel}</span>
+                                                        <span className="text-[9px] text-gray-600 flex-shrink-0 tabular-nums">{items.length}</span>
+                                                    </button>
+                                                    {segExpanded && items.map(item => renderWebsiteItem(item, { indent: true, showTime: true, showType: true }))}
+                                                </div>
+                                            );
+                                        })}
+                                        {isExpanded && !hasSubgroups && segments[0]?.[1]?.map(item => renderWebsiteItem(item, { indent: true, showTime: true, showType: true }))}
                                     </div>
                                 );
                             });
@@ -3452,15 +3486,14 @@ const renderWebsiteList = () => {
                         </button>
                         <button
                             onClick={async () => {
-                                const newFolderName = prompt('New folder name:');
-                                if (newFolderName && newFolderName.trim()) {
-                                    const newPath = `${path}/${newFolderName.trim()}`;
-                                    try {
-                                        await (window as any).api?.createDirectory?.(newPath);
-                                        await refreshDirectoryStructureOnly();
-                                    } catch (err) {
-                                        console.error('Failed to create folder:', err);
-                                    }
+                                const newPath = `${path}/New Folder`;
+                                try {
+                                    await (window as any).api?.createDirectory?.(newPath);
+                                    await refreshDirectoryStructureOnly();
+                                    setFilesCollapsed(false);
+                                    setTimeout(() => setRenamingPath(newPath), 100);
+                                } catch (err) {
+                                    console.error('Failed to create folder:', err);
                                 }
                                 setSidebarItemContextMenuPos(null);
                             }}
@@ -3471,15 +3504,23 @@ const renderWebsiteList = () => {
                         </button>
                         <button
                             onClick={async () => {
-                                const newFileName = prompt('New file name:');
-                                if (newFileName && newFileName.trim()) {
-                                    const newFilePath = `${path}/${newFileName.trim()}`;
+                                let newFilePath = `${path}/untitled.txt`;
+                                let i = 1;
+                                while (true) {
                                     try {
-                                        await (window as any).api?.writeFileContent?.(newFilePath, '');
-                                        await refreshDirectoryStructureOnly();
-                                    } catch (err) {
-                                        console.error('Failed to create file:', err);
-                                    }
+                                        const exists = await (window as any).api?.fileExists?.(newFilePath);
+                                        if (!exists) break;
+                                        newFilePath = `${path}/untitled${i}.txt`;
+                                        i++;
+                                    } catch { break; }
+                                }
+                                try {
+                                    await (window as any).api?.writeFileContent?.(newFilePath, '');
+                                    await refreshDirectoryStructureOnly();
+                                    setFilesCollapsed(false);
+                                    setTimeout(() => setRenamingPath(newFilePath), 100);
+                                } catch (err) {
+                                    console.error('Failed to create file:', err);
                                 }
                                 setSidebarItemContextMenuPos(null);
                             }}
@@ -3713,70 +3754,10 @@ const renderFolderList = (structure) => {
                             >
                                 <Settings size={11} />
                             </button>
-                            <button
-                                onClick={(e) => { e.stopPropagation(); handleCreateNewFolder?.(); }}
-                                className="p-1.5 hover:bg-yellow-500/20 rounded transition-all text-gray-400 hover:text-yellow-400"
-                                title="New Folder"
-                            >
-                                <Plus size={11} />
-                            </button>
                         </>
                     )}
                 </div>
                 <div className="flex-1 flex items-stretch justify-end" style={{ position: 'relative', overflow: 'visible' }}>
-                    <button
-                        onClick={async (e) => {
-                            e.stopPropagation();
-                            try {
-                                const result = await (window as any).api.open_directory_picker();
-                                if (result) { switchToPath(result); }
-                            } catch {}
-                        }}
-                        className="flex items-center justify-center w-1/4 py-4 -my-4 hover:bg-yellow-500/20 transition-all text-blue-400"
-                        title="Browse for folder"
-                    >
-                        <FolderPlus size={10} />
-                    </button>
-                    <button
-                        onClick={(e) => { e.stopPropagation(); if (currentPath !== baseDir) goUpDirectory(currentPath, baseDir, switchToPath, setError); }}
-                        disabled={currentPath === baseDir}
-                        className={`flex items-center justify-center px-1 py-4 -my-4 hover:bg-yellow-500/20 transition-all ${currentPath === baseDir ? 'opacity-40' : 'text-gray-400 hover:text-yellow-400'}`}
-                        title="Go up one folder — drop files here to move to parent"
-                        onDragOver={(e) => {
-                            if (currentPath !== baseDir) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                e.dataTransfer.dropEffect = 'move';
-                                (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(234, 179, 8, 0.3)';
-                            }
-                        }}
-                        onDragLeave={(e) => {
-                            (e.currentTarget as HTMLElement).style.backgroundColor = '';
-                        }}
-                        onDrop={async (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            (e.currentTarget as HTMLElement).style.backgroundColor = '';
-                            if (currentPath === baseDir) return;
-                            try {
-                                const data = JSON.parse(e.dataTransfer.getData('application/json') || '{}');
-                                if (data.type === 'file' || data.type === 'folder') {
-                                    const sourcePath = data.id;
-                                    const fileName = getFileName(sourcePath);
-                                    const parentPath = currentPath.substring(0, currentPath.lastIndexOf('/'));
-                                    const destPath = `${parentPath}/${fileName}`;
-                                    if (sourcePath !== destPath && !destPath.startsWith(sourcePath + '/')) {
-                                        await (window as any).api?.renameFile?.(sourcePath, destPath);
-                                        await refreshDirectoryStructureOnly();
-                                    }
-                                }
-                            } catch (err) {
-                                console.error('Failed to move item to parent:', err);
-                            }
-                        }}
-                    >
-                        <ArrowUp size={10} />
-                    </button>
                     <button
                         ref={folderButtonRef}
                         onClick={(e) => {
@@ -4479,8 +4460,23 @@ onDragStart={(e) => {
                         )}
                     </div>
                     <button
+                        onClick={(e) => { e.stopPropagation(); setIsPredictiveTextEnabled?.(!isPredictiveTextEnabled); }}
+                        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); createAndAddPaneNodeToLayout?.({ contentType: 'activity', contentId: 'activity' }); }}
+                        className={`ml-auto flex items-center justify-center w-8 py-4 -my-4 transition-all hover:bg-gray-700/40`}
+                        title={isPredictiveTextEnabled ? "Disable Autocomplete (right-click: Activity Viewer)" : "Enable Autocomplete (right-click: Activity Viewer)"}
+                    >
+                        <BrainCircuit size={12} className={isPredictiveTextEnabled ? 'text-purple-400' : 'text-gray-400'} />
+                    </button>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); createTeamManagementPane?.(); }}
+                        className="flex items-center justify-center w-8 py-4 -my-4 hover:bg-purple-900/30 transition-all"
+                        title="Team Management"
+                    >
+                        <Users size={12} className="text-indigo-400" />
+                    </button>
+                    <button
                         onClick={(e) => { e.stopPropagation(); createNewConversation?.(); setConversationsCollapsed(false); }}
-                        className="ml-auto flex items-center justify-center w-1/4 py-4 -my-4 hover:bg-green-500/20 transition-all"
+                        className="flex items-center justify-center w-1/4 py-4 -my-4 hover:bg-green-500/20 transition-all"
                         title="New Chat"
                     >
                         <MessageSquare size={12} className="text-green-300" />
@@ -4986,23 +4982,8 @@ onDragStart={(e) => {
                                 Open Full Git View
                             </button>
 
-                            {(unstaged.length > 0 || untracked.length > 0 || staged.length > 0) && (
+                            {staged.length > 0 && (
                                 <div className="flex gap-1">
-                                    {(unstaged.length > 0 || untracked.length > 0) && (
-                                        <button
-                                            disabled={gitLoading}
-                                            onClick={async () => {
-                                                for (const file of [...unstaged, ...untracked]) {
-                                                    await (window as any).api?.gitStageFile?.(currentPath, file.path);
-                                                }
-                                                await loadGitStatus();
-                                            }}
-                                            className="flex-1 px-2 py-1 text-[10px] bg-teal-600/20 text-teal-400 hover:bg-teal-600/30 rounded flex items-center justify-center gap-1"
-                                            title="Stage all changes"
-                                        >
-                                            <Plus size={10} /> Stage All
-                                        </button>
-                                    )}
                                     {staged.length > 0 && (
                                         <button
                                             disabled={gitLoading}
@@ -5548,38 +5529,23 @@ return (
                     {terminalDropdownOpen && (
                         <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[9999] py-1 min-w-[140px]">
                             <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Right-click to set default</div>
-                            <button
-                                onClick={() => { createNewTerminal?.('system'); setTerminalDropdownOpen(false); }}
-                                onContextMenu={(e) => { e.preventDefault(); setDefaultNewTerminalType('system'); setTerminalDropdownOpen(false); }}
-                                className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewTerminalType === 'system' ? 'bg-green-900/30 text-green-300' : 'theme-text-primary'}`}
-                            >
-                                <Terminal size={11} className="text-green-400" /><span>Bash</span>
-                                {defaultNewTerminalType === 'system' && <Star size={8} className="text-yellow-400 ml-auto" />}
-                            </button>
-                            {aiEnabled && (
-                                <button
-                                    onClick={() => { createNewTerminal?.('npcsh'); setTerminalDropdownOpen(false); }}
-                                    onContextMenu={(e) => { e.preventDefault(); setDefaultNewTerminalType('npcsh'); setTerminalDropdownOpen(false); }}
-                                    className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewTerminalType === 'npcsh' ? 'bg-purple-900/30 text-purple-300' : 'theme-text-primary'}`}
-                                >
-                                    <Sparkles size={11} className="text-purple-400" /><span>npcsh</span>
-                                    {defaultNewTerminalType === 'npcsh' && <Star size={8} className="text-yellow-400 ml-auto" />}
-                                </button>
-                            )}
-                            <div className="border-t theme-border my-0.5" />
-                            <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Agents</div>
                             {(() => {
+                                const allTerminals = [
+                                    { name: 'Bash', command: 'system' },
+                                    { name: 'npcsh', command: 'npcsh' },
+                                ];
                                 let agents;
                                 try { agents = JSON.parse(localStorage.getItem('incognide_terminalAgents') || '[]'); } catch { agents = []; }
-                                if (!agents.length) agents = [{"name":"npcsh","command":"npcsh"},{"name":"opencode","command":"opencode"},{"name":"nanocoder","command":"nanocoder"},{"name":"claude","command":"claude"}];
-                                return agents.map((agent: any, idx: number) => (
+                                if (!agents.length) agents = [{"name":"opencode","command":"opencode"},{"name":"nanocoder","command":"nanocoder"}];
+                                const all = [...allTerminals, ...agents.filter((a: any) => a.command !== 'system' && a.command !== 'npcsh')];
+                                return all.map((item: any, idx: number) => (
                                     <button
                                         key={idx}
-                                        onClick={() => { createNewTerminal?.(agent.command); setTerminalDropdownOpen(false); }}
-                                        onContextMenu={(e) => { e.preventDefault(); setDefaultNewTerminalType(agent.command); setTerminalDropdownOpen(false); }}
-                                        className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewTerminalType === agent.command ? 'bg-cyan-900/30 text-cyan-300' : 'theme-text-primary'}`}
+                                        onClick={() => { createNewTerminal?.(item.command); setTerminalDropdownOpen(false); }}
+                                        onContextMenu={(e) => { e.preventDefault(); setDefaultNewTerminalType(item.command); setTerminalDropdownOpen(false); }}
+                                        className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewTerminalType === item.command ? 'bg-green-900/30 text-green-300' : 'theme-text-primary'}`}
                                     >
-                                        <Bot size={11} className="text-cyan-400" /><span>{agent.name}</span>
+                                        <Terminal size={11} /><span>{item.name}</span>
                                         {defaultNewTerminalType === agent.command && <Star size={8} className="text-yellow-400 ml-auto" />}
                                     </button>
                                 ));
