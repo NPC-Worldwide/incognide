@@ -105,6 +105,7 @@ const WebBrowserViewer = memo(({
     const [importStatusCookies, setImportStatusCookies] = useState<string | null>(null);
 
     const SEARCH_ENGINES = {
+        sibiji: { name: 'Sibiji', url: 'https://sibiji.com/search?q=' },
         duckduckgo: { name: 'DuckDuckGo', url: 'https://duckduckgo.com/?q=' },
         startpage: { name: 'Startpage', url: 'https://www.startpage.com/sp/search?query=' },
         google: { name: 'Google', url: 'https://www.google.com/search?q=' },
@@ -112,8 +113,20 @@ const WebBrowserViewer = memo(({
         brave: { name: 'Brave', url: 'https://search.brave.com/search?q=' },
     };
     const [searchEngine, setSearchEngine] = useState(() => {
-        return localStorage.getItem('npc-browser-search-engine') || 'duckduckgo';
+        return localStorage.getItem('npc-browser-search-engine') || 'sibiji';
     });
+    useEffect(() => {
+        const onStorage = (e: StorageEvent) => {
+            if (e.key === 'npc-browser-search-engine' && e.newValue) setSearchEngine(e.newValue);
+        };
+        window.addEventListener('storage', onStorage);
+        const onCustom = (e: any) => { if (e.detail) setSearchEngine(e.detail); };
+        window.addEventListener('search-engine-changed' as any, onCustom);
+        return () => {
+            window.removeEventListener('storage', onStorage);
+            window.removeEventListener('search-engine-changed' as any, onCustom);
+        };
+    }, []);
 
     const isManualNavigationRef = useRef(false);
     const previousUrlRef = useRef<string | null>(null);
@@ -126,7 +139,17 @@ const WebBrowserViewer = memo(({
 
     const paneData = contentDataRef.current[nodeId];
 
-    const initialUrlRef = useRef(paneData?.browserUrl || paneData?.contentId || 'about:blank');
+    const homepageKey = currentPath ? `npc-browser-homepage:${currentPath}` : 'npc-browser-homepage:global';
+    const promptedKey = currentPath ? `npc-browser-prompted:${currentPath}` : 'npc-browser-prompted:global';
+    const getHomepage = () => localStorage.getItem(homepageKey) || localStorage.getItem('npc-browser-homepage:global') || '';
+    const [showFirstRun, setShowFirstRun] = useState(() => {
+        if (paneData?.browserUrl || paneData?.contentId) return false;
+        return !localStorage.getItem(promptedKey);
+    });
+    const [firstRunHomepage, setFirstRunHomepage] = useState('https://sibiji.com');
+    const [firstRunEngine, setFirstRunEngine] = useState(() => localStorage.getItem('npc-browser-search-engine') || 'sibiji');
+
+    const initialUrlRef = useRef(paneData?.browserUrl || paneData?.contentId || getHomepage() || 'about:blank');
 
     const projectPartition = currentPath
         ? `project-${currentPath.replace(/[^a-zA-Z0-9]/g, '-').substring(0, 50)}`
@@ -1485,8 +1508,61 @@ const WebBrowserViewer = memo(({
 
     return (
         <div
-            className="flex flex-col flex-1 w-full min-h-0 theme-bg-secondary"
+            className="flex flex-col flex-1 w-full min-h-0 theme-bg-secondary relative"
         >
+            {showFirstRun && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60">
+                    <div className="theme-bg-secondary border theme-border rounded-lg p-5 w-[420px] shadow-2xl">
+                        <div className="text-sm font-medium theme-text-primary mb-3">Set up this browser</div>
+                        <label className="block text-xs theme-text-muted mb-1">Homepage{currentPath ? ` for ${currentPath.split('/').pop()}` : ' (global)'}</label>
+                        <input
+                            type="text"
+                            value={firstRunHomepage}
+                            onChange={(e) => setFirstRunHomepage(e.target.value)}
+                            className="w-full px-2 py-1.5 mb-3 text-xs theme-input rounded"
+                            placeholder="https://..."
+                        />
+                        <label className="block text-xs theme-text-muted mb-1">Default search engine</label>
+                        <select
+                            value={firstRunEngine}
+                            onChange={(e) => setFirstRunEngine(e.target.value)}
+                            className="w-full px-2 py-1.5 mb-4 text-xs theme-input rounded"
+                        >
+                            {Object.entries(SEARCH_ENGINES).map(([k, v]) => (
+                                <option key={k} value={k}>{v.name}</option>
+                            ))}
+                        </select>
+                        <div className="flex justify-end gap-2">
+                            <button
+                                onClick={() => {
+                                    localStorage.setItem(promptedKey, '1');
+                                    setShowFirstRun(false);
+                                }}
+                                className="px-3 py-1 text-xs theme-hover rounded theme-text-muted"
+                            >Skip</button>
+                            <button
+                                onClick={() => {
+                                    if (firstRunHomepage.trim()) {
+                                        localStorage.setItem(homepageKey, firstRunHomepage.trim());
+                                        if (!currentPath) localStorage.setItem('npc-browser-homepage:global', firstRunHomepage.trim());
+                                    }
+                                    localStorage.setItem('npc-browser-search-engine', firstRunEngine);
+                                    window.dispatchEvent(new CustomEvent('search-engine-changed', { detail: firstRunEngine }));
+                                    localStorage.setItem(promptedKey, '1');
+                                    setShowFirstRun(false);
+                                    if (firstRunHomepage.trim() && webviewRef.current) {
+                                        const url = firstRunHomepage.trim().startsWith('http') ? firstRunHomepage.trim() : `https://${firstRunHomepage.trim()}`;
+                                        webviewRef.current.src = url;
+                                        setCurrentUrl(url);
+                                        setUrlInput(url);
+                                    }
+                                }}
+                                className="px-3 py-1 text-xs bg-cyan-600 hover:bg-cyan-500 text-white rounded"
+                            >Save</button>
+                        </div>
+                    </div>
+                </div>
+            )}
             <div
                 className="flex theme-bg-tertiary border-b theme-border flex-shrink-0 cursor-move"
                 draggable={true}
