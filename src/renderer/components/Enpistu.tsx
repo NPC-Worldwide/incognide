@@ -736,6 +736,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const [topBarWidth, setTopBarWidth] = useState(1000);
     const [searchExpanded, setSearchExpanded] = useState(false);
     const [webSearchExpanded, setWebSearchExpanded] = useState(false);
+    const [engineMenuOpen, setEngineMenuOpen] = useState(false);
     const collapsedSearchRef = useRef<HTMLInputElement>(null);
     const collapsedWebSearchRef = useRef<HTMLInputElement>(null);
 
@@ -8623,21 +8624,38 @@ const renderMainContent = () => {
             ) : (
             <div data-tutorial="web-search-bar" className="flex items-center gap-2 w-32 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-cyan-400 focus-within:ring-1 focus-within:ring-cyan-400/30 transition-all">
                 <div className="relative flex-shrink-0">
-                    <Globe size={14} className="text-cyan-400 pointer-events-none" />
-                    <select
-                        value={webSearchProvider}
-                        onChange={(e) => {
-                            setWebSearchProvider(e.target.value);
-                            localStorage.setItem('npc-browser-search-engine', e.target.value);
-                            window.dispatchEvent(new CustomEvent('search-engine-changed', { detail: e.target.value }));
-                        }}
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setEngineMenuOpen(prev => !prev); }}
                         title={`Search engine: ${WEB_SEARCH_PROVIDERS[webSearchProvider as WebSearchProvider]?.name || webSearchProvider}`}
-                        className="absolute inset-0 opacity-0 cursor-pointer"
+                        className="flex items-center gap-0.5 theme-hover rounded px-0.5 py-0.5 cursor-pointer"
                     >
-                        {Object.entries(WEB_SEARCH_PROVIDERS).map(([k, v]) => (
-                            <option key={k} value={k}>{v.name}</option>
-                        ))}
-                    </select>
+                        <Globe size={14} className="text-cyan-400" />
+                        <ChevronDown size={10} className="text-gray-400" />
+                    </button>
+                    {engineMenuOpen && (
+                        <>
+                            <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setEngineMenuOpen(false)} />
+                            <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded-lg shadow-xl z-50 min-w-[140px] py-1">
+                                <div className="px-3 py-1 text-[10px] theme-text-muted uppercase tracking-wide">Search Engine</div>
+                                {Object.entries(WEB_SEARCH_PROVIDERS).map(([k, v]) => (
+                                    <button
+                                        key={k}
+                                        onClick={() => {
+                                            setWebSearchProvider(k);
+                                            localStorage.setItem('npc-browser-search-engine', k);
+                                            window.dispatchEvent(new CustomEvent('search-engine-changed', { detail: k }));
+                                            setEngineMenuOpen(false);
+                                        }}
+                                        className={`flex items-center justify-between w-full px-3 py-1.5 text-xs text-left theme-hover ${webSearchProvider === k ? 'text-cyan-400' : 'theme-text-primary'}`}
+                                    >
+                                        <span>{v.name}</span>
+                                        {webSearchProvider === k && <Check size={12} />}
+                                    </button>
+                                ))}
+                            </div>
+                        </>
+                    )}
                 </div>
                 <input
                     type="text"
