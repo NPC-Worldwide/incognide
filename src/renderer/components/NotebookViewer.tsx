@@ -110,7 +110,8 @@ const NotebookViewer = ({
     const [collapsedCells, setCollapsedCells] = useState<Set<number>>(new Set());
     const [editingMarkdownCell, setEditingMarkdownCell] = useState<number | null>(null);
 
-    const [availableKernels, setAvailableKernels] = useState<Array<{name: string, displayName: string, language: string}>>([]);
+    const [availableKernels, setAvailableKernels] = useState<Array<{name: string, displayName: string, language: string, pythonPath?: string, needsRegistration?: boolean, needsIpykernel?: boolean}>>([]);
+    const [installingIpykernel, setInstallingIpykernel] = useState<string | null>(null);
     const [selectedKernel, setSelectedKernel] = useState<string>('python3');
     const [kernelId, setKernelId] = useState<string | null>(null);
     const [kernelStatus, setKernelStatus] = useState<'disconnected' | 'starting' | 'connected' | 'busy'>('disconnected');
@@ -234,18 +235,18 @@ const NotebookViewer = ({
                     setPythonPath(checkResult.pythonPath);
                 }
 
-                if (checkResult?.installed) {
-
-                    const result = await (window as any).api.jupyterListKernels({ workspacePath });
-                    if (result?.success && result.kernels) {
-                        setAvailableKernels(result.kernels);
-                        if (result.kernels.length > 0 && !selectedKernel) {
-                            setSelectedKernel(result.kernels[0].name);
-                        }
+                // Always list kernels — discovered envs show up regardless of whether
+                // the workspace python has jupyter installed
+                const result = await (window as any).api.jupyterListKernels({ workspacePath });
+                if (result?.success && result.kernels) {
+                    setAvailableKernels(result.kernels);
+                    if (result.kernels.length > 0 && !selectedKernel) {
+                        const firstReady = result.kernels.find((k: any) => !k.needsIpykernel);
+                        setSelectedKernel((firstReady || result.kernels[0]).name);
                     }
-                    if (result?.pythonPath) {
-                        setPythonPath(result.pythonPath);
-                    }
+                }
+                if (result?.pythonPath) {
+                    setPythonPath(result.pythonPath);
                 }
             } catch (e) {
                 console.error('Failed to check/load kernels:', e);
@@ -319,10 +320,13 @@ const NotebookViewer = ({
         const newKernelId = `kernel_${nodeId}_${Date.now()}`;
 
         try {
+            const selectedKernelObj = availableKernels.find(k => k.name === selectedKernel);
             const result = await (window as any).api.jupyterStartKernel({
                 kernelId: newKernelId,
                 kernelName: selectedKernel,
-                workspacePath
+                workspacePath,
+                pythonOverridePath: selectedKernelObj?.pythonPath,
+                needsRegistration: selectedKernelObj?.needsRegistration,
             });
 
             if (result?.success) {
@@ -368,6 +372,7 @@ const NotebookViewer = ({
                 setKernelId(null);
                 kernelIdRef.current = null;
                 setKernelStatus('disconnected');
+                if (data.error) setError(`Kernel stopped: ${data.error}`);
             }
         });
         return () => unsubscribe?.();
@@ -1386,17 +1391,43 @@ except Exception as e:
                                         </>
                                     ) : (
                                         <>
-                                            <div className="px-3 py-1 text-[10px] text-gray-500 uppercase">Select Kernel</div>
+                                            <div className="px-3 py-1 text-[10px] text-gray-500 uppercase tracking-wider">Kernel</div>
                                             {availableKernels.map(k => (
-                                                <button
-                                                    key={k.name}
-                                                    onClick={() => { setSelectedKernel(k.name); setShowKernelMenu(false); }}
-                                                    className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-700 flex items-center gap-2 ${selectedKernel === k.name ? 'text-green-400' : 'text-gray-300'}`}
-                                                >
-                                                    <Zap size={12} />
-                                                    {k.displayName}
-                                                </button>
+                                                <div key={k.name} className="group flex items-center hover:bg-gray-700/60 mx-1 rounded">
+                                                    <button
+                                                        onClick={() => { if (!k.needsIpykernel) { setSelectedKernel(k.name); setShowKernelMenu(false); } }}
+                                                        className={`flex-1 text-left px-2 py-1.5 text-sm flex items-center gap-2 min-w-0 ${selectedKernel === k.name ? 'text-green-400' : k.needsIpykernel ? 'text-gray-600' : 'text-gray-300'}`}
+                                                    >
+                                                        <span className="truncate flex-1">{k.displayName}</span>
+                                                        {selectedKernel === k.name && !k.needsIpykernel && <span className="text-green-400 text-[10px]">✓</span>}
+                                                    </button>
+                                                    {k.needsIpykernel && k.pythonPath && (
+                                                        <button
+                                                            onClick={async (e) => {
+                                                                e.stopPropagation();
+                                                                setInstallingIpykernel(k.name);
+                                                                const result = await (window as any).api.jupyterInstallIpykernel({ pythonPath: k.pythonPath });
+                                                                setInstallingIpykernel(null);
+                                                                if (result?.success) {
+                                                                    const refreshed = await (window as any).api.jupyterListKernels({ workspacePath });
+                                                                    if (refreshed?.kernels) setAvailableKernels(refreshed.kernels);
+                                                                } else {
+                                                                    setError(result?.error || 'Failed to install ipykernel');
+                                                                    setShowKernelMenu(false);
+                                                                }
+                                                            }}
+                                                            disabled={installingIpykernel === k.name}
+                                                            title="Install ipykernel into this environment"
+                                                            className="shrink-0 px-2 py-1 text-[10px] text-gray-500 hover:text-orange-400 disabled:opacity-40"
+                                                        >
+                                                            {installingIpykernel === k.name ? <Loader size={10} className="animate-spin" /> : '+ ipykernel'}
+                                                        </button>
+                                                    )}
+                                                </div>
                                             ))}
+                                            {availableKernels.length === 0 && (
+                                                <div className="px-3 py-2 text-xs text-gray-500">No environments found</div>
+                                            )}
                                             <div className="border-t border-gray-700 my-1" />
                                             {kernelStatus === 'disconnected' ? (
                                                 <button

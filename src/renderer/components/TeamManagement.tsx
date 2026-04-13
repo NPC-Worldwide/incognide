@@ -700,7 +700,6 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
         { id: 'knowledge', label: 'Knowledge', icon: <GitBranch size={16} /> },
         { id: 'cron', label: 'Cron', icon: <Clock size={16} /> },
         { id: 'mcp', label: 'MCP', icon: <Server size={16} /> },
-        { id: 'models', label: 'SQL Models', icon: <Cpu size={16} /> },
         { id: 'databases', label: 'Databases', icon: <Database size={16} /> },
     ];
 
@@ -785,52 +784,79 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 overflow-auto p-6">
-                    {activeTab === 'context' && (
-                        <CtxEditor
-                            isOpen={true}
-                            onClose={() => {}}
-                            currentPath={currentPath}
-                            embedded={true}
-                            isGlobal={isGlobal}
-                            globalPath={globalPath}
-                        />
-                    )}
-                    {activeTab === 'npcs' && (
-                        <div className="space-y-4">
-                            {isGlobal && (
-                                <div className="flex items-center gap-2">
-                                    <NPCTeamSync globalPath={globalPath} />
-                                    <button
-                                        onClick={() => setResyncModal(true)}
-                                        className="px-3 py-1.5 rounded text-sm font-medium theme-bg-tertiary theme-hover theme-text-secondary transition flex items-center gap-1"
-                                        title="Re-sync global team from package defaults"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
-                                        Re-sync
-                                    </button>
+                <div className="flex-1 flex flex-col overflow-hidden">
+                    {(activeTab === 'memory' || activeTab === 'cron') ? null : (
+                        <div className="flex-1 overflow-auto p-6">
+                            {activeTab === 'context' && (
+                                <CtxEditor
+                                    isOpen={true}
+                                    onClose={() => {}}
+                                    currentPath={currentPath}
+                                    embedded={true}
+                                    isGlobal={isGlobal}
+                                    globalPath={globalPath}
+                                />
+                            )}
+                            {activeTab === 'npcs' && (
+                                <div className="space-y-4">
+                                    {isGlobal && (
+                                        <div className="flex items-center gap-2">
+                                            <NPCTeamSync globalPath={globalPath} />
+                                            <button
+                                                onClick={() => setResyncModal(true)}
+                                                className="px-3 py-1.5 rounded text-sm font-medium theme-bg-tertiary theme-hover theme-text-secondary transition flex items-center gap-1"
+                                                title="Re-sync global team from package defaults"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+                                                Re-sync
+                                            </button>
+                                        </div>
+                                    )}
+                                    <NPCTeamMenu
+                                        isOpen={true}
+                                        onClose={() => {}}
+                                        currentPath={currentPath}
+                                        startNewConversation={startNewConversation}
+                                        embedded={true}
+                                        isGlobal={isGlobal}
+                                        globalPath={globalPath}
+                                    />
                                 </div>
                             )}
-                            <NPCTeamMenu
-                                isOpen={true}
-                                onClose={() => {}}
-                                currentPath={currentPath}
-                                startNewConversation={startNewConversation}
-                                embedded={true}
-                                isGlobal={isGlobal}
-                                globalPath={globalPath}
-                            />
+                            {activeTab === 'jinxes' && (
+                                <JinxMenu
+                                    isOpen={true}
+                                    onClose={() => {}}
+                                    currentPath={currentPath}
+                                    embedded={true}
+                                    isGlobal={isGlobal}
+                                    globalPath={globalPath}
+                                />
+                            )}
+                            {activeTab === 'knowledge' && (
+                                <Suspense fallback={<div className="flex items-center justify-center py-12 theme-text-muted">Loading...</div>}>
+                                    <KnowledgeGraphEditor isModal={false} />
+                                </Suspense>
+                            )}
+                            {activeTab === 'mcp' && (
+                                <McpManager
+                                    currentPath={currentPath}
+                                    embedded={true}
+                                />
+                            )}
+                            {activeTab === 'models' && (
+                                <SqlModelsContent
+                                    currentPath={currentPath}
+                                    isGlobal={isGlobal}
+                                />
+                            )}
+                            {activeTab === 'databases' && (
+                                <DatabasesContent
+                                    currentPath={currentPath}
+                                    isGlobal={isGlobal}
+                                />
+                            )}
                         </div>
-                    )}
-                    {activeTab === 'jinxes' && (
-                        <JinxMenu
-                            isOpen={true}
-                            onClose={() => {}}
-                            currentPath={currentPath}
-                            embedded={true}
-                            isGlobal={isGlobal}
-                            globalPath={globalPath}
-                        />
                     )}
                     {activeTab === 'memory' && (
                         <MemoryManager
@@ -838,13 +864,8 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                             onClose={() => {}}
                             currentPath={currentPath}
                             currentNpc={currentNpc}
-                            isPane={false}
+                            isPane={true}
                         />
-                    )}
-                    {activeTab === 'knowledge' && (
-                        <Suspense fallback={<div className="flex items-center justify-center py-12 theme-text-muted">Loading...</div>}>
-                            <KnowledgeGraphEditor isModal={false} />
-                        </Suspense>
                     )}
                     {activeTab === 'cron' && (
                         <CronDaemonPanel
@@ -853,25 +874,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                             currentPath={currentPath}
                             npcList={npcList}
                             jinxList={jinxList}
-                            isPane={false}
-                            isGlobal={isGlobal}
-                        />
-                    )}
-                    {activeTab === 'mcp' && (
-                        <McpManager
-                            currentPath={currentPath}
-                            embedded={true}
-                        />
-                    )}
-                    {activeTab === 'models' && (
-                        <SqlModelsContent
-                            currentPath={currentPath}
-                            isGlobal={isGlobal}
-                        />
-                    )}
-                    {activeTab === 'databases' && (
-                        <DatabasesContent
-                            currentPath={currentPath}
+                            isPane={true}
                             isGlobal={isGlobal}
                         />
                     )}

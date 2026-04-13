@@ -35,50 +35,176 @@ function register(ctx) {
       return 'python3';
   };
 
+  const discoverPythonEnvironments = async (workspacePath) => {
+      const discovered = [];
+      const isWindows = process.platform === 'win32';
+      const binDir = isWindows ? 'Scripts' : 'bin';
+      const home = os.homedir();
+
+      const tryPython = async (pythonPath, label, source) => {
+          try {
+              await fsPromises.access(pythonPath, fs.constants.X_OK);
+              if (!discovered.find(e => e.pythonPath === pythonPath)) {
+                  discovered.push({ pythonPath, label, source });
+              }
+          } catch {}
+      };
+
+      // Local venv dirs in workspace
+      if (workspacePath) {
+          for (const venvDir of ['.venv', 'venv', '.env', 'env']) {
+              for (const bin of ['python3', 'python']) {
+                  await tryPython(path.join(workspacePath, venvDir, binDir, bin), `${venvDir} (local)`, 'local');
+              }
+          }
+      }
+
+      // pyenv versions
+      const pyenvRoot = process.env.PYENV_ROOT || path.join(home, '.pyenv');
+      try {
+          const versions = await fsPromises.readdir(path.join(pyenvRoot, 'versions'));
+          for (const v of versions) {
+              await tryPython(path.join(pyenvRoot, 'versions', v, 'bin', 'python3'), `pyenv: ${v}`, 'pyenv');
+          }
+      } catch {}
+
+      // uv managed pythons
+      for (const uvDir of [
+          path.join(home, '.local', 'share', 'uv', 'python'),
+          path.join(home, 'Library', 'Application Support', 'uv', 'python'),
+      ]) {
+          try {
+              const versions = await fsPromises.readdir(uvDir);
+              for (const v of versions) {
+                  await tryPython(path.join(uvDir, v, 'bin', 'python3'), `uv: ${v}`, 'uv');
+              }
+          } catch {}
+      }
+
+      // conda environments
+      try {
+          const condaResult = await new Promise((resolve) => {
+              const proc = spawn('conda', ['env', 'list', '--json'], { env: { ...process.env } });
+              let out = '';
+              proc.stdout.on('data', d => { out += d.toString(); });
+              proc.on('close', () => { try { resolve(JSON.parse(out)); } catch { resolve(null); } });
+              proc.on('error', () => resolve(null));
+          });
+          if (condaResult?.envs) {
+              for (const envPath of condaResult.envs) {
+                  const name = path.basename(envPath);
+                  for (const bin of ['python3', 'python']) {
+                      await tryPython(path.join(envPath, binDir, bin), `conda: ${name}`, 'conda');
+                  }
+              }
+          }
+      } catch {}
+
+      return discovered;
+  };
+
   ipcMain.handle('jupyter:listKernels', async (_, { workspacePath } = {}) => {
       try {
-          const pythonPath = await getWorkspacePythonPath(workspacePath);
+          const workspacePythonPath = await getWorkspacePythonPath(workspacePath);
 
-          return new Promise((resolve) => {
-
-              const proc = spawn(pythonPath, ['-m', 'jupyter', 'kernelspec', 'list', '--json'], {
+          // Get formally registered kernels — use workspace python, not a fixed binary,
+          // so we pick up whatever jupyter is on PATH/in the env.
+          const registeredKernels = await new Promise((resolve) => {
+              const proc = spawn(workspacePythonPath, ['-m', 'jupyter', 'kernelspec', 'list', '--json'], {
                   env: { ...process.env },
                   cwd: workspacePath || process.cwd()
               });
-
               let stdout = '';
               proc.stdout.on('data', (data) => { stdout += data.toString(); });
-
               proc.on('close', (code) => {
                   if (code === 0 && stdout) {
                       try {
                           const result = JSON.parse(stdout);
-                          const kernels = Object.entries(result.kernelspecs || {}).map(([name, spec]) => ({
+                          resolve(Object.entries(result.kernelspecs || {}).map(([name, spec]) => ({
                               name,
                               displayName: spec.spec?.display_name || name,
-                              language: spec.spec?.language || 'unknown'
-                          }));
-                          resolve({ success: true, kernels, pythonPath });
-                      } catch (e) {
-                          resolve({ success: true, kernels: [{ name: 'python3', displayName: 'Python 3', language: 'python' }], pythonPath });
-                      }
-                  } else {
-                      resolve({ success: true, kernels: [{ name: 'python3', displayName: 'Python 3', language: 'python' }], pythonPath });
-                  }
+                              language: spec.spec?.language || 'unknown',
+                              resourceDir: spec.resource_dir,
+                          })));
+                      } catch { resolve([]); }
+                  } else { resolve([]); }
               });
-
-              proc.on('error', () => {
-                  resolve({ success: true, kernels: [{ name: 'python3', displayName: 'Python 3', language: 'python' }], pythonPath });
-              });
+              proc.on('error', () => resolve([]));
           });
+
+          // Discover unregistered python environments
+          const discovered = await discoverPythonEnvironments(workspacePath);
+
+          // Get the python path embedded in each registered kernelspec so we can deduplicate
+          const registeredPythons = new Set();
+          for (const k of registeredKernels) {
+              if (k.resourceDir) {
+                  try {
+                      const kernelJson = JSON.parse(await fsPromises.readFile(path.join(k.resourceDir, 'kernel.json'), 'utf8'));
+                      const argv0 = kernelJson.argv?.[0];
+                      if (argv0) registeredPythons.add(fs.realpathSync(argv0));
+                  } catch {}
+              }
+          }
+
+          // Add discovered envs that aren't already registered
+          const extraKernels = [];
+          for (const env of discovered) {
+              try {
+                  const realPath = fs.realpathSync(env.pythonPath);
+                  if (registeredPythons.has(realPath)) continue;
+              } catch {}
+              const hasIpykernel = await new Promise((resolve) => {
+                  const proc = spawn(env.pythonPath, ['-c', 'import ipykernel'], { env: { ...process.env } });
+                  proc.on('close', code => resolve(code === 0));
+                  proc.on('error', () => resolve(false));
+              });
+              const safeName = `incognide_${env.source}_${path.basename(path.dirname(path.dirname(env.pythonPath)))}`.replace(/[^a-z0-9_]/gi, '_');
+              extraKernels.push({
+                  name: safeName,
+                  displayName: env.label,
+                  language: 'python',
+                  pythonPath: env.pythonPath,
+                  needsRegistration: true,
+                  needsIpykernel: !hasIpykernel,
+              });
+          }
+
+          const kernels = registeredKernels.length > 0 || extraKernels.length > 0
+              ? [...registeredKernels, ...extraKernels]
+              : [{ name: 'python3', displayName: 'Python 3', language: 'python' }];
+
+          return { success: true, kernels, pythonPath: workspacePythonPath };
       } catch (err) {
           return { success: false, error: err.message, kernels: [] };
       }
   });
 
-  ipcMain.handle('jupyter:startKernel', async (_, { kernelId, kernelName = 'python3', workspacePath }) => {
+  ipcMain.handle('jupyter:startKernel', async (_, { kernelId, kernelName = 'python3', workspacePath, pythonOverridePath, needsRegistration }) => {
       try {
-          const pythonPath = await getWorkspacePythonPath(workspacePath);
+          let pythonPath = pythonOverridePath || await getWorkspacePythonPath(workspacePath);
+
+          // Auto-register unregistered envs before starting
+          if (needsRegistration && pythonOverridePath) {
+              log(`[Jupyter] Auto-registering kernel: ${kernelName} with ${pythonOverridePath}`);
+              const displayName = kernelName.replace(/_/g, ' ');
+              const isUvManaged = pythonOverridePath.includes(`${path.sep}uv${path.sep}python${path.sep}`);
+              const regResult = await new Promise((resolve) => {
+                  // uv-managed pythons need uv run to invoke ipykernel
+                  const cmd = isUvManaged ? 'uv' : pythonOverridePath;
+                  const args = isUvManaged
+                      ? ['run', '--python', pythonOverridePath, '-m', 'ipykernel', 'install', '--user', '--name', kernelName, '--display-name', displayName]
+                      : ['-m', 'ipykernel', 'install', '--user', '--name', kernelName, '--display-name', displayName];
+                  const proc = spawn(cmd, args, { env: { ...process.env } });
+                  let stderr = '';
+                  proc.stderr.on('data', d => { stderr += d.toString(); });
+                  proc.on('close', code => resolve({ code, stderr }));
+                  proc.on('error', err => resolve({ code: 1, stderr: err.message }));
+              });
+              if (regResult.code !== 0) {
+                  return { success: false, error: `Failed to register kernel: ${regResult.stderr}` };
+              }
+          }
 
           const connectionFile = path.join(os.tmpdir(), `kernel-${kernelId}.json`);
 
@@ -90,8 +216,11 @@ function register(ctx) {
               detached: false
           });
 
+          let kernelStderr = '';
           proc.stderr.on('data', (data) => {
-              log('[Jupyter Kernel]', data.toString());
+              const msg = data.toString();
+              kernelStderr += msg;
+              log('[Jupyter Kernel]', msg);
           });
 
           proc.stdout.on('data', (data) => {
@@ -101,12 +230,13 @@ function register(ctx) {
           proc.on('error', (err) => {
               console.error('[Jupyter Kernel] Process error:', err);
               jupyterKernels.delete(kernelId);
+              getMainWindow()?.webContents.send('jupyter:kernelStopped', { kernelId, error: err.message });
           });
 
           proc.on('exit', (code) => {
               log(`[Jupyter Kernel] Exited with code ${code}`);
               jupyterKernels.delete(kernelId);
-              getMainWindow()?.webContents.send('jupyter:kernelStopped', { kernelId });
+              getMainWindow()?.webContents.send('jupyter:kernelStopped', { kernelId, exitCode: code, error: kernelStderr || undefined });
           });
 
           jupyterKernels.set(kernelId, {
@@ -125,13 +255,11 @@ function register(ctx) {
                   await fsPromises.access(connectionFile);
                   connectionReady = true;
                   break;
-              } catch {
-
-              }
+              } catch {}
 
               if (proc.exitCode !== null) {
                   jupyterKernels.delete(kernelId);
-                  return { success: false, error: `Kernel process exited with code ${proc.exitCode}` };
+                  return { success: false, error: `Kernel exited with code ${proc.exitCode}${kernelStderr ? ': ' + kernelStderr.trim() : ''}` };
               }
           }
 
@@ -702,6 +830,34 @@ except Exception as e:
       } catch (err) {
           return { success: false, error: err.message };
       }
+  });
+  ipcMain.handle('jupyter:installIpykernel', async (_, { pythonPath }) => {
+      if (!pythonPath) return { success: false, error: 'No python path provided' };
+
+      const isUvManaged = pythonPath.includes(`${path.sep}uv${path.sep}python${path.sep}`);
+
+      const doInstall = (cmd, args) => new Promise((resolve) => {
+          const proc = spawn(cmd, args, { env: { ...process.env } });
+          let stderr = '';
+          proc.stdout.on('data', d => getMainWindow()?.webContents.send('jupyter:installProgress', { message: d.toString() }));
+          proc.stderr.on('data', d => {
+              const msg = d.toString();
+              stderr += msg;
+              getMainWindow()?.webContents.send('jupyter:installProgress', { message: msg });
+          });
+          proc.on('close', code => code === 0 ? resolve({ success: true }) : resolve({ success: false, error: stderr }));
+          proc.on('error', err => resolve({ success: false, error: err.message }));
+      });
+
+      if (isUvManaged) {
+          // uv-managed base pythons are externally managed (PEP 668) — use uv pip install
+          const result = await doInstall('uv', ['pip', 'install', '--python', pythonPath, 'ipykernel', 'jupyter_client']);
+          if (!result.success) return result;
+      } else {
+          const result = await doInstall(pythonPath, ['-m', 'pip', 'install', 'ipykernel', 'jupyter_client']);
+          if (!result.success) return result;
+      }
+      return { success: true };
   });
 }
 
