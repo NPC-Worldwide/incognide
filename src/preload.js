@@ -593,6 +593,12 @@ onTerminalClosed: (callback) => {
     deleteSqlModelGlobal: (modelId) => ipcRenderer.invoke('deleteSqlModelGlobal', modelId),
     deleteSqlModelProject: (args) => ipcRenderer.invoke('deleteSqlModelProject', args),
     runSqlModel: (args) => ipcRenderer.invoke('runSqlModel', args),
+    runAllSqlModels: (args) => ipcRenderer.invoke('runAllSqlModels', args),
+    onSqlModelsRunProgress: (callback) => {
+        const handler = (_, data) => callback(data);
+        ipcRenderer.on('sqlModels:runProgress', handler);
+        return () => ipcRenderer.removeListener('sqlModels:runProgress', handler);
+    },
 
     scanLocalModels: (provider) => ipcRenderer.invoke('scan-local-models', provider),
     getLocalModelStatus: (provider) => ipcRenderer.invoke('get-local-model-status', provider),
@@ -776,6 +782,7 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
     jupyterCheckInstalled: (args) => ipcRenderer.invoke('jupyter:checkInstalled', args),
     jupyterInstall: (args) => ipcRenderer.invoke('jupyter:install', args),
     jupyterRegisterKernel: (args) => ipcRenderer.invoke('jupyter:registerKernel', args),
+    jupyterInstallIpykernel: (args) => ipcRenderer.invoke('jupyter:installIpykernel', args),
     onJupyterKernelStopped: (callback) => {
         const handler = (_, data) => callback(data);
         ipcRenderer.on('jupyter:kernelStopped', handler);

@@ -845,6 +845,49 @@ function register(ctx) {
       }
   });
 
+  ipcMain.handle('runAllSqlModels', async (event, { path: projectPath, isGlobal, targetDb: userTargetDb }) => {
+      const send = (data) => getMainWindow()?.webContents.send('sqlModels:runProgress', data);
+
+      let targetDb = userTargetDb || '~/npcsh_history.db';
+      if (targetDb.startsWith('~')) targetDb = path.join(os.homedir(), targetDb.slice(1));
+
+      const results = [];
+
+      const runSet = async (dir, global) => {
+          if (!dir || !fs.existsSync(dir)) return;
+          const sqlFiles = fs.readdirSync(dir).filter(f => f.endsWith('.sql'));
+          for (const file of sqlFiles) {
+              const modelId = file.replace(/\.sql$/, '');
+              const npcDirectory = global
+                  ? path.join(os.homedir(), '.npcsh', 'npc_team')
+                  : path.join(projectPath || os.homedir(), 'npc_team');
+              send({ modelId, status: 'running', isGlobal: global });
+              try {
+                  const response = await fetch(`${BACKEND_URL}/api/npcsql/run_model`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ modelsDir: dir, modelName: modelId, npcDirectory, targetDb })
+                  });
+                  const result = response.ok ? await response.json() : { success: false, error: `HTTP ${response.status}` };
+                  saveModelMeta(dir, modelId, { lastRunAt: new Date().toISOString(), lastRunResult: result.success ? 'success' : 'error' });
+                  send({ modelId, status: result.success ? 'success' : 'error', message: result.success ? `${result.rows ?? 0} rows` : result.error, isGlobal: global });
+                  results.push({ modelId, success: result.success, error: result.error });
+              } catch (err) {
+                  send({ modelId, status: 'error', message: err.message, isGlobal: global });
+                  results.push({ modelId, success: false, error: err.message });
+              }
+          }
+      };
+
+      send({ modelId: null, status: 'start' });
+      if (isGlobal !== false) await runSet(getModelsDir(null, true), true);
+      if (projectPath) await runSet(getModelsDir(projectPath, false), false);
+      send({ modelId: null, status: 'done', results });
+
+      const succeeded = results.filter(r => r.success).length;
+      return { success: true, total: results.length, succeeded, failed: results.length - succeeded, results };
+  });
+
   ipcMain.handle('executeSQL', async (event, { query }) => {
     try {
       const rows = await dbQuery(query);

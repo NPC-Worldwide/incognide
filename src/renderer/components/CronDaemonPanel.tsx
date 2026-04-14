@@ -4,7 +4,7 @@ import {
     RefreshCw, Terminal, Check, AlertCircle, ChevronDown,
     ChevronRight, Save, Copy, Eye, Zap, FileText,
     Code, Bot, Sparkles, FileCode, Database,
-    Table, Activity, Cpu, Search, Square,
+    Table, Activity, Cpu, Search, Square, Loader,
 } from 'lucide-react';
 
 interface SqlModel {
@@ -334,6 +334,8 @@ const CronDaemonPanel = ({
     const [editModel, setEditModel] = useState<SqlModel | null>(null);
     const [modelForm, setModelForm] = useState({ name: '', sql: '', description: '', materialization: 'table' as string, npc: '' });
     const [modelRunResult, setModelRunResult] = useState<Record<string, string>>({});
+    const [runAllLog, setRunAllLog] = useState<Array<{modelId: string, status: string, message?: string}>>([]);
+    const [runAllActive, setRunAllActive] = useState(false);
 
     const [serviceInfo, setServiceInfo] = useState<Record<string, { unit_file?: string; journal?: string; loading?: boolean }>>({});
 
@@ -482,6 +484,34 @@ const CronDaemonPanel = ({
             const r = await api?.runSqlModel?.({ path: currentPath, modelId: model.name, isGlobal: model.isGlobal ?? true });
             setModelRunResult(prev => ({ ...prev, [model.id]: r?.success ? (r.message || `Done. ${r.rows} rows.`) : `Error: ${r?.error}` }));
         } catch (e: any) { setModelRunResult(prev => ({ ...prev, [model.id]: `Error: ${e.message}` })); }
+    };
+
+    const runAll = async () => {
+        setRunAllLog([]);
+        setRunAllActive(true);
+        const unsub = (window as any).api?.onSqlModelsRunProgress?.((data: any) => {
+            if (data.modelId) {
+                setRunAllLog(prev => {
+                    const existing = prev.findIndex(e => e.modelId === data.modelId);
+                    if (existing >= 0) {
+                        const next = [...prev];
+                        next[existing] = data;
+                        return next;
+                    }
+                    return [...prev, data];
+                });
+            }
+            if (data.status === 'done') {
+                setRunAllActive(false);
+                fetchModels();
+            }
+        });
+        try {
+            await (window as any).api?.runAllSqlModels?.({ path: currentPath, isGlobal: isGlobal });
+        } catch (e: any) {
+            setRunAllActive(false);
+        }
+        unsub?.();
     };
 
     const deleteModel = async (model: SqlModel) => {
@@ -1057,11 +1087,42 @@ const CronDaemonPanel = ({
                 {activeTab === 'nql' && (<>
                     <Section title="Your SQL Models" count={sqlModels.length} icon={Table}
                         actions={
-                            <button onClick={() => { setShowNewModel(!showNewModel); setEditModel(null); setModelForm({ name: '', sql: '', description: '', materialization: 'table', npc: '' }); }}
-                                className={`px-2 py-0.5 rounded text-[10px] flex items-center gap-1 ${showNewModel ? 'bg-emerald-600 text-white' : 'bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30'}`}>
-                                <Plus size={10} /> New Model
-                            </button>
+                            <div className="flex items-center gap-1">
+                                {sqlModels.length > 0 && (
+                                    <button onClick={runAll} disabled={runAllActive}
+                                        className="px-2 py-0.5 rounded text-[10px] flex items-center gap-1 bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 disabled:opacity-50">
+                                        {runAllActive ? <Loader size={10} className="animate-spin" /> : <Play size={10} />}
+                                        {runAllActive ? 'Running...' : 'Run All'}
+                                    </button>
+                                )}
+                                <button onClick={() => { setShowNewModel(!showNewModel); setEditModel(null); setModelForm({ name: '', sql: '', description: '', materialization: 'table', npc: '' }); }}
+                                    className={`px-2 py-0.5 rounded text-[10px] flex items-center gap-1 ${showNewModel ? 'bg-emerald-600 text-white' : 'bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30'}`}>
+                                    <Plus size={10} /> New Model
+                                </button>
+                            </div>
                         }>
+
+                        {runAllLog.length > 0 && (
+                            <div className="mb-2 rounded border border-blue-500/20 bg-blue-900/10 overflow-hidden">
+                                <div className="px-2 py-1 text-[10px] text-blue-400 border-b border-blue-500/20 flex items-center gap-1">
+                                    {runAllActive ? <Loader size={9} className="animate-spin" /> : <Check size={9} />}
+                                    {runAllActive ? 'Running models...' : `Finished — ${runAllLog.filter(e => e.status === 'success').length}/${runAllLog.length} succeeded`}
+                                </div>
+                                <div className="divide-y divide-white/5">
+                                    {runAllLog.map(entry => (
+                                        <div key={entry.modelId} className="flex items-center gap-2 px-2 py-1 text-[10px]">
+                                            {entry.status === 'running' && <Loader size={9} className="animate-spin text-blue-400 shrink-0" />}
+                                            {entry.status === 'success' && <Check size={9} className="text-emerald-400 shrink-0" />}
+                                            {entry.status === 'error' && <X size={9} className="text-red-400 shrink-0" />}
+                                            <span className={entry.status === 'error' ? 'text-red-400' : entry.status === 'success' ? 'text-emerald-400' : 'text-gray-400'}>
+                                                {entry.modelId}
+                                            </span>
+                                            {entry.message && <span className="text-gray-500 truncate">{entry.message}</span>}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
                         {(showNewModel || editModel) && (
                             <div className="p-3 bg-emerald-900/15 border border-emerald-500/30 rounded-lg space-y-2 mb-2">
