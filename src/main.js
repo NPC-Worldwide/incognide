@@ -1252,8 +1252,27 @@ function getBackendPythonPath() {
         const pythonPath = match[1].trim().replace(/^~/, os.homedir());
 
         if (fs.existsSync(pythonPath)) {
-          log(`Found backend Python path: ${pythonPath}`);
-          return pythonPath;
+          // Validate that the saved Python is >= 3.10; if not, clear it
+          try {
+            const versionOut = execSync(`"${pythonPath}" --version 2>&1`, { timeout: 5000 }).toString().trim();
+            const vm = versionOut.match(/Python (\d+)\.(\d+)/);
+            if (vm) {
+              const major = parseInt(vm[1], 10);
+              const minor = parseInt(vm[2], 10);
+              if (major > 3 || (major === 3 && minor >= 10)) {
+                log(`Found backend Python path: ${pythonPath} (${major}.${minor})`);
+                return pythonPath;
+              } else {
+                log(`Saved BACKEND_PYTHON_PATH ${pythonPath} is Python ${major}.${minor} (<3.10), clearing`);
+                try {
+                  const rcContent = fs.readFileSync(rcPath, 'utf8');
+                  fs.writeFileSync(rcPath, rcContent.replace(/^BACKEND_PYTHON_PATH=.*$/gm, '').trim() + '\n');
+                } catch (_) {}
+              }
+            }
+          } catch (e) {
+            log(`Could not check version of saved Python path: ${e.message}`);
+          }
         } else {
           log(`Backend Python path configured but not found: ${pythonPath}`);
         }
@@ -2627,6 +2646,34 @@ ipcMain.handle('backend:tryLocalPython', async () => {
       }
     } catch (e) {
       log(`Error reading pyenv versions: ${e.message}`);
+    }
+  }
+
+  // Check common absolute paths (Homebrew, system installs)
+  const absoluteCandidates = process.platform === 'darwin'
+    ? [
+        '/opt/homebrew/bin/python3.13', '/opt/homebrew/bin/python3.12',
+        '/opt/homebrew/bin/python3.11', '/opt/homebrew/bin/python3.10',
+        '/usr/local/bin/python3.13', '/usr/local/bin/python3.12',
+        '/usr/local/bin/python3.11', '/usr/local/bin/python3.10',
+      ]
+    : [];
+
+  for (const bin of absoluteCandidates) {
+    if (!fs.existsSync(bin)) continue;
+    try {
+      const result = execSync(`"${bin}" --version 2>&1`, { timeout: 5000 }).toString().trim();
+      const match = result.match(/Python (\d+)\.(\d+)/);
+      if (match) {
+        const major = parseInt(match[1], 10);
+        const minor = parseInt(match[2], 10);
+        if (major > 3 || (major === 3 && minor >= 10)) {
+          log(`Found Python ${major}.${minor} at absolute path: ${bin}`);
+          return { found: true, pythonPath: bin, version: `${major}.${minor}` };
+        }
+      }
+    } catch (e) {
+      // skip
     }
   }
 
