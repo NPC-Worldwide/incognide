@@ -28,6 +28,7 @@ interface TeamManagementProps {
     currentNpc?: string;
     initialTab?: TabId;
     forceTab?: TabId;
+    onTabChange?: (tab: TabId) => void;
 }
 
 type TabId = 'context' | 'npcs' | 'jinxes' | 'memory' | 'knowledge' | 'cron' | 'mcp' | 'models' | 'databases' | 'ai-settings' | 'llm-models' | 'python' | 'voice' | 'providers';
@@ -1032,10 +1033,12 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
     embedded = false,
     currentNpc = '',
     initialTab,
-    forceTab
+    forceTab,
+    onTabChange
 }) => {
     const [activeTab, setActiveTab] = useState<TabId>(initialTab || 'context');
     useEffect(() => { if (forceTab) setActiveTab(forceTab); }, [forceTab]);
+    const changeTab = (tab: TabId) => { setActiveTab(tab); onTabChange?.(tab); };
     const [isGlobal, setIsGlobal] = useState(false);
     const [globalSource, setGlobalSource] = useState<'incognide' | 'npcsh'>('incognide');
     const [hasProjectTeam, setHasProjectTeam] = useState<boolean | null>(null);
@@ -1177,7 +1180,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                     {sections.map((section) => (
                         <button
                             key={section.id}
-                            onClick={() => setActiveTab(section.id)}
+                            onClick={() => changeTab(section.id)}
                             className={`w-full flex items-center gap-2.5 px-4 py-2 text-sm transition-colors ${
                                 activeTab === section.id
                                     ? 'bg-purple-600/15 text-purple-400 border-l-2 border-purple-500'

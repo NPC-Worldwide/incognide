@@ -65,7 +65,7 @@ import PathSwitcher from './PathSwitcher';
 import WorkspaceSwitchWarning from './WorkspaceSwitchWarning';
 import LogsViewer from './LogsViewer';
 import CronDaemonPanel from './CronDaemonPanel';
-import MemoryManager from './MemoryManager';
+import MemoryManagement from './MemoryManagement';
 import WindowManagerPane from './WindowManagerPane';
 import AccountPane from './AccountPane';
 import SearchPane from './SearchPane';
@@ -76,7 +76,6 @@ import GraphViewer from './GraphViewer';
 import BrowserHistoryWeb from './BrowserHistoryWeb';
 import KnowledgeGraphEditor from './KnowledgeGraphEditor';
 import McpServerMenu from './McpServerMenu';
-import MemoryManagement from './MemoryManagement';
 import MessageLabeling from './MessageLabeling';
 import LabeledDataManager from './LabeledDataManager';
 import ActivityIntelligence from './ActivityIntelligence';
@@ -3649,11 +3648,7 @@ const renderDiskUsagePane = useCallback(({ nodeId }: { nodeId: string }) => {
 // Render MemoryManager pane (for pane-based viewing)
 const renderMemoryManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return (
-        <MemoryManager
-            isPane={true}
-            currentPath={currentPathRef.current}
-            currentNpc={currentNPC}
-        />
+        <MemoryManagement isModal={false} />
     );
 }, [currentNPC]);
 
@@ -5406,7 +5401,8 @@ ${contextPrompt}`;
                 npcList={availableNPCs}
                 jinxList={availableJinxes}
                 currentNpc={currentNPC}
-                initialTab={paneData.initialTab}
+                initialTab={paneData.activeTab || paneData.initialTab}
+                onTabChange={(tab) => { contentDataRef.current[nodeId] = { ...contentDataRef.current[nodeId], activeTab: tab }; }}
             />
         );
     }, [currentPath, createNewConversation, availableNPCs, availableJinxes, currentNPC]);
@@ -5420,6 +5416,7 @@ ${contextPrompt}`;
 
     // Render Settings pane (embedded version for pane layout)
     const renderSettingsPane = useCallback(({ nodeId }: { nodeId: string }) => {
+        const paneData = contentDataRef.current[nodeId] || {};
         return (
             <SettingsMenu
                 isOpen={true}
@@ -5429,6 +5426,8 @@ ${contextPrompt}`;
                 availableModels={availableModels}
                 embedded={true}
                 onRerunSetup={onRerunSetup}
+                initialTab={paneData.activeTab || 'global'}
+                onTabChange={(tab: string) => { contentDataRef.current[nodeId] = { ...contentDataRef.current[nodeId], activeTab: tab }; }}
             />
         );
     }, [currentPath, handlePathChange, availableModels]);
@@ -7569,8 +7568,10 @@ const getChatInputProps = useCallback((paneId: string) => {
     uploadedFiles, setUploadedFiles, contextFiles, setContextFiles,
     contextFilesCollapsed, setContextFilesCollapsed, currentPath,
     // Pane context auto-include
-    autoIncludeContext, setAutoIncludeContext,
-    contextPaneOverrides, setContextPaneOverrides,
+    autoIncludeContext,
+    setAutoIncludeContext: (val: boolean) => { setAutoIncludeContext(val); notifyUpdate(); },
+    contextPaneOverrides,
+    setContextPaneOverrides: (updater: any) => { setContextPaneOverrides(updater); notifyUpdate(); },
     contentDataRef,
     paneVersion,
     // Per-pane execution mode

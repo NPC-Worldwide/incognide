@@ -241,8 +241,9 @@ const PermissionsManager = () => {
     );
 };
 
-const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableModels = [], embedded = false, initialTab = 'global', onRerunSetup = undefined }) => {
+const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableModels = [], embedded = false, initialTab = 'global', onRerunSetup = undefined, onTabChange = undefined }) => {
     const [activeTab, setActiveTab] = useState(initialTab);
+    const changeTab = (tab: string) => { setActiveTab(tab); onTabChange?.(tab); };
     const [globalSettings, setGlobalSettings] = useState(defaultSettings);
 
 
@@ -333,7 +334,7 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                         {tabs.map((tab) => (
                             <button
                                 key={tab.id}
-                                onClick={() => setActiveTab(tab.id)}
+                                onClick={() => changeTab(tab.id)}
                                 className={`w-full text-left px-3 py-1.5 text-xs font-medium rounded transition-all ${
                                     activeTab === tab.id
                                         ? 'bg-blue-600/50 text-white'
