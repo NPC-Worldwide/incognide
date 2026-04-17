@@ -92,6 +92,9 @@ ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarEle
 import * as LucideIcons from 'lucide-react';
 import { useActivityTracker } from './ActivityTracker';
 import ActivityTrackerDashboard from './ActivityTracker';
+import BrowserSettingsManager from './BrowserSettingsManager';
+import ModelManager from './ModelManager';
+import VoiceManager from './VoiceManager';
 import {
     serializeWorkspace,
     saveWorkspaceToStorage,
@@ -3665,6 +3668,18 @@ const renderAccountPane = useCallback(({ nodeId }: { nodeId: string }) => {
 
 const renderActivityPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return <ActivityTrackerDashboard />;
+}, []);
+
+const renderBrowserSettingsPane = useCallback(({ nodeId }: { nodeId: string }) => {
+    return <BrowserSettingsManager currentPath={currentPathRef.current} />;
+}, []);
+
+const renderModelManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
+    return <ModelManager />;
+}, []);
+
+const renderVoiceManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
+    return <VoiceManager />;
 }, []);
 
 const createAccountPane = useCallback(async () => {
@@ -7829,6 +7844,9 @@ const paneRenderers = useMemo(() => ({
     windowmanager: renderWindowManagerPane,
     account: renderAccountPane,
     activity: renderActivityPane,
+    browsersettings: renderBrowserSettingsPane,
+    'model-manager': renderModelManagerPane,
+    'voice-manager': renderVoiceManagerPane,
 }), [
     renderChatView, renderFileEditor, renderTerminalView, renderPdfViewer,
     renderCsvViewer, renderDocxViewer, renderBrowserViewer, renderPptxViewer,
@@ -7840,6 +7858,7 @@ const paneRenderers = useMemo(() => ({
     renderFolderViewerPane, renderProjectEnvPane, renderDiskUsagePane, renderMemoryManagerPane,
     renderCronDaemonPane, renderSearchPane, renderMarkdownPreviewPane, renderHtmlPreviewPane,
     renderTileJinxPane, renderBranchComparisonPane, renderWindowManagerPane,
+    renderBrowserSettingsPane, renderModelManagerPane, renderVoiceManagerPane,
 ]);
 
 const layoutComponentApi = useMemo(() => ({
