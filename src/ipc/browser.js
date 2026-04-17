@@ -183,9 +183,10 @@ function setupWebContentsHandlers(contents, getMainWindow, log) {
 
         item.cancel();
 
-        const mainWindow = getMainWindow();
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('browser-download-requested', {
+        const dlParentWin = BrowserWindow.fromWebContents(webContents.hostWebContents || webContents)
+          || getMainWindow();
+        if (dlParentWin && !dlParentWin.isDestroyed()) {
+          dlParentWin.webContents.send('browser-download-requested', {
             url,
             filename,
             mimeType: item.getMimeType(),

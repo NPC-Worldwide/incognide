@@ -1038,7 +1038,7 @@ app.on('web-contents-created', (event, contents) => {
 
         item.cancel();
 
-        const dlParentWin = BrowserWindow.fromWebContents(contents.hostWebContents || contents)
+        const dlParentWin = BrowserWindow.fromWebContents(webContents.hostWebContents || webContents)
           || BrowserWindow.getFocusedWindow()
           || BrowserWindow.getAllWindows()[0];
         if (dlParentWin && !dlParentWin.isDestroyed()) {
