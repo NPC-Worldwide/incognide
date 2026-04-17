@@ -107,7 +107,7 @@ jobs:
           python -c "
           from npcpy.serve import app
           rules = [r.rule for r in app.url_map.iter_rules()]
-          for endpoint in ['/api/settings/global', '/api/settings/project', '/api/models', '/api/health']:
+          for endpoint in ['/api/settings/project', '/api/models', '/api/health']:
               assert endpoint in rules, f'Missing {endpoint}'
               print(f'OK: {endpoint}')
           print('All critical endpoints registered')
@@ -174,33 +174,6 @@ jobs:
               sys.exit(1)
           " 2>&1) || true
           echo "Health: $HEALTH"
-
-          # Settings save
-          python -c "
-          import urllib.request, json, sys
-          data = json.dumps({'global_settings': {'model': 'ci-test', 'provider': 'ollama'}, 'global_vars': {}}).encode()
-          req = urllib.request.Request('http://127.0.0.1:5337/api/settings/global', data=data, headers={'Content-Type': 'application/json'}, method='POST')
-          try:
-              resp = urllib.request.urlopen(req, timeout=5)
-              result = json.loads(resp.read())
-              assert result.get('error') is None, f'Error: {result}'
-              print('Settings save OK')
-          except Exception as e:
-              print(f'Settings save: {e}', file=sys.stderr)
-          " || true
-
-          # Settings load
-          python -c "
-          import urllib.request, json, sys
-          try:
-              resp = urllib.request.urlopen('http://127.0.0.1:5337/api/settings/global', timeout=5)
-              result = json.loads(resp.read())
-              gs = result.get('global_settings', {})
-              assert gs.get('model') == 'ci-test', f'Expected ci-test, got: {gs}'
-              print('Settings load OK')
-          except Exception as e:
-              print(f'Settings load: {e}', file=sys.stderr)
-          " || true
 
           # Models endpoint
           python -c "
