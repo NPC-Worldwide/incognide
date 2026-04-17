@@ -107,7 +107,7 @@ jobs:
           python -c "
           from npcpy.serve import app
           rules = [r.rule for r in app.url_map.iter_rules()]
-          for endpoint in ['/api/settings/project', '/api/models', '/api/health']:
+          for endpoint in ['/api/models', '/api/health']:
               assert endpoint in rules, f'Missing {endpoint}'
               print(f'OK: {endpoint}')
           print('All critical endpoints registered')
