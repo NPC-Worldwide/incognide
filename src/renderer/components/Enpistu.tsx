@@ -281,6 +281,47 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     // Activity tracking for RNN predictions
     const { trackActivity } = useActivityTracker();
 
+    // Global activity instrumentation
+    useEffect(() => {
+        const handleClick = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            const interactive = target.closest('button, a, [role="button"]');
+            const paneEl = target.closest('[data-pane-id]') as HTMLElement | null;
+            const paneType = paneEl?.getAttribute('data-pane-type') || null;
+            const section = target.closest('[data-section]')?.getAttribute('data-section') || null;
+            if (interactive) {
+                const label = interactive.getAttribute('aria-label')
+                    || interactive.getAttribute('title')
+                    || interactive.textContent?.trim().replace(/\s+/g, ' ').slice(0, 80) || null;
+                if (label && label.length > 0) {
+                    trackActivity('click', { label, section, pane: paneType, x: e.clientX, y: e.clientY });
+                }
+            } else if (paneEl) {
+                const paneId = paneEl.getAttribute('data-pane-id');
+                trackActivity('pane_focus', { paneId, paneType, section });
+            }
+        };
+        const handleKeydown = (e: KeyboardEvent) => {
+            if (e.metaKey || e.ctrlKey || e.altKey) {
+                trackActivity('keyboard_shortcut', { key: e.key, meta: e.metaKey, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey });
+            }
+        };
+        const handleBlur = (e: FocusEvent) => {
+            const t = e.target as HTMLInputElement | HTMLTextAreaElement;
+            if ((t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') && t.value?.trim().length > 1) {
+                trackActivity('text_input', { value: t.value.trim().slice(0, 500), placeholder: t.placeholder || null });
+            }
+        };
+        document.addEventListener('click', handleClick, { capture: true });
+        document.addEventListener('keydown', handleKeydown, { capture: false });
+        document.addEventListener('blur', handleBlur, { capture: true });
+        return () => {
+            document.removeEventListener('click', handleClick, { capture: true });
+            document.removeEventListener('keydown', handleKeydown, { capture: false });
+            document.removeEventListener('blur', handleBlur, { capture: true });
+        };
+    }, [trackActivity]);
+
     // Open mode (pane vs tab) - must be before useLayoutManager so the ref can be passed
     const [openMode, setOpenMode] = useState<'pane' | 'tab'>(() => (localStorage.getItem('incognide_openMode') as 'pane' | 'tab') || 'pane');
     const openModeRef = useRef(openMode);
@@ -8589,6 +8630,7 @@ const renderMainContent = () => {
                     onKeyDown={(e) => {
                         if (e.key === 'Enter' && searchTerm.trim()) {
                             e.preventDefault();
+                            trackActivity('search_query', { query: searchTerm.trim(), scope: searchScope });
                             createSearchPane(searchTerm.trim(), searchScope);
                             setSearchTerm('');
                         }

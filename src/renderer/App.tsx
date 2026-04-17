@@ -3,6 +3,7 @@ import { ClerkProvider } from '@clerk/clerk-react';
 import Enpistu from './components/Enpistu';
 import SetupWizard from './components/SetupWizard';
 import AppTutorial from './components/AppTutorial';
+import BackendErrorBanner from './components/BackendErrorBanner';
 import { AuthProvider } from './components/AuthProvider';
 import { AiFeatureProvider } from './components/AiFeatureContext';
 
@@ -150,6 +151,7 @@ const App: React.FC = () => {
   return (
     <AuthWrapper>
       <AiFeatureProvider>
+        <BackendErrorBanner />
         <Enpistu onRerunSetup={handleRerunSetup} />
         {showTutorial && tutorialReady && <AppTutorial onComplete={handleTutorialComplete} />}
       </AiFeatureProvider>

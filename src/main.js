@@ -1090,31 +1090,13 @@ app.whenReady().then(async () => {
       log(`Warning: Could not create directories: ${dirErr.message}`);
     }
 
-    const customPythonPath = getBackendPythonPath();
+    const executableName = process.platform === 'win32' ? 'incognide_serve.exe' : 'incognide_serve';
+    _backendPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'backend', executableName)
+      : path.join(app.getAppPath(), 'dist', 'resources', 'backend', executableName);
 
-    if (customPythonPath) {
-      log(`Using custom Python for backend: ${customPythonPath}`);
-      _backendPath = customPythonPath;
-      _spawnArgs = ['-m', 'npcpy.serve'];
-    } else {
-      const executableName = process.platform === 'win32' ? 'incognide_serve.exe' : 'incognide_serve';
-      _backendPath = app.isPackaged
-        ? path.join(process.resourcesPath, 'backend', executableName)
-        : path.join(app.getAppPath(), 'dist', 'resources', 'backend', executableName);
-    }
-
-    if (!customPythonPath && !fs.existsSync(_backendPath)) {
-      log(`ERROR: Backend executable not found at: ${_backendPath}`);
-      const pythonPaths = ['python3', 'python'];
-      for (const pyPath of pythonPaths) {
-        try {
-          execSync(`${pyPath} -c "import npcpy"`, { stdio: 'ignore' });
-          log(`Falling back to system Python: ${pyPath}`);
-          _backendPath = pyPath;
-          _spawnArgs = ['-m', 'npcpy.serve'];
-          break;
-        } catch (e) {}
-      }
+    if (!fs.existsSync(_backendPath)) {
+      log(`ERROR: Bundled backend not found at: ${_backendPath}`);
     }
 
     log(`Using backend path: ${_backendPath}${_spawnArgs.length ? ' ' + _spawnArgs.join(' ') : ''}`);
@@ -1154,45 +1136,18 @@ app.whenReady().then(async () => {
       serverReady = await waitForServer();
     }
 
-    if (!serverReady && backendProcess.exitCode !== null && backendProcess.exitCode !== 0) {
-      log('Bundled backend failed to start — attempting fallback to system Python...');
-      const pythonPaths = ['python3', 'python'];
-      for (const pyPath of pythonPaths) {
-        try {
-          execSync(`${pyPath} -c "import npcpy.serve"`, { stdio: 'ignore', timeout: 10000 });
-          log(`Found working Python with npcpy: ${pyPath}`);
-          _backendPath = pyPath;
-          _spawnArgs = ['-m', 'npcpy.serve'];
-          backendProcess = spawnBackendProcess(_backendPath, _spawnArgs, 'python-fallback', _backendEnv);
-          serverReady = await waitForServer(30, 1000);
-          if (serverReady) break;
-        } catch (e) {
-          log(`Python fallback with ${pyPath} not available: ${e.message}`);
-        }
-      }
-    }
-
     if (!serverReady) {
-      const errorMsg = 'Backend server failed to start - check backend.log for details';
+      const triedBinary = _backendPath;
+      const exitCode = backendProcess?.exitCode;
+      const errorMsg = `Bundled backend failed to start (binary: ${triedBinary}, exitCode: ${exitCode ?? 'null'}) — check backend.log for details`;
       log(errorMsg);
       _backendStartupError = {
         message: errorMsg,
-        pythonPath: _backendPath,
-        exitCode: backendProcess?.exitCode,
+        binaryPath: triedBinary,
+        exitCode,
         timestamp: new Date().toISOString(),
       };
-
-      try {
-        log('Attempting direct npcsh initialization...');
-        execSync(`python3 -c "from npcsh._state import initialize_base_npcs_if_needed; import os; initialize_base_npcs_if_needed(os.path.expanduser('~/.npcsh/npcsh_history.db'))"`, {
-          timeout: 30000,
-          env: { ...process.env, HOME: os.homedir() }
-        });
-        log('Direct npcsh initialization completed');
-      } catch (initErr) {
-        log(`Direct npcsh initialization failed: ${initErr.message}`);
-        _backendStartupError.initError = initErr.message;
-      }
+      // Continue — renderer will show a recovery UI via BackendErrorBanner
     } else {
       _backendStartupError = null;
     }
@@ -2622,6 +2577,153 @@ ipcMain.handle('backend:health', async () => {
 
 ipcMain.handle('backend:getStartupError', async () => {
   return _backendStartupError;
+});
+
+ipcMain.handle('backend:tryLocalPython', async () => {
+  log('Searching for local Python >= 3.10...');
+  const versionedBinaries = ['python3.13', 'python3.12', 'python3.11', 'python3.10'];
+
+  // Try versioned binaries first
+  for (const bin of versionedBinaries) {
+    try {
+      const result = execSync(`${bin} --version 2>&1`, { timeout: 5000 }).toString().trim();
+      const match = result.match(/Python (\d+)\.(\d+)/);
+      if (match) {
+        const major = parseInt(match[1], 10);
+        const minor = parseInt(match[2], 10);
+        if (major > 3 || (major === 3 && minor >= 10)) {
+          log(`Found Python ${major}.${minor} at: ${bin}`);
+          return { found: true, pythonPath: bin, version: `${major}.${minor}` };
+        }
+      }
+    } catch (e) {
+      // not found or not executable
+    }
+  }
+
+  // Check pyenv versions
+  const pyenvBase = path.join(os.homedir(), '.pyenv', 'versions');
+  if (fs.existsSync(pyenvBase)) {
+    try {
+      const entries = fs.readdirSync(pyenvBase);
+      for (const entry of entries.sort().reverse()) {
+        const pyBin = path.join(pyenvBase, entry, 'bin', 'python3');
+        if (fs.existsSync(pyBin)) {
+          try {
+            const result = execSync(`"${pyBin}" --version 2>&1`, { timeout: 5000 }).toString().trim();
+            const match = result.match(/Python (\d+)\.(\d+)/);
+            if (match) {
+              const major = parseInt(match[1], 10);
+              const minor = parseInt(match[2], 10);
+              if (major > 3 || (major === 3 && minor >= 10)) {
+                log(`Found Python ${major}.${minor} via pyenv at: ${pyBin}`);
+                return { found: true, pythonPath: pyBin, version: `${major}.${minor}` };
+              }
+            }
+          } catch (e) {
+            // skip
+          }
+        }
+      }
+    } catch (e) {
+      log(`Error reading pyenv versions: ${e.message}`);
+    }
+  }
+
+  log('No Python >= 3.10 found');
+  return { found: false, pythonPath: null, version: null };
+});
+
+ipcMain.handle('backend:installAndStart', async (event, { pythonPath, npcpyExtras = 'lite' }) => {
+  const mainWindow = getMainWindow();
+  const sendProgress = (text) => {
+    event.sender.send('backend:installProgress', { text });
+    log(`[backend:installAndStart] ${text}`);
+  };
+
+  try {
+    const venvDir = path.join(os.homedir(), '.npcsh', 'incognide', 'venv');
+
+    sendProgress(`Creating virtual environment at ${venvDir}...`);
+
+    // Delete existing venv if present
+    if (fs.existsSync(venvDir)) {
+      sendProgress('Removing existing venv...');
+      fs.rmSync(venvDir, { recursive: true, force: true });
+    }
+
+    // Create venv
+    execSync(`"${pythonPath}" -m venv "${venvDir}"`, { timeout: 60000 });
+    sendProgress('Virtual environment created.');
+
+    const venvPython = path.join(venvDir, 'bin', 'python');
+
+    sendProgress(`Installing npcpy[${npcpyExtras}] and npcsh...`);
+
+    // Stream pip install output
+    await new Promise((resolve, reject) => {
+      const installProc = spawn(venvPython, ['-m', 'pip', 'install', '--upgrade', `npcpy[${npcpyExtras}]`, 'npcsh'], {
+        env: { ...process.env, HOME: os.homedir(), PYTHONUNBUFFERED: '1' },
+      });
+
+      installProc.stdout.on('data', (chunk) => {
+        const lines = chunk.toString().split('\n').filter(l => l.trim());
+        for (const line of lines) sendProgress(line);
+      });
+      installProc.stderr.on('data', (chunk) => {
+        const lines = chunk.toString().split('\n').filter(l => l.trim());
+        for (const line of lines) sendProgress(line);
+      });
+      installProc.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`pip install exited with code ${code}`));
+      });
+      installProc.on('error', reject);
+    });
+
+    sendProgress('Installation complete. Starting backend...');
+
+    // Kill existing backend if any
+    killBackendProcess();
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Set up env and spawn with venv python
+    _backendEnv = {
+      ...process.env,
+      INCOGNIDE_PORT: String(BACKEND_PORT),
+      FLASK_DEBUG: '1',
+      PYTHONUNBUFFERED: '1',
+      PYTHONIOENCODING: 'utf-8',
+      HOME: os.homedir(),
+      NPCSH_BASE: path.join(os.homedir(), '.npcsh'),
+      INCOGNIDE_DATA_DIR: path.join(os.homedir(), '.npcsh', 'incognide', 'data'),
+    };
+
+    _backendPath = venvPython;
+    _spawnArgs = ['-m', 'npcpy.serve'];
+
+    backendProcess = spawnBackendProcess(venvPython, ['-m', 'npcpy.serve'], 'venv-install', _backendEnv);
+    const ready = await waitForServer(60, 1000);
+
+    if (ready) {
+      _backendStartupError = null;
+      // Save the venv python path to .npcshrc
+      saveBackendPythonPath(venvPython);
+      sendProgress('Backend started successfully.');
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('backend:started', { venvPython });
+      }
+      return { success: true };
+    } else {
+      const errMsg = `Backend did not become ready after install (exitCode: ${backendProcess?.exitCode ?? 'null'})`;
+      sendProgress(errMsg);
+      return { success: false, error: errMsg };
+    }
+  } catch (err) {
+    log(`[backend:installAndStart] Error: ${err.message}`);
+    sendProgress(`Error: ${err.message}`);
+    return { success: false, error: err.message };
+  }
 });
 
 ipcMain.handle('backend:restart', async () => {

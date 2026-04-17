@@ -831,41 +831,33 @@ function register(ctx) {
 
   ipcMain.handle('browser:getHistoryGraph', async (event, { folderPath, minVisits = 1, dateFrom, dateTo }) => {
     try {
-
+      const hasFolderFilter = folderPath && folderPath !== '~' && folderPath !== '';
       let dateFilter = '';
-      const params = [folderPath];
-      if (dateFrom) {
-        dateFilter += ' AND last_visited >= ?';
-        params.push(dateFrom);
-      }
-      if (dateTo) {
-        dateFilter += ' AND last_visited <= ?';
-        params.push(dateTo);
-      }
+      const params = hasFolderFilter ? [folderPath] : [];
+      if (dateFrom) { dateFilter += ' AND last_visited >= ?'; params.push(dateFrom); }
+      if (dateTo) { dateFilter += ' AND last_visited <= ?'; params.push(dateTo); }
+
+      const folderWhere = hasFolderFilter ? `folder_path = ? AND ` : '';
+      const visitParams = hasFolderFilter ? [...params.slice(0, 1), minVisits, ...params.slice(1)] : [minVisits, ...params];
 
       const historyEntries = await dbQuery(
         `SELECT url, title, visit_count, last_visited, pane_id, navigation_type
          FROM browser_history
-         WHERE folder_path = ? AND visit_count >= ?${dateFilter}
+         WHERE ${folderWhere}visit_count >= ?${dateFilter}
          ORDER BY visit_count DESC`,
-        [...params.slice(0, 1), minVisits, ...params.slice(1)]
+        visitParams
       );
 
       let navDateFilter = '';
-      const navParams = [folderPath];
-      if (dateFrom) {
-        navDateFilter += ' AND timestamp >= ?';
-        navParams.push(dateFrom);
-      }
-      if (dateTo) {
-        navDateFilter += ' AND timestamp <= ?';
-        navParams.push(dateTo);
-      }
+      const navParams = hasFolderFilter ? [folderPath] : [];
+      if (dateFrom) { navDateFilter += ' AND timestamp >= ?'; navParams.push(dateFrom); }
+      if (dateTo) { navDateFilter += ' AND timestamp <= ?'; navParams.push(dateTo); }
 
+      const navFolderWhere = hasFolderFilter ? `folder_path = ? AND ` : '';
       const navigations = await dbQuery(
         `SELECT from_url, to_url, navigation_type, COUNT(*) as weight
          FROM browser_navigations
-         WHERE folder_path = ?${navDateFilter}
+         WHERE ${navFolderWhere}from_url IS NOT NULL${navDateFilter}
          GROUP BY from_url, to_url, navigation_type
          ORDER BY weight DESC`,
         navParams

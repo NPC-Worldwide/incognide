@@ -1,239 +1,161 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Brain, RefreshCw, Zap, Activity, FileText, Globe, Terminal, Eye, Lightbulb, BarChart3, ChevronsRight } from 'lucide-react';
+import { Brain, RefreshCw, Globe, Terminal, Zap, BookOpen, Activity } from 'lucide-react';
 
 interface ActivityIntelligenceProps {
     isModal?: boolean;
     onClose?: () => void;
 }
 
+const TYPE_CONFIG: Record<string, { icon: React.ReactNode; label: string; color: string }> = {
+    website_visit:     { icon: <Globe size={13} />,    label: 'Web',     color: 'text-blue-400' },
+    terminal_command:  { icon: <Terminal size={13} />, label: 'Command', color: 'text-yellow-400' },
+    jinx_execution:    { icon: <Zap size={13} />,      label: 'Jinx',    color: 'text-purple-400' },
+    memory_created:    { icon: <BookOpen size={13} />, label: 'Memory',  color: 'text-green-400' },
+};
+
+const getConfig = (type: string) =>
+    TYPE_CONFIG[type] || { icon: <Activity size={13} />, label: type?.replace(/_/g, ' ') || 'Activity', color: 'text-gray-400' };
+
+const formatTime = (ts: string) => {
+    if (!ts) return '';
+    const d = new Date(ts);
+    const now = new Date();
+    const diff = now.getTime() - d.getTime();
+    if (diff < 60000) return 'just now';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    return d.toLocaleDateString();
+};
+
+const activityLabel = (activity: any): string => {
+    const { type, data } = activity;
+    if (type === 'website_visit') return data?.title || data?.url || '';
+    if (type === 'terminal_command') return data?.command || '';
+    if (type === 'jinx_execution') return data?.command || data?.jinx_name || '';
+    if (type === 'memory_created') return data?.memory || data?.initial_memory || '';
+    if (type === 'pane_open') return `opened ${data?.paneType || data?.contentType || 'pane'}`;
+    if (type === 'pane_close') return `closed ${data?.paneType || data?.contentType || 'pane'}`;
+    if (type === 'chat_message') return data?.content || data?.message || 'chat message';
+    if (type === 'file_open' || type === 'file_edit') return data?.filePath || data?.fileName || '';
+    if (type === 'search_query') return data?.query || '';
+    if (type === 'model_change') return `switched to ${data?.model || ''}`;
+    if (type === 'click') return data?.label || 'click';
+    if (type === 'pane_focus') return `focused ${data?.paneType || 'pane'}`;
+    if (type === 'keyboard_shortcut') {
+        const mods = [data?.meta && '⌘', data?.ctrl && '⌃', data?.alt && '⌥', data?.shift && '⇧'].filter(Boolean).join('');
+        return `${mods}${data?.key || ''}`;
+    }
+    if (type === 'text_input') return data?.value || '';
+    return data?.command || data?.url || data?.title || data?.description || data?.content || type?.replace(/_/g, ' ') || '';
+};
+
+const activitySub = (activity: any): string => {
+    const { type, data } = activity;
+    if (type === 'website_visit') return data?.url || '';
+    if (type === 'memory_created') return data?.npc ? `via ${data.npc}` : '';
+    if (type === 'file_open' || type === 'file_edit') return data?.filePath || '';
+    if (type === 'click') {
+        const parts = [data?.section && `section: ${data.section}`, data?.pane && `pane: ${data.pane}`, data?.x != null && `(${data.x}, ${data.y})`].filter(Boolean);
+        return parts.join(' · ');
+    }
+    if (type === 'text_input') return data?.placeholder ? `in "${data.placeholder}"` : '';
+    return '';
+};
+
+
 const ActivityIntelligence: React.FC<ActivityIntelligenceProps> = ({ isModal = false, onClose }) => {
     const [activityData, setActivityData] = useState<any[]>([]);
-    const [activityPredictions, setActivityPredictions] = useState<any[]>([]);
-    const [activityStats, setActivityStats] = useState<any>(null);
-    const [activityLoading, setActivityLoading] = useState(false);
-    const [activityTraining, setActivityTraining] = useState(false);
-    const [activityTab, setActivityTab] = useState<'predictions' | 'history' | 'patterns'>('predictions');
+    const [stats, setStats] = useState<any>(null);
+    const [loading, setLoading] = useState(false);
+    const [expanded, setExpanded] = useState<number | null>(null);
 
-    const loadActivityData = useCallback(async () => {
-        setActivityLoading(true);
+    const load = useCallback(async () => {
+        setLoading(true);
         try {
-            const predResponse = await (window as any).api?.getActivityPredictions?.();
-            if (predResponse && !predResponse.error) {
-                setActivityPredictions(predResponse.predictions || []);
-                setActivityStats(predResponse.stats || null);
-                setActivityData(predResponse.recentActivities || []);
+            const res = await (window as any).api?.getActivityPredictions?.();
+            if (res && !res.error) {
+                setActivityData(res.recentActivities || []);
+                setStats(res.stats || null);
             }
         } catch (err) {
             console.error('Failed to load activity data:', err);
         }
-        setActivityLoading(false);
+        setLoading(false);
     }, []);
 
-    const handleTrainActivityModel = async () => {
-        setActivityTraining(true);
-        try {
-            await (window as any).api?.trainActivityModel?.();
-            await loadActivityData();
-        } catch (err) {
-            console.error('Failed to train activity model:', err);
-        }
-        setActivityTraining(false);
-    };
-
-    const getActivityIcon = (type: string) => {
-        switch (type) {
-            case 'file_open':
-            case 'file_edit':
-                return <FileText size={14} className="text-blue-400" />;
-            case 'website_visit':
-                return <Globe size={14} className="text-green-400" />;
-            case 'terminal_command':
-                return <Terminal size={14} className="text-yellow-400" />;
-            case 'pane_open':
-            case 'pane_close':
-                return <Eye size={14} className="text-purple-400" />;
-            case 'chat_message':
-                return <Activity size={14} className="text-cyan-400" />;
-            default:
-                return <Activity size={14} className="text-gray-400" />;
-        }
-    };
-
-    useEffect(() => {
-        loadActivityData();
-    }, [loadActivityData]);
+    useEffect(() => { load(); }, [load]);
 
     useEffect(() => {
         if (!isModal) return;
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape' && onClose) onClose();
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
+        const handler = (e: KeyboardEvent) => { if (e.key === 'Escape' && onClose) onClose(); };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
     }, [isModal, onClose]);
 
+    const [search, setSearch] = useState('');
+
+    const filtered = search.trim()
+        ? activityData.filter(a => {
+            const label = activityLabel(a).toLowerCase();
+            const sub = activitySub(a).toLowerCase();
+            return label.includes(search.toLowerCase()) || sub.includes(search.toLowerCase());
+          })
+        : activityData;
+
     const content = (
-        <div className="p-4">
-            <div className="flex justify-between items-center mb-4">
-                <h4 className="text-lg font-semibold flex items-center gap-3 text-white">
-                    <Brain className="text-purple-400" />
-                    Activity Intelligence
-                </h4>
-                <button
-                    onClick={handleTrainActivityModel}
-                    disabled={activityTraining}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded text-sm disabled:opacity-50"
-                >
-                    {activityTraining ? (
-                        <>
-                            <RefreshCw size={14} className="animate-spin" />
-                            Training...
-                        </>
-                    ) : (
-                        <>
-                            <Zap size={14} />
-                            Train Model
-                        </>
-                    )}
+        <div className="flex flex-col h-full">
+            <div className="flex items-center gap-2 px-4 pt-4 pb-2 flex-shrink-0">
+                <Brain size={16} className="text-purple-400 flex-shrink-0" />
+                <input
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    placeholder="Filter activity..."
+                    className="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white outline-none focus:border-purple-500"
+                />
+                <button onClick={load} disabled={loading} className="p-1.5 hover:bg-gray-700 rounded text-gray-400 hover:text-white flex-shrink-0">
+                    <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
                 </button>
             </div>
 
-            <div className="flex border-b border-gray-700 mb-4">
-                {(['predictions', 'history', 'patterns'] as const).map(tab => (
-                    <button
-                        key={tab}
-                        onClick={() => setActivityTab(tab)}
-                        className={`px-4 py-2 text-sm font-medium transition-colors ${
-                            activityTab === tab
-                                ? 'text-purple-400 border-b-2 border-purple-400'
-                                : 'text-gray-400 hover:text-white'
-                        }`}
-                    >
-                        {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                    </button>
-                ))}
-            </div>
-
-            {activityLoading ? (
-                <div className="flex items-center justify-center py-12">
-                    <RefreshCw className="animate-spin text-gray-400" size={32} />
+            {loading ? (
+                <div className="flex items-center justify-center flex-1">
+                    <RefreshCw className="animate-spin text-gray-400" size={24} />
                 </div>
             ) : (
                 <>
-                    {activityTab === 'predictions' && (
-                        <div className="space-y-4">
-                            {activityPredictions.length > 0 ? (
-                                activityPredictions.map((pred, idx) => (
+                    <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-0.5">
+                        {filtered.length > 0 ? filtered.map((activity, idx) => {
+                            const cfg = getConfig(activity.type);
+                            const label = activityLabel(activity);
+                            const sub = activitySub(activity);
+                            const isOpen = expanded === idx;
+                            return (
+                                <div key={idx}>
                                     <div
-                                        key={idx}
-                                        className={`p-4 rounded-lg border ${
-                                            pred.type === 'suggestion' ? 'border-green-600 bg-green-900/20' :
-                                            pred.type === 'pattern' ? 'border-blue-600 bg-blue-900/20' :
-                                            'border-yellow-600 bg-yellow-900/20'
-                                        }`}
+                                        className="flex items-start gap-2.5 py-1.5 px-2 hover:bg-gray-800/60 rounded cursor-pointer"
+                                        onClick={() => setExpanded(isOpen ? null : idx)}
                                     >
-                                        <div className="flex items-start justify-between">
-                                            <div className="flex items-center gap-2">
-                                                <Lightbulb size={18} className={
-                                                    pred.type === 'suggestion' ? 'text-green-400' :
-                                                    pred.type === 'pattern' ? 'text-blue-400' :
-                                                    'text-yellow-400'
-                                                } />
-                                                <h4 className="font-medium text-white">{pred.title}</h4>
-                                            </div>
-                                            <span className="text-xs text-gray-400">
-                                                {(pred.confidence * 100).toFixed(0)}% confidence
-                                            </span>
-                                        </div>
-                                        <p className="text-sm text-gray-300 mt-2">{pred.description}</p>
-                                    </div>
-                                ))
-                            ) : (
-                                <div className="text-center py-12 text-gray-400">
-                                    <Brain size={48} className="mx-auto mb-4 opacity-50" />
-                                    <p>No predictions yet</p>
-                                    <p className="text-xs mt-2">Use the app more to generate activity patterns</p>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {activityTab === 'history' && (
-                        <div className="space-y-2 max-h-96 overflow-y-auto">
-                            {activityData.length > 0 ? (
-                                activityData.slice(0, 50).map((activity, idx) => (
-                                    <div key={idx} className="flex items-center gap-3 p-2 bg-gray-800 rounded">
-                                        {getActivityIcon(activity.type)}
+                                        <span className={`mt-0.5 flex-shrink-0 ${cfg.color}`}>{cfg.icon}</span>
                                         <div className="flex-1 min-w-0">
-                                            <p className="text-sm text-white truncate">
-                                                {activity.type?.replace(/_/g, ' ')}
-                                            </p>
-                                            <p className="text-xs text-gray-400 truncate">
-                                                {activity.data?.filePath || activity.data?.url || activity.data?.command || '-'}
-                                            </p>
+                                            <p className="text-sm text-gray-200 truncate leading-tight">{label || '—'}</p>
+                                            {sub && <p className="text-xs text-gray-500 truncate">{sub}</p>}
                                         </div>
-                                        <span className="text-xs text-gray-500">
-                                            {activity.timestamp ? new Date(activity.timestamp).toLocaleTimeString() : '-'}
-                                        </span>
+                                        <span className="text-xs text-gray-600 flex-shrink-0 mt-0.5">{formatTime(activity.timestamp)}</span>
                                     </div>
-                                ))
-                            ) : (
-                                <div className="text-center py-12 text-gray-400">
-                                    <Activity size={48} className="mx-auto mb-4 opacity-50" />
-                                    <p>No activity history yet</p>
+                                    {isOpen && (
+                                        <div className="ml-7 mb-1 px-2 py-1.5 bg-gray-800 rounded text-xs font-mono text-gray-300 whitespace-pre-wrap break-all">
+                                            {JSON.stringify(activity.data, null, 2)}
+                                        </div>
+                                    )}
                                 </div>
-                            )}
-                        </div>
-                    )}
-
-                    {activityTab === 'patterns' && (
-                        <div className="space-y-4">
-                            {activityStats?.mostCommonPatterns?.length > 0 ? (
-                                <>
-                                    <div className="grid grid-cols-3 gap-4 mb-4">
-                                        <div className="p-4 bg-gray-800 rounded-lg text-center">
-                                            <div className="text-2xl font-bold text-purple-400">{activityStats.totalActivities || 0}</div>
-                                            <div className="text-xs text-gray-400">Total Activities</div>
-                                        </div>
-                                        <div className="p-4 bg-gray-800 rounded-lg text-center">
-                                            <div className="text-2xl font-bold text-blue-400">{activityStats.mostCommonPatterns?.length || 0}</div>
-                                            <div className="text-xs text-gray-400">Patterns Found</div>
-                                        </div>
-                                        <div className="p-4 bg-gray-800 rounded-lg text-center">
-                                            <div className="text-2xl font-bold text-green-400">{activityStats.peakHours?.[0] ?? '-'}</div>
-                                            <div className="text-xs text-gray-400">Peak Hour</div>
-                                        </div>
-                                    </div>
-                                    {activityStats.mostCommonPatterns.map((pattern: any, idx: number) => (
-                                        <div key={idx} className="p-3 bg-gray-800 rounded-lg">
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                                {pattern.pattern.map((step: string, sidx: number) => (
-                                                    <React.Fragment key={sidx}>
-                                                        <span className="px-2 py-1 bg-gray-700 rounded text-sm text-gray-300">
-                                                            {step.replace(/_/g, ' ')}
-                                                        </span>
-                                                        {sidx < pattern.pattern.length - 1 && (
-                                                            <ChevronsRight size={14} className="text-gray-500" />
-                                                        )}
-                                                    </React.Fragment>
-                                                ))}
-                                            </div>
-                                            <div className="flex gap-4 mt-2 text-xs text-gray-400">
-                                                <span>Occurrences: {pattern.count}</span>
-                                                <span>Avg Duration: {Math.round(pattern.avgDuration / 1000)}s</span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </>
-                            ) : (
-                                <div className="text-center py-12 text-gray-400">
-                                    <BarChart3 size={48} className="mx-auto mb-4 opacity-50" />
-                                    <p>No patterns detected yet</p>
-                                    <p className="text-xs mt-2">Keep using the app to build pattern recognition</p>
-                                </div>
-                            )}
-                        </div>
-                    )}
+                            );
+                        }) : (
+                            <div className="text-center py-12 text-gray-500">
+                                <Activity size={32} className="mx-auto mb-3 opacity-40" />
+                                <p className="text-sm">No activity recorded yet</p>
+                            </div>
+                        )}
+                    </div>
                 </>
             )}
         </div>
@@ -242,28 +164,21 @@ const ActivityIntelligence: React.FC<ActivityIntelligenceProps> = ({ isModal = f
     if (isModal) {
         return (
             <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100]" onClick={onClose}>
-                <div
-                    className="theme-bg-secondary rounded-lg shadow-xl w-[90vw] max-w-4xl max-h-[85vh] overflow-hidden flex flex-col"
-                    onClick={e => e.stopPropagation()}
-                >
+                <div className="theme-bg-secondary rounded-lg shadow-xl w-[90vw] max-w-3xl max-h-[85vh] overflow-hidden flex flex-col"
+                    onClick={e => e.stopPropagation()}>
                     <div className="flex items-center justify-between p-4 border-b theme-border">
-                        <h3 className="text-lg font-semibold flex items-center gap-2">
-                            <Brain className="text-purple-400" size={20} />
-                            Activity Intelligence
+                        <h3 className="font-semibold flex items-center gap-2">
+                            <Brain className="text-purple-400" size={18} />Activity Intelligence
                         </h3>
-                        <button onClick={onClose} className="p-1 hover:bg-gray-700 rounded">
-                            <span className="text-xl">&times;</span>
-                        </button>
+                        <button onClick={onClose} className="p-1 hover:bg-gray-700 rounded text-gray-400">✕</button>
                     </div>
-                    <div className="flex-1 overflow-auto">
-                        {content}
-                    </div>
+                    <div className="flex-1 overflow-hidden">{content}</div>
                 </div>
             </div>
         );
     }
 
-    return content;
+    return <div className="h-full flex flex-col">{content}</div>;
 };
 
 export default ActivityIntelligence;

@@ -73,7 +73,7 @@ const Sidebar = (props: any) => {
         setPhotoViewerOpen, setDashboardMenuOpen, setJinxMenuOpen,
         setCtxEditorOpen, setTeamManagementOpen, setNpcTeamMenuOpen, setSidebarCollapsed,
         createGraphViewerPane, createBrowserGraphPane, createDataLabelerPane,
-        createDataDashPane, createDBToolPane, createNPCTeamPane, createJinxPane, createTeamManagementPane, createMcpManagerPane, createSkillsManagerPane, createSettingsPane, createPhotoViewerPane, createScherzoPane, createProjectEnvPane, createDiskUsagePane, createLibraryViewerPane, createHelpPane, createTileJinxPane, createGitPane,
+        createDataDashPane, createDBToolPane, createNPCTeamPane, createJinxPane, createTeamManagementPane, createMcpManagerPane, createSkillsManagerPane, createSettingsPane, createPhotoViewerPane, createScherzoPane, createProjectEnvPane, createDiskUsagePane, createLibraryViewerPane, createHelpPane, createTileJinxPane, createGitPane, createBrowserSettingsPane,
 
         createNewConversation, generateId, streamToPaneRef, availableNPCs, currentNPC, currentModel,
         currentProvider, executionMode, mcpServerPath, selectedMcpTools, updateContentPane,
@@ -86,7 +86,8 @@ const Sidebar = (props: any) => {
         createAndAddPaneNodeToLayout, closeContentPane, findNodePath, findNodeByPath,
         isPredictiveTextEnabled, setIsPredictiveTextEnabled,
         topBarHeight = 48, bottomBarHeight = 48, topBarCollapsed = false,
-        onExpandTopBar, onCollapseTopBar, setDownloadManagerOpen
+        onExpandTopBar, onCollapseTopBar, setDownloadManagerOpen,
+        openTeamManagementTab
     } = props;
 
     const aiEnabled = useAiEnabled();
@@ -1742,6 +1743,7 @@ const renderMcpSidebarPanel = () => {
                     const newState = !mcpPanelOpen;
                     setMcpPanelOpen(newState);
                     if (newState && mcpSidebarServers.length === 0) loadMcpSidebarServers();
+                    openTeamManagementTab?.('mcp');
                 }}
                 className="flex items-center px-2 py-1.5 cursor-pointer hover:bg-cyan-500/10 transition-colors"
             >
@@ -1762,9 +1764,9 @@ const renderMcpSidebarPanel = () => {
                         <RefreshCw size={9} className={`text-gray-500 hover:text-cyan-400 ${mcpSidebarLoading ? 'animate-spin' : ''}`} />
                     </button>
                     <button
-                        onClick={(e) => { e.stopPropagation(); createMcpManagerPane?.(); }}
+                        onClick={(e) => { e.stopPropagation(); openTeamManagementTab?.('mcp'); }}
                         className="p-0.5 hover:bg-cyan-500/20 rounded"
-                        title="Open full MCP Manager"
+                        title="Open MCP in Team Manager"
                     >
                         <ExternalLink size={9} className="text-gray-500 hover:text-cyan-400" />
                     </button>
@@ -1781,7 +1783,7 @@ const renderMcpSidebarPanel = () => {
                         <div className="text-center py-2">
                             <div className="text-[9px] text-gray-500">No MCP servers configured</div>
                             <button
-                                onClick={() => createMcpManagerPane?.()}
+                                onClick={() => openTeamManagementTab?.('mcp')}
                                 className="text-[9px] text-cyan-400 hover:underline mt-0.5"
                             >
                                 Add servers
@@ -1910,7 +1912,7 @@ const renderSidebarSkillNodes = (nodes: any[], teamKey: string, depth: number): 
                     className="flex items-center gap-1 py-0.5 rounded hover:theme-bg-secondary text-[10px] cursor-pointer"
                     style={{ paddingLeft: `${depth * 10 + 6}px` }}
                     title={jinx.description || name}
-                    onClick={() => createSkillsManagerPane?.(name)}
+                    onClick={() => openTeamManagementTab?.('jinxes')}
                 >
                     {isSkill
                         ? <BookOpen size={9} className="text-purple-400 flex-shrink-0" />
@@ -1969,6 +1971,7 @@ const renderSkillsSidebarPanel = () => {
                     const newState = !skillsPanelOpen;
                     setSkillsPanelOpen(newState);
                     if (newState && sidebarJinxes.length === 0) loadSidebarJinxes();
+                    openTeamManagementTab?.('jinxes');
                 }}
                 className="flex items-center px-2 py-1.5 cursor-pointer hover:bg-purple-500/10 transition-colors"
             >
@@ -1996,9 +1999,9 @@ const renderSkillsSidebarPanel = () => {
                         <RefreshCw size={9} className={`text-gray-500 hover:text-purple-400 ${sidebarJinxesLoading ? 'animate-spin' : ''}`} />
                     </button>
                     <button
-                        onClick={(e) => { e.stopPropagation(); createSkillsManagerPane?.(); }}
+                        onClick={(e) => { e.stopPropagation(); openTeamManagementTab?.('jinxes'); }}
                         className="p-0.5 hover:bg-purple-500/20 rounded"
-                        title="Open Skills Manager"
+                        title="Open Skills in Team Manager"
                     >
                         <ExternalLink size={9} className="text-gray-500 hover:text-purple-400" />
                     </button>
@@ -2124,18 +2127,11 @@ const renderWebsiteList = () => {
                                 <RefreshCw size={11} />
                             </button>
                             <button
-                                onClick={(e) => { e.stopPropagation(); setShowWebsitesSettings(!showWebsitesSettings); }}
-                                className={`p-1.5 hover:bg-purple-500/20 rounded transition-all ${showWebsitesSettings ? 'text-purple-400 bg-purple-500/20' : 'text-gray-400 hover:text-purple-400'}`}
-                                title="Settings"
+                                onClick={(e) => { e.stopPropagation(); createBrowserSettingsPane?.(); }}
+                                className="p-1.5 hover:bg-purple-500/20 rounded transition-all text-gray-400 hover:text-purple-400"
+                                title="Browser Settings"
                             >
                                 <Settings size={11} />
-                            </button>
-                            <button
-                                onClick={(e) => { e.stopPropagation(); createBrowserGraphPane?.(); }}
-                                className="p-1.5 hover:bg-cyan-500/20 rounded transition-all text-gray-400 hover:text-cyan-400"
-                                title="Browser History Graph"
-                            >
-                                <Network size={11} />
                             </button>
                         </>
                     )}
@@ -2148,80 +2144,6 @@ const renderWebsiteList = () => {
                     <Globe size={12} className="text-purple-300" />
                 </button>
             </div>
-            {showWebsitesSettings && (
-                <div className="p-2 bg-purple-900/20 border-y border-purple-500/30 text-[10px] space-y-2">
-                    <div>
-                        <label className="text-gray-400 block mb-1">Browser Cookies & Logins</label>
-                        <div className="flex gap-1">
-                            <button
-                                onClick={() => {
-                                    setBrowserSessionMode('global');
-                                    localStorage.setItem('npc-browser-session-mode', 'global');
-                                    localStorage.removeItem(`npc-browser-session-mode-${currentPath}`);
-                                    window.dispatchEvent(new Event('browser-session-mode-changed'));
-                                }}
-                                className={`flex-1 px-2 py-1 rounded text-[10px] transition-colors ${browserSessionMode === 'global' ? 'bg-purple-600 text-white' : 'theme-bg-tertiary theme-text-muted hover:text-white'}`}
-                            >
-                                Global (shared)
-                            </button>
-                            <button
-                                onClick={() => {
-                                    setBrowserSessionMode('project');
-                                    localStorage.setItem(`npc-browser-session-mode-${currentPath}`, 'project');
-                                    window.dispatchEvent(new Event('browser-session-mode-changed'));
-                                }}
-                                className={`flex-1 px-2 py-1 rounded text-[10px] transition-colors ${browserSessionMode === 'project' ? 'bg-purple-600 text-white' : 'theme-bg-tertiary theme-text-muted hover:text-white'}`}
-                            >
-                                Project only
-                            </button>
-                        </div>
-                        <div className="text-[9px] text-gray-500 mt-1">
-                            {browserSessionMode === 'global'
-                                ? 'Logins shared across all folders. Re-open browser tabs to apply.'
-                                : `Logins isolated to this folder. Re-open browser tabs to apply.`}
-                        </div>
-                    </div>
-                    <div className="flex items-center justify-between">
-                        <label className="theme-text-primary">Group by domain</label>
-                        <input
-                            type="checkbox"
-                            checked={websitesSettings.groupByDomain}
-                            onChange={(e) => setWebsitesSettings(s => ({ ...s, groupByDomain: e.target.checked }))}
-                            className="rounded"
-                        />
-                    </div>
-                    <div>
-                        <label className="text-gray-400 block mb-1">Time range (days, 0=all)</label>
-                        <input
-                            type="number"
-                            value={websitesSettings.timeRangeDays}
-                            onChange={(e) => setWebsitesSettings(s => ({ ...s, timeRangeDays: parseInt(e.target.value) || 0 }))}
-                            className="w-full theme-bg-tertiary theme-border border rounded px-2 py-1 theme-text-primary"
-                            min="0"
-                        />
-                    </div>
-                    <div>
-                        <label className="text-gray-400 block mb-1">Max history items</label>
-                        <input
-                            type="number"
-                            value={websitesSettings.maxHistory}
-                            onChange={(e) => setWebsitesSettings(s => ({ ...s, maxHistory: parseInt(e.target.value) || 100 }))}
-                            className="w-full theme-bg-tertiary theme-border border rounded px-2 py-1 theme-text-primary"
-                            min="10"
-                        />
-                    </div>
-                    <div>
-                        <label className="text-gray-400 block mb-1">Excluded domains (comma-sep)</label>
-                        <input
-                            type="text"
-                            value={websitesSettings.excludedDomains}
-                            onChange={(e) => setWebsitesSettings(s => ({ ...s, excludedDomains: e.target.value }))}
-                            placeholder="facebook.com,twitter.com"
-                            className="w-full theme-bg-tertiary theme-border border rounded px-2 py-1 theme-text-primary placeholder:opacity-50"
-                        />
-                    </div>
-                </div>
-            )}
             {!websitesCollapsed && allWebsites.length > 0 && (
                 <div className="px-1 py-1 theme-bg-secondary border-b theme-border">
                     <div className="relative">
@@ -5546,7 +5468,7 @@ return (
                                         className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewTerminalType === item.command ? 'bg-green-900/30 text-green-300' : 'theme-text-primary'}`}
                                     >
                                         <Terminal size={11} /><span>{item.name}</span>
-                                        {defaultNewTerminalType === agent.command && <Star size={8} className="text-yellow-400 ml-auto" />}
+                                        {defaultNewTerminalType === item.command && <Star size={8} className="text-yellow-400 ml-auto" />}
                                     </button>
                                 ));
                             })()}

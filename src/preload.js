@@ -657,6 +657,18 @@ onTerminalClosed: (callback) => {
         ipcRenderer.on('backend:startup-error', handler);
         return () => ipcRenderer.removeListener('backend:startup-error', handler);
     },
+    backendTryLocalPython: () => ipcRenderer.invoke('backend:tryLocalPython'),
+    backendInstallAndStart: (args) => ipcRenderer.invoke('backend:installAndStart', args),
+    onBackendInstallProgress: (cb) => {
+        const handler = (_, data) => cb(data);
+        ipcRenderer.on('backend:installProgress', handler);
+        return () => ipcRenderer.removeListener('backend:installProgress', handler);
+    },
+    onBackendStarted: (cb) => {
+        const handler = (_, data) => cb(data);
+        ipcRenderer.on('backend:started', handler);
+        return () => ipcRenderer.removeListener('backend:started', handler);
+    },
 
     generativeFill: async (params) => {
     return ipcRenderer.invoke('generative-fill', params);
