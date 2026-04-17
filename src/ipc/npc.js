@@ -18,7 +18,7 @@ function hashBuffer(buf) {
 }
 
 function register(ctx) {
-  const { ipcMain, getMainWindow, callBackendApi, BACKEND_URL, log, generateId, activeStreams, appDir } = ctx;
+  const { ipcMain, getMainWindow, callBackendApi, BACKEND_URL, log, generateId, activeStreams, appDir, dbQuery } = ctx;
 
   const INCOGNIDE_TEAM_PATH = path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team');
 
@@ -1105,8 +1105,14 @@ function register(ctx) {
 
   ipcMain.handle('activity:log', async (event, data) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/activity/log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-      return await res.json();
+      await dbQuery(
+        `CREATE TABLE IF NOT EXISTS activity_log (id INTEGER PRIMARY KEY AUTOINCREMENT, activity_type TEXT, activity_data TEXT, timestamp TEXT, npc TEXT, session_id TEXT)`
+      );
+      await dbQuery(
+        `INSERT INTO activity_log (activity_type, activity_data, timestamp, npc, session_id) VALUES (?, ?, ?, ?, ?)`,
+        [data.type, JSON.stringify(data.data || {}), new Date().toISOString(), data.npc || null, data.sessionId || null]
+      );
+      return { success: true };
     } catch (err) { return { error: err.message }; }
   });
 

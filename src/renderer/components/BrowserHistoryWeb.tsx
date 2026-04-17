@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Globe, Loader, RefreshCw } from 'lucide-react';
+import { Globe, Loader, RefreshCw, FolderOpen } from 'lucide-react';
 import ForceGraph2D from 'react-force-graph-2d';
 
 interface BrowserHistoryWebProps {
@@ -15,16 +15,16 @@ const BrowserHistoryWeb: React.FC<BrowserHistoryWebProps> = ({ isModal = false, 
     const [historyGraphError, setHistoryGraphError] = useState<string | null>(null);
     const [historyMinVisits, setHistoryMinVisits] = useState(1);
     const [historyEdgeFilter, setHistoryEdgeFilter] = useState<'all' | 'click' | 'manual'>('all');
+    const [filterByPath, setFilterByPath] = useState(false);
     const [selectedHistoryNode, setSelectedHistoryNode] = useState<any>(null);
     const historyGraphRef = useRef<any>(null);
 
     const fetchHistoryGraph = useCallback(async () => {
-        if (!currentPath) return;
         setHistoryGraphLoading(true);
         setHistoryGraphError(null);
         try {
             const result = await (window as any).api?.browserGetHistoryGraph?.({
-                folderPath: currentPath,
+                folderPath: filterByPath && currentPath ? currentPath : null,
                 minVisits: historyMinVisits
             });
             if (result?.success) {
@@ -38,7 +38,7 @@ const BrowserHistoryWeb: React.FC<BrowserHistoryWebProps> = ({ isModal = false, 
         } finally {
             setHistoryGraphLoading(false);
         }
-    }, [currentPath, historyMinVisits]);
+    }, [currentPath, historyMinVisits, filterByPath]);
 
     useEffect(() => {
         fetchHistoryGraph();
@@ -130,6 +130,18 @@ const BrowserHistoryWeb: React.FC<BrowserHistoryWebProps> = ({ isModal = false, 
                         className="w-full px-2 py-1 text-xs theme-input rounded"
                     />
                 </div>
+                {currentPath && (
+                    <div>
+                        <label className="text-xs theme-text-secondary mb-1 block">Scope</label>
+                        <button
+                            onClick={() => setFilterByPath(f => !f)}
+                            className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded border transition-colors w-full ${filterByPath ? 'bg-blue-600/30 border-blue-500/50 text-blue-300' : 'theme-bg-tertiary theme-border theme-text-muted'}`}
+                        >
+                            <FolderOpen size={12} />
+                            {filterByPath ? 'This folder' : 'All history'}
+                        </button>
+                    </div>
+                )}
                 <div>
                     <label className="text-xs theme-text-secondary mb-1 block">Edge Filter</label>
                     <select

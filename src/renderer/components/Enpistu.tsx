@@ -65,7 +65,7 @@ import PathSwitcher from './PathSwitcher';
 import WorkspaceSwitchWarning from './WorkspaceSwitchWarning';
 import LogsViewer from './LogsViewer';
 import CronDaemonPanel from './CronDaemonPanel';
-import MemoryManager from './MemoryManager';
+import MemoryManagement from './MemoryManagement';
 import WindowManagerPane from './WindowManagerPane';
 import AccountPane from './AccountPane';
 import SearchPane from './SearchPane';
@@ -76,7 +76,6 @@ import GraphViewer from './GraphViewer';
 import BrowserHistoryWeb from './BrowserHistoryWeb';
 import KnowledgeGraphEditor from './KnowledgeGraphEditor';
 import McpServerMenu from './McpServerMenu';
-import MemoryManagement from './MemoryManagement';
 import MessageLabeling from './MessageLabeling';
 import LabeledDataManager from './LabeledDataManager';
 import ActivityIntelligence from './ActivityIntelligence';
@@ -92,6 +91,9 @@ ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarEle
 import * as LucideIcons from 'lucide-react';
 import { useActivityTracker } from './ActivityTracker';
 import ActivityTrackerDashboard from './ActivityTracker';
+import BrowserSettingsManager from './BrowserSettingsManager';
+import ModelManager from './ModelManager';
+import VoiceManager from './VoiceManager';
 import {
     serializeWorkspace,
     saveWorkspaceToStorage,
@@ -280,6 +282,47 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
 
     // Activity tracking for RNN predictions
     const { trackActivity } = useActivityTracker();
+
+    // Global activity instrumentation
+    useEffect(() => {
+        const handleClick = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            const interactive = target.closest('button, a, [role="button"]');
+            const paneEl = target.closest('[data-pane-id]') as HTMLElement | null;
+            const paneType = paneEl?.getAttribute('data-pane-type') || null;
+            const section = target.closest('[data-section]')?.getAttribute('data-section') || null;
+            if (interactive) {
+                const label = interactive.getAttribute('aria-label')
+                    || interactive.getAttribute('title')
+                    || interactive.textContent?.trim().replace(/\s+/g, ' ').slice(0, 80) || null;
+                if (label && label.length > 0) {
+                    trackActivity('click', { label, section, pane: paneType, x: e.clientX, y: e.clientY });
+                }
+            } else if (paneEl) {
+                const paneId = paneEl.getAttribute('data-pane-id');
+                trackActivity('pane_focus', { paneId, paneType, section });
+            }
+        };
+        const handleKeydown = (e: KeyboardEvent) => {
+            if (e.metaKey || e.ctrlKey || e.altKey) {
+                trackActivity('keyboard_shortcut', { key: e.key, meta: e.metaKey, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey });
+            }
+        };
+        const handleBlur = (e: FocusEvent) => {
+            const t = e.target as HTMLInputElement | HTMLTextAreaElement;
+            if ((t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') && t.value?.trim().length > 1) {
+                trackActivity('text_input', { value: t.value.trim().slice(0, 500), placeholder: t.placeholder || null });
+            }
+        };
+        document.addEventListener('click', handleClick, { capture: true });
+        document.addEventListener('keydown', handleKeydown, { capture: false });
+        document.addEventListener('blur', handleBlur, { capture: true });
+        return () => {
+            document.removeEventListener('click', handleClick, { capture: true });
+            document.removeEventListener('keydown', handleKeydown, { capture: false });
+            document.removeEventListener('blur', handleBlur, { capture: true });
+        };
+    }, [trackActivity]);
 
     // Open mode (pane vs tab) - must be before useLayoutManager so the ref can be passed
     const [openMode, setOpenMode] = useState<'pane' | 'tab'>(() => (localStorage.getItem('incognide_openMode') as 'pane' | 'tab') || 'pane');
@@ -3605,11 +3648,7 @@ const renderDiskUsagePane = useCallback(({ nodeId }: { nodeId: string }) => {
 // Render MemoryManager pane (for pane-based viewing)
 const renderMemoryManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return (
-        <MemoryManager
-            isPane={true}
-            currentPath={currentPathRef.current}
-            currentNpc={currentNPC}
-        />
+        <MemoryManagement isModal={false} />
     );
 }, [currentNPC]);
 
@@ -3624,6 +3663,18 @@ const renderAccountPane = useCallback(({ nodeId }: { nodeId: string }) => {
 
 const renderActivityPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return <ActivityTrackerDashboard />;
+}, []);
+
+const renderBrowserSettingsPane = useCallback(({ nodeId }: { nodeId: string }) => {
+    return <BrowserSettingsManager currentPath={currentPathRef.current} />;
+}, []);
+
+const renderModelManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
+    return <ModelManager />;
+}, []);
+
+const renderVoiceManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
+    return <VoiceManager />;
 }, []);
 
 const createAccountPane = useCallback(async () => {
@@ -5350,7 +5401,8 @@ ${contextPrompt}`;
                 npcList={availableNPCs}
                 jinxList={availableJinxes}
                 currentNpc={currentNPC}
-                initialTab={paneData.initialTab}
+                initialTab={paneData.activeTab || paneData.initialTab}
+                onTabChange={(tab) => { contentDataRef.current[nodeId] = { ...contentDataRef.current[nodeId], activeTab: tab }; }}
             />
         );
     }, [currentPath, createNewConversation, availableNPCs, availableJinxes, currentNPC]);
@@ -5364,6 +5416,7 @@ ${contextPrompt}`;
 
     // Render Settings pane (embedded version for pane layout)
     const renderSettingsPane = useCallback(({ nodeId }: { nodeId: string }) => {
+        const paneData = contentDataRef.current[nodeId] || {};
         return (
             <SettingsMenu
                 isOpen={true}
@@ -5373,6 +5426,8 @@ ${contextPrompt}`;
                 availableModels={availableModels}
                 embedded={true}
                 onRerunSetup={onRerunSetup}
+                initialTab={paneData.activeTab || 'global'}
+                onTabChange={(tab: string) => { contentDataRef.current[nodeId] = { ...contentDataRef.current[nodeId], activeTab: tab }; }}
             />
         );
     }, [currentPath, handlePathChange, availableModels]);
@@ -7513,8 +7568,10 @@ const getChatInputProps = useCallback((paneId: string) => {
     uploadedFiles, setUploadedFiles, contextFiles, setContextFiles,
     contextFilesCollapsed, setContextFilesCollapsed, currentPath,
     // Pane context auto-include
-    autoIncludeContext, setAutoIncludeContext,
-    contextPaneOverrides, setContextPaneOverrides,
+    autoIncludeContext,
+    setAutoIncludeContext: (val: boolean) => { setAutoIncludeContext(val); notifyUpdate(); },
+    contextPaneOverrides,
+    setContextPaneOverrides: (updater: any) => { setContextPaneOverrides(updater); notifyUpdate(); },
     contentDataRef,
     paneVersion,
     // Per-pane execution mode
@@ -7788,6 +7845,9 @@ const paneRenderers = useMemo(() => ({
     windowmanager: renderWindowManagerPane,
     account: renderAccountPane,
     activity: renderActivityPane,
+    browsersettings: renderBrowserSettingsPane,
+    'model-manager': renderModelManagerPane,
+    'voice-manager': renderVoiceManagerPane,
 }), [
     renderChatView, renderFileEditor, renderTerminalView, renderPdfViewer,
     renderCsvViewer, renderDocxViewer, renderBrowserViewer, renderPptxViewer,
@@ -7799,6 +7859,7 @@ const paneRenderers = useMemo(() => ({
     renderFolderViewerPane, renderProjectEnvPane, renderDiskUsagePane, renderMemoryManagerPane,
     renderCronDaemonPane, renderSearchPane, renderMarkdownPreviewPane, renderHtmlPreviewPane,
     renderTileJinxPane, renderBranchComparisonPane, renderWindowManagerPane,
+    renderBrowserSettingsPane, renderModelManagerPane, renderVoiceManagerPane,
 ]);
 
 const layoutComponentApi = useMemo(() => ({
@@ -8589,6 +8650,7 @@ const renderMainContent = () => {
                     onKeyDown={(e) => {
                         if (e.key === 'Enter' && searchTerm.trim()) {
                             e.preventDefault();
+                            trackActivity('search_query', { query: searchTerm.trim(), scope: searchScope });
                             createSearchPane(searchTerm.trim(), searchScope);
                             setSearchTerm('');
                         }

@@ -397,6 +397,8 @@ const WebBrowserViewer = memo(({
 
             setCurrentUrl(urlToLoad);
             setUrlInput(urlToLoad === 'about:blank' ? '' : urlToLoad);
+            previousUrlRef.current = urlToLoad;
+            lastHistorySaveRef.current = urlToLoad;
             webview.src = urlToLoad;
 
             if (urlToLoad === 'about:blank') {

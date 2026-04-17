@@ -325,6 +325,7 @@ function register(ctx) {
           registerGlobalShortcut, app, backendProcess, killBackendProcess,
           ensureUserDataDirectory, waitForServer, logBackend,
           logsDir, electronLogPath, backendLogPath,
+          dbQuery,
           readPythonEnvConfig: ctxReadPythonEnvConfig } = ctx;
 
   const _readPythonEnvConfig = ctxReadPythonEnvConfig || readPythonEnvConfig;
@@ -601,72 +602,123 @@ function register(ctx) {
   });
 
   ipcMain.handle('ollama:checkStatus', async () => {
-    log('[Main Process] Checking Ollama status via backend...');
-    return await callBackendApi(`${BACKEND_URL}/api/ollama/status`);
+    log('[Main Process] Checking Ollama status directly...');
+    try {
+      const { shell } = require('electron');
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+      const response = await fetch('http://127.0.0.1:11434/api/tags', { signal: controller.signal });
+      clearTimeout(timeout);
+      if (response.ok) {
+        const data = await response.json();
+        return { installed: true, running: true, models: data.models || [] };
+      }
+      return { installed: true, running: false, models: [] };
+    } catch (err) {
+      return { installed: false, running: false, models: [], error: err.message };
+    }
   });
 
   ipcMain.handle('ollama:install', async () => {
-    log('[Main Process] Requesting Ollama installation from backend...');
-    return await callBackendApi(`${BACKEND_URL}/api/ollama/install`, { method: 'POST' });
+    log('[Main Process] Installing Ollama directly (no backend required)...');
+    const { shell } = require('electron');
+    const OLLAMA_DOWNLOAD_URL = 'https://ollama.com/download';
+
+    if (process.platform === 'darwin') {
+      // Try brew first
+      try {
+        execSync('which brew', { stdio: 'ignore', timeout: 5000 });
+        log('[Main Process] Homebrew found, attempting brew install ollama...');
+        execSync('brew install ollama', { timeout: 120000, stdio: 'ignore' });
+        log('[Main Process] Ollama installed via Homebrew');
+        return { success: true, message: 'Ollama installed via Homebrew. Run `brew services start ollama` or launch Ollama to start it.' };
+      } catch (brewErr) {
+        log(`[Main Process] brew install failed: ${brewErr.message} — falling back to download URL`);
+        await shell.openExternal(OLLAMA_DOWNLOAD_URL);
+        return { success: false, openDownload: true, downloadUrl: OLLAMA_DOWNLOAD_URL, message: 'Download page opened. Install Ollama, then click Refresh.' };
+      }
+    } else {
+      await shell.openExternal(OLLAMA_DOWNLOAD_URL);
+      return { success: false, openDownload: true, downloadUrl: OLLAMA_DOWNLOAD_URL, message: 'Download page opened. Install Ollama, then click Refresh.' };
+    }
   });
 
   ipcMain.handle('ollama:getLocalModels', async () => {
-    log('[Main Process] Fetching local Ollama models from backend...');
-    return await callBackendApi(`${BACKEND_URL}/api/ollama/models`);
+    log('[Main Process] Fetching local Ollama models directly...');
+    try {
+      const response = await fetch('http://127.0.0.1:11434/api/tags', { signal: AbortSignal.timeout(5000) });
+      if (!response.ok) throw new Error(`Ollama returned HTTP ${response.status}`);
+      const data = await response.json();
+      const models = (data.models || []).map(m => ({
+        name: m.name || m.model,
+        size: m.size,
+        modified_at: m.modified_at,
+      })).filter(m => m.name);
+      return { models };
+    } catch (err) {
+      log(`[Main Process] ollama:getLocalModels error: ${err.message}`);
+      return { models: [], error: err.message };
+    }
   });
 
   ipcMain.handle('ollama:deleteModel', async (event, { model }) => {
-    log(`[Main Process] Requesting deletion of model: ${model}`);
-    return await callBackendApi(`${BACKEND_URL}/api/ollama/delete`, {
-        method: 'POST',
+    log(`[Main Process] Deleting Ollama model directly: ${model}`);
+    try {
+      const response = await fetch('http://127.0.0.1:11434/api/delete', {
+        method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: model }),
-    });
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Ollama returned HTTP ${response.status}: ${text}`);
+      }
+      return { success: true };
+    } catch (err) {
+      log(`[Main Process] ollama:deleteModel error: ${err.message}`);
+      return { success: false, error: err.message };
+    }
   });
 
   ipcMain.handle('ollama:pullModel', async (event, { model }) => {
-    log(`[Main Process] Starting pull for model: ${model}`);
+    log(`[Main Process] Starting pull for model directly from Ollama: ${model}`);
     try {
-        const response = await fetch(`${BACKEND_URL}/api/ollama/pull`, {
+        const response = await fetch('http://127.0.0.1:11434/api/pull', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: model }),
+            body: JSON.stringify({ name: model, stream: true }),
         });
 
         if (!response.ok || !response.body) {
             const errorText = await response.text();
-            throw new Error(`Backend error on pull start: ${errorText}`);
+            throw new Error(`Ollama error on pull start: ${errorText}`);
         }
 
         const mainWindow = getMainWindow();
         const stream = response.body;
         stream.on('data', (chunk) => {
             try {
-
                 const progressLines = chunk.toString().trim().split('\n');
                 for (const line of progressLines) {
                     if (line) {
                       const progress = JSON.parse(line);
 
-                    if (progress.status && progress.status.toLowerCase() === 'error') {
-                        log(`[Ollama Pull] Received error from backend stream:`, progress.details);
-                        mainWindow?.webContents.send('ollama-pull-error', progress.details || 'An unknown error occurred during download.');
-
-                    } else {
-
-                        const frontendProgress = {
-                            status: progress.status,
-                            details: `${progress.digest || ''} - ${progress.total ? (progress.completed / progress.total * 100).toFixed(1) + '%' : ''}`,
-                            percent: progress.total ? (progress.completed / progress.total * 100) : null
-                        };
-                        mainWindow?.webContents.send('ollama-pull-progress', frontendProgress);
-                    }
-
+                      if (progress.status && progress.status.toLowerCase() === 'error') {
+                          log(`[Ollama Pull] Received error from stream:`, progress.details);
+                          mainWindow?.webContents.send('ollama-pull-error', progress.details || 'An unknown error occurred during download.');
+                      } else {
+                          const frontendProgress = {
+                              status: progress.status,
+                              details: `${progress.digest || ''} - ${progress.total ? (progress.completed / progress.total * 100).toFixed(1) + '%' : ''}`,
+                              percent: progress.total ? (progress.completed / progress.total * 100) : null
+                          };
+                          mainWindow?.webContents.send('ollama-pull-progress', frontendProgress);
+                      }
                     }
                 }
             } catch (e) {
                 console.error('Error parsing pull progress:', e);
-
                 mainWindow?.webContents.send('ollama-pull-error', 'Failed to parse progress update.');
             }
         });
@@ -1711,14 +1763,27 @@ function register(ctx) {
 
   ipcMain.handle('loadProjectSettings', async (event, currentPath) => {
     try {
-        const url = `${BACKEND_URL}/api/settings/project?path=${encodeURIComponent(currentPath)}`;
-        const response = await fetch(url, {
-            method: 'GET',
-            credentials: 'include'
-        });
-        const data = await response.json();
-        if (data.error) throw new Error(data.error);
-        return data;
+        const envPath = path.join(currentPath, '.env');
+        const env_vars = {};
+        try {
+            const content = await fsPromises.readFile(envPath, 'utf8');
+            for (const line of content.split('\n')) {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed.startsWith('#')) continue;
+                const eqIdx = trimmed.indexOf('=');
+                if (eqIdx === -1) continue;
+                const key = trimmed.slice(0, eqIdx).replace(/^export\s+/, '').trim();
+                let value = trimmed.slice(eqIdx + 1).trim();
+                if ((value.startsWith('"') && value.endsWith('"')) ||
+                    (value.startsWith("'") && value.endsWith("'"))) {
+                    value = value.slice(1, -1);
+                }
+                if (key) env_vars[key] = value;
+            }
+        } catch (readErr) {
+            // .env may not exist — return empty vars
+        }
+        return { env_vars };
     } catch (err) {
         console.error('Error loading project settings in main:', err);
         return { error: err.message };
@@ -1727,13 +1792,10 @@ function register(ctx) {
 
   ipcMain.handle('saveProjectSettings', async (event, { path: settingsPath, env_vars }) => {
     try {
-        const url = `${BACKEND_URL}/api/settings/project?path=${encodeURIComponent(settingsPath)}`;
-        await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ env_vars: env_vars })
-        });
+        const envPath = path.join(settingsPath, '.env');
+        const lines = Object.entries(env_vars || {}).map(([k, v]) => `${k}=${v}`);
+        await fsPromises.mkdir(settingsPath, { recursive: true });
+        await fsPromises.writeFile(envPath, lines.join('\n') + (lines.length ? '\n' : ''));
         return { success: true };
     } catch (err) {
         console.error('Error saving project settings in main:', err);
@@ -1741,48 +1803,98 @@ function register(ctx) {
     }
   });
 
+  // Map of .npcshrc env var names -> settings keys
+  const SETTINGS_KEY_MAP = {
+    NPCSH_CHAT_MODEL: 'model',
+    NPCSH_CHAT_PROVIDER: 'provider',
+    NPCSH_EMBEDDING_MODEL: 'embedding_model',
+    NPCSH_EMBEDDING_PROVIDER: 'embedding_provider',
+    NPCSH_SEARCH_PROVIDER: 'search_provider',
+    NPC_STUDIO_DEFAULT_FOLDER: 'default_folder',
+    INCOGNIDE_HOME: 'data_directory',
+    NPC_STUDIO_PREDICTIVE_TEXT_ENABLED: 'is_predictive_text_enabled',
+    NPC_STUDIO_PREDICTIVE_TEXT_MODEL: 'predictive_text_model',
+    NPC_STUDIO_PREDICTIVE_TEXT_PROVIDER: 'predictive_text_provider',
+    BACKEND_PYTHON_PATH: 'backend_python_path',
+  };
+  const SETTINGS_KEY_MAP_REVERSE = Object.fromEntries(
+    Object.entries(SETTINGS_KEY_MAP).map(([k, v]) => [v, k])
+  );
+  const GLOBAL_SETTINGS_DEFAULTS = {
+    model: 'llama3.2',
+    provider: 'ollama',
+    embedding_model: 'nomic-embed-text',
+    embedding_provider: 'ollama',
+    search_provider: 'perplexity',
+    default_folder: '~/.npcsh/',
+    data_directory: '~/.npcsh/incognide',
+    is_predictive_text_enabled: false,
+    predictive_text_model: 'llama3.2',
+    predictive_text_provider: 'ollama',
+    backend_python_path: '',
+  };
+
   ipcMain.handle('saveGlobalSettings', async (event, { global_settings, global_vars }) => {
     try {
-        const response = await fetch(`${BACKEND_URL}/api/settings/global`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({
-                global_settings: global_settings,
-                global_vars: global_vars,
-            })
-        });
-        if (!response.ok) {
-            const text = await response.text();
-            console.error(`[SETTINGS] Save failed: HTTP ${response.status} — ${text}`);
-            return { error: `Backend returned ${response.status}: ${text}` };
+        const rcPath = path.join(os.homedir(), '.npcshrc');
+        const lines = [];
+        for (const [settingKey, value] of Object.entries(global_settings || {})) {
+            const envKey = SETTINGS_KEY_MAP_REVERSE[settingKey] || settingKey;
+            lines.push(`export ${envKey}=${value}`);
         }
+        for (const [envKey, value] of Object.entries(global_vars || {})) {
+            lines.push(`export ${envKey}=${value}`);
+        }
+        await fsPromises.writeFile(rcPath, lines.join('\n') + (lines.length ? '\n' : ''));
         return { success: true };
     } catch (err) {
         console.error('[SETTINGS] Error saving global settings:', err);
-        return { error: `Could not reach backend to save settings: ${err.message}` };
+        return { error: err.message };
     }
   });
 
   ipcMain.handle('loadGlobalSettings', async () => {
     try {
-        const response = await fetch(`${BACKEND_URL}/api/settings/global`, {
-            method: 'GET',
-            credentials: 'include'
-        });
-        const data = await response.json();
+        const rcPath = path.join(os.homedir(), '.npcshrc');
+        const global_settings = { ...GLOBAL_SETTINGS_DEFAULTS };
+        const global_vars = {};
 
-        if (data.error) {
-            throw new Error(data.error);
+        try {
+            const content = await fsPromises.readFile(rcPath, 'utf8');
+            for (const line of content.split('\n')) {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed.startsWith('#')) continue;
+                // strip leading 'export '
+                const stripped = trimmed.replace(/^export\s+/, '');
+                const eqIdx = stripped.indexOf('=');
+                if (eqIdx === -1) continue;
+                const envKey = stripped.slice(0, eqIdx).trim();
+                let value = stripped.slice(eqIdx + 1).trim();
+                if ((value.startsWith('"') && value.endsWith('"')) ||
+                    (value.startsWith("'") && value.endsWith("'"))) {
+                    value = value.slice(1, -1);
+                }
+                if (envKey in SETTINGS_KEY_MAP) {
+                    const settingKey = SETTINGS_KEY_MAP[envKey];
+                    if (settingKey === 'is_predictive_text_enabled') {
+                        global_settings[settingKey] = value === 'true' || value === '1';
+                    } else {
+                        global_settings[settingKey] = value;
+                    }
+                } else if (envKey) {
+                    global_vars[envKey] = value;
+                }
+            }
+        } catch (readErr) {
+            // .npcshrc may not exist — return defaults
         }
-        return data;
 
-      } catch (err) {
+        return { global_settings, global_vars };
+    } catch (err) {
         console.error('Error loading global settings:', err);
-
-      }
+        return { error: err.message };
     }
-  );
+  });
 
   ipcMain.handle('getLogsDir', async () => {
     return {
@@ -1965,11 +2077,104 @@ function register(ctx) {
     return null;
   });
 
+  // Helper: check if a TCP port is open (returns boolean)
+  const _checkPort = (host, port, timeoutMs = 2000) => {
+    return new Promise((resolve) => {
+      const net = require('net');
+      const socket = new net.Socket();
+      let resolved = false;
+      const finish = (result) => {
+        if (!resolved) { resolved = true; socket.destroy(); resolve(result); }
+      };
+      socket.setTimeout(timeoutMs);
+      socket.once('connect', () => finish(true));
+      socket.once('error', () => finish(false));
+      socket.once('timeout', () => finish(false));
+      socket.connect(port, host);
+    });
+  };
+
+  // Provider config: endpoint to query for models, port to check
+  const LOCAL_PROVIDER_CONFIG = {
+    ollama:   { port: 11434, tagsUrl: 'http://127.0.0.1:11434/api/tags',       modelsKey: 'models',  nameKey: 'name'  },
+    lmstudio: { port: 1234,  tagsUrl: 'http://127.0.0.1:1234/v1/models',       modelsKey: 'data',    nameKey: 'id'    },
+    llamacpp: { port: 8080,  tagsUrl: null },
+    omlx:     { port: 8000,  tagsUrl: 'http://127.0.0.1:8000/v1/models',       modelsKey: 'data',    nameKey: 'id'    },
+  };
+
   ipcMain.handle('scan-local-models', async (event, provider) => {
     try {
-        const response = await fetch(`${BACKEND_URL}/api/models/local/scan?provider=${encodeURIComponent(provider)}`);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        return await response.json();
+        const homeDir = os.homedir();
+        // Scan common model dirs for GGUF files (same approach as scan-gguf-models)
+        const ollamaModels = process.env.OLLAMA_MODELS || path.join(homeDir, '.ollama', 'models');
+        const scanDirs = [
+            path.join(ollamaModels, 'blobs'),
+            path.join(homeDir, '.cache', 'lm-studio', 'models'),
+            path.join(homeDir, '.lmstudio', 'models'),
+            path.join(homeDir, 'LM Studio', 'models'),
+            path.join(homeDir, '.cache', 'huggingface', 'hub'),
+            path.join(homeDir, '.npcsh', 'models'),
+            path.join(homeDir, 'models'),
+        ];
+
+        const models = [];
+        const seenPaths = new Set();
+
+        const scanDir = async (dir, depth = 0) => {
+            if (depth > 4) return;
+            try {
+                const entries = await fsPromises.readdir(dir, { withFileTypes: true });
+                for (const entry of entries) {
+                    const fullPath = path.join(dir, entry.name);
+                    try {
+                        const stats = await fsPromises.stat(fullPath);
+                        if (stats.isDirectory() && !entry.name.startsWith('.git') && entry.name !== 'node_modules') {
+                            await scanDir(fullPath, depth + 1);
+                        } else if (stats.isFile()) {
+                            const ext = path.extname(entry.name).toLowerCase();
+                            if ((ext === '.gguf' || ext === '.ggml') && stats.size > 50 * 1024 * 1024 && !seenPaths.has(fullPath)) {
+                                seenPaths.add(fullPath);
+                                models.push({ name: entry.name, path: fullPath, size: stats.size, modified_at: stats.mtime.toISOString() });
+                            }
+                        }
+                    } catch {}
+                }
+            } catch {}
+        };
+
+        const filterDirs = provider && LOCAL_PROVIDER_CONFIG[provider]
+            ? scanDirs.filter(d => {
+                const dl = d.toLowerCase().replace(/\\/g, '/');
+                return dl.includes(provider === 'lmstudio' ? 'lm-studio' : provider);
+              })
+            : scanDirs;
+
+        for (const dir of (filterDirs.length ? filterDirs : scanDirs)) {
+            await scanDir(dir);
+        }
+
+        // Also fetch named models from running API if available
+        const cfg = provider && LOCAL_PROVIDER_CONFIG[provider];
+        if (cfg && cfg.tagsUrl) {
+            try {
+                const res = await fetch(cfg.tagsUrl, { signal: AbortSignal.timeout(2000) });
+                if (res.ok) {
+                    const data = await res.json();
+                    const apiModels = (data[cfg.modelsKey] || []).map(m => ({
+                        name: m[cfg.nameKey],
+                        path: null,
+                        source: 'api',
+                    }));
+                    for (const m of apiModels) {
+                        if (m.name && !models.some(x => x.name === m.name)) {
+                            models.push(m);
+                        }
+                    }
+                }
+            } catch {}
+        }
+
+        return { models };
     } catch (err) {
         console.error('Error scanning local models:', err);
         return { models: [], error: err.message };
@@ -1978,9 +2183,20 @@ function register(ctx) {
 
   ipcMain.handle('get-local-model-status', async (event, provider) => {
     try {
-        const response = await fetch(`${BACKEND_URL}/api/models/local/status?provider=${encodeURIComponent(provider)}`);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        return await response.json();
+        const cfg = LOCAL_PROVIDER_CONFIG[provider];
+        if (!cfg) return { running: false, error: `Unknown provider: ${provider}` };
+
+        // Try the API endpoint first (more reliable than raw TCP)
+        if (cfg.tagsUrl) {
+            try {
+                const res = await fetch(cfg.tagsUrl, { signal: AbortSignal.timeout(2000) });
+                if (res.ok) return { running: true };
+            } catch {}
+        }
+
+        // Fall back to TCP port check
+        const open = await _checkPort('127.0.0.1', cfg.port);
+        return { running: open };
     } catch (err) {
         console.error('Error getting local model status:', err);
         return { running: false, error: err.message };
@@ -2162,6 +2378,7 @@ function register(ctx) {
     }
   });
 
+  // TODO: download-hf-model kept on backend — complex streaming + auth + large file handling
   ipcMain.handle('download-hf-model', async (event, { url, targetDir }) => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/models/hf/download`, {
@@ -2179,9 +2396,12 @@ function register(ctx) {
 
   ipcMain.handle('search-hf-models', async (event, { query, limit = 20 }) => {
     try {
-        const response = await fetch(`${BACKEND_URL}/api/models/hf/search?q=${encodeURIComponent(query)}&limit=${limit}`);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        return await response.json();
+        const url = `https://huggingface.co/api/models?search=${encodeURIComponent(query)}&limit=${limit}&sort=downloads&direction=-1`;
+        const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+        if (!response.ok) throw new Error(`HuggingFace API returned HTTP ${response.status}`);
+        const data = await response.json();
+        // data is an array of model objects from the HF API
+        return { models: Array.isArray(data) ? data : [] };
     } catch (err) {
         console.error('Error searching HF models:', err);
         return { models: [], error: err.message };
@@ -2190,15 +2410,24 @@ function register(ctx) {
 
   ipcMain.handle('list-hf-files', async (event, { repoId }) => {
     try {
-        const response = await fetch(`${BACKEND_URL}/api/models/hf/files?repo_id=${encodeURIComponent(repoId)}`);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        return await response.json();
+        const url = `https://huggingface.co/api/models/${encodeURIComponent(repoId)}`;
+        const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+        if (!response.ok) throw new Error(`HuggingFace API returned HTTP ${response.status}`);
+        const data = await response.json();
+        const files = (data.siblings || []).map(f => ({
+            rfilename: f.rfilename,
+            size: f.size,
+            blob_id: f.blob_id,
+            lfs: f.lfs,
+        }));
+        return { files };
     } catch (err) {
         console.error('Error listing HF files:', err);
         return { files: [], error: err.message };
     }
   });
 
+  // TODO: download-hf-file kept on backend — complex streaming + auth + large file handling
   ipcMain.handle('download-hf-file', async (event, { repoId, filename, targetDir }) => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/models/hf/download_file`, {
@@ -2231,24 +2460,61 @@ function register(ctx) {
 
   ipcMain.handle('get-activity-predictions', async (event) => {
     try {
-        const response = await fetch(`${BACKEND_URL}/api/activity/predictions`);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        return await response.json();
+        const [browserRows, commandRows, jinxRows, memoryRows, activityRows] = await Promise.all([
+            dbQuery(`SELECT title, url, MAX(last_visited) as timestamp, 'website_visit' as type FROM browser_history GROUP BY url ORDER BY timestamp DESC LIMIT 200`).catch(() => []),
+            dbQuery(`SELECT command, timestamp, 'terminal_command' as type FROM command_history ORDER BY timestamp DESC LIMIT 200`).catch(() => []),
+            dbQuery(`SELECT jinx_name, timestamp, 'jinx_execution' as type FROM jinx_executions ORDER BY timestamp DESC LIMIT 200`).catch(() => []),
+            dbQuery(`SELECT initial_memory, npc, timestamp, 'memory_created' as type FROM memory_lifecycle ORDER BY timestamp DESC LIMIT 100`).catch(() => []),
+            dbQuery(`SELECT activity_type, activity_data, timestamp, npc FROM activity_log ORDER BY timestamp DESC LIMIT 200`).catch(() => []),
+        ]);
+
+        const recentActivities = [
+            ...browserRows.map(r => ({ type: r.type, data: { url: r.url, title: r.title }, timestamp: r.timestamp })),
+            ...commandRows.map(r => ({ type: r.type, data: { command: r.command }, timestamp: r.timestamp })),
+            ...jinxRows.map(r => ({ type: r.type, data: { command: r.jinx_name }, timestamp: r.timestamp })),
+            ...memoryRows.map(r => ({ type: r.type, data: { memory: r.initial_memory, npc: r.npc }, timestamp: r.timestamp })),
+            ...activityRows.map(r => { let d = {}; try { d = JSON.parse(r.activity_data || '{}'); } catch {} return { type: r.activity_type, data: d, timestamp: r.timestamp }; }),
+        ].sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime()).slice(0, 100);
+
+        const domainCounts = {};
+        for (const r of browserRows) {
+            try { const h = new URL(r.url).hostname; domainCounts[h] = (domainCounts[h] || 0) + 1; } catch {}
+        }
+        const topDomains = Object.entries(domainCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+        const hourCounts = {};
+        for (const r of recentActivities) {
+            if (r.timestamp) { const h = new Date(r.timestamp).getHours(); hourCounts[h] = (hourCounts[h] || 0) + 1; }
+        }
+        const peakHours = Object.entries(hourCounts).sort((a, b) => b[1] - a[1]).map(([h]) => parseInt(h));
+
+        const predictions = [
+            ...topDomains.map(([domain, count]) => ({
+                type: 'pattern',
+                title: `Frequent site: ${domain}`,
+                description: `Visited ${count} times recently`,
+                confidence: Math.min(count / 50, 0.99)
+            })),
+        ];
+
+        return {
+            predictions,
+            stats: {
+                totalActivities: recentActivities.length,
+                mostCommonPatterns: topDomains.map(([d, c]) => ({ pattern: [d], count: c, avgDuration: 0 })),
+                peakHours
+            },
+            recentActivities,
+            memoryCount: memoryRows.length
+        };
     } catch (err) {
-        console.error('Error getting activity predictions:', err);
-        return { predictions: [], error: err.message };
+        console.error('Error getting activity data from local DB:', err);
+        return { predictions: [], stats: null, recentActivities: [], error: err.message };
     }
   });
 
   ipcMain.handle('train-activity-model', async (event) => {
-    try {
-        const response = await fetch(`${BACKEND_URL}/api/activity/train`, { method: 'POST' });
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        return await response.json();
-    } catch (err) {
-        console.error('Error training activity model:', err);
-        return { error: err.message };
-    }
+    return { success: true, message: 'Activity patterns computed from local history' };
   });
 
   ipcMain.handle('finetune-diffusers', async (event, params) => {

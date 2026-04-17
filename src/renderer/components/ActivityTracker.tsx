@@ -15,7 +15,11 @@ export type ActivityType =
     | 'chat_message'
     | 'app_switch'
     | 'search_query'
-    | 'model_change';
+    | 'model_change'
+    | 'click'
+    | 'keyboard_shortcut'
+    | 'text_input'
+    | 'pane_focus';
 
 export interface UserActivity {
     type: ActivityType;

@@ -2,16 +2,14 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     Database, Table, Loader, Play, Copy, Download, Plus, Star, Trash2,
     ChevronDown, ChevronRight, Search, Activity, Link,
-    CheckCircle, XCircle, BarChart as BarChartIcon, BrainCircuit, Brain, Tag
+    CheckCircle, XCircle, BarChart as BarChartIcon, BrainCircuit
 } from 'lucide-react';
 import {
     createWindowApiDatabaseClient,
     QueryChart
 } from 'npcts';
 import type { DatabaseClient } from 'npcts';
-import MemoryManagement from './MemoryManagement';
 import ActivityIntelligence from './ActivityIntelligence';
-import LabeledDataManager from './LabeledDataManager';
 
 const generateId = () => `widget_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -72,7 +70,7 @@ const DBTool: React.FC<DBToolProps> = ({
 
     const [csvExportSettings, setCsvExportSettings] = useState({ alwaysPrompt: true });
 
-    const [activeTab, setActiveTab] = useState<'query' | 'memory' | 'labels' | 'activity'>('query');
+    const [activeTab, setActiveTab] = useState<'query' | 'activity'>('query');
 
     useEffect(() => {
         const savedHistory = localStorage.getItem('dataDashQueryHistory');
@@ -414,28 +412,6 @@ Please provide only the SQL query without any markdown formatting or explanation
                 >
                     <Database size={16} />
                     Query
-                </button>
-                <button
-                    onClick={() => setActiveTab('memory')}
-                    className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
-                        activeTab === 'memory'
-                            ? 'border-orange-500 text-orange-400'
-                            : 'border-transparent text-gray-400 hover:text-white'
-                    }`}
-                >
-                    <Brain size={16} />
-                    Memory
-                </button>
-                <button
-                    onClick={() => setActiveTab('labels')}
-                    className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
-                        activeTab === 'labels'
-                            ? 'border-blue-500 text-blue-400'
-                            : 'border-transparent text-gray-400 hover:text-white'
-                    }`}
-                >
-                    <Tag size={16} />
-                    Labels
                 </button>
                 <button
                     onClick={() => setActiveTab('activity')}
@@ -827,14 +803,6 @@ Please provide only the SQL query without any markdown formatting or explanation
                     </div>
                 )}
             </div>
-            ) : activeTab === 'memory' ? (
-                <div className="flex-1 overflow-auto">
-                    <MemoryManagement isModal={false} />
-                </div>
-            ) : activeTab === 'labels' ? (
-                <div className="flex-1 overflow-auto p-4">
-                    <LabeledDataManager />
-                </div>
             ) : activeTab === 'activity' ? (
                 <div className="flex-1 overflow-auto">
                     <ActivityIntelligence />
