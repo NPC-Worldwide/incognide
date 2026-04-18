@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { useAiEnabled } from './AiFeatureContext';
+import KgIcon from './icons/KgIcon';
 
 type ViewTab = 'graph' | 'table' | 'tree' | 'groups';
 
@@ -47,16 +48,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
 
     const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
 
-    const [showSchedulePanel, setShowSchedulePanel] = useState(false);
-    const [sleepSchedule, setSleepSchedule] = useState('0 3 * * *');
-    const [sleepGuidance, setSleepGuidance] = useState('');
-    const [sleepBackfill, setSleepBackfill] = useState(true);
-    const [dreamSchedule, setDreamSchedule] = useState('0 4 * * 0');
-    const [dreamGuidance, setDreamGuidance] = useState('');
-    const [sleepJobActive, setSleepJobActive] = useState<boolean | null>(null);
-    const [dreamJobActive, setDreamJobActive] = useState<boolean | null>(null);
-    const [kgScheduleLoading, setKgScheduleLoading] = useState(false);
-    const [kgScheduleMsg, setKgScheduleMsg] = useState<string | null>(null);
 
     const [showImportPanel, setShowImportPanel] = useState(false);
     const [importText, setImportText] = useState('');
@@ -442,75 +433,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
             setQueryHistory(prev => [...prev, { q, a: `Error: ${err.message}`, sources: [] }]);
         } finally {
             setQueryLoading(false);
-        }
-    };
-
-    const KG_SCHEDULE_PRESETS = [
-        { label: 'Daily midnight', value: '0 0 * * *' },
-        { label: 'Daily 3am', value: '0 3 * * *' },
-        { label: 'Every 12h', value: '0 */12 * * *' },
-        { label: 'Weekly Sun', value: '0 0 * * 0' },
-        { label: 'Weekly Sun 4am', value: '0 4 * * 0' },
-        { label: 'Monthly 1st', value: '0 0 1 * *' },
-    ];
-
-    const checkKgJobStatus = useCallback(async () => {
-        try {
-            const sleepStatus = await (window as any).api?.jobStatus?.('kg_sleep');
-            setSleepJobActive(sleepStatus && !sleepStatus.error ? (sleepStatus.active ?? false) : false);
-            const dreamStatus = await (window as any).api?.jobStatus?.('kg_dream');
-            setDreamJobActive(dreamStatus && !dreamStatus.error ? (dreamStatus.active ?? false) : false);
-        } catch {  }
-    }, []);
-
-    useEffect(() => {
-        if (showSchedulePanel) checkKgJobStatus();
-    }, [showSchedulePanel, checkKgJobStatus]);
-
-    const handleScheduleKgJob = async (type: 'sleep' | 'dream') => {
-        setKgScheduleLoading(true);
-        setKgScheduleMsg(null);
-        try {
-            let cmd = type === 'sleep'
-                ? `sleep${sleepBackfill ? ' backfill=true' : ''}`
-                : 'sleep dream=true';
-            const guidance = type === 'sleep' ? sleepGuidance : dreamGuidance;
-            if (guidance.trim()) {
-                cmd += ` context="${guidance.trim().replace(/"/g, '\\"')}"`;
-            }
-            const schedule = type === 'sleep' ? sleepSchedule : dreamSchedule;
-            const jobName = type === 'sleep' ? 'kg_sleep' : 'kg_dream';
-            const result = await (window as any).api?.scheduleJob?.({ schedule, command: cmd, jobName });
-            if (result?.error) {
-                setKgScheduleMsg(`Error: ${result.error}`);
-            } else {
-                setKgScheduleMsg(`${type === 'sleep' ? 'Sleep' : 'Dream'} job scheduled.`);
-                checkKgJobStatus();
-            }
-        } catch (err: any) {
-            setKgScheduleMsg(`Error: ${err.message}`);
-        } finally {
-            setKgScheduleLoading(false);
-        }
-    };
-
-    const handleUnscheduleKgJob = async (type: 'sleep' | 'dream') => {
-        setKgScheduleLoading(true);
-        setKgScheduleMsg(null);
-        try {
-            const jobName = type === 'sleep' ? 'kg_sleep' : 'kg_dream';
-            const result = await (window as any).api?.unscheduleJob?.(jobName);
-            if (result?.error) {
-                setKgScheduleMsg(`Error: ${result.error}`);
-            } else {
-                setKgScheduleMsg(`${type === 'sleep' ? 'Sleep' : 'Dream'} job removed.`);
-                if (type === 'sleep') setSleepJobActive(false);
-                else setDreamJobActive(false);
-            }
-        } catch (err: any) {
-            setKgScheduleMsg(`Error: ${err.message}`);
-        } finally {
-            setKgScheduleLoading(false);
         }
     };
 
@@ -1003,7 +925,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
 
             <div className="flex items-center justify-between px-3 py-1.5 border-b theme-border flex-shrink-0">
                 <h4 className="text-sm font-semibold flex items-center gap-2 theme-text-primary">
-                    <GitBranch className="text-green-400" size={16} />Knowledge Graph
+                    <KgIcon className="text-green-400" size={16} />Knowledge Graph
                     <span className="text-xs theme-text-muted font-normal">{processedGraphData.nodes.length} nodes · {processedGraphData.links.length} edges</span>
                 </h4>
                 <div className="flex items-center gap-1.5">
@@ -1011,13 +933,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                         <>
                             <button onClick={() => handleKgProcessTrigger('sleep')} disabled={kgLoading} className="px-2 py-1 text-[11px] theme-bg-secondary hover:opacity-80 theme-text-secondary rounded flex items-center gap-1 disabled:opacity-50 border theme-border"><Zap size={11} /> Sleep</button>
                             <button onClick={() => handleKgProcessTrigger('dream')} disabled={kgLoading} className="px-2 py-1 text-[11px] theme-bg-secondary hover:opacity-80 theme-text-secondary rounded flex items-center gap-1 disabled:opacity-50 border theme-border"><Brain size={11} /> Dream</button>
-                            <button
-                                onClick={() => setShowSchedulePanel(!showSchedulePanel)}
-                                className={`px-2 py-1 text-[11px] rounded flex items-center gap-1 border theme-border ${showSchedulePanel ? 'bg-green-600/30 text-green-300' : 'theme-bg-secondary theme-text-secondary hover:opacity-80'}`}
-                            >
-                                <Clock size={11} /> Schedule
-                                {(sleepJobActive || dreamJobActive) && <span className="w-1.5 h-1.5 bg-green-400 rounded-full" />}
-                            </button>
                             <button
                                 onClick={() => { setShowImportPanel(!showImportPanel); setShowQueryPanel(false); }}
                                 className={`px-2 py-1 text-[11px] rounded flex items-center gap-1 border theme-border ${showImportPanel ? 'bg-blue-600/30 text-blue-300' : 'theme-bg-secondary theme-text-secondary hover:opacity-80'}`}
@@ -1051,84 +966,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                     )}
                 </div>
             </div>
-
-            {showSchedulePanel && (
-                <div className="px-3 py-2 border-b theme-border flex-shrink-0 space-y-3 bg-gray-900/50">
-                    <div className="flex items-start gap-3">
-                        <div className="flex-1 space-y-1.5">
-                            <div className="flex items-center gap-2">
-                                <Zap size={12} className="text-amber-400" />
-                                <span className="text-xs font-semibold text-white">Sleep Schedule</span>
-                                {sleepJobActive !== null && (
-                                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${sleepJobActive ? 'bg-green-600/30 text-green-300' : 'bg-gray-600/30 text-gray-500'}`}>
-                                        {sleepJobActive ? 'Active' : 'Off'}
-                                    </span>
-                                )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <select value={sleepSchedule} onChange={e => setSleepSchedule(e.target.value)} className="px-2 py-1 text-[11px] bg-gray-800 text-white border border-gray-600 rounded">
-                                    {KG_SCHEDULE_PRESETS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-                                </select>
-                                <label className="flex items-center gap-1 text-[11px] text-gray-400">
-                                    <input type="checkbox" checked={sleepBackfill} onChange={e => setSleepBackfill(e.target.checked)} className="rounded" />
-                                    Backfill
-                                </label>
-                                <button onClick={() => handleScheduleKgJob('sleep')} disabled={kgScheduleLoading} className="px-2 py-1 text-[11px] bg-amber-600 hover:bg-amber-500 text-white rounded disabled:opacity-50">
-                                    {sleepJobActive ? 'Update' : 'Schedule'}
-                                </button>
-                                {sleepJobActive && (
-                                    <button onClick={() => handleUnscheduleKgJob('sleep')} disabled={kgScheduleLoading} className="px-2 py-1 text-[11px] bg-red-600/30 text-red-300 rounded hover:bg-red-600/50 disabled:opacity-50">
-                                        Remove
-                                    </button>
-                                )}
-                            </div>
-                            <input
-                                type="text" value={sleepGuidance} onChange={e => setSleepGuidance(e.target.value)}
-                                placeholder="Guidance: e.g. Focus on merging duplicate concepts..."
-                                className="w-full px-2 py-1 text-[11px] bg-gray-800 text-white border border-gray-600 rounded placeholder-gray-600"
-                            />
-                        </div>
-                    </div>
-
-                    <div className="flex items-start gap-3">
-                        <div className="flex-1 space-y-1.5">
-                            <div className="flex items-center gap-2">
-                                <Brain size={12} className="text-purple-400" />
-                                <span className="text-xs font-semibold text-white">Dream Schedule</span>
-                                {dreamJobActive !== null && (
-                                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${dreamJobActive ? 'bg-green-600/30 text-green-300' : 'bg-gray-600/30 text-gray-500'}`}>
-                                        {dreamJobActive ? 'Active' : 'Off'}
-                                    </span>
-                                )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <select value={dreamSchedule} onChange={e => setDreamSchedule(e.target.value)} className="px-2 py-1 text-[11px] bg-gray-800 text-white border border-gray-600 rounded">
-                                    {KG_SCHEDULE_PRESETS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-                                </select>
-                                <button onClick={() => handleScheduleKgJob('dream')} disabled={kgScheduleLoading} className="px-2 py-1 text-[11px] bg-purple-600 hover:bg-purple-500 text-white rounded disabled:opacity-50">
-                                    {dreamJobActive ? 'Update' : 'Schedule'}
-                                </button>
-                                {dreamJobActive && (
-                                    <button onClick={() => handleUnscheduleKgJob('dream')} disabled={kgScheduleLoading} className="px-2 py-1 text-[11px] bg-red-600/30 text-red-300 rounded hover:bg-red-600/50 disabled:opacity-50">
-                                        Remove
-                                    </button>
-                                )}
-                            </div>
-                            <input
-                                type="text" value={dreamGuidance} onChange={e => setDreamGuidance(e.target.value)}
-                                placeholder="Guidance: e.g. Cross-pollinate programming and music concepts..."
-                                className="w-full px-2 py-1 text-[11px] bg-gray-800 text-white border border-gray-600 rounded placeholder-gray-600"
-                            />
-                        </div>
-                    </div>
-
-                    {kgScheduleMsg && (
-                        <div className={`text-[11px] px-2 py-1 rounded ${kgScheduleMsg.startsWith('Error') ? 'bg-red-900/30 text-red-300' : 'bg-green-900/30 text-green-300'}`}>
-                            {kgScheduleMsg}
-                        </div>
-                    )}
-                </div>
-            )}
 
             {showImportPanel && (
                 <div className="px-3 py-2 border-b theme-border flex-shrink-0 space-y-2 bg-blue-950/20">
