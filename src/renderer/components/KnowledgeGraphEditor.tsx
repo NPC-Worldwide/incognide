@@ -1,15 +1,16 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import {
     GitBranch, Brain, Zap, Loader, Plus, Link, X, Trash2, Repeat, Search,
     ChevronDown, ChevronUp, ChevronRight, ArrowRight, BarChart3, Network,
     FolderTree, LayoutGrid, Table2, Edit3, Check, ZoomIn, Minus, Maximize2,
-    Clock, Upload, MessageSquare, FileText, Send
+    Clock, Upload, MessageSquare, FileText, Send, Dna
 } from 'lucide-react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { useAiEnabled } from './AiFeatureContext';
 import KgIcon from './icons/KgIcon';
+const SememolutionPanel = lazy(() => import('./SememolutionPanel'));
 
-type ViewTab = 'graph' | 'table' | 'tree' | 'groups';
+type ViewTab = 'graph' | 'table' | 'tree' | 'groups' | 'sememolution';
 
 interface KnowledgeGraphEditorProps {
     isModal?: boolean;
@@ -81,8 +82,26 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
 
     const [showQueryPanel, setShowQueryPanel] = useState(false);
     const [queryInput, setQueryInput] = useState('');
-    const [queryHistory, setQueryHistory] = useState<{ q: string; a: string; sources: string[] }[]>([]);
+    const [queryHistory, setQueryHistory] = useState<{ q: string; a: string; sources: string[]; candidates?: any[] }[]>([]);
     const [queryLoading, setQueryLoading] = useState(false);
+    const [queryMode, setQueryMode] = useState<'keyword' | 'traversal' | 'sememolution'>('keyword');
+    const [queryLambdaDepth, setQueryLambdaDepth] = useState(2.0);
+    const [queryLambdaBreadth, setQueryLambdaBreadth] = useState(5.0);
+    const [querySimilarityThreshold, setQuerySimilarityThreshold] = useState(0.6);
+    const [queryPopulationId, setQueryPopulationId] = useState<string>('');
+    const [availablePopulations, setAvailablePopulations] = useState<Array<{ id: string; name: string }>>([]);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const r = await (window as any).api?.kg_population_list?.();
+                if (Array.isArray(r?.populations)) {
+                    setAvailablePopulations(r.populations);
+                    if (!queryPopulationId && r.populations[0]) setQueryPopulationId(r.populations[0].id);
+                }
+            } catch {}
+        })();
+    }, [queryPopulationId]);
 
     const [tableSortField, setTableSortField] = useState<'name' | 'type' | 'connections'>('connections');
     const [tableSortDir, setTableSortDir] = useState<'asc' | 'desc'>('desc');
@@ -443,9 +462,26 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         setQueryInput('');
         setQueryLoading(true);
         try {
-            const result = await (window as any).api?.kg_query?.({ question: q, top_k: 15 });
+            const payload: any = {
+                question: q,
+                top_k: 15,
+                mode: queryMode,
+                lambda_depth: queryLambdaDepth,
+                lambda_breadth: queryLambdaBreadth,
+                similarity_threshold: querySimilarityThreshold,
+            };
+            if (queryMode === 'sememolution' && queryPopulationId) {
+                payload.population_id = queryPopulationId;
+            }
+            const result = await (window as any).api?.kg_query?.({ ...payload });
             if (result?.error) {
                 setQueryHistory(prev => [...prev, { q, a: `Error: ${result.error}`, sources: [] }]);
+            } else if (result?.candidates) {
+                // Sememolution ranked response — show the top candidate's text, expose the full ranking
+                const top = result.candidates[0];
+                const a = top?.response || 'No ranked candidates.';
+                const sources = top?.context_facts || [];
+                setQueryHistory(prev => [...prev, { q, a, sources, candidates: result.candidates }]);
             } else {
                 setQueryHistory(prev => [...prev, {
                     q,
@@ -748,6 +784,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         { id: 'table', label: 'Table', icon: <Table2 size={14} /> },
         { id: 'tree', label: 'Tree', icon: <FolderTree size={14} /> },
         { id: 'groups', label: 'Groups', icon: <LayoutGrid size={14} /> },
+        { id: 'sememolution', label: 'Sememolution', icon: <Dna size={14} /> },
     ];
 
     const renderTreeNode = (nodeId: string, depth: number, visited: Set<string>) => {
@@ -1081,6 +1118,43 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                             </div>
                         ))}
                     </div>
+                    <div className="flex items-center gap-2 mb-1.5 flex-wrap text-[10px]">
+                        <select value={queryMode} onChange={e => setQueryMode(e.target.value as any)}
+                            className="px-1.5 py-0.5 theme-bg-secondary border theme-border rounded font-mono">
+                            <option value="keyword">mode: keyword</option>
+                            <option value="traversal">mode: traversal</option>
+                            <option value="sememolution">mode: sememolution</option>
+                        </select>
+                        {(queryMode === 'traversal' || queryMode === 'sememolution') && (
+                            <>
+                                <label className="flex items-center gap-1 theme-text-muted">
+                                    λdepth
+                                    <input type="number" step="0.1" min="0.1" max="10" value={queryLambdaDepth}
+                                        onChange={e => setQueryLambdaDepth(parseFloat(e.target.value))}
+                                        className="w-14 px-1 py-0.5 theme-bg-secondary border theme-border rounded font-mono" />
+                                </label>
+                                <label className="flex items-center gap-1 theme-text-muted">
+                                    λbreadth
+                                    <input type="number" step="0.5" min="1" max="50" value={queryLambdaBreadth}
+                                        onChange={e => setQueryLambdaBreadth(parseFloat(e.target.value))}
+                                        className="w-14 px-1 py-0.5 theme-bg-secondary border theme-border rounded font-mono" />
+                                </label>
+                                <label className="flex items-center gap-1 theme-text-muted">
+                                    sim
+                                    <input type="number" step="0.05" min="0" max="1" value={querySimilarityThreshold}
+                                        onChange={e => setQuerySimilarityThreshold(parseFloat(e.target.value))}
+                                        className="w-14 px-1 py-0.5 theme-bg-secondary border theme-border rounded font-mono" />
+                                </label>
+                            </>
+                        )}
+                        {queryMode === 'sememolution' && (
+                            <select value={queryPopulationId} onChange={e => setQueryPopulationId(e.target.value)}
+                                className="px-1.5 py-0.5 theme-bg-secondary border theme-border rounded font-mono">
+                                <option value="">-- pick population --</option>
+                                {availablePopulations.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                        )}
+                    </div>
                     <div className="flex items-center gap-1.5">
                         <input
                             type="text"
@@ -1092,7 +1166,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                         />
                         <button
                             onClick={handleQueryKg}
-                            disabled={queryLoading || !queryInput.trim()}
+                            disabled={queryLoading || !queryInput.trim() || (queryMode === 'sememolution' && !queryPopulationId)}
                             className="px-2 py-1.5 text-[11px] bg-purple-600 hover:bg-purple-500 text-white rounded disabled:opacity-50 flex items-center gap-1"
                         >
                             {queryLoading ? <Loader size={11} className="animate-spin" /> : <Send size={11} />}
@@ -1580,6 +1654,12 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                                 )}
                             </div>
                             </div>
+                        )}
+
+                        {activeTab === 'sememolution' && (
+                            <Suspense fallback={<div className="flex items-center justify-center py-12 theme-text-muted text-xs">Loading Sememolution…</div>}>
+                                <SememolutionPanel />
+                            </Suspense>
                         )}
                     </div>
 

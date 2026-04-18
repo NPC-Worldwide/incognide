@@ -473,6 +473,14 @@ readDocxContent: (filePath) =>
     kg_ingest: (args) => ipcRenderer.invoke('kg:ingest', args),
     kg_query: (args) => ipcRenderer.invoke('kg:query', args),
 
+    kg_population_list: () => ipcRenderer.invoke('kg:population:list'),
+    kg_population_create: (args) => ipcRenderer.invoke('kg:population:create', args),
+    kg_population_get: (id) => ipcRenderer.invoke('kg:population:get', id),
+    kg_population_delete: (id) => ipcRenderer.invoke('kg:population:delete', id),
+    kg_population_evolve: (id) => ipcRenderer.invoke('kg:population:evolve', id),
+    kg_individual_get: (args) => ipcRenderer.invoke('kg:individual:get', args),
+    kg_individual_updateGenome: (args) => ipcRenderer.invoke('kg:individual:updateGenome', args),
+
     backendHealth: () => ipcRenderer.invoke('backend:health'),
     backendRestart: () => ipcRenderer.invoke('backend:restart'),
 
