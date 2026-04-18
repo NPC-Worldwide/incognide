@@ -7879,6 +7879,7 @@ const layoutComponentApi = useMemo(() => ({
     contentDataRef, updateContentPane, performSplit,
     closeContentPane,
     moveContentPane,
+    streamToPaneRef,
     createAndAddPaneNodeToLayout,
     paneRenderers,
     setPaneContextMenu,

@@ -295,6 +295,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             updateContentPane, performSplit, setRootLayoutNode,
             paneRenderers,
             moveContentPane,
+            streamToPaneRef,
             findNodePath, rootLayoutNode, setPaneContextMenu, closeContentPane,
 
             autoScrollEnabled, setAutoScrollEnabled,
@@ -511,8 +512,24 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                                     if (vd.fileContent !== undefined) tab.fileContent = vd.fileContent;
                                     if (vd.fileChanged !== undefined) tab.fileChanged = vd.fileChanged;
                                     if (vd._scrollTopPos !== undefined) tab._scrollTopPos = vd._scrollTopPos;
+                                    if (vd.chatMessages !== undefined) tab.chatMessages = vd.chatMessages;
+                                    if (vd.executionMode !== undefined) tab.executionMode = vd.executionMode;
+                                    if (vd.selectedJinx !== undefined) tab.selectedJinx = vd.selectedJinx;
+                                    if (vd.chatStats !== undefined) tab.chatStats = vd.chatStats;
                                 }
                             });
+                            // If the source pane's chat state isn't on any tab yet (e.g. the
+                            // pane was single-chat without tabs), stash it on the active tab
+                            // we're about to migrate so it survives the merge.
+                            if (sourcePaneData.contentType === 'chat' && sourcePaneData.chatMessages) {
+                                const srcActive = sourcePaneData.tabs[sourcePaneData.activeTabIndex ?? 0];
+                                if (srcActive && srcActive.contentType === 'chat' && !srcActive.chatMessages) {
+                                    srcActive.chatMessages = sourcePaneData.chatMessages;
+                                    srcActive.executionMode = sourcePaneData.executionMode;
+                                    srcActive.selectedJinx = sourcePaneData.selectedJinx;
+                                    srcActive.chatStats = sourcePaneData.chatStats;
+                                }
+                            }
                             sourcePaneData.tabs.forEach(tab => {
                                 targetPaneData.tabs.push({
                                     ...tab,
@@ -535,6 +552,12 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                                 fileChanged: sourcePaneData.fileChanged,
                                 _scrollTopPos: sourcePaneData._scrollTopPos,
                                 shellType: sourcePaneData.shellType,
+                                // Chat state must travel with the tab so in-flight messages
+                                // aren't wiped when the pane is merged into another.
+                                chatMessages: sourcePaneData.chatMessages,
+                                executionMode: sourcePaneData.executionMode,
+                                selectedJinx: sourcePaneData.selectedJinx,
+                                chatStats: sourcePaneData.chatStats,
                                 title: sourceTitle
                             });
                         }
@@ -557,11 +580,34 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                             targetPaneData.fileChanged = activeTab.fileChanged || false;
                         }
 
+                        // Hydrate chat top-level fields from the active tab so renderChatView
+                        // finds chatMessages (and so in-flight streams write to the right place).
+                        if (activeTab.contentType === 'chat' && activeTab.chatMessages) {
+                            targetPaneData.chatMessages = activeTab.chatMessages;
+                            targetPaneData.executionMode = activeTab.executionMode;
+                            targetPaneData.selectedJinx = activeTab.selectedJinx;
+                            targetPaneData.chatStats = activeTab.chatStats;
+                        }
+
                         if (sourcePaneData.tabs) {
                             sourcePaneData.tabs.forEach((tab: any) => {
                                 delete contentDataRef.current[`${comp.draggedItem.id}_${tab.id}`];
                             });
                         }
+
+                        // Re-route any in-flight streams from the old pane id to the merged
+                        // target pane, otherwise an already-requested LLM response would
+                        // land in a deleted pane and the UI would appear to hang.
+                        try {
+                            if (streamToPaneRef?.current) {
+                                const oldId = comp.draggedItem.id;
+                                for (const sid of Object.keys(streamToPaneRef.current)) {
+                                    if (streamToPaneRef.current[sid] === oldId) {
+                                        streamToPaneRef.current[sid] = node.id;
+                                    }
+                                }
+                            }
+                        } catch {}
 
                         closeContentPane(comp.draggedItem.id, comp.draggedItem.nodePath);
 
