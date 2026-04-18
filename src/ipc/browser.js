@@ -360,6 +360,11 @@ function register(ctx) {
       const forwardAndClose = (realUrl) => {
         if (handled) return;
         if (!realUrl || realUrl === 'about:blank') return;
+        // Let localhost OAuth callbacks (e.g. gcloud's localhost:8085) reach local HTTP servers
+        if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(realUrl)) {
+          log('[Browser] Popup navigated to localhost (OAuth callback), skipping forward:', realUrl);
+          return;
+        }
         handled = true;
         log('[Browser] Popup navigated to:', realUrl, '- forwarding to renderer');
         const mw = getMainWindow();

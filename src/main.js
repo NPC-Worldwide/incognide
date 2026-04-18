@@ -979,6 +979,11 @@ app.on('web-contents-created', (event, contents) => {
     contents.on('did-create-window', (newWindow) => {
       const checkAndRedirect = (realUrl) => {
         if (realUrl && realUrl !== 'about:blank') {
+          // Let localhost OAuth callbacks (e.g. gcloud's localhost:8085) reach local HTTP servers
+          if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(realUrl)) {
+            log(`[WebView] Popup navigated to localhost (OAuth callback), skipping redirect: ${realUrl}`);
+            return;
+          }
           log(`[WebView] Popup navigated to: ${realUrl} - redirecting to app tab`);
           const parentWin = BrowserWindow.fromWebContents(contents.hostWebContents || contents)
             || BrowserWindow.getFocusedWindow()
@@ -1750,6 +1755,14 @@ if (!gotTheLock) {
       );
 
       if (urlArg) {
+        // OAuth callback URLs (localhost) must reach the local HTTP server, not Electron's browser pane
+        const isLocalhostCallback = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(urlArg);
+        if (isLocalhostCallback) {
+          log(`[SECOND-INSTANCE] Ignoring localhost OAuth callback (letting it reach local HTTP server): ${urlArg}`);
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.focus();
+          return;
+        }
         log(`[SECOND-INSTANCE] Opening URL in browser pane: ${urlArg}`);
         mainWindow.webContents.send('open-url-in-browser', { url: urlArg });
         if (mainWindow.isMinimized()) mainWindow.restore();
