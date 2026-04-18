@@ -6,7 +6,7 @@ import {
     FileCode, Globe, FileText, Terminal as TerminalIcon, Eye, EyeOff, ToggleLeft, ToggleRight,
     Database, BarChart3, BrainCircuit, Image, Bot, Users, Music, Search, BookOpen, Folder, HardDrive, HelpCircle, Clock, Settings, MessageSquare, Tag
 } from 'lucide-react';
-import MemoryIcon from './MemoryIcon';
+import MemoryIcon from './icons/MemoryIcon';
 import ContextFilesPanel from './ContextFilesPanel';
 
 const getMcpServerDisplayName = (serverPath: string): string => {

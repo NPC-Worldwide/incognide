@@ -6,6 +6,8 @@ import {
     Code, Bot, Sparkles, FileCode, Database,
     Table, Activity, Cpu, Search, Square, Loader,
 } from 'lucide-react';
+import NqlInstallPrompt from './NqlInstallPrompt';
+import SmokestackIcon from './icons/SmokestackIcon';
 
 interface SqlModel {
     id: string;
@@ -67,10 +69,11 @@ const SCHEDULE_PRESETS = [
 const humanSchedule = (s: string) => SCHEDULE_PRESETS.find(p => p.value === s)?.label || s;
 
 const EXAMPLE_JOBS: { name: string; schedule: string; command: string; desc: string; npc?: string }[] = [
-    { name: 'memory_extract', schedule: '0 */6 * * *', command: 'extract_memories limit=50', desc: 'Extract memories from recent conversations every 6h' },
-    { name: 'kg_sleep', schedule: '0 3 * * *', command: 'sleep backfill=true', desc: 'Nightly KG evolution with memory backfill' },
-    { name: 'kg_dream', schedule: '0 4 * * 0', command: 'sleep dream=true', desc: 'Weekly KG creative synthesis' },
-    { name: 'context_compress', schedule: '0 */12 * * *', command: 'compress', desc: 'Compress conversation context every 12h' },
+    { name: 'nql_run_all', schedule: '0 2 * * *', command: 'run_nql_models', desc: 'Run all NQL models nightly in dependency order' },
+    { name: 'backup_db', schedule: '0 1 * * *', command: 'backup_db keep_days=30', desc: 'Snapshot npcsh_history.db daily; keep 30 days' },
+    { name: 'cleanup_screenshots', schedule: '0 4 * * 0', command: 'cleanup_screenshots keep_days=14', desc: 'Weekly prune of ~/.npcsh/screenshots older than 14 days' },
+    { name: 'rotate_logs', schedule: '0 5 * * *', command: 'rotate_logs compress_days=7 delete_days=90', desc: 'Compress week-old logs, delete 90-day-old archives' },
+    { name: 'export_conversations', schedule: '0 3 * * 0', command: 'export_conversations days=7', desc: 'Weekly JSONL export of the last 7 days of conversations' },
 ];
 
 const EXAMPLE_DAEMONS_LINUX: { name: string; command: string; desc: string; npc?: string }[] = [
@@ -95,9 +98,26 @@ const EXAMPLE_DAEMONS = IS_MAC ? EXAMPLE_DAEMONS_MAC : IS_WIN ? EXAMPLE_DAEMONS_
 
 const EXAMPLE_SQL_MODELS: SqlModel[] = [
     {
-        id: 'extract_facts', name: 'extract_facts',
-        description: 'Extract facts from recent conversations into the knowledge graph',
-        materialization: 'incremental', schedule: '0 */6 * * *',
+        id: 'stg_conversations', name: 'stg_conversations',
+        description: 'Staging model — normalized conversation rows from raw history',
+        materialization: 'view',
+        sql: `{{ config(materialized='view') }}
+
+SELECT
+    conversation_id,
+    npc,
+    team,
+    role,
+    content,
+    directory_path,
+    timestamp
+FROM conversation_history
+WHERE content IS NOT NULL AND length(content) > 0`,
+    },
+    {
+        id: 'fct_assistant_turns', name: 'fct_assistant_turns',
+        description: 'Fact table — one row per assistant reply with extracted NQL features',
+        materialization: 'incremental',
         sql: `{{ config(materialized='incremental') }}
 
 SELECT
@@ -105,66 +125,33 @@ SELECT
     nql.extract_facts(content) as facts,
     nql.identify_groups(content) as groups,
     directory_path, timestamp
-FROM conversation_history
+FROM {{ ref('stg_conversations') }}
 WHERE role = 'assistant'
 {% if is_incremental() %}
   AND timestamp > (SELECT MAX(timestamp) FROM {{ this }})
-{% endif %}
-ORDER BY timestamp DESC`,
+{% endif %}`,
     },
     {
-        id: 'kg_sleep', name: 'kg_sleep',
-        description: 'Evolve the knowledge graph — structure unlinked facts, merge concepts, infer new facts',
-        materialization: 'table', schedule: '0 3 * * *',
+        id: 'dim_npc_activity', name: 'dim_npc_activity',
+        description: 'Dimension — per-NPC aggregates: conversation counts, distinct teams, latest activity',
+        materialization: 'table',
         sql: `{{ config(materialized='table') }}
 
-WITH unlinked AS (
-    SELECT f.statement, f.source_text, f.type
-    FROM kg_facts f
-    LEFT JOIN kg_links l ON l.source = f.statement AND l.type = 'fact_to_concept'
-    WHERE l.source IS NULL
-),
-all_facts AS (
-    SELECT statement, source_text FROM kg_facts
-)
 SELECT
-    u.statement,
-    nql.generate_groups(u.statement) as new_concepts,
-    nql.zoom_in(u.statement || ' context: ' || COALESCE(u.source_text, '')) as implied_facts,
-    nql.synthesize(
-        (SELECT GROUP_CONCAT(a.statement, '\\n') FROM all_facts a LIMIT 50)
-    ) as synthesis
-FROM unlinked u`,
-    },
-    {
-        id: 'kg_dream', name: 'kg_dream',
-        description: 'Creative KG synthesis — cross-pollinate concepts, generate new connections',
-        materialization: 'table', schedule: '0 4 * * 0',
-        sql: `{{ config(materialized='table') }}
-
-WITH seed_concepts AS (
-    SELECT name, team_name, npc_name
-    FROM kg_concepts
-    ORDER BY RANDOM() LIMIT 5
-),
-concept_facts AS (
-    SELECT c.name as concept, GROUP_CONCAT(f.statement, '\\n') as related_facts
-    FROM seed_concepts c
-    JOIN kg_links l ON l.target = c.name AND l.type = 'fact_to_concept'
-    JOIN kg_facts f ON f.statement = l.source
-    GROUP BY c.name
-)
-SELECT
-    concept,
-    nql.synthesize(related_facts) as cross_synthesis,
-    nql.zoom_in(related_facts) as new_inferences,
-    nql.abstract(related_facts) as higher_abstractions
-FROM concept_facts`,
+    npc,
+    COUNT(DISTINCT conversation_id) as conversations,
+    COUNT(DISTINCT team) as teams,
+    COUNT(*) as turns,
+    MAX(timestamp) as last_active,
+    MIN(timestamp) as first_active
+FROM {{ ref('fct_assistant_turns') }}
+GROUP BY npc
+ORDER BY turns DESC`,
     },
     {
         id: 'jinx_activity', name: 'jinx_activity',
         description: 'Jinx execution stats — which jinxes run most, by which NPCs, error rates',
-        materialization: 'table', schedule: '0 0 * * 1',
+        materialization: 'table',
         sql: `{{ config(materialized='table') }}
 
 SELECT
@@ -400,6 +387,40 @@ const CronDaemonPanel = ({
         } catch {}
     }, []);
 
+    const [scriptDrafts, setScriptDrafts] = useState<Record<string, string>>({});
+    const [runningJob, setRunningJob] = useState<string | null>(null);
+    const [runResults, setRunResults] = useState<Record<string, { exitCode?: number | null; stdout?: string; stderr?: string; error?: string }>>({});
+    const [scriptSaveMsg, setScriptSaveMsg] = useState<Record<string, string>>({});
+
+    const saveScriptDraft = useCallback(async (name: string) => {
+        const content = scriptDrafts[name];
+        if (content == null) return;
+        try {
+            const r = await api?.jobWriteScript?.(name, content);
+            if (r?.error) {
+                setScriptSaveMsg(prev => ({ ...prev, [name]: `Error: ${r.error}` }));
+            } else {
+                setScriptSaveMsg(prev => ({ ...prev, [name]: `Saved at ${new Date().toLocaleTimeString()}` }));
+                setJobStatuses(prev => ({ ...prev, [name]: { ...(prev[name] || {}), scriptContent: content, scriptMtime: r?.mtime } }));
+            }
+        } catch (e: any) {
+            setScriptSaveMsg(prev => ({ ...prev, [name]: `Error: ${e.message}` }));
+        }
+    }, [scriptDrafts]);
+
+    const runJobNow = useCallback(async (name: string) => {
+        setRunningJob(name);
+        setRunResults(prev => ({ ...prev, [name]: {} }));
+        try {
+            const r = await api?.jobRunNow?.(name);
+            setRunResults(prev => ({ ...prev, [name]: r || { error: 'no response' } }));
+        } catch (e: any) {
+            setRunResults(prev => ({ ...prev, [name]: { error: e.message } }));
+        } finally {
+            setRunningJob(null);
+        }
+    }, []);
+
     const fetchDaemons = useCallback(async () => {
         try {
             const [local, system, crontab] = await Promise.all([
@@ -600,13 +621,7 @@ const CronDaemonPanel = ({
         <div className="flex flex-col h-full">
             <div className="flex items-center justify-between px-4 py-3 border-b theme-border flex-shrink-0">
                 <div className="flex items-center gap-2.5">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400">
-                        <rect x="5" y="10" width="5" height="12" rx="0.5" />
-                        <circle cx="7.5" cy="6" r="2" /><circle cx="9" cy="3" r="1.5" />
-                        <rect x="12" y="14" width="4" height="8" rx="0.5" />
-                        <rect x="18" y="16" width="3" height="6" rx="0.5" />
-                        <path d="M2 22h20" />
-                    </svg>
+                    <SmokestackIcon size={18} className="text-blue-400" />
                     <h2 className="text-base font-semibold">Scheduler & Processes</h2>
                 </div>
                 <div className="flex items-center gap-1">
@@ -786,10 +801,57 @@ const CronDaemonPanel = ({
                                             {status.scriptPath && (
                                                 <Field label="Script"><span className="font-mono text-[10px] text-gray-400 select-all break-all">{status.scriptPath}</span></Field>
                                             )}
-                                            {status.scriptContent && (
+                                            {status.scriptContent != null && (
                                                 <div>
-                                                    <div className="text-[10px] text-gray-400 mb-0.5">Script contents {status.scriptMtime && <span className="text-gray-600">(modified {new Date(status.scriptMtime).toLocaleString()})</span>}</div>
-                                                    <pre className="text-[10px] font-mono text-gray-300 whitespace-pre-wrap bg-black/30 rounded p-2 select-all max-h-32 overflow-y-auto">{status.scriptContent}</pre>
+                                                    <div className="text-[10px] text-gray-400 mb-0.5 flex items-center gap-2">
+                                                        <span>Script contents</span>
+                                                        {status.scriptMtime && <span className="text-gray-600">(modified {new Date(status.scriptMtime).toLocaleString()})</span>}
+                                                        {scriptSaveMsg[job.name] && <span className={scriptSaveMsg[job.name].startsWith('Error') ? 'text-red-400 ml-auto' : 'text-green-400 ml-auto'}>{scriptSaveMsg[job.name]}</span>}
+                                                    </div>
+                                                    <textarea
+                                                        value={scriptDrafts[job.name] != null ? scriptDrafts[job.name] : status.scriptContent}
+                                                        onChange={(e) => setScriptDrafts(prev => ({ ...prev, [job.name]: e.target.value }))}
+                                                        className="w-full text-[10px] font-mono text-gray-200 bg-black/40 rounded p-2 border theme-border focus:border-blue-500 focus:outline-none resize-y"
+                                                        rows={8}
+                                                        spellCheck={false}
+                                                    />
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <button
+                                                            onClick={() => saveScriptDraft(job.name)}
+                                                            disabled={scriptDrafts[job.name] == null || scriptDrafts[job.name] === status.scriptContent}
+                                                            className="px-2 py-1 text-[10px] bg-blue-600 hover:bg-blue-500 text-white rounded disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                                                        >
+                                                            <Save size={10} /> Save
+                                                        </button>
+                                                        <button
+                                                            onClick={() => { setScriptDrafts(prev => { const n = { ...prev }; delete n[job.name]; return n; }); setScriptSaveMsg(prev => ({ ...prev, [job.name]: '' })); }}
+                                                            disabled={scriptDrafts[job.name] == null}
+                                                            className="px-2 py-1 text-[10px] bg-gray-700 hover:bg-gray-600 rounded disabled:opacity-40"
+                                                        >
+                                                            Revert
+                                                        </button>
+                                                        <button
+                                                            onClick={() => runJobNow(job.name)}
+                                                            disabled={runningJob === job.name}
+                                                            className="px-2 py-1 text-[10px] bg-green-600 hover:bg-green-500 text-white rounded disabled:opacity-50 flex items-center gap-1 ml-auto"
+                                                        >
+                                                            {runningJob === job.name ? <><Loader size={10} className="animate-spin" /> Running…</> : <><Play size={10} /> Run now</>}
+                                                        </button>
+                                                    </div>
+                                                    {runResults[job.name] && (runResults[job.name].stdout || runResults[job.name].stderr || runResults[job.name].error != null || runResults[job.name].exitCode != null) && (
+                                                        <div className="mt-1 text-[10px] space-y-1">
+                                                            <div className="text-gray-400">
+                                                                Run result: exit <span className={runResults[job.name].exitCode === 0 ? 'text-green-400' : 'text-red-400'}>{runResults[job.name].exitCode ?? '—'}</span>
+                                                                {runResults[job.name].error && <span className="text-red-400 ml-2">{runResults[job.name].error}</span>}
+                                                            </div>
+                                                            {runResults[job.name].stdout && (
+                                                                <pre className="font-mono text-gray-300 whitespace-pre-wrap bg-black/40 rounded p-2 max-h-40 overflow-y-auto">{runResults[job.name].stdout}</pre>
+                                                            )}
+                                                            {runResults[job.name].stderr && (
+                                                                <pre className="font-mono text-red-300 whitespace-pre-wrap bg-red-950/30 rounded p-2 max-h-40 overflow-y-auto">{runResults[job.name].stderr}</pre>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
                                             <Field label="Log file"><span className="font-mono text-[10px] text-gray-400 select-all break-all">{status.log}</span></Field>
@@ -1174,6 +1236,7 @@ const CronDaemonPanel = ({
                 </>)}
 
                 {activeTab === 'nql' && (<>
+                    <NqlInstallPrompt compact />
                     <Section title="Your SQL Models" count={sqlModels.length} icon={Table}
                         actions={
                             <div className="flex items-center gap-1">

@@ -1,0 +1,40 @@
+jinx_name: rotate_logs
+description: Compress .log files older than `compress_days` (default 7) and delete those older than `delete_days` (default 90).
+inputs:
+  - { dir: "" }
+  - { compress_days: "7" }
+  - { delete_days: "90" }
+steps:
+  - name: rotate
+    engine: python
+    code: |
+      import os, time, gzip, shutil
+
+      _dir = os.path.expanduser(context.get('dir', '') or os.path.join(os.path.expanduser('~'), '.npcsh', 'incognide', 'logs'))
+      _compress_days = int(context.get('compress_days', 7) or 7)
+      _delete_days = int(context.get('delete_days', 90) or 90)
+
+      if not os.path.isdir(_dir):
+          output = f"Log dir not found: {_dir}"
+      else:
+          _now = time.time()
+          _compressed = 0
+          _deleted = 0
+          for _root, _, _files in os.walk(_dir):
+              for _f in _files:
+                  _p = os.path.join(_root, _f)
+                  try:
+                      _age = _now - os.path.getmtime(_p)
+                  except OSError:
+                      continue
+                  if _f.endswith('.gz') and _age > _delete_days * 86400:
+                      try: os.remove(_p); _deleted += 1
+                      except OSError: pass
+                  elif _f.endswith('.log') and _age > _compress_days * 86400:
+                      try:
+                          with open(_p, 'rb') as _src, gzip.open(_p + '.gz', 'wb') as _dst:
+                              shutil.copyfileobj(_src, _dst)
+                          os.remove(_p); _compressed += 1
+                      except OSError:
+                          pass
+          output = f"Rotated logs in {_dir}: compressed {_compressed}, deleted {_deleted}"

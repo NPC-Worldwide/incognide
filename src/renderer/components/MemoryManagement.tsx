@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Loader, CheckCircle, XCircle, Edit, Trash2, RefreshCw, Search, Clock, X } from 'lucide-react';
-import MemoryIcon from './MemoryIcon';
+import MemoryIcon from './icons/MemoryIcon';
 
 interface Memory {
     id: number;

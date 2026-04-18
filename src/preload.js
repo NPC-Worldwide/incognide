@@ -30,6 +30,12 @@ readDocxContent: (filePath) =>
 
     checkBinaries: (names) => ipcRenderer.invoke('check-binaries', names),
     detectProviderKeys: () => ipcRenderer.invoke('detect-provider-keys'),
+    runInstallCommand: (cmd) => ipcRenderer.invoke('run-install-command', cmd),
+    onInstallProgress: (callback) => {
+        const handler = (_, data) => callback(data);
+        ipcRenderer.on('install-progress', handler);
+        return () => ipcRenderer.removeListener('install-progress', handler);
+    },
     getAvailableJinxes: (params) => ipcRenderer.invoke('getAvailableJinxes', params),
     executeJinx: (params) => ipcRenderer.invoke('executeJinx', params),
 
@@ -39,6 +45,8 @@ readDocxContent: (filePath) =>
     unscheduleJob: (jobName) => ipcRenderer.invoke('unscheduleJob', jobName),
     jobStatus: (jobName) => ipcRenderer.invoke('jobStatus', jobName),
     jobReadScript: (jobName) => ipcRenderer.invoke('jobReadScript', jobName),
+    jobWriteScript: (jobName, content) => ipcRenderer.invoke('jobWriteScript', jobName, content),
+    jobRunNow: (jobName) => ipcRenderer.invoke('jobRunNow', jobName),
     jobReadFullLog: (jobName) => ipcRenderer.invoke('jobReadFullLog', jobName),
     getCrontab: () => ipcRenderer.invoke('getCrontab'),
     getSystemDaemons: () => ipcRenderer.invoke('getSystemDaemons'),

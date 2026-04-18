@@ -32,7 +32,7 @@ import KnowledgeGraphEditor from './KnowledgeGraphEditor';
 import LabeledDataManager from './LabeledDataManager';
 import McpServerMenu from './McpServerMenu';
 import MemoryManagement from './MemoryManagement';
-import MemoryIcon from './MemoryIcon';
+import MemoryIcon from './icons/MemoryIcon';
 import MessageLabeling from './MessageLabeling';
 import NPCTeamMenu from './NPCTeamMenu';
 import PythonEnvSettings from './PythonEnvSettings';

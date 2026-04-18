@@ -387,6 +387,79 @@ function register(ctx) {
     }
   });
 
+  ipcMain.handle('jobWriteScript', async (event, jobName, content) => {
+    try {
+      const safeName = String(jobName || '').replace(/[^a-zA-Z0-9_-]/g, '');
+      if (!safeName) return { error: 'invalid job name' };
+      const candidates = [
+        path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team', 'jobs', `${safeName}.sh`),
+        path.join(os.homedir(), '.npcsh', 'npc_team', 'jobs', `${safeName}.sh`),
+      ];
+      for (const scriptPath of candidates) {
+        try {
+          await fsPromises.access(scriptPath);
+          await fsPromises.writeFile(scriptPath, content, { mode: 0o755 });
+          await fsPromises.chmod(scriptPath, 0o755);
+          const stat = await fsPromises.stat(scriptPath);
+          return { scriptPath, mtime: stat.mtime.toISOString() };
+        } catch {}
+      }
+      return { error: 'script not found' };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('jobRunNow', async (event, jobName) => {
+    try {
+      const safeName = String(jobName || '').replace(/[^a-zA-Z0-9_-]/g, '');
+      if (!safeName) return { error: 'invalid job name' };
+      const candidates = [
+        path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team', 'jobs', `${safeName}.sh`),
+        path.join(os.homedir(), '.npcsh', 'npc_team', 'jobs', `${safeName}.sh`),
+      ];
+      let scriptPath = null;
+      for (const c of candidates) {
+        try { await fsPromises.access(c); scriptPath = c; break; } catch {}
+      }
+      if (!scriptPath) return { error: 'script not found' };
+
+      return await new Promise((resolve) => {
+        const child = spawn('/bin/bash', [scriptPath], {
+          env: { ...process.env },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        let stdout = '';
+        let stderr = '';
+        const cap = (s, buf) => {
+          s.on('data', (d) => { buf.push(d.toString()); });
+        };
+        const outBuf = [];
+        const errBuf = [];
+        cap(child.stdout, outBuf);
+        cap(child.stderr, errBuf);
+        const timeout = setTimeout(() => {
+          try { child.kill('SIGTERM'); } catch {}
+        }, 5 * 60 * 1000);
+        child.on('close', (code) => {
+          clearTimeout(timeout);
+          resolve({
+            scriptPath,
+            exitCode: code,
+            stdout: outBuf.join(''),
+            stderr: errBuf.join(''),
+          });
+        });
+        child.on('error', (err) => {
+          clearTimeout(timeout);
+          resolve({ scriptPath, error: err.message });
+        });
+      });
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
   ipcMain.handle('jobReadFullLog', async (event, jobName) => {
     try {
       const safeName = String(jobName || '').replace(/[^a-zA-Z0-9_-]/g, '');
@@ -1340,6 +1413,42 @@ function register(ctx) {
       } catch {}
     }
     return KNOWN.filter(k => envSources.has(k.envVar));
+  });
+
+  ipcMain.handle('run-install-command', async (event, cmd) => {
+    return await new Promise((resolve) => {
+      if (!cmd || typeof cmd !== 'string' || /[;&|`$<>]/.test(cmd) || cmd.includes('&&') || cmd.includes('||')) {
+        return resolve({ error: 'invalid command' });
+      }
+      const parts = cmd.trim().split(/\s+/);
+      const bin = parts[0];
+      const allowed = new Set(['brew', 'cargo', 'pip', 'pip3', 'uv', 'pipx']);
+      if (!allowed.has(bin)) {
+        return resolve({ error: `only ${[...allowed].join(', ')} allowed` });
+      }
+      const child = spawn(bin, parts.slice(1), { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env } });
+      const out = [];
+      const err = [];
+      child.stdout.on('data', (d) => {
+        const s = d.toString();
+        out.push(s);
+        event.sender.send('install-progress', { text: s });
+      });
+      child.stderr.on('data', (d) => {
+        const s = d.toString();
+        err.push(s);
+        event.sender.send('install-progress', { text: s });
+      });
+      const timeout = setTimeout(() => { try { child.kill('SIGTERM'); } catch {} }, 10 * 60 * 1000);
+      child.on('close', (code) => {
+        clearTimeout(timeout);
+        resolve({ exitCode: code, stdout: out.join(''), stderr: err.join('') });
+      });
+      child.on('error', (e) => {
+        clearTimeout(timeout);
+        resolve({ error: e.message });
+      });
+    });
   });
 
   ipcMain.handle('check-binaries', async (event, names) => {

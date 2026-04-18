@@ -1,8 +1,11 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import {
     X, FileJson, Users, Wrench, Clock, Database, Plus, Trash2, Play, Pause, Server, Mail, Save,
-    Brain, GitBranch, Cpu, Box, Code, Mic, Globe, Eye, EyeOff, Check
+    Brain, GitBranch, Cpu, Box, Code, Mic, Globe, Eye, EyeOff, Check, Zap
 } from 'lucide-react';
+import SmokestackIcon from './icons/SmokestackIcon';
+import MemoryIcon from './icons/MemoryIcon';
+import KgIcon from './icons/KgIcon';
 
 import CtxEditor from './CtxEditor';
 import NPCTeamMenu from './NPCTeamMenu';
@@ -1122,10 +1125,10 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
     const sections: { id: TabId; label: string; icon: React.ReactNode }[] = [
         { id: 'context', label: 'Context', icon: <FileJson size={16} /> },
         { id: 'npcs', label: 'NPCs', icon: <Users size={16} /> },
-        { id: 'jinxes', label: 'Jinxes', icon: <Wrench size={16} /> },
-        { id: 'memory', label: 'Memory', icon: <Brain size={16} /> },
-        { id: 'knowledge', label: 'Knowledge', icon: <GitBranch size={16} /> },
-        { id: 'cron', label: 'Cron', icon: <Clock size={16} /> },
+        { id: 'jinxes', label: 'Jinxes', icon: <Zap size={16} /> },
+        { id: 'memory', label: 'Memory', icon: <MemoryIcon size={16} /> },
+        { id: 'knowledge', label: 'Knowledge', icon: <KgIcon size={16} /> },
+        { id: 'cron', label: 'Scheduler', icon: <SmokestackIcon size={16} /> },
         { id: 'mcp', label: 'MCP', icon: <Server size={16} /> },
         { id: 'databases', label: 'Databases', icon: <Database size={16} /> },
         { id: 'ai-settings', label: 'AI Settings', icon: <Cpu size={16} /> },
