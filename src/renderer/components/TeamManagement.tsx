@@ -1123,19 +1123,19 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
     if (!isOpen) return null;
 
     const sections: { id: TabId; label: string; icon: React.ReactNode }[] = [
-        { id: 'context', label: 'Context', icon: <FileJson size={16} /> },
-        { id: 'npcs', label: 'NPCs', icon: <Users size={16} /> },
-        { id: 'jinxes', label: 'Jinxes', icon: <Zap size={16} /> },
-        { id: 'memory', label: 'Memory', icon: <MemoryIcon size={16} /> },
-        { id: 'knowledge', label: 'Knowledge', icon: <KgIcon size={16} /> },
-        { id: 'cron', label: 'Scheduler', icon: <SmokestackIcon size={16} /> },
-        { id: 'mcp', label: 'MCP', icon: <Server size={16} /> },
-        { id: 'databases', label: 'Databases', icon: <Database size={16} /> },
         { id: 'ai-settings', label: 'AI Settings', icon: <Cpu size={16} /> },
+        { id: 'context', label: 'Context', icon: <FileJson size={16} /> },
+        { id: 'databases', label: 'Databases', icon: <Database size={16} /> },
+        { id: 'jinxes', label: 'Jinxes', icon: <Zap size={16} /> },
+        { id: 'knowledge', label: 'Knowledge', icon: <KgIcon size={16} /> },
+        { id: 'mcp', label: 'MCP', icon: <Server size={16} /> },
+        { id: 'memory', label: 'Memory', icon: <MemoryIcon size={16} /> },
         { id: 'llm-models', label: 'Models', icon: <Box size={16} /> },
-        { id: 'python', label: 'Python Env', icon: <Code size={16} /> },
-        { id: 'voice', label: 'Voice / TTS', icon: <Mic size={16} /> },
+        { id: 'npcs', label: 'NPCs', icon: <Users size={16} /> },
         { id: 'providers', label: 'Providers', icon: <Globe size={16} /> },
+        { id: 'python', label: 'Python Env', icon: <Code size={16} /> },
+        { id: 'cron', label: 'Scheduler', icon: <SmokestackIcon size={16} /> },
+        { id: 'voice', label: 'Voice / TTS', icon: <Mic size={16} /> },
     ];
 
     if (!isOpen && !embedded) return null;

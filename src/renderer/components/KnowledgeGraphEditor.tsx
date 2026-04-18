@@ -30,6 +30,30 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
     const [cooccurrenceData, setCooccurrenceData] = useState<any>(null);
     const [centralityData, setCentralityData] = useState<any>(null);
     const [selectedKgNode, setSelectedKgNode] = useState<any>(null);
+    const [sourceMemoryId, setSourceMemoryId] = useState<number | null>(null);
+    const [sourceMemory, setSourceMemory] = useState<any>(null);
+    const [sourceMemoryLoading, setSourceMemoryLoading] = useState(false);
+
+    useEffect(() => {
+        if (sourceMemoryId == null) { setSourceMemory(null); return; }
+        let cancelled = false;
+        (async () => {
+            setSourceMemoryLoading(true);
+            try {
+                const r = await (window as any).api?.executeSQL?.({
+                    query: `SELECT id, conversation_id, message_id, npc, team, directory_path, timestamp, initial_memory, final_memory, status, model, provider, created_at FROM memory_lifecycle WHERE id = ${Number(sourceMemoryId)} LIMIT 1`,
+                });
+                if (cancelled) return;
+                const rows = Array.isArray(r?.result) ? r.result : Array.isArray(r) ? r : (r?.rows || r?.data || []);
+                setSourceMemory(rows?.[0] || null);
+            } catch {
+                setSourceMemory(null);
+            } finally {
+                if (!cancelled) setSourceMemoryLoading(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [sourceMemoryId]);
     const graphRef = useRef<any>(null);
 
     const [activeTab, setActiveTab] = useState<ViewTab>('graph');
@@ -804,12 +828,21 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                     <button onClick={() => { setSelectedKgNode(null); setPendingDelete(null); }} className="theme-text-muted hover:theme-text-primary"><X size={14} /></button>
                 </div>
                 <p className="text-xs font-mono text-blue-400 break-words mb-1" title={selectedKgNode.id}>{selectedKgNode.id}</p>
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
                         selectedKgNode.type === 'concept' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'
                     }`}>
                         {selectedKgNode.type || 'concept'}
                     </span>
+                    {selectedKgNode.memory_id != null && (
+                        <button
+                            onClick={() => setSourceMemoryId(selectedKgNode.memory_id)}
+                            className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30"
+                            title="View the source memory this fact was promoted from"
+                        >
+                            <MessageSquare size={10} /> memory #{selectedKgNode.memory_id}
+                        </button>
+                    )}
                     <button
                         onClick={() => centerOnNode(selectedKgNode.id)}
                         className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-0.5"
@@ -1588,6 +1621,57 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                             )}
                         </div>
                     )}
+                </div>
+            )}
+            {sourceMemoryId != null && (
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[200]" onClick={() => setSourceMemoryId(null)}>
+                    <div onClick={e => e.stopPropagation()} className="theme-bg-primary border theme-border rounded-lg shadow-2xl max-w-xl w-full max-h-[80vh] flex flex-col overflow-hidden">
+                        <div className="flex items-center justify-between px-4 py-2 border-b theme-border">
+                            <div className="flex items-center gap-2">
+                                <MessageSquare size={14} className="text-amber-400" />
+                                <h4 className="text-sm font-semibold">Source memory #{sourceMemoryId}</h4>
+                                {sourceMemory?.status && (
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                        sourceMemory.status === 'human-approved' ? 'bg-green-600/30 text-green-300' :
+                                        sourceMemory.status === 'human-edited' ? 'bg-blue-600/30 text-blue-300' :
+                                        sourceMemory.status === 'pending_approval' ? 'bg-yellow-600/30 text-yellow-300' :
+                                        'bg-gray-600/30 text-gray-300'
+                                    }`}>{sourceMemory.status}</span>
+                                )}
+                            </div>
+                            <button onClick={() => setSourceMemoryId(null)} className="theme-text-muted hover:theme-text-primary"><X size={16} /></button>
+                        </div>
+                        <div className="flex-1 overflow-auto p-4 space-y-3 text-xs">
+                            {sourceMemoryLoading ? (
+                                <div className="text-center theme-text-muted py-8">Loading…</div>
+                            ) : !sourceMemory ? (
+                                <div className="text-center text-red-400 py-8">Memory #{sourceMemoryId} not found.</div>
+                            ) : (<>
+                                <div className="grid grid-cols-2 gap-2 theme-text-muted">
+                                    <div><span className="font-semibold">NPC:</span> {sourceMemory.npc || '—'}</div>
+                                    <div><span className="font-semibold">Team:</span> {sourceMemory.team || '—'}</div>
+                                    <div><span className="font-semibold">Model:</span> {sourceMemory.model || '—'}</div>
+                                    <div><span className="font-semibold">Provider:</span> {sourceMemory.provider || '—'}</div>
+                                    <div className="col-span-2"><span className="font-semibold">Conversation:</span> <span className="font-mono">{sourceMemory.conversation_id}</span></div>
+                                    <div className="col-span-2"><span className="font-semibold">Path:</span> <span className="font-mono break-all">{sourceMemory.directory_path}</span></div>
+                                    <div><span className="font-semibold">Created:</span> {sourceMemory.created_at}</div>
+                                    <div><span className="font-semibold">Timestamp:</span> {sourceMemory.timestamp}</div>
+                                </div>
+                                {sourceMemory.initial_memory && (
+                                    <div>
+                                        <div className="theme-text-muted font-semibold mb-1">Initial memory (extraction)</div>
+                                        <pre className="whitespace-pre-wrap bg-black/30 rounded p-2 text-gray-200">{sourceMemory.initial_memory}</pre>
+                                    </div>
+                                )}
+                                {sourceMemory.final_memory && sourceMemory.final_memory !== sourceMemory.initial_memory && (
+                                    <div>
+                                        <div className="theme-text-muted font-semibold mb-1">Final memory (after human review)</div>
+                                        <pre className="whitespace-pre-wrap bg-black/30 rounded p-2 text-gray-200">{sourceMemory.final_memory}</pre>
+                                    </div>
+                                )}
+                            </>)}
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
