@@ -348,8 +348,55 @@ const CronDaemonPanel = ({
 
     const fetchJobStatus = useCallback(async (name: string) => {
         try {
-            const r = await api?.jobStatus?.(name);
-            if (r) setJobStatuses(prev => ({ ...prev, [name]: r }));
+            const [status, script] = await Promise.all([
+                api?.jobStatus?.(name),
+                api?.jobReadScript?.(name),
+            ]);
+            if (status) {
+                setJobStatuses(prev => ({ ...prev, [name]: { ...status, ...(script && !script.error ? { scriptPath: script.scriptPath, scriptContent: script.content, scriptMtime: script.mtime } : {}) } }));
+            }
+        } catch {}
+    }, []);
+
+    const [editingJob, setEditingJob] = useState<string | null>(null);
+    const [editSchedule, setEditSchedule] = useState('');
+    const [editCommand, setEditCommand] = useState('');
+    const [fullLogs, setFullLogs] = useState<Record<string, string>>({});
+
+    const startEditJob = useCallback((job: any) => {
+        const status = jobStatuses[job.name];
+        const scriptContent = status?.scriptContent || '';
+        // Parse command from script (last non-empty non-comment line)
+        const lines = scriptContent.split('\n').filter((l: string) => l.trim() && !l.startsWith('#') && !l.startsWith('set '));
+        const lastLine = lines[lines.length - 1] || '';
+        // Extract the args after `npc `
+        const cmdMatch = lastLine.match(/(?:\S*npc|npc)\s+(.+)$/);
+        setEditCommand(cmdMatch ? cmdMatch[1].trim() : '');
+        setEditSchedule(job.schedule || '');
+        setEditingJob(job.name);
+    }, [jobStatuses]);
+
+    const saveEditJob = useCallback(async (name: string) => {
+        if (!editSchedule || !editCommand) return;
+        setLoading(true); setError(null);
+        try {
+            await api?.unscheduleJob?.(name);
+            const r = await api?.scheduleJob?.({ schedule: editSchedule, command: editCommand, jobName: name });
+            if (r?.success) {
+                setEditingJob(null);
+                await fetchJobs();
+                await fetchJobStatus(name);
+            } else {
+                setError(r?.message || r?.error || 'Failed to update job');
+            }
+        } catch (e: any) { setError(e.message); }
+        finally { setLoading(false); }
+    }, [editSchedule, editCommand, fetchJobStatus]);
+
+    const loadFullLog = useCallback(async (name: string) => {
+        try {
+            const r = await api?.jobReadFullLog?.(name);
+            if (r && !r.error) setFullLogs(prev => ({ ...prev, [name]: r.content }));
         } catch {}
     }, []);
 
@@ -689,7 +736,10 @@ const CronDaemonPanel = ({
 
                     {jobs.length > 0 && (
                         <Section title="Scheduled Jobs" count={jobs.length} icon={Clock}>
-                            {jobs.filter(j => !filter || j.name.toLowerCase().includes(filter.toLowerCase())).map(job => (
+                            {jobs.filter(j => !filter || j.name.toLowerCase().includes(filter.toLowerCase())).map(job => {
+                                const status = jobStatuses[job.name];
+                                const isEditing = editingJob === job.name;
+                                return (
                                 <ExpandRow key={job.name} header={<>
                                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${job.active ? 'bg-green-400' : 'bg-gray-500'}`} />
                                     <span className="font-mono text-xs text-gray-200">{job.name}</span>
@@ -697,25 +747,64 @@ const CronDaemonPanel = ({
                                         {job.active ? 'active' : 'inactive'}
                                     </span>
                                     <div className="ml-auto flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                                        <button onClick={() => fetchJobStatus(job.name)} className="p-1 text-gray-400 hover:text-blue-400 rounded" title="Load status"><Eye size={12} /></button>
+                                        <button onClick={() => fetchJobStatus(job.name)} className="p-1 text-gray-400 hover:text-blue-400 rounded" title="Refresh"><RefreshCw size={12} /></button>
+                                        <button onClick={async () => { await fetchJobStatus(job.name); startEditJob(job); }} className="p-1 text-gray-400 hover:text-yellow-400 rounded" title="Edit"><Edit2 size={12} /></button>
                                         <button onClick={() => removeJob(job.name)} className="p-1 text-gray-400 hover:text-red-400 rounded" title="Remove"><Trash2 size={12} /></button>
                                     </div>
                                 </>}>
-                                    <div className="space-y-1.5">
-                                        {jobStatuses[job.name] ? (<>
-                                            <Field label="Status"><span className={`text-[10px] ${jobStatuses[job.name].active ? 'text-green-400' : 'text-gray-400'}`}>{jobStatuses[job.name].active ? 'Scheduled' : 'Inactive'}</span></Field>
-                                            <Field label="Log file"><span className="font-mono text-[10px] text-gray-400 select-all">{jobStatuses[job.name].log}</span></Field>
-                                            {jobStatuses[job.name].recent_log?.length > 0 ? (
-                                                <pre className="text-[10px] font-mono text-gray-400 whitespace-pre-wrap max-h-40 overflow-y-auto bg-black/20 rounded p-2 select-all mt-1">{jobStatuses[job.name].recent_log.join('')}</pre>
-                                            ) : <div className="text-[10px] text-gray-600 italic">No log output yet</div>}
-                                        </>) : (
+                                    <div className="space-y-2">
+                                        {!status && (
                                             <button onClick={() => fetchJobStatus(job.name)} className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-1">
-                                                <Eye size={10} /> Load status & logs
+                                                <Eye size={10} /> Load status, script & logs
                                             </button>
                                         )}
+                                        {isEditing && (
+                                            <div className="p-2 bg-yellow-900/15 border border-yellow-500/30 rounded space-y-2">
+                                                <div>
+                                                    <label className="text-[10px] text-gray-400 mb-0.5 block">Schedule (cron)</label>
+                                                    <select value={SCHEDULE_PRESETS.some(p => p.value === editSchedule) ? editSchedule : '__custom'}
+                                                        onChange={e => { if (e.target.value !== '__custom') setEditSchedule(e.target.value); }}
+                                                        className={inputCls}>
+                                                        {SCHEDULE_PRESETS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                                                        <option value="__custom">Custom</option>
+                                                    </select>
+                                                    <input type="text" value={editSchedule} onChange={e => setEditSchedule(e.target.value)} placeholder="* * * * *" className={inputCls + ' mt-1 font-mono'} />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] text-gray-400 mb-0.5 block">Command (args after <code>npc</code>)</label>
+                                                    <textarea value={editCommand} onChange={e => setEditCommand(e.target.value)} className={inputCls + ' font-mono min-h-[50px]'} rows={2} />
+                                                    <p className="text-[9px] text-gray-500 mt-1">Use jinx call form: <code>sleep backfill=true</code>, <code>extract_memories limit=50</code>. Avoid <code>/kg --flag</code> style.</p>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => saveEditJob(job.name)} disabled={loading || !editSchedule || !editCommand} className="flex-1 px-2 py-1 bg-yellow-600 hover:bg-yellow-500 text-white rounded text-[10px] disabled:opacity-50">Save</button>
+                                                    <button onClick={() => setEditingJob(null)} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-[10px]">Cancel</button>
+                                                </div>
+                                            </div>
+                                        )}
+                                        {status && (<>
+                                            <Field label="Status"><span className={`text-[10px] ${status.active ? 'text-green-400' : 'text-gray-400'}`}>{status.active ? 'Scheduled' : 'Inactive'}</span></Field>
+                                            {status.scriptPath && (
+                                                <Field label="Script"><span className="font-mono text-[10px] text-gray-400 select-all break-all">{status.scriptPath}</span></Field>
+                                            )}
+                                            {status.scriptContent && (
+                                                <div>
+                                                    <div className="text-[10px] text-gray-400 mb-0.5">Script contents {status.scriptMtime && <span className="text-gray-600">(modified {new Date(status.scriptMtime).toLocaleString()})</span>}</div>
+                                                    <pre className="text-[10px] font-mono text-gray-300 whitespace-pre-wrap bg-black/30 rounded p-2 select-all max-h-32 overflow-y-auto">{status.scriptContent}</pre>
+                                                </div>
+                                            )}
+                                            <Field label="Log file"><span className="font-mono text-[10px] text-gray-400 select-all break-all">{status.log}</span></Field>
+                                            {fullLogs[job.name] ? (
+                                                <pre className="text-[10px] font-mono text-gray-400 whitespace-pre-wrap max-h-72 overflow-y-auto bg-black/20 rounded p-2 select-all mt-1">{fullLogs[job.name]}</pre>
+                                            ) : status.recent_log?.length > 0 ? (
+                                                <>
+                                                    <pre className="text-[10px] font-mono text-gray-400 whitespace-pre-wrap max-h-40 overflow-y-auto bg-black/20 rounded p-2 select-all mt-1">{status.recent_log.join('')}</pre>
+                                                    <button onClick={() => loadFullLog(job.name)} className="text-[10px] text-blue-400 hover:text-blue-300">Load full log</button>
+                                                </>
+                                            ) : <div className="text-[10px] text-gray-600 italic">No log output yet</div>}
+                                        </>)}
                                     </div>
-                                </ExpandRow>
-                            ))}
+                                </ExpandRow>);
+                            })}
                         </Section>
                     )}
 

@@ -1096,33 +1096,71 @@ app.whenReady().then(async () => {
     }
 
     const executableName = process.platform === 'win32' ? 'incognide_serve.exe' : 'incognide_serve';
-    _backendPath = app.isPackaged
+    const bundledPath = app.isPackaged
       ? path.join(process.resourcesPath, 'backend', executableName)
       : path.join(app.getAppPath(), 'dist', 'resources', 'backend', executableName);
 
-    if (!fs.existsSync(_backendPath)) {
-      log(`ERROR: Bundled backend not found at: ${_backendPath}`);
+    const bundledExists = fs.existsSync(bundledPath);
+    const devScriptPath = path.join(app.getAppPath(), 'incognide_serve.py');
+    const devScriptExists = !app.isPackaged && fs.existsSync(devScriptPath);
+
+    // In dev, prefer python + incognide_serve.py so stdout/stderr flow into logBackend.
+    // In prod, use the bundled PyInstaller binary.
+    let spawnMode = 'bundled';
+    if (!app.isPackaged && devScriptExists) {
+      const pyPath = getBackendPythonPath();
+      if (pyPath && fs.existsSync(pyPath)) {
+        _backendPath = pyPath;
+        _spawnArgs = ['-u', devScriptPath];
+        spawnMode = 'python-dev';
+        log(`Dev mode: spawning backend via ${pyPath} ${devScriptPath}`);
+      } else {
+        _backendPath = bundledPath;
+      }
+    } else {
+      _backendPath = bundledPath;
+    }
+
+    if (spawnMode === 'bundled' && !bundledExists) {
+      log(`Bundled backend not found at: ${_backendPath}`);
     }
 
     log(`Using backend path: ${_backendPath}${_spawnArgs.length ? ' ' + _spawnArgs.join(' ') : ''}`);
 
-    // Check if backend is already running on the port before spawning
     let backendAlreadyRunning = false;
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 2000);
-      const response = await fetch(`${BACKEND_URL}/api/health`, { signal: controller.signal });
-      clearTimeout(timeout);
-      if (response.ok) {
-        log(`Backend already running on ${BACKEND_URL} - skipping spawn`);
-        backendAlreadyRunning = true;
-        _backendStartupError = null;
+    const canSpawnDev = spawnMode === 'python-dev';
+    const checkAttempts = (!bundledExists && !canSpawnDev) ? 15 : 1;
+    for (let attempt = 0; attempt < checkAttempts && !backendAlreadyRunning; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2000);
+        const response = await fetch(`${BACKEND_URL}/api/health`, { signal: controller.signal });
+        clearTimeout(timeout);
+        if (response.ok) {
+          log(`Backend already running on ${BACKEND_URL} - skipping spawn`);
+          backendAlreadyRunning = true;
+          _backendStartupError = null;
+        }
+      } catch (e) {
+        if (attempt === 0) log(`No existing backend found on ${BACKEND_URL}, ${(bundledExists || canSpawnDev) ? 'will spawn new one' : 'polling for external backend...'}`);
       }
-    } catch (e) {
-      log(`No existing backend found on ${BACKEND_URL}, will spawn new one`);
+      if (!backendAlreadyRunning && attempt < checkAttempts - 1) {
+        await new Promise(r => setTimeout(r, 1000));
+      }
     }
 
     let serverReady = backendAlreadyRunning;
+
+    if (!backendAlreadyRunning && spawnMode === 'bundled' && !bundledExists) {
+      log('Skipping bundled backend spawn — binary missing and no external backend detected.');
+      _backendStartupError = {
+        message: `No backend detected on ${BACKEND_URL} and bundled binary is missing. Start the backend with \`python -m npcpy.serve\` or build the bundle.`,
+        binaryPath: _backendPath,
+        exitCode: null,
+        timestamp: new Date().toISOString(),
+      };
+      return;
+    }
 
     if (!backendAlreadyRunning) {
       _backendEnv = {
@@ -1136,7 +1174,7 @@ app.whenReady().then(async () => {
         INCOGNIDE_DATA_DIR: path.join(os.homedir(), '.npcsh', 'incognide', 'data'),
       };
 
-      backendProcess = spawnBackendProcess(_backendPath, _spawnArgs, 'bundled', _backendEnv);
+      backendProcess = spawnBackendProcess(_backendPath, _spawnArgs, spawnMode, _backendEnv);
 
       serverReady = await waitForServer();
     }

@@ -144,7 +144,7 @@ const VoiceManager = () => {
     }
 
     return (
-        <div className="space-y-4">
+        <div className="flex-1 overflow-y-auto p-6 space-y-4 min-h-0">
             {error && (
                 <div className="p-3 rounded-lg text-sm bg-red-900/30 text-red-400">
                     {error}
@@ -152,7 +152,7 @@ const VoiceManager = () => {
                 </div>
             )}
 
-            <Card title="TTS Engine">
+            <Card title="TTS Engine" className="!h-auto">
                 <div className="space-y-3">
                     <div className="flex flex-wrap gap-2">
                         {Object.entries(engines).map(([key, engine]: [string, any]) => (
@@ -194,7 +194,7 @@ const VoiceManager = () => {
             </Card>
 
             {currentEngine?.available && availableVoices.length > 0 && (
-                <Card title="Voice">
+                <Card title="Voice" className="!h-auto">
                     <div className="space-y-3">
                         <Select
                             value={selectedVoice}
@@ -229,7 +229,7 @@ const VoiceManager = () => {
                 </Card>
             )}
 
-            <Card title="Test Voice">
+            <Card title="Test Voice" className="!h-auto">
                 <div className="space-y-3">
                     <textarea
                         value={testText}
@@ -257,7 +257,7 @@ const VoiceManager = () => {
                 </div>
             </Card>
 
-            <Card title="Speech-to-Text (STT)">
+            <Card title="Speech-to-Text (STT)" className="!h-auto">
                 <div className="space-y-3">
                     <div className="flex items-center gap-3 p-3 bg-gray-800/50 rounded-lg">
                         <Mic size={20} className="text-blue-400" />

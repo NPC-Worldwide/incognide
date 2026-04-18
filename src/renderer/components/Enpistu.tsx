@@ -5454,6 +5454,12 @@ ${contextPrompt}`;
         addPaneOrTab(newPaneId);
     }, []);
 
+    const createBrowserSettingsPane = useCallback(async () => {
+        const newPaneId = generateId();
+        contentDataRef.current[newPaneId] = { contentType: 'browsersettings', contentId: 'browsersettings' };
+        addPaneOrTab(newPaneId);
+    }, []);
+
     const renderSkillsManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
         const paneData = contentDataRef.current[nodeId];
         return (
@@ -9441,6 +9447,7 @@ const renderMainContent = () => {
         createJinxPane={createJinxPane}
         createTeamManagementPane={createTeamManagementPane}
         createMcpManagerPane={createMcpManagerPane}
+        createBrowserSettingsPane={createBrowserSettingsPane}
         createSkillsManagerPane={createSkillsManagerPane}
         createSettingsPane={createSettingsPane}
         createPhotoViewerPane={createPhotoViewerPane}

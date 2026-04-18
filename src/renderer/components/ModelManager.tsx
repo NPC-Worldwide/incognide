@@ -14,7 +14,7 @@ const LOCAL_PROVIDERS: Record<string, any> = {
         bgColor: 'bg-orange-600'
     },
     llamacpp: {
-        name: 'llama.cpp',
+        name: 'llama.cpp Server',
         description: 'High-performance C++ inference server',
         defaultPort: 8080,
         docsUrl: 'https://github.com/ggerganov/llama.cpp',
@@ -74,11 +74,19 @@ const ModelList = ({ models, activeProvider, isDeleting, onDelete }: any) => {
                 ? { model: modelName, messages: next, stream: false }
                 : { model: modelName, messages: next };
             const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            if (!res.ok) {
+                const errText = await res.text().catch(() => '');
+                throw new Error(`HTTP ${res.status}${errText ? `: ${errText.slice(0, 200)}` : ''}`);
+            }
             const data = await res.json();
-            const reply = isOllama ? (data?.message?.content || '(no response)') : (data?.choices?.[0]?.message?.content || '(no response)');
+            const reply = isOllama
+                ? (data?.message?.content || data?.error || '(no response)')
+                : (data?.choices?.[0]?.message?.content || data?.error?.message || '(no response)');
             setChatMessages(m => ({ ...m, [modelName]: [...next, { role: 'assistant', content: reply }] }));
-        } catch {
-            setChatMessages(m => ({ ...m, [modelName]: [...next, { role: 'assistant', content: '(error)' }] }));
+        } catch (err: any) {
+            console.error('Quick chat error:', err);
+            const errMsg = err?.message || String(err) || 'unknown error';
+            setChatMessages(m => ({ ...m, [modelName]: [...next, { role: 'assistant', content: `(error) ${errMsg}` }] }));
         }
         setChatLoading(null);
     };

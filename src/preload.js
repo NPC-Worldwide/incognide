@@ -28,6 +28,8 @@ readDocxContent: (filePath) =>
     readDirectoryImages: (dirPath) => ipcRenderer.invoke('readDirectoryImages', dirPath),
     open_directory_picker: () => ipcRenderer.invoke('open_directory_picker'),
 
+    checkBinaries: (names) => ipcRenderer.invoke('check-binaries', names),
+    detectProviderKeys: () => ipcRenderer.invoke('detect-provider-keys'),
     getAvailableJinxes: (params) => ipcRenderer.invoke('getAvailableJinxes', params),
     executeJinx: (params) => ipcRenderer.invoke('executeJinx', params),
 
@@ -36,6 +38,8 @@ readDocxContent: (filePath) =>
     scheduleJob: (params) => ipcRenderer.invoke('scheduleJob', params),
     unscheduleJob: (jobName) => ipcRenderer.invoke('unscheduleJob', jobName),
     jobStatus: (jobName) => ipcRenderer.invoke('jobStatus', jobName),
+    jobReadScript: (jobName) => ipcRenderer.invoke('jobReadScript', jobName),
+    jobReadFullLog: (jobName) => ipcRenderer.invoke('jobReadFullLog', jobName),
     getCrontab: () => ipcRenderer.invoke('getCrontab'),
     getSystemDaemons: () => ipcRenderer.invoke('getSystemDaemons'),
     getServiceInfo: (unit) => ipcRenderer.invoke('getServiceInfo', unit),

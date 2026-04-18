@@ -366,6 +366,48 @@ function register(ctx) {
     return await callBackendApi(`${BACKEND_URL}/api/cron/status/${encodeURIComponent(jobName)}`);
   });
 
+  ipcMain.handle('jobReadScript', async (event, jobName) => {
+    try {
+      const safeName = String(jobName || '').replace(/[^a-zA-Z0-9_-]/g, '');
+      if (!safeName) return { error: 'invalid job name' };
+      const candidates = [
+        path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team', 'jobs', `${safeName}.sh`),
+        path.join(os.homedir(), '.npcsh', 'npc_team', 'jobs', `${safeName}.sh`),
+      ];
+      for (const scriptPath of candidates) {
+        try {
+          const content = await fsPromises.readFile(scriptPath, 'utf8');
+          const stat = await fsPromises.stat(scriptPath);
+          return { scriptPath, content, mtime: stat.mtime.toISOString() };
+        } catch {}
+      }
+      return { error: 'script not found' };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('jobReadFullLog', async (event, jobName) => {
+    try {
+      const safeName = String(jobName || '').replace(/[^a-zA-Z0-9_-]/g, '');
+      if (!safeName) return { error: 'invalid job name' };
+      const candidates = [
+        path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team', 'logs', `${safeName}.log`),
+        path.join(os.homedir(), '.npcsh', 'npc_team', 'logs', `${safeName}.log`),
+      ];
+      for (const logPath of candidates) {
+        try {
+          const content = await fsPromises.readFile(logPath, 'utf8');
+          const stat = await fsPromises.stat(logPath);
+          return { logPath, content, mtime: stat.mtime.toISOString(), size: stat.size };
+        } catch {}
+      }
+      return { error: 'log not found' };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
   // --- Cross-platform crontab helper ---
   // Linux & macOS have crontab; Windows does not (returns empty).
   const _getCrontabLocal = () => {
@@ -1265,6 +1307,55 @@ function register(ctx) {
     return { pythonPath };
   });
 
+  ipcMain.handle('detect-provider-keys', async () => {
+    const KNOWN = [
+      { provider: 'openai', envVar: 'OPENAI_API_KEY', baseUrl: 'https://api.openai.com/v1' },
+      { provider: 'anthropic', envVar: 'ANTHROPIC_API_KEY', baseUrl: 'https://api.anthropic.com/v1' },
+      { provider: 'gemini', envVar: 'GEMINI_API_KEY', baseUrl: 'https://generativelanguage.googleapis.com/v1beta' },
+      { provider: 'google', envVar: 'GOOGLE_API_KEY', baseUrl: 'https://generativelanguage.googleapis.com/v1beta' },
+      { provider: 'deepseek', envVar: 'DEEPSEEK_API_KEY', baseUrl: 'https://api.deepseek.com/v1' },
+      { provider: 'groq', envVar: 'GROQ_API_KEY', baseUrl: 'https://api.groq.com/openai/v1' },
+      { provider: 'mistral', envVar: 'MISTRAL_API_KEY', baseUrl: 'https://api.mistral.ai/v1' },
+      { provider: 'perplexity', envVar: 'PERPLEXITY_API_KEY', baseUrl: 'https://api.perplexity.ai' },
+      { provider: 'together', envVar: 'TOGETHER_API_KEY', baseUrl: 'https://api.together.xyz/v1' },
+      { provider: 'xai', envVar: 'XAI_API_KEY', baseUrl: 'https://api.x.ai/v1' },
+      { provider: 'openrouter', envVar: 'OPENROUTER_API_KEY', baseUrl: 'https://openrouter.ai/api/v1' },
+      { provider: 'elevenlabs', envVar: 'ELEVENLABS_API_KEY', baseUrl: 'https://api.elevenlabs.io/v1' },
+      { provider: 'huggingface', envVar: 'HF_TOKEN', baseUrl: 'https://api-inference.huggingface.co' },
+    ];
+    const envSources = new Set();
+    for (const key of Object.keys(process.env)) envSources.add(key);
+    const sourceFiles = [
+      path.join(os.homedir(), '.npcshrc'),
+      path.join(os.homedir(), '.env'),
+      path.join(os.homedir(), '.zshrc'),
+      path.join(os.homedir(), '.bashrc'),
+      path.join(os.homedir(), '.bash_profile'),
+    ];
+    for (const f of sourceFiles) {
+      try {
+        const txt = await fsPromises.readFile(f, 'utf8');
+        const matches = txt.matchAll(/(?:export\s+)?([A-Z_][A-Z0-9_]+)\s*=/g);
+        for (const m of matches) envSources.add(m[1]);
+      } catch {}
+    }
+    return KNOWN.filter(k => envSources.has(k.envVar));
+  });
+
+  ipcMain.handle('check-binaries', async (event, names) => {
+    const result = {};
+    for (const name of names || []) {
+      try {
+        const which = process.platform === 'win32' ? 'where' : 'which';
+        execSync(`${which} ${name}`, { stdio: 'ignore', timeout: 2000 });
+        result[name] = true;
+      } catch {
+        result[name] = false;
+      }
+    }
+    return result;
+  });
+
   ipcMain.handle('setup:detectPython', async () => {
     const pythons = [];
 
@@ -2098,7 +2189,7 @@ function register(ctx) {
   const LOCAL_PROVIDER_CONFIG = {
     ollama:   { port: 11434, tagsUrl: 'http://127.0.0.1:11434/api/tags',       modelsKey: 'models',  nameKey: 'name'  },
     lmstudio: { port: 1234,  tagsUrl: 'http://127.0.0.1:1234/v1/models',       modelsKey: 'data',    nameKey: 'id'    },
-    llamacpp: { port: 8080,  tagsUrl: null },
+    llamacpp: { port: 8080,  tagsUrl: 'http://127.0.0.1:8080/v1/models',       modelsKey: 'data',    nameKey: 'id'    },
     omlx:     { port: 8000,  tagsUrl: 'http://127.0.0.1:8000/v1/models',       modelsKey: 'data',    nameKey: 'id'    },
   };
 

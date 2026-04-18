@@ -308,6 +308,21 @@ const Sidebar = (props: any) => {
     const [docDropdownOpen, setDocDropdownOpen] = useState(false);
 
     const [terminalDropdownOpen, setTerminalDropdownOpen] = useState(false);
+    const [installedAgents, setInstalledAgents] = useState<Record<string, boolean>>({});
+    const [showAddAgentPrompt, setShowAddAgentPrompt] = useState(false);
+    const [newAgentName, setNewAgentName] = useState('');
+    const [newAgentCommand, setNewAgentCommand] = useState('');
+    const KNOWN_AGENTS = ['npcsh', 'opencode', 'nanocoder', 'gemini', 'claude', 'codex', 'qwen', 'hermes', 'pi'];
+    useEffect(() => {
+        (async () => {
+            try {
+                const customAgents = JSON.parse(localStorage.getItem('incognide_terminalAgents') || '[]');
+                const allCmds = [...KNOWN_AGENTS, ...customAgents.map((a: any) => a.command)];
+                const r = await (window as any).api?.checkBinaries?.(allCmds);
+                setInstalledAgents(r || {});
+            } catch {}
+        })();
+    }, [terminalDropdownOpen]);
 
     const [chatPlusDropdownOpen, setChatPlusDropdownOpen] = useState(false);
 
@@ -5449,18 +5464,16 @@ return (
                         <ChevronDown size={7} className="text-gray-500" />
                     </button>
                     {terminalDropdownOpen && (
-                        <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[9999] py-1 min-w-[140px]">
+                        <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[9999] py-1 min-w-[160px]">
                             <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Right-click to set default</div>
                             {(() => {
-                                const allTerminals = [
-                                    { name: 'Bash', command: 'system' },
-                                    { name: 'npcsh', command: 'npcsh' },
-                                ];
-                                let agents;
-                                try { agents = JSON.parse(localStorage.getItem('incognide_terminalAgents') || '[]'); } catch { agents = []; }
-                                if (!agents.length) agents = [{"name":"opencode","command":"opencode"},{"name":"nanocoder","command":"nanocoder"}];
-                                const all = [...allTerminals, ...agents.filter((a: any) => a.command !== 'system' && a.command !== 'npcsh')];
-                                return all.map((item: any, idx: number) => (
+                                const bash = { name: 'Bash', command: 'system' };
+                                let customAgents: any[] = [];
+                                try { customAgents = JSON.parse(localStorage.getItem('incognide_terminalAgents') || '[]'); } catch {}
+                                const known = KNOWN_AGENTS.map(cmd => ({ name: cmd, command: cmd }));
+                                const allKnown = [bash, ...known.filter(a => installedAgents[a.command])];
+                                const customFiltered = customAgents.filter(a => installedAgents[a.command] && !KNOWN_AGENTS.includes(a.command) && a.command !== 'system');
+                                return [...allKnown, ...customFiltered].map((item: any, idx: number) => (
                                     <button
                                         key={idx}
                                         onClick={() => { createNewTerminal?.(item.command); setTerminalDropdownOpen(false); }}
@@ -5472,6 +5485,37 @@ return (
                                     </button>
                                 ));
                             })()}
+                            <div className="border-t theme-border my-0.5" />
+                            {!showAddAgentPrompt ? (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); setShowAddAgentPrompt(true); }}
+                                    className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs text-blue-400"
+                                >
+                                    <Plus size={11} /><span>Add custom agent...</span>
+                                </button>
+                            ) : (
+                                <div className="p-2 space-y-1" onClick={(e) => e.stopPropagation()}>
+                                    <input type="text" placeholder="Name" value={newAgentName} onChange={e => setNewAgentName(e.target.value)} className="w-full px-1.5 py-0.5 text-xs theme-bg-primary border theme-border rounded" />
+                                    <input type="text" placeholder="Command (binary name)" value={newAgentCommand} onChange={e => setNewAgentCommand(e.target.value)} className="w-full px-1.5 py-0.5 text-xs theme-bg-primary border theme-border rounded" />
+                                    <div className="flex gap-1">
+                                        <button
+                                            onClick={async () => {
+                                                if (!newAgentName || !newAgentCommand) return;
+                                                try {
+                                                    const existing = JSON.parse(localStorage.getItem('incognide_terminalAgents') || '[]');
+                                                    const updated = [...existing.filter((a: any) => a.command !== newAgentCommand), { name: newAgentName, command: newAgentCommand }];
+                                                    localStorage.setItem('incognide_terminalAgents', JSON.stringify(updated));
+                                                    const r = await (window as any).api?.checkBinaries?.([newAgentCommand]);
+                                                    setInstalledAgents(prev => ({ ...prev, ...(r || {}) }));
+                                                } catch {}
+                                                setNewAgentName(''); setNewAgentCommand(''); setShowAddAgentPrompt(false);
+                                            }}
+                                            className="flex-1 px-2 py-0.5 text-[10px] bg-blue-600 hover:bg-blue-500 text-white rounded"
+                                        >Add</button>
+                                        <button onClick={() => { setNewAgentName(''); setNewAgentCommand(''); setShowAddAgentPrompt(false); }} className="px-2 py-0.5 text-[10px] theme-bg-tertiary rounded">Cancel</button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
