@@ -513,29 +513,38 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
     };
 
     const handleAddKgEdge = async () => {
-        if (!newEdgeSource.trim() || !newEdgeTarget.trim()) return;
-        setKgLoading(true);
+        const src = newEdgeSource.trim();
+        const tgt = newEdgeTarget.trim();
+        if (!src || !tgt) return;
         try {
-            await (window as any).api?.kg_addEdge?.({ sourceId: newEdgeSource.trim(), targetId: newEdgeTarget.trim() });
+            const r = await (window as any).api?.kg_addEdge?.({ sourceId: src, targetId: tgt });
+            if (r?.error) { setKgError(r.error); return; }
             setNewEdgeSource('');
             setNewEdgeTarget('');
-            fetchKgData(currentKgGeneration ?? undefined);
+            // Optimistic local insert — avoids full KG re-fetch that caused layout flash
+            setKgData(prev => {
+                if (prev.links.some((l: any) => (l.source === src || l.source?.id === src) && (l.target === tgt || l.target?.id === tgt))) return prev;
+                return { ...prev, links: [...prev.links, { source: src, target: tgt, type: 'related_to', weight: 1 }] };
+            });
         } catch (err: any) {
             setKgError(err.message);
-        } finally {
-            setKgLoading(false);
         }
     };
 
     const handleDeleteKgEdge = async (sourceId: string, targetId: string) => {
-        setKgLoading(true);
         try {
-            await (window as any).api?.kg_deleteEdge?.({ sourceId, targetId });
-            fetchKgData(currentKgGeneration ?? undefined);
+            const r = await (window as any).api?.kg_deleteEdge?.({ sourceId, targetId });
+            if (r?.error) { setKgError(r.error); return; }
+            setKgData(prev => ({
+                ...prev,
+                links: prev.links.filter((l: any) => {
+                    const s = l.source?.id ?? l.source;
+                    const t = l.target?.id ?? l.target;
+                    return !(s === sourceId && t === targetId);
+                }),
+            }));
         } catch (err: any) {
             setKgError(err.message);
-        } finally {
-            setKgLoading(false);
         }
     };
 
@@ -600,16 +609,19 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
             if (!connectSource) {
                 setConnectSource(node.id);
             } else if (connectSource !== node.id) {
+                const src = connectSource;
+                const tgt = node.id;
                 (async () => {
-                    setKgLoading(true);
                     try {
-                        await (window as any).api?.kg_addEdge?.({ sourceId: connectSource, targetId: node.id });
+                        const r = await (window as any).api?.kg_addEdge?.({ sourceId: src, targetId: tgt });
                         setConnectSource(null);
-                        fetchKgData(currentKgGeneration ?? undefined);
+                        if (r?.error) { setKgError(r.error); return; }
+                        setKgData(prev => {
+                            if (prev.links.some((l: any) => (l.source === src || l.source?.id === src) && (l.target === tgt || l.target?.id === tgt))) return prev;
+                            return { ...prev, links: [...prev.links, { source: src, target: tgt, type: 'related_to', weight: 1 }] };
+                        });
                     } catch (err: any) {
                         setKgError(err.message);
-                    } finally {
-                        setKgLoading(false);
                     }
                 })();
             }
