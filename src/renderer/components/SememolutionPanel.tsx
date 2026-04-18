@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Plus, RefreshCw, Trash2, Play, X, Loader2, Dna, Save, Cpu } from 'lucide-react';
+import { Plus, RefreshCw, Trash2, Play, X, Loader2, Dna, Save, Cpu, Lock, Power } from 'lucide-react';
 import KgIcon from './icons/KgIcon';
+
+const MIN_KG_SIZE_FOR_SEMEMOLUTION = 100;
 
 interface Genome {
     lambda_depth: number;
@@ -133,12 +135,38 @@ const GenomeEditor: React.FC<{
 
 const SememolutionPanel: React.FC = () => {
     const api = (window as any).api;
+    const [enabled, setEnabled] = useState<boolean>(() => {
+        try { return localStorage.getItem('incognide_sememolution_enabled') === '1'; } catch { return false; }
+    });
+    const [kgSize, setKgSize] = useState<{ facts: number; concepts: number } | null>(null);
     const [populations, setPopulations] = useState<PopulationSummary[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [detail, setDetail] = useState<PopulationDetail | null>(null);
     const [showCreate, setShowCreate] = useState(false);
+
+    // Refresh KG size so we know if the user is eligible to enable Sememolution.
+    const fetchKgSize = useCallback(async () => {
+        try {
+            const g = await api?.kg_getGraphData?.({ generation: null });
+            const nodes = g?.graph?.nodes || [];
+            const facts = nodes.filter((n: any) => n.type === 'fact').length;
+            const concepts = nodes.filter((n: any) => n.type === 'concept').length;
+            setKgSize({ facts, concepts });
+        } catch { /* ignore */ }
+    }, [api]);
+    useEffect(() => { fetchKgSize(); }, [fetchKgSize]);
+
+    const totalNodes = (kgSize?.facts ?? 0) + (kgSize?.concepts ?? 0);
+    const eligible = totalNodes >= MIN_KG_SIZE_FOR_SEMEMOLUTION;
+
+    const toggleEnabled = () => {
+        if (!eligible && !enabled) return;
+        const next = !enabled;
+        setEnabled(next);
+        try { localStorage.setItem('incognide_sememolution_enabled', next ? '1' : '0'); } catch {}
+    };
     const [newName, setNewName] = useState('');
     const [newSize, setNewSize] = useState(20);
     const [newSampleSize, setNewSampleSize] = useState(10);
@@ -250,8 +278,69 @@ const SememolutionPanel: React.FC = () => {
         finally { setQuerying(false); }
     };
 
+    const header = (
+        <div className="px-4 py-2 border-b theme-border flex items-center gap-3">
+            <Dna size={14} className="text-pink-400" />
+            <h3 className="text-sm font-semibold">Sememolution</h3>
+            <span className="text-[10px] theme-text-muted">
+                KG size: <span className="font-mono theme-text-primary">{totalNodes}</span> / {MIN_KG_SIZE_FOR_SEMEMOLUTION}
+                {kgSize && <> <span className="opacity-60">({kgSize.facts}f · {kgSize.concepts}c)</span></>}
+            </span>
+            <button
+                onClick={toggleEnabled}
+                disabled={!eligible && !enabled}
+                className={`ml-auto px-2 py-1 text-[11px] rounded flex items-center gap-1 border theme-border ${
+                    enabled ? 'bg-green-600/30 text-green-300 border-green-500/50'
+                    : eligible ? 'theme-bg-tertiary text-gray-300 hover:opacity-80'
+                    : 'theme-bg-tertiary text-gray-600 cursor-not-allowed'
+                }`}
+                title={!eligible && !enabled ? `Need ${MIN_KG_SIZE_FOR_SEMEMOLUTION} nodes; have ${totalNodes}` : ''}
+            >
+                {enabled ? <Power size={11} /> : <Lock size={11} />}
+                {enabled ? 'Sememolution ON' : eligible ? 'Enable Sememolution' : 'Locked'}
+            </button>
+        </div>
+    );
+
+    if (!enabled) {
+        return (
+            <div className="flex-1 flex flex-col overflow-hidden">
+                {header}
+                <div className="flex-1 flex items-center justify-center p-8">
+                    <div className="max-w-md text-center space-y-3">
+                        {!eligible ? (<>
+                            <Lock size={32} className="mx-auto theme-text-muted" />
+                            <h4 className="text-sm font-semibold">Sememolution is locked</h4>
+                            <p className="text-xs theme-text-muted">
+                                Build your knowledge graph to at least {MIN_KG_SIZE_FOR_SEMEMOLUTION} facts + concepts before enabling population-based Sememolution.
+                            </p>
+                            <div className="flex items-center gap-2 justify-center text-xs theme-text-muted">
+                                <span className="font-mono">{totalNodes}</span>
+                                <div className="w-48 h-2 bg-gray-700 rounded overflow-hidden">
+                                    <div className="h-full bg-gradient-to-r from-pink-500 to-purple-500" style={{ width: `${Math.min(100, (totalNodes / MIN_KG_SIZE_FOR_SEMEMOLUTION) * 100)}%` }} />
+                                </div>
+                                <span className="font-mono">{MIN_KG_SIZE_FOR_SEMEMOLUTION}</span>
+                            </div>
+                            <button onClick={fetchKgSize} className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1 mx-auto">
+                                <RefreshCw size={10} /> Re-check
+                            </button>
+                        </>) : (<>
+                            <Dna size={32} className="mx-auto text-pink-400" />
+                            <h4 className="text-sm font-semibold">Sememolution is available</h4>
+                            <p className="text-xs theme-text-muted">
+                                Your KG has {totalNodes} nodes — enough to spawn diverse individuals. Toggle Sememolution ON to start managing populations. You can turn it off any time and go back to the main graph without losing anything.
+                            </p>
+                        </>)}
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
-        <div className="flex-1 overflow-hidden flex">
+        <div className="flex-1 flex flex-col overflow-hidden">
+            {header}
+            <div className="flex-1 overflow-hidden flex">
             {/* LEFT: population list */}
             <div className="w-64 border-r theme-border flex flex-col flex-shrink-0">
                 <div className="flex items-center justify-between px-3 py-2 border-b theme-border">
@@ -435,6 +524,7 @@ const SememolutionPanel: React.FC = () => {
                         <button onClick={() => setError(null)} className="theme-text-muted hover:theme-text-primary"><X size={12} /></button>
                     </div>
                 )}
+            </div>
             </div>
         </div>
     );
