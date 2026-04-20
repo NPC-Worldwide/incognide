@@ -22,6 +22,7 @@ import { useLayoutManager, getConversationStats } from '../hooks/useLayoutManage
 import GitPane from './GitPane';
 import GitModal from './GitModal';
 import Sidebar from './Sidebar';
+import RightSidebar from './RightSidebar';
 import StatusBar from './StatusBar';
 import CsvViewer from './CsvViewer';
 import DocxViewer from './DocxViewer';
@@ -536,6 +537,28 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const [logsViewerOpen, setLogsViewerOpen] = useState(false);
     const [graphViewerOpen, setGraphViewerOpen] = useState(false);
     const [dataLabelerOpen, setDataLabelerOpen] = useState(false);
+    // Right sidebar state
+    const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(() => {
+        try { return localStorage.getItem('incognide_rightSidebarCollapsed') === 'true'; } catch { return false; }
+    });
+    const [rightSidebarWidth, setRightSidebarWidth] = useState(() => {
+        try { const v = parseInt(localStorage.getItem('incognide_rightSidebarWidth') || '260'); return isNaN(v) ? 260 : v; } catch { return 260; }
+    });
+    const [isResizingRightSidebar, setIsResizingRightSidebar] = useState(false);
+    useEffect(() => { try { localStorage.setItem('incognide_rightSidebarCollapsed', String(rightSidebarCollapsed)); } catch {} }, [rightSidebarCollapsed]);
+    useEffect(() => { try { localStorage.setItem('incognide_rightSidebarWidth', String(rightSidebarWidth)); } catch {} }, [rightSidebarWidth]);
+    useEffect(() => {
+        if (!isResizingRightSidebar) return;
+        const onMove = (e: MouseEvent) => {
+            const w = window.innerWidth - e.clientX;
+            if (w >= 160 && w <= 600) setRightSidebarWidth(w);
+        };
+        const onUp = () => setIsResizingRightSidebar(false);
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+        return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    }, [isResizingRightSidebar]);
+
     // Sidebar/resize state from useSidebarResize hook
     const {
         sidebarWidth, setSidebarWidth, inputHeight, setInputHeight,
@@ -871,6 +894,18 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
             if (el) el.classList.add('pane-active');
         }
     }, [activeContentPaneId]);
+
+    // Backfill paneData.npc / model for chat/agent panes that were created before
+    // currentNPC was set, so pane headers and tabs pick up a real name.
+    useEffect(() => {
+        if (!activeContentPaneId) return;
+        const pd = contentDataRef.current[activeContentPaneId];
+        if (!pd || (pd.contentType !== 'chat' && pd.contentType !== 'agent')) return;
+        let changed = false;
+        if (!pd.npc && currentNPC) { pd.npc = currentNPC; changed = true; }
+        if (!pd.model && currentModel) { pd.model = currentModel; changed = true; }
+        if (changed) paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: activeContentPaneId } }));
+    }, [activeContentPaneId, currentNPC, currentModel]);
 
     const [editorContextMenuPos, setEditorContextMenuPos] = useState(null);
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
@@ -1445,7 +1480,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
             if (!node) return { total: 0, hasTerminal: false, hasChat: false };
             if (node.type === 'leaf') {
                 const isTerminal = node.contentType === 'terminal';
-                const isChat = node.contentType === 'chat';
+                const isChat = (node.contentType === 'chat' || node.contentType === 'agent');
                 return { total: 1, hasTerminal: isTerminal, hasChat: isChat };
             }
             if (node.children && Array.isArray(node.children)) {
@@ -1715,7 +1750,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
                     }
                     return;
                 }
-                if (activePane?.contentType === 'chat') {
+                if ((activePane?.contentType === 'chat' || activePane?.contentType === 'agent')) {
                     e.preventDefault();
                     e.stopPropagation();
                     setIsGlobalSearch(false);
@@ -1874,7 +1909,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
                     return;
                 }
                 // For chat panes, reload the conversation messages
-                if (activePane?.contentType === 'chat' && activePane?.contentId) {
+                if ((activePane?.contentType === 'chat' || activePane?.contentType === 'agent') && activePane?.contentId) {
                     e.preventDefault();
                     e.stopPropagation();
                     (async () => {
@@ -2166,7 +2201,7 @@ const handleResendMessage = useCallback((messageToResend: any) => {
 // Handle broadcast - send same message to multiple model/NPC combinations
 const handleBroadcast = useCallback(async (messageToResend: any, models: string[], npcs: string[]) => {
     const activePaneData = contentDataRef.current[activeContentPaneId];
-    if (!activePaneData || activePaneData.contentType !== 'chat' || !activePaneData.contentId) {
+    if (!activePaneData || (activePaneData.contentType !== 'chat' && activePaneData.contentType !== 'agent') || !activePaneData.contentId) {
         setError("Cannot broadcast: The active pane is not a valid chat window.");
         return;
     }
@@ -3071,7 +3106,7 @@ const handleAICodeAction = useCallback(async (type: string, selectedText: string
 // Chat pane action handlers
 const handleCopyChat = useCallback(() => {
     const paneData = contentDataRef.current[activeContentPaneId];
-    if (!paneData || paneData.contentType !== 'chat') return;
+    if (!paneData || (paneData.contentType !== 'chat' && paneData.contentType !== 'agent')) return;
 
     const messages = paneData.chatMessages?.messages || [];
     if (messageSelectionMode && selectedMessages.size > 0) {
@@ -3086,7 +3121,7 @@ const handleCopyChat = useCallback(() => {
 
 const handleSaveChat = useCallback(async () => {
     const paneData = contentDataRef.current[activeContentPaneId];
-    if (!paneData || paneData.contentType !== 'chat') return;
+    if (!paneData || (paneData.contentType !== 'chat' && paneData.contentType !== 'agent')) return;
 
     const messages = paneData.chatMessages?.messages || [];
     const conversationId = paneData.contentId;
@@ -4705,7 +4740,10 @@ const handleBrowserDialogNavigate = (url) => {
         const targetPaneId = options?.paneId ?? activeContentPaneId;
 
         // Get pane-specific execution mode and selectedJinx
-        const paneExecMode = targetPaneId ? (contentDataRef.current[targetPaneId]?.executionMode || 'tool_agent') : 'tool_agent';
+        // Default based on pane contentType: 'agent' pane → tool_agent, 'chat' pane → chat
+        const targetPaneData = targetPaneId ? contentDataRef.current[targetPaneId] : null;
+        const defaultMode = targetPaneData?.contentType === 'agent' ? 'tool_agent' : 'chat';
+        const paneExecMode = targetPaneData?.executionMode || defaultMode;
         const paneSelectedJinx = targetPaneId ? (contentDataRef.current[targetPaneId]?.selectedJinx || null) : null;
 
         const isJinxMode = paneExecMode !== 'chat' && paneSelectedJinx;
@@ -4721,7 +4759,7 @@ const handleBrowserDialogNavigate = (url) => {
         }
 
         const paneData = contentDataRef.current[targetPaneId];
-        if (!paneData || paneData.contentType !== 'chat' || !paneData.contentId) {
+        if (!paneData || (paneData.contentType !== 'chat' && paneData.contentType !== 'agent') || !paneData.contentId) {
             console.error("No active chat pane to send message to.");
             return;
         }
@@ -4854,6 +4892,13 @@ ${contextPrompt}`;
         const savedFiles = [...uploadedFiles];
         setInput('');
         setUploadedFiles([]);
+
+        // Stamp the pane with the current NPC/model so the header reflects
+        // the active agent for this conversation.
+        if (targetPaneId && contentDataRef.current[targetPaneId]) {
+            contentDataRef.current[targetPaneId].npc = currentNPC;
+            contentDataRef.current[targetPaneId].model = currentModel;
+        }
         if (isJinxMode) {
             setJinxInputValues(prev => ({
                 ...prev,
@@ -5140,7 +5185,7 @@ ${contextPrompt}`;
 
     const handleResendWithSettings = async (messageToResend: any, selectedModel: string, selectedNPC: string) => {
         const activePaneData = contentDataRef.current[activeContentPaneId];
-        if (!activePaneData || activePaneData.contentType !== 'chat' || !activePaneData.contentId) {
+        if (!activePaneData || (activePaneData.contentType !== 'chat' && activePaneData.contentType !== 'agent') || !activePaneData.contentId) {
             setError("Cannot resend: The active pane is not a valid chat window.");
             return;
         }
@@ -5295,7 +5340,11 @@ ${contextPrompt}`;
         }
     };
 
-    const createNewConversation = useCallback(async (skipMessageLoad = false) => {
+    const createNewConversation = useCallback(async (skipMessageLoad: boolean | { contentType?: 'chat' | 'agent'; npc?: string; model?: string } = false) => {
+        const opts = typeof skipMessageLoad === 'object' ? skipMessageLoad : {};
+        const contentType: 'chat' | 'agent' = opts.contentType || 'chat';
+        const npcToUse = opts.npc !== undefined ? opts.npc : currentNPC;
+        const modelToUse = opts.model !== undefined ? opts.model : currentModel;
         try {
             const conversation = await window.api.createConversation({ directory_path: currentPath });
             if (!conversation || !conversation.id) {
@@ -5316,10 +5365,15 @@ ${contextPrompt}`;
 
             // Set content BEFORE layout to prevent empty pane
             contentDataRef.current[newPaneId] = {
-                contentType: 'chat',
+                contentType,
                 contentId: conversation.id,
-                chatMessages: { messages: [], allMessages: [], displayedMessageCount: 20 }
+                chatMessages: { messages: [], allMessages: [], displayedMessageCount: 20 },
+                npc: npcToUse,
+                model: modelToUse,
             };
+            if (contentType === 'agent') {
+                contentDataRef.current[newPaneId].executionMode = 'tool_agent';
+            }
 
             // Update the layout with the new pane using balanced grid
             addPaneOrTab(newPaneId);
@@ -5400,7 +5454,7 @@ ${contextPrompt}`;
                 embedded={true}
                 npcList={availableNPCs}
                 jinxList={availableJinxes}
-                currentNpc={currentNPC}
+                currentNpc={paneData.initialNpc || currentNPC}
                 initialTab={paneData.activeTab || paneData.initialTab}
                 onTabChange={(tab) => { contentDataRef.current[nodeId] = { ...contentDataRef.current[nodeId], activeTab: tab }; }}
             />
@@ -5408,9 +5462,14 @@ ${contextPrompt}`;
     }, [currentPath, createNewConversation, availableNPCs, availableJinxes, currentNPC]);
 
     // Create Team Management pane
-    const createTeamManagementPane = useCallback(async () => {
+    const createTeamManagementPane = useCallback(async (opts?: { npcName?: string; tab?: string }) => {
         const newPaneId = generateId();
-        contentDataRef.current[newPaneId] = { contentType: 'teammanagement', contentId: 'teammanagement' };
+        contentDataRef.current[newPaneId] = {
+            contentType: 'teammanagement',
+            contentId: 'teammanagement',
+            initialTab: opts?.tab || 'npcs',
+            initialNpc: opts?.npcName,
+        };
         addPaneOrTab(newPaneId);
     }, []);
 
@@ -7509,7 +7568,9 @@ ${contextPrompt}`;
 
 // Per-pane execution mode getter/setter
 const getPaneExecutionMode = useCallback((paneId: string) => {
-    return contentDataRef.current[paneId]?.executionMode || 'tool_agent';
+    const pd = contentDataRef.current[paneId];
+    const def = pd?.contentType === 'agent' ? 'tool_agent' : 'chat';
+    return pd?.executionMode || def;
 }, []);
 
 const setPaneExecutionMode = useCallback(async (paneId: string, mode: string) => {
@@ -7626,7 +7687,7 @@ const getChatInputProps = useCallback((paneId: string) => {
     // Broadcast new message to multiple models/NPCs
     onBroadcast: async (models: string[], npcs: string[]) => {
         const activePaneData = contentDataRef.current[paneId];
-        if (!activePaneData || activePaneData.contentType !== 'chat' || !activePaneData.contentId) {
+        if (!activePaneData || (activePaneData.contentType !== 'chat' && activePaneData.contentType !== 'agent') || !activePaneData.contentId) {
             setError("Cannot broadcast: The active pane is not a valid chat window.");
             return;
         }
@@ -7908,6 +7969,8 @@ const layoutComponentApi = useMemo(() => ({
     onExpandTopBar: () => { setTopBarCollapsed(false); localStorage.setItem('incognide_topBarCollapsed', 'false'); },
     // Current working directory
     currentPath,
+    // Fallback for chat/agent pane header when paneData.npc is missing
+    currentNPC,
     // Pane locking (per-pane)
     lockedPanes,
     togglePaneLocked: (nodeId: string) => { setLockedPanes(prev => { const next = new Set(prev); if (next.has(nodeId)) next.delete(nodeId); else next.add(nodeId); localStorage.setItem('incognide_lockedPanes', JSON.stringify([...next])); return next; }); },
@@ -7926,7 +7989,7 @@ const layoutComponentApi = useMemo(() => ({
     zenModePaneId,
     renamingPaneId, editedFileName, handleConfirmRename,
     handleRunScript, handleNewBrowserTab, topBarCollapsed,
-    currentPath, lockedPanes,
+    currentPath, currentNPC, lockedPanes,
 ]);
 
 // Stable ref for layoutComponentApi — LayoutNode reads from this ref so it doesn't
@@ -7947,7 +8010,7 @@ const handleConversationSelect = async (conversationId: string, skipMessageLoad 
     // Check if this conversation is already open in a pane
     const existingPaneId = Object.keys(contentDataRef.current).find(paneId => {
         const paneData = contentDataRef.current[paneId];
-        return paneData?.contentType === 'chat' && paneData?.contentId === conversationId;
+        return (paneData?.contentType === 'chat' || paneData?.contentType === 'agent') && paneData?.contentId === conversationId;
     });
 
     if (existingPaneId) {
@@ -7978,7 +8041,7 @@ const handleConversationSelect = async (conversationId: string, skipMessageLoad 
     else {
         // Check if active pane is already a chat — if so, reuse it; otherwise create a new pane
         const activePaneData = activeContentPaneId ? contentDataRef.current[activeContentPaneId] : null;
-        const activeIsChat = activePaneData?.contentType === 'chat';
+        const activeIsChat = (activePaneData?.contentType === 'chat' || activePaneData?.contentType === 'agent');
 
         if (activeIsChat && activeContentPaneId) {
             // Reuse existing chat pane
@@ -8926,6 +8989,7 @@ const renderMainContent = () => {
         return (
             <main className={`flex-1 flex flex-col theme-bg-primary ${isDarkMode ? 'dark-mode' : 'light-mode'} overflow-hidden`}>
                 {topBar}
+                <div className="flex-1 flex overflow-hidden">
                 <div
                     className="flex-1 flex items-center justify-center border-2 border-dashed border-gray-400 m-4"
                     onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
@@ -9165,6 +9229,58 @@ const renderMainContent = () => {
                         </div>
                     </div>
                 </div>
+                {aiEnabled && (
+                <RightSidebar
+                    collapsed={rightSidebarCollapsed}
+                    setCollapsed={setRightSidebarCollapsed}
+                    width={rightSidebarWidth}
+                    setWidth={setRightSidebarWidth}
+                    isResizing={isResizingRightSidebar}
+                    setIsResizing={setIsResizingRightSidebar}
+                    directoryConversations={directoryConversations}
+                    activeConversationId={activeConversationId}
+                    currentPath={currentPath}
+                    createNewConversation={(opts?: any) => createNewConversation(opts)}
+                    onConversationSelect={(id: string) => handleConversationSelect(id)}
+                    refreshConversations={refreshConversations}
+                    availableNPCs={availableNPCs}
+                    currentNPC={currentNPC}
+                    setCurrentNPC={setCurrentNPC}
+                    jinxesToDisplay={jinxesToDisplay}
+                    availableModels={modelsToDisplay}
+                    availableProviders={Array.from(new Set((modelsToDisplay || []).map((m: any) => m.provider).filter(Boolean)))}
+                    createTeamManagementPane={createTeamManagementPane}
+                    onNpcSave={async (npc: any, changes: { model?: string; provider?: string; jinxes?: any[] }) => {
+                        try {
+                            const merged = {
+                                name: npc.name,
+                                primary_directive: npc.primary_directive || '',
+                                model: changes.model !== undefined ? changes.model : (npc.model || ''),
+                                provider: changes.provider !== undefined ? changes.provider : (npc.provider || ''),
+                                api_url: npc.api_url || '',
+                                jinxes: changes.jinxes !== undefined ? changes.jinxes : (npc.jinxes || []),
+                                use_global_jinxes: npc.use_global_jinxes !== undefined ? npc.use_global_jinxes : true,
+                            };
+                            const res = await fetch(`${BACKEND_URL}/api/save_npc`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ npc: merged, isGlobal: npc.source === 'global', team: npc.team, currentPath }),
+                            });
+                            const body = await res.json();
+                            if (body?.error) { setError(body.error); return; }
+                            await loadAvailableNPCs(currentPath, setNpcsLoading, setNpcsError, setAvailableNPCs);
+                        } catch (err: any) {
+                            setError(err?.message || 'Failed to save NPC');
+                        }
+                    }}
+                    onOpenFile={(path: string) => {
+                        const newPaneId = generateId();
+                        contentDataRef.current[newPaneId] = { contentType: 'editor', contentId: path };
+                        addPaneOrTab(newPaneId);
+                    }}
+                />
+                )}
+                </div>
                 {bottomBarCollapsed ? (
                     <div
                         className="h-1 hover:h-4 flex items-center justify-center cursor-pointer theme-bg-tertiary border-t theme-border transition-all group"
@@ -9202,6 +9318,7 @@ const renderMainContent = () => {
     // Pane items for dock
     const PANE_TITLES: Record<string, string> = {
         'chat': 'Chat',
+        'agent': 'Agent',
         'editor': 'File',
         'terminal': 'Terminal',
         'browser': 'Browser',
@@ -9223,7 +9340,9 @@ const renderMainContent = () => {
         .map(([paneId, data]: [string, any]) => {
             const ct = data.contentType;
             let title = PANE_TITLES[ct] || ct || 'Pane';
-            if (ct === 'chat') title = `Chat ${data?.contentId?.slice(-6) || ''}`;
+            const shortId = data?.contentId?.slice(-6) || '';
+            if (ct === 'chat') title = `${data?.npc || 'Chat'} ${shortId}`.trim();
+            else if (ct === 'agent') title = `${data?.npc || 'Agent'} ${shortId}`.trim();
             else if (ct === 'editor') title = getFileName(data?.contentId) || 'File';
             else if (ct === 'terminal') title = `Terminal${data?.shellType ? ` (${data.shellType})` : ''}`;
             return { id: paneId, type: ct, title, isActive: paneId === activeContentPaneId };
@@ -9257,6 +9376,57 @@ const renderMainContent = () => {
                     <div className="flex-1 flex items-center justify-center theme-text-muted">
                         {loading ? "Loading..." : "Drag a conversation or file to start."}
                     </div>
+                )}
+                {aiEnabled && (
+                <RightSidebar
+                    collapsed={rightSidebarCollapsed}
+                    setCollapsed={setRightSidebarCollapsed}
+                    width={rightSidebarWidth}
+                    setWidth={setRightSidebarWidth}
+                    isResizing={isResizingRightSidebar}
+                    setIsResizing={setIsResizingRightSidebar}
+                    directoryConversations={directoryConversations}
+                    activeConversationId={activeConversationId}
+                    currentPath={currentPath}
+                    createNewConversation={(opts?: any) => createNewConversation(opts)}
+                    onConversationSelect={(id: string) => handleConversationSelect(id)}
+                    refreshConversations={refreshConversations}
+                    availableNPCs={availableNPCs}
+                    currentNPC={currentNPC}
+                    setCurrentNPC={setCurrentNPC}
+                    jinxesToDisplay={jinxesToDisplay}
+                    availableModels={modelsToDisplay}
+                    availableProviders={Array.from(new Set((modelsToDisplay || []).map((m: any) => m.provider).filter(Boolean)))}
+                    createTeamManagementPane={createTeamManagementPane}
+                    onNpcSave={async (npc: any, changes: { model?: string; provider?: string; jinxes?: any[] }) => {
+                        try {
+                            const merged = {
+                                name: npc.name,
+                                primary_directive: npc.primary_directive || '',
+                                model: changes.model !== undefined ? changes.model : (npc.model || ''),
+                                provider: changes.provider !== undefined ? changes.provider : (npc.provider || ''),
+                                api_url: npc.api_url || '',
+                                jinxes: changes.jinxes !== undefined ? changes.jinxes : (npc.jinxes || []),
+                                use_global_jinxes: npc.use_global_jinxes !== undefined ? npc.use_global_jinxes : true,
+                            };
+                            const res = await fetch(`${BACKEND_URL}/api/save_npc`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ npc: merged, isGlobal: npc.source === 'global', team: npc.team, currentPath }),
+                            });
+                            const body = await res.json();
+                            if (body?.error) { setError(body.error); return; }
+                            await loadAvailableNPCs(currentPath, setNpcsLoading, setNpcsError, setAvailableNPCs);
+                        } catch (err: any) {
+                            setError(err?.message || 'Failed to save NPC');
+                        }
+                    }}
+                    onOpenFile={(path: string) => {
+                        const newPaneId = generateId();
+                        contentDataRef.current[newPaneId] = { contentType: 'editor', contentId: path };
+                        addPaneOrTab(newPaneId);
+                    }}
+                />
                 )}
             </div>
             {bottomBarCollapsed ? (

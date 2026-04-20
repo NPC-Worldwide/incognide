@@ -79,6 +79,8 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
                         executionMode: activePaneData.executionMode,
                         selectedJinx: activePaneData.selectedJinx,
                         chatStats: activePaneData.chatStats,
+                        npc: activePaneData.npc,
+                        model: activePaneData.model,
                     }];
                 }
 
@@ -95,6 +97,8 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
                     executionMode: newPaneData.executionMode,
                     selectedJinx: newPaneData.selectedJinx,
                     chatStats: newPaneData.chatStats,
+                    npc: newPaneData.npc,
+                    model: newPaneData.model,
                 });
                 activePaneData.activeTabIndex = activePaneData.tabs.length - 1;
 
@@ -459,9 +463,11 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
                     data.fileChanged = tab.fileChanged;
                     data.isUntitled = tab.isUntitled;
                     if (tab.contentType === 'browser') data.browserUrl = tab.browserUrl;
-                    if (tab.contentType === 'chat') {
+                    if ((tab.contentType === 'chat' || tab.contentType === 'agent')) {
                         data.chatMessages = tab.chatMessages;
                         data.executionMode = tab.executionMode;
+                        data.npc = tab.npc;
+                        data.model = tab.model;
                     }
                     setActiveContentPaneId(paneId);
                     paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));

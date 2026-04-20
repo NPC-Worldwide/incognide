@@ -31,11 +31,11 @@ function findChatPaneData(ctx: StudioContext, paneId?: string): any {
   // Find the active chat pane
   const targetId = (!paneId || paneId === 'active') ? ctx.activeContentPaneId : paneId;
   const data = ctx.contentDataRef.current[targetId];
-  if (data?.contentType === 'chat') return { paneData: data, paneId: targetId };
+  if ((data?.contentType === 'chat' || data?.contentType === 'agent')) return { paneData: data, paneId: targetId };
 
   // Fallback: search all panes for a chat
   for (const [id, d] of Object.entries(ctx.contentDataRef.current)) {
-    if ((d as any)?.contentType === 'chat') return { paneData: d, paneId: id };
+    if ((d as any)?.contentType === 'chat' || (d as any)?.contentType === 'agent') return { paneData: d, paneId: id };
   }
   return { paneData: null, paneId: null };
 }
@@ -224,7 +224,7 @@ async function send_message(
     return { success: false, error: `Pane not found: ${paneId}` };
   }
 
-  if (data.contentType !== 'chat') {
+  if ((data.contentType !== 'chat' && data.contentType !== 'agent')) {
     return { success: false, error: `Pane is not a chat: ${data.contentType}` };
   }
 
@@ -256,7 +256,7 @@ async function switch_npc(
     return { success: false, error: `Pane not found: ${paneId}` };
   }
 
-  if (data.contentType !== 'chat') {
+  if ((data.contentType !== 'chat' && data.contentType !== 'agent')) {
     return { success: false, error: `Pane is not a chat: ${data.contentType}` };
   }
 

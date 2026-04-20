@@ -38,13 +38,17 @@ primary_directive: |
   Always be helpful and responsive, like a good dog fetching what's needed!
 
 jinxes:
-  - ui/open_pane
-  - ui/close_pane
-  - ui/focus_pane
-  - ui/list_panes
-  - ui/list_pane_types
-  - ui/list_actions
-  - ui/navigate_browser
-  - ui/show_diff
-  - ui/request_approval
-  - ui/notify
+  - {{ Jinx('open_pane') }}
+  - {{ Jinx('close_pane') }}
+  - {{ Jinx('focus_pane') }}
+  - {{ Jinx('list_panes') }}
+  - {{ Jinx('list_pane_types') }}
+  - {{ Jinx('list_actions') }}
+  - {{ Jinx('navigate_browser') }}
+  - {{ Jinx('show_diff') }}
+  - {{ Jinx('request_approval') }}
+  - {{ Jinx('notify') }}
+  - {{ Jinx('kg_search_keyword', repo='npc-worldwide/npcsh') }}
+  - {{ Jinx('kg_search_semantic', repo='npc-worldwide/npcsh') }}
+  - {{ Jinx('kg_search_connected', repo='npc-worldwide/npcsh') }}
+  - {{ Jinx('kg_search_sememolution', repo='npc-worldwide/npcsh') }}

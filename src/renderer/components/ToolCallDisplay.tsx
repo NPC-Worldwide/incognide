@@ -174,31 +174,55 @@ export function ToolCallDisplay({ tool }: ToolCallProps) {
     );
   }
 
-  // Default rendering for non-studio tools
+  // Default rendering for non-studio tools — collapsed by default
   const argDisplay = rawArgs && String(rawArgs).trim().length > 0
     ? (typeof rawArgs === 'string' ? rawArgs : JSON.stringify(rawArgs, null, 2))
     : 'No arguments';
   const resDisplay = resultVal && String(resultVal).trim().length > 0
     ? (typeof resultVal === 'string' ? resultVal : JSON.stringify(resultVal, null, 2))
     : null;
+  const oneLinePreview = (() => {
+    if (resDisplay) return resDisplay.split('\n')[0].slice(0, 120);
+    try {
+      const a = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : rawArgs;
+      const firstVal = a ? Object.values(a)[0] : null;
+      if (firstVal) return String(firstVal).split('\n')[0].slice(0, 120);
+    } catch {}
+    return '';
+  })();
 
   return (
-    <div className={`my-2 px-3 py-2 theme-bg-tertiary rounded-md border-l-2 ${statusColor}`}>
-      <div className="text-xs text-blue-400 mb-1 font-semibold flex items-center gap-2">
-        <span>{funcName}</span>
+    <div className={`my-1.5 rounded-md border-l-2 ${statusColor} overflow-hidden`}>
+      <div
+        className="flex items-center gap-2 px-3 py-1.5 theme-bg-tertiary cursor-pointer hover:brightness-110 transition-all"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <Play size={12} className="text-blue-400 flex-shrink-0" />
+        <span className="text-sm font-semibold text-blue-400 flex-shrink-0">{funcName}</span>
+        {oneLinePreview && (
+          <span className="text-xs theme-text-muted flex-1 truncate">{oneLinePreview}</span>
+        )}
         {statusIcon}
+        {expanded
+          ? <ChevronDown size={14} className="theme-text-muted flex-shrink-0" />
+          : <ChevronRight size={14} className="theme-text-muted flex-shrink-0" />
+        }
       </div>
-      <div className="text-[11px] theme-text-muted mb-1">Args:</div>
-      <pre className="theme-bg-primary p-2 rounded text-xs overflow-x-auto my-1 theme-text-secondary max-h-32 overflow-y-auto">
-        {argDisplay}
-      </pre>
-      {resDisplay && (
-        <>
-          <div className="text-[11px] theme-text-muted mb-1">Result:</div>
-          <pre className="theme-bg-primary p-2 rounded text-xs overflow-x-auto my-1 theme-text-secondary max-h-32 overflow-y-auto">
-            {resDisplay}
+      {expanded && (
+        <div className="px-3 py-2 theme-bg-primary border-t border-[var(--border-color,#313244)]">
+          <div className="text-[11px] theme-text-muted mb-1">Args:</div>
+          <pre className="theme-bg-tertiary p-2 rounded text-xs overflow-x-auto my-1 theme-text-secondary max-h-32 overflow-y-auto">
+            {argDisplay}
           </pre>
-        </>
+          {resDisplay && (
+            <>
+              <div className="text-[11px] theme-text-muted mb-1">Result:</div>
+              <pre className="theme-bg-tertiary p-2 rounded text-xs overflow-x-auto my-1 theme-text-secondary max-h-48 overflow-y-auto">
+                {resDisplay}
+              </pre>
+            </>
+          )}
+        </div>
       )}
     </div>
   );

@@ -53,7 +53,7 @@ const getParamColor = (value: number, min: number, max: number): string => {
     }
 };
 
-interface ChatInputProps {
+interface AgentInputProps {
     paneId: string;
 
     inputHeight: number;
@@ -123,7 +123,7 @@ interface ChatInputProps {
     onBroadcast?: (models: string[], npcs: string[], inputText?: string, files?: any[]) => void;
 }
 
-const ChatInput: React.FC<ChatInputProps> = (props) => {
+const AgentInput: React.FC<AgentInputProps> = (props) => {
     const {
         paneId,
         inputHeight, setInputHeight,
@@ -333,6 +333,32 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         }
     }, [availableMcpServers]);
 
+    // When NPC changes in tool_agent mode, load its resolved tools
+    useEffect(() => {
+        if (executionMode !== 'tool_agent' || !currentNPC) return;
+        loadNpcTools(currentNPC);
+    }, [currentNPC, executionMode]);
+
+    // Force tool_agent mode on mount — this pane is always agent
+    useEffect(() => {
+        if (executionMode !== 'tool_agent') setExecutionMode('tool_agent');
+    }, [executionMode]);
+
+    // Just list the available MCP servers, don't auto-start or auto-enable anything
+    useEffect(() => {
+        if (!currentPath) return;
+        (async () => {
+            try {
+                const res = await (window as any).api.getMcpServers(currentPath);
+                if (res?.servers?.length) {
+                    setLocalMcpServers(res.servers);
+                }
+            } catch (err) {
+                console.error('[MCP] Failed to list servers:', err);
+            }
+        })();
+    }, [currentPath]);
+
     const [showModelsDropdown, setShowModelsDropdown] = useState(false);
     const [showNpcsDropdown, setShowNpcsDropdown] = useState(false);
     const modelsDropdownRef = useRef<HTMLDivElement>(null);
@@ -384,7 +410,39 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     const [newPresetName, setNewPresetName] = useState('');
     const npcsDropdownRef = useRef<HTMLDivElement>(null);
 
+    const [detectedJinxes, setDetectedJinxes] = useState<any[]>([]);
+    const [showJinxSuggestion, setShowJinxSuggestion] = useState(false);
     const firstJinxInputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+
+    // Only show jinxes that belong to the current NPC (scoped to npcResolvedTools)
+    useEffect(() => {
+        if (!localInput) {
+            setDetectedJinxes([]);
+            setShowJinxSuggestion(false);
+            return;
+        }
+
+        const match = localInput.match(/^\/(\S+)/);
+        if (match) {
+            const jinxName = match[1].toLowerCase();
+            const npcJinxNames = new Set((npcResolvedTools || []).map((t: any) => (t.name || '').toLowerCase()));
+            const matches = jinxesToDisplay.filter((j: any) => {
+                if (!npcJinxNames.has(j.name.toLowerCase())) return false;
+                return j.name.toLowerCase() === jinxName || j.name.toLowerCase().startsWith(jinxName);
+            });
+            if (matches.length > 0) {
+                setDetectedJinxes(matches);
+                setShowJinxSuggestion(true);
+            } else {
+                setDetectedJinxes([]);
+                setShowJinxSuggestion(false);
+            }
+        } else {
+            setDetectedJinxes([]);
+            setShowJinxSuggestion(false);
+        }
+    }, [localInput, jinxesToDisplay, npcResolvedTools]);
+
 
     useEffect(() => {
         if (!showMcpServersDropdown) return;
@@ -1102,29 +1160,77 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                     <div className="flex-1 flex items-stretch p-2 gap-2">
                         <div className="flex-grow relative h-full">
                             <div className="relative h-full">
-                                <textarea
-                                    value={localInput}
-                                    onChange={(e) => setLocalInput(e.target.value)}
-                                    onKeyDown={(e) => {
-                                        if (!isStreaming && e.key === 'Enter' && !e.shiftKey) {
-                                            e.preventDefault();
+                                    <textarea
+                                        value={localInput}
+                                        onChange={(e) => setLocalInput(e.target.value)}
+                                        onKeyDown={(e) => {
 
-                                            const shouldBroadcast = broadcastMode && onBroadcast && selectedModels.length > 0 && selectedNPCs.length > 0 && (selectedModels.length > 1 || selectedNPCs.length > 1);
-                                            if (shouldBroadcast) {
-                                                onBroadcast(selectedModels, selectedNPCs, localInput, uploadedFiles); setLocalInput(''); setUploadedFiles([]);
-                                            } else {
-                                                handleInputSubmit(e, { voiceInput: usedVoiceInput, useKgSearch, useMemorySearch, disableThinking, genParams, inputText: localInput, uploadedFiles, contextFiles, paneId });
+                                            if (showJinxSuggestion && detectedJinxes.length > 0 && e.key === 'Enter' && !e.shiftKey) {
+                                                e.preventDefault();
+                                                const jinx = detectedJinxes[0];
+                                                setExecutionMode(jinx.name);
+                                                setSelectedJinx(jinx);
                                                 setLocalInput('');
-                                                setUploadedFiles([]);
-                                                setUsedVoiceInput(false);
+                                                setShowJinxSuggestion(false);
+                                                setDetectedJinxes([]);
+                                                return;
                                             }
-                                        }
-                                    }}
-                                    onPaste={handlePaste}
-                                    placeholder="Type a message..."
-                                    className="w-full h-full theme-input text-sm rounded-lg pl-3 pr-16 py-2 focus:outline-none border-0 resize-none"
-                                />
-                            </div>
+                                            if (!isStreaming && e.key === 'Enter' && !e.shiftKey) {
+                                                e.preventDefault();
+
+                                                const shouldBroadcast = broadcastMode && onBroadcast && selectedModels.length > 0 && selectedNPCs.length > 0 && (selectedModels.length > 1 || selectedNPCs.length > 1);
+                                                if (shouldBroadcast) {
+                                                    onBroadcast(selectedModels, selectedNPCs, localInput, uploadedFiles); setLocalInput(''); setUploadedFiles([]);
+                                                } else {
+                                                    handleInputSubmit(e, { voiceInput: usedVoiceInput, useKgSearch, useMemorySearch, disableThinking, genParams, inputText: localInput, uploadedFiles, mcpServerPath, selectedMcpTools, contextFiles, paneId });
+                                                    setLocalInput('');
+                                                    setUploadedFiles([]);
+                                                    setUsedVoiceInput(false);
+                                                }
+                                            }
+
+                                            if (e.key === 'Escape' && showJinxSuggestion) {
+                                                setShowJinxSuggestion(false);
+                                                setDetectedJinxes([]);
+                                            }
+                                        }}
+                                        onPaste={handlePaste}
+                                        placeholder="Type a message... (use /jinx to run a jinx)"
+                                        className="w-full h-full theme-input text-sm rounded-lg pl-3 pr-16 py-2 focus:outline-none border-0 resize-none"
+                                    />
+                                    {showJinxSuggestion && detectedJinxes.length > 0 && (
+                                        <div className="absolute bottom-full left-0 right-0 mb-1 bg-gradient-to-r from-purple-900/95 to-pink-900/95 backdrop-blur-xl border border-purple-500/30 rounded-lg shadow-2xl overflow-hidden z-[100] max-h-48 overflow-y-auto">
+                                            {detectedJinxes.map((jinx: any) => (
+                                                <button
+                                                    key={jinx.name}
+                                                    onClick={() => {
+                                                        setExecutionMode(jinx.name);
+                                                        setSelectedJinx(jinx);
+                                                        setLocalInput('');
+                                                        setShowJinxSuggestion(false);
+                                                        setDetectedJinxes([]);
+                                                    }}
+                                                    className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-white/10 transition-colors border-b border-purple-500/10 last:border-b-0"
+                                                >
+                                                    <div className="w-6 h-6 rounded bg-purple-500/30 flex items-center justify-center flex-shrink-0">
+                                                        <Zap size={12} className="text-purple-300" />
+                                                    </div>
+                                                    <div className="flex-1 text-left min-w-0">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="text-xs font-medium text-purple-100 truncate">{jinx.name}</span>
+                                                            {jinx.group && (
+                                                                <span className="text-[8px] px-1 py-0.5 rounded bg-purple-500/30 text-purple-300 flex-shrink-0">{jinx.group}</span>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-[9px] text-purple-300/60 truncate">
+                                                            {jinx.inputs?.length || 0} input{(jinx.inputs?.length || 0) !== 1 ? 's' : ''}
+                                                        </div>
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
 
                             <div className="absolute top-1 right-1 flex gap-1">
                                 <button onClick={() => setIsInputMinimized(true)} className="p-1 theme-text-muted hover:theme-text-primary rounded theme-hover opacity-50 group-hover:opacity-100" title="Minimize">
@@ -1225,6 +1331,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
 
                 <div className={`px-1.5 py-1 relative z-50 ${isStreaming ? 'opacity-50 pointer-events-none' : ''}`}>
                 <div className="flex items-center gap-1">
+
                     <div className="relative flex-1" ref={modelsDropdownRef}>
                         <button
                             className={`w-full h-9 flex items-center justify-center gap-2 rounded-lg text-xs font-medium transition-all duration-200 ${
@@ -1567,4 +1674,4 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     );
 };
 
-export default ChatInput;
+export default AgentInput;

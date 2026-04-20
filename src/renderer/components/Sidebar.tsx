@@ -137,7 +137,7 @@ const Sidebar = (props: any) => {
         setDropTargetSection(null);
         if (draggedId === targetSectionId || !setSidebarSectionOrder) return;
 
-        const currentOrder = sidebarSectionOrder || ['websites', 'files', 'conversations', 'git'];
+        const currentOrder = sidebarSectionOrder || ['websites', 'files', 'git'];
         const newOrder = [...currentOrder];
         const draggedIndex = newOrder.indexOf(draggedId);
         const targetIndex = newOrder.indexOf(targetSectionId);
@@ -569,7 +569,7 @@ const Sidebar = (props: any) => {
         const convos: { paneId: string; conversationId: string }[] = [];
         for (const [paneId, data] of Object.entries(contentDataRef.current)) {
             const d = data as any;
-            if (d?.contentType === 'chat' && d?.conversationId) {
+            if ((d?.contentType === 'chat' || d?.contentType === 'agent') && d?.conversationId) {
                 convos.push({ paneId, conversationId: d.conversationId });
             }
         }
@@ -1069,7 +1069,7 @@ const handleApplyPromptToFiles = async (operationType, customPrompt = '') => {
         }
 
         const paneData = contentDataRef.current[newPaneId];
-        if (!paneData || paneData.contentType !== 'chat') {
+        if (!paneData || (paneData.contentType !== 'chat' && paneData.contentType !== 'agent')) {
             throw new Error("Target pane is not a chat pane.");
         }
 
@@ -1220,7 +1220,7 @@ const handleSummarizeAndStart = async () => {
         }
 
         const paneData = contentDataRef.current[newPaneId];
-        if (!paneData || paneData.contentType !== 'chat') {
+        if (!paneData || (paneData.contentType !== 'chat' && paneData.contentType !== 'agent')) {
             throw new Error("Target pane is not a chat pane.");
         }
 
@@ -4086,7 +4086,6 @@ onDragStart={(e) => {
                                     });
                                 }
                             }}
-                            onDoubleClick={() => !isInaccessible && handleOpenFolderAsWorkspace(fullPath)}
                             onContextMenu={(e) => handleSidebarItemContextMenu(e, fullPath, 'directory', isInaccessible)}
                             className={`flex items-center gap-1.5 px-1.5 py-0.5 w-full hover:bg-gray-800 text-left rounded text-[11px] select-none ${isInaccessible ? 'opacity-60' : ''}`}
                             title={isInaccessible ? `Permission denied: ${fullPath}` : `Drag to open as folder viewer, Click to expand, Ctrl+Click to open as workspace`}
@@ -4417,6 +4416,13 @@ onDragStart={(e) => {
                         title="New Chat"
                     >
                         <MessageSquare size={12} className="text-green-300" />
+                    </button>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); createNewConversation?.({ contentType: 'agent' }); setConversationsCollapsed(false); }}
+                        className="flex items-center justify-center w-1/4 py-4 -my-4 hover:bg-amber-500/20 transition-all"
+                        title="New Agent"
+                    >
+                        <Bot size={12} className="text-amber-300" />
                     </button>
                 </div>
                 {showConversationsSettings && (
@@ -5686,7 +5692,7 @@ return (
                             setDropTargetSection(null);
                             return;
                         }
-                        const currentOrder = sidebarSectionOrder || ['websites', 'files', 'conversations', 'git'];
+                        const currentOrder = sidebarSectionOrder || ['websites', 'files', 'git'];
                         const newOrder = [...currentOrder];
                         const draggedIndex = newOrder.indexOf(draggedSection);
                         const targetIndex = newOrder.indexOf(dropTargetSection);
@@ -5697,7 +5703,7 @@ return (
                         setDropTargetSection(null);
                     }}
                 >
-                    {(sidebarSectionOrder || ['websites', 'files', 'conversations', 'git']).filter((s: string) => ['websites', 'files', 'conversations', 'git'].includes(s)).map((sectionId: string) => {
+                    {(sidebarSectionOrder || ['websites', 'files', 'git']).filter((s: string) => ['websites', 'files', 'git'].includes(s)).map((sectionId: string) => {
                         const sectionColors: Record<string, string> = {
                             websites: 'ring-purple-500',
                             files: 'ring-yellow-500',
@@ -5717,7 +5723,7 @@ return (
                             >
                                 {sectionId === 'websites' && <div data-tutorial="website-browser" className="h-full overflow-hidden">{renderWebsiteList()}</div>}
                                 {sectionId === 'files' && <div data-tutorial="file-browser" className="h-full overflow-hidden">{renderFolderList(folderStructure)}</div>}
-                                {sectionId === 'conversations' && aiEnabled && <div data-tutorial="conversations" className="h-full overflow-hidden">{renderConversationList(directoryConversations)}</div>}
+                                {/* conversations moved to RightSidebar */}
                                 {sectionId === 'git' && <div data-tutorial="git-browser" className="h-full overflow-hidden">{renderGitSection()}</div>}
                             </div>
                         );

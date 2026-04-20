@@ -13,6 +13,7 @@ import PaneHeader from './PaneHeader';
 import PaneTabBar from './PaneTabBar';
 import { getFileName, getFileIcon } from './utils';
 import ChatInput from './ChatInput';
+import AgentInput from './AgentInput';
 import DiffViewer from './DiffViewer';
 import { ChatHeaderContent } from './pane-headers';
 
@@ -314,6 +315,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             onExpandTopBar,
 
             currentPath,
+            currentNPC,
 
             lockedPanes, togglePaneLocked,
         } = component;
@@ -521,9 +523,9 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                             // If the source pane's chat state isn't on any tab yet (e.g. the
                             // pane was single-chat without tabs), stash it on the active tab
                             // we're about to migrate so it survives the merge.
-                            if (sourcePaneData.contentType === 'chat' && sourcePaneData.chatMessages) {
+                            if (((sourcePaneData.contentType === 'chat' || sourcePaneData.contentType === 'agent') || sourcePaneData.contentType === 'agent') && sourcePaneData.chatMessages) {
                                 const srcActive = sourcePaneData.tabs[sourcePaneData.activeTabIndex ?? 0];
-                                if (srcActive && srcActive.contentType === 'chat' && !srcActive.chatMessages) {
+                                if (srcActive && ((srcActive.contentType === 'chat' || srcActive.contentType === 'agent') || srcActive.contentType === 'agent') && !srcActive.chatMessages) {
                                     srcActive.chatMessages = sourcePaneData.chatMessages;
                                     srcActive.executionMode = sourcePaneData.executionMode;
                                     srcActive.selectedJinx = sourcePaneData.selectedJinx;
@@ -558,6 +560,8 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                                 executionMode: sourcePaneData.executionMode,
                                 selectedJinx: sourcePaneData.selectedJinx,
                                 chatStats: sourcePaneData.chatStats,
+                                npc: sourcePaneData.npc,
+                                model: sourcePaneData.model,
                                 title: sourceTitle
                             });
                         }
@@ -582,7 +586,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
 
                         // Hydrate chat top-level fields from the active tab so renderChatView
                         // finds chatMessages (and so in-flight streams write to the right place).
-                        if (activeTab.contentType === 'chat' && activeTab.chatMessages) {
+                        if (((activeTab.contentType === 'chat' || activeTab.contentType === 'agent') || activeTab.contentType === 'agent') && activeTab.chatMessages) {
                             targetPaneData.chatMessages = activeTab.chatMessages;
                             targetPaneData.executionMode = activeTab.executionMode;
                             targetPaneData.selectedJinx = activeTab.selectedJinx;
@@ -714,7 +718,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                                 if (vd.browserUrl) tab.browserUrl = vd.browserUrl;
                                 if (vd.browserTitle) tab.browserTitle = vd.browserTitle;
                             }
-                            if (tab.contentType === 'chat') {
+                            if ((tab.contentType === 'chat' || tab.contentType === 'agent') || tab.contentType === 'agent') {
                                 tab.chatMessages = vd.chatMessages ?? sourcePaneData.chatMessages;
                                 tab.executionMode = vd.executionMode ?? sourcePaneData.executionMode;
                                 tab.selectedJinx = vd.selectedJinx ?? sourcePaneData.selectedJinx;
@@ -926,11 +930,13 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                         tabs[currentTabIndex]._scrollTopPos = currentVirtualData._scrollTopPos;
                     }
 
-                    if (tabs[currentTabIndex].contentType === 'chat') {
+                    if ((tabs[currentTabIndex].contentType === 'chat' || tabs[currentTabIndex].contentType === 'agent')) {
                         tabs[currentTabIndex].chatMessages = paneData.chatMessages;
                         tabs[currentTabIndex].executionMode = paneData.executionMode;
                         tabs[currentTabIndex].selectedJinx = paneData.selectedJinx;
                         tabs[currentTabIndex].chatStats = paneData.chatStats;
+                        tabs[currentTabIndex].npc = paneData.npc;
+                        tabs[currentTabIndex].model = paneData.model;
                     }
 
                     if (tabs[currentTabIndex].contentType === 'browser') {
@@ -959,11 +965,13 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                     }
                 }
 
-                if (selectedTab.contentType === 'chat') {
+                if ((selectedTab.contentType === 'chat' || selectedTab.contentType === 'agent')) {
                     paneData.chatMessages = selectedTab.chatMessages;
                     paneData.executionMode = selectedTab.executionMode;
                     paneData.selectedJinx = selectedTab.selectedJinx;
                     paneData.chatStats = selectedTab.chatStats;
+                    paneData.npc = selectedTab.npc;
+                    paneData.model = selectedTab.model;
                 }
 
                 if (selectedTab.contentType === 'browser') {
@@ -994,11 +1002,13 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                         tabs[currentTabIndex].fileChanged = closeVirtualData?.fileChanged ?? paneData.fileChanged;
                     }
 
-                    if (tabs[currentTabIndex].contentType === 'chat') {
+                    if ((tabs[currentTabIndex].contentType === 'chat' || tabs[currentTabIndex].contentType === 'agent')) {
                         tabs[currentTabIndex].chatMessages = paneData.chatMessages;
                         tabs[currentTabIndex].executionMode = paneData.executionMode;
                         tabs[currentTabIndex].selectedJinx = paneData.selectedJinx;
                         tabs[currentTabIndex].chatStats = paneData.chatStats;
+                        tabs[currentTabIndex].npc = paneData.npc;
+                        tabs[currentTabIndex].model = paneData.model;
                     }
                 }
 
@@ -1031,7 +1041,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                         paneData.browserTitle = newActiveTab.browserTitle || 'Browser';
                     }
 
-                    if (newActiveTab?.contentType === 'chat') {
+                    if ((newActiveTab?.contentType === 'chat' || newActiveTab?.contentType === 'agent')) {
                         paneData.chatMessages = newActiveTab.chatMessages;
                         paneData.executionMode = newActiveTab.executionMode;
                         paneData.selectedJinx = newActiveTab.selectedJinx;
@@ -1073,11 +1083,13 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                         tabs[currentTabIndex].fileContent = reorderVd?.fileContent ?? paneData.fileContent;
                         tabs[currentTabIndex].fileChanged = reorderVd?.fileChanged ?? paneData.fileChanged;
                     }
-                    if (tabs[currentTabIndex].contentType === 'chat') {
+                    if ((tabs[currentTabIndex].contentType === 'chat' || tabs[currentTabIndex].contentType === 'agent')) {
                         tabs[currentTabIndex].chatMessages = paneData.chatMessages;
                         tabs[currentTabIndex].executionMode = paneData.executionMode;
                         tabs[currentTabIndex].selectedJinx = paneData.selectedJinx;
                         tabs[currentTabIndex].chatStats = paneData.chatStats;
+                        tabs[currentTabIndex].npc = paneData.npc;
+                        tabs[currentTabIndex].model = paneData.model;
                     }
                 }
 
@@ -1182,8 +1194,11 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
         let headerTitle = contentType || 'Pane';
 
         if (contentType === 'chat') {
-            headerIcon = <MessageSquare size={14} className="text-blue-400" />;
+            headerIcon = <MessageSquare size={14} className="text-green-400" />;
             headerTitle = 'Chat';
+        } else if (contentType === 'agent') {
+            headerIcon = <Bot size={14} className="text-amber-400" />;
+            headerTitle = 'Agent';
         } else if (contentType === 'editor' && contentId) {
             headerIcon = getFileIcon(contentId);
             headerTitle = getFileName(contentId);
@@ -1426,12 +1441,25 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             );
         }
 
-        if (contentType === 'chat') {
+        if (contentType === 'chat' || contentType === 'agent') {
             const chatStats = paneData?.chatStats || { messageCount: 0, inputTokens: 0, outputTokens: 0, totalCost: 0, models: new Set(), agents: new Set(), providers: new Set() };
+            const shortId = paneData?.contentId ? String(paneData.contentId).slice(-6) : '';
+            const msgs = paneData?.chatMessages?.messages || paneData?.chatMessages?.allMessages || [];
+            const lastAssistant = [...msgs].reverse().find((m: any) => m.role === 'assistant' && m.npc);
+            const agentsFromStats = chatStats?.agents instanceof Set
+                ? Array.from(chatStats.agents)
+                : (Array.isArray(chatStats?.agents) ? chatStats.agents : []);
+            const npcName = paneData?.npc
+                || lastAssistant?.npc
+                || (agentsFromStats.length > 0 ? String(agentsFromStats[0]) : null)
+                || (activeContentPaneId === node.id ? currentNPC : null);
+            const computedTitle = npcName
+                ? `${npcName}${shortId ? ` ${shortId}` : ''}`
+                : shortId || (contentType === 'agent' ? 'Agent' : 'Chat');
             headerContent = (
                 <ChatHeaderContent
                     icon={headerIcon}
-                    title={headerTitle}
+                    title={computedTitle}
                     chatStats={chatStats}
                     autoScrollEnabled={autoScrollEnabled}
                     setAutoScrollEnabled={setAutoScrollEnabled}
@@ -1454,7 +1482,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
         const lastMessageReasoning = lastMessage?.reasoningContent || '';
 
         useEffect(() => {
-            if (autoScrollEnabled && chatScrollRef.current && contentType === 'chat') {
+            if (autoScrollEnabled && chatScrollRef.current && (contentType === 'chat' || contentType === 'agent')) {
                 chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
             }
         }, [chatMessages.length, lastMessageContent, lastMessageReasoning, autoScrollEnabled, contentType]);
@@ -1481,6 +1509,8 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                         executionMode: tab.executionMode,
                         selectedJinx: tab.selectedJinx,
                         chatStats: tab.chatStats,
+                        npc: tab.npc,
+                        model: tab.model,
                     };
                 }
                 const vd = contentDataRef.current[virtualId];
@@ -1521,15 +1551,16 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             const tabContentType = tab.contentType;
             const isActiveTab = tabIndex === activeTabIndex;
 
-            if (tabContentType === 'chat') {
+            if (tabContentType === 'chat' || tabContentType === 'agent') {
                 if (isActiveTab) {
+                    const InputComponent = tabContentType === 'agent' ? AgentInput : ChatInput;
                     return (
                         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                             <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto">
                                 {paneRenderers.chat?.({ nodeId: node.id })}
                             </div>
                             {chatInputProps && (
-                                <ChatInput
+                                <InputComponent
                                     {...chatInputProps}
                                     paneId={node.id}
                                     onFocus={() => setActiveContentPaneId(node.id)}
@@ -1574,14 +1605,15 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
 
         const renderPaneContent = () => {
 
-            if (contentType === 'chat') {
+            if (contentType === 'chat' || contentType === 'agent') {
+                const InputComponent = contentType === 'agent' ? AgentInput : ChatInput;
                 return (
                     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                         <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto">
                             {paneRenderers.chat?.({ nodeId: node.id })}
                         </div>
                         {chatInputProps && (
-                            <ChatInput
+                            <InputComponent
                                 {...chatInputProps}
                                 paneId={node.id}
                                 onFocus={() => setActiveContentPaneId(node.id)}
