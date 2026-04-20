@@ -1685,55 +1685,6 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         setSelectedNotes(new Set(pianoNotes.map((_, i) => i)));
     }, [pianoNotes]);
 
-    const saveNotationProject = useCallback(async () => {
-        const project = {
-            version: 1,
-            notes: pianoNotes,
-            bpm: notationBpm,
-            timeSignature: notationTimeSignature,
-            keySignature: notationKeySignature,
-            clef: notationClef,
-            instrument: notationInstrument,
-            measures: notationMeasures,
-        };
-        const result = await (window as any).api?.showSaveDialog?.({
-            title: 'Save Notation Project',
-            defaultPath: 'notation.scherzo.json',
-            filters: [{ name: 'Scherzo Project', extensions: ['scherzo.json'] }],
-        });
-        if (result?.filePath) {
-            await (window as any).api?.writeFileContent?.(result.filePath, JSON.stringify(project, null, 2));
-        }
-    }, [pianoNotes, notationBpm, notationTimeSignature, notationKeySignature, notationClef, notationInstrument, notationMeasures]);
-
-    const loadNotationProject = useCallback(async () => {
-        const result = await (window as any).api?.showOpenDialog?.({
-            title: 'Open Notation Project',
-            filters: [{ name: 'Scherzo Project', extensions: ['json'] }],
-            properties: ['openFile'],
-        });
-        if (result?.filePaths?.[0]) {
-            const content = await (window as any).api?.readFileContent?.(result.filePaths[0]);
-            if (content) {
-                try {
-                    const project = JSON.parse(content);
-                    if (project.notes) {
-                        pushNotationUndo();
-                        setPianoNotes(project.notes);
-                        if (project.bpm) setNotationBpm(project.bpm);
-                        if (project.timeSignature) setNotationTimeSignature(project.timeSignature);
-                        if (project.keySignature) setNotationKeySignature(project.keySignature);
-                        if (project.clef) setNotationClef(project.clef);
-                        if (project.instrument) setNotationInstrument(project.instrument);
-                        if (project.measures) setNotationMeasures(project.measures);
-                        setSelectedNotes(new Set());
-                        setInputCursor(0);
-                    }
-                } catch (e) { console.error('Failed to load project:', e); }
-            }
-        }
-    }, [pushNotationUndo]);
-
     const exportMidi = useCallback(async () => {
         // Build a simple MIDI file (format 0, single track)
         const bpm = notationBpm;
@@ -2805,6 +2756,82 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         <Sliders size={12}/> FX
                     </button>
 
+                    <div className="w-px h-5 theme-bg-tertiary mx-1"/>
+                    <button
+                        onClick={async () => {
+                            const api = (window as any).api;
+                            if (!api?.showOpenDialog) { alert('file dialog IPC missing — restart app'); return; }
+                            const result = await api.showOpenDialog({
+                                title: 'Import Audio Files',
+                                properties: ['openFile', 'multiSelections'],
+                                filters: [
+                                    { name: 'Audio', extensions: ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'aiff', 'wma', 'webm'] },
+                                    { name: 'All Files', extensions: ['*'] },
+                                ],
+                            });
+                            const picked: string[] = result?.filePaths || [];
+                            if (picked.length === 0) return;
+
+                            // Create file entries + audioFiles library entries
+                            const newFiles = picked.map((p, i) => ({
+                                id: `imported_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`,
+                                name: p.split('/').pop() || p,
+                                path: p,
+                                duration: 0,
+                            }));
+                            setAudioFiles(prev => {
+                                const existing = new Set(prev.map(f => f.path));
+                                return [...prev, ...newFiles.filter(f => !existing.has(f.path))];
+                            });
+
+                            // Drop each as a clip — one per track, creating new tracks as needed.
+                            // Probe duration asynchronously per file.
+                            const probeDuration = (src: string) => new Promise<number>(resolve => {
+                                const a = new Audio();
+                                a.preload = 'metadata';
+                                a.onloadedmetadata = () => resolve(a.duration || 5);
+                                a.onerror = () => resolve(5);
+                                a.src = `file://${src}`;
+                            });
+
+                            saveUndoState();
+                            for (let i = 0; i < newFiles.length; i++) {
+                                const f = newFiles[i];
+                                const dur = await probeDuration(f.path);
+                                setAudioFiles(prev => prev.map(af => af.id === f.id ? { ...af, duration: dur } : af));
+                                const clip = {
+                                    id: `clip_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`,
+                                    audioId: f.id,
+                                    startTime: editorPlayhead,
+                                    duration: dur,
+                                    offset: 0,
+                                    name: f.name,
+                                    gain: 1,
+                                    fadeIn: 0,
+                                    fadeOut: 0,
+                                };
+                                setTracks(prev => {
+                                    // pick the i-th track; if it doesn't exist, create it.
+                                    if (prev[i]) {
+                                        return prev.map((t, idx) => idx === i ? { ...t, clips: [...t.clips, clip] } : t);
+                                    }
+                                    return [...prev, {
+                                        id: `track-${prev.length + 1}`,
+                                        name: `Track ${prev.length + 1}`,
+                                        clips: [clip],
+                                        volume: 1, pan: 0, muted: false, solo: false,
+                                        color: prev.length % TRACK_COLORS.length, height: 80,
+                                    }];
+                                });
+                                loadWaveform(f.path, f.id);
+                            }
+                        }}
+                        className="px-2 py-1 rounded text-xs flex items-center gap-1 bg-green-600 hover:bg-green-500 text-white"
+                        title="Import audio files from disk as new clips"
+                    >
+                        <Upload size={12}/> Import Audio
+                    </button>
+
                     <div className="flex-1"/>
 
                     <button
@@ -3820,17 +3847,17 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     </div>
 
                     <div className="flex-1 flex min-h-0">
-                        <div className="w-28 border-r theme-border px-2 py-2 flex flex-col gap-1">
+                        <div className="w-28 shrink-0 border-r theme-border px-2 py-2 flex flex-col gap-1 overflow-hidden">
                             <div className="text-[9px] theme-text-muted font-semibold tracking-wider text-center mb-1">EQ</div>
                             {(['high', 'mid', 'low'] as const).map(band => (
-                                <div key={band} className="flex items-center gap-1.5">
+                                <div key={band} className="flex items-center gap-1.5 min-w-0">
                                     <button
                                         onClick={() => setDeck(prev => ({
                                             ...prev,
                                             eqKill: { ...prev.eqKill, [band]: !prev.eqKill[band] }
                                         }))}
                                         title={`Kill ${band}`}
-                                        className={`w-7 h-5 text-[9px] font-bold rounded ${
+                                        className={`shrink-0 w-7 h-5 text-[9px] font-bold rounded ${
                                             deck.eqKill[band] ? 'bg-red-600 text-white' : 'theme-bg-secondary theme-text-muted theme-hover'
                                         }`}
                                     >
@@ -3846,7 +3873,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                             ...prev,
                                             eq: { ...prev.eq, [band]: parseInt(e.target.value) }
                                         }))}
-                                        className="flex-1 h-1.5 accent-purple-500"
+                                        className="flex-1 min-w-0 h-1.5 accent-purple-500"
                                     />
                                 </div>
                             ))}
@@ -5947,23 +5974,16 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
                     <div className="w-px h-6 theme-bg-tertiary mx-1"/>
 
-                    <button onClick={saveNotationProject} className="p-1.5 theme-hover rounded" title="Save Project">
+                    <button onClick={exportMusicXML} disabled={pianoNotes.length === 0}
+                        className={`p-1.5 rounded ${pianoNotes.length > 0 ? 'theme-hover' : 'opacity-30'}`} title="Save as MusicXML (reads in MuseScore, Finale, Sibelius, Logic, Dorico)">
                         <Save size={14}/>
                     </button>
-                    <button onClick={loadNotationProject} className="p-1.5 theme-hover rounded" title="Open Project">
+                    <button onClick={importMusicXML} className="p-1.5 theme-hover rounded" title="Open MusicXML">
                         <FolderOpen size={14}/>
                     </button>
                     <button onClick={exportMidi} disabled={pianoNotes.length === 0}
-                        className={`px-2 py-1 rounded text-xs flex items-center gap-1 ${pianoNotes.length > 0 ? 'theme-bg-tertiary theme-hover' : 'opacity-30'}`} title="Export MIDI">
+                        className={`px-2 py-1 rounded text-xs flex items-center gap-1 ${pianoNotes.length > 0 ? 'theme-bg-tertiary theme-hover' : 'opacity-30'}`} title="Export as MIDI (for DAWs)">
                         <Download size={12}/> MIDI
-                    </button>
-                    <button onClick={exportMusicXML} disabled={pianoNotes.length === 0}
-                        className={`px-2 py-1 rounded text-xs flex items-center gap-1 ${pianoNotes.length > 0 ? 'theme-bg-tertiary theme-hover' : 'opacity-30'}`} title="Export MusicXML (MuseScore)">
-                        <Download size={12}/> XML
-                    </button>
-                    <button onClick={importMusicXML}
-                        className="px-2 py-1 rounded text-xs flex items-center gap-1 theme-bg-tertiary theme-hover" title="Import MusicXML">
-                        <Upload size={12}/> XML
                     </button>
 
                     <div className="w-px h-6 theme-bg-tertiary mx-1"/>
