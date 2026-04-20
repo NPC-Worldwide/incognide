@@ -57,6 +57,9 @@ readDocxContent: (filePath) =>
 
     generateImages: (prompt, n, model, provider, attachments, baseFilename, currentPath) => ipcRenderer.invoke('generate_images', { prompt, n, model, provider, attachments, baseFilename,currentPath}),
 
+    generateMusic: (prompt, provider, model, duration, currentPath) => ipcRenderer.invoke('generate_music', { prompt, provider, model, duration, currentPath }),
+    loadDemoTracks: () => ipcRenderer.invoke('load_demo_tracks'),
+
     openNewWindow: (path, options) => ipcRenderer.invoke('open-new-window', path, options),
     getWindowCount: () => ipcRenderer.invoke('get-window-count'),
     getAllWindowsInfo: () => ipcRenderer.invoke('get-all-windows-info'),

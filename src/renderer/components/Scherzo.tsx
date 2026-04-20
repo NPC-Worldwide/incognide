@@ -336,6 +336,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
     const [deckA, setDeckA] = useState<DJDeck>({ ...defaultDeckState });
     const [deckB, setDeckB] = useState<DJDeck>({ ...defaultDeckState });
     const [crossfader, setCrossfader] = useState(0.5);
+    const [loadingDemoTracks, setLoadingDemoTracks] = useState(false);
     const deckARef = useRef<HTMLAudioElement>(null);
     const deckBRef = useRef<HTMLAudioElement>(null);
 
@@ -664,15 +665,14 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
     }, []);
 
     const AUDIO_MODELS = [
-        { id: 'suno-v4', name: 'Suno v4', provider: 'suno', type: 'music' },
-        { id: 'suno-v3.5', name: 'Suno v3.5', provider: 'suno', type: 'music' },
-        { id: 'udio-v1.5', name: 'Udio v1.5', provider: 'udio', type: 'music' },
-        { id: 'udio-v1', name: 'Udio v1', provider: 'udio', type: 'music' },
-        { id: 'stable-audio-2', name: 'Stable Audio 2.0', provider: 'stability', type: 'music' },
-        { id: 'musicgen-large', name: 'MusicGen Large', provider: 'meta', type: 'music' },
-        { id: 'audiogen', name: 'AudioGen', provider: 'meta', type: 'sfx' },
-        { id: 'bark', name: 'Bark', provider: 'suno', type: 'speech' },
-        { id: 'eleven-v2', name: 'ElevenLabs v2', provider: 'elevenlabs', type: 'speech' }
+        { id: 'replicate:meta/musicgen',           name: 'MusicGen (Replicate)',       provider: 'replicate', backendModel: 'meta/musicgen',               type: 'music' },
+        { id: 'replicate:stackadoc/stable-audio-open-1.0', name: 'Stable Audio Open (Replicate)', provider: 'replicate', backendModel: 'stackadoc/stable-audio-open-1.0', type: 'music' },
+        { id: 'replicate:riffusion/riffusion',     name: 'Riffusion (Replicate)',      provider: 'replicate', backendModel: 'riffusion/riffusion',         type: 'music' },
+        { id: 'local:facebook/musicgen-small',     name: 'MusicGen Small (Local)',     provider: 'local',     backendModel: 'facebook/musicgen-small',     type: 'music' },
+        { id: 'local:facebook/musicgen-medium',    name: 'MusicGen Medium (Local)',    provider: 'local',     backendModel: 'facebook/musicgen-medium',    type: 'music' },
+        { id: 'elevenlabs:sfx',                    name: 'ElevenLabs SFX (≤22s)',      provider: 'elevenlabs', backendModel: 'sound-generation',           type: 'sfx' },
+        { id: 'tts:kokoro',                        name: 'Kokoro (Local TTS)',         provider: 'kokoro',    backendModel: 'kokoro',                      type: 'speech' },
+        { id: 'tts:elevenlabs',                    name: 'ElevenLabs Voice',           provider: 'elevenlabs',backendModel: 'elevenlabs',                  type: 'speech' },
     ];
 
     const ALL_SCHERZO_MODES = [
@@ -966,14 +966,57 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             if (!genPrompt || !genModel) return;
                             setGenerating(true);
                             try {
+                                const modelDef = AUDIO_MODELS.find(m => m.id === genModel) as any;
+                                if (!modelDef) throw new Error(`Unknown model: ${genModel}`);
 
-                                await new Promise(r => setTimeout(r, 3000));
+                                let resp: any;
+                                let audioB64 = '';
+                                let fmt = 'wav';
+                                let savedPath = '';
+
+                                if (modelDef.type === 'speech') {
+                                    const engine = modelDef.provider === 'elevenlabs' ? 'elevenlabs' : 'kokoro';
+                                    const r = await fetch('http://127.0.0.1:5437/api/audio/tts', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ text: genPrompt, engine }),
+                                    });
+                                    resp = await r.json();
+                                    if (!resp.success) throw new Error(resp.error || 'TTS failed');
+                                    audioB64 = resp.audio;
+                                    fmt = resp.format || 'wav';
+                                } else {
+                                    // music / sfx — real backend music generator
+                                    const api = (window as any).api;
+                                    if (!api?.generateMusic) throw new Error('generateMusic IPC not available (restart app)');
+                                    resp = await api.generateMusic(
+                                        genPrompt,
+                                        modelDef.provider,
+                                        modelDef.backendModel,
+                                        genDuration,
+                                        currentPath || undefined,
+                                    );
+                                    if (!resp?.success) throw new Error(resp?.error || 'music gen failed');
+                                    audioB64 = resp.audio;
+                                    fmt = resp.format || 'wav';
+                                    savedPath = resp.filename || '';
+                                }
+
+                                const bin = atob(audioB64);
+                                const bytes = new Uint8Array(bin.length);
+                                for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                                const mime = fmt === 'mp3' ? 'audio/mpeg' : 'audio/wav';
+                                const blob = new Blob([bytes], { type: mime });
+                                const url = URL.createObjectURL(blob);
+
                                 setGeneratedAudio(prev => [...prev, {
                                     id: `gen_${Date.now()}`,
-                                    name: genPrompt.slice(0, 30) + '...',
-                                    path: '',
-                                    duration: genDuration
+                                    name: genPrompt.slice(0, 40),
+                                    path: savedPath || url,
+                                    duration: genDuration,
                                 }]);
+                            } catch (e: any) {
+                                alert('Audio generation failed: ' + (e.message || e));
                             } finally {
                                 setGenerating(false);
                             }
@@ -2422,15 +2465,15 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
     };
 
     const renderBeatMaker = () => {
-        const rows: Array<{ id: string; name: string; freq: number; color: string }> = [
-            { id: 'kick',  name: 'Kick',  freq: 60,  color: 'bg-red-500' },
-            { id: 'snare', name: 'Snare', freq: 200, color: 'bg-orange-500' },
-            { id: 'hat',   name: 'HiHat', freq: 8000, color: 'bg-yellow-500' },
-            { id: 'clap',  name: 'Clap',  freq: 1500, color: 'bg-green-500' },
-            { id: 'perc1', name: 'Perc1', freq: 440,  color: 'bg-blue-500' },
-            { id: 'perc2', name: 'Perc2', freq: 880,  color: 'bg-purple-500' },
-            { id: 'perc3', name: 'Perc3', freq: 1100, color: 'bg-pink-500' },
-            { id: 'perc4', name: 'Perc4', freq: 330,  color: 'bg-cyan-500' },
+        const rows: Array<{ id: string; name: string; color: string }> = [
+            { id: 'kick',  name: 'Kick',  color: 'bg-red-500' },
+            { id: 'snare', name: 'Snare', color: 'bg-orange-500' },
+            { id: 'hat',   name: 'HiHat', color: 'bg-yellow-500' },
+            { id: 'open',  name: 'Open Hat', color: 'bg-lime-500' },
+            { id: 'clap',  name: 'Clap',  color: 'bg-green-500' },
+            { id: 'tom',   name: 'Tom',   color: 'bg-blue-500' },
+            { id: 'rim',   name: 'Rim',   color: 'bg-purple-500' },
+            { id: 'cow',   name: 'Cowbell', color: 'bg-cyan-500' },
         ];
         const STEPS = 16;
         const stepKey = (rowId: string, step: number) => `${rowId}-${step}`;
@@ -2442,27 +2485,111 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 return next;
             });
         };
+
+        // Build a shared white-noise buffer once per context for drum voices.
+        const getNoiseBuf = (ctx: AudioContext) => {
+            const r: any = beatAudioCtxRef.current as any;
+            if (r && r._noiseBuf) return r._noiseBuf as AudioBuffer;
+            const buf = ctx.createBuffer(1, ctx.sampleRate * 1.0, ctx.sampleRate);
+            const data = buf.getChannelData(0);
+            for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+            (beatAudioCtxRef.current as any)._noiseBuf = buf;
+            return buf;
+        };
+
+        const voices = {
+            kick: (ctx: AudioContext, t: number) => {
+                const osc = ctx.createOscillator();
+                const g = ctx.createGain();
+                osc.frequency.setValueAtTime(150, t);
+                osc.frequency.exponentialRampToValueAtTime(40, t + 0.18);
+                g.gain.setValueAtTime(1.0, t);
+                g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+                osc.connect(g); g.connect(ctx.destination);
+                osc.start(t); osc.stop(t + 0.4);
+            },
+            snare: (ctx: AudioContext, t: number) => {
+                // noise burst
+                const src = ctx.createBufferSource(); src.buffer = getNoiseBuf(ctx);
+                const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1000;
+                const ng = ctx.createGain(); ng.gain.setValueAtTime(0.8, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+                src.connect(hp); hp.connect(ng); ng.connect(ctx.destination);
+                src.start(t); src.stop(t + 0.2);
+                // tonal body
+                const osc = ctx.createOscillator(); osc.type = 'triangle'; osc.frequency.value = 180;
+                const tg = ctx.createGain(); tg.gain.setValueAtTime(0.5, t); tg.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+                osc.connect(tg); tg.connect(ctx.destination);
+                osc.start(t); osc.stop(t + 0.15);
+            },
+            hat: (ctx: AudioContext, t: number) => {
+                const src = ctx.createBufferSource(); src.buffer = getNoiseBuf(ctx);
+                const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 7000;
+                const g = ctx.createGain(); g.gain.setValueAtTime(0.35, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+                src.connect(hp); hp.connect(g); g.connect(ctx.destination);
+                src.start(t); src.stop(t + 0.06);
+            },
+            open: (ctx: AudioContext, t: number) => {
+                const src = ctx.createBufferSource(); src.buffer = getNoiseBuf(ctx);
+                const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 5000;
+                const g = ctx.createGain(); g.gain.setValueAtTime(0.35, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+                src.connect(hp); hp.connect(g); g.connect(ctx.destination);
+                src.start(t); src.stop(t + 0.3);
+            },
+            clap: (ctx: AudioContext, t: number) => {
+                const bursts = [0, 0.01, 0.02, 0.05];
+                bursts.forEach((d, i) => {
+                    const src = ctx.createBufferSource(); src.buffer = getNoiseBuf(ctx);
+                    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1200; bp.Q.value = 0.5;
+                    const g = ctx.createGain();
+                    const tt = t + d;
+                    g.gain.setValueAtTime(i === bursts.length - 1 ? 0.7 : 0.5, tt);
+                    g.gain.exponentialRampToValueAtTime(0.001, tt + (i === bursts.length - 1 ? 0.12 : 0.03));
+                    src.connect(bp); bp.connect(g); g.connect(ctx.destination);
+                    src.start(tt); src.stop(tt + 0.15);
+                });
+            },
+            tom: (ctx: AudioContext, t: number) => {
+                const osc = ctx.createOscillator(); osc.type = 'sine';
+                osc.frequency.setValueAtTime(220, t);
+                osc.frequency.exponentialRampToValueAtTime(90, t + 0.3);
+                const g = ctx.createGain();
+                g.gain.setValueAtTime(0.8, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+                osc.connect(g); g.connect(ctx.destination);
+                osc.start(t); osc.stop(t + 0.45);
+            },
+            rim: (ctx: AudioContext, t: number) => {
+                const osc1 = ctx.createOscillator(); osc1.type = 'square'; osc1.frequency.value = 320;
+                const osc2 = ctx.createOscillator(); osc2.type = 'square'; osc2.frequency.value = 800;
+                const g = ctx.createGain(); g.gain.setValueAtTime(0.35, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+                osc1.connect(g); osc2.connect(g); g.connect(ctx.destination);
+                osc1.start(t); osc1.stop(t + 0.05);
+                osc2.start(t); osc2.stop(t + 0.05);
+            },
+            cow: (ctx: AudioContext, t: number) => {
+                const freqs = [560, 845];
+                freqs.forEach(f => {
+                    const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = f;
+                    const g = ctx.createGain(); g.gain.setValueAtTime(0.25, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+                    o.connect(g); g.connect(ctx.destination);
+                    o.start(t); o.stop(t + 0.25);
+                });
+            },
+        } as Record<string, (ctx: AudioContext, t: number) => void>;
+
         const playStep = (step: number) => {
             try {
                 const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
                 if (!Ctx) return;
                 if (!beatAudioCtxRef.current) beatAudioCtxRef.current = new Ctx();
                 const ctx = beatAudioCtxRef.current;
-                const now = ctx.currentTime;
+                if (ctx.state === 'suspended') ctx.resume();
+                const t = ctx.currentTime + 0.01;
                 rows.forEach(r => {
                     if (!beatPattern.has(stepKey(r.id, step))) return;
-                    const osc = ctx.createOscillator();
-                    const gain = ctx.createGain();
-                    osc.type = r.id === 'hat' || r.id === 'clap' ? 'square' : 'sine';
-                    osc.frequency.setValueAtTime(r.freq, now);
-                    osc.frequency.exponentialRampToValueAtTime(Math.max(20, r.freq * 0.4), now + 0.15);
-                    gain.gain.setValueAtTime(0.25, now);
-                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
-                    osc.connect(gain); gain.connect(ctx.destination);
-                    osc.start(now);
-                    osc.stop(now + 0.22);
+                    const voice = voices[r.id];
+                    if (voice) voice(ctx, t);
                 });
-            } catch {}
+            } catch (e) { console.warn('[beat] play failed', e); }
         };
         const togglePlay = () => {
             if (beatPlayRef.current) {
@@ -3693,20 +3820,21 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     </div>
 
                     <div className="flex-1 flex min-h-0">
-                        <div className="w-20 border-r theme-border p-1.5 flex flex-col">
-                            <div className="text-[9px] theme-text-muted text-center mb-1">EQ</div>
+                        <div className="w-28 border-r theme-border px-2 py-2 flex flex-col gap-1">
+                            <div className="text-[9px] theme-text-muted font-semibold tracking-wider text-center mb-1">EQ</div>
                             {(['high', 'mid', 'low'] as const).map(band => (
-                                <div key={band} className="flex-1 flex items-center gap-0.5">
+                                <div key={band} className="flex items-center gap-1.5">
                                     <button
                                         onClick={() => setDeck(prev => ({
                                             ...prev,
                                             eqKill: { ...prev.eqKill, [band]: !prev.eqKill[band] }
                                         }))}
-                                        className={`w-4 h-4 text-[8px] font-bold rounded ${
+                                        title={`Kill ${band}`}
+                                        className={`w-7 h-5 text-[9px] font-bold rounded ${
                                             deck.eqKill[band] ? 'bg-red-600 text-white' : 'theme-bg-secondary theme-text-muted theme-hover'
                                         }`}
                                     >
-                                        {band[0].toUpperCase()}
+                                        {band === 'high' ? 'HI' : band === 'mid' ? 'MID' : 'LO'}
                                     </button>
                                     <input
                                         type="range"
@@ -3722,8 +3850,8 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                     />
                                 </div>
                             ))}
-                            <div className="border-t theme-border mt-1 pt-1">
-                                <div className="text-[9px] theme-text-muted text-center">FILTER</div>
+                            <div className="border-t theme-border mt-2 pt-2">
+                                <div className="text-[9px] theme-text-muted font-semibold tracking-wider text-center mb-1">FILTER</div>
                                 <input
                                     type="range"
                                     min={0}
@@ -3848,57 +3976,54 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             </div>
                         </div>
 
-                        <div className="w-16 border-l theme-border p-1.5 flex flex-col items-center">
-                            <div className="text-[9px] theme-text-muted mb-1">TEMPO</div>
-                            <div className="flex-1 flex flex-col items-center justify-center">
-                                <input
-                                    type="range"
-                                    min={0.5}
-                                    max={1.5}
-                                    step={0.001}
-                                    value={deck.speed}
-                                    onChange={(e) => {
-                                        const speed = parseFloat(e.target.value);
-                                        setDeck(prev => ({ ...prev, speed }));
-                                        if (audioRef.current) audioRef.current.playbackRate = speed;
-                                    }}
-                                    className="h-24 accent-purple-500"
-                                    style={{ writingMode: 'vertical-lr', direction: 'rtl' }}
-                                />
-                            </div>
+                        <div className="w-20 border-l theme-border py-2 flex flex-col items-center gap-1.5">
+                            <div className="text-[9px] theme-text-muted font-semibold tracking-wider">TEMPO</div>
+                            <input
+                                type="range"
+                                min={0.5}
+                                max={1.5}
+                                step={0.001}
+                                value={deck.speed}
+                                onChange={(e) => {
+                                    const speed = parseFloat(e.target.value);
+                                    setDeck(prev => ({ ...prev, speed }));
+                                    if (audioRef.current) audioRef.current.playbackRate = speed;
+                                }}
+                                className="h-32 accent-purple-500"
+                                style={{ writingMode: 'vertical-lr', direction: 'rtl' }}
+                            />
                             <button
                                 onClick={() => {
                                     setDeck(prev => ({ ...prev, speed: 1 }));
                                     if (audioRef.current) audioRef.current.playbackRate = 1;
                                 }}
-                                className="mt-1 w-full py-0.5 text-[9px] theme-bg-secondary theme-hover rounded"
+                                title="Reset tempo to 0%"
+                                className="w-12 py-0.5 text-[9px] theme-bg-secondary theme-hover rounded"
                             >
-                                0%
+                                RESET
                             </button>
-
-                            <div className="border-t theme-border mt-2 pt-2 w-full flex flex-col items-center">
-                                <div className="text-[9px] theme-text-muted mb-1">VOL</div>
-                                <input
-                                    type="range"
-                                    min={0}
-                                    max={1}
-                                    step={0.01}
-                                    value={deck.volume}
-                                    onChange={(e) => {
-                                        const vol = parseFloat(e.target.value);
-                                        setDeck(prev => ({ ...prev, volume: vol }));
-                                        if (audioRef.current) {
-                                            audioRef.current.volume = vol * (isLeft ? Math.max(0, 1 - crossfader * 2) : Math.max(0, crossfader * 2 - 1));
-                                        }
-                                    }}
-                                    className="h-16 accent-green-500"
-                                    style={{ writingMode: 'vertical-lr', direction: 'rtl' }}
-                                />
-                            </div>
+                            <div className="border-t theme-border w-full my-1"/>
+                            <div className="text-[9px] theme-text-muted font-semibold tracking-wider">VOL</div>
+                            <input
+                                type="range"
+                                min={0}
+                                max={1}
+                                step={0.01}
+                                value={deck.volume}
+                                onChange={(e) => {
+                                    const vol = parseFloat(e.target.value);
+                                    setDeck(prev => ({ ...prev, volume: vol }));
+                                    if (audioRef.current) {
+                                        audioRef.current.volume = vol * (isLeft ? Math.max(0, 1 - crossfader * 2) : Math.max(0, crossfader * 2 - 1));
+                                    }
+                                }}
+                                className="h-28 accent-green-500"
+                                style={{ writingMode: 'vertical-lr', direction: 'rtl' }}
+                            />
                         </div>
                     </div>
 
-                    <div className="h-8 border-t theme-border flex items-center px-2 gap-2">
+                    <div className="h-9 border-t theme-border flex items-center px-2 gap-1.5">
                         <button
                             onClick={() => {
                                 if (selectedAudio) {
@@ -3914,15 +4039,50 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                 }
                             }}
                             disabled={!selectedAudio}
-                            className={`flex-1 py-1 rounded text-xs font-medium truncate ${
-                                selectedAudio ? `${bgAccent} ${bgAccentHover}` : 'theme-bg-secondary theme-text-muted'
+                            className={`flex-1 h-6 px-2 rounded text-xs font-medium truncate flex items-center justify-center gap-1.5 ${
+                                selectedAudio ? `${bgAccent} ${bgAccentHover} text-white` : 'theme-bg-secondary theme-text-muted'
                             }`}
                         >
-                            {selectedAudio ? `Load: ${selectedAudio.name}` : 'Select track from library'}
+                            <Music size={11}/>
+                            <span className="truncate">{selectedAudio ? selectedAudio.name : 'Select from library'}</span>
+                        </button>
+                        <button
+                            onClick={async () => {
+                                const api = (window as any).api;
+                                if (!api?.showOpenDialog) { alert('file dialog IPC missing — restart app'); return; }
+                                const result = await api.showOpenDialog({
+                                    title: `Open track for Deck ${label}`,
+                                    properties: ['openFile'],
+                                    filters: [
+                                        { name: 'Audio', extensions: ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'aiff', 'wma'] },
+                                        { name: 'All Files', extensions: ['*'] },
+                                    ],
+                                });
+                                const picked = result?.filePaths?.[0];
+                                if (!picked) return;
+                                const file = {
+                                    id: `picked_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                                    name: picked.split('/').pop() || picked,
+                                    path: picked,
+                                    duration: 0,
+                                };
+                                setAudioFiles(prev => prev.some(f => f.path === file.path) ? prev : [...prev, file]);
+                                setSelectedAudio(file);
+                                setDeck(prev => ({ ...defaultDeckState, audioFile: file, volume: prev.volume }));
+                                if (audioRef.current) {
+                                    audioRef.current.src = `file://${file.path}`;
+                                    audioRef.current.load();
+                                }
+                            }}
+                            className="h-6 px-2 theme-bg-secondary theme-hover rounded flex items-center gap-1 text-[10px] font-medium theme-text-muted"
+                            title="Browse filesystem for an audio file"
+                        >
+                            <FolderOpen size={11}/>
+                            Browse
                         </button>
                         <button
                             onClick={() => setDeck(prev => ({ ...defaultDeckState, volume: prev.volume }))}
-                            className="p-1.5 theme-bg-secondary hover:bg-red-600 rounded"
+                            className="h-6 w-6 theme-bg-secondary hover:bg-red-600 hover:text-white rounded flex items-center justify-center"
                             title="Eject"
                         >
                             <X size={12}/>
@@ -3980,6 +4140,57 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         <span className="text-sm font-bold text-purple-400">DJ MIXER</span>
                     </div>
                     <div className="flex-1"/>
+                    <button
+                        onClick={async () => {
+                            const api = (window as any).api;
+                            if (!api?.loadDemoTracks) {
+                                alert('loadDemoTracks IPC not available — restart Electron.');
+                                return;
+                            }
+                            setLoadingDemoTracks(true);
+                            try {
+                                const data = await api.loadDemoTracks();
+                                if (!data?.success) throw new Error(data?.error || 'demo tracks failed');
+                                const newFiles = (data.tracks || []).map((t: any, i: number) => ({
+                                    id: `demo_${Date.now()}_${i}`,
+                                    name: t.name,
+                                    path: t.path,
+                                    duration: 0,
+                                }));
+                                if (newFiles.length === 0) throw new Error('no demo tracks found in bundle');
+                                setAudioFiles(prev => {
+                                    const existing = new Set(prev.map(f => f.path));
+                                    return [...prev, ...newFiles.filter((f: any) => !existing.has(f.path))];
+                                });
+                                // Auto-load deck A + B so the user sees something happen right away.
+                                if (newFiles[0]) {
+                                    setDeckA(prev => ({ ...defaultDeckState, volume: prev.volume, audioFile: newFiles[0] }));
+                                    if (deckARef.current) {
+                                        deckARef.current.src = `file://${newFiles[0].path}`;
+                                        deckARef.current.load();
+                                    }
+                                }
+                                if (newFiles[1]) {
+                                    setDeckB(prev => ({ ...defaultDeckState, volume: prev.volume, audioFile: newFiles[1] }));
+                                    if (deckBRef.current) {
+                                        deckBRef.current.src = `file://${newFiles[1].path}`;
+                                        deckBRef.current.load();
+                                    }
+                                }
+                                setSelectedAudio(newFiles[0] || null);
+                            } catch (e: any) {
+                                alert('Demo track load failed: ' + (e.message || e));
+                            } finally {
+                                setLoadingDemoTracks(false);
+                            }
+                        }}
+                        disabled={loadingDemoTracks}
+                        className="px-3 py-1 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 rounded text-xs text-white flex items-center gap-1.5"
+                        title="Add the bundled demo tracks to your library"
+                    >
+                        {loadingDemoTracks ? <Loader size={12} className="animate-spin"/> : <Sparkles size={12}/>}
+                        Load Demo Tracks
+                    </button>
                     <div className="flex items-center gap-3">
                         <span className="text-xs theme-text-muted">MASTER</span>
                         <input
@@ -3998,7 +4209,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 <div className="flex-1 flex overflow-hidden">
                     {renderDeck(deckA, setDeckA, 'A', deckARef, true)}
 
-                    <div className="w-36 theme-bg-primary border-x theme-border flex flex-col">
+                    <div className="w-52 theme-bg-primary border-x theme-border flex flex-col">
                         <div className="h-32 p-2 border-b theme-border">
                             <div className="text-[9px] theme-text-muted text-center mb-1">LEVEL</div>
                             <div className="flex justify-center gap-3 h-full pb-2">
@@ -4070,8 +4281,8 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             </div>
                         </div>
 
-                        <div className="flex-1 flex flex-col items-center justify-center p-3">
-                            <div className="text-[9px] theme-text-muted mb-2">CROSSFADER</div>
+                        <div className="flex-1 flex flex-col items-center p-3 gap-1">
+                            <div className="text-[9px] theme-text-muted font-semibold tracking-wider mb-1">CROSSFADER</div>
                             <input
                                 type="range"
                                 min={0}
@@ -4105,59 +4316,54 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                 <span className="text-orange-400 font-bold">B</span>
                             </div>
 
-                            <div className="mt-3 w-full">
-                                <div className="text-[9px] theme-text-muted text-center mb-1">MASTER FX</div>
-                                <div className="space-y-1">
+                            <div className="mt-4 w-full">
+                                <div className="text-[9px] theme-text-muted font-semibold tracking-wider text-center mb-2">MASTER FX</div>
+                                <div className="space-y-1.5">
                                     {[
                                         { name: 'Echo', key: 'echo', color: 'accent-cyan-500' },
                                         { name: 'Reverb', key: 'reverb', color: 'accent-purple-500' },
                                         { name: 'Filter', key: 'filter', color: 'accent-yellow-500' },
                                         { name: 'Flanger', key: 'flanger', color: 'accent-pink-500' }
-                                    ].map(fx => (
-                                        <div key={fx.key} className="flex items-center gap-1">
-                                            <button
-                                                onClick={() => {
-                                                    setDeckAEffects(prev => ({
-                                                        ...prev,
-                                                        [fx.key]: prev[fx.key] > 0 ? 0 : 50
-                                                    }));
-                                                    setDeckBEffects(prev => ({
-                                                        ...prev,
-                                                        [fx.key]: prev[fx.key] > 0 ? 0 : 50
-                                                    }));
-                                                }}
-                                                className={`w-5 h-4 text-[7px] font-bold rounded transition-colors ${
-                                                    (deckAEffects[fx.key] || 0) > 0 || (deckBEffects[fx.key] || 0) > 0
-                                                        ? 'bg-purple-600 text-white'
-                                                        : 'theme-bg-secondary theme-text-muted theme-hover'
-                                                }`}
-                                            >
-                                                {fx.name[0]}
-                                            </button>
-                                            <input
-                                                type="range"
-                                                min={0}
-                                                max={100}
-                                                value={(deckAEffects[fx.key] || 0 + deckBEffects[fx.key] || 0) / 2}
-                                                onChange={(e) => {
-                                                    const val = parseInt(e.target.value);
-                                                    setDeckAEffects(prev => ({ ...prev, [fx.key]: val }));
-                                                    setDeckBEffects(prev => ({ ...prev, [fx.key]: val }));
-                                                }}
-                                                className={`flex-1 h-1 ${fx.color}`}
-                                            />
-                                        </div>
-                                    ))}
+                                    ].map(fx => {
+                                        const active = (deckAEffects[fx.key] || 0) > 0 || (deckBEffects[fx.key] || 0) > 0;
+                                        return (
+                                            <div key={fx.key} className="flex items-center gap-1.5">
+                                                <button
+                                                    onClick={() => {
+                                                        setDeckAEffects(prev => ({ ...prev, [fx.key]: prev[fx.key] > 0 ? 0 : 50 }));
+                                                        setDeckBEffects(prev => ({ ...prev, [fx.key]: prev[fx.key] > 0 ? 0 : 50 }));
+                                                    }}
+                                                    className={`w-14 h-5 text-[9px] font-semibold rounded transition-colors ${
+                                                        active ? 'bg-purple-600 text-white' : 'theme-bg-secondary theme-text-muted theme-hover'
+                                                    }`}
+                                                >
+                                                    {fx.name}
+                                                </button>
+                                                <input
+                                                    type="range"
+                                                    min={0}
+                                                    max={100}
+                                                    value={(deckAEffects[fx.key] || 0 + deckBEffects[fx.key] || 0) / 2}
+                                                    onChange={(e) => {
+                                                        const val = parseInt(e.target.value);
+                                                        setDeckAEffects(prev => ({ ...prev, [fx.key]: val }));
+                                                        setDeckBEffects(prev => ({ ...prev, [fx.key]: val }));
+                                                    }}
+                                                    className={`flex-1 h-1 ${fx.color}`}
+                                                />
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
 
-                            <div className="mt-2 flex gap-1 w-full">
+                            <div className="mt-3 flex gap-1 w-full">
                                 {(['linear', 'cut', 'smooth'] as const).map(curve => (
                                     <button
                                         key={curve}
                                         onClick={() => setCrossfaderCurve(curve)}
-                                        className={`flex-1 py-0.5 text-[8px] rounded ${
-                                            crossfaderCurve === curve ? 'bg-purple-600' : 'theme-bg-secondary theme-hover'
+                                        className={`flex-1 py-1 text-[9px] font-medium rounded uppercase tracking-wide ${
+                                            crossfaderCurve === curve ? 'bg-purple-600 text-white' : 'theme-bg-secondary theme-hover theme-text-muted'
                                         }`}
                                     >
                                         {curve}

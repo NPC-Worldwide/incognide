@@ -243,6 +243,7 @@ const [selectionDragStart, setSelectionDragStart] = useState(null);
     const [selectedNodeId, setSelectedNodeId] = useState(null);
     const [draggingNode, setDraggingNode] = useState(null);
     const [draggingConnection, setDraggingConnection] = useState(null);
+    const [workflowResult, setWorkflowResult] = useState<{ path: string; savedTo: string | null } | null>(null);
     const [dragMousePos, setDragMousePos] = useState<{x: number; y: number} | null>(null);
     const [savedWorkflows, setSavedWorkflows] = useState<Array<{name: string; nodes: any[]; connections: any[]}>>(() => {
         try {
@@ -2563,48 +2564,119 @@ const addWorkflowConnection = useCallback((fromNode, fromPort, toNode, toPort) =
 
 const executeWorkflow = useCallback(async () => {
     setWorkflowExecuting(true);
+    setWorkflowResult(null);
+    setWorkflowNodes(prev => prev.map(n => ({
+        ...n,
+        _output: undefined,
+        _status: undefined,
+        _statusMsg: undefined,
+    })));
     try {
-        const nodeOutputs: Record<string, any> = {};
-        // Topological order: process sources first, then follow connections
+        const nodeOutputs: Record<string, { image: string | null; mask?: string | null }> = {};
         const processed = new Set<string>();
-        const queue = workflowNodes.filter(n => n.type === 'source' || n.type === 'generate');
+        const setStatus = (id: string, s: 'running' | 'done' | 'error', msg?: string) => {
+            updateWorkflowNode(id, { _status: s, _statusMsg: msg });
+        };
+        const cleanPath = (p: string) => (p ? p.replace(/^media:\/\//, '') : '');
+        const outputDir = currentPath || '~/.npcsh/images';
 
-        for (const node of queue) {
-            if (node.type === 'source' && node.params?.imagePath) {
-                nodeOutputs[node.id] = { image: node.params.imagePath };
+        // Seed source + generate nodes
+        for (const node of workflowNodes) {
+            if (node.type === 'source') {
+                setStatus(node.id, 'running');
+                const p = node.params?.imagePath;
+                if (!p) { setStatus(node.id, 'error', 'No image set'); continue; }
+                nodeOutputs[node.id] = { image: cleanPath(p) };
+                updateWorkflowNode(node.id, { _output: cleanPath(p) });
                 processed.add(node.id);
-            } else if (node.type === 'generate' && node.params?.prompt) {
-                // Generate node would call AI API
-                nodeOutputs[node.id] = { image: null, prompt: node.params.prompt };
-                processed.add(node.id);
+                setStatus(node.id, 'done');
+            } else if (node.type === 'generate') {
+                const prompt = node.params?.prompt;
+                if (!prompt) { setStatus(node.id, 'error', 'No prompt'); continue; }
+                setStatus(node.id, 'running', 'Generating…');
+                try {
+                    // Route away from the local `diffusers` provider — the env's
+                    // diffusers/peft/transformers versions disagree (HybridCache
+                    // import error), so the backend crashes. Prefer any non-
+                    // diffusers model from the available list, then fall back to
+                    // a sane cloud default.
+                    let genModel = node.params?.model || selectedModel;
+                    let genProvider = node.params?.provider || selectedProvider;
+                    if (genProvider === 'diffusers') {
+                        const cloud = availableModels.find((m: any) => m.provider && m.provider !== 'diffusers');
+                        if (cloud) {
+                            genModel = cloud.value || cloud.name || cloud.display_name;
+                            genProvider = cloud.provider;
+                        } else {
+                            genModel = 'gemini-2.5-flash-image';
+                            genProvider = 'gemini';
+                        }
+                    }
+                    const resp = await (window as any).api.generateImages(
+                        prompt, 1,
+                        genModel, genProvider,
+                        [], node.params?.filename || 'wf_gen', outputDir,
+                    );
+                    if (resp?.error) throw new Error(resp.error);
+                    const out = resp?.filenames && resp.filenames[0];
+                    if (!out) throw new Error('Backend returned no filenames — image not saved');
+                    nodeOutputs[node.id] = { image: cleanPath(out) };
+                    updateWorkflowNode(node.id, { _output: cleanPath(out) });
+                    processed.add(node.id);
+                    setStatus(node.id, 'done', `${genProvider}`);
+                } catch (e: any) {
+                    setStatus(node.id, 'error', e.message || 'generate failed');
+                }
             }
         }
 
-        // Process downstream nodes
+        // Downstream DAG walk
         let changed = true;
         while (changed) {
             changed = false;
             for (const node of workflowNodes) {
                 if (processed.has(node.id)) continue;
-                const incomingConns = workflowConnections.filter(c => c.to === node.id);
-                const allInputsReady = incomingConns.length > 0 && incomingConns.every(c => processed.has(c.from));
-                if (!allInputsReady) continue;
+                const incoming = workflowConnections.filter(c => c.to === node.id);
+                if (!incoming.length || !incoming.every(c => processed.has(c.from))) continue;
+                const inputImage = incoming.map(c => nodeOutputs[c.from]?.image).find(Boolean) || null;
 
-                const inputImage = incomingConns.map(c => nodeOutputs[c.from]?.image).find(Boolean);
-                if (node.type === 'adjust') {
-                    nodeOutputs[node.id] = { image: inputImage, adjustments: node.params };
-                } else if (node.type === 'output' && inputImage) {
-                    // Save the final output
-                    const outputName = node.params?.filename || 'output.png';
-                    const outputPath = currentPath ? `${currentPath}/${outputName}` : outputName;
-                    console.log('[Workflow] Output saved to:', outputPath);
-                    nodeOutputs[node.id] = { image: inputImage, savedTo: outputPath };
+                if (node.type === 'adjust' || node.type === 'filter' || node.type === 'upscale' || node.type === 'mask') {
+                    setStatus(node.id, 'done', 'pass-through (op not yet wired)');
+                    nodeOutputs[node.id] = { image: inputImage };
+                    updateWorkflowNode(node.id, { _output: inputImage });
+                    processed.add(node.id); changed = true;
+                } else if (node.type === 'fill') {
+                    setStatus(node.id, 'done', 'pass-through (fill op not yet wired)');
+                    nodeOutputs[node.id] = { image: inputImage };
+                    updateWorkflowNode(node.id, { _output: inputImage });
+                    processed.add(node.id); changed = true;
+                } else if (node.type === 'output') {
+                    setStatus(node.id, 'running');
+                    try {
+                        if (!inputImage) throw new Error('No image on input');
+                        const outName = node.params?.filename || `wf_${Date.now()}.png`;
+                        const outPath = `${outputDir}/${outName}`;
+                        await (window as any).api?.copyFile?.(inputImage, outPath);
+                        nodeOutputs[node.id] = { image: outPath };
+                        updateWorkflowNode(node.id, { _output: outPath });
+                        setStatus(node.id, 'done', outPath);
+                        setWorkflowResult({ path: `media://${outPath}`, savedTo: outPath });
+                    } catch (e: any) {
+                        setStatus(node.id, 'error', e.message || 'save failed');
+                    }
+                    processed.add(node.id); changed = true;
                 } else {
                     nodeOutputs[node.id] = { image: inputImage };
+                    updateWorkflowNode(node.id, { _output: inputImage });
+                    processed.add(node.id); changed = true;
                 }
-                processed.add(node.id);
-                changed = true;
             }
+        }
+
+        // Final result: the last produced image from any output node, else the last non-source
+        if (!workflowNodes.some(n => n.type === 'output') && processed.size > 0) {
+            const lastImg = Object.values(nodeOutputs).reverse().find(o => o.image)?.image;
+            if (lastImg) setWorkflowResult({ path: lastImg.startsWith('media://') ? lastImg : `media://${lastImg}`, savedTo: null });
         }
 
         console.log('[Workflow] Execution complete. Processed:', processed.size, 'nodes');
@@ -2613,7 +2685,7 @@ const executeWorkflow = useCallback(async () => {
     } finally {
         setWorkflowExecuting(false);
     }
-}, [workflowNodes, workflowConnections, currentPath]);
+}, [workflowNodes, workflowConnections, currentPath, selectedModel, selectedProvider, availableModels]);
 
 const renderWorkflow = useCallback(() => {
     return (
@@ -2870,7 +2942,10 @@ const renderWorkflow = useCallback(() => {
                         >
                             <div className={`${config.color} px-3 py-2 rounded-t-md flex items-center gap-2`}>
                                 <span>{config.icon}</span>
-                                <span className="text-white text-sm font-medium flex-1">{config.name}</span>
+                                <span className="text-white text-sm font-medium flex-1 truncate">{config.name}</span>
+                                {node._status === 'running' && <Loader size={12} className="text-white animate-spin" />}
+                                {node._status === 'done' && <Check size={12} className="text-white" />}
+                                {node._status === 'error' && <span className="text-[10px] text-red-200" title={node._statusMsg}>!</span>}
                                 <button
                                     onClick={(e) => { e.stopPropagation(); deleteWorkflowNode(node.id); }}
                                     className="text-white/60 hover:text-white"
@@ -2878,6 +2953,29 @@ const renderWorkflow = useCallback(() => {
                                     <X size={14} />
                                 </button>
                             </div>
+                            {node._statusMsg && node._status !== 'running' && (
+                                <div className="text-[10px] text-gray-400 px-3 py-0.5 truncate bg-gray-900/60" title={node._statusMsg}>
+                                    {node._statusMsg}
+                                </div>
+                            )}
+                            {node._output && (
+                                <div
+                                    className="bg-black/60 border-y theme-border p-1 cursor-zoom-in"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        const p = node._output.startsWith('media://') ? node._output : `media://${node._output}`;
+                                        setWorkflowResult({ path: p, savedTo: node._output });
+                                    }}
+                                    title={`Click to preview\n${node._output}`}
+                                >
+                                    <img
+                                        src={node._output.startsWith('media://') ? node._output : `media://${node._output}`}
+                                        alt="node output"
+                                        className="w-full h-20 object-contain bg-black"
+                                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                    />
+                                </div>
+                            )}
 
                             <div className="bg-gray-800 p-2 rounded-b-md">
                                 {config.inputs.map((input, i) => (
@@ -2896,16 +2994,51 @@ const renderWorkflow = useCallback(() => {
                                     </div>
                                 ))}
 
-                                {node.type === 'generate' && (
-                                    <input
-                                        type="text"
-                                        placeholder="Prompt..."
-                                        value={node.params.prompt || ''}
-                                        onChange={(e) => updateWorkflowNode(node.id, { prompt: e.target.value })}
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="w-full text-xs theme-input mt-1 px-2 py-1"
-                                    />
-                                )}
+                                {node.type === 'generate' && (() => {
+                                    const effectiveModel = node.params.model || selectedModel;
+                                    const effectiveProvider = node.params.provider || selectedProvider;
+                                    const willFallback = effectiveProvider === 'diffusers';
+                                    return (
+                                        <>
+                                            <input
+                                                type="text"
+                                                placeholder="Prompt..."
+                                                value={node.params.prompt || ''}
+                                                onChange={(e) => updateWorkflowNode(node.id, { prompt: e.target.value })}
+                                                onClick={(e) => e.stopPropagation()}
+                                                className="w-full text-xs theme-input mt-1 px-2 py-1"
+                                            />
+                                            <div
+                                                className={`mt-1 text-[10px] px-2 py-0.5 rounded truncate ${willFallback ? 'bg-yellow-900/60 text-yellow-300' : 'bg-purple-900/40 text-purple-200'}`}
+                                                title={willFallback ? 'diffusers is broken locally — will fall back to a cloud model' : `${effectiveProvider}/${effectiveModel}`}
+                                            >
+                                                {willFallback ? '⚠ ' : ''}{effectiveProvider}/{(effectiveModel || '').slice(0, 24)}
+                                            </div>
+                                        </>
+                                    );
+                                })()}
+                                {node.type === 'fill' && (() => {
+                                    const effectiveModel = node.params.model || 'gemini-2.5-flash-image';
+                                    const effectiveProvider = node.params.provider || 'gemini';
+                                    return (
+                                        <>
+                                            <input
+                                                type="text"
+                                                placeholder="Fill prompt..."
+                                                value={node.params.prompt || ''}
+                                                onChange={(e) => updateWorkflowNode(node.id, { prompt: e.target.value })}
+                                                onClick={(e) => e.stopPropagation()}
+                                                className="w-full text-xs theme-input mt-1 px-2 py-1"
+                                            />
+                                            <div
+                                                className="mt-1 text-[10px] px-2 py-0.5 rounded truncate bg-indigo-900/40 text-indigo-200"
+                                                title={`${effectiveProvider}/${effectiveModel}`}
+                                            >
+                                                {effectiveProvider}/{effectiveModel.slice(0, 24)}
+                                            </div>
+                                        </>
+                                    );
+                                })()}
                                 {node.type === 'source' && (
                                     <button
                                         onClick={(e) => {
@@ -2967,6 +3100,30 @@ const renderWorkflow = useCallback(() => {
                         </div>
                     </div>
                 )}
+                {workflowResult && (
+                    <div className="absolute bottom-4 right-4 w-80 bg-black/90 border theme-border rounded-lg shadow-xl overflow-hidden z-20">
+                        <div className="flex items-center justify-between px-3 py-2 border-b theme-border">
+                            <span className="text-xs font-semibold text-white">Result</span>
+                            <button onClick={() => setWorkflowResult(null)} className="text-gray-400 hover:text-white">
+                                <X size={14} />
+                            </button>
+                        </div>
+                        <img src={workflowResult.path} alt="workflow result" className="w-full max-h-64 object-contain bg-black" />
+                        {workflowResult.savedTo && (
+                            <div className="px-3 py-1.5 text-[10px] theme-text-muted truncate border-t theme-border" title={workflowResult.savedTo}>
+                                saved to {workflowResult.savedTo}
+                            </div>
+                        )}
+                        <div className="flex border-t theme-border">
+                            <button
+                                onClick={() => { setSelectedImage(workflowResult.path); setActiveTab('editor'); }}
+                                className="flex-1 px-3 py-2 text-xs bg-blue-600 hover:bg-blue-500 text-white"
+                            >
+                                Open in DarkRoom
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             <div className="w-64 border-l theme-border p-3 overflow-y-auto theme-bg-secondary">
@@ -2996,15 +3153,85 @@ const renderWorkflow = useCallback(() => {
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-xs text-gray-400">Model</label>
+                                        <label className="text-xs text-gray-400">Provider</label>
                                         <select
-                                            value={node.params.model || ''}
-                                            onChange={(e) => updateWorkflowNode(node.id, { model: e.target.value })}
+                                            value={node.params.provider || selectedProvider || ''}
+                                            onChange={(e) => {
+                                                const p = e.target.value;
+                                                const first = availableModels.find((m: any) => m.provider === p);
+                                                updateWorkflowNode(node.id, { provider: p, model: first?.value || node.params.model });
+                                            }}
                                             className="w-full theme-input mt-1 text-sm"
                                         >
-                                            {availableModels.map(m => (
-                                                <option key={m.id} value={m.id}>{m.name}</option>
+                                            {[...new Set(availableModels.map((m: any) => m.provider))].map((p: any) => (
+                                                <option key={p} value={p}>{p}</option>
                                             ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-400">Model</label>
+                                        <select
+                                            value={node.params.model || selectedModel || ''}
+                                            onChange={(e) => {
+                                                const v = e.target.value;
+                                                const found = availableModels.find((m: any) => m.value === v);
+                                                updateWorkflowNode(node.id, { model: v, provider: found?.provider || node.params.provider });
+                                            }}
+                                            className="w-full theme-input mt-1 text-sm"
+                                        >
+                                            {availableModels
+                                                .filter((m: any) => !node.params.provider || m.provider === node.params.provider)
+                                                .map((m: any) => (
+                                                    <option key={m.value} value={m.value}>{m.display_name || m.value}</option>
+                                                ))}
+                                        </select>
+                                    </div>
+                                </>
+                            )}
+                            {node.type === 'fill' && (
+                                <>
+                                    <div>
+                                        <label className="text-xs text-gray-400">Prompt</label>
+                                        <textarea
+                                            value={node.params.prompt || ''}
+                                            onChange={(e) => updateWorkflowNode(node.id, { prompt: e.target.value })}
+                                            className="w-full theme-input mt-1 text-sm"
+                                            rows={3}
+                                            placeholder="What to fill in the masked area..."
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-400">Provider</label>
+                                        <select
+                                            value={node.params.provider || 'gemini'}
+                                            onChange={(e) => {
+                                                const p = e.target.value;
+                                                const first = availableModels.find((m: any) => m.provider === p);
+                                                updateWorkflowNode(node.id, { provider: p, model: first?.value || node.params.model });
+                                            }}
+                                            className="w-full theme-input mt-1 text-sm"
+                                        >
+                                            {[...new Set(availableModels.filter((m: any) => m.provider !== 'diffusers').map((m: any) => m.provider))].map((p: any) => (
+                                                <option key={p} value={p}>{p}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-400">Model</label>
+                                        <select
+                                            value={node.params.model || 'gemini-2.5-flash-image'}
+                                            onChange={(e) => {
+                                                const v = e.target.value;
+                                                const found = availableModels.find((m: any) => m.value === v);
+                                                updateWorkflowNode(node.id, { model: v, provider: found?.provider || node.params.provider });
+                                            }}
+                                            className="w-full theme-input mt-1 text-sm"
+                                        >
+                                            {availableModels
+                                                .filter((m: any) => m.provider !== 'diffusers' && (!node.params.provider || m.provider === node.params.provider))
+                                                .map((m: any) => (
+                                                    <option key={m.value} value={m.value}>{m.display_name || m.value}</option>
+                                                ))}
                                         </select>
                                     </div>
                                 </>
