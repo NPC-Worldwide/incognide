@@ -1,14 +1,16 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import {
     GitBranch, Brain, Zap, Loader, Plus, Link, X, Trash2, Repeat, Search,
     ChevronDown, ChevronUp, ChevronRight, ArrowRight, BarChart3, Network,
     FolderTree, LayoutGrid, Table2, Edit3, Check, ZoomIn, Minus, Maximize2,
-    Clock, Upload, MessageSquare, FileText, Send
+    Clock, Upload, MessageSquare, FileText, Send, Dna
 } from 'lucide-react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { useAiEnabled } from './AiFeatureContext';
+import KgIcon from './icons/KgIcon';
+const SememolutionPanel = lazy(() => import('./SememolutionPanel'));
 
-type ViewTab = 'graph' | 'table' | 'tree' | 'groups';
+type ViewTab = 'graph' | 'table' | 'tree' | 'groups' | 'sememolution';
 
 interface KnowledgeGraphEditorProps {
     isModal?: boolean;
@@ -29,6 +31,30 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
     const [cooccurrenceData, setCooccurrenceData] = useState<any>(null);
     const [centralityData, setCentralityData] = useState<any>(null);
     const [selectedKgNode, setSelectedKgNode] = useState<any>(null);
+    const [sourceMemoryId, setSourceMemoryId] = useState<number | null>(null);
+    const [sourceMemory, setSourceMemory] = useState<any>(null);
+    const [sourceMemoryLoading, setSourceMemoryLoading] = useState(false);
+
+    useEffect(() => {
+        if (sourceMemoryId == null) { setSourceMemory(null); return; }
+        let cancelled = false;
+        (async () => {
+            setSourceMemoryLoading(true);
+            try {
+                const r = await (window as any).api?.executeSQL?.({
+                    query: `SELECT id, conversation_id, message_id, npc, team, directory_path, timestamp, initial_memory, final_memory, status, model, provider, created_at FROM memory_lifecycle WHERE id = ${Number(sourceMemoryId)} LIMIT 1`,
+                });
+                if (cancelled) return;
+                const rows = Array.isArray(r?.result) ? r.result : Array.isArray(r) ? r : (r?.rows || r?.data || []);
+                setSourceMemory(rows?.[0] || null);
+            } catch {
+                setSourceMemory(null);
+            } finally {
+                if (!cancelled) setSourceMemoryLoading(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [sourceMemoryId]);
     const graphRef = useRef<any>(null);
 
     const [activeTab, setActiveTab] = useState<ViewTab>('graph');
@@ -47,16 +73,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
 
     const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
 
-    const [showSchedulePanel, setShowSchedulePanel] = useState(false);
-    const [sleepSchedule, setSleepSchedule] = useState('0 3 * * *');
-    const [sleepGuidance, setSleepGuidance] = useState('');
-    const [sleepBackfill, setSleepBackfill] = useState(true);
-    const [dreamSchedule, setDreamSchedule] = useState('0 4 * * 0');
-    const [dreamGuidance, setDreamGuidance] = useState('');
-    const [sleepJobActive, setSleepJobActive] = useState<boolean | null>(null);
-    const [dreamJobActive, setDreamJobActive] = useState<boolean | null>(null);
-    const [kgScheduleLoading, setKgScheduleLoading] = useState(false);
-    const [kgScheduleMsg, setKgScheduleMsg] = useState<string | null>(null);
 
     const [showImportPanel, setShowImportPanel] = useState(false);
     const [importText, setImportText] = useState('');
@@ -66,8 +82,26 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
 
     const [showQueryPanel, setShowQueryPanel] = useState(false);
     const [queryInput, setQueryInput] = useState('');
-    const [queryHistory, setQueryHistory] = useState<{ q: string; a: string; sources: string[] }[]>([]);
+    const [queryHistory, setQueryHistory] = useState<{ q: string; a: string; sources: string[]; candidates?: any[] }[]>([]);
     const [queryLoading, setQueryLoading] = useState(false);
+    const [queryMode, setQueryMode] = useState<'keyword' | 'traversal' | 'sememolution'>('keyword');
+    const [queryLambdaDepth, setQueryLambdaDepth] = useState(2.0);
+    const [queryLambdaBreadth, setQueryLambdaBreadth] = useState(5.0);
+    const [querySimilarityThreshold, setQuerySimilarityThreshold] = useState(0.6);
+    const [queryPopulationId, setQueryPopulationId] = useState<string>('');
+    const [availablePopulations, setAvailablePopulations] = useState<Array<{ id: string; name: string }>>([]);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const r = await (window as any).api?.kg_population_list?.();
+                if (Array.isArray(r?.populations)) {
+                    setAvailablePopulations(r.populations);
+                    if (!queryPopulationId && r.populations[0]) setQueryPopulationId(r.populations[0].id);
+                }
+            } catch {}
+        })();
+    }, [queryPopulationId]);
 
     const [tableSortField, setTableSortField] = useState<'name' | 'type' | 'connections'>('connections');
     const [tableSortDir, setTableSortDir] = useState<'asc' | 'desc'>('desc');
@@ -428,9 +462,26 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         setQueryInput('');
         setQueryLoading(true);
         try {
-            const result = await (window as any).api?.kg_query?.({ question: q, top_k: 15 });
+            const payload: any = {
+                question: q,
+                top_k: 15,
+                mode: queryMode,
+                lambda_depth: queryLambdaDepth,
+                lambda_breadth: queryLambdaBreadth,
+                similarity_threshold: querySimilarityThreshold,
+            };
+            if (queryMode === 'sememolution' && queryPopulationId) {
+                payload.population_id = queryPopulationId;
+            }
+            const result = await (window as any).api?.kg_query?.({ ...payload });
             if (result?.error) {
                 setQueryHistory(prev => [...prev, { q, a: `Error: ${result.error}`, sources: [] }]);
+            } else if (result?.candidates) {
+                // Sememolution ranked response — show the top candidate's text, expose the full ranking
+                const top = result.candidates[0];
+                const a = top?.response || 'No ranked candidates.';
+                const sources = top?.context_facts || [];
+                setQueryHistory(prev => [...prev, { q, a, sources, candidates: result.candidates }]);
             } else {
                 setQueryHistory(prev => [...prev, {
                     q,
@@ -442,75 +493,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
             setQueryHistory(prev => [...prev, { q, a: `Error: ${err.message}`, sources: [] }]);
         } finally {
             setQueryLoading(false);
-        }
-    };
-
-    const KG_SCHEDULE_PRESETS = [
-        { label: 'Daily midnight', value: '0 0 * * *' },
-        { label: 'Daily 3am', value: '0 3 * * *' },
-        { label: 'Every 12h', value: '0 */12 * * *' },
-        { label: 'Weekly Sun', value: '0 0 * * 0' },
-        { label: 'Weekly Sun 4am', value: '0 4 * * 0' },
-        { label: 'Monthly 1st', value: '0 0 1 * *' },
-    ];
-
-    const checkKgJobStatus = useCallback(async () => {
-        try {
-            const sleepStatus = await (window as any).api?.jobStatus?.('kg_sleep');
-            setSleepJobActive(sleepStatus && !sleepStatus.error ? (sleepStatus.active ?? false) : false);
-            const dreamStatus = await (window as any).api?.jobStatus?.('kg_dream');
-            setDreamJobActive(dreamStatus && !dreamStatus.error ? (dreamStatus.active ?? false) : false);
-        } catch {  }
-    }, []);
-
-    useEffect(() => {
-        if (showSchedulePanel) checkKgJobStatus();
-    }, [showSchedulePanel, checkKgJobStatus]);
-
-    const handleScheduleKgJob = async (type: 'sleep' | 'dream') => {
-        setKgScheduleLoading(true);
-        setKgScheduleMsg(null);
-        try {
-            let cmd = type === 'sleep'
-                ? `sleep${sleepBackfill ? ' backfill=true' : ''}`
-                : 'sleep dream=true';
-            const guidance = type === 'sleep' ? sleepGuidance : dreamGuidance;
-            if (guidance.trim()) {
-                cmd += ` context="${guidance.trim().replace(/"/g, '\\"')}"`;
-            }
-            const schedule = type === 'sleep' ? sleepSchedule : dreamSchedule;
-            const jobName = type === 'sleep' ? 'kg_sleep' : 'kg_dream';
-            const result = await (window as any).api?.scheduleJob?.({ schedule, command: cmd, jobName });
-            if (result?.error) {
-                setKgScheduleMsg(`Error: ${result.error}`);
-            } else {
-                setKgScheduleMsg(`${type === 'sleep' ? 'Sleep' : 'Dream'} job scheduled.`);
-                checkKgJobStatus();
-            }
-        } catch (err: any) {
-            setKgScheduleMsg(`Error: ${err.message}`);
-        } finally {
-            setKgScheduleLoading(false);
-        }
-    };
-
-    const handleUnscheduleKgJob = async (type: 'sleep' | 'dream') => {
-        setKgScheduleLoading(true);
-        setKgScheduleMsg(null);
-        try {
-            const jobName = type === 'sleep' ? 'kg_sleep' : 'kg_dream';
-            const result = await (window as any).api?.unscheduleJob?.(jobName);
-            if (result?.error) {
-                setKgScheduleMsg(`Error: ${result.error}`);
-            } else {
-                setKgScheduleMsg(`${type === 'sleep' ? 'Sleep' : 'Dream'} job removed.`);
-                if (type === 'sleep') setSleepJobActive(false);
-                else setDreamJobActive(false);
-            }
-        } catch (err: any) {
-            setKgScheduleMsg(`Error: ${err.message}`);
-        } finally {
-            setKgScheduleLoading(false);
         }
     };
 
@@ -591,29 +573,38 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
     };
 
     const handleAddKgEdge = async () => {
-        if (!newEdgeSource.trim() || !newEdgeTarget.trim()) return;
-        setKgLoading(true);
+        const src = newEdgeSource.trim();
+        const tgt = newEdgeTarget.trim();
+        if (!src || !tgt) return;
         try {
-            await (window as any).api?.kg_addEdge?.({ sourceId: newEdgeSource.trim(), targetId: newEdgeTarget.trim() });
+            const r = await (window as any).api?.kg_addEdge?.({ sourceId: src, targetId: tgt });
+            if (r?.error) { setKgError(r.error); return; }
             setNewEdgeSource('');
             setNewEdgeTarget('');
-            fetchKgData(currentKgGeneration ?? undefined);
+            // Optimistic local insert — avoids full KG re-fetch that caused layout flash
+            setKgData(prev => {
+                if (prev.links.some((l: any) => (l.source === src || l.source?.id === src) && (l.target === tgt || l.target?.id === tgt))) return prev;
+                return { ...prev, links: [...prev.links, { source: src, target: tgt, type: 'related_to', weight: 1 }] };
+            });
         } catch (err: any) {
             setKgError(err.message);
-        } finally {
-            setKgLoading(false);
         }
     };
 
     const handleDeleteKgEdge = async (sourceId: string, targetId: string) => {
-        setKgLoading(true);
         try {
-            await (window as any).api?.kg_deleteEdge?.({ sourceId, targetId });
-            fetchKgData(currentKgGeneration ?? undefined);
+            const r = await (window as any).api?.kg_deleteEdge?.({ sourceId, targetId });
+            if (r?.error) { setKgError(r.error); return; }
+            setKgData(prev => ({
+                ...prev,
+                links: prev.links.filter((l: any) => {
+                    const s = l.source?.id ?? l.source;
+                    const t = l.target?.id ?? l.target;
+                    return !(s === sourceId && t === targetId);
+                }),
+            }));
         } catch (err: any) {
             setKgError(err.message);
-        } finally {
-            setKgLoading(false);
         }
     };
 
@@ -678,16 +669,19 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
             if (!connectSource) {
                 setConnectSource(node.id);
             } else if (connectSource !== node.id) {
+                const src = connectSource;
+                const tgt = node.id;
                 (async () => {
-                    setKgLoading(true);
                     try {
-                        await (window as any).api?.kg_addEdge?.({ sourceId: connectSource, targetId: node.id });
+                        const r = await (window as any).api?.kg_addEdge?.({ sourceId: src, targetId: tgt });
                         setConnectSource(null);
-                        fetchKgData(currentKgGeneration ?? undefined);
+                        if (r?.error) { setKgError(r.error); return; }
+                        setKgData(prev => {
+                            if (prev.links.some((l: any) => (l.source === src || l.source?.id === src) && (l.target === tgt || l.target?.id === tgt))) return prev;
+                            return { ...prev, links: [...prev.links, { source: src, target: tgt, type: 'related_to', weight: 1 }] };
+                        });
                     } catch (err: any) {
                         setKgError(err.message);
-                    } finally {
-                        setKgLoading(false);
                     }
                 })();
             }
@@ -790,6 +784,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         { id: 'table', label: 'Table', icon: <Table2 size={14} /> },
         { id: 'tree', label: 'Tree', icon: <FolderTree size={14} /> },
         { id: 'groups', label: 'Groups', icon: <LayoutGrid size={14} /> },
+        { id: 'sememolution', label: 'Sememolution', icon: <Dna size={14} /> },
     ];
 
     const renderTreeNode = (nodeId: string, depth: number, visited: Set<string>) => {
@@ -870,12 +865,21 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                     <button onClick={() => { setSelectedKgNode(null); setPendingDelete(null); }} className="theme-text-muted hover:theme-text-primary"><X size={14} /></button>
                 </div>
                 <p className="text-xs font-mono text-blue-400 break-words mb-1" title={selectedKgNode.id}>{selectedKgNode.id}</p>
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
                         selectedKgNode.type === 'concept' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'
                     }`}>
                         {selectedKgNode.type || 'concept'}
                     </span>
+                    {selectedKgNode.memory_id != null && (
+                        <button
+                            onClick={() => setSourceMemoryId(selectedKgNode.memory_id)}
+                            className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30"
+                            title="View the source memory this fact was promoted from"
+                        >
+                            <MessageSquare size={10} /> memory #{selectedKgNode.memory_id}
+                        </button>
+                    )}
                     <button
                         onClick={() => centerOnNode(selectedKgNode.id)}
                         className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-0.5"
@@ -1003,7 +1007,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
 
             <div className="flex items-center justify-between px-3 py-1.5 border-b theme-border flex-shrink-0">
                 <h4 className="text-sm font-semibold flex items-center gap-2 theme-text-primary">
-                    <GitBranch className="text-green-400" size={16} />Knowledge Graph
+                    <KgIcon className="text-green-400" size={16} />Knowledge Graph
                     <span className="text-xs theme-text-muted font-normal">{processedGraphData.nodes.length} nodes · {processedGraphData.links.length} edges</span>
                 </h4>
                 <div className="flex items-center gap-1.5">
@@ -1011,13 +1015,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                         <>
                             <button onClick={() => handleKgProcessTrigger('sleep')} disabled={kgLoading} className="px-2 py-1 text-[11px] theme-bg-secondary hover:opacity-80 theme-text-secondary rounded flex items-center gap-1 disabled:opacity-50 border theme-border"><Zap size={11} /> Sleep</button>
                             <button onClick={() => handleKgProcessTrigger('dream')} disabled={kgLoading} className="px-2 py-1 text-[11px] theme-bg-secondary hover:opacity-80 theme-text-secondary rounded flex items-center gap-1 disabled:opacity-50 border theme-border"><Brain size={11} /> Dream</button>
-                            <button
-                                onClick={() => setShowSchedulePanel(!showSchedulePanel)}
-                                className={`px-2 py-1 text-[11px] rounded flex items-center gap-1 border theme-border ${showSchedulePanel ? 'bg-green-600/30 text-green-300' : 'theme-bg-secondary theme-text-secondary hover:opacity-80'}`}
-                            >
-                                <Clock size={11} /> Schedule
-                                {(sleepJobActive || dreamJobActive) && <span className="w-1.5 h-1.5 bg-green-400 rounded-full" />}
-                            </button>
                             <button
                                 onClick={() => { setShowImportPanel(!showImportPanel); setShowQueryPanel(false); }}
                                 className={`px-2 py-1 text-[11px] rounded flex items-center gap-1 border theme-border ${showImportPanel ? 'bg-blue-600/30 text-blue-300' : 'theme-bg-secondary theme-text-secondary hover:opacity-80'}`}
@@ -1051,84 +1048,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                     )}
                 </div>
             </div>
-
-            {showSchedulePanel && (
-                <div className="px-3 py-2 border-b theme-border flex-shrink-0 space-y-3 bg-gray-900/50">
-                    <div className="flex items-start gap-3">
-                        <div className="flex-1 space-y-1.5">
-                            <div className="flex items-center gap-2">
-                                <Zap size={12} className="text-amber-400" />
-                                <span className="text-xs font-semibold text-white">Sleep Schedule</span>
-                                {sleepJobActive !== null && (
-                                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${sleepJobActive ? 'bg-green-600/30 text-green-300' : 'bg-gray-600/30 text-gray-500'}`}>
-                                        {sleepJobActive ? 'Active' : 'Off'}
-                                    </span>
-                                )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <select value={sleepSchedule} onChange={e => setSleepSchedule(e.target.value)} className="px-2 py-1 text-[11px] bg-gray-800 text-white border border-gray-600 rounded">
-                                    {KG_SCHEDULE_PRESETS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-                                </select>
-                                <label className="flex items-center gap-1 text-[11px] text-gray-400">
-                                    <input type="checkbox" checked={sleepBackfill} onChange={e => setSleepBackfill(e.target.checked)} className="rounded" />
-                                    Backfill
-                                </label>
-                                <button onClick={() => handleScheduleKgJob('sleep')} disabled={kgScheduleLoading} className="px-2 py-1 text-[11px] bg-amber-600 hover:bg-amber-500 text-white rounded disabled:opacity-50">
-                                    {sleepJobActive ? 'Update' : 'Schedule'}
-                                </button>
-                                {sleepJobActive && (
-                                    <button onClick={() => handleUnscheduleKgJob('sleep')} disabled={kgScheduleLoading} className="px-2 py-1 text-[11px] bg-red-600/30 text-red-300 rounded hover:bg-red-600/50 disabled:opacity-50">
-                                        Remove
-                                    </button>
-                                )}
-                            </div>
-                            <input
-                                type="text" value={sleepGuidance} onChange={e => setSleepGuidance(e.target.value)}
-                                placeholder="Guidance: e.g. Focus on merging duplicate concepts..."
-                                className="w-full px-2 py-1 text-[11px] bg-gray-800 text-white border border-gray-600 rounded placeholder-gray-600"
-                            />
-                        </div>
-                    </div>
-
-                    <div className="flex items-start gap-3">
-                        <div className="flex-1 space-y-1.5">
-                            <div className="flex items-center gap-2">
-                                <Brain size={12} className="text-purple-400" />
-                                <span className="text-xs font-semibold text-white">Dream Schedule</span>
-                                {dreamJobActive !== null && (
-                                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${dreamJobActive ? 'bg-green-600/30 text-green-300' : 'bg-gray-600/30 text-gray-500'}`}>
-                                        {dreamJobActive ? 'Active' : 'Off'}
-                                    </span>
-                                )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <select value={dreamSchedule} onChange={e => setDreamSchedule(e.target.value)} className="px-2 py-1 text-[11px] bg-gray-800 text-white border border-gray-600 rounded">
-                                    {KG_SCHEDULE_PRESETS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-                                </select>
-                                <button onClick={() => handleScheduleKgJob('dream')} disabled={kgScheduleLoading} className="px-2 py-1 text-[11px] bg-purple-600 hover:bg-purple-500 text-white rounded disabled:opacity-50">
-                                    {dreamJobActive ? 'Update' : 'Schedule'}
-                                </button>
-                                {dreamJobActive && (
-                                    <button onClick={() => handleUnscheduleKgJob('dream')} disabled={kgScheduleLoading} className="px-2 py-1 text-[11px] bg-red-600/30 text-red-300 rounded hover:bg-red-600/50 disabled:opacity-50">
-                                        Remove
-                                    </button>
-                                )}
-                            </div>
-                            <input
-                                type="text" value={dreamGuidance} onChange={e => setDreamGuidance(e.target.value)}
-                                placeholder="Guidance: e.g. Cross-pollinate programming and music concepts..."
-                                className="w-full px-2 py-1 text-[11px] bg-gray-800 text-white border border-gray-600 rounded placeholder-gray-600"
-                            />
-                        </div>
-                    </div>
-
-                    {kgScheduleMsg && (
-                        <div className={`text-[11px] px-2 py-1 rounded ${kgScheduleMsg.startsWith('Error') ? 'bg-red-900/30 text-red-300' : 'bg-green-900/30 text-green-300'}`}>
-                            {kgScheduleMsg}
-                        </div>
-                    )}
-                </div>
-            )}
 
             {showImportPanel && (
                 <div className="px-3 py-2 border-b theme-border flex-shrink-0 space-y-2 bg-blue-950/20">
@@ -1199,6 +1118,43 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                             </div>
                         ))}
                     </div>
+                    <div className="flex items-center gap-2 mb-1.5 flex-wrap text-[10px]">
+                        <select value={queryMode} onChange={e => setQueryMode(e.target.value as any)}
+                            className="px-1.5 py-0.5 theme-bg-secondary border theme-border rounded font-mono">
+                            <option value="keyword">mode: keyword</option>
+                            <option value="traversal">mode: traversal</option>
+                            <option value="sememolution">mode: sememolution</option>
+                        </select>
+                        {(queryMode === 'traversal' || queryMode === 'sememolution') && (
+                            <>
+                                <label className="flex items-center gap-1 theme-text-muted">
+                                    λdepth
+                                    <input type="number" step="0.1" min="0.1" max="10" value={queryLambdaDepth}
+                                        onChange={e => setQueryLambdaDepth(parseFloat(e.target.value))}
+                                        className="w-14 px-1 py-0.5 theme-bg-secondary border theme-border rounded font-mono" />
+                                </label>
+                                <label className="flex items-center gap-1 theme-text-muted">
+                                    λbreadth
+                                    <input type="number" step="0.5" min="1" max="50" value={queryLambdaBreadth}
+                                        onChange={e => setQueryLambdaBreadth(parseFloat(e.target.value))}
+                                        className="w-14 px-1 py-0.5 theme-bg-secondary border theme-border rounded font-mono" />
+                                </label>
+                                <label className="flex items-center gap-1 theme-text-muted">
+                                    sim
+                                    <input type="number" step="0.05" min="0" max="1" value={querySimilarityThreshold}
+                                        onChange={e => setQuerySimilarityThreshold(parseFloat(e.target.value))}
+                                        className="w-14 px-1 py-0.5 theme-bg-secondary border theme-border rounded font-mono" />
+                                </label>
+                            </>
+                        )}
+                        {queryMode === 'sememolution' && (
+                            <select value={queryPopulationId} onChange={e => setQueryPopulationId(e.target.value)}
+                                className="px-1.5 py-0.5 theme-bg-secondary border theme-border rounded font-mono">
+                                <option value="">-- pick population --</option>
+                                {availablePopulations.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                        )}
+                    </div>
                     <div className="flex items-center gap-1.5">
                         <input
                             type="text"
@@ -1210,7 +1166,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                         />
                         <button
                             onClick={handleQueryKg}
-                            disabled={queryLoading || !queryInput.trim()}
+                            disabled={queryLoading || !queryInput.trim() || (queryMode === 'sememolution' && !queryPopulationId)}
                             className="px-2 py-1.5 text-[11px] bg-purple-600 hover:bg-purple-500 text-white rounded disabled:opacity-50 flex items-center gap-1"
                         >
                             {queryLoading ? <Loader size={11} className="animate-spin" /> : <Send size={11} />}
@@ -1699,6 +1655,12 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                             </div>
                             </div>
                         )}
+
+                        {activeTab === 'sememolution' && (
+                            <Suspense fallback={<div className="flex items-center justify-center py-12 theme-text-muted text-xs">Loading Sememolution…</div>}>
+                                <SememolutionPanel />
+                            </Suspense>
+                        )}
                     </div>
 
                     {showDetail && (
@@ -1739,6 +1701,57 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                             )}
                         </div>
                     )}
+                </div>
+            )}
+            {sourceMemoryId != null && (
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[200]" onClick={() => setSourceMemoryId(null)}>
+                    <div onClick={e => e.stopPropagation()} className="theme-bg-primary border theme-border rounded-lg shadow-2xl max-w-xl w-full max-h-[80vh] flex flex-col overflow-hidden">
+                        <div className="flex items-center justify-between px-4 py-2 border-b theme-border">
+                            <div className="flex items-center gap-2">
+                                <MessageSquare size={14} className="text-amber-400" />
+                                <h4 className="text-sm font-semibold">Source memory #{sourceMemoryId}</h4>
+                                {sourceMemory?.status && (
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                        sourceMemory.status === 'human-approved' ? 'bg-green-600/30 text-green-300' :
+                                        sourceMemory.status === 'human-edited' ? 'bg-blue-600/30 text-blue-300' :
+                                        sourceMemory.status === 'pending_approval' ? 'bg-yellow-600/30 text-yellow-300' :
+                                        'bg-gray-600/30 text-gray-300'
+                                    }`}>{sourceMemory.status}</span>
+                                )}
+                            </div>
+                            <button onClick={() => setSourceMemoryId(null)} className="theme-text-muted hover:theme-text-primary"><X size={16} /></button>
+                        </div>
+                        <div className="flex-1 overflow-auto p-4 space-y-3 text-xs">
+                            {sourceMemoryLoading ? (
+                                <div className="text-center theme-text-muted py-8">Loading…</div>
+                            ) : !sourceMemory ? (
+                                <div className="text-center text-red-400 py-8">Memory #{sourceMemoryId} not found.</div>
+                            ) : (<>
+                                <div className="grid grid-cols-2 gap-2 theme-text-muted">
+                                    <div><span className="font-semibold">NPC:</span> {sourceMemory.npc || '—'}</div>
+                                    <div><span className="font-semibold">Team:</span> {sourceMemory.team || '—'}</div>
+                                    <div><span className="font-semibold">Model:</span> {sourceMemory.model || '—'}</div>
+                                    <div><span className="font-semibold">Provider:</span> {sourceMemory.provider || '—'}</div>
+                                    <div className="col-span-2"><span className="font-semibold">Conversation:</span> <span className="font-mono">{sourceMemory.conversation_id}</span></div>
+                                    <div className="col-span-2"><span className="font-semibold">Path:</span> <span className="font-mono break-all">{sourceMemory.directory_path}</span></div>
+                                    <div><span className="font-semibold">Created:</span> {sourceMemory.created_at}</div>
+                                    <div><span className="font-semibold">Timestamp:</span> {sourceMemory.timestamp}</div>
+                                </div>
+                                {sourceMemory.initial_memory && (
+                                    <div>
+                                        <div className="theme-text-muted font-semibold mb-1">Initial memory (extraction)</div>
+                                        <pre className="whitespace-pre-wrap bg-black/30 rounded p-2 text-gray-200">{sourceMemory.initial_memory}</pre>
+                                    </div>
+                                )}
+                                {sourceMemory.final_memory && sourceMemory.final_memory !== sourceMemory.initial_memory && (
+                                    <div>
+                                        <div className="theme-text-muted font-semibold mb-1">Final memory (after human review)</div>
+                                        <pre className="whitespace-pre-wrap bg-black/30 rounded p-2 text-gray-200">{sourceMemory.final_memory}</pre>
+                                    </div>
+                                )}
+                            </>)}
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

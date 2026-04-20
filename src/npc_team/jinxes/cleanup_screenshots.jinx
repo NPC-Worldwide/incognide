@@ -1,0 +1,30 @@
+jinx_name: cleanup_screenshots
+description: Delete screenshots in ~/.npcsh/screenshots older than `keep_days` (default 14).
+inputs:
+  - { dir: "" }
+  - { keep_days: "14" }
+steps:
+  - name: prune
+    engine: python
+    code: |
+      import os, time
+
+      _dir = os.path.expanduser(context.get('dir', '') or os.path.join(os.path.expanduser('~'), '.npcsh', 'screenshots'))
+      _keep = int(context.get('keep_days', 14) or 14)
+      if not os.path.isdir(_dir):
+          output = f"Screenshots dir not found: {_dir}"
+      else:
+          _cutoff = time.time() - _keep * 86400
+          _removed = 0
+          _freed = 0
+          for _root, _, _files in os.walk(_dir):
+              for _f in _files:
+                  _p = os.path.join(_root, _f)
+                  try:
+                      _stat = os.stat(_p)
+                      if _stat.st_mtime < _cutoff:
+                          _freed += _stat.st_size
+                          os.remove(_p); _removed += 1
+                  except OSError:
+                      pass
+          output = f"Pruned {_removed} screenshot(s) older than {_keep}d, freed {_freed:,} bytes"

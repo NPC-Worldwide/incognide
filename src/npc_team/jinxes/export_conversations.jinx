@@ -1,0 +1,39 @@
+jinx_name: export_conversations
+description: Dump recent conversations from the history DB to JSONL for archival/training. Exports last `days` (default 7).
+inputs:
+  - { db_path: "" }
+  - { out_dir: "" }
+  - { days: "7" }
+steps:
+  - name: export
+    engine: python
+    code: |
+      import os, json, sqlite3, datetime
+
+      _home = os.path.expanduser('~')
+      _db = os.path.expanduser(context.get('db_path', '') or os.path.join(_home, 'npcsh_history.db'))
+      _out = os.path.expanduser(context.get('out_dir', '') or os.path.join(_home, '.npcsh', 'exports'))
+      _days = int(context.get('days', 7) or 7)
+
+      if not os.path.exists(_db):
+          output = f"DB not found: {_db}"
+      else:
+          os.makedirs(_out, exist_ok=True)
+          _cutoff = (datetime.datetime.now() - datetime.timedelta(days=_days)).isoformat()
+          _stamp = datetime.datetime.now().strftime('%Y%m%d')
+          _path = os.path.join(_out, f"conversations-{_stamp}.jsonl")
+          _conn = sqlite3.connect(_db)
+          try:
+              _cur = _conn.cursor()
+              _cur.execute("SELECT conversation_id, role, content, npc, team, directory_path, timestamp FROM conversation_history WHERE timestamp >= ? ORDER BY timestamp ASC", (_cutoff,))
+              _n = 0
+              with open(_path, 'w') as _f:
+                  for _row in _cur:
+                      _f.write(json.dumps({
+                          'conversation_id': _row[0], 'role': _row[1], 'content': _row[2],
+                          'npc': _row[3], 'team': _row[4], 'directory_path': _row[5], 'timestamp': _row[6],
+                      }) + '\n')
+                      _n += 1
+              output = f"Exported {_n} rows (last {_days}d) -> {_path}"
+          finally:
+              _conn.close()

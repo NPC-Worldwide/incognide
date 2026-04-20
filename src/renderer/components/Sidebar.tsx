@@ -32,7 +32,7 @@ import KnowledgeGraphEditor from './KnowledgeGraphEditor';
 import LabeledDataManager from './LabeledDataManager';
 import McpServerMenu from './McpServerMenu';
 import MemoryManagement from './MemoryManagement';
-import MemoryIcon from './MemoryIcon';
+import MemoryIcon from './icons/MemoryIcon';
 import MessageLabeling from './MessageLabeling';
 import NPCTeamMenu from './NPCTeamMenu';
 import PythonEnvSettings from './PythonEnvSettings';
@@ -137,7 +137,7 @@ const Sidebar = (props: any) => {
         setDropTargetSection(null);
         if (draggedId === targetSectionId || !setSidebarSectionOrder) return;
 
-        const currentOrder = sidebarSectionOrder || ['websites', 'files', 'conversations', 'git'];
+        const currentOrder = sidebarSectionOrder || ['websites', 'files', 'git'];
         const newOrder = [...currentOrder];
         const draggedIndex = newOrder.indexOf(draggedId);
         const targetIndex = newOrder.indexOf(targetSectionId);
@@ -308,6 +308,21 @@ const Sidebar = (props: any) => {
     const [docDropdownOpen, setDocDropdownOpen] = useState(false);
 
     const [terminalDropdownOpen, setTerminalDropdownOpen] = useState(false);
+    const [installedAgents, setInstalledAgents] = useState<Record<string, boolean>>({});
+    const [showAddAgentPrompt, setShowAddAgentPrompt] = useState(false);
+    const [newAgentName, setNewAgentName] = useState('');
+    const [newAgentCommand, setNewAgentCommand] = useState('');
+    const KNOWN_AGENTS = ['npcsh', 'opencode', 'nanocoder', 'gemini', 'claude', 'codex', 'qwen', 'hermes', 'pi'];
+    useEffect(() => {
+        (async () => {
+            try {
+                const customAgents = JSON.parse(localStorage.getItem('incognide_terminalAgents') || '[]');
+                const allCmds = [...KNOWN_AGENTS, ...customAgents.map((a: any) => a.command)];
+                const r = await (window as any).api?.checkBinaries?.(allCmds);
+                setInstalledAgents(r || {});
+            } catch {}
+        })();
+    }, [terminalDropdownOpen]);
 
     const [chatPlusDropdownOpen, setChatPlusDropdownOpen] = useState(false);
 
@@ -554,7 +569,7 @@ const Sidebar = (props: any) => {
         const convos: { paneId: string; conversationId: string }[] = [];
         for (const [paneId, data] of Object.entries(contentDataRef.current)) {
             const d = data as any;
-            if (d?.contentType === 'chat' && d?.conversationId) {
+            if ((d?.contentType === 'chat' || d?.contentType === 'agent') && d?.conversationId) {
                 convos.push({ paneId, conversationId: d.conversationId });
             }
         }
@@ -1054,7 +1069,7 @@ const handleApplyPromptToFiles = async (operationType, customPrompt = '') => {
         }
 
         const paneData = contentDataRef.current[newPaneId];
-        if (!paneData || paneData.contentType !== 'chat') {
+        if (!paneData || (paneData.contentType !== 'chat' && paneData.contentType !== 'agent')) {
             throw new Error("Target pane is not a chat pane.");
         }
 
@@ -1205,7 +1220,7 @@ const handleSummarizeAndStart = async () => {
         }
 
         const paneData = contentDataRef.current[newPaneId];
-        if (!paneData || paneData.contentType !== 'chat') {
+        if (!paneData || (paneData.contentType !== 'chat' && paneData.contentType !== 'agent')) {
             throw new Error("Target pane is not a chat pane.");
         }
 
@@ -4071,7 +4086,6 @@ onDragStart={(e) => {
                                     });
                                 }
                             }}
-                            onDoubleClick={() => !isInaccessible && handleOpenFolderAsWorkspace(fullPath)}
                             onContextMenu={(e) => handleSidebarItemContextMenu(e, fullPath, 'directory', isInaccessible)}
                             className={`flex items-center gap-1.5 px-1.5 py-0.5 w-full hover:bg-gray-800 text-left rounded text-[11px] select-none ${isInaccessible ? 'opacity-60' : ''}`}
                             title={isInaccessible ? `Permission denied: ${fullPath}` : `Drag to open as folder viewer, Click to expand, Ctrl+Click to open as workspace`}
@@ -4402,6 +4416,13 @@ onDragStart={(e) => {
                         title="New Chat"
                     >
                         <MessageSquare size={12} className="text-green-300" />
+                    </button>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); createNewConversation?.({ contentType: 'agent' }); setConversationsCollapsed(false); }}
+                        className="flex items-center justify-center w-1/4 py-4 -my-4 hover:bg-amber-500/20 transition-all"
+                        title="New Agent"
+                    >
+                        <Bot size={12} className="text-amber-300" />
                     </button>
                 </div>
                 {showConversationsSettings && (
@@ -5449,18 +5470,16 @@ return (
                         <ChevronDown size={7} className="text-gray-500" />
                     </button>
                     {terminalDropdownOpen && (
-                        <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[9999] py-1 min-w-[140px]">
+                        <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[9999] py-1 min-w-[160px]">
                             <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Right-click to set default</div>
                             {(() => {
-                                const allTerminals = [
-                                    { name: 'Bash', command: 'system' },
-                                    { name: 'npcsh', command: 'npcsh' },
-                                ];
-                                let agents;
-                                try { agents = JSON.parse(localStorage.getItem('incognide_terminalAgents') || '[]'); } catch { agents = []; }
-                                if (!agents.length) agents = [{"name":"opencode","command":"opencode"},{"name":"nanocoder","command":"nanocoder"}];
-                                const all = [...allTerminals, ...agents.filter((a: any) => a.command !== 'system' && a.command !== 'npcsh')];
-                                return all.map((item: any, idx: number) => (
+                                const bash = { name: 'Bash', command: 'system' };
+                                let customAgents: any[] = [];
+                                try { customAgents = JSON.parse(localStorage.getItem('incognide_terminalAgents') || '[]'); } catch {}
+                                const known = KNOWN_AGENTS.map(cmd => ({ name: cmd, command: cmd }));
+                                const allKnown = [bash, ...known.filter(a => installedAgents[a.command])];
+                                const customFiltered = customAgents.filter(a => installedAgents[a.command] && !KNOWN_AGENTS.includes(a.command) && a.command !== 'system');
+                                return [...allKnown, ...customFiltered].map((item: any, idx: number) => (
                                     <button
                                         key={idx}
                                         onClick={() => { createNewTerminal?.(item.command); setTerminalDropdownOpen(false); }}
@@ -5472,6 +5491,37 @@ return (
                                     </button>
                                 ));
                             })()}
+                            <div className="border-t theme-border my-0.5" />
+                            {!showAddAgentPrompt ? (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); setShowAddAgentPrompt(true); }}
+                                    className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs text-blue-400"
+                                >
+                                    <Plus size={11} /><span>Add custom agent...</span>
+                                </button>
+                            ) : (
+                                <div className="p-2 space-y-1" onClick={(e) => e.stopPropagation()}>
+                                    <input type="text" placeholder="Name" value={newAgentName} onChange={e => setNewAgentName(e.target.value)} className="w-full px-1.5 py-0.5 text-xs theme-bg-primary border theme-border rounded" />
+                                    <input type="text" placeholder="Command (binary name)" value={newAgentCommand} onChange={e => setNewAgentCommand(e.target.value)} className="w-full px-1.5 py-0.5 text-xs theme-bg-primary border theme-border rounded" />
+                                    <div className="flex gap-1">
+                                        <button
+                                            onClick={async () => {
+                                                if (!newAgentName || !newAgentCommand) return;
+                                                try {
+                                                    const existing = JSON.parse(localStorage.getItem('incognide_terminalAgents') || '[]');
+                                                    const updated = [...existing.filter((a: any) => a.command !== newAgentCommand), { name: newAgentName, command: newAgentCommand }];
+                                                    localStorage.setItem('incognide_terminalAgents', JSON.stringify(updated));
+                                                    const r = await (window as any).api?.checkBinaries?.([newAgentCommand]);
+                                                    setInstalledAgents(prev => ({ ...prev, ...(r || {}) }));
+                                                } catch {}
+                                                setNewAgentName(''); setNewAgentCommand(''); setShowAddAgentPrompt(false);
+                                            }}
+                                            className="flex-1 px-2 py-0.5 text-[10px] bg-blue-600 hover:bg-blue-500 text-white rounded"
+                                        >Add</button>
+                                        <button onClick={() => { setNewAgentName(''); setNewAgentCommand(''); setShowAddAgentPrompt(false); }} className="px-2 py-0.5 text-[10px] theme-bg-tertiary rounded">Cancel</button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -5642,7 +5692,7 @@ return (
                             setDropTargetSection(null);
                             return;
                         }
-                        const currentOrder = sidebarSectionOrder || ['websites', 'files', 'conversations', 'git'];
+                        const currentOrder = sidebarSectionOrder || ['websites', 'files', 'git'];
                         const newOrder = [...currentOrder];
                         const draggedIndex = newOrder.indexOf(draggedSection);
                         const targetIndex = newOrder.indexOf(dropTargetSection);
@@ -5653,7 +5703,7 @@ return (
                         setDropTargetSection(null);
                     }}
                 >
-                    {(sidebarSectionOrder || ['websites', 'files', 'conversations', 'git']).filter((s: string) => ['websites', 'files', 'conversations', 'git'].includes(s)).map((sectionId: string) => {
+                    {(sidebarSectionOrder || ['websites', 'files', 'git']).filter((s: string) => ['websites', 'files', 'git'].includes(s)).map((sectionId: string) => {
                         const sectionColors: Record<string, string> = {
                             websites: 'ring-purple-500',
                             files: 'ring-yellow-500',
@@ -5673,7 +5723,7 @@ return (
                             >
                                 {sectionId === 'websites' && <div data-tutorial="website-browser" className="h-full overflow-hidden">{renderWebsiteList()}</div>}
                                 {sectionId === 'files' && <div data-tutorial="file-browser" className="h-full overflow-hidden">{renderFolderList(folderStructure)}</div>}
-                                {sectionId === 'conversations' && aiEnabled && <div data-tutorial="conversations" className="h-full overflow-hidden">{renderConversationList(directoryConversations)}</div>}
+                                {/* conversations moved to RightSidebar */}
                                 {sectionId === 'git' && <div data-tutorial="git-browser" className="h-full overflow-hidden">{renderGitSection()}</div>}
                             </div>
                         );

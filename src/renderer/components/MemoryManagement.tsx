@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Loader, CheckCircle, XCircle, Edit, Trash2, RefreshCw, Search, Clock, X } from 'lucide-react';
-import MemoryIcon from './MemoryIcon';
+import MemoryIcon from './icons/MemoryIcon';
 
 interface Memory {
     id: number;
@@ -24,61 +24,6 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
     const [loadError, setLoadError] = useState<string | null>(null);
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editText, setEditText] = useState('');
-    const [activeTab, setActiveTab] = useState<'memories' | 'schedule'>('memories');
-    const [extractSchedule, setExtractSchedule] = useState('0 */6 * * *');
-    const [extractGuidance, setExtractGuidance] = useState('');
-    const [extractLimit, setExtractLimit] = useState('50');
-    const [extractJobActive, setExtractJobActive] = useState<boolean | null>(null);
-    const [extractJobLog, setExtractJobLog] = useState<string[]>([]);
-    const [scheduleLoading, setScheduleLoading] = useState(false);
-    const [scheduleError, setScheduleError] = useState<string | null>(null);
-    const [scheduleSuccess, setScheduleSuccess] = useState<string | null>(null);
-
-    const SCHEDULE_PRESETS = [
-        { label: 'Every 6h', value: '0 */6 * * *' },
-        { label: 'Every 12h', value: '0 */12 * * *' },
-        { label: 'Daily midnight', value: '0 0 * * *' },
-        { label: 'Daily 9am', value: '0 9 * * *' },
-        { label: 'Weekdays 9am', value: '0 9 * * 1-5' },
-        { label: 'Weekly Sun', value: '0 0 * * 0' },
-    ];
-
-    const checkExtractJobStatus = useCallback(async () => {
-        try {
-            const status = await (window as any).api?.jobStatus?.('memory_extract');
-            if (status && !status.error) {
-                setExtractJobActive(status.active ?? false);
-                setExtractJobLog(status.recent_log || []);
-            } else {
-                setExtractJobActive(false);
-                setExtractJobLog([]);
-            }
-        } catch { setExtractJobActive(false); }
-    }, []);
-
-    const handleScheduleExtract = async () => {
-        setScheduleLoading(true); setScheduleError(null); setScheduleSuccess(null);
-        try {
-            let cmd = `extract_memories limit=${extractLimit}`;
-            if (extractGuidance.trim()) cmd += ` context="${extractGuidance.trim().replace(/"/g, '\\"')}"`;
-            const result = await (window as any).api?.scheduleJob?.({ schedule: extractSchedule, command: cmd, jobName: 'memory_extract' });
-            if (result?.error) setScheduleError(result.error);
-            else { setScheduleSuccess('Memory extraction job scheduled.'); checkExtractJobStatus(); }
-        } catch (err: any) { setScheduleError(err.message || 'Failed to schedule job'); }
-        finally { setScheduleLoading(false); }
-    };
-
-    const handleUnscheduleExtract = async () => {
-        setScheduleLoading(true); setScheduleError(null); setScheduleSuccess(null);
-        try {
-            const result = await (window as any).api?.unscheduleJob?.('memory_extract');
-            if (result?.error) setScheduleError(result.error);
-            else { setScheduleSuccess('Memory extraction job removed.'); setExtractJobActive(false); setExtractJobLog([]); }
-        } catch (err: any) { setScheduleError(err.message || 'Failed to unschedule job'); }
-        finally { setScheduleLoading(false); }
-    };
-
-    useEffect(() => { if (activeTab === 'schedule') checkExtractJobStatus(); }, [activeTab, checkExtractJobStatus]);
 
     const loadMemories = async () => {
         setMemoryLoading(true);
@@ -193,81 +138,6 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
 
     const content = (
         <div className="flex flex-col h-full">
-            <div className="flex border-b theme-border flex-shrink-0">
-                {(['memories', 'schedule'] as const).map(tab => (
-                    <button key={tab} onClick={() => setActiveTab(tab)}
-                        className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === tab ? 'border-orange-500 text-orange-400' : 'border-transparent text-gray-400 hover:text-white'}`}>
-                        {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                    </button>
-                ))}
-            </div>
-
-            {activeTab === 'schedule' ? (
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                    <div className="border theme-border rounded-lg p-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                            <h4 className="text-sm font-semibold flex items-center gap-2">
-                                <Clock size={14} className="text-orange-400" /> Memory Extraction
-                            </h4>
-                            {extractJobActive !== null && (
-                                <span className={`text-xs px-2 py-0.5 rounded ${extractJobActive ? 'bg-green-600/30 text-green-300' : 'bg-gray-600/30 text-gray-400'}`}>
-                                    {extractJobActive ? 'Active' : 'Not scheduled'}
-                                </span>
-                            )}
-                        </div>
-                        <p className="text-xs theme-text-secondary">Automatically extract memories from recent conversations and store them as pending approval.</p>
-                        <div>
-                            <label className="text-xs theme-text-secondary block mb-1">Frequency</label>
-                            <select value={extractSchedule} onChange={e => setExtractSchedule(e.target.value)} className="w-full theme-input text-sm">
-                                {SCHEDULE_PRESETS.map(p => <option key={p.value} value={p.value}>{p.label} ({p.value})</option>)}
-                            </select>
-                        </div>
-                        <div>
-                            <label className="text-xs theme-text-secondary block mb-1">Conversations per run</label>
-                            <input type="number" value={extractLimit} onChange={e => setExtractLimit(e.target.value)} min="1" max="500" className="w-full theme-input text-sm" />
-                        </div>
-                        <div>
-                            <label className="text-xs theme-text-secondary block mb-1">Extraction guidance (optional)</label>
-                            <textarea value={extractGuidance} onChange={e => setExtractGuidance(e.target.value)} placeholder="e.g. Focus on technical decisions..." rows={3} className="w-full theme-input text-sm resize-none" />
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <button onClick={handleScheduleExtract} disabled={scheduleLoading} className="px-3 py-1.5 text-sm bg-orange-600 hover:bg-orange-500 text-white rounded disabled:opacity-50 flex items-center gap-1">
-                                {scheduleLoading ? <Loader size={12} className="animate-spin" /> : <Clock size={12} />}
-                                {extractJobActive ? 'Update Schedule' : 'Schedule'}
-                            </button>
-                            {extractJobActive && (
-                                <button onClick={handleUnscheduleExtract} disabled={scheduleLoading} className="px-3 py-1.5 text-sm bg-red-600/30 hover:bg-red-600/50 text-red-300 rounded disabled:opacity-50 flex items-center gap-1">
-                                    <X size={12} /> Remove
-                                </button>
-                            )}
-                            <button onClick={checkExtractJobStatus} className="px-3 py-1.5 text-sm theme-text-secondary hover:text-white rounded flex items-center gap-1">
-                                <RefreshCw size={12} /> Refresh
-                            </button>
-                        </div>
-                        {scheduleError && <div className="text-xs text-red-400 bg-red-900/20 p-2 rounded">{scheduleError}</div>}
-                        {scheduleSuccess && <div className="text-xs text-green-400 bg-green-900/20 p-2 rounded">{scheduleSuccess}</div>}
-                        {extractJobLog.length > 0 && (
-                            <div>
-                                <label className="text-xs theme-text-secondary block mb-1">Recent log</label>
-                                <div className="theme-bg-primary rounded p-2 max-h-32 overflow-y-auto">
-                                    {extractJobLog.map((line, i) => <div key={i} className="text-xs text-gray-500 font-mono">{line}</div>)}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                    <div className="border theme-border rounded-lg p-4 space-y-2">
-                        <h4 className="text-sm font-semibold flex items-center gap-2">Pipeline</h4>
-                        <div className="flex items-center gap-2 text-xs theme-text-secondary">
-                            <span className="px-2 py-0.5 bg-amber-600/20 text-amber-300 rounded">Extract</span>
-                            <span>→</span>
-                            <span className="px-2 py-0.5 bg-gray-600/20 text-gray-300 rounded">Review &amp; Approve</span>
-                            <span>→</span>
-                            <span className="px-2 py-0.5 bg-blue-600/20 text-blue-300 rounded">KG Backfill</span>
-                        </div>
-                        <p className="text-xs theme-text-muted">Extracted memories land in "Pending Approval". Review them in the Memories tab, then schedule a KG Sleep with backfill in the Knowledge Graph editor to incorporate approved memories.</p>
-                    </div>
-                </div>
-            ) : (
             <div className="flex-1 overflow-auto p-4">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
                 <div>
@@ -444,7 +314,6 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
                 </div>
             )}
             </div>
-            )}
         </div>
     );
 

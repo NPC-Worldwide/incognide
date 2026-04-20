@@ -36,13 +36,21 @@ const BackendErrorBanner: React.FC = () => {
     const api = (window as any).api;
     if (!api) return;
 
-    api.backendGetStartupError?.().then((err: any) => {
-      if (err) setError(err);
-    }).catch(() => {});
+    // Verify backend is actually unreachable before showing. If health check passes,
+    // a running backend (e.g. dev server) means no need for the banner.
+    const verifyAndSet = async (err: any) => {
+      if (!err) return;
+      try {
+        const health = await api.backendHealth?.();
+        if (health?.status === 'ok') return;
+      } catch {}
+      setError(err);
+    };
+
+    api.backendGetStartupError?.().then(verifyAndSet).catch(() => {});
 
     const unsubError = api.onBackendStartupError?.((data: any) => {
-      setError(data);
-      setDismissed(false);
+      verifyAndSet(data).then(() => setDismissed(false));
     });
 
     const unsubStarted = api.onBackendStarted?.(() => {
@@ -50,9 +58,21 @@ const BackendErrorBanner: React.FC = () => {
       setInstallDone(true);
     });
 
+    // Periodically re-check — if backend comes up later, auto-dismiss
+    const iv = setInterval(async () => {
+      try {
+        const health = await api.backendHealth?.();
+        if (health?.status === 'ok') {
+          setError(null);
+          setDismissed(true);
+        }
+      } catch {}
+    }, 5000);
+
     return () => {
       unsubError?.();
       unsubStarted?.();
+      clearInterval(iv);
     };
   }, []);
 
@@ -118,7 +138,7 @@ const BackendErrorBanner: React.FC = () => {
     : '';
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-[9999] flex flex-col" style={{ pointerEvents: 'auto' }}>
+    <div className="relative flex flex-col w-full" style={{ pointerEvents: 'auto' }}>
       {/* Main banner bar */}
       <div className="flex items-center gap-2 bg-yellow-900/90 border-b border-yellow-700 text-yellow-100 px-4 py-2 text-sm shadow-lg">
         <AlertCircle size={16} className="text-yellow-400 flex-shrink-0" />

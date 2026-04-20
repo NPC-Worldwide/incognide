@@ -4,6 +4,7 @@ import { registerAction, StudioContext, StudioActionResult } from './index';
 
 const PANE_TYPE_INFO: Record<string, { title: string; description: string; needsPath?: boolean; needsUrl?: boolean }> = {
   'chat':             { title: 'Chat',             description: 'AI chat conversation' },
+  'agent':            { title: 'Agent',            description: 'AI agent with tools' },
   'editor':           { title: 'Code Editor',      description: 'Edit code and text files', needsPath: true },
   'terminal':         { title: 'Terminal',          description: 'Shell terminal (system, npcsh, guac)' },
   'browser':          { title: 'Browser',           description: 'Web browser', needsUrl: true },
@@ -101,6 +102,12 @@ function getPaneTitle(data: any): string {
 
   if (contentType === 'terminal') {
     return `Terminal${data.shellType ? ` (${data.shellType})` : ''}`;
+  }
+
+  if (contentType === 'chat' || contentType === 'agent') {
+    const shortId = contentId ? String(contentId).slice(-6) : '';
+    const npcName = data.npc || (contentType === 'agent' ? 'Agent' : 'Chat');
+    return `${npcName}${shortId ? ` ${shortId}` : ''}`;
   }
 
   return info?.title || contentId || contentType || 'Untitled';

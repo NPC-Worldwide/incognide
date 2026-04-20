@@ -1,8 +1,11 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import {
     X, FileJson, Users, Wrench, Clock, Database, Plus, Trash2, Play, Pause, Server, Mail, Save,
-    Brain, GitBranch, Cpu, Box, Code, Mic, Globe, Eye, EyeOff
+    Brain, GitBranch, Cpu, Box, Code, Mic, Globe, Eye, EyeOff, Check, Zap
 } from 'lucide-react';
+import SmokestackIcon from './icons/SmokestackIcon';
+import MemoryIcon from './icons/MemoryIcon';
+import KgIcon from './icons/KgIcon';
 
 import CtxEditor from './CtxEditor';
 import NPCTeamMenu from './NPCTeamMenu';
@@ -887,9 +890,14 @@ const ProvidersContent = () => {
     const [providers, setProviders] = useState<{ name: string; baseUrl: string; apiKeyVar: string; headers: string }[]>([
         { name: '', baseUrl: '', apiKeyVar: '', headers: '' }
     ]);
+    const [detectedProviders, setDetectedProviders] = useState<{ provider: string; envVar: string; baseUrl: string }[]>([]);
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
+        (async () => {
+            const detected = await (window as any).api?.detectProviderKeys?.();
+            if (Array.isArray(detected)) setDetectedProviders(detected);
+        })();
         (async () => {
             const data = await (window as any).api.loadGlobalSettings();
             if (data.error || !data.global_vars) return;
@@ -946,6 +954,23 @@ const ProvidersContent = () => {
 
     return (
         <div className="space-y-4">
+            {detectedProviders.length > 0 && (
+                <div className="theme-bg-tertiary p-4 rounded-lg">
+                    <h4 className="text-sm font-semibold theme-text-secondary mb-2 flex items-center gap-2">
+                        <Check size={14} className="text-green-400" /> Detected Providers ({detectedProviders.length})
+                    </h4>
+                    <p className="text-xs theme-text-muted mb-2">Found API keys for these providers in your environment or shell config.</p>
+                    <div className="grid grid-cols-2 gap-2">
+                        {detectedProviders.map(d => (
+                            <div key={d.envVar} className="flex items-center gap-2 px-2 py-1.5 theme-bg-primary rounded text-xs">
+                                <span className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" />
+                                <span className="font-medium capitalize">{d.provider}</span>
+                                <span className="font-mono text-[10px] theme-text-muted ml-auto">{d.envVar}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
             <p className="text-sm theme-text-muted">Define custom API providers for your models.</p>
             {providers.map((provider, index) => (
                 <div key={index} className="theme-bg-tertiary p-4 rounded-lg space-y-3">
@@ -1098,19 +1123,19 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
     if (!isOpen) return null;
 
     const sections: { id: TabId; label: string; icon: React.ReactNode }[] = [
-        { id: 'context', label: 'Context', icon: <FileJson size={16} /> },
-        { id: 'npcs', label: 'NPCs', icon: <Users size={16} /> },
-        { id: 'jinxes', label: 'Jinxes', icon: <Wrench size={16} /> },
-        { id: 'memory', label: 'Memory', icon: <Brain size={16} /> },
-        { id: 'knowledge', label: 'Knowledge', icon: <GitBranch size={16} /> },
-        { id: 'cron', label: 'Cron', icon: <Clock size={16} /> },
-        { id: 'mcp', label: 'MCP', icon: <Server size={16} /> },
-        { id: 'databases', label: 'Databases', icon: <Database size={16} /> },
         { id: 'ai-settings', label: 'AI Settings', icon: <Cpu size={16} /> },
+        { id: 'context', label: 'Context', icon: <FileJson size={16} /> },
+        { id: 'databases', label: 'Databases', icon: <Database size={16} /> },
+        { id: 'jinxes', label: 'Jinxes', icon: <Zap size={16} /> },
+        { id: 'knowledge', label: 'Knowledge', icon: <KgIcon size={16} /> },
+        { id: 'mcp', label: 'MCP', icon: <Server size={16} /> },
+        { id: 'memory', label: 'Memory', icon: <MemoryIcon size={16} /> },
         { id: 'llm-models', label: 'Models', icon: <Box size={16} /> },
-        { id: 'python', label: 'Python Env', icon: <Code size={16} /> },
-        { id: 'voice', label: 'Voice / TTS', icon: <Mic size={16} /> },
+        { id: 'npcs', label: 'NPCs', icon: <Users size={16} /> },
         { id: 'providers', label: 'Providers', icon: <Globe size={16} /> },
+        { id: 'python', label: 'Python Env', icon: <Code size={16} /> },
+        { id: 'cron', label: 'Scheduler', icon: <SmokestackIcon size={16} /> },
+        { id: 'voice', label: 'Voice / TTS', icon: <Mic size={16} /> },
     ];
 
     if (!isOpen && !embedded) return null;
@@ -1195,7 +1220,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
 
                 {/* Content */}
                 <div className="flex-1 flex flex-col overflow-hidden">
-                    {(activeTab === 'memory' || activeTab === 'cron' || activeTab === 'llm-models' || activeTab === 'python' || activeTab === 'voice') ? null : (
+                    {(activeTab === 'memory' || activeTab === 'cron' || activeTab === 'llm-models' || activeTab === 'python' || activeTab === 'voice' || activeTab === 'knowledge') ? null : (
                         <div className="flex-1 overflow-auto p-6">
                             {activeTab === 'context' && (
                                 <CtxEditor
@@ -1242,11 +1267,6 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                     isGlobal={isGlobal}
                                     globalPath={globalPath}
                                 />
-                            )}
-                            {activeTab === 'knowledge' && (
-                                <Suspense fallback={<div className="flex items-center justify-center py-12 theme-text-muted">Loading...</div>}>
-                                    <KnowledgeGraphEditor isModal={false} />
-                                </Suspense>
                             )}
                             {activeTab === 'mcp' && (
                                 <McpManager currentPath={currentPath} embedded={true} />
@@ -1298,6 +1318,13 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                     {activeTab === 'voice' && (
                         <div className="flex-1 flex flex-col overflow-hidden">
                             <VoiceManager />
+                        </div>
+                    )}
+                    {activeTab === 'knowledge' && (
+                        <div className="flex-1 flex flex-col overflow-hidden">
+                            <Suspense fallback={<div className="flex items-center justify-center py-12 theme-text-muted">Loading...</div>}>
+                                <KnowledgeGraphEditor isModal={false} />
+                            </Suspense>
                         </div>
                     )}
                 </div>

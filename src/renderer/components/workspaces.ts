@@ -174,7 +174,7 @@ export const deserializeWorkspace = async (
                     if (pd.contentType === 'editor') {
                         const response = await window.api.readFileContent(pd.contentId);
                         paneDataRef.fileContent = response.error ? `Error: ${response.error}` : response.content;
-                    } else if (pd.contentType === 'chat') {
+                    } else if ((pd.contentType === 'chat' || pd.contentType === 'agent')) {
                         paneDataRef.chatMessages = {
                             messages: [],
                             allMessages: [],
@@ -206,7 +206,7 @@ export const deserializeWorkspace = async (
         console.log('[WORKSPACE] All content loaded. ContentDataRef keys:', Object.keys(contentDataRef.current));
         for (const [paneId, paneData] of Object.entries(contentDataRef.current)) {
             const pd = paneData as any;
-            if (pd.contentType === 'chat') {
+            if ((pd.contentType === 'chat' || pd.contentType === 'agent')) {
                 console.log('[WORKSPACE] Chat pane', paneId, 'has', pd.chatMessages?.allMessages?.length || 0, 'messages');
             }
         }

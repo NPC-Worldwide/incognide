@@ -1066,11 +1066,51 @@ function register(ctx) {
     });
   });
 
-  ipcMain.handle('kg:query', async (event, { question, top_k }) => {
+  ipcMain.handle('kg:query', async (event, args) => {
     return await callBackendApi(`${BACKEND_URL}/api/kg/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, top_k })
+      body: JSON.stringify(args || {})
+    });
+  });
+
+  ipcMain.handle('kg:population:list', async () => {
+    return await callBackendApi(`${BACKEND_URL}/api/kg/populations`);
+  });
+
+  ipcMain.handle('kg:population:create', async (event, args) => {
+    return await callBackendApi(`${BACKEND_URL}/api/kg/population`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(args || {})
+    });
+  });
+
+  ipcMain.handle('kg:population:get', async (event, id) => {
+    return await callBackendApi(`${BACKEND_URL}/api/kg/population/${encodeURIComponent(id)}`);
+  });
+
+  ipcMain.handle('kg:population:delete', async (event, id) => {
+    return await callBackendApi(`${BACKEND_URL}/api/kg/population/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+  });
+
+  ipcMain.handle('kg:population:evolve', async (event, id) => {
+    return await callBackendApi(`${BACKEND_URL}/api/kg/population/${encodeURIComponent(id)}/evolve`, {
+      method: 'POST'
+    });
+  });
+
+  ipcMain.handle('kg:individual:get', async (event, { populationId, individualId }) => {
+    return await callBackendApi(`${BACKEND_URL}/api/kg/population/${encodeURIComponent(populationId)}/individual/${encodeURIComponent(individualId)}`);
+  });
+
+  ipcMain.handle('kg:individual:updateGenome', async (event, { populationId, individualId, genome }) => {
+    return await callBackendApi(`${BACKEND_URL}/api/kg/population/${encodeURIComponent(populationId)}/individual/${encodeURIComponent(individualId)}/genome`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(genome || {})
     });
   });
 

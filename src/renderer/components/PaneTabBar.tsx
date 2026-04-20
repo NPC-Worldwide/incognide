@@ -41,7 +41,9 @@ interface PaneTabBarProps {
 const getTabIcon = (contentType: string) => {
     switch (contentType) {
         case 'chat':
-            return <MessageSquare size={12} className="text-blue-400" />;
+            return <MessageSquare size={12} className="text-green-400" />;
+        case 'agent':
+            return <Bot size={12} className="text-amber-400" />;
         case 'terminal':
             return <Terminal size={12} className="text-green-400" />;
         case 'browser':
@@ -103,12 +105,31 @@ const getTabIcon = (contentType: string) => {
     }
 };
 
-const getTabTitle = (tab: Tab): string => {
+const getTabTitle = (tab: Tab, contentDataRef?: any, nodeId?: string): string => {
+    // For chat/agent tabs always compute from npc + id, ignore any stale title.
+    // Fall back to per-tab virtual data (kept in sync after stamp) or the parent pane
+    // data, so existing tabs get the current NPC name without needing re-creation.
+    if (tab.contentType === 'chat' || tab.contentType === 'agent') {
+        const virtualId = nodeId ? `${nodeId}_${tab.id}` : null;
+        const vd = virtualId ? contentDataRef?.current?.[virtualId] : null;
+        const parentPd = nodeId ? contentDataRef?.current?.[nodeId] : null;
+        const msgs = vd?.chatMessages?.messages || vd?.chatMessages?.allMessages
+            || parentPd?.chatMessages?.messages || parentPd?.chatMessages?.allMessages
+            || (tab as any).chatMessages?.messages || (tab as any).chatMessages?.allMessages
+            || [];
+        const lastAssistant = Array.isArray(msgs) ? [...msgs].reverse().find((m: any) => m?.role === 'assistant' && m?.npc) : null;
+        const shortId = tab.contentId ? String(tab.contentId).slice(-6) : '';
+        const name = (tab as any).npc || vd?.npc || parentPd?.npc || lastAssistant?.npc;
+        if (name) return `${name}${shortId ? ` ${shortId}` : ''}`;
+        return shortId || (tab.contentType === 'agent' ? 'Agent' : 'Chat');
+    }
+
     if (tab.title) return tab.title;
 
     switch (tab.contentType) {
         case 'chat':
-            return `Chat ${tab.contentId?.slice(-6) || ''}`;
+        case 'agent':
+            return 'unreachable';
         case 'terminal':
             return 'Terminal';
         case 'browser':
@@ -312,7 +333,7 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
                     `}
                 >
                     {getTabIcon(tab.contentType)}
-                    <span className="truncate">{getTabTitle(tab)}</span>
+                    <span className="truncate">{getTabTitle(tab, contentDataRef, nodeId)}</span>
                     <button
                         onClick={(e) => handleTabClose(e, index)}
                         className="absolute top-0.5 right-0.5 p-0.5 rounded bg-gray-600 hover:bg-red-500/50 transition-colors z-10"

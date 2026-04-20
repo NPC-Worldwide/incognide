@@ -318,7 +318,7 @@ const handleResendMessage = (messageToResend) => {
 
 const handleResendWithSettings = async (messageToResend, selectedModel, selectedNPC) => {
     const activePaneData = contentDataRef.current[activeContentPaneId];
-    if (!activePaneData || activePaneData.contentType !== 'chat' || !activePaneData.contentId) {
+    if (!activePaneData || ((activePaneData.contentType !== 'chat' && activePaneData.contentType !== 'agent') && activePaneData.contentType !== 'agent') || !activePaneData.contentId) {
         setError("Cannot resend: The active pane is not a valid chat window.");
         return;
     }

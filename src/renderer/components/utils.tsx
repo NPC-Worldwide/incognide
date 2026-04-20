@@ -1007,8 +1007,10 @@ export const usePaneAwareStreamListeners = (
 
                         const existing = message.toolCalls || [];
                         const merged = [...existing];
+                        // Match on tc.id ONLY — function name is not unique across multiple
+                        // sequential calls to the same tool (e.g. `sh` invoked 3 times in a row).
                         normalizedCalls.forEach((tc: any) => {
-                            const idx = merged.findIndex((mtc: any) => mtc.id === tc.id || mtc.function.name === tc.function.name);
+                            const idx = tc.id ? merged.findIndex((mtc: any) => mtc.id && mtc.id === tc.id) : -1;
                             if (idx >= 0) {
                                 const existingTc = merged[idx];
                                 const newArgs = tc.function?.arguments;
@@ -1023,14 +1025,13 @@ export const usePaneAwareStreamListeners = (
                                 };
 
                                 const partIdx = message.contentParts.findIndex((p: any) =>
-                                    p.type === 'tool_call' && (p.call.id === tc.id || p.call.function?.name === tc.function?.name)
+                                    p.type === 'tool_call' && p.call.id && p.call.id === tc.id
                                 );
                                 if (partIdx >= 0) {
                                     message.contentParts[partIdx].call = merged[idx];
                                 }
                             } else {
                                 merged.push(tc);
-
                                 message.contentParts.push({ type: 'tool_call', call: tc });
                             }
                         });

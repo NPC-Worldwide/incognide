@@ -1,8 +1,56 @@
 # npc_serve.py
 
-from npcpy.serve import start_flask_server
 import os
 import sys
+
+
+def _install_log_tee():
+    """Tee stdout/stderr to ~/.npcsh/incognide/logs/backend.log so Electron's
+    Backend Logs panel can surface them regardless of whether Electron spawned
+    this process or it was started externally (dev workflow)."""
+    log_dir = os.environ.get(
+        'INCOGNIDE_LOG_DIR',
+        os.path.join(os.path.expanduser('~'), '.npcsh', 'incognide', 'logs'),
+    )
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+    except OSError:
+        return
+    log_path = os.path.join(log_dir, 'backend.log')
+    try:
+        fh = open(log_path, 'a', buffering=1)
+    except OSError:
+        return
+
+    class _Tee:
+        def __init__(self, underlying, file_handle):
+            self._u = underlying
+            self._f = file_handle
+        def write(self, data):
+            try:
+                self._u.write(data)
+            except Exception:
+                pass
+            try:
+                self._f.write(data)
+            except Exception:
+                pass
+        def flush(self):
+            for s in (self._u, self._f):
+                try:
+                    s.flush()
+                except Exception:
+                    pass
+        def __getattr__(self, name):
+            return getattr(self._u, name)
+
+    sys.stdout = _Tee(sys.stdout, fh)
+    sys.stderr = _Tee(sys.stderr, fh)
+
+
+_install_log_tee()
+
+from npcpy.serve import start_flask_server
 
 if __name__ == "__main__":
     # Detect if running as compiled executable (prod) or Python script (dev)

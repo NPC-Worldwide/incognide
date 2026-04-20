@@ -22,6 +22,14 @@ context: |
 
 forenpc: ledbi
 use_global_jinxes: false
+
+# Pull in jinxes from other team roots without copying files. Own-team jinxes
+# take precedence; external ones only fill in gaps by name. This is how ledbi
+# gets access to npcsh's lib/ jinxes (kg_search_*, extract_memories, compress,
+# edit_file, ...) without shipping duplicates.
+external_jinx_teams:
+    - ~/.npcsh/npc_team
+
 preferences:
     - Always request approval before destructive operations
     - Keep the user informed with notifications
