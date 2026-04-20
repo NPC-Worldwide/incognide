@@ -160,6 +160,18 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
     const aiEnabled = useAiEnabled();
 
     const [activeMode, _setActiveMode] = useState(() => localStorage.getItem('scherzo_activeMode') || 'library');
+
+    // Beat maker state
+    const [beatPattern, setBeatPattern] = useState<Set<string>>(new Set());
+    const [beatBpm, setBeatBpm] = useState(120);
+    const [beatPlaying, setBeatPlaying] = useState(false);
+    const [beatCurrentStep, setBeatCurrentStep] = useState(-1);
+    const beatPlayRef = useRef<any>(null);
+    const beatAudioCtxRef = useRef<AudioContext | null>(null);
+    useEffect(() => () => {
+        if (beatPlayRef.current) clearInterval(beatPlayRef.current);
+        if (beatAudioCtxRef.current) { try { beatAudioCtxRef.current.close(); } catch {} }
+    }, []);
     const setActiveMode = useCallback((mode: string) => {
         _setActiveMode(mode);
         localStorage.setItem('scherzo_activeMode', mode);
@@ -2407,6 +2419,109 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         const s = Math.floor(seconds % 60);
         const ms = Math.floor((seconds % 1) * 100);
         return `${m}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
+    };
+
+    const renderBeatMaker = () => {
+        const rows: Array<{ id: string; name: string; freq: number; color: string }> = [
+            { id: 'kick',  name: 'Kick',  freq: 60,  color: 'bg-red-500' },
+            { id: 'snare', name: 'Snare', freq: 200, color: 'bg-orange-500' },
+            { id: 'hat',   name: 'HiHat', freq: 8000, color: 'bg-yellow-500' },
+            { id: 'clap',  name: 'Clap',  freq: 1500, color: 'bg-green-500' },
+            { id: 'perc1', name: 'Perc1', freq: 440,  color: 'bg-blue-500' },
+            { id: 'perc2', name: 'Perc2', freq: 880,  color: 'bg-purple-500' },
+            { id: 'perc3', name: 'Perc3', freq: 1100, color: 'bg-pink-500' },
+            { id: 'perc4', name: 'Perc4', freq: 330,  color: 'bg-cyan-500' },
+        ];
+        const STEPS = 16;
+        const stepKey = (rowId: string, step: number) => `${rowId}-${step}`;
+        const toggle = (rowId: string, step: number) => {
+            setBeatPattern(prev => {
+                const next = new Set(prev);
+                const k = stepKey(rowId, step);
+                if (next.has(k)) next.delete(k); else next.add(k);
+                return next;
+            });
+        };
+        const playStep = (step: number) => {
+            try {
+                const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+                if (!Ctx) return;
+                if (!beatAudioCtxRef.current) beatAudioCtxRef.current = new Ctx();
+                const ctx = beatAudioCtxRef.current;
+                const now = ctx.currentTime;
+                rows.forEach(r => {
+                    if (!beatPattern.has(stepKey(r.id, step))) return;
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = r.id === 'hat' || r.id === 'clap' ? 'square' : 'sine';
+                    osc.frequency.setValueAtTime(r.freq, now);
+                    osc.frequency.exponentialRampToValueAtTime(Math.max(20, r.freq * 0.4), now + 0.15);
+                    gain.gain.setValueAtTime(0.25, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+                    osc.connect(gain); gain.connect(ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.22);
+                });
+            } catch {}
+        };
+        const togglePlay = () => {
+            if (beatPlayRef.current) {
+                clearInterval(beatPlayRef.current);
+                beatPlayRef.current = null;
+                setBeatPlaying(false);
+                setBeatCurrentStep(-1);
+                return;
+            }
+            setBeatPlaying(true);
+            let step = 0;
+            playStep(step);
+            setBeatCurrentStep(step);
+            const intervalMs = (60 / beatBpm / 4) * 1000;
+            beatPlayRef.current = setInterval(() => {
+                step = (step + 1) % STEPS;
+                playStep(step);
+                setBeatCurrentStep(step);
+            }, intervalMs);
+        };
+        const clearPattern = () => setBeatPattern(new Set());
+        return (
+            <div className="flex-1 flex flex-col overflow-hidden p-4 gap-3">
+                <div className="flex items-center gap-3">
+                    <button onClick={togglePlay} className={`px-4 py-2 rounded ${beatPlaying ? 'bg-red-600' : 'bg-green-600'} text-white text-sm font-medium`}>
+                        {beatPlaying ? 'Stop' : 'Play'}
+                    </button>
+                    <button onClick={clearPattern} className="px-3 py-2 rounded bg-gray-700 hover:bg-gray-600 text-sm">Clear</button>
+                    <label className="text-xs theme-text-muted ml-2">BPM</label>
+                    <input type="number" min={40} max={240} value={beatBpm} onChange={e => setBeatBpm(Math.max(40, Math.min(240, parseInt(e.target.value) || 120)))} className="w-16 theme-input text-sm" />
+                    <span className="text-xs theme-text-muted ml-auto">{beatPattern.size} active · 16-step sequencer</span>
+                </div>
+                <div className="flex-1 overflow-auto rounded border theme-border">
+                    <table className="w-full border-collapse">
+                        <tbody>
+                            {rows.map(r => (
+                                <tr key={r.id}>
+                                    <td className="px-2 py-1 text-xs font-medium theme-text-primary border-b theme-border bg-black/30 sticky left-0 min-w-[80px]">{r.name}</td>
+                                    {Array.from({ length: STEPS }).map((_, i) => {
+                                        const active = beatPattern.has(stepKey(r.id, i));
+                                        const isBeat = i % 4 === 0;
+                                        const isCurrent = beatCurrentStep === i;
+                                        return (
+                                            <td key={i} className="p-0.5 border-b theme-border">
+                                                <button
+                                                    onClick={() => toggle(r.id, i)}
+                                                    className={`w-full h-9 rounded ${active ? r.color : isBeat ? 'bg-white/10' : 'bg-white/5'} ${isCurrent ? 'ring-2 ring-white' : ''} hover:brightness-125 transition-all`}
+                                                    title={`${r.name} · step ${i + 1}`}
+                                                />
+                                            </td>
+                                        );
+                                    })}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        );
     };
 
     const renderEditor = () => {
@@ -6053,6 +6168,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     {activeMode === 'analysis' && renderAnalysis()}
                     {activeMode === 'notation' && renderNotation()}
                     {activeMode === 'datasets' && renderDatasets()}
+                    {activeMode === 'beats' && renderBeatMaker()}
 
                     {visualizerActive && (
                         <div className="absolute inset-0 bg-black/95 z-50 flex flex-col">

@@ -4,7 +4,7 @@ flask_sse
 redis
 pyyaml
 pillow
-npcpy>=1.4.20
+npcpy>=1.4.21
 npcsh>=1.1.36
 anthropic
 google-genai
