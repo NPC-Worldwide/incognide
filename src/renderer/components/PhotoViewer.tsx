@@ -243,6 +243,17 @@ const [selectionDragStart, setSelectionDragStart] = useState(null);
     const [selectedNodeId, setSelectedNodeId] = useState(null);
     const [draggingNode, setDraggingNode] = useState(null);
     const [draggingConnection, setDraggingConnection] = useState(null);
+    const [workflowResult, setWorkflowResult] = useState<{ path: string; savedTo: string | null } | null>(null);
+    const [dragMousePos, setDragMousePos] = useState<{x: number; y: number} | null>(null);
+    const [savedWorkflows, setSavedWorkflows] = useState<Array<{name: string; nodes: any[]; connections: any[]}>>(() => {
+        try {
+            const raw = localStorage.getItem('vixynt_saved_workflows');
+            return raw ? JSON.parse(raw) : [];
+        } catch { return []; }
+    });
+    useEffect(() => {
+        try { localStorage.setItem('vixynt_saved_workflows', JSON.stringify(savedWorkflows)); } catch {}
+    }, [savedWorkflows]);
     const [workflowExecuting, setWorkflowExecuting] = useState(false);
     const workflowCanvasRef = useRef(null);
 
@@ -708,10 +719,11 @@ const renderFineTuneModal = () => {
                 setLoading(false);
             }
 
-            if (currentPath) {
+            {
               try {
-                const imageModelsResponse = await window.api.getAvailableImageModels(currentPath);
-                if (imageModelsResponse?.models) {
+                // Fall back to '~' so image models load even when no project folder is open.
+                const imageModelsResponse = await window.api.getAvailableImageModels(currentPath || '~');
+                if (imageModelsResponse?.models && imageModelsResponse.models.length > 0) {
 
                   setAvailableModels(imageModelsResponse.models);
 
@@ -2235,34 +2247,60 @@ const handleUseForGeneration = () => {
                         </select>
                     </div>
 
-                    {(selectedImageGroup.size > 0 || selectedGeneratedImages.size > 0) && (
-                        <div>
-                            <label className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2 block">
-                                References ({selectedImageGroup.size + selectedGeneratedImages.size})
-                            </label>
-                            <div className="flex flex-wrap gap-2 p-2 rounded-lg bg-black/20 border border-white/10">
-                                {Array.from(selectedImageGroup).slice(0, 4).map((imgPath, idx) => (
-                                    <div key={`gallery-${idx}`} className="relative group">
-                                        <img src={imgPath} alt="" className="w-14 h-14 object-cover rounded" />
-                                        <button
-                                            onClick={() => { const newSelection = new Set(selectedImageGroup); newSelection.delete(imgPath); setSelectedImageGroup(newSelection); }}
-                                            className="absolute -top-1 -right-1 bg-red-500 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                                        >
-                                            <X size={10} className="text-white" />
-                                        </button>
-                                    </div>
-                                ))}
-                                {Array.from(selectedGeneratedImages).slice(0, 4).map(index => (
-                                    <div key={`gen-${index}`} className="relative group">
-                                        <img src={generatedImages[index]} className="w-14 h-14 object-cover rounded border-2 border-purple-500" alt="" />
-                                        <button onClick={() => handleImageSelect(index, false)} className="absolute -top-1 -right-1 bg-red-500 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <X size={10} className="text-white" />
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
+                    <div>
+                        <label className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2 block">
+                            References ({selectedImageGroup.size + selectedGeneratedImages.size})
+                        </label>
+                        <div className="flex flex-wrap gap-2 p-2 rounded-lg bg-black/20 border border-white/10">
+                            {Array.from(selectedImageGroup).slice(0, 8).map((imgPath, idx) => (
+                                <div key={`gallery-${idx}`} className="relative group">
+                                    <img src={imgPath} alt="" className="w-14 h-14 object-cover rounded" />
+                                    <button
+                                        onClick={() => { const newSelection = new Set(selectedImageGroup); newSelection.delete(imgPath); setSelectedImageGroup(newSelection); }}
+                                        className="absolute -top-1 -right-1 bg-red-500 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                        <X size={10} className="text-white" />
+                                    </button>
+                                </div>
+                            ))}
+                            {Array.from(selectedGeneratedImages).slice(0, 4).map(index => (
+                                <div key={`gen-${index}`} className="relative group">
+                                    <img src={generatedImages[index]} className="w-14 h-14 object-cover rounded border-2 border-purple-500" alt="" />
+                                    <button onClick={() => handleImageSelect(index, false)} className="absolute -top-1 -right-1 bg-red-500 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <X size={10} className="text-white" />
+                                    </button>
+                                </div>
+                            ))}
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        const result = await (window as any).api?.showOpenDialog?.({
+                                            properties: ['openFile', 'multiSelections'],
+                                            filters: [
+                                                { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'] },
+                                                { name: 'All Files', extensions: ['*'] }
+                                            ],
+                                            defaultPath: currentPath || undefined,
+                                        });
+                                        const picked: string[] = Array.isArray(result)
+                                            ? result.map((r: any) => r?.path || r).filter(Boolean)
+                                            : (result?.filePaths || []);
+                                        if (picked.length) {
+                                            const next = new Set(selectedImageGroup);
+                                            picked.forEach((p: string) => next.add(p.startsWith('media://') || p.startsWith('file://') ? p : `media://${p}`));
+                                            setSelectedImageGroup(next);
+                                        }
+                                    } catch (err) {
+                                        console.error('Add reference failed:', err);
+                                    }
+                                }}
+                                className="w-14 h-14 rounded border-2 border-dashed border-white/20 hover:border-purple-500 hover:bg-purple-500/10 flex items-center justify-center text-white/50 hover:text-purple-300 transition-colors"
+                                title="Add reference from files (project or global)"
+                            >
+                                <Plus size={20} />
+                            </button>
                         </div>
-                    )}
+                    </div>
 
                     <details className="group">
                         <summary className="text-xs font-medium text-gray-400 uppercase tracking-wide cursor-pointer flex items-center gap-2 select-none">
@@ -2526,48 +2564,119 @@ const addWorkflowConnection = useCallback((fromNode, fromPort, toNode, toPort) =
 
 const executeWorkflow = useCallback(async () => {
     setWorkflowExecuting(true);
+    setWorkflowResult(null);
+    setWorkflowNodes(prev => prev.map(n => ({
+        ...n,
+        _output: undefined,
+        _status: undefined,
+        _statusMsg: undefined,
+    })));
     try {
-        const nodeOutputs: Record<string, any> = {};
-        // Topological order: process sources first, then follow connections
+        const nodeOutputs: Record<string, { image: string | null; mask?: string | null }> = {};
         const processed = new Set<string>();
-        const queue = workflowNodes.filter(n => n.type === 'source' || n.type === 'generate');
+        const setStatus = (id: string, s: 'running' | 'done' | 'error', msg?: string) => {
+            updateWorkflowNode(id, { _status: s, _statusMsg: msg });
+        };
+        const cleanPath = (p: string) => (p ? p.replace(/^media:\/\//, '') : '');
+        const outputDir = currentPath || '~/.npcsh/images';
 
-        for (const node of queue) {
-            if (node.type === 'source' && node.params?.imagePath) {
-                nodeOutputs[node.id] = { image: node.params.imagePath };
+        // Seed source + generate nodes
+        for (const node of workflowNodes) {
+            if (node.type === 'source') {
+                setStatus(node.id, 'running');
+                const p = node.params?.imagePath;
+                if (!p) { setStatus(node.id, 'error', 'No image set'); continue; }
+                nodeOutputs[node.id] = { image: cleanPath(p) };
+                updateWorkflowNode(node.id, { _output: cleanPath(p) });
                 processed.add(node.id);
-            } else if (node.type === 'generate' && node.params?.prompt) {
-                // Generate node would call AI API
-                nodeOutputs[node.id] = { image: null, prompt: node.params.prompt };
-                processed.add(node.id);
+                setStatus(node.id, 'done');
+            } else if (node.type === 'generate') {
+                const prompt = node.params?.prompt;
+                if (!prompt) { setStatus(node.id, 'error', 'No prompt'); continue; }
+                setStatus(node.id, 'running', 'Generating…');
+                try {
+                    // Route away from the local `diffusers` provider — the env's
+                    // diffusers/peft/transformers versions disagree (HybridCache
+                    // import error), so the backend crashes. Prefer any non-
+                    // diffusers model from the available list, then fall back to
+                    // a sane cloud default.
+                    let genModel = node.params?.model || selectedModel;
+                    let genProvider = node.params?.provider || selectedProvider;
+                    if (genProvider === 'diffusers') {
+                        const cloud = availableModels.find((m: any) => m.provider && m.provider !== 'diffusers');
+                        if (cloud) {
+                            genModel = cloud.value || cloud.name || cloud.display_name;
+                            genProvider = cloud.provider;
+                        } else {
+                            genModel = 'gemini-2.5-flash-image';
+                            genProvider = 'gemini';
+                        }
+                    }
+                    const resp = await (window as any).api.generateImages(
+                        prompt, 1,
+                        genModel, genProvider,
+                        [], node.params?.filename || 'wf_gen', outputDir,
+                    );
+                    if (resp?.error) throw new Error(resp.error);
+                    const out = resp?.filenames && resp.filenames[0];
+                    if (!out) throw new Error('Backend returned no filenames — image not saved');
+                    nodeOutputs[node.id] = { image: cleanPath(out) };
+                    updateWorkflowNode(node.id, { _output: cleanPath(out) });
+                    processed.add(node.id);
+                    setStatus(node.id, 'done', `${genProvider}`);
+                } catch (e: any) {
+                    setStatus(node.id, 'error', e.message || 'generate failed');
+                }
             }
         }
 
-        // Process downstream nodes
+        // Downstream DAG walk
         let changed = true;
         while (changed) {
             changed = false;
             for (const node of workflowNodes) {
                 if (processed.has(node.id)) continue;
-                const incomingConns = workflowConnections.filter(c => c.to === node.id);
-                const allInputsReady = incomingConns.length > 0 && incomingConns.every(c => processed.has(c.from));
-                if (!allInputsReady) continue;
+                const incoming = workflowConnections.filter(c => c.to === node.id);
+                if (!incoming.length || !incoming.every(c => processed.has(c.from))) continue;
+                const inputImage = incoming.map(c => nodeOutputs[c.from]?.image).find(Boolean) || null;
 
-                const inputImage = incomingConns.map(c => nodeOutputs[c.from]?.image).find(Boolean);
-                if (node.type === 'adjust') {
-                    nodeOutputs[node.id] = { image: inputImage, adjustments: node.params };
-                } else if (node.type === 'output' && inputImage) {
-                    // Save the final output
-                    const outputName = node.params?.filename || 'output.png';
-                    const outputPath = currentPath ? `${currentPath}/${outputName}` : outputName;
-                    console.log('[Workflow] Output saved to:', outputPath);
-                    nodeOutputs[node.id] = { image: inputImage, savedTo: outputPath };
+                if (node.type === 'adjust' || node.type === 'filter' || node.type === 'upscale' || node.type === 'mask') {
+                    setStatus(node.id, 'done', 'pass-through (op not yet wired)');
+                    nodeOutputs[node.id] = { image: inputImage };
+                    updateWorkflowNode(node.id, { _output: inputImage });
+                    processed.add(node.id); changed = true;
+                } else if (node.type === 'fill') {
+                    setStatus(node.id, 'done', 'pass-through (fill op not yet wired)');
+                    nodeOutputs[node.id] = { image: inputImage };
+                    updateWorkflowNode(node.id, { _output: inputImage });
+                    processed.add(node.id); changed = true;
+                } else if (node.type === 'output') {
+                    setStatus(node.id, 'running');
+                    try {
+                        if (!inputImage) throw new Error('No image on input');
+                        const outName = node.params?.filename || `wf_${Date.now()}.png`;
+                        const outPath = `${outputDir}/${outName}`;
+                        await (window as any).api?.copyFile?.(inputImage, outPath);
+                        nodeOutputs[node.id] = { image: outPath };
+                        updateWorkflowNode(node.id, { _output: outPath });
+                        setStatus(node.id, 'done', outPath);
+                        setWorkflowResult({ path: `media://${outPath}`, savedTo: outPath });
+                    } catch (e: any) {
+                        setStatus(node.id, 'error', e.message || 'save failed');
+                    }
+                    processed.add(node.id); changed = true;
                 } else {
                     nodeOutputs[node.id] = { image: inputImage };
+                    updateWorkflowNode(node.id, { _output: inputImage });
+                    processed.add(node.id); changed = true;
                 }
-                processed.add(node.id);
-                changed = true;
             }
+        }
+
+        // Final result: the last produced image from any output node, else the last non-source
+        if (!workflowNodes.some(n => n.type === 'output') && processed.size > 0) {
+            const lastImg = Object.values(nodeOutputs).reverse().find(o => o.image)?.image;
+            if (lastImg) setWorkflowResult({ path: lastImg.startsWith('media://') ? lastImg : `media://${lastImg}`, savedTo: null });
         }
 
         console.log('[Workflow] Execution complete. Processed:', processed.size, 'nodes');
@@ -2576,7 +2685,7 @@ const executeWorkflow = useCallback(async () => {
     } finally {
         setWorkflowExecuting(false);
     }
-}, [workflowNodes, workflowConnections, currentPath]);
+}, [workflowNodes, workflowConnections, currentPath, selectedModel, selectedProvider, availableModels]);
 
 const renderWorkflow = useCallback(() => {
     return (
@@ -2617,15 +2726,124 @@ const renderWorkflow = useCallback(() => {
                             )}
                         </button>
                         <button
+                            onClick={() => {
+                                const name = window.prompt('Save workflow as:', `workflow_${new Date().toISOString().slice(0,10)}`);
+                                if (!name) return;
+                                setSavedWorkflows(prev => {
+                                    const without = prev.filter(w => w.name !== name);
+                                    return [...without, { name, nodes: workflowNodes, connections: workflowConnections }];
+                                });
+                            }}
+                            disabled={workflowNodes.length === 0}
+                            className="w-full py-2 px-3 bg-blue-600/30 hover:bg-blue-600/50 disabled:bg-gray-600/20 disabled:cursor-not-allowed rounded-lg text-blue-300 text-sm flex items-center justify-center gap-2"
+                        >
+                            <Save size={14} /> Save Workflow
+                        </button>
+                        <button
                             onClick={() => { setWorkflowNodes([]); setWorkflowConnections([]); setSelectedNodeId(null); }}
                             disabled={workflowNodes.length === 0}
                             className="w-full py-2 px-3 bg-red-600/20 hover:bg-red-600/30 disabled:bg-gray-600/20 disabled:cursor-not-allowed rounded-lg text-red-400 text-sm flex items-center justify-center gap-2"
                         >
-                            <Trash2 size={14} />
-                            Clear All
+                            <Trash2 size={14} /> Clear All
                         </button>
                     </div>
                 </div>
+
+                <div className="border-t theme-border pt-3 mt-2">
+                    <h4 className="text-xs font-semibold text-gray-400 mb-2">Examples</h4>
+                    <div className="flex flex-col gap-1.5">
+                        {[
+                            {
+                                name: 'Generate → Upscale → Save',
+                                load: () => {
+                                    const ids = ['n_gen', 'n_up', 'n_out'];
+                                    setWorkflowNodes([
+                                        { id: ids[0], type: 'generate', x: 80,  y: 100, params: { prompt: 'A cinematic photograph of a mountain range at dusk' } },
+                                        { id: ids[1], type: 'upscale',  x: 320, y: 100, params: { scale: 2 } },
+                                        { id: ids[2], type: 'output',   x: 560, y: 100, params: { filename: 'generated.png' } },
+                                    ]);
+                                    setWorkflowConnections([
+                                        { id: 'c1', from: ids[0], fromPort: 0, to: ids[1], toPort: 0 },
+                                        { id: 'c2', from: ids[1], fromPort: 0, to: ids[2], toPort: 0 },
+                                    ]);
+                                }
+                            },
+                            {
+                                name: 'Load → Adjust → Filter → Save',
+                                load: () => {
+                                    const ids = ['n_src', 'n_adj', 'n_flt', 'n_out'];
+                                    setWorkflowNodes([
+                                        { id: ids[0], type: 'source', x: 80,  y: 100, params: {} },
+                                        { id: ids[1], type: 'adjust', x: 300, y: 100, params: {} },
+                                        { id: ids[2], type: 'filter', x: 520, y: 100, params: { style: 'vintage' } },
+                                        { id: ids[3], type: 'output', x: 740, y: 100, params: { filename: 'processed.png' } },
+                                    ]);
+                                    setWorkflowConnections([
+                                        { id: 'c1', from: ids[0], fromPort: 0, to: ids[1], toPort: 0 },
+                                        { id: 'c2', from: ids[1], fromPort: 0, to: ids[2], toPort: 0 },
+                                        { id: 'c3', from: ids[2], fromPort: 0, to: ids[3], toPort: 0 },
+                                    ]);
+                                }
+                            },
+                            {
+                                name: 'Load → Mask → Gen Fill → Save',
+                                load: () => {
+                                    const ids = ['n_src', 'n_msk', 'n_fill', 'n_out'];
+                                    setWorkflowNodes([
+                                        { id: ids[0], type: 'source', x: 80,  y: 100, params: {} },
+                                        { id: ids[1], type: 'mask',   x: 300, y: 100, params: {} },
+                                        { id: ids[2], type: 'fill',   x: 520, y: 180, params: { prompt: 'replace with a lush forest' } },
+                                        { id: ids[3], type: 'output', x: 740, y: 180, params: { filename: 'inpainted.png' } },
+                                    ]);
+                                    setWorkflowConnections([
+                                        { id: 'c1', from: ids[0], fromPort: 0, to: ids[1], toPort: 0 },
+                                        { id: 'c2', from: ids[1], fromPort: 0, to: ids[2], toPort: 0 },
+                                        { id: 'c3', from: ids[1], fromPort: 1, to: ids[2], toPort: 1 },
+                                        { id: 'c4', from: ids[2], fromPort: 0, to: ids[3], toPort: 0 },
+                                    ]);
+                                }
+                            },
+                        ].map((ex) => (
+                            <button
+                                key={ex.name}
+                                onClick={() => { ex.load(); setSelectedNodeId(null); }}
+                                className="w-full py-1.5 px-2 bg-white/5 hover:bg-white/10 rounded text-left text-[11px] theme-text-primary"
+                            >
+                                {ex.name}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {savedWorkflows.length > 0 && (
+                    <div className="border-t theme-border pt-3 mt-2">
+                        <h4 className="text-xs font-semibold text-gray-400 mb-2">Saved</h4>
+                        <div className="flex flex-col gap-1">
+                            {savedWorkflows.map((w) => (
+                                <div key={w.name} className="flex items-center gap-1">
+                                    <button
+                                        onClick={() => {
+                                            setWorkflowNodes(w.nodes || []);
+                                            setWorkflowConnections(w.connections || []);
+                                            setSelectedNodeId(null);
+                                        }}
+                                        className="flex-1 py-1 px-2 bg-white/5 hover:bg-white/10 rounded text-left text-[11px] truncate theme-text-primary"
+                                        title={w.name}
+                                    >
+                                        {w.name}
+                                    </button>
+                                    <button
+                                        onClick={() => setSavedWorkflows(prev => prev.filter(x => x.name !== w.name))}
+                                        className="p-1 text-gray-500 hover:text-red-400"
+                                        title="Delete"
+                                    >
+                                        <X size={10} />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
 
             <div
@@ -2635,8 +2853,39 @@ const renderWorkflow = useCallback(() => {
                     backgroundImage: 'radial-gradient(circle, #374151 1px, transparent 1px)',
                     backgroundSize: '20px 20px'
                 }}
+                onMouseMove={(e) => {
+                    if (!draggingConnection) return;
+                    const rect = workflowCanvasRef.current?.getBoundingClientRect();
+                    if (!rect) return;
+                    setDragMousePos({
+                        x: e.clientX - rect.left + (workflowCanvasRef.current?.scrollLeft || 0),
+                        y: e.clientY - rect.top + (workflowCanvasRef.current?.scrollTop || 0),
+                    });
+                }}
+                onMouseUp={() => {
+                    // Clicked outside an input port — cancel the drag
+                    setDraggingConnection(null);
+                    setDragMousePos(null);
+                }}
             >
                 <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ minWidth: '2000px', minHeight: '2000px' }}>
+                    {draggingConnection && dragMousePos && (() => {
+                        const fromNode = workflowNodes.find(n => n.id === draggingConnection.from);
+                        if (!fromNode) return null;
+                        const fromX = fromNode.x + 180;
+                        const fromY = fromNode.y + 30 + draggingConnection.fromPort * 20;
+                        const cx1 = fromX + 50;
+                        const cx2 = dragMousePos.x - 50;
+                        return (
+                            <path
+                                d={`M ${fromX} ${fromY} C ${cx1} ${fromY}, ${cx2} ${dragMousePos.y}, ${dragMousePos.x} ${dragMousePos.y}`}
+                                stroke="#60a5fa"
+                                strokeWidth="2"
+                                strokeDasharray="6 4"
+                                fill="none"
+                            />
+                        );
+                    })()}
                     {workflowConnections.map(conn => {
                         const fromNode = workflowNodes.find(n => n.id === conn.from);
                         const toNode = workflowNodes.find(n => n.id === conn.to);
@@ -2693,7 +2942,10 @@ const renderWorkflow = useCallback(() => {
                         >
                             <div className={`${config.color} px-3 py-2 rounded-t-md flex items-center gap-2`}>
                                 <span>{config.icon}</span>
-                                <span className="text-white text-sm font-medium flex-1">{config.name}</span>
+                                <span className="text-white text-sm font-medium flex-1 truncate">{config.name}</span>
+                                {node._status === 'running' && <Loader size={12} className="text-white animate-spin" />}
+                                {node._status === 'done' && <Check size={12} className="text-white" />}
+                                {node._status === 'error' && <span className="text-[10px] text-red-200" title={node._statusMsg}>!</span>}
                                 <button
                                     onClick={(e) => { e.stopPropagation(); deleteWorkflowNode(node.id); }}
                                     className="text-white/60 hover:text-white"
@@ -2701,25 +2953,92 @@ const renderWorkflow = useCallback(() => {
                                     <X size={14} />
                                 </button>
                             </div>
+                            {node._statusMsg && node._status !== 'running' && (
+                                <div className="text-[10px] text-gray-400 px-3 py-0.5 truncate bg-gray-900/60" title={node._statusMsg}>
+                                    {node._statusMsg}
+                                </div>
+                            )}
+                            {node._output && (
+                                <div
+                                    className="bg-black/60 border-y theme-border p-1 cursor-zoom-in"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        const p = node._output.startsWith('media://') ? node._output : `media://${node._output}`;
+                                        setWorkflowResult({ path: p, savedTo: node._output });
+                                    }}
+                                    title={`Click to preview\n${node._output}`}
+                                >
+                                    <img
+                                        src={node._output.startsWith('media://') ? node._output : `media://${node._output}`}
+                                        alt="node output"
+                                        className="w-full h-20 object-contain bg-black"
+                                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                    />
+                                </div>
+                            )}
 
                             <div className="bg-gray-800 p-2 rounded-b-md">
                                 {config.inputs.map((input, i) => (
                                     <div key={input} className="flex items-center gap-2 py-1">
-                                        <div className="w-3 h-3 rounded-full bg-yellow-500 border-2 border-gray-700 -ml-4" />
+                                        <div
+                                            className={`w-3 h-3 rounded-full border-2 border-gray-700 -ml-4 ${draggingConnection ? 'bg-green-400 cursor-crosshair' : 'bg-yellow-500'}`}
+                                            onMouseUp={(e) => {
+                                                e.stopPropagation();
+                                                if (draggingConnection && draggingConnection.from !== node.id) {
+                                                    addWorkflowConnection(draggingConnection.from, draggingConnection.fromPort, node.id, i);
+                                                }
+                                                setDraggingConnection(null);
+                                            }}
+                                        />
                                         <span className="text-xs text-gray-400">{input}</span>
                                     </div>
                                 ))}
 
-                                {node.type === 'generate' && (
-                                    <input
-                                        type="text"
-                                        placeholder="Prompt..."
-                                        value={node.params.prompt || ''}
-                                        onChange={(e) => updateWorkflowNode(node.id, { prompt: e.target.value })}
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="w-full text-xs theme-input mt-1 px-2 py-1"
-                                    />
-                                )}
+                                {node.type === 'generate' && (() => {
+                                    const effectiveModel = node.params.model || selectedModel;
+                                    const effectiveProvider = node.params.provider || selectedProvider;
+                                    const willFallback = effectiveProvider === 'diffusers';
+                                    return (
+                                        <>
+                                            <input
+                                                type="text"
+                                                placeholder="Prompt..."
+                                                value={node.params.prompt || ''}
+                                                onChange={(e) => updateWorkflowNode(node.id, { prompt: e.target.value })}
+                                                onClick={(e) => e.stopPropagation()}
+                                                className="w-full text-xs theme-input mt-1 px-2 py-1"
+                                            />
+                                            <div
+                                                className={`mt-1 text-[10px] px-2 py-0.5 rounded truncate ${willFallback ? 'bg-yellow-900/60 text-yellow-300' : 'bg-purple-900/40 text-purple-200'}`}
+                                                title={willFallback ? 'diffusers is broken locally — will fall back to a cloud model' : `${effectiveProvider}/${effectiveModel}`}
+                                            >
+                                                {willFallback ? '⚠ ' : ''}{effectiveProvider}/{(effectiveModel || '').slice(0, 24)}
+                                            </div>
+                                        </>
+                                    );
+                                })()}
+                                {node.type === 'fill' && (() => {
+                                    const effectiveModel = node.params.model || 'gemini-2.5-flash-image';
+                                    const effectiveProvider = node.params.provider || 'gemini';
+                                    return (
+                                        <>
+                                            <input
+                                                type="text"
+                                                placeholder="Fill prompt..."
+                                                value={node.params.prompt || ''}
+                                                onChange={(e) => updateWorkflowNode(node.id, { prompt: e.target.value })}
+                                                onClick={(e) => e.stopPropagation()}
+                                                className="w-full text-xs theme-input mt-1 px-2 py-1"
+                                            />
+                                            <div
+                                                className="mt-1 text-[10px] px-2 py-0.5 rounded truncate bg-indigo-900/40 text-indigo-200"
+                                                title={`${effectiveProvider}/${effectiveModel}`}
+                                            >
+                                                {effectiveProvider}/{effectiveModel.slice(0, 24)}
+                                            </div>
+                                        </>
+                                    );
+                                })()}
                                 {node.type === 'source' && (
                                     <button
                                         onClick={(e) => {
@@ -2781,6 +3100,30 @@ const renderWorkflow = useCallback(() => {
                         </div>
                     </div>
                 )}
+                {workflowResult && (
+                    <div className="absolute bottom-4 right-4 w-80 bg-black/90 border theme-border rounded-lg shadow-xl overflow-hidden z-20">
+                        <div className="flex items-center justify-between px-3 py-2 border-b theme-border">
+                            <span className="text-xs font-semibold text-white">Result</span>
+                            <button onClick={() => setWorkflowResult(null)} className="text-gray-400 hover:text-white">
+                                <X size={14} />
+                            </button>
+                        </div>
+                        <img src={workflowResult.path} alt="workflow result" className="w-full max-h-64 object-contain bg-black" />
+                        {workflowResult.savedTo && (
+                            <div className="px-3 py-1.5 text-[10px] theme-text-muted truncate border-t theme-border" title={workflowResult.savedTo}>
+                                saved to {workflowResult.savedTo}
+                            </div>
+                        )}
+                        <div className="flex border-t theme-border">
+                            <button
+                                onClick={() => { setSelectedImage(workflowResult.path); setActiveTab('editor'); }}
+                                className="flex-1 px-3 py-2 text-xs bg-blue-600 hover:bg-blue-500 text-white"
+                            >
+                                Open in DarkRoom
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             <div className="w-64 border-l theme-border p-3 overflow-y-auto theme-bg-secondary">
@@ -2810,15 +3153,85 @@ const renderWorkflow = useCallback(() => {
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-xs text-gray-400">Model</label>
+                                        <label className="text-xs text-gray-400">Provider</label>
                                         <select
-                                            value={node.params.model || ''}
-                                            onChange={(e) => updateWorkflowNode(node.id, { model: e.target.value })}
+                                            value={node.params.provider || selectedProvider || ''}
+                                            onChange={(e) => {
+                                                const p = e.target.value;
+                                                const first = availableModels.find((m: any) => m.provider === p);
+                                                updateWorkflowNode(node.id, { provider: p, model: first?.value || node.params.model });
+                                            }}
                                             className="w-full theme-input mt-1 text-sm"
                                         >
-                                            {availableModels.map(m => (
-                                                <option key={m.id} value={m.id}>{m.name}</option>
+                                            {[...new Set(availableModels.map((m: any) => m.provider))].map((p: any) => (
+                                                <option key={p} value={p}>{p}</option>
                                             ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-400">Model</label>
+                                        <select
+                                            value={node.params.model || selectedModel || ''}
+                                            onChange={(e) => {
+                                                const v = e.target.value;
+                                                const found = availableModels.find((m: any) => m.value === v);
+                                                updateWorkflowNode(node.id, { model: v, provider: found?.provider || node.params.provider });
+                                            }}
+                                            className="w-full theme-input mt-1 text-sm"
+                                        >
+                                            {availableModels
+                                                .filter((m: any) => !node.params.provider || m.provider === node.params.provider)
+                                                .map((m: any) => (
+                                                    <option key={m.value} value={m.value}>{m.display_name || m.value}</option>
+                                                ))}
+                                        </select>
+                                    </div>
+                                </>
+                            )}
+                            {node.type === 'fill' && (
+                                <>
+                                    <div>
+                                        <label className="text-xs text-gray-400">Prompt</label>
+                                        <textarea
+                                            value={node.params.prompt || ''}
+                                            onChange={(e) => updateWorkflowNode(node.id, { prompt: e.target.value })}
+                                            className="w-full theme-input mt-1 text-sm"
+                                            rows={3}
+                                            placeholder="What to fill in the masked area..."
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-400">Provider</label>
+                                        <select
+                                            value={node.params.provider || 'gemini'}
+                                            onChange={(e) => {
+                                                const p = e.target.value;
+                                                const first = availableModels.find((m: any) => m.provider === p);
+                                                updateWorkflowNode(node.id, { provider: p, model: first?.value || node.params.model });
+                                            }}
+                                            className="w-full theme-input mt-1 text-sm"
+                                        >
+                                            {[...new Set(availableModels.filter((m: any) => m.provider !== 'diffusers').map((m: any) => m.provider))].map((p: any) => (
+                                                <option key={p} value={p}>{p}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-400">Model</label>
+                                        <select
+                                            value={node.params.model || 'gemini-2.5-flash-image'}
+                                            onChange={(e) => {
+                                                const v = e.target.value;
+                                                const found = availableModels.find((m: any) => m.value === v);
+                                                updateWorkflowNode(node.id, { model: v, provider: found?.provider || node.params.provider });
+                                            }}
+                                            className="w-full theme-input mt-1 text-sm"
+                                        >
+                                            {availableModels
+                                                .filter((m: any) => m.provider !== 'diffusers' && (!node.params.provider || m.provider === node.params.provider))
+                                                .map((m: any) => (
+                                                    <option key={m.value} value={m.value}>{m.display_name || m.value}</option>
+                                                ))}
                                         </select>
                                     </div>
                                 </>
@@ -4524,25 +4937,37 @@ const handleCanvasMouseUp = () => {
         setSelection({ type: 'lasso', points: selectionPoints });
     }
 };
-const executeGenerativeFill = async (layerId, prompt) => {
+const executeGenerativeFill = async (sel, prompt, opts?: { model?: string; provider?: string }) => {
+    // The ImageEditor (npcts) component passes its own selection object here
+    // as the first arg — honor that instead of the legacy PhotoViewer-level
+    // `selection` state which is only populated by the old darkroom path.
+    const activeSelection = sel || selection;
     console.log('executeGenerativeFill called with prompt:', prompt);
     console.log('selectedImage:', selectedImage);
-    console.log('selection:', selection);
+    console.log('selection:', activeSelection);
 
-    if (!selectedImage || !selection) {
+    if (!selectedImage || !activeSelection) {
         setError('Need image and selection for generative fill');
         return;
     }
 
     try {
-        const maskData = await createMaskFromSelection(selection);
+        const maskData = await createMaskFromSelection(activeSelection);
         console.log('Mask data created:', maskData ? 'yes' : 'no');
 
         const imagePath = selectedImage.replace('media://', '');
         console.log('Image path:', imagePath);
 
-        const model = selectedModel || 'gemini-2.5-flash-image';
-        const provider = selectedProvider || 'gemini';
+        // Prefer a cloud inpaint model. The local `diffusers` path relies on the
+        // StableDiffusionInpaintPipeline which breaks when the system's diffusers/
+        // peft/transformers versions disagree (HybridCache import error), so
+        // even if the user has a diffusers model selected for general image
+        // generation, route generative fill to Gemini / OpenAI by default.
+        // Prefer the explicit model/provider the user picked in the fill UI;
+        // fall back to the currently-selected generation model, then to a
+        // sane cloud default.
+        const model = opts?.model || selectedModel || 'gemini-2.5-flash-image';
+        const provider = opts?.provider || selectedProvider || 'gemini';
         console.log('Using model:', model, 'provider:', provider);
 
         const response = await window.api.generativeFill({
@@ -4570,14 +4995,33 @@ const executeGenerativeFill = async (layerId, prompt) => {
     }
 };
 
-const createMaskFromSelection = async (sel) => {
-    const canvas = document.createElement('canvas');
-    const img = imageRef.current;
-    if (!img) return null;
+const loadImageDims = (src: string): Promise<{ w: number; h: number }> => {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+        img.onerror = reject;
+        img.src = src;
+    });
+};
 
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
+const createMaskFromSelection = async (sel) => {
+    // Always derive dimensions from the currently-selected image file rather
+    // than PhotoViewer's legacy imageRef (which is null when the npcts
+    // ImageEditor is the renderer).
+    let dims: { w: number; h: number } | null = null;
+    const legacyImg = imageRef.current;
+    if (legacyImg && legacyImg.naturalWidth > 0) {
+        dims = { w: legacyImg.naturalWidth, h: legacyImg.naturalHeight };
+    } else if (selectedImage) {
+        try { dims = await loadImageDims(selectedImage); } catch { dims = null; }
+    }
+    if (!dims) return null;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = dims.w;
+    canvas.height = dims.h;
     const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
 
     ctx.fillStyle = 'black';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -4605,12 +5049,12 @@ const createMaskFromSelection = async (sel) => {
     return canvas.toDataURL('image/png');
 };
 const renderDarkRoom = () => {
-    const handleGenerativeFill = async (sel: any, prompt: string) => {
+    const handleGenerativeFill = async (sel: any, prompt: string, opts?: { model?: string; provider?: string }) => {
         if (!prompt) {
             setError('Need a prompt');
             return;
         }
-        await executeGenerativeFill(sel, prompt);
+        await executeGenerativeFill(sel, prompt, opts);
     };
 
     const getFileParts = () => {
@@ -4665,6 +5109,41 @@ const renderDarkRoom = () => {
         } catch (e) { console.error('Export failed:', e); }
     };
 
+    const handleOpenPhotoFromDisk = async () => {
+        try {
+            const result = await (window as any).api?.showOpenDialog?.({
+                properties: ['openFile'],
+                filters: [
+                    { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'] },
+                    { name: 'All Files', extensions: ['*'] }
+                ]
+            });
+            const picked = Array.isArray(result)
+                ? (result[0]?.path || result[0])
+                : (result?.filePaths?.[0] || result?.filePath || result?.[0]);
+            if (picked) {
+                setSelectedImage(picked.startsWith('media://') || picked.startsWith('file://') ? picked : `media://${picked}`);
+            }
+        } catch (e) {
+            console.error('Open photo failed:', e);
+        }
+    };
+
+    if (!selectedImage) {
+        return (
+            <div className="flex-1 flex items-center justify-center theme-bg-primary">
+                <button
+                    onClick={handleOpenPhotoFromDisk}
+                    className="flex flex-col items-center gap-4 px-10 py-8 rounded-2xl border-2 border-dashed theme-border hover:border-blue-500 hover:bg-blue-500/5 theme-text-primary transition-colors"
+                >
+                    <ImageIcon size={64} className="text-blue-400" />
+                    <span className="text-base font-semibold">Open Photo</span>
+                    <span className="text-xs theme-text-muted">pick an image to edit in the darkroom</span>
+                </button>
+            </div>
+        );
+    }
+
     return (
         <div className="flex-1 flex flex-col overflow-hidden">
             <div className="flex items-center gap-2 px-3 py-1.5 border-b theme-border theme-bg-secondary text-xs">
@@ -4691,6 +5170,9 @@ const renderDarkRoom = () => {
                 showHeader={true}
                 title="DarkRoom"
                 className="flex-1"
+                fillModels={availableModels}
+                defaultFillModel={selectedModel}
+                defaultFillProvider={selectedProvider}
             />
         </div>
     );

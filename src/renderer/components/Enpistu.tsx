@@ -1182,13 +1182,29 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         }
         if (api.api?.onMenuToggleHideUI) {
             cleanups.push(api.api.onMenuToggleHideUI(() => {
-                const anyVisible = !topBarCollapsed || !sidebarCollapsed || !bottomBarCollapsed;
-                const next = anyVisible;
-                setTopBarCollapsed(next);
-                setSidebarCollapsed(next);
-                setBottomBarCollapsed(next);
-                localStorage.setItem('incognide_topBarCollapsed', String(next));
-                localStorage.setItem('incognide_bottomBarCollapsed', String(next));
+                // The callback closure captures state once at registration so
+                // topBarCollapsed/sidebarCollapsed/etc can go stale. Read the
+                // current values via the setters' functional form and flip
+                // every chrome section together.
+                let top = false, side = false, bot = false, right = false;
+                setTopBarCollapsed(prev => { top = prev; return prev; });
+                setSidebarCollapsed(prev => { side = prev; return prev; });
+                setBottomBarCollapsed(prev => { bot = prev; return prev; });
+                setRightSidebarCollapsed(prev => { right = prev; return prev; });
+                // After the reads flush, compute the target and apply.
+                setTimeout(() => {
+                    const anyVisible = !top || !side || !bot || !right;
+                    const next = anyVisible;
+                    setTopBarCollapsed(next);
+                    setSidebarCollapsed(next);
+                    setBottomBarCollapsed(next);
+                    setRightSidebarCollapsed(next);
+                    try {
+                        localStorage.setItem('incognide_topBarCollapsed', String(next));
+                        localStorage.setItem('incognide_bottomBarCollapsed', String(next));
+                        localStorage.setItem('incognide_rightSidebarCollapsed', String(next));
+                    } catch {}
+                }, 0);
             }));
         }
 
