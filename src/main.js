@@ -2167,6 +2167,28 @@ function createWindow(cliArgs = {}) {
             }
           },
           { type: 'separator' },
+          {
+            label: 'Focused Pane Actual Size',
+            accelerator: 'CmdOrCtrl+Shift+0',
+            click: (_, focusedWindow) => {
+              if (focusedWindow) focusedWindow.webContents.send('pane-zoom-reset');
+            }
+          },
+          {
+            label: 'Focused Pane Zoom In',
+            accelerator: 'CmdOrCtrl+Shift+=',
+            click: (_, focusedWindow) => {
+              if (focusedWindow) focusedWindow.webContents.send('pane-zoom-in');
+            }
+          },
+          {
+            label: 'Focused Pane Zoom Out',
+            accelerator: 'CmdOrCtrl+Shift+-',
+            click: (_, focusedWindow) => {
+              if (focusedWindow) focusedWindow.webContents.send('pane-zoom-out');
+            }
+          },
+          { type: 'separator' },
           { role: 'togglefullscreen' }
         ]
       },
