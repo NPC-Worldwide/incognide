@@ -1,6 +1,6 @@
 {
   "name": "incognide",
-  "version": "0.1.27",
+  "version": "0.1.28",
   "description": "Explore the unknown, build the future, own your data.",
   "author": "Chris Agostino <info@npcworldwi.de>",
   "main": "src/main.js",
