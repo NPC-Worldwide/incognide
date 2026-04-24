@@ -995,6 +995,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                         modelDef.backendModel,
                                         genDuration,
                                         currentPath || undefined,
+                                        { workspacePath: currentPath || undefined },
                                     );
                                     if (!resp?.success) throw new Error(resp?.error || 'music gen failed');
                                     audioB64 = resp.audio;

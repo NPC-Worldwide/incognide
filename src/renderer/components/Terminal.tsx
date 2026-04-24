@@ -798,9 +798,9 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                     if (activeContentPaneId === nodeId) {
                         xtermInstance.current.focus();
                     }
-                    // Send Enter to trigger a fresh prompt (in case
-                    // the initial prompt was lost during strict mode re-mount)
-                    window.api.writeToTerminal({ id: terminalId, data: '\r' });
+                    if (!result.reused) {
+                        window.api.writeToTerminal({ id: terminalId, data: '\r' });
+                    }
 
                     const hasBeenPrompted = localStorage.getItem(SHELL_PROMPT_KEY);
                     if (!hasBeenPrompted && result.shell === 'system') {
@@ -849,7 +849,6 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             }
             pasteContainer?.removeEventListener('paste', handleImagePaste, true);
 
-            // Save terminal buffer so history survives moves/de-tabs
             if (xtermInstance.current) {
                 const buf = xtermInstance.current.buffer.active;
                 const lines: string[] = [];
@@ -857,17 +856,15 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                     const line = buf.getLine(i);
                     if (line) lines.push(line.translateToString(true));
                 }
-                // Store on the pane data (may be same pane or a new one after de-tab)
                 const pd = contentDataRef.current[nodeId];
                 if (pd) pd._terminalBuffer = lines.join('\n');
-                // Also store by terminalId for tab scenarios
                 if (terminalId) {
                     (window as any).__terminalBuffers = (window as any).__terminalBuffers || {};
                     (window as any).__terminalBuffers[terminalId] = lines.join('\n');
                 }
+                xtermInstance.current.dispose();
+                xtermInstance.current = null;
             }
-
-            window.api.closeTerminalSession(terminalId);
         };
     }, [terminalId, shellType]);
 

@@ -206,7 +206,8 @@ const NPCTeamMenu = ({
                 loraAlpha: 16,
                 systemPrompt: fineTuneConfig.systemPrompt || selectedNpc.primary_directive,
                 npc: selectedNpc.name,
-                formatStyle: 'gemma'
+                formatStyle: 'gemma',
+                workspacePath: currentPath,
             });
 
             console.log('Fine-tune response:', response);
@@ -214,9 +215,9 @@ const NPCTeamMenu = ({
             if (response?.error) {
                 setFineTuneStatus(`Error: ${response.error}`);
                 setIsFineTuning(false);
-            } else if (response?.jobId) {
-                setFineTuneStatus(`Training started! Job: ${response.jobId}`);
-                pollNpcFineTuneStatus(response.jobId);
+            } else if (response?.job_id) {
+                setFineTuneStatus(`Training started! Job: ${response.job_id}`);
+                pollNpcFineTuneStatus(response.job_id);
             }
         } catch (err) {
             console.error('Fine-tune error:', err);

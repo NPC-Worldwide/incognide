@@ -42,14 +42,88 @@ Updated version coming soon....
 
 ---
 
-## Quick Start
+## Setup
 
-1. **Download** the installer for your platform from [enpisi.com/incognide](https://enpisi.com/incognide)
-2. **Run** the installer and launch Incognide
-3. **Configure** your models:
-   - **Local models**: Install [Ollama](https://ollama.ai), [LM Studio](https://lmstudio.ai), or run a [llama.cpp server](https://github.com/ggerganov/llama.cpp)
-   - **Cloud providers**: Add API keys in Settings for OpenAI, Anthropic, Gemini, etc.
-4. **Start working** - select a model and begin a conversation or open files
+### 1. Install
+
+Download the installer for your platform from [enpisi.com/incognide](https://enpisi.com/incognide), run it, and launch Incognide. Linux, macOS, and Windows are supported.
+
+### 2. First launch — setup wizard
+
+On first launch the wizard walks you through five steps:
+
+1. **Welcome** — intro screen.
+2. **Preferences** — theme (dark/light) and the data directory for teams, models, and configs (default `~/.npcsh/incognide`).
+3. **Defaults** — default web search engine, default terminal shell (auto-detected per platform: `system`/`zsh`/`bash` on mac/linux, `powershell` on Windows), and activity tracking opt-in (local only, used for next-action predictions).
+4. **Usage path** — pick one of:
+   - **No AI** — workspace only (files, code, browsers, terminals, docs, maps). No model calls.
+   - **Cloud AI** — OpenAI / Anthropic / Gemini / etc. via API keys.
+   - **Local AI** — Ollama / LM Studio / llama.cpp / oMLX running on your machine.
+5. **Cloud keys** (cloud-ai path) or **Local models** (local-ai path). See step 3 below for details.
+
+The wizard writes preferences to `localStorage` (theme, fonts, shortcuts, UI defaults) and shell/provider settings to `~/.npcshrc` (read by `npcsh`).
+
+### 3. Connect a model provider
+
+#### Local providers
+
+The setup wizard (Local Models step) and the in-app Model Manager both probe these endpoints and binary locations:
+
+| Provider    | Server port | Binary / app checks                                        |
+|-------------|-------------|------------------------------------------------------------|
+| Ollama      | 11434       | `ollama` in PATH; `/Applications/Ollama.app` on macOS      |
+| LM Studio   | 1234        | `lms` in PATH; `/Applications/LM Studio.app` on macOS      |
+| llama.cpp   | 8080        | `llama-server`, `llama-cli`, or `koboldcpp` in PATH        |
+| oMLX        | 8000        | `omlx` in PATH; `/Applications/oMLX.app` (macOS only)      |
+
+Each tile shows one of three states: **Running** (server responds), **Installed (not running)** (binary or app found but port is dead), or **Not found**. The Model Manager has Start/Stop buttons when the binary is installed:
+
+- Ollama: `open -a Ollama` (macOS) or `ollama serve` (Linux). Stop via `pkill -f 'ollama serve'` (or kill from the Windows system tray).
+- LM Studio: `lms server start` / `lms server stop` if the `lms` CLI is present; otherwise the app launches and you start the server from the Developer tab.
+- llama.cpp: requires a model path to start, so Incognide prints the exact command (`llama-server -m <model.gguf> --port 8080`) for you to run in a terminal. Stop via `pkill -f llama-server`.
+- oMLX: `open -a oMLX` launches the menu-bar app; stop/start the server from its menu-bar icon.
+
+GGUF / GGML model files can be loaded directly without a server, but only if **llama.cpp or koboldcpp is installed** — the Model Manager's GGUF tab depends on that engine and shows "Not found" otherwise.
+
+#### Cloud providers
+
+Add API keys on the **Cloud keys** step of the wizard, or later in **Settings → Global Settings** or **Team Management → API keys**. Keys are stored in `~/.npcshrc` as `export <PROVIDER>_API_KEY=...` and are read by `npcsh` and by the in-app provider clients.
+
+### 4. Local setup for image generation, audio generation, and fine-tuning
+
+**Cloud providers (OpenAI, Anthropic, Gemini, etc.) and Ollama go through the bundled npcpy backend** — no extra setup required beyond API keys.
+
+**Local inference and fine-tuning (diffusers, torch, custom fine-tuned models) need a Python venv you control**, with the heavy packages (`diffusers`, `torch`, `transformers`, `accelerate`, `openai-whisper`, etc.). Incognide shells out to that venv instead of embedding these dependencies in the bundled backend, so you can pick the torch build that matches your hardware.
+
+Setup happens in **Team Management → Python Env**:
+
+1. Open **Team Management** (Users icon in the right sidebar or the settings screen).
+2. Go to the **Python Env** tab.
+3. Choose an environment for the current workspace:
+   - **Detected**: list of venvs/pyenv/conda/uv environments found under the workspace, homedir, and common paths.
+   - **Create new venv**: creates `<workspace>/.venv` (or the name you pick) with the system Python.
+   - **Custom path**: point at any existing Python interpreter.
+4. With an environment selected, click **Install packages** and pick one of the bundles:
+   - `PyTorch (CPU)` — `torch torchvision torchaudio`
+   - `PyTorch (CUDA)` — same plus the CUDA index URL for GPU builds
+   - `Diffusers (Image Gen)` — `diffusers transformers accelerate safetensors`
+   - `Transformers (LLM)` — `transformers accelerate safetensors sentencepiece`
+   - `Whisper (Speech)` — `openai-whisper`
+
+   Or install any specific package by name.
+
+Vixynt routes image generation through the workspace's configured interpreter only when `provider === 'diffusers'` or a custom fine-tuned model path is specified; API providers (OpenAI, Anthropic, Gemini, Ollama) continue to go through the bundled backend.
+
+### 5. Data directory
+
+Incognide stores teams, NPCs, jinxes, memories, knowledge graphs, and model configs under the data directory you picked in step 2 (default `~/.npcsh/incognide`). Changing it in **Settings → Global Settings → Default Directory** updates `~/.npcshrc`'s `NPCSH_DATA_DIRECTORY`.
+
+### 6. Troubleshooting
+
+- **`No matching distribution found for npcpy[local]`** during any Python install step — upgrade pip first: `~/.npcsh/incognide/venv/bin/python -m pip install --upgrade pip`, then retry. Old pip (<23) doesn't resolve modern extras syntax reliably.
+- **Local model tile says "Not found" but you know it's installed** — restart Incognide. Detection runs in the Electron main process, which on macOS uses a stripped PATH that often excludes `/opt/homebrew/bin` and `/usr/local/bin`. The detector also checks those paths directly, but only at main-process startup.
+- **Backend unhealthy indicator in the status bar** — right-click the `npcpy` icon in the status bar for Restart / View Logs. Logs live in `~/Library/Logs/Incognide/` (macOS), `~/.config/Incognide/logs/` (Linux), or `%APPDATA%\Incognide\logs\` (Windows).
+- **Tutorial didn't highlight anything** — the tutorial opens the Help pane before it starts so the workspace highlight has a target. If it runs before any pane is open you'll see an un-highlighted step; re-run it from **Settings → Replay Tutorial**.
 
 ---
 
@@ -65,7 +139,7 @@ Updated version coming soon....
 - [Focus & Productivity](#focus--productivity)
 - [Settings & Customization](#settings--customization)
 - [Keyboard Shortcuts](#keyboard-shortcuts)
-- [Installation](#installation)
+- [Setup](#setup)
 - [Development Setup](#development-setup)
 - [Community](#community)
 - [License](#license)
@@ -479,13 +553,6 @@ Configure Python environments per project:
 View and customize keyboard shortcuts:
 
 ![keyboard shortcuts](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/keyboard_shortcuts.png)
-
-
----
-
-## Installation
-
-Pre-built executables are available for **Linux**, **macOS**, and **Windows** at [enpisi.com/incognide](https://enpisi.com/incognide).
 
 
 ---

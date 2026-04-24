@@ -78,6 +78,11 @@ export const useActivityTracker = () => {
             sessionId: sessionIdRef.current
         };
 
+        const enabledPref = localStorage.getItem('incognide_activityTrackingEnabled');
+        if (enabledPref === 'false') {
+            return activity;
+        }
+
         try {
             await (window as any).api?.logActivity?.({
                 type: activity.type,

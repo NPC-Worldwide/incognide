@@ -41,12 +41,30 @@ const defaultSettings = {
     theme_dark_bg: '#0f172a',
     theme_dark_text: '#f1f5f9',
     theme_light_primary: '#ec4899',
-    theme_light_bg: '#8ecfb8',
+    theme_light_bg: '#e4f1ea',
     theme_light_text: '#1e293b',
     theme_hue_shift: 0,
     theme_saturation: 100,
     theme_brightness: 100,
+    app_font_family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+    app_font_size: 14,
 };
+
+const APP_FONT_OPTIONS: { value: string; label: string }[] = [
+    { value: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif', label: 'System default' },
+    { value: 'system-ui, sans-serif', label: 'system-ui' },
+    { value: '"Helvetica Neue", Helvetica, Arial, sans-serif', label: 'Helvetica' },
+    { value: 'Arial, sans-serif', label: 'Arial' },
+    { value: 'Verdana, Geneva, sans-serif', label: 'Verdana' },
+    { value: 'Tahoma, Geneva, sans-serif', label: 'Tahoma' },
+    { value: '"Trebuchet MS", sans-serif', label: 'Trebuchet MS' },
+    { value: 'Georgia, "Times New Roman", serif', label: 'Georgia' },
+    { value: '"Times New Roman", Times, serif', label: 'Times New Roman' },
+    { value: '"Spectral", Georgia, serif', label: 'Spectral' },
+    { value: '"Fira Code", Menlo, Monaco, Consolas, monospace', label: 'Fira Code' },
+    { value: 'Menlo, Monaco, Consolas, monospace', label: 'Menlo / Monaco' },
+    { value: 'Consolas, "Courier New", monospace', label: 'Consolas' },
+];
 
 
 const PermissionsManager = () => {
@@ -256,7 +274,33 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
     const loadGlobalSettings = async () => {
         const data = await window.api.loadGlobalSettings();
         if (data.error) return;
-        setGlobalSettings({ ...defaultSettings, ...(data.global_settings || {}) });
+        const fromLocalStorage: Record<string, any> = {};
+        const lsKeys: Record<string, string> = {
+            theme_dark_primary: 'incognide_themeDarkPrimary',
+            theme_dark_bg: 'incognide_themeDarkBg',
+            theme_dark_text: 'incognide_themeDarkText',
+            theme_light_primary: 'incognide_themeLightPrimary',
+            theme_light_bg: 'incognide_themeLightBg',
+            theme_light_text: 'incognide_themeLightText',
+            theme_hue_shift: 'incognide_themeHueShift',
+            theme_saturation: 'incognide_themeSaturation',
+            theme_brightness: 'incognide_themeBrightness',
+            app_font_family: 'incognide_appFontFamily',
+            app_font_size: 'incognide_appFontSize',
+            default_new_pane_type: 'incognide_defaultNewPaneType',
+            default_new_terminal_type: 'incognide_defaultNewTerminalType',
+            default_new_document_type: 'incognide_defaultNewDocumentType',
+        };
+        const numericKeys = new Set(['theme_hue_shift', 'theme_saturation', 'theme_brightness', 'app_font_size']);
+        for (const [settingKey, lsKey] of Object.entries(lsKeys)) {
+            const v = localStorage.getItem(lsKey);
+            if (v !== null) fromLocalStorage[settingKey] = numericKeys.has(settingKey) ? Number(v) : v;
+        }
+        try {
+            const raw = localStorage.getItem('incognide_keyboardShortcuts');
+            if (raw) fromLocalStorage.keyboard_shortcuts = JSON.parse(raw);
+        } catch {}
+        setGlobalSettings({ ...defaultSettings, ...(data.global_settings || {}), ...fromLocalStorage });
     };
 
     useEffect(() => {
@@ -266,9 +310,28 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
     }, [isOpen]);
 
     const handleSave = async () => {
-        await window.api.saveGlobalSettings({
-            global_settings: globalSettings,
-        });
+        const UI_ONLY_KEYS = new Set([
+            'default_new_pane_type',
+            'default_new_terminal_type',
+            'default_new_document_type',
+            'theme_dark_primary',
+            'theme_dark_bg',
+            'theme_dark_text',
+            'theme_light_primary',
+            'theme_light_bg',
+            'theme_light_text',
+            'theme_hue_shift',
+            'theme_saturation',
+            'theme_brightness',
+            'app_font_family',
+            'app_font_size',
+            'keyboard_shortcuts',
+        ]);
+        const backendSettings: Record<string, any> = {};
+        for (const [k, v] of Object.entries(globalSettings)) {
+            if (!UI_ONLY_KEYS.has(k)) backendSettings[k] = v;
+        }
+        await window.api.saveGlobalSettings({ global_settings: backendSettings });
 
         if (globalSettings.default_new_pane_type) {
             localStorage.setItem('incognide_defaultNewPaneType', globalSettings.default_new_pane_type);
@@ -316,6 +379,19 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
         document.documentElement.style.setProperty('--theme-saturation', `${globalSettings.theme_saturation ?? 100}%`);
         document.documentElement.style.setProperty('--theme-brightness', `${globalSettings.theme_brightness ?? 100}%`);
 
+        if (globalSettings.app_font_family) {
+            localStorage.setItem('incognide_appFontFamily', globalSettings.app_font_family);
+            document.documentElement.style.setProperty('--app-font-family', globalSettings.app_font_family);
+        }
+        if (globalSettings.app_font_size) {
+            localStorage.setItem('incognide_appFontSize', String(globalSettings.app_font_size));
+            document.documentElement.style.setProperty('--app-font-size', `${globalSettings.app_font_size}px`);
+        }
+
+        if (globalSettings.keyboard_shortcuts) {
+            localStorage.setItem('incognide_keyboardShortcuts', JSON.stringify(globalSettings.keyboard_shortcuts));
+        }
+
         onClose();
     };
 
@@ -351,13 +427,9 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                 {activeTab === 'global' && (
                     <>
                         <button
-                            onClick={async () => {
-                                try {
-                                    await (window as any).api?.profileSave?.({ tutorialComplete: false });
-                                    window.location.reload();
-                                } catch (err) {
-                                    console.error('Error resetting tutorial:', err);
-                                }
+                            onClick={() => {
+                                if (onClose) onClose();
+                                window.dispatchEvent(new CustomEvent('replay-tutorial'));
                             }}
                             className="w-full text-left px-3 py-2 text-sm border border-gray-700 rounded-lg hover:bg-gray-700/50 text-gray-300 transition-colors"
                         >
@@ -496,7 +568,7 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                                 <span className="text-xs text-gray-400">Primary</span>
                             </div>
                             <div className="flex items-center gap-2">
-                                <input type="color" value={globalSettings.theme_light_bg || '#8ecfb8'} onChange={(e) => { setGlobalSettings({...globalSettings, theme_light_bg: e.target.value}); document.documentElement.style.setProperty('--theme-bg-light', e.target.value); }} className="w-8 h-6 rounded cursor-pointer" />
+                                <input type="color" value={globalSettings.theme_light_bg || '#e4f1ea'} onChange={(e) => { setGlobalSettings({...globalSettings, theme_light_bg: e.target.value}); document.documentElement.style.setProperty('--theme-bg-light', e.target.value); }} className="w-8 h-6 rounded cursor-pointer" />
                                 <span className="text-xs text-gray-400">Background</span>
                             </div>
                             <div className="flex items-center gap-2">
@@ -505,11 +577,49 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                             </div>
                         </div>
 
+                        <div className="text-xs text-gray-400 font-medium">Font</div>
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="text-xs text-gray-400 mb-1 block">Family</label>
+                                <select
+                                    value={globalSettings.app_font_family || APP_FONT_OPTIONS[0].value}
+                                    onChange={(e) => {
+                                        setGlobalSettings({ ...globalSettings, app_font_family: e.target.value });
+                                        document.documentElement.style.setProperty('--app-font-family', e.target.value);
+                                    }}
+                                    className="w-full text-xs theme-bg-tertiary theme-border border rounded px-2 py-1 theme-text-primary"
+                                >
+                                    {APP_FONT_OPTIONS.map(f => (
+                                        <option key={f.value} value={f.value}>{f.label}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs text-gray-400 mb-1 block">Size</label>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="range"
+                                        min="10"
+                                        max="22"
+                                        value={globalSettings.app_font_size || 14}
+                                        onChange={(e) => {
+                                            const val = parseInt(e.target.value);
+                                            setGlobalSettings({ ...globalSettings, app_font_size: val });
+                                            document.documentElement.style.setProperty('--app-font-size', `${val}px`);
+                                        }}
+                                        className="flex-1"
+                                    />
+                                    <span className="text-xs text-gray-400 w-10 text-right">{globalSettings.app_font_size || 14}px</span>
+                                </div>
+                            </div>
+                        </div>
+
                         <button onClick={() => {
-                            setGlobalSettings({...globalSettings, theme_dark_primary: '#3b82f6', theme_dark_bg: '#0f172a', theme_dark_text: '#f1f5f9', theme_light_primary: '#ec4899', theme_light_bg: '#8ecfb8', theme_light_text: '#1e293b', theme_hue_shift: 0, theme_saturation: 100, theme_brightness: 100});
+                            setGlobalSettings({...globalSettings, theme_dark_primary: '#3b82f6', theme_dark_bg: '#0f172a', theme_dark_text: '#f1f5f9', theme_light_primary: '#ec4899', theme_light_bg: '#e4f1ea', theme_light_text: '#1e293b', theme_hue_shift: 0, theme_saturation: 100, theme_brightness: 100, app_font_family: defaultSettings.app_font_family, app_font_size: 14});
                             document.documentElement.style.setProperty('--theme-primary-dark', '#3b82f6'); document.documentElement.style.setProperty('--theme-bg-dark', '#0f172a'); document.documentElement.style.setProperty('--theme-text-dark', '#f1f5f9');
-                            document.documentElement.style.setProperty('--theme-primary-light', '#ec4899'); document.documentElement.style.setProperty('--theme-bg-light', '#8ecfb8'); document.documentElement.style.setProperty('--theme-text-light', '#1e293b');
+                            document.documentElement.style.setProperty('--theme-primary-light', '#ec4899'); document.documentElement.style.setProperty('--theme-bg-light', '#e4f1ea'); document.documentElement.style.setProperty('--theme-text-light', '#1e293b');
                             document.documentElement.style.setProperty('--theme-hue-shift', '0deg'); document.documentElement.style.setProperty('--theme-saturation', '100%'); document.documentElement.style.setProperty('--theme-brightness', '100%');
+                            document.documentElement.style.setProperty('--app-font-family', defaultSettings.app_font_family); document.documentElement.style.setProperty('--app-font-size', '14px');
                         }} className="text-xs text-gray-400 hover:text-white">Reset to defaults</button>
                     </div>
                 )}

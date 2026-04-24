@@ -1012,6 +1012,11 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                     }
                 }
 
+                const closingTab = tabs[index];
+                if (closingTab?.contentType === 'terminal' && closingTab.contentId) {
+                    (window as any).api?.closeTerminalSession?.(closingTab.contentId);
+                }
+
                 const newTabs = [...tabs];
                 newTabs.splice(index, 1);
 

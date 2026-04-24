@@ -252,9 +252,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 style={{ backgroundColor: isResizing ? '#3b82f6' : 'transparent' }}
             />
 
-            {/* Top action bar — New Chat / New Agent / Team / Refresh / Collapse */}
             <div className="flex items-center border-b theme-border">
                 <button
+                    data-tutorial="new-chat-button"
                     onClick={() => createNewConversation?.()}
                     className="flex-1 flex items-center justify-center py-2 hover:bg-green-500/20 text-green-300 border-r theme-border"
                     title="New Chat"
@@ -262,6 +262,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     <MessageSquare size={14} />
                 </button>
                 <button
+                    data-tutorial="new-agent-button"
                     onClick={() => createNewConversation?.({ contentType: 'agent' })}
                     className="flex-1 flex items-center justify-center py-2 hover:bg-amber-500/20 text-amber-300 border-r theme-border"
                     title="New Agent"
@@ -273,7 +274,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     className="flex-1 flex items-center justify-center py-2 hover:bg-indigo-500/20 text-indigo-300 border-r theme-border"
                     title="Team Management"
                 >
-                    <Users size={14} />
+                    <span data-tutorial="team-management-button" className="flex items-center justify-center">
+                        <Users size={14} />
+                    </span>
                 </button>
                 <button
                     onClick={() => refreshConversations?.()}
@@ -291,7 +294,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 </button>
             </div>
 
-            {/* Conversations section */}
+            <div data-tutorial="conversations" className="flex flex-col min-h-0" style={{ flex: convosCollapsed ? '0 0 auto' : 2, overflow: 'hidden' }}>
             <SectionHeader
                 label="Conversations"
                 color="green"
@@ -300,7 +303,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 onToggle={() => setConvosCollapsed(!convosCollapsed)}
             />
             {!convosCollapsed && (
-                <div className="flex flex-col min-h-0 border-b theme-border" style={{ flex: 2, overflow: 'hidden' }}>
+                <div className="flex flex-col min-h-0 border-b theme-border" style={{ flex: 1, overflow: 'hidden' }}>
                     <div className="px-2 py-1.5 border-b theme-border flex-shrink-0">
                         <div className="relative">
                             <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 theme-text-muted" />
@@ -365,8 +368,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     </div>
                 </div>
             )}
+            </div>
 
-            {/* NPCs section */}
+            <div data-tutorial="npcs-section" className="flex flex-col min-h-0" style={{ flex: npcsCollapsed ? '0 0 auto' : 1, overflow: 'hidden' }}>
             <SectionHeader
                 label="Personas"
                 color="indigo"
@@ -556,8 +560,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     </div>
                 </div>
             )}
+            </div>
 
-            {/* Jinxes & Skills section */}
+            <div data-tutorial="jinxes-section" className="flex flex-col min-h-0" style={{ flex: jinxesCollapsed ? '0 0 auto' : 1, overflow: 'hidden' }}>
             <SectionHeader
                 label="Jinxes & Skills"
                 color="amber"
@@ -621,6 +626,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     </div>
                 </div>
             )}
+            </div>
 
         </div>
     );

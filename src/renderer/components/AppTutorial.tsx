@@ -16,7 +16,7 @@ const TUTORIAL_STEPS: TutorialStep[] = [
     {
         selector: '[data-tutorial="sidebar"]',
         title: 'Sidebar',
-        description: 'Your command center. Files, websites, and conversations all live here. Sections are draggable — reorder them how you like.',
+        description: 'Your command center. Files, websites, and git all live here. Sections are draggable — reorder them how you like.',
         paths: ['no-ai', 'cloud-ai', 'local-ai'],
         position: 'right',
     },
@@ -51,7 +51,7 @@ const TUTORIAL_STEPS: TutorialStep[] = [
     {
         selector: '[data-tutorial="document-button"]',
         title: 'Documents',
-        description: 'Create Word, Excel, PowerPoint, and mind map documents. Edit them directly in the app with full formatting support.',
+        description: 'Create Word, Excel, and PowerPoint documents. Edit them directly in the app with full formatting support.',
         paths: ['no-ai', 'cloud-ai', 'local-ai'],
         position: 'bottom',
     },
@@ -77,16 +77,9 @@ const TUTORIAL_STEPS: TutorialStep[] = [
         position: 'right',
     },
     {
-        selector: '[data-tutorial="browser-section"]',
-        title: 'Web Browser',
-        description: 'Built-in web browser with tab management. Browse the web, save bookmarks, and view sites side-by-side with your code.',
-        paths: ['no-ai', 'cloud-ai', 'local-ai'],
-        position: 'right',
-    },
-    {
         selector: '[data-tutorial="search-bar"]',
         title: 'Local Search',
-        description: 'Search your project files and conversation history. Hit Enter to open a dedicated search pane with results across your workspace.',
+        description: 'Search your files, conversations, memories, and knowledge graph.',
         paths: ['no-ai', 'cloud-ai', 'local-ai'],
         position: 'bottom',
     },
@@ -100,14 +93,14 @@ const TUTORIAL_STEPS: TutorialStep[] = [
     {
         selector: '[data-tutorial="vixynt-button"]',
         title: 'Vixynt — Image Studio',
-        description: 'Generate images from text prompts, edit photos with AI-powered tools, apply generative fill, and manage your image library.',
+        description: 'Generate images from text prompts, edit photos, apply generative fill, and manage your image library.',
         paths: ['cloud-ai', 'local-ai'],
         position: 'bottom',
     },
     {
         selector: '[data-tutorial="scherzo-button"]',
         title: 'Scherzo — Audio Studio',
-        description: 'Multi-track audio editor with waveform visualization. Record, trim, mix clips, and generate audio with AI.',
+        description: 'Multi-track audio editor with waveform visualization. Record, trim, and mix clips; DJ mixer, beat maker, and MusicXML import/export.',
         paths: ['cloud-ai', 'local-ai'],
         position: 'bottom',
     },
@@ -119,23 +112,9 @@ const TUTORIAL_STEPS: TutorialStep[] = [
         position: 'bottom',
     },
     {
-        selector: '[data-tutorial="radio-button"]',
-        title: 'Radio',
-        description: 'Ham radio operations pane. Repeater search via RepeaterBook, APRS tracking, live HF propagation data, QSO logging with ADIF export, serial port connection for CAT/TNC/Meshtastic, and digital mode references.',
-        paths: ['no-ai', 'cloud-ai', 'local-ai'],
-        position: 'bottom',
-    },
-    {
-        selector: '[data-tutorial="conversations"]',
-        title: 'Chat with AI Agents',
-        description: 'Chat with any model from any provider. Default mode is Agent with MCP tools connected — your agents can open panes, browse the web, and control the workspace. Send messages even while the agent is working.',
-        paths: ['cloud-ai', 'local-ai'],
-        position: 'right',
-    },
-    {
         selector: '[data-tutorial="settings-button"]',
         title: 'Settings',
-        description: 'Configure everything — theme, models, providers, voice/TTS, keybindings, global variables, and app mode. Re-run this tutorial or the setup wizard from here.',
+        description: 'Global preferences, theme, keyboard shortcuts, and permissions. Also where you re-run this tutorial or the setup wizard.',
         paths: ['no-ai', 'cloud-ai', 'local-ai'],
         position: 'right',
     },
@@ -147,24 +126,129 @@ const TUTORIAL_STEPS: TutorialStep[] = [
         position: 'right',
     },
     {
-        selector: '[data-tutorial="npc-team-button"]',
-        title: 'NPCs',
-        description: 'Your AI agents — each NPC has a personality, model, and specialized jinxes (tools). Ledbi is your default UI assistant. Add, edit, or remove NPCs to build your ideal team.',
+        selector: '[data-tutorial="new-chat-button"]',
+        title: 'New Chat',
+        description: 'Start a plain conversation with a model — no tools, just back-and-forth messages.',
         paths: ['cloud-ai', 'local-ai'],
-        position: 'top',
+        position: 'left',
     },
     {
-        selector: '[data-tutorial="jinxes-button"]',
-        title: 'Jinxes',
-        description: 'Jinxes are tools your NPCs can use — function calls, API integrations, UI actions, and custom scripts. Browse, create, and assign jinxes to NPCs from here.',
+        selector: '[data-tutorial="new-agent-button"]',
+        title: 'New Agent',
+        description: 'Start an agent run with MCP tools connected. Agents can open panes, browse the web, and control the workspace.',
         paths: ['cloud-ai', 'local-ai'],
-        position: 'top',
+        position: 'left',
+    },
+    {
+        selector: '[data-tutorial="conversations"]',
+        title: 'Conversations',
+        description: 'Your past chats and agent runs. Group by time, NPC, or model; search and filter to find what you need.',
+        paths: ['cloud-ai', 'local-ai'],
+        position: 'left',
+    },
+    {
+        selector: '[data-tutorial="npcs-section"]',
+        title: 'Personas',
+        description: 'Your NPCs grouped by team. Click to set the active persona, or use the buttons to start a chat or agent run with that NPC directly.',
+        paths: ['cloud-ai', 'local-ai'],
+        position: 'left',
+    },
+    {
+        selector: '[data-tutorial="jinxes-section"]',
+        title: 'Jinxes & Skills',
+        description: 'Jinxes are the tools your NPCs can call — function calls, integrations, UI actions. Skills are higher-level capability packages. Browse, search, and inspect them here.',
+        paths: ['cloud-ai', 'local-ai'],
+        position: 'left',
     },
     {
         selector: '[data-tutorial="team-management-button"]',
-        title: 'Team Context',
-        description: 'Configure your team\'s shared context — the forenpc, project description, databases, MCP servers, and custom key-value pairs.',
+        title: 'Team Management',
+        description: 'Open the full team editor — configure NPCs, jinxes, skills, MCP servers, databases, and shared team context.',
         paths: ['cloud-ai', 'local-ai'],
+        position: 'left',
+    },
+    {
+        selector: '[data-tutorial="window-manager-button"]',
+        title: 'Window Manager',
+        description: 'See and switch between all open Incognide windows across your desktop.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'top',
+    },
+    {
+        selector: '[data-tutorial="theme-toggle-button"]',
+        title: 'Light / Dark Mode',
+        description: 'Toggle between light and dark themes. Fine-tune colors, hue, saturation, and brightness in Settings → Theme.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'top',
+    },
+    {
+        selector: '[data-tutorial="account-button"]',
+        title: 'Account',
+        description: 'Sign in, manage your profile and subscription, set up end-to-end encryption, and control cross-device sync.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'top',
+    },
+    {
+        selector: '[data-tutorial="new-window-button"]',
+        title: 'New Window',
+        description: 'Open another Incognide window — useful for working on multiple projects side-by-side. Shortcut: Cmd/Ctrl+Shift+N.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'top',
+    },
+    {
+        selector: '[data-tutorial="db-tool-button"]',
+        title: 'Database Tool',
+        description: 'Browse SQLite, Postgres, and other databases. Run queries, inspect schemas, and view results.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'top',
+    },
+    {
+        selector: '[data-tutorial="downloads-button"]',
+        title: 'Downloads',
+        description: 'Track files downloaded from the built-in browser and other tools.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'top',
+    },
+    {
+        selector: '[data-tutorial="data-dash-button"]',
+        title: 'Data Dashboard',
+        description: 'Aggregate views across your databases, conversations, and memories — charts and summaries of your data.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'top',
+    },
+    {
+        selector: '[data-tutorial="disk-usage-button"]',
+        title: 'Disk Usage',
+        description: 'Drill into disk usage for the current folder — find what is taking up space.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'top',
+    },
+    {
+        selector: '[data-tutorial="pane-indicators"]',
+        title: 'Open Panes',
+        description: 'Icons for every open pane. Click to bring that pane into focus.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'top',
+    },
+    {
+        selector: '[data-tutorial="backend-status"]',
+        title: 'Python Backend',
+        description: 'Status of the local npcpy backend server. Click to open the backend panel; right-click to restart or view logs.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'top',
+    },
+    {
+        selector: '[data-tutorial="pane-tab-toggle"]',
+        title: 'Panes vs Tabs',
+        description: 'Switch between pane mode (everything is a split) and tab mode (new content opens as tabs in the active pane).',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'top',
+    },
+    {
+        selector: '[data-tutorial="update-button"]',
+        title: 'Auto-Update',
+        description: 'Checks for new Incognide versions. Click to download and install when an update is available.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
         position: 'top',
     },
 ];
@@ -302,6 +386,15 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ onComplete }) => {
         }
     }, [currentStep]);
 
+    const goToStep = useCallback((idx: number) => {
+        if (idx === currentStep || idx < 0 || idx >= totalSteps) return;
+        setIsAnimating(true);
+        setTimeout(() => {
+            setCurrentStep(idx);
+            setIsAnimating(false);
+        }, 150);
+    }, [currentStep, totalSteps]);
+
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
@@ -404,10 +497,12 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ onComplete }) => {
                 <p className="text-xs text-gray-300 leading-relaxed mb-4">{step.description}</p>
 
                 <div className="flex items-center gap-1 mb-3">
-                    {steps.map((_, i) => (
-                        <div
+                    {steps.map((s, i) => (
+                        <button
                             key={i}
-                            className={`h-1 rounded-full transition-all duration-200 ${
+                            onClick={() => goToStep(i)}
+                            title={`${i + 1}. ${s.title}`}
+                            className={`h-1 rounded-full transition-all duration-200 cursor-pointer hover:bg-blue-300 ${
                                 i === currentStep
                                     ? 'w-4 bg-blue-400'
                                     : i < currentStep

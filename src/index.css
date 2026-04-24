@@ -1,11 +1,12 @@
 /* src/index.css */
+@import url('https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600;700&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
   /* Light Mode Colors - Base colors that can be customized */
-  --theme-bg-light: #8ecfb8;
+  --theme-bg-light: #e4f1ea;
   --theme-text-light: #1e293b;
   --theme-primary-light: #ec4899;
 
@@ -105,12 +106,25 @@
     --theme-hue-shift: 0deg;
     --theme-saturation: 100%;
     --theme-brightness: 100%;
+
+    --app-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --app-font-size: 14px;
 }
 
 body {
     background-color: var(--theme-bg);
     color: var(--theme-text);
+    font-family: var(--app-font-family);
+    font-size: var(--app-font-size);
     transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.font-sans, .font-mono {
+    font-family: var(--app-font-family) !important;
+}
+
+button, input, textarea, select {
+    font-family: var(--app-font-family);
 }
 
 #root {

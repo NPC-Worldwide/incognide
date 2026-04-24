@@ -55,9 +55,9 @@ readDocxContent: (filePath) =>
     removeDaemon: (daemonId) => ipcRenderer.invoke('removeDaemon', daemonId),
     getDaemons: () => ipcRenderer.invoke('getDaemons'),
 
-    generateImages: (prompt, n, model, provider, attachments, baseFilename, currentPath) => ipcRenderer.invoke('generate_images', { prompt, n, model, provider, attachments, baseFilename,currentPath}),
+    generateImages: (prompt, n, model, provider, attachments, baseFilename, currentPath, opts = {}) => ipcRenderer.invoke('generate_images', { prompt, n, model, provider, attachments, baseFilename, currentPath, workspacePath: opts.workspacePath, width: opts.width, height: opts.height, customModelPath: opts.customModelPath }),
 
-    generateMusic: (prompt, provider, model, duration, currentPath) => ipcRenderer.invoke('generate_music', { prompt, provider, model, duration, currentPath }),
+    generateMusic: (prompt, provider, model, duration, currentPath, opts = {}) => ipcRenderer.invoke('generate_music', { prompt, provider, model, duration, currentPath, workspacePath: opts.workspacePath, baseFilename: opts.baseFilename, apiKey: opts.apiKey }),
     loadDemoTracks: () => ipcRenderer.invoke('load_demo_tracks'),
 
     openNewWindow: (path, options) => ipcRenderer.invoke('open-new-window', path, options),
@@ -625,6 +625,9 @@ onTerminalClosed: (callback) => {
 
     scanLocalModels: (provider) => ipcRenderer.invoke('scan-local-models', provider),
     getLocalModelStatus: (provider) => ipcRenderer.invoke('get-local-model-status', provider),
+    startLocalProvider: (provider) => ipcRenderer.invoke('local-provider:start', provider),
+    stopLocalProvider: (provider) => ipcRenderer.invoke('local-provider:stop', provider),
+    uiSetHidden: (hidden) => ipcRenderer.invoke('ui:setHidden', hidden),
     scanGgufModels: (directory) => ipcRenderer.invoke('scan-gguf-models', directory),
     browseGgufFile: () => ipcRenderer.invoke('browse-gguf-file'),
     downloadHfModel: (params) => ipcRenderer.invoke('download-hf-model', params),

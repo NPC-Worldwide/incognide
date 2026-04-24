@@ -314,6 +314,17 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
             if (closedTabsRef.current.length > 20) {
                 closedTabsRef.current.shift();
             }
+
+            const killTerminalFromTab = (tab: any) => {
+                if (tab?.contentType === 'terminal' && tab.contentId) {
+                    (window as any).api?.closeTerminalSession?.(tab.contentId);
+                }
+            };
+            if (Array.isArray(paneData.tabs) && paneData.tabs.length > 0) {
+                paneData.tabs.forEach(killTerminalFromTab);
+            } else {
+                killTerminalFromTab(paneData);
+            }
         }
 
         if (!nodePath) {
