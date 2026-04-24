@@ -22,12 +22,6 @@ const AuthWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   );
 };
 
-/**
- * Wait until a data-tutorial element is present in the DOM,
- * indicating Enpistu has fully mounted and rendered its UI.
- * Polls briefly then resolves. Rejects after timeout so we
- * don't hang forever if something unexpected happens.
- */
 function waitForEnpistuReady(timeoutMs = 5000): Promise<void> {
   return new Promise((resolve) => {
     const start = Date.now();
@@ -35,8 +29,6 @@ function waitForEnpistuReady(timeoutMs = 5000): Promise<void> {
       if (document.querySelector('[data-tutorial]')) {
         resolve();
       } else if (Date.now() - start > timeoutMs) {
-        // Enpistu never rendered tutorial targets — resolve anyway
-        // so the app isn't stuck, but tutorial will gracefully degrade
         resolve();
       } else {
         requestAnimationFrame(check);
@@ -49,11 +41,7 @@ function waitForEnpistuReady(timeoutMs = 5000): Promise<void> {
 const App: React.FC = () => {
   const [showSetup, setShowSetup] = useState<boolean | null>(null);
   const [showTutorial, setShowTutorial] = useState(false);
-  // Tracks whether Enpistu has mounted and rendered its tutorial targets.
-  // The tutorial overlay is only shown once this is true, preventing the
-  // tutorial from rendering on top of a half-loaded or absent Enpistu UI.
   const [tutorialReady, setTutorialReady] = useState(false);
-  // Whether we want the tutorial after setup finishes (deferred until Enpistu mounts)
   const pendingTutorialRef = useRef(false);
 
   useEffect(() => {
@@ -61,15 +49,14 @@ const App: React.FC = () => {
       try {
         const result = await (window as any).api?.setupCheckNeeded?.();
         const needed = result?.needed ?? false;
-        setShowSetup(needed);
 
         if (!needed) {
           const profile = await (window as any).api?.profileGet?.();
           if (profile && profile.setupComplete && !profile.tutorialComplete) {
-            // Don't show tutorial immediately — wait for Enpistu to mount
             pendingTutorialRef.current = true;
           }
         }
+        setShowSetup(needed);
       } catch (err) {
         console.error('Error checking setup:', err);
         setShowSetup(false);
@@ -78,25 +65,41 @@ const App: React.FC = () => {
     checkSetup();
   }, []);
 
-  // When Enpistu is rendered (showSetup becomes false) and we have a pending
-  // tutorial, wait for its DOM to be ready before showing the tutorial overlay.
   useEffect(() => {
     if (showSetup !== false) return;
     if (!pendingTutorialRef.current) return;
 
     let cancelled = false;
-    waitForEnpistuReady().then(() => {
-      if (!cancelled) {
-        pendingTutorialRef.current = false;
-        setTutorialReady(true);
-        setShowTutorial(true);
-      }
+    waitForEnpistuReady().then(async () => {
+      if (cancelled) return;
+      pendingTutorialRef.current = false;
+      window.dispatchEvent(new CustomEvent('open-help-pane'));
+      await new Promise(resolve => setTimeout(resolve, 400));
+      if (cancelled) return;
+      setTutorialReady(true);
+      setShowTutorial(true);
     });
     return () => { cancelled = true; };
   }, [showSetup]);
 
+  useEffect(() => {
+    const handleReplay = async () => {
+      try {
+        await (window as any).api?.profileSave?.({ tutorialComplete: false });
+      } catch (err) {
+        console.error('Error resetting tutorial state:', err);
+      }
+      await waitForEnpistuReady();
+      window.dispatchEvent(new CustomEvent('open-help-pane'));
+      await new Promise(resolve => setTimeout(resolve, 400));
+      setTutorialReady(true);
+      setShowTutorial(true);
+    };
+    window.addEventListener('replay-tutorial', handleReplay);
+    return () => window.removeEventListener('replay-tutorial', handleReplay);
+  }, []);
+
   const handleSetupComplete = useCallback(async () => {
-    // Mark that we want the tutorial after Enpistu mounts
     try {
       const profile = await (window as any).api?.profileGet?.();
       if (!profile?.tutorialComplete) {
@@ -105,8 +108,6 @@ const App: React.FC = () => {
     } catch {
       pendingTutorialRef.current = true;
     }
-    // This triggers a render where Enpistu mounts; the useEffect above
-    // will detect the pending tutorial and wait for DOM readiness.
     setShowSetup(false);
   }, []);
 

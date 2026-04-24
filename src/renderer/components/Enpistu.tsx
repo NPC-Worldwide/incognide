@@ -1182,16 +1182,11 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         }
         if (api.api?.onMenuToggleHideUI) {
             cleanups.push(api.api.onMenuToggleHideUI(() => {
-                // The callback closure captures state once at registration so
-                // topBarCollapsed/sidebarCollapsed/etc can go stale. Read the
-                // current values via the setters' functional form and flip
-                // every chrome section together.
                 let top = false, side = false, bot = false, right = false;
                 setTopBarCollapsed(prev => { top = prev; return prev; });
                 setSidebarCollapsed(prev => { side = prev; return prev; });
                 setBottomBarCollapsed(prev => { bot = prev; return prev; });
                 setRightSidebarCollapsed(prev => { right = prev; return prev; });
-                // After the reads flush, compute the target and apply.
                 setTimeout(() => {
                     const anyVisible = !top || !side || !bot || !right;
                     const next = anyVisible;
@@ -1204,6 +1199,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
                         localStorage.setItem('incognide_bottomBarCollapsed', String(next));
                         localStorage.setItem('incognide_rightSidebarCollapsed', String(next));
                     } catch {}
+                    (window as any).api?.uiSetHidden?.(next);
                 }, 0);
             }));
         }
@@ -1222,6 +1218,10 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         if (api.api?.onMenuShowShortcuts) {
             cleanups.push(api.api.onMenuShowShortcuts(() => createHelpPaneRef.current?.()));
         }
+
+        const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
+        window.addEventListener('open-help-pane', handleOpenHelpEvent);
+        cleanups.push(() => window.removeEventListener('open-help-pane', handleOpenHelpEvent));
 
         // Zoom handlers — zoom the active browser webview if active pane is a browser, else zoom the app
         const handleZoom = (direction: 'in' | 'out' | 'reset') => {
@@ -1278,6 +1278,10 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         const lightPrimary = localStorage.getItem('incognide_themeLightPrimary');
         const lightBg = localStorage.getItem('incognide_themeLightBg');
         const lightText = localStorage.getItem('incognide_themeLightText');
+        const appFontFamily = localStorage.getItem('incognide_appFontFamily');
+        const appFontSize = localStorage.getItem('incognide_appFontSize');
+        if (appFontFamily) document.documentElement.style.setProperty('--app-font-family', appFontFamily);
+        if (appFontSize) document.documentElement.style.setProperty('--app-font-size', `${appFontSize}px`);
         const darkMode = localStorage.getItem('incognide_darkMode');
         const hueShift = localStorage.getItem('incognide_themeHueShift');
         const saturation = localStorage.getItem('incognide_themeSaturation');
@@ -8633,7 +8637,7 @@ const renderMainContent = () => {
             <button
                 onClick={() => setCommandPaletteOpen(true)}
                 className="p-1.5 theme-hover rounded theme-text-muted"
-                title="Command palette (Ctrl+Shift+P)"
+                title={`Command palette (${navigator.platform?.toLowerCase().includes('mac') ? '⌘P' : 'Ctrl+Shift+P'})`}
             >
                 <Sparkles size={14} />
             </button>
@@ -9148,56 +9152,46 @@ const renderMainContent = () => {
                             <span className="italic">{(() => {
                                 const m = navigator.platform?.toLowerCase().includes('mac') ? '⌘' : 'Ctrl+';
                                 const s = navigator.platform?.toLowerCase().includes('mac') ? '⇧' : 'Shift+';
+                                const isMac = navigator.platform?.toLowerCase().includes('mac');
+                                const newTerminalShortcut = isMac ? '⌃⇧T' : 'Super+Shift+T';
+                                const commandPaletteShortcut = isMac ? '⌘P' : 'Ctrl+Shift+P';
                                 const tips = [
-                                    "Drag files from the sidebar to create new panes",
+                                    "Drag files from the sidebar into the workspace to open them in a new pane",
                                     "Drag tabs between panes to reorganize your workspace",
                                     "Drag pane edges to resize them",
                                     "Drag a tab to the edge of a pane to split it",
                                     "Drag images directly into chat to share them",
-                                    "Drag folders from finder into the sidebar to add them",
-                                    "Double-click a tab to maximize that pane",
-                                    "Click a maximized pane's tab again to restore it",
                                     "Close unused panes to simplify your workspace",
                                     `Use ${m}W to close the current tab`,
                                     "Right-click on tabs for more options",
                                     "Right-click files in the sidebar for context actions",
                                     "Right-click in the editor for code actions",
                                     "Right-click on folders to create new files",
-                                    "Click the folder icon in the sidebar to open a new project",
-                                    "Use the search bar in the sidebar to filter files",
+                                    "Click the folder name in the top bar to open a different project",
+                                    "Use the search bar in the top bar to search files, conversations, memories, and knowledge",
                                     "Toggle folders open/closed by clicking their arrows",
-                                    "Pin frequently used files by starring them",
-                                    `Use ${m}${s}T to open a new terminal quickly`,
-                                    "Terminal supports multiple shells and sessions",
+                                    `Use ${newTerminalShortcut} to open a new terminal`,
+                                    "Terminal supports multiple shells — bash, npcsh, python, and more",
                                     "Run npcsh commands directly in the terminal",
-                                    "Use Ctrl+C to cancel running commands",
                                     `Use ${m}F to search within the current file`,
                                     `Use ${m}${s}F for global search across all files`,
-                                    "Click line numbers to set breakpoints",
-                                    `Use multiple cursors with ${m}click`,
-                                    "View git status with the diff viewer",
-                                    "Stage changes directly from the diff viewer",
-                                    "Commit messages support markdown formatting",
-                                    "View file history through the context menu",
+                                    "Stage and unstage git changes from the Git section in the sidebar",
                                     "Open .ipynb files for Jupyter notebook editing",
                                     "Create .exp files for reproducible experiments",
                                     "Run notebook cells with Shift+Enter",
-                                    "Export notebooks to various formats",
                                     `Use ${m}B to open a new browser pane`,
                                     "Use Ctrl+R to refresh the browser",
                                     "Use Ctrl+J to open the download manager",
                                     "Browser panes can be split for side-by-side viewing",
-                                    `Use ${m}N to create a new text file`,
+                                    `Use ${m}N to create a new untitled text file`,
                                     `Use ${m}O to quickly open any file`,
                                     "Double-click files in the sidebar to open them",
-                                    "Supported formats: PDF, CSV, Excel, images, and more",
-                                    `Use ${m}P to access all commands quickly`,
-                                    "Type '>' in the command palette for commands",
-                                    "Type '@' in the command palette to search symbols",
+                                    "Supported formats: PDF, CSV, Excel, Word, images, and more",
+                                    `Use ${commandPaletteShortcut} to open the command palette`,
+                                    "Type '/' in the command palette to see all commands",
                                     `Use ${m}${s}N to open a new window`,
                                     "Press Escape to close menus and dialogs",
                                     "Hover over icons for tooltips",
-                                    "Check the status bar for git and system info",
                                 ];
                                 // Use day of year to pick tip - only changes once per day
                                 const now = new Date();
@@ -9739,7 +9733,7 @@ const renderMainContent = () => {
             {/* Zen Mode Overlay */}
             {zenModePaneId && contentDataRef.current[zenModePaneId] && (
                 <div className="fixed inset-0 z-[200] theme-bg-primary flex flex-col">
-                    <div className="absolute top-0 left-0 right-0 h-8 z-[201] group/zentrig">
+                    <div className="absolute top-0 left-0 right-0 h-[3px] z-[201] group/zentrig">
                     <div className="absolute top-0 left-0 right-0 z-[202] p-2 border-b theme-border text-xs theme-text-muted theme-bg-secondary flex justify-between items-center opacity-0 -translate-y-full group-hover/zentrig:opacity-100 group-hover/zentrig:translate-y-0 transition-all duration-200 pointer-events-none group-hover/zentrig:pointer-events-auto">
                         <div className="flex items-center gap-2">
                             <span className="font-semibold">Zen Mode</span>

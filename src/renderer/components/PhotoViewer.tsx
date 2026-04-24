@@ -349,7 +349,8 @@ const handleStartFineTune = async () => {
         epochs: fineTuneConfig.epochs,
         batchSize: fineTuneConfig.batchSize,
         learningRate: fineTuneConfig.learningRate,
-        outputPath: finalOutputPath
+        outputPath: finalOutputPath,
+        workspacePath: currentPath,
     };
 
     const response = await window.api?.fineTuneDiffusers?.(config);
@@ -358,9 +359,9 @@ const handleStartFineTune = async () => {
         setError('Fine-tuning failed: ' + response.error);
         setFineTuneStatus(null);
         setIsFineTuning(false);
-    } else if (response?.status === 'started') {
+    } else if (response?.job_id) {
         setFineTuneStatus({ status: 'running', message: 'Training started...' });
-        pollFineTuneStatus(response.jobId);
+        pollFineTuneStatus(response.job_id);
     }
 };
 
@@ -2370,7 +2371,7 @@ const handleUseForGeneration = () => {
                                 const baseFilename = generateFilename || 'vixynt_gen';
                                 const attachments = [...Array.from(selectedImageGroup).map(path => ({ path: path.replace('media://', '') }))];
                                 const outputPath = activeSource?.path || currentPath;
-                                const response = await window.api.generateImages(generatePrompt, numImagesToGenerate, selectedModel, selectedProvider, attachments, baseFilename, outputPath);
+                                const response = await window.api.generateImages(generatePrompt, numImagesToGenerate, selectedModel, selectedProvider, attachments, baseFilename, outputPath, { workspacePath: currentPath });
 
                                 if (response.error) {
                                     throw new Error(response.error);
@@ -2616,6 +2617,7 @@ const executeWorkflow = useCallback(async () => {
                         prompt, 1,
                         genModel, genProvider,
                         [], node.params?.filename || 'wf_gen', outputDir,
+                        { workspacePath: currentPath },
                     );
                     if (resp?.error) throw new Error(resp.error);
                     const out = resp?.filenames && resp.filenames[0];

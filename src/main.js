@@ -86,6 +86,123 @@ const backendLogStream = fs.createWriteStream(backendLogPath, { flags: 'a' });
 
 let mainWindow = null;
 let pdfView = null;
+let uiHidden = false;
+
+function applyAppMenu() {
+  if (!mainWindow) return;
+  const isMac = process.platform === 'darwin';
+  const menuTemplate = [
+    ...(isMac ? [{
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { label: 'Settings', accelerator: 'CmdOrCtrl+,', click: () => mainWindow.webContents.send('menu-open-settings') },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    }] : []),
+    {
+      label: 'File',
+      submenu: [
+        { label: 'New Chat', click: () => mainWindow.webContents.send('menu-new-chat') },
+        { label: 'New Terminal', accelerator: isMac ? 'Ctrl+Shift+T' : 'Super+Shift+T', click: () => mainWindow.webContents.send('menu-new-terminal') },
+        { label: 'Reopen Closed Tab', accelerator: 'CmdOrCtrl+Shift+T', click: () => mainWindow.webContents.send('menu-reopen-tab') },
+        { label: 'New Browser Tab', accelerator: 'CmdOrCtrl+T', click: () => mainWindow.webContents.send('browser-new-tab') },
+        { type: 'separator' },
+        { label: 'Open File...', accelerator: 'CmdOrCtrl+O', click: () => mainWindow.webContents.send('menu-open-file') },
+        { label: 'Open Folder...', accelerator: 'CmdOrCtrl+Shift+O', click: () => mainWindow.webContents.send('open-folder-picker') },
+        { type: 'separator' },
+        { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => mainWindow.webContents.send('menu-save-file') },
+        { label: 'Save As...', accelerator: 'CmdOrCtrl+Shift+S', click: () => mainWindow.webContents.send('menu-save-file-as') },
+        { type: 'separator' },
+        { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: () => mainWindow.webContents.send('menu-close-tab') },
+        { type: 'separator' },
+        ...(isMac ? [] : [
+          { label: 'Settings', accelerator: 'CmdOrCtrl+,', click: () => mainWindow.webContents.send('menu-open-settings') },
+          { type: 'separator' },
+          { role: 'quit' }
+        ])
+      ]
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
+        { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'pasteAndMatchStyle' },
+        { role: 'delete' }, { role: 'selectAll' }, { type: 'separator' },
+        { label: 'Find', accelerator: 'CmdOrCtrl+F', click: () => mainWindow.webContents.send('menu-find') },
+        { label: 'Find in Files', accelerator: 'CmdOrCtrl+Shift+F', click: () => mainWindow.webContents.send('menu-global-search') }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        { label: 'Command Palette', accelerator: 'CmdOrCtrl+P', click: () => mainWindow.webContents.send('menu-command-palette') },
+        { type: 'separator' },
+        { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: () => mainWindow.webContents.send('menu-toggle-sidebar') },
+        { label: uiHidden ? 'Show UI' : 'Hide UI', accelerator: 'CmdOrCtrl+F11', click: () => mainWindow.webContents.send('menu-toggle-hide-ui') },
+        { type: 'separator' },
+        { role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: (_, focusedWindow) => focusedWindow && focusedWindow.webContents.send('zoom-reset') },
+        { label: 'Zoom In', accelerator: 'CmdOrCtrl+=', click: (_, focusedWindow) => focusedWindow && focusedWindow.webContents.send('zoom-in') },
+        { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: (_, focusedWindow) => focusedWindow && focusedWindow.webContents.send('zoom-out') },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { label: 'New Window', accelerator: 'CmdOrCtrl+Shift+N', click: () => mainWindow.webContents.send('menu-new-window') },
+        { type: 'separator' },
+        { role: 'minimize' }, { role: 'zoom' },
+        ...(isMac
+          ? [{ type: 'separator' }, { role: 'front' }, { type: 'separator' }, { role: 'window' }]
+          : [{ role: 'close' }]),
+        { type: 'separator' },
+        { label: 'Split Pane Right', click: () => mainWindow.webContents.send('menu-split-right') },
+        { label: 'Split Pane Down', click: () => mainWindow.webContents.send('menu-split-down') }
+      ]
+    },
+    {
+      label: 'Help',
+      submenu: [
+        { label: 'Help & Documentation', click: () => mainWindow.webContents.send('menu-open-help') },
+        { label: 'Keyboard Shortcuts', accelerator: 'CmdOrCtrl+/', click: () => mainWindow.webContents.send('menu-show-shortcuts') },
+        { type: 'separator' },
+        { label: 'Report Issue', click: () => shell.openExternal('https://github.com/NPC-Worldwide/incognide/issues') },
+        { label: 'Visit Website', click: () => shell.openExternal('https://incognide.com') },
+        { type: 'separator' },
+        {
+          label: 'About Incognide',
+          click: () => {
+            dialog.showMessageBox(mainWindow, {
+              type: 'info',
+              title: 'About Incognide',
+              message: 'Incognide',
+              detail: `Version: ${app.getVersion()}\nElectron: ${process.versions.electron}\nChrome: ${process.versions.chrome}\nNode: ${process.versions.node}`
+            });
+          }
+        }
+      ]
+    }
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate));
+}
+
+ipcMain.handle('ui:setHidden', (event, hidden) => {
+  uiHidden = !!hidden;
+  applyAppMenu();
+  return { success: true };
+});
 
 const ensureTablesExist = async () => {
   console.log('[DB] Ensuring all tables exist...');
@@ -2007,240 +2124,7 @@ function createWindow(cliArgs = {}) {
 
     registerGlobalShortcut(mainWindow);
 
-    const isMac = process.platform === 'darwin';
-    const menuTemplate = [
-
-      ...(isMac ? [{
-        label: app.name,
-        submenu: [
-          { role: 'about' },
-          { type: 'separator' },
-          {
-            label: 'Settings',
-            accelerator: 'CmdOrCtrl+,',
-            click: () => mainWindow.webContents.send('menu-open-settings')
-          },
-          { type: 'separator' },
-          { role: 'services' },
-          { type: 'separator' },
-          { role: 'hide' },
-          { role: 'hideOthers' },
-          { role: 'unhide' },
-          { type: 'separator' },
-          { role: 'quit' }
-        ]
-      }] : []),
-
-      {
-        label: 'File',
-        submenu: [
-          {
-            label: 'New Chat',
-
-            click: () => mainWindow.webContents.send('menu-new-chat')
-          },
-          {
-            label: 'New Terminal',
-            accelerator: isMac ? 'Ctrl+Shift+T' : 'Super+Shift+T',
-            click: () => mainWindow.webContents.send('menu-new-terminal')
-          },
-          {
-            label: 'Reopen Closed Tab',
-            accelerator: 'CmdOrCtrl+Shift+T',
-            click: () => mainWindow.webContents.send('menu-reopen-tab')
-          },
-          {
-            label: 'New Browser Tab',
-            accelerator: 'CmdOrCtrl+T',
-            click: () => mainWindow.webContents.send('browser-new-tab')
-          },
-          { type: 'separator' },
-          {
-            label: 'Open File...',
-            accelerator: 'CmdOrCtrl+O',
-            click: () => mainWindow.webContents.send('menu-open-file')
-          },
-          {
-            label: 'Open Folder...',
-            accelerator: 'CmdOrCtrl+Shift+O',
-            click: () => mainWindow.webContents.send('open-folder-picker')
-          },
-          { type: 'separator' },
-          {
-            label: 'Save',
-            accelerator: 'CmdOrCtrl+S',
-            click: () => mainWindow.webContents.send('menu-save-file')
-          },
-          {
-            label: 'Save As...',
-            accelerator: 'CmdOrCtrl+Shift+S',
-            click: () => mainWindow.webContents.send('menu-save-file-as')
-          },
-          { type: 'separator' },
-          {
-            label: 'Close Tab',
-            accelerator: 'CmdOrCtrl+W',
-            click: () => mainWindow.webContents.send('menu-close-tab')
-          },
-          { type: 'separator' },
-          ...(isMac ? [] : [
-            {
-              label: 'Settings',
-              accelerator: 'CmdOrCtrl+,',
-              click: () => mainWindow.webContents.send('menu-open-settings')
-            },
-            { type: 'separator' },
-            { role: 'quit' }
-          ])
-        ]
-      },
-
-      {
-        label: 'Edit',
-        submenu: [
-          { role: 'undo' },
-          { role: 'redo' },
-          { type: 'separator' },
-          { role: 'cut' },
-          { role: 'copy' },
-          { role: 'paste' },
-          { role: 'pasteAndMatchStyle' },
-          { role: 'delete' },
-          { role: 'selectAll' },
-          { type: 'separator' },
-          {
-            label: 'Find',
-            accelerator: 'CmdOrCtrl+F',
-            click: () => mainWindow.webContents.send('menu-find')
-          },
-          {
-            label: 'Find in Files',
-            accelerator: 'CmdOrCtrl+Shift+F',
-            click: () => mainWindow.webContents.send('menu-global-search')
-          }
-        ]
-      },
-
-      {
-        label: 'View',
-        submenu: [
-          {
-            label: 'Command Palette',
-            accelerator: 'CmdOrCtrl+P',
-            click: () => mainWindow.webContents.send('menu-command-palette')
-          },
-          { type: 'separator' },
-          {
-            label: 'Toggle Sidebar',
-            accelerator: 'CmdOrCtrl+B',
-            click: () => mainWindow.webContents.send('menu-toggle-sidebar')
-          },
-          {
-            label: 'Hide UI',
-            accelerator: 'CmdOrCtrl+F11',
-            click: () => mainWindow.webContents.send('menu-toggle-hide-ui')
-          },
-          { type: 'separator' },
-          { role: 'reload' },
-          { role: 'forceReload' },
-          { role: 'toggleDevTools' },
-          { type: 'separator' },
-          {
-            label: 'Actual Size',
-            accelerator: 'CmdOrCtrl+0',
-            click: (_, focusedWindow) => {
-              if (focusedWindow) focusedWindow.webContents.send('zoom-reset');
-            }
-          },
-          {
-            label: 'Zoom In',
-            accelerator: 'CmdOrCtrl+=',
-            click: (_, focusedWindow) => {
-              if (focusedWindow) focusedWindow.webContents.send('zoom-in');
-            }
-          },
-          {
-            label: 'Zoom Out',
-            accelerator: 'CmdOrCtrl+-',
-            click: (_, focusedWindow) => {
-              if (focusedWindow) focusedWindow.webContents.send('zoom-out');
-            }
-          },
-          { type: 'separator' },
-          { role: 'togglefullscreen' }
-        ]
-      },
-
-      {
-        label: 'Window',
-        submenu: [
-          {
-            label: 'New Window',
-            accelerator: 'CmdOrCtrl+Shift+N',
-            click: () => mainWindow.webContents.send('menu-new-window')
-          },
-          { type: 'separator' },
-          { role: 'minimize' },
-          { role: 'zoom' },
-          ...(isMac ? [
-            { type: 'separator' },
-            { role: 'front' },
-            { type: 'separator' },
-            { role: 'window' }
-          ] : [
-            { role: 'close' }
-          ]),
-          { type: 'separator' },
-          {
-            label: 'Split Pane Right',
-            click: () => mainWindow.webContents.send('menu-split-right')
-          },
-          {
-            label: 'Split Pane Down',
-            click: () => mainWindow.webContents.send('menu-split-down')
-          }
-        ]
-      },
-
-      {
-        label: 'Help',
-        submenu: [
-          {
-            label: 'Help & Documentation',
-            click: () => mainWindow.webContents.send('menu-open-help')
-          },
-          {
-            label: 'Keyboard Shortcuts',
-            accelerator: 'CmdOrCtrl+/',
-            click: () => mainWindow.webContents.send('menu-show-shortcuts')
-          },
-          { type: 'separator' },
-          {
-            label: 'Report Issue',
-            click: () => shell.openExternal('https://github.com/NPC-Worldwide/incognide/issues')
-          },
-          {
-            label: 'Visit Website',
-            click: () => shell.openExternal('https://incognide.com')
-          },
-          { type: 'separator' },
-          {
-            label: 'About Incognide',
-            click: () => {
-              dialog.showMessageBox(mainWindow, {
-                type: 'info',
-                title: 'About Incognide',
-                message: 'Incognide',
-                detail: `Version: ${app.getVersion()}\nElectron: ${process.versions.electron}\nChrome: ${process.versions.chrome}\nNode: ${process.versions.node}`
-              });
-            }
-          }
-        ]
-      }
-    ];
-
-    const menu = Menu.buildFromTemplate(menuTemplate);
-    Menu.setApplicationMenu(menu);
+    applyAppMenu();
 
     // Add Referer header for tile servers that require it (OSM, OpenTopoMap)
     mainWindow.webContents.session.webRequest.onBeforeSendHeaders({ urls: ['*://*.tile.openstreetmap.org/*', '*://*.tile.opentopomap.org/*'] }, (details, callback) => {

@@ -188,7 +188,69 @@ function register(ctx) {
     generateId,
     activeStreams,
     DEFAULT_CONFIG,
+    readPythonEnvConfig,
+    resolvePythonPath,
   } = ctx;
+
+  async function resolveWorkspacePython(workspacePath) {
+    if (!workspacePath) return null;
+    try {
+      const config = await readPythonEnvConfig();
+      const envConfig = config?.workspaces?.[workspacePath];
+      if (!envConfig) return null;
+      const resolved = await resolvePythonPath(workspacePath, envConfig);
+      return resolved?.pythonPath || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function resolveHelperScript(scriptName) {
+    const { app } = require('electron');
+    const candidates = [
+      path.resolve(__dirname, '..', '..', 'resources', scriptName),
+      path.join(process.resourcesPath || '', scriptName),
+      path.join(app.getAppPath(), 'resources', scriptName),
+    ];
+    return candidates.find(p => { try { return fs.existsSync(p); } catch { return false; } });
+  }
+
+  function shellOutHelper(pythonPath, scriptName, payload) {
+    return new Promise((resolve) => {
+      const scriptPath = resolveHelperScript(scriptName);
+      if (!scriptPath) {
+        resolve({ success: false, error: `${scriptName} not found in resources` });
+        return;
+      }
+      const proc = spawn(pythonPath, [scriptPath], { stdio: ['pipe', 'pipe', 'pipe'] });
+      let stdout = '';
+      let stderr = '';
+      proc.stdout.on('data', d => { stdout += d.toString(); });
+      proc.stderr.on('data', d => { stderr += d.toString(); });
+      proc.on('error', (err) => resolve({ success: false, error: `Failed to spawn ${pythonPath}: ${err.message}` }));
+      proc.on('close', (code) => {
+        if (code !== 0 && !stdout) {
+          resolve({ success: false, error: stderr || `${scriptName} exited with code ${code}` });
+          return;
+        }
+        try {
+          const last = stdout.trim().split('\n').pop();
+          resolve(JSON.parse(last));
+        } catch (err) {
+          resolve({ success: false, error: `Could not parse helper output: ${err.message}. stderr: ${stderr}` });
+        }
+      });
+      try {
+        proc.stdin.write(JSON.stringify(payload));
+        proc.stdin.end();
+      } catch (err) {
+        resolve({ success: false, error: `Failed to write to helper stdin: ${err.message}` });
+      }
+    });
+  }
+
+  const shellOutImageGen = (pythonPath, payload) => shellOutHelper(pythonPath, 'run_image_gen.py', payload);
+  const shellOutMusicGen = (pythonPath, payload) => shellOutHelper(pythonPath, 'run_music_gen.py', payload);
 
   ipcMain.handle('getAvailableModels', async (event, currentPath) => {
 
@@ -319,51 +381,66 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('generate_images', async (event, { prompt, n, model, provider, attachments, baseFilename='vixynt_gen_', currentPath='~/.npcsh/images' }) => {
-    log(`[Main Process] Received request to generate ${n} image(s) with prompt: "${prompt}" using model: "${model}" (${provider})`);
+  ipcMain.handle('generate_images', async (event, { prompt, n, model, provider, attachments, baseFilename='vixynt_gen_', currentPath='~/.npcsh/images', workspacePath, width, height, customModelPath }) => {
+    log(`[Main Process] Image gen request: n=${n} prompt="${prompt}" model="${model}" provider=${provider}`);
 
-    if (!prompt) {
-        return { error: 'Prompt cannot be empty' };
-    }
-    if (!model || !provider) {
-        return { error: 'Image model and provider must be selected.' };
-    }
+    if (!prompt) return { error: 'Prompt cannot be empty' };
+    if (!model || !provider) return { error: 'Image model and provider must be selected.' };
 
-    try {
+    const needsLocalVenv = provider === 'diffusers' || !!customModelPath;
+
+    if (!needsLocalVenv) {
+      try {
         const apiUrl = `${BACKEND_URL}/api/generate_images`;
         const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              prompt,
-              n,
-              model,
-              provider,
-              attachments,
-              baseFilename,
-              currentPath
-
-            })
-
-          });
-
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, n, model, provider, attachments, baseFilename, currentPath }),
+        });
         if (!response.ok) {
-            const errorBody = await response.json();
-            const errorMessage = errorBody.error || `HTTP error! status: ${response.status}`;
-            log('Backend image generation failed:', errorMessage);
-            return { error: errorMessage };
+          const errorBody = await response.json().catch(() => ({}));
+          return { error: errorBody.error || `HTTP error! status: ${response.status}` };
         }
-
         const data = await response.json();
-
-        if (data.error) {
-            return { error: data.error };
-        }
+        if (data.error) return { error: data.error };
         return { images: data.images, filenames: data.filenames, generation_id: data.generation_id };
-    } catch (error) {
-        log('Error generating images in main process handler:', error);
-        return { error: error.message || 'Image generation failed in main process' };
+      } catch (error) {
+        log('Error generating images via backend:', error);
+        return { error: error.message || 'Image generation failed' };
+      }
     }
+
+    const outputDir = currentPath.startsWith('~')
+      ? path.join(os.homedir(), currentPath.slice(1).replace(/^\//, ''))
+      : currentPath;
+
+    const python = await resolveWorkspacePython(workspacePath);
+    if (!python) {
+      return { error: 'No Python environment configured for this workspace. Open Team Management → Python Env and create a venv with diffusers + torch installed.' };
+    }
+
+    const payload = {
+      prompt,
+      n,
+      model,
+      provider,
+      attachments,
+      base_filename: baseFilename,
+      output_dir: outputDir,
+      width,
+      height,
+      custom_model_path: customModelPath,
+    };
+
+    const result = await shellOutImageGen(python, payload);
+    if (!result.success) {
+      log('Image generation (shell-out) failed:', result.error);
+      return { error: result.error };
+    }
+
+    const paths = result.paths || [];
+    const filenames = paths.map(p => path.basename(p));
+    return { images: paths.map(p => `file://${p}`), filenames, generation_id: generateId() };
   });
 
   ipcMain.handle('load_demo_tracks', async () => {
@@ -388,24 +465,54 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('generate_music', async (event, { prompt, provider, model, duration, currentPath }) => {
+  ipcMain.handle('generate_music', async (event, { prompt, provider, model, duration, currentPath, workspacePath, baseFilename, apiKey }) => {
     log(`[Main Process] Generate music: "${prompt}" provider=${provider} model=${model} dur=${duration}s`);
     if (!prompt) return { success: false, error: 'Prompt is required' };
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/generate_music`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, provider, model, duration, currentPath }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        return { success: false, error: data.error || `HTTP ${response.status}` };
+
+    const p = (provider || 'local').toLowerCase();
+    const isLocal = ['local', 'musicgen', 'transformers', 'meta'].includes(p);
+
+    if (!isLocal) {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/generate_music`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, provider, model, duration, currentPath }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          return { success: false, error: data.error || `HTTP ${response.status}` };
+        }
+        return data;
+      } catch (error) {
+        log('Error generating music via backend:', error);
+        return { success: false, error: error.message || 'Music generation failed' };
       }
-      return data;
-    } catch (error) {
-      log('Error generating music:', error);
-      return { success: false, error: error.message || 'Music generation failed' };
     }
+
+    const outputDir = currentPath && currentPath.startsWith('~')
+      ? path.join(os.homedir(), currentPath.slice(1).replace(/^\//, ''))
+      : (currentPath || path.join(os.homedir(), '.npcsh', 'audio'));
+
+    const python = await resolveWorkspacePython(workspacePath);
+    if (!python) {
+      return { success: false, error: 'No Python environment configured for this workspace. Open Team Management → Python Env and create a venv with npcpy + torch + transformers installed.' };
+    }
+
+    const result = await shellOutMusicGen(python, {
+      prompt,
+      provider,
+      model,
+      duration,
+      output_dir: outputDir,
+      base_filename: baseFilename,
+      api_key: apiKey,
+    });
+    if (!result.success) {
+      log('Music generation (shell-out) failed:', result.error);
+      return { success: false, error: result.error };
+    }
+    return { success: true, path: result.path, url: `file://${result.path}`, format: result.format, provider: result.provider, model: result.model };
   });
 
   ipcMain.handle('deleteMessage', async (_, { conversationId, messageId }) => {

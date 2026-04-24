@@ -230,18 +230,25 @@ const ModelManager = () => {
         setProviderStatuses(prev => ({ ...prev, ollama: ollamaStatusStr }));
         if (ollamaStatusStr === 'running') fetchModelsForProvider('ollama');
 
+        let llamacppStatus: string = 'not_found';
         for (const provider of ['lmstudio', 'llamacpp', ...(isMac ? ['omlx'] : [])]) {
             try {
                 const status = await window.api.getLocalModelStatus?.(provider);
-                setProviderStatuses(prev => ({
-                    ...prev,
-                    [provider]: status?.running ? 'running' : 'not_running'
-                }));
+                const s = status?.running ? 'running' : (status?.installed ? 'not_running' : 'not_found');
+                if (provider === 'llamacpp') llamacppStatus = s;
+                setProviderStatuses(prev => ({ ...prev, [provider]: s }));
                 if (status?.running) fetchModelsForProvider(provider);
             } catch {
-                setProviderStatuses(prev => ({ ...prev, [provider]: 'not_found' }));
+                const s = 'not_found';
+                if (provider === 'llamacpp') llamacppStatus = s;
+                setProviderStatuses(prev => ({ ...prev, [provider]: s }));
             }
         }
+
+        setProviderStatuses(prev => ({
+            ...prev,
+            gguf: llamacppStatus === 'not_found' ? 'not_found' : 'ready',
+        }));
     };
 
     const handleScanModels = async () => {
@@ -422,6 +429,7 @@ const ModelManager = () => {
                             <span className={`px-2 py-1 rounded text-xs ${
                                 currentStatus === 'running' || currentStatus === 'ready' ? 'bg-green-900 text-green-300' :
                                 currentStatus === 'checking' ? 'bg-yellow-900 text-yellow-300' :
+                                currentStatus === 'not_running' ? 'bg-yellow-900/70 text-yellow-300' :
                                 'bg-red-900 text-red-300'
                             }`}>
                                 {currentStatus === 'running' ? 'Running' :
@@ -429,6 +437,31 @@ const ModelManager = () => {
                                  currentStatus === 'checking' ? 'Checking...' :
                                  currentStatus === 'not_running' ? 'Not Running' : 'Not Found'}
                             </span>
+                            {activeProvider !== 'gguf' && currentStatus === 'not_running' && (
+                                <button
+                                    onClick={async () => {
+                                        setProviderStatuses(prev => ({ ...prev, [activeProvider]: 'checking' }));
+                                        const res = await (window as any).api.startLocalProvider?.(activeProvider);
+                                        if (res && !res.success) alert(res.error || 'Failed to start');
+                                        setTimeout(() => checkAllStatuses(), 1500);
+                                    }}
+                                    className="text-xs px-2 py-1 bg-green-700 hover:bg-green-600 text-white rounded"
+                                >
+                                    Start
+                                </button>
+                            )}
+                            {activeProvider !== 'gguf' && currentStatus === 'running' && (
+                                <button
+                                    onClick={async () => {
+                                        const res = await (window as any).api.stopLocalProvider?.(activeProvider);
+                                        if (res && !res.success) alert(res.error || 'Failed to stop');
+                                        setTimeout(() => checkAllStatuses(), 1000);
+                                    }}
+                                    className="text-xs px-2 py-1 bg-red-700 hover:bg-red-600 text-white rounded"
+                                >
+                                    Stop
+                                </button>
+                            )}
                             <a
                                 href={providerInfo.docsUrl}
                                 target="_blank"

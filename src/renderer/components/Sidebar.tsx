@@ -6039,15 +6039,15 @@ return (
         {!sidebarCollapsed && (
         <div className="border-t theme-border">
             <div className="grid grid-cols-3 divide-x theme-border" style={{ height: bottomBarHeight }}>
-                <button onClick={() => createAndAddPaneNodeToLayout?.('windowmanager', 'windowmanager')} className="flex items-center justify-center hover:bg-teal-500/20 transition-all" title="Window Manager"><Monitor size={16} className="text-gray-600 dark:text-gray-400" /></button>
+                <button data-tutorial="window-manager-button" onClick={() => createAndAddPaneNodeToLayout?.('windowmanager', 'windowmanager')} className="flex items-center justify-center hover:bg-teal-500/20 transition-all" title="Window Manager"><Monitor size={16} className="text-gray-600 dark:text-gray-400" /></button>
                 <button onClick={() => setBottomGridCollapsed(!bottomGridCollapsed)} className="flex items-center justify-center hover:bg-teal-500/20 transition-all" title={bottomGridCollapsed ? "Show quick actions" : "Hide quick actions"}>{bottomGridCollapsed ? <ChevronUp size={16} className="text-gray-600 dark:text-gray-400" /> : <ChevronDown size={16} className="text-gray-600 dark:text-gray-400" />}</button>
                 <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="flex items-center justify-center hover:bg-teal-500/20 transition-all" title="Collapse sidebar"><ChevronLeft size={16} className="text-gray-600 dark:text-gray-400" /></button>
             </div>
             {!bottomGridCollapsed && (
             <div className="grid grid-cols-3 divide-x theme-border border-t theme-border" style={{ height: bottomBarHeight }}>
-                <button onClick={toggleTheme} className="flex items-center justify-center hover:bg-teal-500/20 transition-all" title="Toggle Theme">{isDarkMode ? <Moon size={16} className="text-blue-400" /> : <Sun size={16} className="text-yellow-400" />}</button>
-                <button onClick={() => createAndAddPaneNodeToLayout?.('account', 'account')} className="flex items-center justify-center hover:bg-teal-500/20 transition-all text-gray-400 hover:text-blue-400" title="Account"><User size={16} /></button>
-                <button onClick={() => { if ((window as any).api?.openNewWindow) (window as any).api.openNewWindow(''); else window.open(window.location.href, '_blank'); }} className="flex items-center justify-center hover:bg-teal-500/20 transition-all" title="New Window (Alt+N)"><img src={npcLogo} alt="Incognide" style={{ width: 16, height: 16 }} className="rounded-full" /></button>
+                <button data-tutorial="theme-toggle-button" onClick={toggleTheme} className="flex items-center justify-center hover:bg-teal-500/20 transition-all" title="Toggle Theme">{isDarkMode ? <Moon size={16} className="text-blue-400" /> : <Sun size={16} className="text-yellow-400" />}</button>
+                <button data-tutorial="account-button" onClick={() => createAndAddPaneNodeToLayout?.('account', 'account')} className="flex items-center justify-center hover:bg-teal-500/20 transition-all text-gray-400 hover:text-blue-400" title="Account"><User size={16} /></button>
+                <button data-tutorial="new-window-button" onClick={() => { if ((window as any).api?.openNewWindow) (window as any).api.openNewWindow(''); else window.open(window.location.href, '_blank'); }} className="flex items-center justify-center hover:bg-teal-500/20 transition-all" title="New Window (Cmd/Ctrl+Shift+N)"><img src={npcLogo} alt="Incognide" style={{ width: 16, height: 16 }} className="rounded-full" /></button>
             </div>
             )}
         </div>

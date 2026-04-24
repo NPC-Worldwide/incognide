@@ -15,6 +15,7 @@ function registerAll(ctx) {
   const fullCtx = {
     ...ctx,
     readPythonEnvConfig: settings.readPythonEnvConfig,
+    resolvePythonPath: settings.resolvePythonPath,
   };
 
   browser.register(fullCtx);

@@ -200,33 +200,28 @@ const StatusBar: React.FC<StatusBarProps> = ({
                 </button>
             )}
 
-            {/* LEFT: Database */}
             <button data-tutorial="db-tool-button" onClick={() => createDBToolPane?.()} className={`${btnClass} text-blue-600 dark:text-blue-400`} title="Database Tool">
                 <Database size={20} />
             </button>
 
-            {/* LEFT: Downloads */}
-            <button onClick={() => onOpenDownloadManager?.()} className={`${btnClass} text-cyan-600 dark:text-cyan-400`} title="Downloads">
+            <button data-tutorial="downloads-button" onClick={() => onOpenDownloadManager?.()} className={`${btnClass} text-cyan-600 dark:text-cyan-400`} title="Downloads">
                 <Download size={20} />
             </button>
 
-            {/* LEFT: Data Dashboard */}
-            <button onClick={() => createDataDashPane?.()} className={`${btnClass} text-green-600 dark:text-green-400`} title="Data Dashboard">
+            <button data-tutorial="data-dash-button" onClick={() => createDataDashPane?.()} className={`${btnClass} text-green-600 dark:text-green-400`} title="Data Dashboard">
                 <BarChart3 size={20} />
             </button>
 
-            {/* LEFT: Disk Usage */}
-            <button onClick={() => createDiskUsagePane?.()} className={`${btnClass} text-gray-500 dark:text-gray-400`} title="Disk Usage">
+            <button data-tutorial="disk-usage-button" onClick={() => createDiskUsagePane?.()} className={`${btnClass} text-gray-500 dark:text-gray-400`} title="Disk Usage">
                 <HardDrive size={20} />
             </button>
 
             <div className="flex-1" />
 
-            {/* CENTER: Open pane indicators */}
             {onCollapse && (
                 <button onClick={onCollapse} className={`${btnClass} text-gray-400 dark:text-gray-500`} title="Hide status bar"><ChevronDown size={16} /></button>
             )}
-            <div className="flex items-center gap-1">
+            <div data-tutorial="pane-indicators" className="flex items-center gap-1">
                 {paneItems.map((pane) => (
                     <button key={pane.id} onClick={() => setActiveContentPaneId(pane.id)} className={`p-2 rounded transition-colors ${pane.isActive ? 'bg-blue-600 text-white' : 'bg-transparent theme-text-muted hover:opacity-80'}`} title={pane.title}>
                         {pane.type === 'chat' && <MessageSquare size={20} />}
@@ -251,9 +246,9 @@ const StatusBar: React.FC<StatusBarProps> = ({
 
             <div className="flex-1" />
 
-            {/* RIGHT: npcpy logo | pane/tab | version | clock */}
             <div className="relative group/backend">
                 <div
+                    data-tutorial="backend-status"
                     onClick={() => createBackendPane?.()}
                     onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setShowBackendMenu(true); }}
                     className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors cursor-pointer hover:bg-white/10 ${backendStatus === 'ok' ? '' : 'opacity-60'}`}
@@ -279,13 +274,13 @@ const StatusBar: React.FC<StatusBarProps> = ({
             </div>
 
             {onToggleOpenMode && (
-                <button onClick={onToggleOpenMode} className={`${btnClass} ${openMode === 'tab' ? 'text-blue-400' : 'text-gray-400 dark:text-gray-500'}`} title={openMode === 'pane' ? 'Pane mode' : 'Tab mode'}>
+                <button data-tutorial="pane-tab-toggle" onClick={onToggleOpenMode} className={`${btnClass} ${openMode === 'tab' ? 'text-blue-400' : 'text-gray-400 dark:text-gray-500'}`} title={openMode === 'pane' ? 'Pane mode' : 'Tab mode'}>
                     {openMode === 'pane' ? <Columns size={16} /> : <Layers size={16} />}
                 </button>
             )}
 
             <div className="relative group/update">
-                <button onClick={handleCheckUpdates} className={`${btnClass} ${updateAvailable ? 'text-amber-500' : 'text-gray-400 dark:text-gray-500'}`}>
+                <button data-tutorial="update-button" onClick={handleCheckUpdates} className={`${btnClass} ${updateAvailable ? 'text-amber-500' : 'text-gray-400 dark:text-gray-500'}`}>
                     {downloadProgress !== null ? (downloadProgress >= 100 ? <Check size={16} className="text-green-400" /> : <span className="text-[10px] font-mono text-amber-400">{downloadProgress}%</span>) : updateAvailable ? <AlertCircle size={16} /> : checkingUpdates ? <RefreshCw size={16} className="animate-spin" /> : <Check size={16} />}
                 </button>
                 {showQuitPrompt && (

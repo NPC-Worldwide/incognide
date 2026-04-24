@@ -28,10 +28,14 @@ function register(ctx) {
     if (ptyKillTimers.has(id)) {
       clearTimeout(ptyKillTimers.get(id));
       ptyKillTimers.delete(id);
+    }
 
-      if (ptySessions.has(id)) {
-        return { success: true };
+    if (ptySessions.has(id)) {
+      const existing = ptySessions.get(id);
+      if (existing) {
+        existing.webContents = senderWebContents;
       }
+      return { success: true, reused: true, shell: existing?.shellType };
     }
 
     const workingDir = cwd || os.homedir();
@@ -147,17 +151,19 @@ function register(ctx) {
       ptySessions.set(id, { ptyProcess, webContents: senderWebContents, shellType: actualShellType });
 
       ptyProcess.onData(data => {
-
-        if (senderWebContents && !senderWebContents.isDestroyed()) {
-          senderWebContents.send('terminal-data', { id, data });
+        const session = ptySessions.get(id);
+        const wc = session?.webContents;
+        if (wc && !wc.isDestroyed()) {
+          wc.send('terminal-data', { id, data });
         }
       });
 
       ptyProcess.onExit(({ exitCode, signal }) => {
+        const session = ptySessions.get(id);
+        const wc = session?.webContents;
         ptySessions.delete(id);
-
-        if (senderWebContents && !senderWebContents.isDestroyed()) {
-          senderWebContents.send('terminal-closed', { id });
+        if (wc && !wc.isDestroyed()) {
+          wc.send('terminal-closed', { id });
         }
       });
 
@@ -178,15 +184,19 @@ function register(ctx) {
           ptySessions.set(id, { ptyProcess, webContents: senderWebContents, shellType: 'ipython' });
 
           ptyProcess.onData(data => {
-            if (senderWebContents && !senderWebContents.isDestroyed()) {
-              senderWebContents.send('terminal-data', { id, data });
+            const session = ptySessions.get(id);
+            const wc = session?.webContents;
+            if (wc && !wc.isDestroyed()) {
+              wc.send('terminal-data', { id, data });
             }
           });
 
           ptyProcess.onExit(({ exitCode, signal }) => {
+            const session = ptySessions.get(id);
+            const wc = session?.webContents;
             ptySessions.delete(id);
-            if (senderWebContents && !senderWebContents.isDestroyed()) {
-              senderWebContents.send('terminal-closed', { id });
+            if (wc && !wc.isDestroyed()) {
+              wc.send('terminal-closed', { id });
             }
           });
 
@@ -204,20 +214,17 @@ function register(ctx) {
       return { success: false, error: 'Terminal functionality not available' };
     }
 
+    if (ptyKillTimers.has(id)) {
+      clearTimeout(ptyKillTimers.get(id));
+      ptyKillTimers.delete(id);
+    }
+
     if (ptySessions.has(id)) {
-      if (ptyKillTimers.has(id)) return { success: true };
-
-      const timer = setTimeout(() => {
-        if (ptySessions.has(id)) {
-          const session = ptySessions.get(id);
-          if (session?.ptyProcess) {
-            session.ptyProcess.kill();
-          }
-        }
-        ptyKillTimers.delete(id);
-      }, 100);
-
-      ptyKillTimers.set(id, timer);
+      const session = ptySessions.get(id);
+      if (session?.ptyProcess) {
+        session.ptyProcess.kill();
+      }
+      ptySessions.delete(id);
     }
     return { success: true };
   });

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Terminal, Package, Check, AlertCircle, RefreshCw, ChevronRight, Sparkles, Cpu, Mic, Zap, Box, Wand2, Bot, ChevronLeft, Info, Server, HardDrive, X, Folder, Cloud, KeyRound, Sun, Moon, FolderOpen } from 'lucide-react';
+import incognideLogo from '../../assets/icon.png';
 
 interface PythonInfo {
     name: string;
@@ -26,8 +27,27 @@ type UserPath = 'no-ai' | 'cloud-ai' | 'local-ai';
 interface ModelInfo {
     provider: string;
     models: string[];
-    available: boolean;
+    running: boolean;
+    installed: boolean;
 }
+
+const statusBadge = (info: ModelInfo | undefined) => {
+    if (info?.running) return { text: 'Running', cls: 'bg-green-500/30 text-green-300' };
+    if (info?.installed) return { text: 'Installed (not running)', cls: 'bg-yellow-500/30 text-yellow-300' };
+    return { text: 'Not found', cls: 'text-gray-500' };
+};
+
+const tileBorder = (info: ModelInfo | undefined) => {
+    if (info?.running) return 'border-green-500/50 bg-green-900/20';
+    if (info?.installed) return 'border-yellow-500/40 bg-yellow-900/10';
+    return 'border-gray-700 bg-gray-800/50';
+};
+
+const iconColor = (info: ModelInfo | undefined) => {
+    if (info?.running) return 'text-green-400';
+    if (info?.installed) return 'text-yellow-400';
+    return 'text-gray-500';
+};
 
 const INSTALL_OPTIONS: InstallOption[] = [
     {
@@ -61,7 +81,47 @@ const INSTALL_OPTIONS: InstallOption[] = [
     },
 ];
 
-type SetupStep = 'welcome' | 'preferences' | 'path' | 'cloud-keys' | 'extras' | 'models' | 'creating' | 'installing' | 'concepts' | 'complete' | 'error';
+type SetupStep = 'welcome' | 'preferences' | 'defaults' | 'path' | 'cloud-keys' | 'extras' | 'models' | 'creating' | 'installing' | 'concepts' | 'complete' | 'error';
+
+const SEARCH_ENGINES: { id: string; name: string }[] = [
+    { id: 'sibiji', name: 'Sibiji (default)' },
+    { id: 'duckduckgo', name: 'DuckDuckGo' },
+    { id: 'startpage', name: 'Startpage' },
+    { id: 'ecosia', name: 'Ecosia' },
+    { id: 'brave', name: 'Brave' },
+    { id: 'google', name: 'Google' },
+    { id: 'perplexity', name: 'Perplexity' },
+    { id: 'wikipedia', name: 'Wikipedia' },
+];
+
+function detectDefaultShell(): string {
+    const plat = navigator.platform?.toLowerCase() || '';
+    if (plat.includes('win')) return 'powershell';
+    return 'system';
+}
+
+function shellOptions(): { id: string; name: string }[] {
+    const plat = navigator.platform?.toLowerCase() || '';
+    if (plat.includes('win')) {
+        return [
+            { id: 'powershell', name: 'PowerShell' },
+            { id: 'cmd', name: 'Command Prompt' },
+            { id: 'system', name: 'System shell' },
+        ];
+    }
+    if (plat.includes('mac')) {
+        return [
+            { id: 'system', name: 'zsh (system default)' },
+            { id: 'bash', name: 'bash' },
+            { id: 'npcsh', name: 'npcsh' },
+        ];
+    }
+    return [
+        { id: 'system', name: 'bash / $SHELL (system default)' },
+        { id: 'zsh', name: 'zsh' },
+        { id: 'npcsh', name: 'npcsh' },
+    ];
+}
 
 const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
@@ -86,9 +146,17 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     const [installingXcode, setInstallingXcode] = useState(false);
     const [installError, setInstallError] = useState<string | null>(null);
     const [installMessage, setInstallMessage] = useState<string | null>(null);
+    const [skippedInstalls, setSkippedInstalls] = useState<Set<string>>(new Set());
+    const skipInstall = (name: string) => setSkippedInstalls(prev => new Set(prev).add(name));
 
     const [isDarkMode, setIsDarkMode] = useState(() => document.body.classList.contains('dark-mode'));
     const [dataDirectory, setDataDirectory] = useState('~/.npcsh/incognide');
+    const [searchEngine, setSearchEngine] = useState(() => localStorage.getItem('npc-browser-search-engine') || 'sibiji');
+    const [defaultShell, setDefaultShell] = useState(() => localStorage.getItem('terminal-default-shell') || detectDefaultShell());
+    const [activityTrackingEnabled, setActivityTrackingEnabled] = useState(() => {
+        const v = localStorage.getItem('incognide_activityTrackingEnabled');
+        return v === null ? true : v === 'true';
+    });
 
     const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
 
@@ -352,7 +420,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
     const handlePathNext = () => {
         if (userPath === 'no-ai') {
-            handleStartInstall();
+            handleSkip();
         } else if (userPath === 'cloud-ai') {
             setStep('cloud-keys');
         } else {
@@ -364,7 +432,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     };
 
     const handleCloudKeysNext = () => {
-        handleStartInstall();
+        handleSkip();
     };
 
     const handleExtrasNext = async () => {
@@ -375,16 +443,13 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     const renderWelcome = () => (
         <div className="space-y-6">
             <div className="text-center">
-                <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center">
-                    <Sparkles size={32} className="text-white" />
-                </div>
+                <img src={incognideLogo} alt="Incognide" className="w-20 h-20 mx-auto mb-4 rounded-2xl" />
                 <h1 className="text-2xl font-bold text-white mb-2">Welcome to Incognide</h1>
-                <p className="text-gray-400">Your personal workspace</p>
+                <p className="text-gray-400">Explore the unknown and build the future.</p>
             </div>
 
             <div className="bg-gray-800/50 rounded-lg p-4 text-sm text-gray-300">
-                Incognide is a workspace for files, code, documents, browsing, and optionally AI-powered tools.
-                Let's get you set up.
+                Incognide unifies chat, code, documents, web browsing, and media into a tileable workspace with intelligent context and composable automations. Let's get you set up.
             </div>
 
             <button
@@ -495,6 +560,78 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                                 global_vars: {}
                             }).catch(() => {});
                         }
+                        setStep('defaults');
+                    }}
+                    className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
+                >
+                    Continue <ChevronRight size={18} />
+                </button>
+            </div>
+        </div>
+    );
+
+    const renderDefaults = () => (
+        <div className="space-y-5">
+            <div className="text-center">
+                <h2 className="text-xl font-bold text-white mb-1">Defaults</h2>
+                <p className="text-gray-400 text-sm">Pre-selected based on your platform — change any of these if you want</p>
+            </div>
+
+            <div className="space-y-2">
+                <label className="text-xs text-gray-400 font-medium">Default web search engine</label>
+                <select
+                    value={searchEngine}
+                    onChange={(e) => setSearchEngine(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white"
+                >
+                    {SEARCH_ENGINES.map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                </select>
+            </div>
+
+            <div className="space-y-2">
+                <label className="text-xs text-gray-400 font-medium">Default terminal shell</label>
+                <select
+                    value={defaultShell}
+                    onChange={(e) => setDefaultShell(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white"
+                >
+                    {shellOptions().map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                </select>
+            </div>
+
+            <div className="space-y-2">
+                <label className="flex items-start gap-3 cursor-pointer p-3 rounded-lg border border-gray-700 bg-gray-800/50 hover:bg-gray-800">
+                    <input
+                        type="checkbox"
+                        checked={activityTrackingEnabled}
+                        onChange={(e) => setActivityTrackingEnabled(e.target.checked)}
+                        className="mt-0.5"
+                    />
+                    <div className="flex-1">
+                        <div className="text-sm text-white font-medium">Activity tracking</div>
+                        <div className="text-xs text-gray-400 mt-0.5">
+                            Records your clicks, file opens, searches, and commands locally so Incognide can predict your next action. All data stays on your machine. You can turn this off any time.
+                        </div>
+                    </div>
+                </label>
+            </div>
+
+            <div className="flex gap-3">
+                <button
+                    onClick={() => setStep('preferences')}
+                    className="py-2 px-4 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center gap-1"
+                >
+                    <ChevronLeft size={16} /> Back
+                </button>
+                <button
+                    onClick={() => {
+                        localStorage.setItem('npc-browser-search-engine', searchEngine);
+                        localStorage.setItem('terminal-default-shell', defaultShell);
+                        localStorage.setItem('incognide_activityTrackingEnabled', String(activityTrackingEnabled));
                         setStep('path');
                     }}
                     className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
@@ -576,7 +713,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
             <div className="flex gap-3">
                 <button
-                    onClick={() => setStep('preferences')}
+                    onClick={() => setStep('defaults')}
                     className="py-2 px-4 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center gap-1"
                 >
                     <ChevronLeft size={16} /> Back
@@ -710,92 +847,180 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
             ) : (
                 <>
                     <div className="space-y-3">
-                        <div className={`p-3 rounded-lg border ${detectedModels.find(m => m.provider === 'ollama')?.available ? 'border-green-500/50 bg-green-900/20' : 'border-gray-700 bg-gray-800/50'}`}>
-                            <div className="flex items-center justify-between mb-1">
-                                <div className="flex items-center gap-2">
-                                    <Server size={18} className={detectedModels.find(m => m.provider === 'ollama')?.available ? 'text-green-400' : 'text-gray-500'} />
-                                    <span className="font-medium text-white">Ollama</span>
-                                </div>
-                                {detectedModels.find(m => m.provider === 'ollama')?.available ? (
-                                    <span className="text-xs bg-green-500/30 text-green-300 px-2 py-0.5 rounded">Detected</span>
-                                ) : (
-                                    <div className="flex items-center gap-1">
-                                        <button
-                                            onClick={() => handleInstallOllama()}
-                                            disabled={installingOllama}
-                                            className="text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-2 py-0.5 rounded flex items-center gap-1"
-                                        >
-                                            {installingOllama ? <><RefreshCw size={10} className="animate-spin" /> ...</> : 'Download'}
-                                        </button>
-                                        {platform === 'darwin' && homebrewAvailable && (
-                                            <button
-                                                onClick={() => handleInstallOllama('brew')}
-                                                disabled={installingOllama}
-                                                className="text-xs bg-gray-600 hover:bg-gray-500 disabled:bg-gray-700 text-white px-2 py-0.5 rounded"
-                                                title="Install via Homebrew"
-                                            >
-                                                brew
-                                            </button>
+                        {(() => {
+                            const info = detectedModels.find(m => m.provider === 'ollama');
+                            const b = statusBadge(info);
+                            if (skippedInstalls.has('ollama')) return null;
+                            return (
+                                <div className={`p-3 rounded-lg border ${tileBorder(info)}`}>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <div className="flex items-center gap-2">
+                                            <Server size={18} className={iconColor(info)} />
+                                            <span className="font-medium text-white">Ollama</span>
+                                        </div>
+                                        {info?.installed ? (
+                                            <span className={`text-xs px-2 py-0.5 rounded ${b.cls}`}>{b.text}</span>
+                                        ) : (
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    onClick={() => handleInstallOllama()}
+                                                    disabled={installingOllama}
+                                                    className="text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-2 py-0.5 rounded flex items-center gap-1"
+                                                >
+                                                    {installingOllama ? <><RefreshCw size={10} className="animate-spin" /> ...</> : 'Download'}
+                                                </button>
+                                                {platform === 'darwin' && homebrewAvailable && (
+                                                    <button
+                                                        onClick={() => handleInstallOllama('brew')}
+                                                        disabled={installingOllama}
+                                                        className="text-xs bg-gray-600 hover:bg-gray-500 disabled:bg-gray-700 text-white px-2 py-0.5 rounded"
+                                                        title="Install via Homebrew"
+                                                    >
+                                                        brew
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={() => skipInstall('ollama')}
+                                                    className="text-xs bg-transparent hover:bg-gray-700 text-gray-400 hover:text-gray-200 px-2 py-0.5 rounded"
+                                                    title="Skip Ollama install"
+                                                >
+                                                    Skip
+                                                </button>
+                                            </div>
                                         )}
                                     </div>
-                                )}
-                            </div>
-                            <p className="text-xs text-gray-400">Easy-to-use local model server</p>
-                            {detectedModels.find(m => m.provider === 'ollama')?.models?.length > 0 && (
-                                <div className="mt-2 flex flex-wrap gap-1">
-                                    {detectedModels.find(m => m.provider === 'ollama')?.models.slice(0, 4).map(model => (
-                                        <span key={model} className="text-[10px] bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">{model}</span>
-                                    ))}
-                                    {(detectedModels.find(m => m.provider === 'ollama')?.models.length || 0) > 4 && (
-                                        <span className="text-[10px] text-gray-500">+{(detectedModels.find(m => m.provider === 'ollama')?.models.length || 0) - 4} more</span>
+                                    <p className="text-xs text-gray-400">Easy-to-use local model server</p>
+                                    {(info?.models?.length || 0) > 0 && (
+                                        <div className="mt-2 flex flex-wrap gap-1">
+                                            {info!.models.slice(0, 4).map(model => (
+                                                <span key={model} className="text-[10px] bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">{model}</span>
+                                            ))}
+                                            {info!.models.length > 4 && (
+                                                <span className="text-[10px] text-gray-500">+{info!.models.length - 4} more</span>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
-                            )}
-                        </div>
+                            );
+                        })()}
 
-                        <div className={`p-3 rounded-lg border ${detectedModels.find(m => m.provider === 'lmstudio')?.available ? 'border-green-500/50 bg-green-900/20' : 'border-gray-700 bg-gray-800/50'}`}>
-                            <div className="flex items-center justify-between mb-1">
-                                <div className="flex items-center gap-2">
-                                    <HardDrive size={18} className={detectedModels.find(m => m.provider === 'lmstudio')?.available ? 'text-green-400' : 'text-gray-500'} />
-                                    <span className="font-medium text-white">LM Studio</span>
+                        {(() => {
+                            const info = detectedModels.find(m => m.provider === 'lmstudio');
+                            const b = statusBadge(info);
+                            return (
+                                <div className={`p-3 rounded-lg border ${tileBorder(info)}`}>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <div className="flex items-center gap-2">
+                                            <HardDrive size={18} className={iconColor(info)} />
+                                            <span className="font-medium text-white">LM Studio</span>
+                                        </div>
+                                        <span className={`text-xs px-2 py-0.5 rounded ${b.cls}`}>{b.text}</span>
+                                    </div>
+                                    <p className="text-xs text-gray-400">GUI for running GGUF models — server on port 1234 when started</p>
                                 </div>
-                                {detectedModels.find(m => m.provider === 'lmstudio')?.available ? (
-                                    <span className="text-xs bg-green-500/30 text-green-300 px-2 py-0.5 rounded">Detected</span>
-                                ) : (
-                                    <span className="text-xs text-gray-500">Not found</span>
-                                )}
-                            </div>
-                            <p className="text-xs text-gray-400">GUI for running GGUF models</p>
-                        </div>
+                            );
+                        })()}
+
+                        {(() => {
+                            const info = detectedModels.find(m => m.provider === 'llamacpp');
+                            const b = statusBadge(info);
+                            return (
+                                <div className={`p-3 rounded-lg border ${tileBorder(info)}`}>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <div className="flex items-center gap-2">
+                                            <Cpu size={18} className={iconColor(info)} />
+                                            <span className="font-medium text-white">llama.cpp / koboldcpp</span>
+                                        </div>
+                                        <span className={`text-xs px-2 py-0.5 rounded ${b.cls}`}>{b.text}</span>
+                                    </div>
+                                    <p className="text-xs text-gray-400">Inference engine for GGUF/GGML files. Server on port 8080 when running; binary detected via llama-server / llama-cli / koboldcpp.</p>
+                                    {(info?.models?.length || 0) > 0 && (
+                                        <div className="mt-2 flex flex-wrap gap-1">
+                                            {info!.models.slice(0, 4).map(model => (
+                                                <span key={model} className="text-[10px] bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">{model}</span>
+                                            ))}
+                                            {info!.models.length > 4 && (
+                                                <span className="text-[10px] text-gray-500">+{info!.models.length - 4} more</span>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })()}
+
+                        {(() => {
+                            const info = detectedModels.find(m => m.provider === 'omlx');
+                            const b = statusBadge(info);
+                            return (
+                                <div className={`p-3 rounded-lg border ${tileBorder(info)}`}>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <div className="flex items-center gap-2">
+                                            <Zap size={18} className={iconColor(info)} />
+                                            <span className="font-medium text-white">oMLX</span>
+                                        </div>
+                                        <span className={`text-xs px-2 py-0.5 rounded ${b.cls}`}>{b.text}</span>
+                                    </div>
+                                    <p className="text-xs text-gray-400">MLX inference server for Apple Silicon — server on port 8000 when running</p>
+                                    {(info?.models?.length || 0) > 0 && (
+                                        <div className="mt-2 flex flex-wrap gap-1">
+                                            {info!.models.slice(0, 4).map(model => (
+                                                <span key={model} className="text-[10px] bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">{model}</span>
+                                            ))}
+                                            {info!.models.length > 4 && (
+                                                <span className="text-[10px] text-gray-500">+{info!.models.length - 4} more</span>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })()}
                     </div>
 
-                    {platform === 'darwin' && !xcodeAvailable && (
+                    {platform === 'darwin' && !xcodeAvailable && !skippedInstalls.has('xcode') && (
                         <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
                             <div className="flex items-center justify-between mb-1">
                                 <p className="text-xs text-blue-300 font-medium">Xcode Command Line Tools</p>
-                                <button
-                                    onClick={handleInstallXcode}
-                                    disabled={installingXcode}
-                                    className="text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-2 py-0.5 rounded"
-                                >
-                                    {installingXcode ? 'Opening...' : 'Install'}
-                                </button>
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        onClick={handleInstallXcode}
+                                        disabled={installingXcode}
+                                        className="text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-2 py-0.5 rounded"
+                                    >
+                                        {installingXcode ? 'Opening...' : 'Install'}
+                                    </button>
+                                    <button
+                                        onClick={() => skipInstall('xcode')}
+                                        className="text-xs bg-transparent hover:bg-gray-700 text-gray-400 hover:text-gray-200 px-2 py-0.5 rounded"
+                                        title="Skip Xcode install"
+                                    >
+                                        Skip
+                                    </button>
+                                </div>
                             </div>
                             <p className="text-xs text-gray-400">Recommended for compiling packages.</p>
                         </div>
                     )}
 
-                    {platform === 'darwin' && !homebrewAvailable && (
+                    {platform === 'darwin' && !homebrewAvailable && !skippedInstalls.has('homebrew') && (
                         <div className="bg-gray-800/50 border border-gray-600 rounded-lg p-3">
                             <div className="flex items-center justify-between mb-1">
                                 <p className="text-xs text-gray-300 font-medium">Homebrew (optional)</p>
-                                <button
-                                    onClick={handleInstallHomebrew}
-                                    disabled={installingHomebrew}
-                                    className="text-xs bg-gray-600 hover:bg-gray-500 disabled:bg-gray-700 text-white px-2 py-0.5 rounded"
-                                >
-                                    {installingHomebrew ? <><RefreshCw size={10} className="animate-spin" /> Installing...</> : 'Install'}
-                                </button>
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        onClick={handleInstallHomebrew}
+                                        disabled={installingHomebrew}
+                                        className="text-xs bg-gray-600 hover:bg-gray-500 disabled:bg-gray-700 text-white px-2 py-0.5 rounded"
+                                    >
+                                        {installingHomebrew ? <><RefreshCw size={10} className="animate-spin" /> Installing...</> : 'Install'}
+                                    </button>
+                                    <button
+                                        onClick={() => skipInstall('homebrew')}
+                                        className="text-xs bg-transparent hover:bg-gray-700 text-gray-400 hover:text-gray-200 px-2 py-0.5 rounded"
+                                        title="Skip Homebrew install"
+                                    >
+                                        Skip
+                                    </button>
+                                </div>
                             </div>
                             <p className="text-xs text-gray-500">Package manager for macOS.</p>
                         </div>
@@ -830,10 +1055,11 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                     <ChevronLeft size={16} /> Back
                 </button>
                 <button
-                    onClick={handleStartInstall}
+                    onClick={handleSkip}
+                    disabled={loading}
                     className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
                 >
-                    Install <ChevronRight size={18} />
+                    Continue <ChevronRight size={18} />
                 </button>
             </div>
         </div>
@@ -1038,6 +1264,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
             <div className="w-full max-w-md bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-2xl my-auto">
                 {step === 'welcome' && renderWelcome()}
                 {step === 'preferences' && renderPreferences()}
+                {step === 'defaults' && renderDefaults()}
                 {step === 'path' && renderPathSelection()}
                 {step === 'cloud-keys' && renderCloudKeys()}
                 {step === 'extras' && renderExtras()}

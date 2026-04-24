@@ -685,32 +685,94 @@ function register(ctx) {
   });
 
   ipcMain.handle('detect-local-models', async () => {
+    const isMac = process.platform === 'darwin';
+    const isWin = process.platform === 'win32';
+    const whichCmd = isWin ? 'where' : 'which';
+    const home = os.homedir();
+    const extraBinDirs = isWin
+      ? []
+      : [
+          '/opt/homebrew/bin',
+          '/usr/local/bin',
+          '/usr/bin',
+          path.join(home, '.local', 'bin'),
+          path.join(home, 'bin'),
+          path.join(home, 'miniconda3', 'bin'),
+          path.join(home, 'anaconda3', 'bin'),
+        ];
+    const pathExists = (p) => {
+      try { return fs.existsSync(p); } catch { return false; }
+    };
+    const hasBinary = (name) => {
+      try {
+        execSync(`${whichCmd} ${name}`, { stdio: 'ignore', timeout: 2000 });
+        return true;
+      } catch {}
+      const suffix = isWin ? '.exe' : '';
+      for (const dir of extraBinDirs) {
+        if (pathExists(path.join(dir, name + suffix))) return true;
+      }
+      return false;
+    };
+    const appExists = (appName) => {
+      if (!isMac) return false;
+      return pathExists(`/Applications/${appName}`)
+        || pathExists(path.join(home, 'Applications', appName));
+    };
+    const probe = async (url) => {
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
+        if (!res.ok) return null;
+        return await res.json();
+      } catch {
+        return null;
+      }
+    };
+
     const models = [];
 
-    try {
-      const ollamaRes = await fetch('http://127.0.0.1:11434/api/tags', { signal: AbortSignal.timeout(3000) });
-      if (ollamaRes.ok) {
-        const data = await ollamaRes.json();
-        const modelNames = (data.models || []).map(m => m.name || m.model).filter(Boolean);
-        models.push({ provider: 'ollama', available: true, models: modelNames });
-      } else {
-        models.push({ provider: 'ollama', available: false, models: [] });
-      }
-    } catch {
-      models.push({ provider: 'ollama', available: false, models: [] });
+    {
+      const data = await probe('http://127.0.0.1:11434/api/tags');
+      const running = !!data;
+      const modelNames = running ? (data.models || []).map(m => m.name || m.model).filter(Boolean) : [];
+      const installed = running
+        || hasBinary('ollama')
+        || appExists('Ollama.app')
+        || (isWin && pathExists(path.join(home, 'AppData', 'Local', 'Programs', 'Ollama')));
+      models.push({ provider: 'ollama', running, installed, models: modelNames });
     }
 
-    try {
-      const lmRes = await fetch('http://127.0.0.1:1234/v1/models', { signal: AbortSignal.timeout(3000) });
-      if (lmRes.ok) {
-        const data = await lmRes.json();
-        const modelNames = (data.data || []).map(m => m.id).filter(Boolean);
-        models.push({ provider: 'lmstudio', available: true, models: modelNames });
-      } else {
-        models.push({ provider: 'lmstudio', available: false, models: [] });
-      }
-    } catch {
-      models.push({ provider: 'lmstudio', available: false, models: [] });
+    {
+      const data = await probe('http://127.0.0.1:1234/v1/models');
+      const running = !!data;
+      const modelNames = running ? (data.data || []).map(m => m.id).filter(Boolean) : [];
+      const installed = running
+        || hasBinary('lms')
+        || appExists('LM Studio.app')
+        || (isWin && pathExists(path.join(home, 'AppData', 'Local', 'LM-Studio')))
+        || (isWin && pathExists(path.join(home, 'AppData', 'Local', 'Programs', 'LM Studio')));
+      models.push({ provider: 'lmstudio', running, installed, models: modelNames });
+    }
+
+    {
+      const data = await probe('http://127.0.0.1:8080/v1/models');
+      const running = !!data;
+      let modelNames = running ? (data.data || []).map(m => m.id).filter(Boolean) : [];
+      const binaries = ['llama-server', 'llama-cli', 'koboldcpp'].filter(hasBinary);
+      const installed = running || binaries.length > 0;
+      if (!running && binaries.length > 0) modelNames = binaries;
+      models.push({ provider: 'llamacpp', running, installed, models: modelNames });
+    }
+
+    {
+      const data = await probe('http://127.0.0.1:8000/v1/models');
+      const running = !!data;
+      const modelNames = running ? (data.data || []).map(m => m.id).filter(Boolean) : [];
+      const installed = running
+        || hasBinary('omlx')
+        || appExists('oMLX.app')
+        || appExists('OMLX.app');
+      models.push({ provider: 'omlx', running, installed, models: modelNames });
     }
 
     return { models };
@@ -731,6 +793,81 @@ function register(ctx) {
       return { installed: true, running: false, models: [] };
     } catch (err) {
       return { installed: false, running: false, models: [], error: err.message };
+    }
+  });
+
+  ipcMain.handle('local-provider:start', async (event, provider) => {
+    const isMac = process.platform === 'darwin';
+    const isWin = process.platform === 'win32';
+    try {
+      if (provider === 'ollama') {
+        if (isMac) {
+          spawn('open', ['-a', 'Ollama'], { detached: true, stdio: 'ignore' }).unref();
+        } else {
+          spawn('ollama', ['serve'], { detached: true, stdio: 'ignore' }).unref();
+        }
+        return { success: true, message: 'Ollama starting…' };
+      }
+      if (provider === 'lmstudio') {
+        try {
+          spawn('lms', ['server', 'start'], { detached: true, stdio: 'ignore' }).unref();
+          return { success: true, message: 'LM Studio server starting…' };
+        } catch {}
+        if (isMac) {
+          spawn('open', ['-a', 'LM Studio'], { detached: true, stdio: 'ignore' }).unref();
+          return { success: true, message: 'LM Studio launched — start the server from the Developer tab.' };
+        }
+        return { success: false, error: 'lms CLI not found. Install LM Studio and enable the CLI.' };
+      }
+      if (provider === 'omlx') {
+        if (isMac) {
+          spawn('open', ['-a', 'oMLX'], { detached: true, stdio: 'ignore' }).unref();
+          return { success: true, message: 'oMLX launched — start the server from the menu bar.' };
+        }
+        return { success: false, error: 'oMLX is macOS only.' };
+      }
+      if (provider === 'llamacpp') {
+        return { success: false, error: 'llama.cpp requires a model path to start. Run `llama-server -m <model.gguf> --port 8080` in a terminal.' };
+      }
+      return { success: false, error: `Unknown provider: ${provider}` };
+    } catch (err) {
+      return { success: false, error: err.message || String(err) };
+    }
+  });
+
+  ipcMain.handle('local-provider:stop', async (event, provider) => {
+    const isWin = process.platform === 'win32';
+    try {
+      if (provider === 'lmstudio') {
+        try {
+          execSync('lms server stop', { stdio: 'ignore', timeout: 5000 });
+          return { success: true, message: 'LM Studio server stopped' };
+        } catch (err) {
+          return { success: false, error: 'lms server stop failed — stop it from the LM Studio Developer tab.' };
+        }
+      }
+      if (provider === 'ollama') {
+        if (isWin) {
+          try { execSync('taskkill /F /IM ollama.exe', { stdio: 'ignore', timeout: 5000 }); return { success: true }; }
+          catch (err) { return { success: false, error: 'Could not stop Ollama — quit it from the system tray.' }; }
+        }
+        try { execSync("pkill -f 'ollama serve'", { stdio: 'ignore', timeout: 5000 }); return { success: true }; }
+        catch { return { success: false, error: 'Could not stop Ollama — quit the Ollama app.' }; }
+      }
+      if (provider === 'llamacpp') {
+        if (isWin) {
+          try { execSync('taskkill /F /IM llama-server.exe', { stdio: 'ignore', timeout: 5000 }); return { success: true }; }
+          catch { return { success: false, error: 'Could not stop llama-server.' }; }
+        }
+        try { execSync('pkill -f llama-server', { stdio: 'ignore', timeout: 5000 }); return { success: true }; }
+        catch { return { success: false, error: 'Could not stop llama-server — no running process found.' }; }
+      }
+      if (provider === 'omlx') {
+        return { success: false, error: 'Stop oMLX from its menu bar icon.' };
+      }
+      return { success: false, error: `Unknown provider: ${provider}` };
+    } catch (err) {
+      return { success: false, error: err.message || String(err) };
     }
   });
 
@@ -2384,22 +2521,48 @@ function register(ctx) {
   ipcMain.handle('get-local-model-status', async (event, provider) => {
     try {
         const cfg = LOCAL_PROVIDER_CONFIG[provider];
-        if (!cfg) return { running: false, error: `Unknown provider: ${provider}` };
+        if (!cfg) return { running: false, installed: false, error: `Unknown provider: ${provider}` };
 
-        // Try the API endpoint first (more reliable than raw TCP)
+        let running = false;
         if (cfg.tagsUrl) {
             try {
                 const res = await fetch(cfg.tagsUrl, { signal: AbortSignal.timeout(2000) });
-                if (res.ok) return { running: true };
+                if (res.ok) running = true;
             } catch {}
         }
+        if (!running) running = await _checkPort('127.0.0.1', cfg.port);
 
-        // Fall back to TCP port check
-        const open = await _checkPort('127.0.0.1', cfg.port);
-        return { running: open };
+        const isMac = process.platform === 'darwin';
+        const isWin = process.platform === 'win32';
+        const home = os.homedir();
+        const extraBinDirs = isWin ? [] : ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', path.join(home, '.local', 'bin'), path.join(home, 'bin')];
+        const hasBin = (name) => {
+            try { execSync(`${isWin ? 'where' : 'which'} ${name}`, { stdio: 'ignore', timeout: 2000 }); return true; } catch {}
+            const suf = isWin ? '.exe' : '';
+            return extraBinDirs.some(d => { try { return fs.existsSync(path.join(d, name + suf)); } catch { return false; } });
+        };
+        const appExists = (app) => {
+            if (!isMac) return false;
+            try { return fs.existsSync(`/Applications/${app}`) || fs.existsSync(path.join(home, 'Applications', app)); } catch { return false; }
+        };
+
+        let installed = running;
+        if (!installed) {
+            if (provider === 'ollama') {
+                installed = hasBin('ollama') || appExists('Ollama.app');
+            } else if (provider === 'lmstudio') {
+                installed = hasBin('lms') || appExists('LM Studio.app');
+            } else if (provider === 'llamacpp') {
+                installed = hasBin('llama-server') || hasBin('llama-cli') || hasBin('koboldcpp');
+            } else if (provider === 'omlx') {
+                installed = hasBin('omlx') || appExists('oMLX.app') || appExists('OMLX.app');
+            }
+        }
+
+        return { running, installed };
     } catch (err) {
         console.error('Error getting local model status:', err);
-        return { running: false, error: err.message };
+        return { running: false, installed: false, error: err.message };
     }
   });
 
@@ -2717,77 +2880,93 @@ function register(ctx) {
     return { success: true, message: 'Activity patterns computed from local history' };
   });
 
+  const finetuneJobsDir = path.join(os.homedir(), '.npcsh', 'incognide', 'finetune_jobs');
+
+  function resolveFinetuneHelper(scriptName) {
+    const { app } = require('electron');
+    const candidates = [
+      path.resolve(__dirname, '..', '..', 'resources', scriptName),
+      path.join(process.resourcesPath || '', scriptName),
+      path.join(app.getAppPath(), 'resources', scriptName),
+    ];
+    return candidates.find(p => { try { return fs.existsSync(p); } catch { return false; } });
+  }
+
+  async function spawnFinetuneJob(scriptName, workspacePath, jobPayload) {
+    const config = await _readPythonEnvConfig();
+    const envConfig = config?.workspaces?.[workspacePath];
+    const resolved = envConfig ? await resolvePythonPath(workspacePath, envConfig) : null;
+    const pythonPath = resolved?.pythonPath;
+    if (!pythonPath) {
+      return { error: 'No Python environment configured for this workspace. Open Team Management → Python Env and create a venv with npcpy + torch + diffusers installed.' };
+    }
+    const scriptPath = resolveFinetuneHelper(scriptName);
+    if (!scriptPath) return { error: `${scriptName} not found in resources` };
+
+    const jobId = `ft_${Date.now()}`;
+    const jobDir = path.join(finetuneJobsDir, jobId);
+    await fsPromises.mkdir(jobDir, { recursive: true });
+    const statusFile = path.join(jobDir, 'status.json');
+
+    const payload = { ...jobPayload, job_id: jobId, status_file: statusFile };
+
+    const proc = spawn(pythonPath, [scriptPath], {
+      stdio: ['pipe', 'ignore', 'ignore'],
+      detached: true,
+    });
+    try {
+      proc.stdin.write(JSON.stringify(payload));
+      proc.stdin.end();
+    } catch (err) {
+      return { error: `Failed to start helper: ${err.message}` };
+    }
+    proc.unref();
+
+    await fsPromises.writeFile(statusFile, JSON.stringify({ status: 'running', job_id: jobId, start_time: new Date().toISOString() }));
+    return { job_id: jobId, status_file: statusFile };
+  }
+
+  async function readFinetuneStatus(jobId) {
+    const statusFile = path.join(finetuneJobsDir, jobId, 'status.json');
+    try {
+      const raw = await fsPromises.readFile(statusFile, 'utf8');
+      return JSON.parse(raw);
+    } catch (err) {
+      return { error: `Status not available for job ${jobId}: ${err.message}` };
+    }
+  }
+
   ipcMain.handle('finetune-diffusers', async (event, params) => {
     try {
-        const response = await fetch(`${BACKEND_URL}/api/finetune_diffusers`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(params)
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Finetuning failed');
-        }
-
-        return await response.json();
+      const workspacePath = params.workspacePath || params.currentPath;
+      return await spawnFinetuneJob('run_finetune_diffusers.py', workspacePath, {
+        images: params.images,
+        captions: params.captions,
+        output_name: params.outputName,
+        output_path: params.outputPath,
+        epochs: params.epochs,
+        batch_size: params.batchSize,
+        learning_rate: params.learningRate,
+      });
     } catch (error) {
-        console.error('Finetune diffusers error:', error);
-        return { error: error.message };
+      console.error('Finetune diffusers error:', error);
+      return { error: error.message };
     }
   });
 
-  ipcMain.handle('get-finetune-status', async (event, jobId) => {
-    try {
-        const response = await fetch(`${BACKEND_URL}/api/finetune_status/${jobId}`);
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to get finetune status');
-        }
-
-        return await response.json();
-    } catch (error) {
-        console.error('Get finetune status error:', error);
-        return { error: error.message };
-    }
-  });
+  ipcMain.handle('get-finetune-status', async (event, jobId) => readFinetuneStatus(jobId));
 
   ipcMain.handle('finetune-instruction', async (event, params) => {
     try {
-        const response = await fetch(`${BACKEND_URL}/api/finetune_instruction`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(params)
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Instruction finetuning failed');
-        }
-
-        return await response.json();
+      const workspacePath = params.workspacePath || params.currentPath;
+      return await spawnFinetuneJob('run_finetune_instruction.py', workspacePath, params);
     } catch (error) {
-        console.error('Finetune instruction error:', error);
-        return { error: error.message };
+      console.error('Finetune instruction error:', error);
+      return { error: error.message };
     }
   });
 
-  ipcMain.handle('get-instruction-finetune-status', async (event, jobId) => {
-    try {
-        const response = await fetch(`${BACKEND_URL}/api/finetune_instruction_status/${jobId}`);
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to get instruction finetune status');
-        }
-
-        return await response.json();
-    } catch (error) {
-        console.error('Get instruction finetune status error:', error);
-        return { error: error.message };
-    }
-  });
+  ipcMain.handle('get-instruction-finetune-status', async (event, jobId) => readFinetuneStatus(jobId));
 
   ipcMain.handle('get-instruction-models', async (event, currentPath) => {
     try {
@@ -3037,4 +3216,4 @@ function register(ctx) {
   });
 }
 
-module.exports = { register, readPythonEnvConfig };
+module.exports = { register, readPythonEnvConfig, resolvePythonPath };
