@@ -6,6 +6,7 @@ const git = require('./git');
 const database = require('./database');
 const jupyter = require('./jupyter');
 const chat = require('./chat');
+const music = require('./music');
 const npc = require('./npc');
 const filesystem = require('./filesystem');
 const settings = require('./settings');
@@ -24,6 +25,7 @@ function registerAll(ctx) {
   database.register(fullCtx);
   jupyter.register(fullCtx);
   chat.register(fullCtx);
+  music.register(fullCtx);
   npc.register(fullCtx);
   filesystem.register(fullCtx);
   settings.register(fullCtx);
