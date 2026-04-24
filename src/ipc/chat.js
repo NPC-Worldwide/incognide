@@ -515,6 +515,48 @@ function register(ctx) {
     return { success: true, path: result.path, url: `file://${result.path}`, format: result.format, provider: result.provider, model: result.model };
   });
 
+  ipcMain.handle('load_demo_tracks', async () => {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const { app } = require('electron');
+      const candidates = [
+        path.resolve(__dirname, '..', '..', 'assets', 'demo_audio'),
+        path.join(process.resourcesPath || '', 'assets', 'demo_audio'),
+        path.join(app.getAppPath(), 'assets', 'demo_audio'),
+      ];
+      const dir = candidates.find(p => fs.existsSync(p));
+      if (!dir) return { success: false, error: 'demo_audio directory not found in app resources' };
+      const files = fs.readdirSync(dir)
+        .filter(n => /\.(wav|mp3|ogg|flac|m4a|aac|aiff)$/i.test(n))
+        .map(n => ({ name: n, path: path.join(dir, n) }));
+      return { success: true, tracks: files, dir };
+    } catch (error) {
+      log('Error loading demo tracks:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('generate_music', async (event, { prompt, provider, model, duration, currentPath }) => {
+    log(`[Main Process] Generate music: "${prompt}" provider=${provider} model=${model} dur=${duration}s`);
+    if (!prompt) return { success: false, error: 'Prompt is required' };
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/generate_music`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, provider, model, duration, currentPath }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return { success: false, error: data.error || `HTTP ${response.status}` };
+      }
+      return data;
+    } catch (error) {
+      log('Error generating music:', error);
+      return { success: false, error: error.message || 'Music generation failed' };
+    }
+  });
+
   ipcMain.handle('deleteMessage', async (_, { conversationId, messageId }) => {
     try {
       const db = new sqlite3.Database(dbPath);
