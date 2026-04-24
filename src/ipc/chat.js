@@ -250,7 +250,6 @@ function register(ctx) {
   }
 
   const shellOutImageGen = (pythonPath, payload) => shellOutHelper(pythonPath, 'run_image_gen.py', payload);
-  const shellOutMusicGen = (pythonPath, payload) => shellOutHelper(pythonPath, 'run_music_gen.py', payload);
 
   ipcMain.handle('getAvailableModels', async (event, currentPath) => {
 
@@ -441,120 +440,6 @@ function register(ctx) {
     const paths = result.paths || [];
     const filenames = paths.map(p => path.basename(p));
     return { images: paths.map(p => `file://${p}`), filenames, generation_id: generateId() };
-  });
-
-  ipcMain.handle('load_demo_tracks', async () => {
-    try {
-      const fs = require('fs');
-      const path = require('path');
-      const { app } = require('electron');
-      const candidates = [
-        path.resolve(__dirname, '..', '..', 'assets', 'demo_audio'),
-        path.join(process.resourcesPath || '', 'assets', 'demo_audio'),
-        path.join(app.getAppPath(), 'assets', 'demo_audio'),
-      ];
-      const dir = candidates.find(p => fs.existsSync(p));
-      if (!dir) return { success: false, error: 'demo_audio directory not found in app resources' };
-      const files = fs.readdirSync(dir)
-        .filter(n => /\.(wav|mp3|ogg|flac|m4a|aac|aiff)$/i.test(n))
-        .map(n => ({ name: n, path: path.join(dir, n) }));
-      return { success: true, tracks: files, dir };
-    } catch (error) {
-      log('Error loading demo tracks:', error);
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('generate_music', async (event, { prompt, provider, model, duration, currentPath, workspacePath, baseFilename, apiKey }) => {
-    log(`[Main Process] Generate music: "${prompt}" provider=${provider} model=${model} dur=${duration}s`);
-    if (!prompt) return { success: false, error: 'Prompt is required' };
-
-    const p = (provider || 'local').toLowerCase();
-    const isLocal = ['local', 'musicgen', 'transformers', 'meta'].includes(p);
-
-    if (!isLocal) {
-      try {
-        const response = await fetch(`${BACKEND_URL}/api/generate_music`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt, provider, model, duration, currentPath }),
-        });
-        const data = await response.json();
-        if (!response.ok || !data.success) {
-          return { success: false, error: data.error || `HTTP ${response.status}` };
-        }
-        return data;
-      } catch (error) {
-        log('Error generating music via backend:', error);
-        return { success: false, error: error.message || 'Music generation failed' };
-      }
-    }
-
-    const outputDir = currentPath && currentPath.startsWith('~')
-      ? path.join(os.homedir(), currentPath.slice(1).replace(/^\//, ''))
-      : (currentPath || path.join(os.homedir(), '.npcsh', 'audio'));
-
-    const python = await resolveWorkspacePython(workspacePath);
-    if (!python) {
-      return { success: false, error: 'No Python environment configured for this workspace. Open Team Management → Python Env and create a venv with npcpy + torch + transformers installed.' };
-    }
-
-    const result = await shellOutMusicGen(python, {
-      prompt,
-      provider,
-      model,
-      duration,
-      output_dir: outputDir,
-      base_filename: baseFilename,
-      api_key: apiKey,
-    });
-    if (!result.success) {
-      log('Music generation (shell-out) failed:', result.error);
-      return { success: false, error: result.error };
-    }
-    return { success: true, path: result.path, url: `file://${result.path}`, format: result.format, provider: result.provider, model: result.model };
-  });
-
-  ipcMain.handle('load_demo_tracks', async () => {
-    try {
-      const fs = require('fs');
-      const path = require('path');
-      const { app } = require('electron');
-      const candidates = [
-        path.resolve(__dirname, '..', '..', 'assets', 'demo_audio'),
-        path.join(process.resourcesPath || '', 'assets', 'demo_audio'),
-        path.join(app.getAppPath(), 'assets', 'demo_audio'),
-      ];
-      const dir = candidates.find(p => fs.existsSync(p));
-      if (!dir) return { success: false, error: 'demo_audio directory not found in app resources' };
-      const files = fs.readdirSync(dir)
-        .filter(n => /\.(wav|mp3|ogg|flac|m4a|aac|aiff)$/i.test(n))
-        .map(n => ({ name: n, path: path.join(dir, n) }));
-      return { success: true, tracks: files, dir };
-    } catch (error) {
-      log('Error loading demo tracks:', error);
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('generate_music', async (event, { prompt, provider, model, duration, currentPath }) => {
-    log(`[Main Process] Generate music: "${prompt}" provider=${provider} model=${model} dur=${duration}s`);
-    if (!prompt) return { success: false, error: 'Prompt is required' };
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/generate_music`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, provider, model, duration, currentPath }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        return { success: false, error: data.error || `HTTP ${response.status}` };
-      }
-      return data;
-    } catch (error) {
-      log('Error generating music:', error);
-      return { success: false, error: error.message || 'Music generation failed' };
-    }
   });
 
   ipcMain.handle('deleteMessage', async (_, { conversationId, messageId }) => {

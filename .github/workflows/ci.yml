@@ -215,14 +215,74 @@ jobs:
         env:
           npm_config_optional: true
 
-      - name: Verify main.js syntax
-        run: node -e "require('./src/main.js')" 2>&1 || true
-
       - name: Verify preload.js syntax
-        run: node -e "require('./src/preload.js')" 2>&1 || true
+        run: node --check src/preload.js
 
-      - name: Verify IPC settings handlers load
-        run: node -e "require('./src/ipc/settings.js')" 2>&1 || true
+      - name: Verify all IPC modules syntax
+        shell: bash
+        run: |
+          for f in src/ipc/*.js; do
+            node --check "$f"
+          done
+
+      - name: Smoke-test registerAll (catches duplicate ipcMain.handle channels)
+        shell: bash
+        run: |
+          node -e "
+            const registered = new Set();
+            const stub = () => {};
+            const ipcMain = {
+              handle: (channel) => {
+                if (registered.has(channel)) {
+                  throw new Error('Duplicate ipcMain.handle for channel: ' + channel);
+                }
+                registered.add(channel);
+              },
+              on: stub,
+              removeHandler: stub,
+              removeAllListeners: stub,
+            };
+            const { registerAll } = require('./src/ipc');
+            registerAll({
+              ipcMain,
+              getMainWindow: () => null,
+              dbQuery: async () => [],
+              callBackendApi: async () => ({}),
+              BACKEND_URL: 'http://127.0.0.1:5337',
+              BACKEND_PORT: 5337,
+              log: () => {},
+              logBackend: () => {},
+              generateId: () => 'id',
+              activeStreams: new Map(),
+              DEFAULT_CONFIG: {},
+              app: { getAppPath: () => process.cwd(), getPath: () => process.cwd() },
+              IS_DEV_MODE: true,
+              cronJobs: new Map(),
+              daemons: new Map(),
+              scheduleCronJob: () => {},
+              deviceConfig: {},
+              updateDeviceConfig: () => {},
+              getOrCreateDeviceId: () => 'dev',
+              needsFirstRunSetup: () => false,
+              saveBackendPythonPath: () => {},
+              markSetupComplete: () => {},
+              getBackendPythonPath: () => null,
+              getUserProfile: () => ({}),
+              saveUserProfile: () => {},
+              registerGlobalShortcut: () => {},
+              backendProcess: null,
+              killBackendProcess: () => {},
+              ensureUserDataDirectory: () => {},
+              waitForServer: async () => {},
+              logsDir: '/tmp',
+              electronLogPath: '/tmp/electron.log',
+              backendLogPath: '/tmp/backend.log',
+              ensureTablesExist: async () => {},
+              appDir: process.cwd() + '/src',
+              NPCSH_BASE: '/tmp/.npcsh',
+            });
+            console.log('OK: registered ' + registered.size + ' unique channels');
+          "
 
       - name: Test GGUF path detection includes Windows paths
         if: runner.os == 'Windows'
