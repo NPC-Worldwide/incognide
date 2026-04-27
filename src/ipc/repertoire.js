@@ -148,14 +148,48 @@ function parseSmf(buffer) {
 
 // =========================================================================
 // Build MusicXML string from parsed MIDI tracks.
-// Picks 4/4 time, derives clef per track from average pitch (>= midi 60 → treble else bass).
+// Quantizes to a 16th-note grid, drops sub-1/16 noise hits, and splits any wide-range
+// single track into treble + bass parts so the result is readable on staff.
 // =========================================================================
 function midiTracksToMusicXml({ tracks, tempoBpm, title, composer }) {
   const tsNum = 4, tsDenom = 4;
   const beatsPerMeasure = tsNum;
-  const divisions = 4; // ticks per quarter in MusicXML output
+  const divisions = 4; // ticks per quarter in MusicXML output (16ths)
+  const QUANT = 0.25;  // quantization grid: 16th note (in beats)
+  const MIN_DUR = 0.25; // minimum kept note duration (16th)
 
   if (!tracks || tracks.length === 0) tracks = [{ name: 'Track 1', notes: [] }];
+
+  // Quantize + filter every track
+  const quantize = (v) => Math.round(v / QUANT) * QUANT;
+  tracks = tracks.map(t => {
+    const cleaned = t.notes
+      .map(n => ({
+        midi: n.midi,
+        startBeat: Math.max(0, quantize(n.startBeat)),
+        durationBeats: Math.max(MIN_DUR, quantize(n.durationBeats)),
+        velocity: n.velocity,
+      }))
+      .filter(n => n.durationBeats >= MIN_DUR);
+    return { ...t, notes: cleaned };
+  });
+
+  // Auto-split: if a single wide-range track is the only input (typical of basic-pitch),
+  // split into treble (>=60) and bass (<60) parts so it's readable.
+  if (tracks.length === 1 && tracks[0].notes.length > 0) {
+    const ns = tracks[0].notes;
+    const minP = Math.min(...ns.map(n => n.midi));
+    const maxP = Math.max(...ns.map(n => n.midi));
+    if (maxP - minP > 24 || minP < 55) {
+      const baseName = tracks[0].name || 'Derived';
+      const treble = ns.filter(n => n.midi >= 60);
+      const bass = ns.filter(n => n.midi < 60);
+      tracks = [];
+      if (treble.length) tracks.push({ name: `${baseName} (RH)`, notes: treble });
+      if (bass.length) tracks.push({ name: `${baseName} (LH)`, notes: bass });
+      if (tracks.length === 0) tracks = [{ name: baseName, notes: ns }];
+    }
+  }
 
   // Compute total measures across all tracks
   let maxEndBeat = 0;
@@ -643,19 +677,45 @@ function register(ctx) {
 
       if (!helperResult?.success) return { success: false, error: helperResult?.error || 'derivation failed' };
 
-      const midiPath = helperResult.midi_path;
-      if (!midiPath || !fs.existsSync(midiPath)) {
-        return { success: false, error: `helper reported MIDI path missing: ${midiPath}` };
+      // Helper returns either { stems: [{name, midi_path}, ...] } (new pipeline)
+      // or legacy { midi_path }. Normalize to a stems list.
+      const stems = Array.isArray(helperResult.stems)
+        ? helperResult.stems
+        : (helperResult.midi_path ? [{ name: 'all', midi_path: helperResult.midi_path }] : []);
+      if (stems.length === 0) {
+        return { success: false, error: 'helper reported no MIDI output' };
+      }
+      const missing = stems.filter(s => !s.midi_path || !fs.existsSync(s.midi_path));
+      if (missing.length === stems.length) {
+        return { success: false, error: `all reported MIDI files missing on disk` };
       }
 
-      // Parse MIDI → MusicXML
+      // Parse each stem's MIDI → one named track per stem; combine into one MusicXML.
       let xml;
       try {
-        const midiBuf = await fsPromises.readFile(midiPath);
-        const parsed = parseSmf(midiBuf);
+        const allTracks = [];
+        let bpm = 120;
+        for (const stem of stems) {
+          if (!stem.midi_path || !fs.existsSync(stem.midi_path)) continue;
+          const midiBuf = await fsPromises.readFile(stem.midi_path);
+          const parsed = parseSmf(midiBuf);
+          if (parsed.tempoBpm) bpm = parsed.tempoBpm;
+          // Tag each parsed track with the stem name (and skip empties)
+          parsed.tracks.forEach((t, i) => {
+            if (t.notes.length === 0) return;
+            const baseName = stem.name || `Track ${allTracks.length + 1}`;
+            const name = parsed.tracks.filter(x => x.notes.length > 0).length > 1
+              ? `${baseName} ${i + 1}`
+              : baseName;
+            allTracks.push({ ...t, name });
+          });
+        }
+        if (allTracks.length === 0) {
+          return { success: false, error: 'all stems empty after MIDI parse' };
+        }
         xml = midiTracksToMusicXml({
-          tracks: parsed.tracks,
-          tempoBpm: parsed.tempoBpm,
+          tracks: allTracks,
+          tempoBpm: bpm,
           title: row.title,
           composer: row.composer,
         });
