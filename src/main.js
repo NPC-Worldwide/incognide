@@ -307,6 +307,31 @@ const ensureTablesExist = async () => {
       );
   `;
 
+  const createRepertoireTable = `
+      CREATE TABLE IF NOT EXISTS repertoire (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          title TEXT NOT NULL,
+          composer TEXT,
+          audio_path TEXT,
+          source_url TEXT,
+          source_type TEXT,
+          notes TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+  `;
+
+  const createRepertoireSheetsTable = `
+      CREATE TABLE IF NOT EXISTS repertoire_sheets (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          repertoire_id INTEGER NOT NULL,
+          name TEXT,
+          musicxml TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (repertoire_id) REFERENCES repertoire(id) ON DELETE CASCADE
+      );
+  `;
+
   const createIndexes = `
       CREATE INDEX IF NOT EXISTS idx_file_path ON pdf_highlights(file_path);
       CREATE INDEX IF NOT EXISTS idx_pdf_drawings_file ON pdf_drawings(file_path);
@@ -319,6 +344,7 @@ const ensureTablesExist = async () => {
       CREATE INDEX IF NOT EXISTS idx_navigations_folder ON browser_navigations(folder_path);
       CREATE INDEX IF NOT EXISTS idx_jinx_log_name ON jinx_execution_log(jinx_name);
       CREATE INDEX IF NOT EXISTS idx_jinx_log_folder ON jinx_execution_log(folder_path);
+      CREATE INDEX IF NOT EXISTS idx_repertoire_sheets_rid ON repertoire_sheets(repertoire_id);
   `;
 
   try {
@@ -329,6 +355,8 @@ const ensureTablesExist = async () => {
       await dbQuery(createBrowserNavigationsTable);
       await dbQuery(createDrawingsTable);
       await dbQuery(createJinxExecutionLogTable);
+      await dbQuery(createRepertoireTable);
+      await dbQuery(createRepertoireSheetsTable);
       await dbQuery(createIndexes);
 
       const addColumnIfMissing = async (table, column, definition) => {
@@ -342,6 +370,8 @@ const ensureTablesExist = async () => {
       await addColumnIfMissing('browser_history', 'pane_id', 'TEXT');
       await addColumnIfMissing('browser_history', 'navigation_type', "TEXT DEFAULT 'click'");
       await addColumnIfMissing('pdf_highlights', 'color', "TEXT DEFAULT 'yellow'");
+      await addColumnIfMissing('repertoire', 'album', 'TEXT');
+      await addColumnIfMissing('repertoire', 'duration_sec', 'REAL');
 
       console.log('[DB] All tables are ready.');
   } catch (error) {

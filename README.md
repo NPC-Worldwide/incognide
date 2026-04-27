@@ -258,6 +258,20 @@ View 3D models directly in Incognide with a Three.js-powered viewer.
 
 Play audio files with a built-in music player and playlist management.
 
+**Repertoire** — keep a library of pieces you're learning. Each piece can have:
+- An audio file (local import or YouTube via `yt-dlp`)
+- One or more attached MusicXML sheets (renders in the multi-track Notation editor)
+- Variable playback speed (0.25×–2×) without pitch shift
+- Sheet derivation from audio (basic-pitch, beta)
+
+**Optional Scherzo dependencies** (assumed on `PATH`):
+- `yt-dlp` — for the YouTube import button. Install with `brew install yt-dlp` or `pip install yt-dlp`.
+- `basic-pitch` — for audio→MusicXML sheet derivation. Install with `pip install basic-pitch` into your active Python (e.g. the same env as the incognide backend).
+
+If a dependency is missing, the corresponding button surfaces an inline error rather than failing silently.
+
+Audio downloaded by Repertoire is stored under `~/.npcsh/incognide/data/repertoire/`.
+
 ---
 
 ## Research & Knowledge Management
