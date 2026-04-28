@@ -674,10 +674,11 @@ const CodeEditorPane = ({
 
         if (currentPaneData.contentId && currentPaneData.fileChanged) {
             currentPaneData._selfWriting = true;
+            currentPaneData._lastWrittenContent = currentPaneData.fileContent;
             await window.api.writeFileContent(currentPaneData.contentId, currentPaneData.fileContent);
             currentPaneData.fileChanged = false;
             setRootLayoutNode(p => ({ ...p }));
-            setTimeout(() => { currentPaneData._selfWriting = false; }, 1500);
+            setTimeout(() => { currentPaneData._selfWriting = false; }, 4000);
         }
     }, [nodeId, contentDataRef, setRootLayoutNode, setPromptModal, currentPath]);
 
@@ -693,14 +694,15 @@ const CodeEditorPane = ({
         const timer = setTimeout(async () => {
             try {
                 currentPaneData._selfWriting = true;
+                currentPaneData._lastWrittenContent = currentPaneData.fileContent;
                 await (window as any).api.writeFileContent(currentPaneData.contentId, currentPaneData.fileContent);
                 currentPaneData.fileChanged = false;
                 setRootLayoutNode(p => ({ ...p }));
-                setTimeout(() => { currentPaneData._selfWriting = false; }, 1500);
+                setTimeout(() => { currentPaneData._selfWriting = false; }, 4000);
             } catch (e) {
                 currentPaneData._selfWriting = false;
             }
-        }, 3000);
+        }, 30000);  // 30s idle before autosave — explicit Cmd+S still saves instantly
         return () => clearTimeout(timer);
     }, [fileContent, fileChanged, nodeId, contentDataRef, setRootLayoutNode]);
 
@@ -732,7 +734,10 @@ const CodeEditorPane = ({
             try {
                 const result = await (window as any).api.readFileContent(changedPath);
                 const diskContent = typeof result === 'string' ? result : result?.content;
-                if (diskContent == null || diskContent === pd.fileContent) return;
+                if (diskContent == null) return;
+                // Echo guard: ignore disk events whose content matches the last bytes we wrote.
+                if (diskContent === pd._lastWrittenContent) return;
+                if (diskContent === pd.fileContent) return;
                 if (pd.fileChanged) {
                     setDiskChangeContent(diskContent);
                     return;

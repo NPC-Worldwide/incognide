@@ -626,6 +626,8 @@ const LatexViewer = ({
     const [isDarkMode, setIsDarkMode] = useState(() => !document.body.classList.contains('light-mode'));
     const [isCompact, setIsCompact] = useState(false);
     const [showSavedFlash, setShowSavedFlash] = useState(false);
+    const [diskChangeContent, setDiskChangeContent] = useState<string | null>(null);
+    const lastWrittenContentRef = useRef<string | null>(null);
     const [openPdfOnBuild, setOpenPdfOnBuild] = useState(() => localStorage.getItem('latex_openPdfOnBuild') !== 'false');
     const [texEngine, setTexEngine] = useState<string>(() => localStorage.getItem('latex_engine') || 'pdflatex');
     const [logPanelHeight, setLogPanelHeight] = useState(112);
@@ -1144,13 +1146,20 @@ const LatexViewer = ({
             try {
                 const result = await (window as any).api.readFileContent(changedPath);
                 const diskContent = typeof result === 'string' ? result : result?.content;
-                if (diskContent == null || diskContent === contentRef.current) return;
+                if (diskContent == null) return;
+                // Echo guard: ignore disk events whose content matches what we just wrote (chokidar
+                // sometimes fires after our self-writing window expires).
+                if (diskContent === lastWrittenContentRef.current) return;
+                if (diskContent === contentRef.current) return;
                 if (hasChangesRef.current) {
-                    const reload = window.confirm('This file has been changed on disk. Reload and lose your changes?');
-                    if (!reload) return;
+                    // Don't show a modal — surface a non-blocking banner. User picks Reload or Ignore.
+                    setDiskChangeContent(diskContent);
+                    return;
                 }
+                // No unsaved changes → silently sync to disk content.
                 setContent(diskContent);
                 setHasChanges(false);
+                setDiskChangeContent(null);
             } catch (e) {
                 console.error('[FILE-WATCH] Error reloading:', e);
             }
@@ -1357,11 +1366,12 @@ const LatexViewer = ({
         setError(null);
         try {
             selfWritingRef.current = true;
+            lastWrittenContentRef.current = content;
             await (window as any).api.writeFileContent(savePath, content);
             setHasChanges(false);
             setShowSavedFlash(true);
             setTimeout(() => setShowSavedFlash(false), 1500);
-            setTimeout(() => { selfWritingRef.current = false; }, 1500);
+            setTimeout(() => { selfWritingRef.current = false; }, 4000);
         } catch (e: any) {
             selfWritingRef.current = false;
             setError(e.message || String(e));
@@ -1375,13 +1385,14 @@ const LatexViewer = ({
         const timer = setTimeout(async () => {
             try {
                 selfWritingRef.current = true;
+                lastWrittenContentRef.current = content;
                 await (window as any).api.writeFileContent(filePath, content);
                 setHasChanges(false);
-                setTimeout(() => { selfWritingRef.current = false; }, 1500);
+                setTimeout(() => { selfWritingRef.current = false; }, 4000);
             } catch (e) {
                 selfWritingRef.current = false;
             }
-        }, 3000);
+        }, 30000);  // 30s idle before autosave — explicit Cmd+S / Compile still save instantly
         return () => clearTimeout(timer);
     }, [content, hasChanges, filePath, isSaving]);
 
@@ -1402,9 +1413,10 @@ const LatexViewer = ({
         if (hasChanges) {
             try {
                 selfWritingRef.current = true;
+                lastWrittenContentRef.current = content;
                 await (window as any).api.writeFileContent(filePath, content);
                 setHasChanges(false);
-                setTimeout(() => { selfWritingRef.current = false; }, 1500);
+                setTimeout(() => { selfWritingRef.current = false; }, 4000);
             } catch (e: any) {
                 selfWritingRef.current = false;
                 setError('Failed to save: ' + (e.message || String(e)));
@@ -1963,6 +1975,33 @@ const LatexViewer = ({
                     </div>
                 )}
             </div>
+
+            {diskChangeContent !== null && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-900/40 border-b border-yellow-700/50 text-yellow-200 text-xs shrink-0">
+                    <RefreshCw size={12} className="text-yellow-400 shrink-0" />
+                    <span className="flex-1">
+                        File changed on disk. Reload and lose your unsaved changes?
+                    </span>
+                    <button
+                        onClick={() => {
+                            if (diskChangeContent != null) {
+                                setContent(diskChangeContent);
+                                setHasChanges(false);
+                            }
+                            setDiskChangeContent(null);
+                        }}
+                        className="px-2 py-0.5 rounded bg-yellow-600/50 hover:bg-yellow-600/80 text-yellow-100 font-medium transition-colors"
+                    >
+                        Reload
+                    </button>
+                    <button
+                        onClick={() => setDiskChangeContent(null)}
+                        className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-gray-300 transition-colors"
+                    >
+                        Ignore
+                    </button>
+                </div>
+            )}
 
             {showLog && (
                 <div className="flex flex-col flex-shrink-0 theme-bg-secondary" style={{

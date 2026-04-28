@@ -17,6 +17,7 @@ import {
     Beam, Accidental, StaveConnector
 } from 'vexflow';
 import { demoScores, DemoScore } from './scherzoLibrary';
+import JSZip from 'jszip';
 
 interface ScherzoProps {
     currentPath?: string;
@@ -260,7 +261,43 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
     const [waveformDataCache, setWaveformDataCache] = useState<Map<string, Float32Array>>(new Map());
 
     const [notationView, setNotationView] = useState<'piano' | 'sheet' | 'tab'>('sheet');
-    const [pianoNotes, setPianoNotes] = useState<Array<{ note: number; start: number; duration: number; velocity: number }>>([]);
+    type NotationNote = { note: number; start: number; duration: number; velocity: number };
+    type NotationTrack = { id: string; name: string; clef: 'treble' | 'bass'; notes: NotationNote[] };
+    const [notationTracks, setNotationTracks] = useState<NotationTrack[]>([
+        { id: 't0', name: 'Track 1', clef: 'treble', notes: [] },
+    ]);
+    const [activeTrackIdx, setActiveTrackIdx] = useState(0);
+    const [workTitle, setWorkTitle] = useState('');
+    const [composer, setComposer] = useState('');
+    const pianoNotes = notationTracks[activeTrackIdx]?.notes ?? [];
+    const setPianoNotes = useCallback((value: NotationNote[] | ((prev: NotationNote[]) => NotationNote[])) => {
+        setNotationTracks(prev => prev.map((t, i) => {
+            if (i !== activeTrackIdx) return t;
+            const newNotes = typeof value === 'function'
+                ? (value as (p: NotationNote[]) => NotationNote[])(t.notes)
+                : value;
+            return { ...t, notes: newNotes };
+        }));
+    }, [activeTrackIdx]);
+    // Repertoire state
+    type RepertoireItem = {
+        id: number; title: string; composer: string | null; album: string | null;
+        audio_path: string | null; source_url: string | null; source_type: string | null;
+        duration_sec?: number | null;
+        created_at?: string; updated_at?: string;
+    };
+    type RepertoireSheetMeta = { id: number; name: string; xml_length: number; created_at?: string };
+    const [repertoireItems, setRepertoireItems] = useState<RepertoireItem[]>([]);
+    const [repertoireSelectedId, setRepertoireSelectedId] = useState<number | null>(null);
+    const [repertoireSheets, setRepertoireSheets] = useState<RepertoireSheetMeta[]>([]);
+    const [repertoireDownloading, setRepertoireDownloading] = useState(false);
+    const [repertoireDeriving, setRepertoireDeriving] = useState(false);
+    const [repertoireError, setRepertoireError] = useState<string | null>(null);
+    const [repertoireProgressLog, setRepertoireProgressLog] = useState<string[]>([]);
+    const [repertoirePlaybackRate, setRepertoirePlaybackRate] = useState(1);
+    const [repertoireYouTubeUrl, setRepertoireYouTubeUrl] = useState('');
+    const repertoireAudioRef = useRef<HTMLAudioElement | null>(null);
+
     const [tabNotes, setTabNotes] = useState<Array<{ string: number; fret: number; start: number; duration: number }>>([]);
     const [notationZoom, setNotationZoom] = useState(1);
     const [notationPlayhead, setNotationPlayhead] = useState(0);
@@ -277,7 +314,13 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
     const staveLayoutRef = useRef<Array<{
         x: number; y: number; width: number; measureIdx: number;
         clef: 'treble' | 'bass'; topLineY: number; bottomLineY: number;
+        trackIdx: number; isActive: boolean;
+        noteStartX: number; noteEndX: number;
     }>>([]);
+    const sheetPlayheadRef = useRef<HTMLDivElement | null>(null);
+    const pianoPlayheadRef = useRef<HTMLDivElement | null>(null);
+    const tabPlayheadRef = useRef<HTMLDivElement | null>(null);
+    const [notationMutedTracks, setNotationMutedTracks] = useState<Set<number>>(new Set());
     const [notationKeySignature, setNotationKeySignature] = useState('C');
     const [notationClef, setNotationClef] = useState<'treble' | 'bass' | 'grand'>('treble');
     const [inputNoteDuration, setInputNoteDuration] = useState(1);
@@ -677,6 +720,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
     const ALL_SCHERZO_MODES = [
         { id: 'library', name: 'Library', icon: Library, group: 'browse' },
+        { id: 'repertoire', name: 'Repertoire', icon: ListMusic, group: 'browse' },
         { id: 'generator', name: 'Generate', icon: Sparkles, group: 'create' },
         { id: 'editor', name: 'Editor', icon: Waves, group: 'edit' },
         { id: 'beats', name: 'Beat Maker', icon: Grid, group: 'create' },
@@ -848,6 +892,528 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         />
                     </div>
                 )}
+            </div>
+        );
+    };
+
+    // ============== REPERTOIRE ==============
+    const repertoireSelected = repertoireItems.find(r => r.id === repertoireSelectedId) || null;
+
+    const repertoireRefreshList = useCallback(async () => {
+        const api = (window as any).api;
+        if (!api?.repertoireList) return;
+        const r = await api.repertoireList();
+        if (r?.success) setRepertoireItems(r.items || []);
+        else setRepertoireError(r?.error || 'failed to load');
+    }, []);
+
+    const repertoireLoadDetail = useCallback(async (id: number) => {
+        const api = (window as any).api;
+        if (!api?.repertoireGet) return;
+        const r = await api.repertoireGet(id);
+        if (r?.success) setRepertoireSheets(r.sheets || []);
+        else setRepertoireError(r?.error || 'failed to load detail');
+    }, []);
+
+    useEffect(() => {
+        if (activeMode === 'repertoire') repertoireRefreshList();
+    }, [activeMode, repertoireRefreshList]);
+
+    useEffect(() => {
+        const api = (window as any).api;
+        if (!api?.onRepertoireDownloadProgress) return;
+        const off = api.onRepertoireDownloadProgress((data: { url: string; line: string }) => {
+            const lines = String(data?.line || '').split(/\r?\n/).filter(Boolean);
+            if (lines.length === 0) return;
+            setRepertoireProgressLog(prev => [...prev, ...lines].slice(-30));
+        });
+        return () => { try { off?.(); } catch {} };
+    }, []);
+
+    useEffect(() => {
+        if (repertoireSelectedId != null) repertoireLoadDetail(repertoireSelectedId);
+        else setRepertoireSheets([]);
+    }, [repertoireSelectedId, repertoireLoadDetail]);
+
+    // Re-apply rate whenever it changes OR a new audio src loads
+    useEffect(() => {
+        const a = repertoireAudioRef.current;
+        if (!a) return;
+        a.playbackRate = repertoirePlaybackRate;
+        // Preserve pitch across speed changes (most browsers default true; be explicit for older Electron)
+        try {
+            (a as any).preservesPitch = true;
+            (a as any).mozPreservesPitch = true;
+            (a as any).webkitPreservesPitch = true;
+        } catch {}
+    }, [repertoirePlaybackRate, repertoireSelectedId]);
+
+    const repertoireImportLocal = async () => {
+        const api = (window as any).api;
+        if (!api?.showOpenDialog) return;
+        const result = await api.showOpenDialog({
+            title: 'Add audio to Repertoire',
+            properties: ['openFile'],
+            filters: [
+                { name: 'Audio', extensions: ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac'] },
+            ],
+        });
+        const picked: string | undefined = Array.isArray(result) ? result[0]?.path : result?.filePaths?.[0];
+        if (!picked) return;
+        const title = (picked.split('/').pop() || 'Untitled').replace(/\.[^.]+$/, '');
+        const r = await api.repertoireImportLocalFile({ sourcePath: picked, title });
+        if (r?.success) {
+            await repertoireRefreshList();
+            setRepertoireSelectedId(r.id);
+        } else {
+            setRepertoireError(r?.error || 'import failed');
+        }
+    };
+
+    const repertoireDownload = async () => {
+        const api = (window as any).api;
+        // Strip stray characters (backslashes, quotes) from paste
+        const url = repertoireYouTubeUrl.trim().replace(/^[\\"']+|[\\"']+$/g, '');
+        if (!url || !api?.repertoireDownloadYouTube) return;
+        setRepertoireError(null);
+        setRepertoireProgressLog([]);
+        setRepertoireDownloading(true);
+        try {
+            const r = await api.repertoireDownloadYouTube({ url, title: '' });
+            if (r?.success) {
+                setRepertoireYouTubeUrl('');
+                setRepertoireProgressLog([]);
+                await repertoireRefreshList();
+                setRepertoireSelectedId(r.id);
+            } else {
+                setRepertoireError(r?.error || 'download failed');
+            }
+        } finally {
+            setRepertoireDownloading(false);
+        }
+    };
+
+    const repertoireDeleteCurrent = async () => {
+        if (!repertoireSelectedId) return;
+        const api = (window as any).api;
+        if (!confirm('Delete this piece (and its sheets/audio) from your repertoire?')) return;
+        const r = await api.repertoireDelete(repertoireSelectedId);
+        if (r?.success) {
+            setRepertoireSelectedId(null);
+            await repertoireRefreshList();
+        }
+    };
+
+    const repertoireUpdateField = async (field: 'title' | 'composer' | 'album', value: string) => {
+        if (!repertoireSelectedId) return;
+        setRepertoireItems(prev => prev.map(it => it.id === repertoireSelectedId ? { ...it, [field]: value } : it));
+        const api = (window as any).api;
+        await api.repertoireUpdate({ id: repertoireSelectedId, fields: { [field]: value } });
+    };
+
+    const repertoireAttachSheetFromFile = async () => {
+        if (!repertoireSelectedId) return;
+        const api = (window as any).api;
+        const result = await api.showOpenDialog({
+            title: 'Attach MusicXML',
+            properties: ['openFile'],
+            filters: [{ name: 'MusicXML', extensions: ['musicxml', 'xml', 'mxl'] }],
+        });
+        const picked: string | undefined = Array.isArray(result) ? result[0]?.path : result?.filePaths?.[0];
+        if (!picked) return;
+        try {
+            let xmlText: string;
+            if (/\.mxl$/i.test(picked)) {
+                const buffer = await api.readFileBuffer(picked);
+                const zip = await JSZip.loadAsync(buffer);
+                const containerFile = zip.file('META-INF/container.xml');
+                let rootPath: string | null = null;
+                if (containerFile) {
+                    const cdoc = new DOMParser().parseFromString(await containerFile.async('string'), 'text/xml');
+                    rootPath = cdoc.querySelector('rootfile')?.getAttribute('full-path') || null;
+                }
+                if (!rootPath) {
+                    rootPath = Object.keys(zip.files).find(n => !n.startsWith('META-INF/') && /\.(xml|musicxml)$/i.test(n)) || null;
+                }
+                if (!rootPath) throw new Error('no score file inside .mxl');
+                xmlText = await zip.file(rootPath)!.async('string');
+            } else {
+                const r = await api.readFileContent(picked);
+                xmlText = typeof r === 'string' ? r : (r?.content ?? '');
+            }
+            const name = (picked.split('/').pop() || 'Sheet');
+            const r = await api.repertoireAttachSheet({ repertoireId: repertoireSelectedId, name, musicxml: xmlText });
+            if (r?.success) await repertoireLoadDetail(repertoireSelectedId);
+            else setRepertoireError(r?.error || 'attach failed');
+        } catch (e: any) {
+            setRepertoireError(e?.message || 'attach failed');
+        }
+    };
+
+    const repertoireOpenSheetInNotation = async (sheetId: number) => {
+        const api = (window as any).api;
+        const r = await api.repertoireGetSheetXml(sheetId);
+        if (!r?.success) { setRepertoireError(r?.error || 'load sheet failed'); return; }
+        // Parse via the same code path as importMusicXML — pop the user into notation mode after loading.
+        // Stash the XML on window so importMusicXML can pick it up if invoked, but we reuse parsing inline here:
+        try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(r.musicxml, 'text/xml');
+            const stepToSemitone: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+            const title = doc.querySelector('work > work-title')?.textContent?.trim() || repertoireSelected?.title || '';
+            const composerName = Array.from(doc.querySelectorAll('identification > creator'))
+                .find(c => c.getAttribute('type') === 'composer')?.textContent?.trim()
+                || repertoireSelected?.composer || '';
+            const partNameById = new Map<string, string>();
+            doc.querySelectorAll('part-list > score-part').forEach(sp => {
+                const id = sp.getAttribute('id') || '';
+                const name = sp.querySelector('part-name')?.textContent?.trim() || id;
+                if (id) partNameById.set(id, name);
+            });
+            const metronome = doc.querySelector('metronome');
+            let bpm = 120;
+            if (metronome?.querySelector('per-minute')?.textContent) bpm = parseInt(metronome.querySelector('per-minute')!.textContent!) || 120;
+            const timeEl = doc.querySelector('time');
+            let tsNum = 4, tsDenom = 4;
+            if (timeEl?.querySelector('beats')?.textContent) tsNum = parseInt(timeEl.querySelector('beats')!.textContent!) || 4;
+            if (timeEl?.querySelector('beat-type')?.textContent) tsDenom = parseInt(timeEl.querySelector('beat-type')!.textContent!) || 4;
+            const keyEl = doc.querySelector('key');
+            const keySig = keyEl
+                ? fifthsToKeySignature(parseInt(keyEl.querySelector('fifths')?.textContent || '0'))
+                : 'C';
+
+            const parts = doc.querySelectorAll('score-partwise > part');
+            const partList = parts.length > 0 ? Array.from(parts) : Array.from(doc.querySelectorAll('part'));
+            let maxMeasureCount = 0;
+            const newTracks: NotationTrack[] = [];
+            partList.forEach((part, partIdx) => {
+                let divisions = parseInt(part.querySelector('divisions')?.textContent || '1') || 1;
+                let beatOffset = 0;
+                const measures = part.querySelectorAll('measure');
+                if (measures.length > maxMeasureCount) maxMeasureCount = measures.length;
+                let trackClef: 'treble' | 'bass' = 'treble';
+                const sign = part.querySelector('attributes > clef > sign')?.textContent;
+                if (sign === 'F') trackClef = 'bass';
+                const partId = part.getAttribute('id') || `P${partIdx + 1}`;
+                const partName = partNameById.get(partId) || `Track ${partIdx + 1}`;
+                const trackNotes: NotationNote[] = [];
+                measures.forEach((measure) => {
+                    let measureBeat = beatOffset;
+                    const beatsPerMeasure = tsNum * (4 / tsDenom);
+                    let prevNoteBeat = measureBeat;
+                    Array.from(measure.children).forEach((child) => {
+                        const tag = child.tagName;
+                        if (tag === 'attributes') {
+                            const d = child.querySelector('divisions');
+                            if (d?.textContent) divisions = parseInt(d.textContent) || divisions;
+                            return;
+                        }
+                        if (tag === 'backup') {
+                            measureBeat -= (parseInt(child.querySelector('duration')?.textContent || '0') || 0) / divisions;
+                            prevNoteBeat = measureBeat;
+                            return;
+                        }
+                        if (tag === 'forward') {
+                            measureBeat += (parseInt(child.querySelector('duration')?.textContent || '0') || 0) / divisions;
+                            prevNoteBeat = measureBeat;
+                            return;
+                        }
+                        if (tag !== 'note') return;
+                        const isRest = child.querySelector('rest');
+                        const isChord = child.querySelector('chord');
+                        const isGrace = child.querySelector('grace');
+                        const durationBeats = (parseInt(child.querySelector('duration')?.textContent || '0') || 0) / divisions;
+                        if (isChord) measureBeat = prevNoteBeat;
+                        if (!isRest && !isGrace) {
+                            const pitchEl = child.querySelector('pitch');
+                            if (pitchEl) {
+                                const step = pitchEl.querySelector('step')?.textContent || 'C';
+                                const alter = parseInt(pitchEl.querySelector('alter')?.textContent || '0') || 0;
+                                const octave = parseInt(pitchEl.querySelector('octave')?.textContent || '4') || 4;
+                                const midi = (octave + 1) * 12 + (stepToSemitone[step] || 0) + alter;
+                                trackNotes.push({ note: midi, start: measureBeat, duration: durationBeats, velocity: 0.8 });
+                            }
+                        }
+                        if (!isChord && !isGrace) { prevNoteBeat = measureBeat; measureBeat += durationBeats; }
+                    });
+                    beatOffset += beatsPerMeasure;
+                });
+                newTracks.push({ id: `t${partIdx}_${partId}`, name: partName, clef: trackClef, notes: trackNotes });
+            });
+            if (newTracks.length === 0) newTracks.push({ id: 't0', name: 'Track 1', clef: 'treble', notes: [] });
+            setNotationTracks(newTracks);
+            setActiveTrackIdx(0);
+            setWorkTitle(title);
+            setComposer(composerName);
+            setNotationBpm(bpm);
+            setNotationTimeSignature([tsNum, tsDenom]);
+            setNotationKeySignature(keySig);
+            setNotationClef(newTracks[0]?.clef ?? 'treble');
+            setNotationMeasures(Math.max(4, maxMeasureCount));
+            setActiveMode('notation');
+            setNotationView('sheet');
+        } catch (e: any) {
+            setRepertoireError(e?.message || 'parse failed');
+        }
+    };
+
+    const repertoireDeriveCurrent = async () => {
+        if (!repertoireSelectedId) return;
+        setRepertoireError(null);
+        setRepertoireDeriving(true);
+        try {
+            const api = (window as any).api;
+            const r = await api.repertoireDeriveSheet({ repertoireId: repertoireSelectedId });
+            if (!r?.success) setRepertoireError(r?.error || 'derive failed');
+            else {
+                await repertoireLoadDetail(repertoireSelectedId);
+            }
+        } finally {
+            setRepertoireDeriving(false);
+        }
+    };
+
+    const renderRepertoire = () => {
+        return (
+            <div className="flex-1 flex overflow-hidden">
+                {/* Left rail — list */}
+                <div className="w-64 shrink-0 border-r theme-border flex flex-col">
+                    <div className="px-3 py-2 border-b theme-border flex items-center justify-between">
+                        <span className="text-xs font-semibold uppercase theme-text-muted">Repertoire</span>
+                        <button
+                            onClick={repertoireImportLocal}
+                            className="p-1 theme-hover rounded"
+                            title="Add audio file"
+                        >
+                            <Plus size={14}/>
+                        </button>
+                    </div>
+                    <div className="px-2 py-2 border-b theme-border space-y-1">
+                        <input
+                            type="text"
+                            value={repertoireYouTubeUrl}
+                            onChange={(e) => setRepertoireYouTubeUrl(e.target.value)}
+                            placeholder="Paste YouTube URL…"
+                            className="theme-input text-xs w-full"
+                            disabled={repertoireDownloading}
+                            onKeyDown={(e) => { if (e.key === 'Enter') repertoireDownload(); }}
+                        />
+                        <button
+                            onClick={repertoireDownload}
+                            disabled={repertoireDownloading || !repertoireYouTubeUrl.trim()}
+                            className={`w-full text-xs py-1 rounded flex items-center justify-center gap-1 ${
+                                repertoireDownloading
+                                    ? 'theme-bg-tertiary opacity-50'
+                                    : 'bg-purple-600 text-white hover:bg-purple-500 disabled:opacity-40'
+                            }`}
+                        >
+                            {repertoireDownloading ? <><Loader size={11} className="animate-spin"/> Downloading…</> : <><Download size={11}/> Import (yt-dlp)</>}
+                        </button>
+                        {repertoireDownloading && repertoireProgressLog.length > 0 && (
+                            <div className="mt-1 max-h-24 overflow-y-auto rounded border theme-border bg-black/40 p-1 text-[10px] font-mono leading-tight whitespace-pre-wrap">
+                                {repertoireProgressLog.slice(-6).map((l, i) => (
+                                    <div key={i} className="text-green-300 truncate">{l}</div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    <div className="flex-1 overflow-y-auto">
+                        {repertoireItems.length === 0 ? (
+                            <div className="text-xs theme-text-muted p-4 text-center">
+                                No pieces yet. Add audio or paste a YouTube URL above.
+                            </div>
+                        ) : (
+                            repertoireItems.map(item => (
+                                <button
+                                    key={item.id}
+                                    onClick={() => setRepertoireSelectedId(item.id)}
+                                    className={`w-full text-left px-3 py-2 border-b theme-border ${
+                                        item.id === repertoireSelectedId ? 'bg-purple-600/20 text-purple-200' : 'theme-hover'
+                                    }`}
+                                >
+                                    <div className="text-sm font-medium truncate">{item.title || 'Untitled'}</div>
+                                    {item.composer && <div className="text-[11px] theme-text-muted truncate">{item.composer}</div>}
+                                    {item.album && <div className="text-[10px] theme-text-muted truncate italic">{item.album}</div>}
+                                    {item.source_type && (
+                                        <div className="text-[10px] theme-text-muted mt-0.5 uppercase">{item.source_type}</div>
+                                    )}
+                                </button>
+                            ))
+                        )}
+                    </div>
+                </div>
+
+                {/* Right pane — detail */}
+                <div className="flex-1 flex flex-col overflow-auto">
+                    {!repertoireSelected ? (
+                        <div className="flex-1 flex items-center justify-center theme-text-muted text-sm">
+                            Select a piece, or add one from the left.
+                        </div>
+                    ) : (
+                        <div className="p-6 max-w-4xl mx-auto w-full">
+                            {repertoireError && (
+                                <div className="mb-3 px-3 py-2 rounded bg-red-900/40 text-red-200 text-xs flex items-center justify-between">
+                                    <span>{repertoireError}</span>
+                                    <button onClick={() => setRepertoireError(null)} className="opacity-60 hover:opacity-100"><X size={12}/></button>
+                                </div>
+                            )}
+                            {/* Header */}
+                            <div className="flex items-start justify-between gap-3 mb-4">
+                                <div className="flex-1 space-y-1">
+                                    <input
+                                        type="text"
+                                        value={repertoireSelected.title}
+                                        onChange={(e) => repertoireUpdateField('title', e.target.value)}
+                                        className="text-2xl font-semibold w-full bg-transparent border-none outline-none theme-text-primary"
+                                        placeholder="Title"
+                                    />
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <label className="block">
+                                            <span className="text-[10px] uppercase theme-text-muted">Artist / Composer</span>
+                                            <input
+                                                type="text"
+                                                value={repertoireSelected.composer || ''}
+                                                onChange={(e) => repertoireUpdateField('composer', e.target.value)}
+                                                className="theme-input text-sm w-full"
+                                                placeholder="Artist or composer"
+                                            />
+                                        </label>
+                                        <label className="block">
+                                            <span className="text-[10px] uppercase theme-text-muted">Album</span>
+                                            <input
+                                                type="text"
+                                                value={repertoireSelected.album || ''}
+                                                onChange={(e) => repertoireUpdateField('album', e.target.value)}
+                                                className="theme-input text-sm w-full"
+                                                placeholder="Album"
+                                            />
+                                        </label>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={repertoireDeleteCurrent}
+                                    className="p-2 theme-hover rounded text-red-400 mt-1"
+                                    title="Delete piece"
+                                >
+                                    <Trash2 size={16}/>
+                                </button>
+                            </div>
+
+                            {/* Audio player */}
+                            {repertoireSelected.audio_path ? (
+                                <div className="mb-4 p-3 theme-bg-tertiary rounded border theme-border">
+                                    <audio
+                                        ref={repertoireAudioRef}
+                                        src={`file://${repertoireSelected.audio_path}`}
+                                        controls
+                                        controlsList="noplaybackrate nodownload"
+                                        className="w-full"
+                                        onLoadedMetadata={(e) => {
+                                            const a = e.currentTarget;
+                                            a.playbackRate = repertoirePlaybackRate;
+                                            try {
+                                                (a as any).preservesPitch = true;
+                                                (a as any).mozPreservesPitch = true;
+                                                (a as any).webkitPreservesPitch = true;
+                                            } catch {}
+                                        }}
+                                        onRateChange={(e) => {
+                                            // Keep the slider in sync if the user changes rate via the native menu
+                                            const a = e.currentTarget;
+                                            if (Math.abs(a.playbackRate - repertoirePlaybackRate) > 0.001) {
+                                                setRepertoirePlaybackRate(a.playbackRate);
+                                            }
+                                        }}
+                                    />
+                                    <div className="mt-2 flex items-center gap-2">
+                                        <span className="text-xs theme-text-muted shrink-0">Speed</span>
+                                        <select
+                                            value={repertoirePlaybackRate}
+                                            onChange={(e) => {
+                                                const rate = parseFloat(e.target.value);
+                                                setRepertoirePlaybackRate(rate);
+                                                if (repertoireAudioRef.current) repertoireAudioRef.current.playbackRate = rate;
+                                            }}
+                                            className="theme-bg-tertiary theme-border border rounded px-2 py-0.5 text-sm font-mono cursor-pointer"
+                                            title="Change playback speed"
+                                        >
+                                            {[0.25, 0.5, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2].map(r => (
+                                                <option key={r} value={r}>{r.toFixed(2)}×</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    {repertoireSelected.source_url && (
+                                        <div className="mt-2 text-[10px] theme-text-muted truncate">
+                                            Source: {repertoireSelected.source_url}
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="mb-4 p-3 theme-bg-tertiary rounded border theme-border text-xs theme-text-muted">
+                                    No audio attached.
+                                </div>
+                            )}
+
+                            {/* Sheets */}
+                            <div className="mb-4">
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-xs font-semibold uppercase theme-text-muted">Sheet music</span>
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            onClick={repertoireAttachSheetFromFile}
+                                            className="text-[11px] px-2 py-0.5 rounded theme-hover border theme-border flex items-center gap-1"
+                                            title="Attach a MusicXML file"
+                                        >
+                                            <Plus size={11}/> Attach
+                                        </button>
+                                        <button
+                                            onClick={repertoireDeriveCurrent}
+                                            className="text-[11px] px-2 py-0.5 rounded theme-hover border theme-border flex items-center gap-1 disabled:opacity-40"
+                                            title="Derive sheet music from audio (basic-pitch)"
+                                            disabled={!repertoireSelected.audio_path || repertoireDeriving}
+                                        >
+                                            {repertoireDeriving
+                                                ? <><Loader size={11} className="animate-spin"/> Deriving…</>
+                                                : <><Sparkles size={11}/> Derive (beta)</>}
+                                        </button>
+                                    </div>
+                                </div>
+                                {repertoireSheets.length === 0 ? (
+                                    <div className="text-xs theme-text-muted p-3 border theme-border rounded">
+                                        No sheets attached. Attach a MusicXML / .mxl file, or derive from the audio.
+                                    </div>
+                                ) : (
+                                    <div className="space-y-1">
+                                        {repertoireSheets.map(s => (
+                                            <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 theme-bg-tertiary border theme-border rounded">
+                                                <button
+                                                    onClick={() => repertoireOpenSheetInNotation(s.id)}
+                                                    className="flex-1 text-left text-sm hover:text-purple-300 truncate"
+                                                    title="Open in Notation editor"
+                                                >
+                                                    <FileJson size={12} className="inline mr-1.5"/>{s.name}
+                                                </button>
+                                                <span className="text-[10px] theme-text-muted">{Math.round((s.xml_length || 0) / 1024)} KB</span>
+                                                <button
+                                                    onClick={async () => {
+                                                        if (!confirm(`Delete sheet "${s.name}"?`)) return;
+                                                        const api = (window as any).api;
+                                                        await api.repertoireDeleteSheet(s.id);
+                                                        if (repertoireSelectedId) repertoireLoadDetail(repertoireSelectedId);
+                                                    }}
+                                                    className="theme-hover rounded p-1 text-red-400"
+                                                    title="Delete sheet"
+                                                >
+                                                    <Trash2 size={11}/>
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
         );
     };
@@ -1759,26 +2325,26 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
 
         const result = await (window as any).api?.showSaveDialog?.({
             title: 'Export MIDI',
-            defaultPath: 'notation.mid',
+            defaultPath: `${workTitle || 'notation'}.mid`,
             filters: [{ name: 'MIDI File', extensions: ['mid', 'midi'] }],
         });
-        if (result?.filePath) {
-            await (window as any).api?.writeFileBuffer?.(result.filePath, midiBytes);
+        // show-save-dialog returns the path string directly (or null/undefined on cancel),
+        // older callers may receive a {filePath} envelope.
+        const savePath: string | undefined = typeof result === 'string'
+            ? result
+            : result?.filePath;
+        if (savePath) {
+            await (window as any).api?.writeFileBuffer?.(savePath, midiBytes);
+            console.log('[Scherzo] Wrote MIDI to', savePath);
+        } else {
+            console.log('[Scherzo] MIDI export cancelled');
         }
-    }, [pianoNotes, notationBpm, notationTimeSignature]);
+    }, [pianoNotes, notationBpm, notationTimeSignature, workTitle]);
 
     const exportMusicXML = useCallback(async () => {
         const [tsNum, tsDenom] = notationTimeSignature;
         const beatsPerMeasure = tsNum * (4 / tsDenom);
         const divisions = 4; // divisions per quarter note
-
-        // Group notes into measures
-        const measureNotes: Array<Array<{ note: number; start: number; duration: number; velocity: number }>> = [];
-        for (let m = 0; m < notationMeasures; m++) measureNotes.push([]);
-        for (const n of pianoNotes) {
-            const mIdx = Math.floor(n.start / beatsPerMeasure);
-            if (mIdx >= 0 && mIdx < notationMeasures) measureNotes[mIdx].push(n);
-        }
 
         const midiToPitch = (midi: number) => {
             const names = ['C', 'C', 'D', 'D', 'E', 'F', 'F', 'G', 'G', 'A', 'A', 'B'];
@@ -1797,88 +2363,112 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
             return '32nd';
         };
 
+        const escapeXml = (s: string) => s.replace(/[<>&"']/g, c => (
+            { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c] as string
+        ));
+
+        const tracksToExport = notationTracks.length > 0
+            ? notationTracks
+            : [{ id: 't0', name: 'Track 1', clef: notationClef === 'bass' ? 'bass' as const : 'treble' as const, notes: pianoNotes }];
+
         let xml = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
 <score-partwise version="4.0">
-  <work><work-title>Scherzo Export</work-title></work>
+  <work><work-title>${escapeXml(workTitle || 'Untitled')}</work-title></work>
   <identification>
-    <creator type="composer">Incognide Scherzo</creator>
+    <creator type="composer">${escapeXml(composer || '')}</creator>
     <encoding><software>Incognide Scherzo</software></encoding>
   </identification>
-  <part-list>
-    <score-part id="P1"><part-name>Part 1</part-name></score-part>
-  </part-list>
-  <part id="P1">\n`;
+  <part-list>\n`;
+        tracksToExport.forEach((t, i) => {
+            xml += `    <score-part id="P${i + 1}"><part-name>${escapeXml(t.name)}</part-name></score-part>\n`;
+        });
+        xml += `  </part-list>\n`;
 
-        for (let m = 0; m < notationMeasures; m++) {
-            xml += `    <measure number="${m + 1}">\n`;
-            if (m === 0) {
-                xml += `      <attributes>
+        tracksToExport.forEach((track, partIdx) => {
+            const partId = `P${partIdx + 1}`;
+            xml += `  <part id="${partId}">\n`;
+
+            // Group this track's notes per measure
+            const trackMeasureNotes: NotationNote[][] = [];
+            for (let m = 0; m < notationMeasures; m++) trackMeasureNotes.push([]);
+            for (const n of track.notes) {
+                const mIdx = Math.floor(n.start / beatsPerMeasure);
+                if (mIdx >= 0 && mIdx < notationMeasures) trackMeasureNotes[mIdx].push(n);
+            }
+
+            for (let m = 0; m < notationMeasures; m++) {
+                xml += `    <measure number="${m + 1}">\n`;
+                if (m === 0) {
+                    xml += `      <attributes>
         <divisions>${divisions}</divisions>
         <key><fifths>${keySignatureToFifths(notationKeySignature)}</fifths></key>
         <time><beats>${tsNum}</beats><beat-type>${tsDenom}</beat-type></time>
-        <clef><sign>${notationClef === 'bass' ? 'F' : 'G'}</sign><line>${notationClef === 'bass' ? 4 : 2}</line></clef>
+        <clef><sign>${track.clef === 'bass' ? 'F' : 'G'}</sign><line>${track.clef === 'bass' ? 4 : 2}</line></clef>
       </attributes>
       <direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>${notationBpm}</per-minute></metronome></direction-type></direction>\n`;
-            }
+                }
 
-            const notes = measureNotes[m].sort((a, b) => a.start - b.start);
-            const measureStart = m * beatsPerMeasure;
+                const notes = trackMeasureNotes[m].slice().sort((a, b) => a.start - b.start);
+                const measureStart = m * beatsPerMeasure;
 
-            if (notes.length === 0) {
-                // Whole measure rest
-                xml += `      <note><rest/><duration>${Math.round(beatsPerMeasure * divisions)}</duration><type>whole</type></note>\n`;
-            } else {
-                let cursor = measureStart;
-                for (let i = 0; i < notes.length; i++) {
-                    const n = notes[i];
-                    const noteStart = n.start;
+                if (notes.length === 0) {
+                    xml += `      <note><rest/><duration>${Math.round(beatsPerMeasure * divisions)}</duration><type>whole</type></note>\n`;
+                } else {
+                    let cursor = measureStart;
+                    for (let i = 0; i < notes.length; i++) {
+                        const n = notes[i];
+                        const noteStart = n.start;
 
-                    // Rest before this note
-                    if (noteStart > cursor + 0.01) {
-                        const restDur = noteStart - cursor;
-                        xml += `      <note><rest/><duration>${Math.round(restDur * divisions)}</duration><type>${durationToType(restDur)}</type></note>\n`;
+                        if (noteStart > cursor + 0.01) {
+                            const restDur = noteStart - cursor;
+                            xml += `      <note><rest/><duration>${Math.round(restDur * divisions)}</duration><type>${durationToType(restDur)}</type></note>\n`;
+                        }
+
+                        const { step, alter, octave } = midiToPitch(n.note);
+                        const dur = Math.min(n.duration, measureStart + beatsPerMeasure - noteStart);
+                        const xmlDur = Math.round(dur * divisions);
+                        const dynamics = Math.round(n.velocity * 127);
+                        const isChord = i > 0 && Math.abs(notes[i].start - notes[i - 1].start) < 0.01;
+
+                        xml += `      <note>\n`;
+                        if (isChord) xml += `        <chord/>\n`;
+                        xml += `        <pitch><step>${step}</step>${alter ? `<alter>${alter}</alter>` : ''}<octave>${octave}</octave></pitch>\n`;
+                        xml += `        <duration>${xmlDur}</duration>\n`;
+                        xml += `        <type>${durationToType(dur)}</type>\n`;
+                        xml += `        <dynamics><other-dynamics>${dynamics}</other-dynamics></dynamics>\n`;
+                        xml += `      </note>\n`;
+
+                        if (!isChord) cursor = noteStart + dur;
                     }
 
-                    const { step, alter, octave } = midiToPitch(n.note);
-                    const dur = Math.min(n.duration, measureStart + beatsPerMeasure - noteStart);
-                    const xmlDur = Math.round(dur * divisions);
-                    const dynamics = Math.round(n.velocity * 127);
-
-                    // Check if this note starts at same time as next (chord)
-                    const isChord = i > 0 && Math.abs(notes[i].start - notes[i - 1].start) < 0.01;
-
-                    xml += `      <note>\n`;
-                    if (isChord) xml += `        <chord/>\n`;
-                    xml += `        <pitch><step>${step}</step>${alter ? `<alter>${alter}</alter>` : ''}<octave>${octave}</octave></pitch>\n`;
-                    xml += `        <duration>${xmlDur}</duration>\n`;
-                    xml += `        <type>${durationToType(dur)}</type>\n`;
-                    xml += `        <dynamics><other-dynamics>${dynamics}</other-dynamics></dynamics>\n`;
-                    xml += `      </note>\n`;
-
-                    if (!isChord) cursor = noteStart + dur;
+                    const remaining = measureStart + beatsPerMeasure - cursor;
+                    if (remaining > 0.01) {
+                        xml += `      <note><rest/><duration>${Math.round(remaining * divisions)}</duration><type>${durationToType(remaining)}</type></note>\n`;
+                    }
                 }
-
-                // Fill remaining measure with rest
-                const remaining = measureStart + beatsPerMeasure - cursor;
-                if (remaining > 0.01) {
-                    xml += `      <note><rest/><duration>${Math.round(remaining * divisions)}</duration><type>${durationToType(remaining)}</type></note>\n`;
-                }
+                xml += `    </measure>\n`;
             }
-            xml += `    </measure>\n`;
-        }
+            xml += `  </part>\n`;
+        });
 
-        xml += `  </part>\n</score-partwise>`;
+        xml += `</score-partwise>`;
 
         const result = await (window as any).api?.showSaveDialog?.({
             title: 'Export MusicXML',
-            defaultPath: 'notation.musicxml',
+            defaultPath: `${workTitle || 'notation'}.musicxml`,
             filters: [{ name: 'MusicXML', extensions: ['musicxml', 'xml'] }],
         });
-        if (result?.filePath) {
-            await (window as any).api?.writeFileContent?.(result.filePath, xml);
+        const savePath: string | undefined = typeof result === 'string'
+            ? result
+            : result?.filePath;
+        if (savePath) {
+            await (window as any).api?.writeFileContent?.(savePath, xml);
+            console.log('[Scherzo] Wrote MusicXML to', savePath);
+        } else {
+            console.log('[Scherzo] MusicXML export cancelled');
         }
-    }, [pianoNotes, notationBpm, notationTimeSignature, notationKeySignature, notationClef, notationMeasures]);
+    }, [pianoNotes, notationTracks, notationBpm, notationTimeSignature, notationKeySignature, notationClef, notationMeasures, workTitle, composer]);
 
     const importMusicXML = useCallback(async () => {
         const result = await (window as any).api?.showOpenDialog?.({
@@ -1886,14 +2476,63 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
             filters: [{ name: 'MusicXML', extensions: ['musicxml', 'xml', 'mxl'] }],
             properties: ['openFile'],
         });
-        if (!result?.filePaths?.[0]) return;
+        // show-open-dialog returns either an array of {path,...} objects or a {filePaths:[...]} envelope, depending on handler version
+        let filePath: string | undefined;
+        if (Array.isArray(result)) filePath = result[0]?.path;
+        else filePath = result?.filePaths?.[0];
+        if (!filePath) {
+            console.log('[Scherzo] MusicXML import cancelled or no file selected', result);
+            return;
+        }
+        console.log('[Scherzo] Importing MusicXML from', filePath);
+        const isCompressed = /\.mxl$/i.test(filePath);
 
-        const content = await (window as any).api?.readFileContent?.(result.filePaths[0]);
-        if (!content) return;
+        let xmlText: string | null = null;
+        try {
+            if (isCompressed) {
+                const buffer = await (window as any).api?.readFileBuffer?.(filePath);
+                if (!buffer) return;
+                const zip = await JSZip.loadAsync(buffer);
+                // Find root file via META-INF/container.xml; fall back to any score-looking .xml
+                let rootPath: string | null = null;
+                const containerFile = zip.file('META-INF/container.xml');
+                if (containerFile) {
+                    const containerXml = await containerFile.async('string');
+                    const cdoc = new DOMParser().parseFromString(containerXml, 'text/xml');
+                    rootPath = cdoc.querySelector('rootfile')?.getAttribute('full-path') || null;
+                }
+                if (!rootPath) {
+                    rootPath = Object.keys(zip.files).find(
+                        n => !n.startsWith('META-INF/') && /\.(xml|musicxml)$/i.test(n)
+                    ) || null;
+                }
+                if (!rootPath) {
+                    console.error('MusicXML: no score file inside .mxl');
+                    return;
+                }
+                const scoreFile = zip.file(rootPath);
+                if (!scoreFile) {
+                    console.error('MusicXML: rootfile referenced but missing:', rootPath);
+                    return;
+                }
+                xmlText = await scoreFile.async('string');
+            } else {
+                const r = await (window as any).api?.readFileContent?.(filePath);
+                xmlText = typeof r === 'string' ? r : (r?.content ?? null);
+                if (r?.error) {
+                    console.error('Failed to read MusicXML:', r.error);
+                    return;
+                }
+            }
+        } catch (e) {
+            console.error('Failed to load MusicXML file:', e);
+            return;
+        }
+        if (!xmlText) return;
 
         try {
             const parser = new DOMParser();
-            const doc = parser.parseFromString(content, 'text/xml');
+            const doc = parser.parseFromString(xmlText, 'text/xml');
 
             const stepToSemitone: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 
@@ -1923,76 +2562,128 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 keySig = fifthsToKeySignature(fifths);
             }
 
-            // Extract clef
-            const clefEl = doc.querySelector('clef');
-            let clef = notationClef;
-            if (clefEl) {
-                const sign = clefEl.querySelector('sign')?.textContent;
-                if (sign === 'F') clef = 'bass';
-                else if (sign === 'G') clef = 'treble';
-            }
+            // Title + composer
+            const title = doc.querySelector('work > work-title')?.textContent?.trim()
+                || doc.querySelector('movement-title')?.textContent?.trim()
+                || '';
+            const composerName = Array.from(doc.querySelectorAll('identification > creator'))
+                .find(c => c.getAttribute('type') === 'composer')?.textContent?.trim()
+                || doc.querySelector('identification > creator')?.textContent?.trim()
+                || '';
 
-            // Extract divisions (ticks per quarter note)
-            const divisionsEl = doc.querySelector('divisions');
-            const divisions = parseInt(divisionsEl?.textContent || '1') || 1;
+            // Build partId -> name map from part-list
+            const partNameById = new Map<string, string>();
+            doc.querySelectorAll('part-list > score-part').forEach(sp => {
+                const id = sp.getAttribute('id') || '';
+                const name = sp.querySelector('part-name')?.textContent?.trim() || id;
+                if (id) partNameById.set(id, name);
+            });
 
-            // Parse notes from all measures
-            const notes: Array<{ note: number; start: number; duration: number; velocity: number }> = [];
-            const measures = doc.querySelectorAll('measure');
-            let beatOffset = 0;
+            // Parse notes per part — each part becomes its own track
+            const parts = doc.querySelectorAll('score-partwise > part');
+            const partList = parts.length > 0 ? Array.from(parts) : Array.from(doc.querySelectorAll('part'));
+            let maxMeasureCount = 0;
+            const newTracks: NotationTrack[] = [];
 
-            measures.forEach((measure) => {
-                let measureBeat = beatOffset;
-                const beatsPerMeasure = tsNum * (4 / tsDenom);
-                let chordBeat = measureBeat;
+            partList.forEach((part, partIdx) => {
+                let divisions = parseInt(part.querySelector('divisions')?.textContent || '1') || 1;
+                let beatOffset = 0;
+                const measures = part.querySelectorAll('measure');
+                if (measures.length > maxMeasureCount) maxMeasureCount = measures.length;
 
-                measure.querySelectorAll('note').forEach((noteEl) => {
-                    const isRest = noteEl.querySelector('rest');
-                    const isChord = noteEl.querySelector('chord');
-                    const durEl = noteEl.querySelector('duration');
-                    const durationTicks = parseInt(durEl?.textContent || '0') || 0;
-                    const durationBeats = durationTicks / divisions;
+                // Detect this part's clef from the first <clef sign> inside it
+                let trackClef: 'treble' | 'bass' = 'treble';
+                const partClefSign = part.querySelector('attributes > clef > sign')?.textContent;
+                if (partClefSign === 'F') trackClef = 'bass';
+                else if (partClefSign === 'G') trackClef = 'treble';
 
-                    if (isChord) {
-                        // Chord note starts at the same beat as previous
-                        measureBeat = chordBeat;
-                    }
+                const partId = part.getAttribute('id') || `P${partIdx + 1}`;
+                const partName = partNameById.get(partId) || `Track ${partIdx + 1}`;
+                const trackNotes: NotationNote[] = [];
 
-                    if (!isRest) {
-                        const pitchEl = noteEl.querySelector('pitch');
-                        if (pitchEl) {
-                            const step = pitchEl.querySelector('step')?.textContent || 'C';
-                            const alter = parseInt(pitchEl.querySelector('alter')?.textContent || '0') || 0;
-                            const octave = parseInt(pitchEl.querySelector('octave')?.textContent || '4') || 4;
-                            const midi = (octave + 1) * 12 + (stepToSemitone[step] || 0) + alter;
+                measures.forEach((measure) => {
+                    let measureBeat = beatOffset;
+                    const beatsPerMeasure = tsNum * (4 / tsDenom);
+                    let prevNoteBeat = measureBeat;
 
-                            // Extract velocity from dynamics if present
-                            let velocity = 0.8;
-                            const dynEl = noteEl.querySelector('dynamics other-dynamics');
-                            if (dynEl?.textContent) velocity = (parseInt(dynEl.textContent) || 100) / 127;
+                    Array.from(measure.children).forEach((child) => {
+                        const tag = child.tagName;
 
-                            notes.push({ note: midi, start: measureBeat, duration: durationBeats, velocity: Math.min(1, Math.max(0.1, velocity)) });
+                        if (tag === 'attributes') {
+                            const d = child.querySelector('divisions');
+                            if (d?.textContent) divisions = parseInt(d.textContent) || divisions;
+                            return;
                         }
-                    }
 
-                    if (!isChord) {
-                        chordBeat = measureBeat;
-                        measureBeat += durationBeats;
-                    }
+                        if (tag === 'backup') {
+                            const ticks = parseInt(child.querySelector('duration')?.textContent || '0') || 0;
+                            measureBeat -= ticks / divisions;
+                            prevNoteBeat = measureBeat;
+                            return;
+                        }
+
+                        if (tag === 'forward') {
+                            const ticks = parseInt(child.querySelector('duration')?.textContent || '0') || 0;
+                            measureBeat += ticks / divisions;
+                            prevNoteBeat = measureBeat;
+                            return;
+                        }
+
+                        if (tag !== 'note') return;
+                        const noteEl = child;
+                        const isRest = noteEl.querySelector('rest');
+                        const isChord = noteEl.querySelector('chord');
+                        const isGrace = noteEl.querySelector('grace');
+                        const durEl = noteEl.querySelector('duration');
+                        const durationTicks = parseInt(durEl?.textContent || '0') || 0;
+                        const durationBeats = durationTicks / divisions;
+
+                        if (isChord) measureBeat = prevNoteBeat;
+
+                        if (!isRest && !isGrace) {
+                            const pitchEl = noteEl.querySelector('pitch');
+                            if (pitchEl) {
+                                const step = pitchEl.querySelector('step')?.textContent || 'C';
+                                const alter = parseInt(pitchEl.querySelector('alter')?.textContent || '0') || 0;
+                                const octave = parseInt(pitchEl.querySelector('octave')?.textContent || '4') || 4;
+                                const midi = (octave + 1) * 12 + (stepToSemitone[step] || 0) + alter;
+
+                                let velocity = 0.8;
+                                const dynEl = noteEl.querySelector('dynamics other-dynamics');
+                                if (dynEl?.textContent) velocity = (parseInt(dynEl.textContent) || 100) / 127;
+
+                                trackNotes.push({ note: midi, start: measureBeat, duration: durationBeats, velocity: Math.min(1, Math.max(0.1, velocity)) });
+                            }
+                        }
+
+                        if (!isChord && !isGrace) {
+                            prevNoteBeat = measureBeat;
+                            measureBeat += durationBeats;
+                        }
+                    });
+
+                    beatOffset += beatsPerMeasure;
                 });
 
-                beatOffset += beatsPerMeasure;
+                newTracks.push({ id: `t${partIdx}_${partId}`, name: partName, clef: trackClef, notes: trackNotes });
             });
 
             pushNotationUndo();
-            setPianoNotes(notes);
+            if (newTracks.length === 0) {
+                newTracks.push({ id: 't0', name: 'Track 1', clef: 'treble', notes: [] });
+            }
+            setNotationTracks(newTracks);
+            setActiveTrackIdx(0);
+            setWorkTitle(title);
+            setComposer(composerName);
             setNotationBpm(bpm);
             setNotationTimeSignature([tsNum, tsDenom]);
             setNotationKeySignature(keySig);
-            setNotationClef(clef);
-            setNotationMeasures(Math.max(notationMeasures, measures.length));
+            setNotationClef(newTracks[0]?.clef ?? 'treble');
+            setNotationMeasures(Math.max(notationMeasures, maxMeasureCount));
             setSelectedNotes(new Set());
             setInputCursor(0);
+            console.log(`[Scherzo] Imported "${title}" by ${composerName}: ${newTracks.length} tracks, ${maxMeasureCount} measures`);
         } catch (e) {
             console.error('Failed to import MusicXML:', e);
         }
@@ -2014,13 +2705,19 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         if (!synthRef.current) synthRef.current = new AudioContext();
         const ctx = synthRef.current;
         if (ctx.state === 'suspended') ctx.resume();
-        const startTime = ctx.currentTime;
+        // Schedule slightly in the future so all per-note scheduling completes
+        // before audio begins; same anchor used for visual playhead → no drift.
+        const startTime = ctx.currentTime + 0.1;
 
         // Stop any previous oscillators
         notationOscillators.current.forEach(osc => { try { osc.stop(); } catch {} });
         notationOscillators.current = [];
 
-        pianoNotes.forEach(note => {
+        // Play all tracks simultaneously (skipping muted ones), not just the active one
+        const allNotes: NotationNote[] = notationTracks.length > 0
+            ? notationTracks.flatMap((t, i) => notationMutedTracks.has(i) ? [] : t.notes)
+            : pianoNotes;
+        allNotes.forEach(note => {
             const noteStartTime = startTime + (note.start * 60 / notationBpm);
             const noteDuration = note.duration * 60 / notationBpm;
 
@@ -2041,20 +2738,31 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
         setIsNotationPlaying(true);
         setNotationPlayhead(0);
         const bpmPerMeasure = notationTimeSignature[0];
-        const totalNoteBeat = pianoNotes.length > 0 ? Math.max(...pianoNotes.map(n => n.start + n.duration)) : 0;
+        const totalNoteBeat = allNotes.length > 0 ? Math.max(...allNotes.map(n => n.start + n.duration)) : 0;
         // Play through ALL measures, not just to the last note
         const totalBeats = Math.max(totalNoteBeat, notationMeasures * bpmPerMeasure);
-        const totalDurationMs = totalBeats * 60 / notationBpm * 1000;
-        const playStartTime = performance.now();
+        const totalDurationSec = totalBeats * 60 / notationBpm;
         const beatWidthLocal = 40 * notationZoom;
         const tabBeatWidthLocal = 36 * notationZoom;
 
+        // Page padding inside the white sheet music container — must match JSX below
+        const SHEET_PAD_LEFT = 45;
+        const SHEET_PAD_TOP = 40;
+
+        // Estimated frame paint delay (ms→sec). rAF callbacks fire just before paint, so any value
+        // we read from ctx.currentTime is slightly older than what the user sees on screen. Bumping
+        // the visual time forward by this amount removes the perceived "playhead behind audio" lag.
+        const paintLookahead = 0.024;
+
         const animatePlayhead = () => {
-            const elapsed = performance.now() - playStartTime;
-            const currentBeat = (elapsed / 1000) * (notationBpm / 60);
-            if (elapsed < totalDurationMs) {
-                setNotationPlayhead(currentBeat);
-                // Auto-scroll piano roll
+            // Use AudioContext clock + small lookahead — same clock as the audio scheduler so playhead never drifts.
+            const elapsedSec = (ctx.currentTime - startTime) + paintLookahead;
+            const currentBeat = Math.max(0, elapsedSec * (notationBpm / 60));
+            if (elapsedSec < totalDurationSec) {
+                // Update piano-roll playhead via ref (no React render)
+                if (pianoPlayheadRef.current) {
+                    pianoPlayheadRef.current.style.left = `${currentBeat * beatWidthLocal}px`;
+                }
                 if (pianoRollGridRef.current) {
                     const playheadX = currentBeat * beatWidthLocal;
                     const scrollLeft = pianoRollGridRef.current.scrollLeft;
@@ -2063,21 +2771,47 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         pianoRollGridRef.current.scrollLeft = playheadX - 80;
                     }
                 }
-                // Auto-scroll sheet music view
-                if (sheetMusicScrollRef.current && staveLayoutRef.current.length > 0) {
-                    const measureIdx = Math.floor(currentBeat / bpmPerMeasure);
-                    const stave = staveLayoutRef.current.find(s => s.measureIdx === measureIdx && s.clef !== 'bass');
-                    if (stave) {
-                        const scrollEl = sheetMusicScrollRef.current;
-                        const staveY = stave.y * notationZoom;
-                        const scrollTop = scrollEl.scrollTop;
-                        const viewH = scrollEl.clientHeight;
-                        if (staveY < scrollTop + 40 || staveY > scrollTop + viewH - 80) {
-                            scrollEl.scrollTop = staveY - 60;
+
+                // Update sheet music playhead via ref
+                if (sheetPlayheadRef.current && staveLayoutRef.current.length > 0) {
+                    const measureIdx = Math.min(notationMeasures - 1, Math.floor(currentBeat / bpmPerMeasure));
+                    const beatInMeasure = currentBeat - measureIdx * bpmPerMeasure;
+                    const stavesAtMeasure = staveLayoutRef.current.filter(s => s.measureIdx === measureIdx);
+                    if (stavesAtMeasure.length > 0) {
+                        // X anchored to the stave's note region (consistent per measure → smooth across barlines)
+                        const ref = stavesAtMeasure[0];
+                        const noteRangeX = Math.max(1, ref.noteEndX - ref.noteStartX);
+                        const xRatio = Math.min(1, beatInMeasure / bpmPerMeasure);
+                        const playX = (ref.noteStartX + xRatio * noteRangeX) * notationZoom + SHEET_PAD_LEFT;
+                        // Y span: top of topmost stave to bottom of bottommost, with extra padding to ensure all tracks are crossed
+                        const minTop = Math.min(...stavesAtMeasure.map(s => s.topLineY));
+                        const maxBot = Math.max(...stavesAtMeasure.map(s => s.bottomLineY));
+                        const playTop = (minTop - 18) * notationZoom + SHEET_PAD_TOP;
+                        const playH = (maxBot - minTop + 36) * notationZoom;
+                        sheetPlayheadRef.current.style.display = 'block';
+                        sheetPlayheadRef.current.style.left = `${playX}px`;
+                        sheetPlayheadRef.current.style.top = `${playTop}px`;
+                        sheetPlayheadRef.current.style.height = `${playH}px`;
+                    }
+                    // Auto-scroll
+                    if (sheetMusicScrollRef.current) {
+                        const stave = staveLayoutRef.current.find(s => s.measureIdx === measureIdx && s.trackIdx === 0);
+                        if (stave) {
+                            const scrollEl = sheetMusicScrollRef.current;
+                            const staveY = stave.y * notationZoom;
+                            const scrollTop = scrollEl.scrollTop;
+                            const viewH = scrollEl.clientHeight;
+                            if (staveY < scrollTop + 40 || staveY > scrollTop + viewH - 80) {
+                                scrollEl.scrollTop = staveY - 60;
+                            }
                         }
                     }
                 }
-                // Auto-scroll tab view
+
+                // Tab view playhead
+                if (tabPlayheadRef.current) {
+                    tabPlayheadRef.current.style.left = `${currentBeat * tabBeatWidthLocal}px`;
+                }
                 if (tabScrollRef.current) {
                     const playheadX = currentBeat * tabBeatWidthLocal;
                     const scrollLeft = tabScrollRef.current.scrollLeft;
@@ -2092,10 +2826,11 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 setIsNotationPlaying(false);
                 notationAnimRef.current = null;
                 notationOscillators.current = [];
+                if (sheetPlayheadRef.current) sheetPlayheadRef.current.style.display = 'none';
             }
         };
         notationAnimRef.current = requestAnimationFrame(animatePlayhead);
-    }, [pianoNotes, notationBpm, notationInstrument, notationZoom, isNotationPlaying, stopNotation, notationTimeSignature, notationMeasures]);
+    }, [pianoNotes, notationTracks, notationMutedTracks, notationBpm, notationInstrument, notationZoom, isNotationPlaying, stopNotation, notationTimeSignature, notationMeasures]);
 
     // Auto-scroll piano roll to middle C on first render
     useEffect(() => {
@@ -2770,7 +3505,9 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                     { name: 'All Files', extensions: ['*'] },
                                 ],
                             });
-                            const picked: string[] = result?.filePaths || [];
+                            const picked: string[] = Array.isArray(result)
+                                ? result.map((r: any) => r?.path).filter(Boolean)
+                                : (result?.filePaths || []);
                             if (picked.length === 0) return;
 
                             // Create file entries + audioFiles library entries
@@ -4086,7 +4823,9 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                                         { name: 'All Files', extensions: ['*'] },
                                     ],
                                 });
-                                const picked = result?.filePaths?.[0];
+                                const picked: string | undefined = Array.isArray(result)
+                                    ? result[0]?.path
+                                    : result?.filePaths?.[0];
                                 if (!picked) return;
                                 const file = {
                                     id: `picked_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -4884,18 +5623,38 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 return map[d] || 1;
             };
 
-            const groupedMeasures: Array<Array<{ note: number; start: number; duration: number; velocity: number }>> = [];
-            for (let m = 0; m < measures; m++) {
-                const measureStart = m * beatsPerMeasure;
-                const measureEnd = measureStart + beatsPerMeasure;
-                const notesInMeasure = pianoNotes.filter(n => n.start >= measureStart && n.start < measureEnd);
-                groupedMeasures.push(notesInMeasure);
+            // Build the effective list of "render tracks". Multi-track imports use notationTracks directly.
+            // Single-track + 'grand' clef synthesizes a treble+bass split from one source by midi pitch.
+            type RenderTrack = { name: string; clef: 'treble' | 'bass'; notes: NotationNote[] };
+            let renderTracks: RenderTrack[];
+            if (notationTracks.length === 1 && notationClef === 'grand') {
+                const allNotes = notationTracks[0].notes;
+                renderTracks = [
+                    { name: notationTracks[0].name, clef: 'treble', notes: allNotes.filter(n => n.note >= 60) },
+                    { name: notationTracks[0].name, clef: 'bass', notes: allNotes.filter(n => n.note < 60) },
+                ];
+            } else {
+                renderTracks = notationTracks.map(t => ({ name: t.name, clef: t.clef, notes: t.notes }));
             }
+
+            // Per-track per-measure note grouping
+            const groupedByTrack: Array<Array<NotationNote[]>> = renderTracks.map(track => {
+                const out: NotationNote[][] = [];
+                for (let m = 0; m < measures; m++) {
+                    const ms = m * beatsPerMeasure;
+                    const me = ms + beatsPerMeasure;
+                    out.push(track.notes.filter(n => n.start >= ms && n.start < me));
+                }
+                return out;
+            });
 
             const renderVexFlow = (container: HTMLDivElement | null) => {
                 if (!container) return;
                 // Skip re-render if content hasn't changed (prevents 60fps VexFlow rebuilds during playback)
-                const contentKey = `${pianoNotes.map(n => `${n.note}:${n.start}:${n.duration}`).join(',')}|${notationKeySignature}|${notationClef}|${notationTimeSignature.join('/')}|${measures}`;
+                const tracksKey = renderTracks.map(t =>
+                    `${t.name}:${t.clef}:${t.notes.map(n => `${n.note}|${n.start}|${n.duration}`).join(',')}`
+                ).join('||');
+                const contentKey = `${tracksKey}|${notationKeySignature}|${notationTimeSignature.join('/')}|${measures}|${activeTrackIdx}`;
                 if (container.dataset.vfKey === contentKey) return;
                 container.dataset.vfKey = contentKey;
                 container.innerHTML = '';
@@ -4905,7 +5664,10 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 const staveStartX = 50;
                 const pageWidth = 1100;
                 const staveWidth = Math.floor((pageWidth - staveStartX - 30) / measuresPerLine);
-                const lineHeight = notationClef === 'grand' ? 240 : 150;
+                const staveSpacing = 90; // vertical px between staves within a line
+                const linePadding = 40;
+                const numTracks = renderTracks.length;
+                const lineHeight = numTracks * staveSpacing + linePadding;
                 const totalLines = Math.ceil(measures / measuresPerLine);
                 const totalHeight = Math.max(totalLines * lineHeight + 80, 500);
 
@@ -4914,11 +5676,9 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 const context = renderer.getContext();
                 context.setFont('Arial', 10);
 
-                // Style SVG for professional appearance
                 const svgEl = container.querySelector('svg');
                 if (svgEl) {
                     svgEl.style.overflow = 'visible';
-                    // Thicken staff lines and barlines
                     const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
                     style.textContent = `
                         .vf-stave .vf-stave-section rect { stroke-width: 0.8; }
@@ -4928,7 +5688,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                 }
 
                 for (let line = 0; line < totalLines; line++) {
-                    const y = line * lineHeight + 30;
+                    const lineY = line * lineHeight + 30;
 
                     for (let mInLine = 0; mInLine < measuresPerLine; mInLine++) {
                         const mIdx = line * measuresPerLine + mInLine;
@@ -4938,199 +5698,149 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         const isFirstInLine = mInLine === 0;
                         const isFirstMeasure = mIdx === 0;
 
-                        const trebleStave = new Stave(x, y, staveWidth);
-                        if (isFirstInLine) trebleStave.addClef('treble');
-                        if (isFirstMeasure) {
-                            trebleStave.addTimeSignature(`${notationTimeSignature[0]}/${notationTimeSignature[1]}`);
-                            if (notationKeySignature !== 'C') {
-                                trebleStave.addKeySignature(notationKeySignature);
-                            }
-                        }
-                        // Add measure number above the stave
-                        if (isFirstInLine || mIdx > 0) {
-                            trebleStave.setMeasure(mIdx + 1);
-                        }
-                        trebleStave.setContext(context).draw();
-
-                        let bassStave: Stave | null = null;
-                        if (notationClef === 'grand') {
-                            bassStave = new Stave(x, y + 100, staveWidth);
-                            if (isFirstInLine) bassStave.addClef('bass');
+                        // Build one stave per track at this measure
+                        const stavesAtMeasure: Stave[] = [];
+                        renderTracks.forEach((track, tIdx) => {
+                            const sy = lineY + tIdx * staveSpacing;
+                            const stave = new Stave(x, sy, staveWidth);
+                            if (isFirstInLine) stave.addClef(track.clef);
                             if (isFirstMeasure) {
-                                bassStave.addTimeSignature(`${notationTimeSignature[0]}/${notationTimeSignature[1]}`);
-                                if (notationKeySignature !== 'C') {
-                                    bassStave.addKeySignature(notationKeySignature);
-                                }
+                                stave.addTimeSignature(`${notationTimeSignature[0]}/${notationTimeSignature[1]}`);
+                                if (notationKeySignature !== 'C') stave.addKeySignature(notationKeySignature);
                             }
-                            bassStave.setContext(context).draw();
+                            // Measure number on the topmost stave only
+                            if (tIdx === 0 && (isFirstInLine || mIdx > 0)) {
+                                stave.setMeasure(mIdx + 1);
+                            }
+                            stave.setContext(context).draw();
+                            stavesAtMeasure.push(stave);
 
-                            if (isFirstInLine) {
-                                new StaveConnector(trebleStave, bassStave).setType('single').setContext(context).draw();
-                                new StaveConnector(trebleStave, bassStave).setType('brace').setContext(context).draw();
+                            // Track-name label (left of first measure of each line, on each stave)
+                            if (isFirstInLine && track.name) {
+                                try {
+                                    const ctx: any = context;
+                                    if (ctx.save) ctx.save();
+                                    ctx.setFont?.('Arial', 9, 'normal');
+                                    ctx.fillText?.(track.name, x - 46, sy + 30);
+                                    if (ctx.restore) ctx.restore();
+                                } catch {}
                             }
+                        });
+
+                        // Brace + connector across all tracks on the first measure of each line
+                        if (isFirstInLine && stavesAtMeasure.length > 1) {
+                            const top = stavesAtMeasure[0];
+                            const bot = stavesAtMeasure[stavesAtMeasure.length - 1];
+                            try {
+                                new StaveConnector(top, bot).setType('singleLeft').setContext(context).draw();
+                                new StaveConnector(top, bot).setType('brace').setContext(context).draw();
+                            } catch {}
                         }
 
-                        try {
-                            staveLayoutRef.current.push({
-                                x, y, width: staveWidth, measureIdx: mIdx,
-                                clef: notationClef === 'bass' ? 'bass' : 'treble',
-                                topLineY: trebleStave.getYForLine(0),
-                                bottomLineY: trebleStave.getYForLine(4),
-                            });
-                            if (bassStave) {
-                                staveLayoutRef.current.push({
-                                    x, y: y + 90, width: staveWidth, measureIdx: mIdx,
-                                    clef: 'bass',
-                                    topLineY: bassStave.getYForLine(0),
-                                    bottomLineY: bassStave.getYForLine(4),
-                                });
+                        // Layout registration deferred until after voice rendering so we
+                        // can capture the actual first-note X (Formatter adds padding past getNoteStartX).
+
+                        // Render notes for each track's stave
+                        const fillRests = (out: StaveNote[], beatsFilled: number, clef: string) => {
+                            let remaining = beatsPerMeasure - beatsFilled;
+                            while (remaining > 0) {
+                                let restDur = 'qr', restBeats = 1;
+                                if (remaining >= 4) { restDur = 'wr'; restBeats = 4; }
+                                else if (remaining >= 2) { restDur = 'hr'; restBeats = 2; }
+                                else if (remaining >= 1) { restDur = 'qr'; restBeats = 1; }
+                                else if (remaining >= 0.5) { restDur = '8r'; restBeats = 0.5; }
+                                else { restDur = '16r'; restBeats = 0.25; }
+                                try {
+                                    out.push(new StaveNote({
+                                        clef,
+                                        keys: [clef === 'bass' ? 'D/3' : 'B/4'],
+                                        duration: restDur,
+                                    }));
+                                } catch { break; }
+                                remaining -= restBeats;
                             }
-                        } catch {}
+                        };
 
-                        const measureNotes = groupedMeasures[mIdx] || [];
+                        renderTracks.forEach((track, tIdx) => {
+                            const stave = stavesAtMeasure[tIdx];
+                            const measureNotes = groupedByTrack[tIdx][mIdx] || [];
+                            const clef = track.clef;
+                            const restPitch = clef === 'bass' ? 'D/3' : 'B/4';
 
-                        const trebleNotes: StaveNote[] = [];
-                        const bassNotes: StaveNote[] = [];
+                            const out: StaveNote[] = [];
+                            let beatsFilled = 0;
 
-                        if (measureNotes.length === 0) {
+                            if (measureNotes.length === 0) {
+                                out.push(new StaveNote({ clef, keys: [restPitch], duration: 'wr' }));
+                            } else {
+                                const sorted = [...measureNotes].sort((a, b) => a.start - b.start || a.note - b.note);
 
-                            trebleNotes.push(new StaveNote({
-                                clef: 'treble',
-                                keys: ['B/4'],
-                                duration: 'wr',
-                            }));
-                            if (notationClef === 'grand') {
-                                bassNotes.push(new StaveNote({
-                                    clef: 'bass',
-                                    keys: ['D/3'],
-                                    duration: 'wr',
-                                }));
-                            }
-                        } else {
-
-                            const sorted = [...measureNotes].sort((a, b) => a.start - b.start || a.note - b.note);
-                            const measureStart = mIdx * beatsPerMeasure;
-                            let trebleBeatsFilled = 0;
-                            let bassBeatsFilled = 0;
-
-                            const groups: Array<typeof measureNotes> = [];
-                            for (const n of sorted) {
-                                const last = groups[groups.length - 1];
-                                if (last && Math.abs(last[0].start - n.start) < 0.01) {
-                                    last.push(n);
-                                } else {
-                                    groups.push([n]);
+                                // Group notes that start at the same beat into a chord
+                                const groups: NotationNote[][] = [];
+                                for (const n of sorted) {
+                                    const last = groups[groups.length - 1];
+                                    if (last && Math.abs(last[0].start - n.start) < 0.01) last.push(n);
+                                    else groups.push([n]);
                                 }
-                            }
 
-                            for (const group of groups) {
-
-                                const trebleGroup = group.filter(n => !(n.note < 60 && notationClef === 'grand'));
-                                const bassGroup = group.filter(n => n.note < 60 && notationClef === 'grand');
-
-                                const buildChordNote = (notes: typeof group, clef: string) => {
-                                    if (notes.length === 0) return null;
-                                    const maxDur = Math.max(...notes.map(n => n.duration));
+                                for (const group of groups) {
+                                    const maxDur = Math.max(...group.map(n => n.duration));
                                     const vexDuration = quantizeDuration(maxDur);
                                     const beats = durationBeats(vexDuration);
-                                    const keys = notes.map(n => midiToVexPitch(n.note));
+                                    const keys = group.map(n => midiToVexPitch(n.note));
                                     try {
-                                        const staveNote = new StaveNote({ clef, keys, duration: vexDuration });
+                                        const sn = new StaveNote({ clef, keys, duration: vexDuration });
                                         keys.forEach((pitch, idx) => {
                                             const noteName = pitch.split('/')[0];
-                                            if (noteName.includes('#')) staveNote.addModifier(new Accidental('#'), idx);
-                                            else if (noteName.includes('b')) staveNote.addModifier(new Accidental('b'), idx);
+                                            if (noteName.includes('#')) sn.addModifier(new Accidental('#'), idx);
+                                            else if (noteName.includes('b')) sn.addModifier(new Accidental('b'), idx);
                                         });
-                                        return { staveNote, beats };
-                                    } catch { return null; }
-                                };
-
-                                const trebleChord = buildChordNote(trebleGroup, 'treble');
-                                if (trebleChord) {
-                                    trebleNotes.push(trebleChord.staveNote);
-                                    trebleBeatsFilled += trebleChord.beats;
+                                        out.push(sn);
+                                        beatsFilled += beats;
+                                    } catch {}
                                 }
-                                const bassChord = buildChordNote(bassGroup, 'bass');
-                                if (bassChord) {
-                                    bassNotes.push(bassChord.staveNote);
-                                    bassBeatsFilled += bassChord.beats;
-                                }
-                            }
 
-                            const fillRests = (notes: StaveNote[], beatsFilled: number, clef: string) => {
-                                let remaining = beatsPerMeasure - beatsFilled;
-                                while (remaining > 0) {
-                                    let restDur = 'qr';
-                                    let restBeats = 1;
-                                    if (remaining >= 4) { restDur = 'wr'; restBeats = 4; }
-                                    else if (remaining >= 2) { restDur = 'hr'; restBeats = 2; }
-                                    else if (remaining >= 1) { restDur = 'qr'; restBeats = 1; }
-                                    else if (remaining >= 0.5) { restDur = '8r'; restBeats = 0.5; }
-                                    else { restDur = '16r'; restBeats = 0.25; }
-                                    try {
-                                        notes.push(new StaveNote({
-                                            clef: clef,
-                                            keys: [clef === 'bass' ? 'D/3' : 'B/4'],
-                                            duration: restDur,
-                                        }));
-                                    } catch (e) { break; }
-                                    remaining -= restBeats;
-                                }
-                            };
-
-                            if (trebleNotes.length === 0) {
-                                trebleNotes.push(new StaveNote({ clef: 'treble', keys: ['B/4'], duration: 'wr' }));
-                            } else {
-                                fillRests(trebleNotes, trebleBeatsFilled, 'treble');
-                            }
-                            if (notationClef === 'grand') {
-                                if (bassNotes.length === 0) {
-                                    bassNotes.push(new StaveNote({ clef: 'bass', keys: ['D/3'], duration: 'wr' }));
+                                if (out.length === 0) {
+                                    out.push(new StaveNote({ clef, keys: [restPitch], duration: 'wr' }));
                                 } else {
-                                    fillRests(bassNotes, bassBeatsFilled, 'bass');
+                                    fillRests(out, beatsFilled, clef);
                                 }
                             }
-                        }
 
-                        try {
-                            const trebleVoice = new Voice({ numBeats: beatsPerMeasure, beatValue: notationTimeSignature[1] })
-                                .setMode(Voice.Mode.SOFT);
-                            trebleVoice.addTickables(trebleNotes);
-
-                            const trebleBeamable = trebleNotes.filter(n => {
-                                const dur = n.getDuration();
-                                return !dur.includes('r') && (dur === '8' || dur === '16' || dur === '32');
-                            });
-                            const trebleBeams = trebleBeamable.length >= 2 ? Beam.generateBeams(trebleBeamable) : [];
-
-                            if (notationClef === 'grand' && bassStave) {
-                                const bassVoice = new Voice({ numBeats: beatsPerMeasure, beatValue: notationTimeSignature[1] })
+                            try {
+                                const voice = new Voice({ numBeats: beatsPerMeasure, beatValue: notationTimeSignature[1] })
                                     .setMode(Voice.Mode.SOFT);
-                                bassVoice.addTickables(bassNotes);
+                                voice.addTickables(out);
+                                new Formatter().joinVoices([voice])
+                                    .format([voice], staveWidth - (isFirstInLine ? 60 : 20));
+                                voice.draw(context, stave);
 
-                                new Formatter().joinVoices([trebleVoice]).joinVoices([bassVoice])
-                                    .format([trebleVoice, bassVoice], staveWidth - (isFirstInLine ? 80 : 20));
-
-                                trebleVoice.draw(context, trebleStave);
-                                bassVoice.draw(context, bassStave);
-
-                                const bassBeamable = bassNotes.filter(n => {
-                                    const dur = n.getDuration();
-                                    return !dur.includes('r') && (dur === '8' || dur === '16' || dur === '32');
+                                const beamable = out.filter(n => {
+                                    const d = n.getDuration();
+                                    return !d.includes('r') && (d === '8' || d === '16' || d === '32');
                                 });
-                                if (bassBeamable.length >= 2) {
-                                    Beam.generateBeams(bassBeamable).forEach(b => b.setContext(context).draw());
+                                if (beamable.length >= 2) {
+                                    Beam.generateBeams(beamable).forEach(b => b.setContext(context).draw());
                                 }
-                            } else {
-                                new Formatter().joinVoices([trebleVoice])
-                                    .format([trebleVoice], staveWidth - (isFirstInLine ? 60 : 20));
-                                trebleVoice.draw(context, trebleStave);
-                            }
+                            } catch {}
 
-                            trebleBeams.forEach(b => b.setContext(context).draw());
-                        } catch (e) {
-
-                        }
+                            // Register layout entry. Anchor playhead start at the stave's note region
+                            // (consistent per-measure) and end at the right barline — no jumps across measure transitions.
+                            try {
+                                const noteStartX = (stave as any).getNoteStartX?.() ?? x;
+                                const noteEndX = x + staveWidth; // right barline
+                                staveLayoutRef.current.push({
+                                    x, y: lineY + tIdx * staveSpacing, width: staveWidth, measureIdx: mIdx,
+                                    clef: track.clef,
+                                    topLineY: stave.getYForLine(0),
+                                    bottomLineY: stave.getYForLine(4),
+                                    trackIdx: tIdx,
+                                    isActive: tIdx === activeTrackIdx,
+                                    noteStartX,
+                                    noteEndX,
+                                });
+                            } catch {}
+                        });
                     }
                 }
             };
@@ -5405,6 +6115,46 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                         <button onClick={addSheetRest} className="h-6 px-2 rounded text-xs font-medium theme-bg-tertiary theme-hover theme-border border" title="Rest">Rest</button>
                     </div>
 
+                    {/* Track selector — visible when there are multiple tracks. Click a name to edit, M to mute. */}
+                    {notationTracks.length > 1 && (
+                        <div className="flex items-center gap-1.5 px-3 h-7 shrink-0 border-b theme-border theme-bg-secondary overflow-x-auto">
+                            <span className="text-[10px] font-medium theme-text-muted shrink-0">Tracks:</span>
+                            {notationTracks.map((t, i) => {
+                                const isMuted = notationMutedTracks.has(i);
+                                return (
+                                    <div key={t.id} className="flex items-center rounded border theme-border overflow-hidden shrink-0">
+                                        <button
+                                            onClick={() => setActiveTrackIdx(i)}
+                                            className={`px-2 py-0.5 text-[11px] whitespace-nowrap ${
+                                                i === activeTrackIdx
+                                                    ? 'bg-purple-600 text-white'
+                                                    : 'theme-bg-tertiary theme-text-muted theme-hover'
+                                            } ${isMuted ? 'opacity-50 line-through' : ''}`}
+                                            title={`Edit ${t.name} (${t.clef})`}
+                                        >
+                                            {t.name}
+                                        </button>
+                                        <button
+                                            onClick={() => setNotationMutedTracks(prev => {
+                                                const next = new Set(prev);
+                                                if (next.has(i)) next.delete(i); else next.add(i);
+                                                return next;
+                                            })}
+                                            className={`px-1.5 py-0.5 text-[10px] border-l theme-border ${
+                                                isMuted
+                                                    ? 'bg-red-600 text-white'
+                                                    : 'theme-bg-tertiary theme-text-muted theme-hover'
+                                            }`}
+                                            title={isMuted ? 'Unmute' : 'Mute'}
+                                        >
+                                            M
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
                     <div
                         className="flex-1 overflow-auto cursor-crosshair relative"
                         ref={sheetMusicScrollRef}
@@ -5428,44 +6178,71 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                             padding: '40px 45px 60px',
                             position: 'relative',
                         }}>
+                            {/* Editable title + composer header (classical score layout) */}
+                            <div style={{ marginBottom: '20px', textAlign: 'center', userSelect: 'text' }}>
+                                <input
+                                    type="text"
+                                    value={workTitle}
+                                    onChange={(e) => setWorkTitle(e.target.value)}
+                                    placeholder="Untitled"
+                                    style={{
+                                        width: '100%',
+                                        textAlign: 'center',
+                                        fontSize: '22px',
+                                        fontWeight: 600,
+                                        fontFamily: 'Georgia, "Times New Roman", serif',
+                                        color: '#111',
+                                        background: 'transparent',
+                                        border: 'none',
+                                        outline: 'none',
+                                        padding: '2px 0',
+                                    }}
+                                />
+                                <input
+                                    type="text"
+                                    value={composer}
+                                    onChange={(e) => setComposer(e.target.value)}
+                                    placeholder="Composer"
+                                    style={{
+                                        width: '100%',
+                                        textAlign: 'right',
+                                        fontSize: '13px',
+                                        fontStyle: 'italic',
+                                        fontFamily: 'Georgia, "Times New Roman", serif',
+                                        color: '#333',
+                                        background: 'transparent',
+                                        border: 'none',
+                                        outline: 'none',
+                                        padding: '2px 4px 0 0',
+                                    }}
+                                />
+                            </div>
                             <div
                                 ref={renderVexFlow}
                                 style={{ transform: `scale(${notationZoom})`, transformOrigin: 'top left' }}
                             />
-                        {/* Sheet music playhead — positioned over VexFlow SVG, offset by page padding */}
-                        {(isNotationPlaying || notationPlayhead > 0) && staveLayoutRef.current.length > 0 && (() => {
-                            const currentMeasure = Math.floor(notationPlayhead / beatsPerMeasure);
-                            const beatInMeasure = notationPlayhead - currentMeasure * beatsPerMeasure;
-                            const stave = staveLayoutRef.current.find(s => s.measureIdx === currentMeasure && s.clef !== 'bass');
-                            if (!stave) return null;
-                            const xRatio = beatInMeasure / beatsPerMeasure;
-                            // VexFlow SVG coords + page padding (45px left, 40px top)
-                            const padLeft = 45;
-                            const padTop = 40;
-                            const playX = (stave.x + xRatio * stave.width) * notationZoom + padLeft;
-                            const playTop = (stave.topLineY - 10) * notationZoom + padTop;
-                            const lineH = notationClef === 'grand'
-                                ? ((stave.bottomLineY + 120) - stave.topLineY + 20) * notationZoom
-                                : (stave.bottomLineY - stave.topLineY + 20) * notationZoom;
-                            return (
-                                <div className="absolute pointer-events-none z-20" style={{
-                                    left: `${playX}px`,
-                                    top: `${playTop}px`,
-                                    width: '2.5px',
-                                    height: `${lineH}px`,
-                                    background: 'rgba(59, 130, 246, 0.85)',
-                                    boxShadow: '0 0 6px rgba(59,130,246,0.4)',
-                                    borderRadius: '1px',
-                                }}>
-                                    <div style={{
-                                        position: 'absolute', top: '-6px', left: '-4.75px',
-                                        width: 0, height: 0,
-                                        borderLeft: '6px solid transparent', borderRight: '6px solid transparent',
-                                        borderTop: '6px solid rgba(59, 130, 246, 0.9)',
-                                    }}/>
-                                </div>
-                            );
-                        })()}
+                        {/* Sheet music playhead — spans all tracks at the current measure.
+                            Positioning is mutated directly via ref in the rAF loop for sample-accurate sync. */}
+                        <div
+                            ref={sheetPlayheadRef}
+                            className="absolute pointer-events-none z-20"
+                            style={{
+                                display: (isNotationPlaying || notationPlayhead > 0) ? 'block' : 'none',
+                                left: '0px', top: '0px',
+                                width: '2.5px',
+                                height: '0px',
+                                background: 'rgba(59, 130, 246, 0.85)',
+                                boxShadow: '0 0 6px rgba(59,130,246,0.4)',
+                                borderRadius: '1px',
+                            }}
+                        >
+                            <div style={{
+                                position: 'absolute', top: '-6px', left: '-4.75px',
+                                width: 0, height: 0,
+                                borderLeft: '6px solid transparent', borderRight: '6px solid transparent',
+                                borderTop: '6px solid rgba(59, 130, 246, 0.9)',
+                            }}/>
+                        </div>
                         <div
                             ref={ghostNoteRef}
                             className="absolute pointer-events-none"
@@ -6389,6 +7166,7 @@ export const Scherzo: React.FC<ScherzoProps> = ({ currentPath, onClose }) => {
                     </div>
 
                     {activeMode === 'library' && renderLibrary()}
+                    {activeMode === 'repertoire' && renderRepertoire()}
                     {aiEnabled && activeMode === 'generator' && renderGenerator()}
                     {activeMode === 'editor' && renderEditor()}
                     {activeMode === 'dj' && renderDJMixer()}

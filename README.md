@@ -258,6 +258,31 @@ View 3D models directly in Incognide with a Three.js-powered viewer.
 
 Play audio files with a built-in music player and playlist management.
 
+**Repertoire** — keep a library of pieces you're learning. Each piece can have:
+- An audio file (local import or YouTube via `yt-dlp`)
+- One or more attached MusicXML sheets (renders in the multi-track Notation editor)
+- Variable playback speed (0.25×–2×) without pitch shift
+- Sheet derivation from audio (demucs stem separation → basic-pitch transcription per stem)
+
+**Optional Scherzo dependencies** (assumed on `PATH`, or in the Python env configured in **Team Management → Python Env**):
+
+| Tool | Purpose | Install |
+|------|---------|---------|
+| `yt-dlp` | YouTube import | `brew install yt-dlp` (or `pip install yt-dlp`) |
+| `ffmpeg` | Audio extraction for yt-dlp; required by demucs | `brew install ffmpeg` |
+| `basic-pitch` | Audio → MIDI transcription | `pip install 'basic-pitch[coreml]'` on macOS, `pip install basic-pitch` elsewhere |
+| `demucs` | Splits audio into vocals/bass/drums/other stems before transcription (multi-track output) | `pip install demucs` |
+
+The **macOS CoreML extra** is important — the default TensorFlow SavedModel ships incompatible weights on TF 2.16+, so basic-pitch falls back to the CoreML model bundled by the `[coreml]` extra. On Linux/Windows the ONNX or TFLite model is used.
+
+**First-run notes:**
+- demucs downloads the `htdemucs` model (~250 MB) to `~/.cache/torch/hub/checkpoints/` on first use.
+- Basic-pitch's quality on dense polyphonic mixes is fundamentally limited; the demucs pre-step (vocals/bass/other separated, drums skipped) is what gives you a readable multi-staff score instead of a single-track wall of notes.
+
+If a dependency is missing, the corresponding button surfaces an inline error rather than failing silently.
+
+Audio downloaded by Repertoire and derived MIDI/MusicXML are stored under `~/.npcsh/incognide/data/repertoire/`.
+
 ---
 
 ## Research & Knowledge Management
