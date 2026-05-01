@@ -645,7 +645,7 @@ const Sidebar = (props: any) => {
             { id: 'browser', label: 'Browser', icon: 'globe', enabled: true, order: 3 },
             { id: 'terminal', label: 'Terminal', icon: 'terminal', enabled: true, order: 4, subTypes: ['system', 'npcsh', 'guac'] },
             { id: 'code', label: 'Code', icon: 'code', enabled: true, order: 5 },
-            { id: 'document', label: 'Doc', icon: 'file-text', enabled: true, order: 6, subTypes: ['docx', 'xlsx', 'pptx', 'mapx'] },
+            { id: 'document', label: 'Doc', icon: 'file-text', enabled: true, order: 6, subTypes: ['docx', 'xlsx', 'pptx'] },
             { id: 'workspace', label: 'Incognide', icon: 'incognide', enabled: true, order: 7 }
         ],
         customTiles: []
@@ -5564,7 +5564,7 @@ return (
                         </div>
                     )}
                 </div>
-                {/* Documents (merged: docx/xlsx/pptx/mapx + notebook/experiment/pltx) */}
+                {/* Documents (docx/xlsx/pptx) */}
                 <div className="relative" data-dropdown="doc" data-tutorial="document-button">
                     <button
                         onClick={() => createNewDocument?.(defaultNewDocumentType)}
@@ -5586,8 +5586,6 @@ return (
                             <button onClick={() => { createNewDocument?.('docx'); setDocDropdownOpen(false); }} className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs theme-text-primary"><FileText size={11} className="text-blue-300" /><span>Word</span></button>
                             <button onClick={() => { createNewDocument?.('xlsx'); setDocDropdownOpen(false); }} className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs theme-text-primary"><FileJson size={11} className="text-green-300" /><span>Excel</span></button>
                             <button onClick={() => { createNewDocument?.('pptx'); setDocDropdownOpen(false); }} className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs theme-text-primary"><BarChart3 size={11} className="text-orange-300" /><span>PowerPoint</span></button>
-                            <button onClick={() => { createNewDocument?.('mapx'); setDocDropdownOpen(false); }} className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs theme-text-primary"><Share2 size={11} className="text-pink-300" /><span>Mind Map</span></button>
-                            <button onClick={() => { createNewDocument?.('pltx'); setDocDropdownOpen(false); }} className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs theme-text-primary"><BarChart3 size={11} className="text-cyan-400" /><span>Plot (.pltx)</span></button>
                         </div>
                     )}
                 </div>

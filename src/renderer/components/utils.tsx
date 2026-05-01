@@ -307,11 +307,13 @@ export const loadAvailableNPCs = async (
     setNpcsError(null);
     try {
 
-        const projectResponse = await window.api.getNPCTeamProject(pathToUse);
-        const projectNPCs = projectResponse.npcs || [];
+        const [projectResult, globalResult] = await Promise.allSettled([
+            window.api.getNPCTeamProject(pathToUse),
+            window.api.getNPCTeamGlobal('npcsh'),
+        ]);
 
-        const globalResponse = await window.api.getNPCTeamGlobal('npcsh');
-        const globalNPCs = globalResponse.npcs || [];
+        const projectNPCs = projectResult.status === 'fulfilled' ? (projectResult.value.npcs || []) : [];
+        const globalNPCs = globalResult.status === 'fulfilled' ? (globalResult.value.npcs || []) : [];
 
         const formattedProjectNPCs = projectNPCs.map(npc => ({
             ...npc,
@@ -979,14 +981,10 @@ export const usePaneAwareStreamListeners = (
 
                                             if (incomingStreamId) {
                                                 try {
-                                                    await fetch(`${BACKEND_URL}/api/studio/action_result`, {
-                                                        method: 'POST',
-                                                        headers: { 'Content-Type': 'application/json' },
-                                                        body: JSON.stringify({
-                                                            streamId: incomingStreamId,
-                                                            toolId: tc.id,
-                                                            result: result
-                                                        })
+                                                    await window.api.studioActionResult({
+                                                        streamId: incomingStreamId,
+                                                        toolId: tc.id,
+                                                        result: result
                                                     });
                                                 } catch (fetchErr) {
                                                     console.warn('[STUDIO] Failed to send result to backend:', fetchErr);

@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/npc-worldwide/incognide/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPLv3%20%2B%20restrictions-blue.svg" alt="License"></a>
+  <a href="https://github.com/npc-worldwide/incognide/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
   <a href="https://enpisi.com/incognide"><img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg" alt="Platforms"></a>
   <a href="https://github.com/npc-worldwide/incognide/releases"><img src="https://img.shields.io/github/v/release/npc-worldwide/incognide?include_prereleases" alt="Release"></a>
 </p>
@@ -629,4 +629,4 @@ npm start                     # Electron
 
 ## License
 
-Incognide is licensed under AGPLv3 with additional terms prohibiting third-party SaaS services and packaged resale. See the [LICENSE](LICENSE) file for details.
+Incognide is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

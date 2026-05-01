@@ -418,29 +418,46 @@ function register(ctx) {
     }
   });
 
+  const readNPCTeamFromDir = async (teamDir, source) => {
+    try {
+      const entries = await fsPromises.readdir(teamDir);
+      const npcs = [];
+      for (const entry of entries) {
+        if (!entry.endsWith('.npc')) continue;
+        try {
+          const content = await fsPromises.readFile(path.join(teamDir, entry), 'utf8');
+          const parsed = yaml.load(content);
+          if (parsed && parsed.name) {
+            npcs.push({
+              ...parsed,
+              source,
+              source_path: path.join(teamDir, entry),
+              source_ext: '.npc',
+              team: source,
+            });
+          }
+        } catch (e) {
+          // skip unreadable .npc files
+        }
+      }
+      return npcs;
+    } catch {
+      return [];
+    }
+  };
+
   ipcMain.handle('getNPCTeamGlobal', async (event, globalPath) => {
     try {
       if (globalPath === 'npcsh') {
-
-        const response = await fetch(`${BACKEND_URL}/api/npc_team_global`, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' }
-        });
-        if (!response.ok) throw new Error('Failed to fetch NPC team');
-        const data = await response.json();
-        return { npcs: (data.npcs || []).map(n => ({ ...n, source: 'npcsh' })) };
+        const npcshTeamDir = path.join(os.homedir(), '.npcsh', 'npc_team');
+        const npcs = await readNPCTeamFromDir(npcshTeamDir, 'npcsh');
+        return { npcs };
       }
-
-      const teamPath = globalPath || INCOGNIDE_TEAM_PATH;
-      const response = await fetch(`${BACKEND_URL}/api/npc_team_project?currentPath=${encodeURIComponent(teamPath)}`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      if (!response.ok) throw new Error(`Failed to fetch NPC team from ${teamPath}`);
-      const data = await response.json();
-      return { npcs: (data.npcs || []).map(n => ({ ...n, source: globalPath ? 'custom' : 'incognide' })) };
+      const teamDir = globalPath || INCOGNIDE_TEAM_PATH;
+      const npcs = await readNPCTeamFromDir(teamDir, globalPath || 'incognide');
+      return { npcs };
     } catch (error) {
-      console.error('Error fetching NPC team:', error);
+      console.error('Error reading NPC team:', error);
       throw error;
     }
   });
@@ -450,35 +467,12 @@ function register(ctx) {
       if (!currentPath || typeof currentPath !== 'string') {
         throw new Error('Invalid currentPath provided');
       }
-
-      const queryParams = new URLSearchParams({
-        currentPath: currentPath
-      }).toString();
-
-      const url = `${BACKEND_URL}/api/npc_team_project?${queryParams}`;
-      console.log('Fetching NPC team from:', url);
-
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Server responded with status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      return {
-        npcs: data.npcs || []
-      };
+      const projectTeamDir = path.join(currentPath, 'npc_team');
+      const npcs = await readNPCTeamFromDir(projectTeamDir, 'project');
+      return { npcs };
     } catch (error) {
-      console.error('Error fetching NPC team:', error);
-      return {
-        npcs: [],
-        error: error.message
-      };
+      console.error('Error reading NPC team:', error);
+      return { npcs: [], error: error.message };
     }
   });
 
@@ -1317,6 +1311,59 @@ function register(ctx) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: projectPath }),
     });
+  });
+
+  // Studio IPC handlers - migrated from direct HTTP fetch
+  ipcMain.handle('studio:registerWindow', async (event, data) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/studio/register_window`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      return await response.json();
+    } catch (err) {
+      console.error('Error registering window:', err);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('studio:actionComplete', async (event, data) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/studio/action_complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      return await response.json();
+    } catch (err) {
+      console.error('Error completing studio action:', err);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('studio:actionResult', async (event, data) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/studio/action_result`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      return await response.json();
+    } catch (err) {
+      console.error('Error sending action result:', err);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('studio:listWindows', async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/studio/windows`);
+      return await response.json();
+    } catch (err) {
+      console.error('Error listing windows:', err);
+      return { success: false, error: err.message, windows: [] };
+    }
   });
 }
 

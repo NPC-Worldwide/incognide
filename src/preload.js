@@ -734,6 +734,12 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
     },
 
     getNPCTeamGlobal: (globalPath) => ipcRenderer.invoke('getNPCTeamGlobal', globalPath),
+
+    // Studio IPC handlers
+    studioRegisterWindow: (data) => ipcRenderer.invoke('studio:registerWindow', data),
+    studioActionComplete: (data) => ipcRenderer.invoke('studio:actionComplete', data),
+    studioActionResult: (data) => ipcRenderer.invoke('studio:actionResult', data),
+    studioListWindows: () => ipcRenderer.invoke('studio:listWindows'),
     onBrowserShowContextMenu: (callback) => {
         const handler = (_, data) => callback(data);
         ipcRenderer.on('browser-show-context-menu', handler);

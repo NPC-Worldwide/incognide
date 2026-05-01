@@ -334,7 +334,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             const emitter = componentRef.current?.paneUpdateEmitter;
             if (!emitter) return;
             const handler = (e: any) => {
-                if (e.detail?.paneId === node.id) {
+                if (e.detail?.paneId === node.id || e.detail?.paneId === 'all') {
                     forceRender(n => n + 1);
                 }
             };

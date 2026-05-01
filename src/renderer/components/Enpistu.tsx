@@ -2079,19 +2079,11 @@ useEffect(() => {
 
         try {
             const result = await executeStudioAction(actionData.action, actionData.args || {}, ctx);
-            await fetch(`${BACKEND_URL}/api/studio/action_complete`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ actionId, result })
-            });
+            await window.api.studioActionComplete({ actionId, result });
             console.log('[MCP] Action complete:', actionId, result.success);
         } catch (err) {
             console.error('[MCP] Action failed:', actionId, err);
-            await fetch(`${BACKEND_URL}/api/studio/action_complete`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ actionId, result: { success: false, error: String(err) } })
-            });
+            await window.api.studioActionComplete({ actionId, result: { success: false, error: String(err) } });
         }
     };
 
@@ -2118,14 +2110,10 @@ useEffect(() => {
 
         // Register window metadata
         if (windowId) {
-            fetch(`${BACKEND_URL}/api/studio/register_window`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    windowId,
-                    folder: currentPathRef.current || '',
-                    title: document.title || 'Incognide',
-                })
+            window.api.studioRegisterWindow({
+                windowId,
+                folder: currentPathRef.current || '',
+                title: document.title || 'Incognide',
             }).catch(() => {});
         }
 
@@ -3979,9 +3967,16 @@ useEffect(() => {
 
     useEffect(() => {
         if (currentPath) {
-            loadAvailableNPCs(currentPath, setNpcsLoading, setNpcsError, setAvailableNPCs);
+            loadAvailableNPCs(currentPath, setNpcsLoading, setNpcsError, setAvailableNPCs).then(() => {
+                paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: 'all' } }));
+            });
         }
     }, [currentPath]);
+    useEffect(() => {
+        if (availableNPCs.length > 0) {
+            paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: 'all' } }));
+        }
+    }, [availableNPCs]);
     useEffect(() => {
         const handleGlobalDismiss = (e) => {
             if (e.key === 'Escape') {
