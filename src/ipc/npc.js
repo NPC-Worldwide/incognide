@@ -1318,6 +1318,59 @@ function register(ctx) {
       body: JSON.stringify({ path: projectPath }),
     });
   });
+
+  // Studio IPC handlers - migrated from direct HTTP fetch
+  ipcMain.handle('studio:registerWindow', async (event, data) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/studio/register_window`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      return await response.json();
+    } catch (err) {
+      console.error('Error registering window:', err);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('studio:actionComplete', async (event, data) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/studio/action_complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      return await response.json();
+    } catch (err) {
+      console.error('Error completing studio action:', err);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('studio:actionResult', async (event, data) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/studio/action_result`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      return await response.json();
+    } catch (err) {
+      console.error('Error sending action result:', err);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('studio:listWindows', async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/studio/windows`);
+      return await response.json();
+    } catch (err) {
+      console.error('Error listing windows:', err);
+      return { success: false, error: err.message, windows: [] };
+    }
+  });
 }
 
 module.exports = { register };

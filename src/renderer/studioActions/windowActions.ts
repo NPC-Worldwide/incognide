@@ -3,16 +3,12 @@
 import { registerAction, StudioContext, StudioActionResult } from './index';
 import { collectPaneInfo } from './paneActions';
 
-const BACKEND_URL = (window as any).__BACKEND_URL__ ||
-  `http://127.0.0.1:${(window as any).__BACKEND_PORT__ || '5437'}`;
-
 async function list_windows(
   _args: Record<string, any>,
   _ctx: StudioContext
 ): Promise<StudioActionResult> {
   try {
-    const response = await fetch(`${BACKEND_URL}/api/studio/windows`);
-    const data = await response.json();
+    const data = await (window as any).api.studioListWindows();
     return data;
   } catch (err) {
     return { success: false, error: `Failed to list windows: ${err}` };

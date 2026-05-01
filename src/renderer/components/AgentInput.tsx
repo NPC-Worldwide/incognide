@@ -2,7 +2,7 @@ import { getFileName } from './utils';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { BACKEND_URL } from '../config';
 import {
-    Send, Paperclip, Maximize2, ChevronDown, Star, ListFilter, FolderTree, Minimize2, Mic, MicOff, Volume2, GitBranch, SlidersHorizontal, Save, Trash2, Zap, X, RefreshCw,
+    Send, Paperclip, Maximize2, ChevronDown, Star, ListFilter, FolderTree, Minimize2, Mic, MicOff, Volume2, GitBranch, Save, Trash2, Zap, X, RefreshCw,
     FileCode, Globe, FileText, Terminal as TerminalIcon, Eye, EyeOff, ToggleLeft, ToggleRight,
     Database, BarChart3, BrainCircuit, Image, Bot, Users, Music, Search, BookOpen, Folder, HardDrive, HelpCircle, Clock, Settings, MessageSquare, Tag
 } from 'lucide-react';
@@ -397,17 +397,16 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         top_k: 40,
         max_tokens: 4096
     });
-    const [showParamsDropdown, setShowParamsDropdown] = useState(false);
-    const paramsDropdownRef = useRef<HTMLDivElement>(null);
+    const [showTempDropdown, setShowTempDropdown] = useState(false);
+    const tempDropdownRef = useRef<HTMLDivElement>(null);
+    const [showTopPDropdown, setShowTopPDropdown] = useState(false);
+    const topPDropdownRef = useRef<HTMLDivElement>(null);
+    const [showTopKDropdown, setShowTopKDropdown] = useState(false);
+    const topKDropdownRef = useRef<HTMLDivElement>(null);
+    const [showMaxTokensDropdown, setShowMaxTokensDropdown] = useState(false);
+    const maxTokensDropdownRef = useRef<HTMLDivElement>(null);
     const [showJinxConfigDropdown, setShowJinxConfigDropdown] = useState(false);
     const jinxConfigDropdownRef = useRef<HTMLDivElement>(null);
-    const [customPresets, setCustomPresets] = useState<{name: string, params: typeof genParams}[]>(() => {
-        try {
-            const saved = localStorage.getItem('incognide-gen-presets');
-            return saved ? JSON.parse(saved) : [];
-        } catch { return []; }
-    });
-    const [newPresetName, setNewPresetName] = useState('');
     const npcsDropdownRef = useRef<HTMLDivElement>(null);
 
     const [detectedJinxes, setDetectedJinxes] = useState<any[]>([]);
@@ -468,14 +467,17 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
     }, [showMcpServersDropdown, setShowMcpServersDropdown]);
 
     useEffect(() => {
-        if (!showModelsDropdown && !showNpcsDropdown && !showParamsDropdown && !showJinxConfigDropdown) return;
+        if (!showModelsDropdown && !showNpcsDropdown && !showJinxConfigDropdown && !showTempDropdown && !showTopPDropdown && !showTopKDropdown && !showMaxTokensDropdown) return;
 
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
                 setShowModelsDropdown(false);
                 setShowNpcsDropdown(false);
-                setShowParamsDropdown(false);
                 setShowJinxConfigDropdown(false);
+                setShowTempDropdown(false);
+                setShowTopPDropdown(false);
+                setShowTopKDropdown(false);
+                setShowMaxTokensDropdown(false);
             }
         };
 
@@ -486,11 +488,20 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
             if (showNpcsDropdown && npcsDropdownRef.current && !npcsDropdownRef.current.contains(e.target as Node)) {
                 setShowNpcsDropdown(false);
             }
-            if (showParamsDropdown && paramsDropdownRef.current && !paramsDropdownRef.current.contains(e.target as Node)) {
-                setShowParamsDropdown(false);
-            }
             if (showJinxConfigDropdown && jinxConfigDropdownRef.current && !jinxConfigDropdownRef.current.contains(e.target as Node)) {
                 setShowJinxConfigDropdown(false);
+            }
+            if (showTempDropdown && tempDropdownRef.current && !tempDropdownRef.current.contains(e.target as Node)) {
+                setShowTempDropdown(false);
+            }
+            if (showTopPDropdown && topPDropdownRef.current && !topPDropdownRef.current.contains(e.target as Node)) {
+                setShowTopPDropdown(false);
+            }
+            if (showTopKDropdown && topKDropdownRef.current && !topKDropdownRef.current.contains(e.target as Node)) {
+                setShowTopKDropdown(false);
+            }
+            if (showMaxTokensDropdown && maxTokensDropdownRef.current && !maxTokensDropdownRef.current.contains(e.target as Node)) {
+                setShowMaxTokensDropdown(false);
             }
         };
 
@@ -500,7 +511,7 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
             document.removeEventListener('keydown', handleKeyDown);
             document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, [showModelsDropdown, showNpcsDropdown, showParamsDropdown, showJinxConfigDropdown]);
+    }, [showModelsDropdown, showNpcsDropdown, showJinxConfigDropdown, showTempDropdown, showTopPDropdown, showTopKDropdown, showMaxTokensDropdown]);
 
     const isJinxMode = false;
     const hasJinxContent = false;
@@ -1159,6 +1170,81 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
 
                     <div className="flex-1 flex items-stretch p-2 gap-2">
                         <div className="flex-grow relative h-full">
+                            <div className="absolute left-0 bottom-0 w-[15%] min-w-[70px] max-w-[130px] z-10 px-1 pointer-events-none" ref={npcsDropdownRef}>
+                                <button
+                                    className={`pointer-events-auto w-full h-9 flex items-center justify-center gap-2 rounded-lg text-xs font-medium transition-all duration-200 ${
+                                        selectedNPCs.length > 1
+                                            ? 'bg-gradient-to-br from-green-500/30 to-emerald-600/30 text-green-200 border border-green-400/40'
+                                            : 'theme-bg-secondary theme-text-secondary theme-border border theme-hover'
+                                    }`}
+                                    disabled={npcsLoading || !!npcsError}
+                                    onClick={() => { setShowNpcsDropdown(!showNpcsDropdown); setShowModelsDropdown(false); setShowJinxDropdown(false); }}
+                                >
+                                    {selectedNPCs.length > 1 && (
+                                        <span className="w-5 h-5 rounded bg-green-500 text-white text-[10px] flex items-center justify-center font-bold flex-shrink-0">{selectedNPCs.length}</span>
+                                    )}
+                                    <span className="truncate">
+                                        {npcsLoading ? '...' : npcsError ? 'Error' :
+                                            selectedNPCs.length === 1 ? ((availableNPCs.find((n: any) => n.value === selectedNPCs[0])?.display_name || selectedNPCs[0]).split(' | ')[0]) : selectedNPCs.length === 0 ? 'NPC' : 'NPCs'
+                                        }
+                                    </span>
+                                    <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${showNpcsDropdown ? 'rotate-180' : ''}`} />
+                                </button>
+                                {showNpcsDropdown && !npcsLoading && !npcsError && (
+                                    <div className="pointer-events-auto absolute left-0 bottom-full mb-1 theme-bg-primary backdrop-blur-xl theme-border border rounded-lg shadow-2xl overflow-hidden w-64">
+                                        <div className="px-2 py-1.5 border-b theme-border">
+                                            <input
+                                                ref={npcSearchRef}
+                                                type="text"
+                                                value={npcSearch}
+                                                onChange={(e) => setNpcSearch(e.target.value)}
+                                                placeholder="Search NPCs..."
+                                                className="w-full theme-input border theme-border rounded px-2 py-1 text-xs theme-text-primary placeholder-gray-500 focus:outline-none focus:border-green-500/50"
+                                                onKeyDown={(e) => e.stopPropagation()}
+                                            />
+                                        </div>
+                                        <div className="px-2 py-1 border-b theme-border flex items-center justify-between">
+                                            <button
+                                                onClick={() => setBroadcastMode(!broadcastMode)}
+                                                className={`text-[9px] px-1.5 py-0.5 rounded ${broadcastMode ? 'bg-purple-500/30 text-purple-300' : 'bg-white/5 text-gray-500 hover:text-gray-300'}`}
+                                            >
+                                                {broadcastMode ? '● Multi' : '○ Single'}
+                                            </button>
+                                            <div className="flex gap-2">
+                                                {broadcastMode && <button onClick={() => setSelectedNPCs(filteredNPCs.map((n: any) => n.value))} className="text-[9px] text-green-400 hover:text-green-300">All</button>}
+                                                <button onClick={() => setSelectedNPCs([])} className="text-[9px] text-gray-400 hover:text-gray-300">Reset</button>
+                                            </div>
+                                        </div>
+                                        <div className="max-h-64 overflow-y-auto p-1">
+                                            {filteredNPCs.map((npc: any) => {
+                                                const npcKey = npc.value;
+                                                const checked = selectedNPCs.includes(npcKey);
+                                                const teamPath = npc.source === 'project' ? '📁' : npc.source === 'global' ? '🌐' : '';
+                                                return (
+                                                    <div key={`${npc.source}-${npc.value}`} className={`px-2 py-1.5 text-xs rounded cursor-pointer flex items-center gap-2 transition-all ${checked ? 'bg-green-500/20 text-green-200' : 'hover:bg-white/5'}`}
+                                                        onClick={() => {
+                                                            if (broadcastMode) {
+                                                                setSelectedNPCs(prev => prev.includes(npcKey) ? (prev.length === 1 ? prev : prev.filter(x => x !== npcKey)) : [...prev, npcKey]);
+                                                            } else {
+                                                                setSelectedNPCs([npcKey]);
+                                                            }
+                                                            if (!checked) setCurrentNPC(npc.value);
+                                                        }}>
+                                                        <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0 ${checked ? 'bg-green-500 border-green-500' : 'border-gray-600'}`}>
+                                                            {checked && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                                                        </div>
+                                                        <span className="truncate flex-1">{npc.display_name}</span>
+                                                        <span className="text-[9px] text-gray-600 flex-shrink-0">{teamPath}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                            {filteredNPCs.length === 0 && (
+                                                <div className="px-2 py-3 text-xs text-gray-500 text-center">No NPCs found</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                             <div className="relative h-full">
                                     <textarea
                                         value={localInput}
@@ -1331,8 +1417,7 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
 
                 <div className={`px-1.5 py-1 relative z-50 ${isStreaming ? 'opacity-50 pointer-events-none' : ''}`}>
                 <div className="flex items-center gap-1">
-
-                    <div className="relative flex-1" ref={modelsDropdownRef}>
+                    <div className="relative flex-1 min-w-0" ref={modelsDropdownRef}>
                         <button
                             className={`w-full h-9 flex items-center justify-center gap-2 rounded-lg text-xs font-medium transition-all duration-200 ${
                                 selectedModels.length > 1
@@ -1411,218 +1496,79 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                         )}
                     </div>
 
-                    <div className="relative flex-1" ref={npcsDropdownRef}>
+                    <div className="relative flex-1 min-w-0" ref={tempDropdownRef}>
                         <button
-                            className={`w-full h-9 flex items-center justify-center gap-2 rounded-lg text-xs font-medium transition-all duration-200 ${
-                                selectedNPCs.length > 1
-                                    ? 'bg-gradient-to-br from-green-500/30 to-emerald-600/30 text-green-200 border border-green-400/40'
-                                    : 'theme-bg-secondary theme-text-secondary theme-border border theme-hover'
-                            }`}
-                            disabled={npcsLoading || !!npcsError}
-                            onClick={() => { setShowNpcsDropdown(!showNpcsDropdown); setShowModelsDropdown(false); setShowJinxDropdown(false); }}
+                            className="w-full h-8 flex items-center justify-center gap-1 rounded-lg text-xs font-medium transition-all duration-200 theme-bg-tertiary theme-text-secondary border theme-border hover:opacity-80 px-2"
+                            onClick={() => { setShowTempDropdown(!showTempDropdown); setShowModelsDropdown(false); setShowTopPDropdown(false); setShowTopKDropdown(false); setShowMaxTokensDropdown(false); }}
                         >
-                            {selectedNPCs.length > 1 && (
-                                <span className="w-5 h-5 rounded bg-green-500 text-white text-[10px] flex items-center justify-center font-bold flex-shrink-0">{selectedNPCs.length}</span>
-                            )}
-                            <span className="truncate">
-                                {npcsLoading ? '...' : npcsError ? 'Error' :
-                                    selectedNPCs.length === 1 ? ((availableNPCs.find((n: any) => n.value === selectedNPCs[0])?.display_name || selectedNPCs[0]).split(' | ')[0]) : selectedNPCs.length === 0 ? 'NPC' : 'NPCs'
-                                }
-                            </span>
-                            <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${showNpcsDropdown ? 'rotate-180' : ''}`} />
+                            <span style={{ color: getParamColor(genParams.temperature, 0, 2) }}>T{genParams.temperature}</span>
+                            <ChevronDown size={8} className="theme-text-muted" />
                         </button>
-                        {showNpcsDropdown && !npcsLoading && !npcsError && (
-                            <div className="absolute z-[100] left-0 right-0 bottom-full mb-1 theme-bg-primary backdrop-blur-xl theme-border border rounded-lg shadow-2xl overflow-hidden w-64">
-                                <div className="px-2 py-1.5 border-b theme-border">
-                                    <input
-                                        ref={npcSearchRef}
-                                        type="text"
-                                        value={npcSearch}
-                                        onChange={(e) => setNpcSearch(e.target.value)}
-                                        placeholder="Search NPCs..."
-                                        className="w-full theme-input border theme-border rounded px-2 py-1 text-xs theme-text-primary placeholder-gray-500 focus:outline-none focus:border-green-500/50"
-                                        onKeyDown={(e) => e.stopPropagation()}
-                                    />
+                        {showTempDropdown && (
+                            <div className="absolute z-[100] right-0 bottom-full mb-1 theme-bg-secondary backdrop-blur-xl border theme-border rounded-lg shadow-2xl overflow-hidden w-48 p-2">
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="text-[10px] theme-text-muted">Temperature</label>
+                                    <input type="number" value={genParams.temperature} onChange={(e) => setGenParams(p => ({ ...p, temperature: Math.max(0, Math.min(2, parseFloat(e.target.value) || 0)) }))} className="w-14 text-xs theme-bg-tertiary border theme-border rounded px-1.5 py-0.5 text-right theme-text-primary" step="0.1" min="0" max="2" />
                                 </div>
-                                <div className="px-2 py-1 border-b theme-border flex items-center justify-between">
-                                    <button
-                                        onClick={() => setBroadcastMode(!broadcastMode)}
-                                        className={`text-[9px] px-1.5 py-0.5 rounded ${broadcastMode ? 'bg-purple-500/30 text-purple-300' : 'bg-white/5 text-gray-500 hover:text-gray-300'}`}
-                                    >
-                                        {broadcastMode ? '● Multi' : '○ Single'}
-                                    </button>
-                                    <div className="flex gap-2">
-                                        {broadcastMode && <button onClick={() => setSelectedNPCs(filteredNPCs.map((n: any) => n.value))} className="text-[9px] text-green-400 hover:text-green-300">All</button>}
-                                        <button onClick={() => setSelectedNPCs([])} className="text-[9px] text-gray-400 hover:text-gray-300">Reset</button>
-                                    </div>
-                                </div>
-                                <div className="max-h-64 overflow-y-auto p-1">
-                                    {filteredNPCs.map((npc: any) => {
-                                        const npcKey = npc.value;
-                                        const checked = selectedNPCs.includes(npcKey);
-                                        const teamPath = npc.source === 'project' ? '📁' : npc.source === 'global' ? '🌐' : '';
-                                        return (
-                                            <div key={`${npc.source}-${npc.value}`} className={`px-2 py-1.5 text-xs rounded cursor-pointer flex items-center gap-2 transition-all ${checked ? 'bg-green-500/20 text-green-200' : 'hover:bg-white/5'}`}
-                                                onClick={() => {
-                                                    if (broadcastMode) {
-
-                                                        setSelectedNPCs(prev => prev.includes(npcKey) ? (prev.length === 1 ? prev : prev.filter(x => x !== npcKey)) : [...prev, npcKey]);
-                                                    } else {
-
-                                                        setSelectedNPCs([npcKey]);
-                                                    }
-                                                    if (!checked) setCurrentNPC(npc.value);
-                                                }}>
-                                                <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0 ${checked ? 'bg-green-500 border-green-500' : 'border-gray-600'}`}>
-                                                    {checked && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                                                </div>
-                                                <span className="truncate flex-1">{npc.display_name}</span>
-                                                <span className="text-[9px] text-gray-600 flex-shrink-0">{teamPath}</span>
-                                            </div>
-                                        );
-                                    })}
-                                    {filteredNPCs.length === 0 && (
-                                        <div className="px-2 py-3 text-xs text-gray-500 text-center">No NPCs found</div>
-                                    )}
-                                </div>
+                                <input type="range" value={genParams.temperature} onChange={(e) => setGenParams(p => ({ ...p, temperature: parseFloat(e.target.value) }))} className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-orange-500" min="0" max="2" step="0.1" />
+                                <div className="flex justify-between text-[9px] theme-text-muted mt-0.5"><span>Precise</span><span>Creative</span></div>
                             </div>
                         )}
                     </div>
-
-                    {(
-                        <div className="relative flex-1" ref={paramsDropdownRef}>
-                            <button
-                                className="w-full h-8 flex items-center justify-center gap-2 rounded-lg text-xs font-medium transition-all duration-200 theme-bg-tertiary theme-text-secondary border theme-border hover:opacity-80 px-2"
-                                onClick={() => { setShowParamsDropdown(!showParamsDropdown); setShowModelsDropdown(false); setShowNpcsDropdown(false); setShowJinxDropdown(false); }}
-                            >
-                                <SlidersHorizontal size={10} className="flex-shrink-0 theme-text-muted" />
-                                <div className="flex items-center gap-1 text-[9px]">
-                                    <span style={{ color: getParamColor(genParams.temperature, 0, 2) }}>T{genParams.temperature}</span>
-                                    <span className="theme-text-muted">·</span>
-                                    <span style={{ color: getParamColor(genParams.top_p, 0, 1) }}>P{genParams.top_p}</span>
-                                    <span className="theme-text-muted">·</span>
-                                    <span style={{ color: getParamColor(genParams.top_k, 1, 100) }}>K{genParams.top_k}</span>
+                    <div className="relative flex-1 min-w-0" ref={topPDropdownRef}>
+                        <button
+                            className="w-full h-8 flex items-center justify-center gap-1 rounded-lg text-xs font-medium transition-all duration-200 theme-bg-tertiary theme-text-secondary border theme-border hover:opacity-80 px-2"
+                            onClick={() => { setShowTopPDropdown(!showTopPDropdown); setShowModelsDropdown(false); setShowTempDropdown(false); setShowTopKDropdown(false); setShowMaxTokensDropdown(false); }}
+                        >
+                            <span style={{ color: getParamColor(genParams.top_p, 0, 1) }}>P{genParams.top_p}</span>
+                            <ChevronDown size={8} className="theme-text-muted" />
+                        </button>
+                        {showTopPDropdown && (
+                            <div className="absolute z-[100] right-0 bottom-full mb-1 theme-bg-secondary backdrop-blur-xl border theme-border rounded-lg shadow-2xl overflow-hidden w-48 p-2">
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="text-[10px] theme-text-muted">Top P</label>
+                                    <input type="number" value={genParams.top_p} onChange={(e) => setGenParams(p => ({ ...p, top_p: Math.max(0, Math.min(1, parseFloat(e.target.value) || 0)) }))} className="w-14 text-xs theme-bg-tertiary border theme-border rounded px-1.5 py-0.5 text-right theme-text-primary" step="0.05" min="0" max="1" />
                                 </div>
-                                <ChevronDown size={10} className={`transition-transform flex-shrink-0 theme-text-muted ${showParamsDropdown ? 'rotate-180' : ''}`} />
-                            </button>
-                            {showParamsDropdown && (
-                                <div className="absolute z-[100] right-0 bottom-full mb-1 theme-bg-secondary backdrop-blur-xl border theme-border rounded-lg shadow-2xl overflow-hidden w-72">
-                                    <div className="px-3 py-2 border-b theme-border flex items-center justify-between">
-                                        <span className="text-[10px] uppercase theme-text-muted font-medium flex items-center gap-1.5">
-                                            <SlidersHorizontal size={10} /> Generation Parameters
-                                        </span>
-                                        <span className="text-[9px] theme-text-muted">T:{genParams.temperature} P:{genParams.top_p} K:{genParams.top_k}</span>
-                                    </div>
-                                    <div className="p-3 space-y-3">
-                                        <div>
-                                            <div className="flex items-center justify-between mb-1">
-                                                <label className="text-[10px] theme-text-muted">Temperature</label>
-                                                <input
-                                                    type="number"
-                                                    value={genParams.temperature}
-                                                    onChange={(e) => setGenParams(p => ({ ...p, temperature: Math.max(0, Math.min(2, parseFloat(e.target.value) || 0)) }))}
-                                                    className="w-14 text-xs theme-bg-tertiary border theme-border rounded px-1.5 py-0.5 text-right theme-text-primary"
-                                                    step="0.1" min="0" max="2"
-                                                />
-                                            </div>
-                                            <input type="range" value={genParams.temperature} onChange={(e) => setGenParams(p => ({ ...p, temperature: parseFloat(e.target.value) }))}
-                                                className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-orange-500" min="0" max="2" step="0.1" />
-                                            <div className="flex justify-between text-[9px] theme-text-muted mt-0.5"><span>Precise</span><span>Creative</span></div>
-                                        </div>
-
-                                        <div>
-                                            <div className="flex items-center justify-between mb-1">
-                                                <label className="text-[10px] theme-text-muted">Top P (nucleus)</label>
-                                                <input type="number" value={genParams.top_p} onChange={(e) => setGenParams(p => ({ ...p, top_p: Math.max(0, Math.min(1, parseFloat(e.target.value) || 0)) }))}
-                                                    className="w-14 text-xs theme-bg-tertiary border theme-border rounded px-1.5 py-0.5 text-right theme-text-primary" step="0.05" min="0" max="1" />
-                                            </div>
-                                            <input type="range" value={genParams.top_p} onChange={(e) => setGenParams(p => ({ ...p, top_p: parseFloat(e.target.value) }))}
-                                                className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-blue-500" min="0" max="1" step="0.05" />
-                                        </div>
-
-                                        <div>
-                                            <div className="flex items-center justify-between mb-1">
-                                                <label className="text-[10px] theme-text-muted">Top K</label>
-                                                <input type="number" value={genParams.top_k} onChange={(e) => setGenParams(p => ({ ...p, top_k: Math.max(1, Math.min(100, parseInt(e.target.value) || 1)) }))}
-                                                    className="w-14 text-xs theme-bg-tertiary border theme-border rounded px-1.5 py-0.5 text-right theme-text-primary" step="1" min="1" max="100" />
-                                            </div>
-                                            <input type="range" value={genParams.top_k} onChange={(e) => setGenParams(p => ({ ...p, top_k: parseInt(e.target.value) }))}
-                                                className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-green-500" min="1" max="100" step="1" />
-                                        </div>
-
-                                        <div>
-                                            <div className="flex items-center justify-between mb-1">
-                                                <label className="text-[10px] theme-text-muted">Max Tokens</label>
-                                                <input type="number" value={genParams.max_tokens} onChange={(e) => setGenParams(p => ({ ...p, max_tokens: Math.max(1, Math.min(32000, parseInt(e.target.value) || 1)) }))}
-                                                    className="w-16 text-xs theme-bg-tertiary border theme-border rounded px-1.5 py-0.5 text-right theme-text-primary" step="256" min="1" max="32000" />
-                                            </div>
-                                            <input type="range" value={genParams.max_tokens} onChange={(e) => setGenParams(p => ({ ...p, max_tokens: parseInt(e.target.value) }))}
-                                                className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-purple-500" min="256" max="32000" step="256" />
-                                        </div>
-
-                                        <div className="pt-2 border-t theme-border">
-                                            <div className="text-[10px] theme-text-muted uppercase mb-2">Presets</div>
-                                            <div className="flex flex-wrap gap-1 mb-2">
-                                                <button onClick={() => setGenParams({ temperature: 0.3, top_p: 0.9, top_k: 40, max_tokens: 4096 })} className="px-2 py-1 text-[10px] bg-blue-500/20 text-blue-300 rounded hover:bg-blue-500/30">Precise</button>
-                                                <button onClick={() => setGenParams({ temperature: 0.7, top_p: 0.9, top_k: 40, max_tokens: 4096 })} className="px-2 py-1 text-[10px] bg-gray-500/20 text-gray-300 rounded hover:bg-gray-500/30">Balanced</button>
-                                                <button onClick={() => setGenParams({ temperature: 1.0, top_p: 0.95, top_k: 60, max_tokens: 4096 })} className="px-2 py-1 text-[10px] bg-orange-500/20 text-orange-300 rounded hover:bg-orange-500/30">Creative</button>
-                                                <button onClick={() => setGenParams({ temperature: 1.5, top_p: 1.0, top_k: 80, max_tokens: 8192 })} className="px-2 py-1 text-[10px] bg-pink-500/20 text-pink-300 rounded hover:bg-pink-500/30">Wild</button>
-                                            </div>
-
-                                            {customPresets.length > 0 && (
-                                                <div className="flex flex-wrap gap-1 mb-2">
-                                                    {customPresets.map((preset, i) => (
-                                                        <div key={i} className="flex items-center gap-0.5 bg-cyan-500/20 rounded overflow-hidden">
-                                                            <button onClick={() => setGenParams(preset.params)} className="px-2 py-1 text-[10px] text-cyan-300 hover:bg-cyan-500/30">{preset.name}</button>
-                                                            <button onClick={() => {
-                                                                const updated = customPresets.filter((_, idx) => idx !== i);
-                                                                setCustomPresets(updated);
-                                                                localStorage.setItem('incognide-gen-presets', JSON.stringify(updated));
-                                                            }} className="px-1 py-1 text-cyan-400 hover:bg-red-500/30 hover:text-red-300">
-                                                                <Trash2 size={10} />
-                                                            </button>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-
-                                            <div className="flex gap-1 mt-2">
-                                                <input
-                                                    type="text"
-                                                    value={newPresetName}
-                                                    onChange={(e) => setNewPresetName(e.target.value)}
-                                                    placeholder="Preset name..."
-                                                    className="flex-1 text-[10px] theme-bg-tertiary border theme-border rounded px-2 py-1 theme-text-primary placeholder-gray-500"
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'Enter' && newPresetName.trim()) {
-                                                            const updated = [...customPresets, { name: newPresetName.trim(), params: { ...genParams } }];
-                                                            setCustomPresets(updated);
-                                                            localStorage.setItem('incognide-gen-presets', JSON.stringify(updated));
-                                                            setNewPresetName('');
-                                                        }
-                                                    }}
-                                                />
-                                                <button
-                                                    onClick={() => {
-                                                        if (newPresetName.trim()) {
-                                                            const updated = [...customPresets, { name: newPresetName.trim(), params: { ...genParams } }];
-                                                            setCustomPresets(updated);
-                                                            localStorage.setItem('incognide-gen-presets', JSON.stringify(updated));
-                                                            setNewPresetName('');
-                                                        }
-                                                    }}
-                                                    disabled={!newPresetName.trim()}
-                                                    className="px-2 py-1 text-[10px] bg-green-500/20 text-green-300 rounded hover:bg-green-500/30 disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1"
-                                                >
-                                                    <Save size={10} /> Save
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
+                                <input type="range" value={genParams.top_p} onChange={(e) => setGenParams(p => ({ ...p, top_p: parseFloat(e.target.value) }))} className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-blue-500" min="0" max="1" step="0.05" />
+                            </div>
+                        )}
+                    </div>
+                    <div className="relative flex-1 min-w-0" ref={topKDropdownRef}>
+                        <button
+                            className="w-full h-8 flex items-center justify-center gap-1 rounded-lg text-xs font-medium transition-all duration-200 theme-bg-tertiary theme-text-secondary border theme-border hover:opacity-80 px-2"
+                            onClick={() => { setShowTopKDropdown(!showTopKDropdown); setShowModelsDropdown(false); setShowTempDropdown(false); setShowTopPDropdown(false); setShowMaxTokensDropdown(false); }}
+                        >
+                            <span style={{ color: getParamColor(genParams.top_k, 1, 100) }}>K{genParams.top_k}</span>
+                            <ChevronDown size={8} className="theme-text-muted" />
+                        </button>
+                        {showTopKDropdown && (
+                            <div className="absolute z-[100] right-0 bottom-full mb-1 theme-bg-secondary backdrop-blur-xl border theme-border rounded-lg shadow-2xl overflow-hidden w-48 p-2">
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="text-[10px] theme-text-muted">Top K</label>
+                                    <input type="number" value={genParams.top_k} onChange={(e) => setGenParams(p => ({ ...p, top_k: Math.max(1, Math.min(100, parseInt(e.target.value) || 1)) }))} className="w-14 text-xs theme-bg-tertiary border theme-border rounded px-1.5 py-0.5 text-right theme-text-primary" step="1" min="1" max="100" />
                                 </div>
-                            )}
-                        </div>
-                    )}
+                                <input type="range" value={genParams.top_k} onChange={(e) => setGenParams(p => ({ ...p, top_k: parseInt(e.target.value) }))} className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-green-500" min="1" max="100" step="1" />
+                            </div>
+                        )}
+                    </div>
+                    <div className="relative flex-1 min-w-0" ref={maxTokensDropdownRef}>
+                        <button
+                            className="w-full h-8 flex items-center justify-center gap-1 rounded-lg text-xs font-medium transition-all duration-200 theme-bg-tertiary theme-text-secondary border theme-border hover:opacity-80 px-2"
+                            onClick={() => { setShowMaxTokensDropdown(!showMaxTokensDropdown); setShowModelsDropdown(false); setShowTempDropdown(false); setShowTopPDropdown(false); setShowTopKDropdown(false); }}
+                        >
+                            <span style={{ color: getParamColor(genParams.max_tokens, 256, 32000) }}>M{genParams.max_tokens}</span>
+                            <ChevronDown size={8} className="theme-text-muted" />
+                        </button>
+                        {showMaxTokensDropdown && (
+                            <div className="absolute z-[100] right-0 bottom-full mb-1 theme-bg-secondary backdrop-blur-xl border theme-border rounded-lg shadow-2xl overflow-hidden w-48 p-2">
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="text-[10px] theme-text-muted">Max Tokens</label>
+                                    <input type="number" value={genParams.max_tokens} onChange={(e) => setGenParams(p => ({ ...p, max_tokens: Math.max(1, Math.min(32000, parseInt(e.target.value) || 1)) }))} className="w-16 text-xs theme-bg-tertiary border theme-border rounded px-1.5 py-0.5 text-right theme-text-primary" step="256" min="1" max="32000" />
+                                </div>
+                                <input type="range" value={genParams.max_tokens} onChange={(e) => setGenParams(p => ({ ...p, max_tokens: parseInt(e.target.value) }))} className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-purple-500" min="256" max="32000" step="256" />
+                            </div>
+                        )}
+                    </div>
 
                     <div className="flex items-center gap-0.5 pl-1 border-l theme-border ml-1">
                         {(() => {
