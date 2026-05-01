@@ -307,21 +307,13 @@ export const loadAvailableNPCs = async (
     setNpcsError(null);
     try {
 
-        let projectNPCs: any[] = [];
-        try {
-            const projectResponse = await window.api.getNPCTeamProject(pathToUse);
-            projectNPCs = projectResponse.npcs || [];
-        } catch (e) {
-            // No project team — fall through to global
-        }
+        const [projectResult, globalResult] = await Promise.allSettled([
+            window.api.getNPCTeamProject(pathToUse),
+            window.api.getNPCTeamGlobal('npcsh'),
+        ]);
 
-        let globalNPCs: any[] = [];
-        try {
-            const globalResponse = await window.api.getNPCTeamGlobal('npcsh');
-            globalNPCs = globalResponse.npcs || [];
-        } catch (e) {
-            // Global team also failed
-        }
+        const projectNPCs = projectResult.status === 'fulfilled' ? (projectResult.value.npcs || []) : [];
+        const globalNPCs = globalResult.status === 'fulfilled' ? (globalResult.value.npcs || []) : [];
 
         const formattedProjectNPCs = projectNPCs.map(npc => ({
             ...npc,
