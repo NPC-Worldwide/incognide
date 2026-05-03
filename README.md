@@ -1,6 +1,4 @@
-# incognide
-
-SQL files now visible in file browser
+<p align="center">
   <img src="https://raw.githubusercontent.com/npc-worldwide/incognide/main/levi.PNG" alt="Incognide logo with Levi the dog howling at the moon" width="400" height="400">
 </p>
 

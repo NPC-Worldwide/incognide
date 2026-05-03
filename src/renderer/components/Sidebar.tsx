@@ -165,7 +165,9 @@ const Sidebar = (props: any) => {
             showHidden: false,
             allowedExtensions: '',
             customExtensions: '',
-            excludedExtensions: '.pyc,.pyo,.git,.DS_Store,__pycache__'
+            excludedExtensions: '.pyc,.pyo,.git,.DS_Store,__pycache__',
+            excludedFolders: 'node_modules,.git,__pycache__,.venv,venv',
+            maxDepth: 10
         };
         return saved ? { ...defaults, ...JSON.parse(saved) } : defaults;
     });
@@ -362,8 +364,13 @@ const Sidebar = (props: any) => {
         { ext: 'js', label: 'JavaScript', icon: '📜' },
         { ext: 'ts', label: 'TypeScript', icon: '📘' },
         { ext: 'jsx', label: 'React JSX', icon: '⚛️' },
-  { ext: ['.sql'], label: 'SQL', icon: '🗃️', color: '#FF9800', description: 'SQL Database Files' },
-  { ext: ['.sqlite', '.sqlite3', '.db'], label: 'Database', icon: '🗃️', color: '#FF5722' },
+        { ext: 'tsx', label: 'React TSX', icon: '⚛️' },
+        { ext: 'md', label: 'Markdown', icon: '📝' },
+        { ext: 'txt', label: 'Text', icon: '📄' },
+        { ext: 'sh', label: 'Shell Script', icon: '🖥️' },
+        { ext: 'json', label: 'JSON', icon: '{}' },
+        { ext: 'html', label: 'HTML', icon: '🌐' },
+        { ext: 'css', label: 'CSS', icon: '🎨' },
         { ext: 'yaml', label: 'YAML', icon: '📋' },
         { ext: 'sql', label: 'SQL', icon: '🗃️' },
         { ext: 'go', label: 'Go', icon: '🐹' },
