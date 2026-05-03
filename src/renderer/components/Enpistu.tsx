@@ -3835,12 +3835,15 @@ const renderHtmlPreviewPane = useCallback(({ nodeId }: { nodeId: string }) => {
 
 // Render DBTool pane (for pane-based viewing)
 const renderDBToolPane = useCallback(({ nodeId }: { nodeId: string }) => {
+    const paneData = contentDataRef.current[nodeId];
+    const dbPath = paneData?.contentId && paneData.contentId !== 'dbtool' ? paneData.contentId : undefined;
     return (
         <DBTool
             currentPath={currentPath}
             currentModel={currentModel}
             currentProvider={currentProvider}
             currentNPC={currentNPC}
+            initialDbPath={dbPath}
         />
     );
 }, [currentPath, currentModel, currentProvider, currentNPC]);
