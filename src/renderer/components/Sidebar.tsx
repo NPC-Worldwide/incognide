@@ -4156,7 +4156,7 @@ onDragStart={(e) => {
                             } else if (['db', 'sqlite', 'sqlite3'].includes(ext)) {
                                     createAndAddPaneNodeToLayout?.({
                                         id: generateId(),
-                                        contentType: 'db',
+                                        contentType: 'dbtool',
                                         contentId: fullPath
                                     });
                             } else {
