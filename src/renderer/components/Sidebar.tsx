@@ -165,8 +165,7 @@ const Sidebar = (props: any) => {
             showHidden: false,
             allowedExtensions: '',
             customExtensions: '',
-            excludedExtensions: '.pyc,.pyo,.git,.DS_Store,__pycache__',
-            excludedFolders: 'node_modules,.git,__pycache__,.venv,venv',
+    excludedExtensions: '.pyc,.pyo,.git,.DS_Store,__pycache__,.log,.tmp,.temp'
             maxDepth: 10
         };
         return saved ? { ...defaults, ...JSON.parse(saved) } : defaults;
