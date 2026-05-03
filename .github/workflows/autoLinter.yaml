@@ -1,11 +1,9 @@
 name: Install and Verify Autolinters
 
 on:
-  workflow_run:
-    workflows: ["Build and Release"]
-    types: [completed]
-    branches-ignore: [main]
-
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:

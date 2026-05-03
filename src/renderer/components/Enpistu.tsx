@@ -3835,12 +3835,15 @@ const renderHtmlPreviewPane = useCallback(({ nodeId }: { nodeId: string }) => {
 
 // Render DBTool pane (for pane-based viewing)
 const renderDBToolPane = useCallback(({ nodeId }: { nodeId: string }) => {
+    const paneData = contentDataRef.current[nodeId];
+    const dbPath = paneData?.contentId && paneData.contentId !== 'dbtool' ? paneData.contentId : undefined;
     return (
         <DBTool
             currentPath={currentPath}
             currentModel={currentModel}
             currentProvider={currentProvider}
             currentNPC={currentNPC}
+            initialDbPath={dbPath}
         />
     );
 }, [currentPath, currentModel, currentProvider, currentNPC]);
@@ -8122,6 +8125,7 @@ const handleFileClick = useCallback(async (filePath: string) => {
     else if (extension === 'zip') contentType = 'zip';
     else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(extension)) contentType = 'image';
     else if (extension === 'stl') contentType = 'stl';
+    else if (['db', 'sqlite', 'sqlite3'].includes(extension)) contentType = 'dbtool';
 
     createAndAddPaneNodeToLayout(contentType, filePath);
 }, [createAndAddPaneNodeToLayout]);
@@ -9036,6 +9040,7 @@ const renderMainContent = () => {
                             else if (['mapx', 'geojson', 'kml', 'kmz', 'gpx', 'shp'].includes(extension)) contentType = 'cartoglyph';
                             else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(extension)) contentType = 'image';
                             else if (extension === 'stl') contentType = 'stl';
+    else if (['db', 'sqlite', 'sqlite3'].includes(extension)) contentType = 'dbtool';
                             else contentType = 'editor';
                         } else {
                             contentType = 'editor';

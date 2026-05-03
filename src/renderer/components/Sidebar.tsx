@@ -4154,10 +4154,19 @@ onDragStart={(e) => {
                                 }
                                 setSelectedFiles(newSelected);
                             } else {
-                                setSelectedFiles(new Set([fullPath]));
-                                handleFileClick(fullPath);
-                                const fileEntries = items.filter(item => item.type === 'file');
-                                setLastClickedFileIndex(fileEntries.findIndex(item => item.path === fullPath));
+                                const ext = name.split('.').pop()?.toLowerCase();
+                                if (['db', 'sqlite', 'sqlite3'].includes(ext)) {
+                                    createAndAddPaneNodeToLayout?.({
+                                        id: generateId(),
+                                        contentType: 'dbtool',
+                                        contentId: fullPath
+                                    });
+                                } else {
+                                    setSelectedFiles(new Set([fullPath]));
+                                    handleFileClick(fullPath);
+                                    const fileEntries = items.filter(item => item.type === 'file');
+                                    setLastClickedFileIndex(fileEntries.findIndex(item => item.path === fullPath));
+                                }
                             }
                         }}
                         onContextMenu={(e) => handleSidebarItemContextMenu(e, fullPath, 'file')}
