@@ -1,8 +1,9 @@
 name: Docker
 
 on:
-  release:
-    types: [published]
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:

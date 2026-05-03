@@ -373,9 +373,6 @@ const Sidebar = (props: any) => {
         { ext: 'css', label: 'CSS', icon: '🎨' },
         { ext: 'yaml', label: 'YAML', icon: '📋' },
         { ext: 'sql', label: 'SQL', icon: '🗃️' },
-        { ext: 'sqlite', label: 'SQLite', icon: '🗃️' },
-        { ext: 'sqlite3', label: 'SQLite3', icon: '🗃️' },
-        { ext: 'db', label: 'Database', icon: '🗃️' },
         { ext: 'go', label: 'Go', icon: '🐹' },
         { ext: 'rs', label: 'Rust', icon: '🦀' },
         { ext: 'c', label: 'C', icon: '©️' },
@@ -4154,7 +4151,9 @@ onDragStart={(e) => {
                                 const end = Math.max(lastClickedFileIndex, currentFileIndex);
                                 for (let i = start; i <= end; i++) {
                                     if (fileEntries[i]) newSelected.add(fileEntries[i].path);
-                                } else if (['db', 'sqlite', 'sqlite3'].includes(ext)) {
+                                }
+                                setSelectedFiles(newSelected);
+                            } else if (['db', 'sqlite', 'sqlite3'].includes(ext)) {
                                     createAndAddPaneNodeToLayout?.({
                                         id: generateId(),
                                         contentType: 'db',

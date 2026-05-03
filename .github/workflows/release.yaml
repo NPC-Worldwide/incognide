@@ -1,8 +1,10 @@
 name: Attach Artifacts to Release
 
 on:
-  release:
-    types: [published]
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
 jobs:
   attach-artifacts:

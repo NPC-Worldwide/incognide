@@ -996,6 +996,10 @@ function register(ctx) {
                                '.stl',
                                '.rs',
                                '.pltx',
+                               '.sql',
+                               '.db',
+                               '.sqlite',
+                               '.sqlite3',
                               ];
 
     // Merge in user-defined custom extensions
