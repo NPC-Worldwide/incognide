@@ -4154,8 +4154,12 @@ onDragStart={(e) => {
                                 const end = Math.max(lastClickedFileIndex, currentFileIndex);
                                 for (let i = start; i <= end; i++) {
                                     if (fileEntries[i]) newSelected.add(fileEntries[i].path);
-                                }
-                                setSelectedFiles(newSelected);
+                                } else if (['db', 'sqlite', 'sqlite3'].includes(ext)) {
+                                    createAndAddPaneNodeToLayout?.({
+                                        id: generateId(),
+                                        contentType: 'db',
+                                        contentId: fullPath
+                                    });
                             } else {
                                 setSelectedFiles(new Set([fullPath]));
                                 handleFileClick(fullPath);
