@@ -35,7 +35,7 @@ const DBTool: React.FC<DBToolProps> = ({
         createWindowApiDatabaseClient((window as any).api),
     []);
 
-    const [sqlQuery, setSqlQuery] = useState('SELECT * FROM conversation_history LIMIT 10;');
+    const [sqlQuery, setSqlQuery] = useState('');
     const [queryResult, setQueryResult] = useState<any[] | null>(null);
     const [loadingQuery, setLoadingQuery] = useState(false);
     const [queryError, setQueryError] = useState<string | null>(null);
@@ -174,13 +174,17 @@ const DBTool: React.FC<DBToolProps> = ({
                     if (res.error) throw new Error(res.error);
                     setDbTables(res.tables || []);
                     await testDbConnection(selectedDatabase);
+                    // Set default query to first table if available
+                    if (res.tables && res.tables.length > 0 && !sqlQuery) {
+                        setSqlQuery(`SELECT * FROM ${res.tables[0]} LIMIT 10;`);
+                    }
                 } catch (err) {
                     setQueryError("Could not fetch database tables.");
                 }
             }
         };
         fetchTables();
-    }, [selectedDatabase, testDbConnection]);
+    }, [selectedDatabase, testDbConnection, sqlQuery]);
 
     const formatFileSize = (bytes: number) => {
         if (bytes < 1024) return `${bytes} B`;
@@ -204,9 +208,9 @@ const DBTool: React.FC<DBToolProps> = ({
         setQueryError(null);
         setQueryResult(null);
         try {
-            const response = await (window as any).api.executeSQL({ query: sqlQuery });
+            const response = await (window as any).api.executeSQLForPath({ connectionString: selectedDatabase, query: sqlQuery });
             if (response.error) throw new Error(response.error);
-            setQueryResult(response.result);
+            setQueryResult(response.rows || response.result);
             const newHistory = [
                 { query: sqlQuery, favorited: false, date: new Date().toISOString() },
                 ...queryHistory.filter(h => h.query !== sqlQuery)
