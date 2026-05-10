@@ -885,6 +885,97 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const activeContentPaneIdRef = useRef(activeContentPaneId);
     activeContentPaneIdRef.current = activeContentPaneId;
 
+    const clampPaneZoom = useCallback((value: number) => {
+        if (!Number.isFinite(value)) return 1;
+        return Math.min(3, Math.max(0.5, Math.round(value * 100) / 100));
+    }, []);
+    const [globalPaneZoom, setGlobalPaneZoom] = useState<number>(() => {
+        const stored = Number(localStorage.getItem('incognide_globalPaneZoom') || '1');
+        return Number.isFinite(stored) ? Math.min(3, Math.max(0.5, stored)) : 1;
+    });
+    const [paneZoomLevels, setPaneZoomLevels] = useState<Record<string, number>>(() => {
+        try {
+            const raw = localStorage.getItem('incognide_paneZoomLevels');
+            if (!raw) return {};
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== 'object') return {};
+            return Object.fromEntries(
+                Object.entries(parsed).filter(([, value]) => Number.isFinite(value as number))
+            ) as Record<string, number>;
+        } catch {
+            return {};
+        }
+    });
+    const globalPaneZoomRef = useRef(globalPaneZoom);
+    globalPaneZoomRef.current = globalPaneZoom;
+    const paneZoomLevelsRef = useRef(paneZoomLevels);
+    paneZoomLevelsRef.current = paneZoomLevels;
+
+    const notifyPaneZoomUpdate = useCallback((paneId: string) => {
+        window.setTimeout(() => {
+            paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
+        }, 0);
+    }, [paneUpdateEmitter]);
+
+    const notifyAllPaneZoomUpdates = useCallback(() => {
+        window.setTimeout(() => {
+            Object.keys(contentDataRef.current).forEach((paneId) => {
+                paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
+            });
+        }, 0);
+    }, [contentDataRef, paneUpdateEmitter]);
+
+    const setPaneZoomLevel = useCallback((paneId: string, updater: (current: number) => number) => {
+        if (!paneId) return;
+        setPaneZoomLevels(prev => {
+            const current = prev[paneId] ?? 1;
+            const next = clampPaneZoom(updater(current));
+            if (next === 1) {
+                const updated = { ...prev };
+                delete updated[paneId];
+                localStorage.setItem('incognide_paneZoomLevels', JSON.stringify(updated));
+                return updated;
+            }
+            const updated = { ...prev, [paneId]: next };
+            localStorage.setItem('incognide_paneZoomLevels', JSON.stringify(updated));
+            return updated;
+        });
+        notifyPaneZoomUpdate(paneId);
+    }, [clampPaneZoom, notifyPaneZoomUpdate]);
+
+    const zoomPaneIn = useCallback((paneId: string) => {
+        setPaneZoomLevel(paneId, current => current + 0.1);
+    }, [setPaneZoomLevel]);
+
+    const zoomPaneOut = useCallback((paneId: string) => {
+        setPaneZoomLevel(paneId, current => current - 0.1);
+    }, [setPaneZoomLevel]);
+
+    const resetPaneZoom = useCallback((paneId: string) => {
+        setPaneZoomLevel(paneId, () => 1);
+    }, [setPaneZoomLevel]);
+
+    const adjustGlobalPaneZoom = useCallback((direction: 'in' | 'out' | 'reset') => {
+        setGlobalPaneZoom(prev => {
+            const next = direction === 'in'
+                ? clampPaneZoom(prev + 0.1)
+                : direction === 'out'
+                    ? clampPaneZoom(prev - 0.1)
+                    : 1;
+            localStorage.setItem('incognide_globalPaneZoom', String(next));
+            return next;
+        });
+        notifyAllPaneZoomUpdates();
+    }, [clampPaneZoom, notifyAllPaneZoomUpdates]);
+
+    const getPaneZoomLevel = useCallback((paneId: string) => {
+        return paneZoomLevelsRef.current[paneId] ?? 1;
+    }, []);
+
+    const getEffectivePaneZoom = useCallback((paneId: string) => {
+        return clampPaneZoom(globalPaneZoomRef.current * getPaneZoomLevel(paneId));
+    }, [clampPaneZoom, getPaneZoomLevel]);
+
     // Toggle blue outline on active pane via DOM — avoids re-rendering panes
     useEffect(() => {
         const prev = document.querySelector('[data-pane-id].pane-active');
@@ -1219,30 +1310,23 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
             cleanups.push(api.api.onMenuShowShortcuts(() => createHelpPaneRef.current?.()));
         }
 
-        const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
+const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
         window.addEventListener('open-help-pane', handleOpenHelpEvent);
         cleanups.push(() => window.removeEventListener('open-help-pane', handleOpenHelpEvent));
 
-        // Zoom handlers — zoom the active browser webview if active pane is a browser, else zoom the app
+        // Global zoom handlers keep pane layout fixed and scale pane contents proportionally.
         const handleZoom = (direction: 'in' | 'out' | 'reset') => {
+            adjustGlobalPaneZoom(direction);
+        };
+        const handleFocusedPaneZoom = (direction: 'in' | 'out' | 'reset') => {
             const activePaneId = activeContentPaneIdRef.current;
-            const paneData = contentDataRef.current[activePaneId];
-            if (paneData?.contentType === 'browser') {
-                // Dispatch event so the specific browser pane handles zoom
-                window.dispatchEvent(new CustomEvent('incognide-zoom', {
-                    detail: { paneId: activePaneId, direction }
-                }));
+            if (!activePaneId) return;
+            if (direction === 'in') {
+                zoomPaneIn(activePaneId);
+            } else if (direction === 'out') {
+                zoomPaneOut(activePaneId);
             } else {
-                // Zoom the main renderer (app-level zoom)
-                const wc = (window as any).require?.('electron')?.remote?.webFrame;
-                // Use webFrame from the renderer's own context
-                if (direction === 'in') {
-                    document.body.style.zoom = String(parseFloat(document.body.style.zoom || '1') + 0.1);
-                } else if (direction === 'out') {
-                    document.body.style.zoom = String(Math.max(0.5, parseFloat(document.body.style.zoom || '1') - 0.1));
-                } else {
-                    document.body.style.zoom = '1';
-                }
+                resetPaneZoom(activePaneId);
             }
         };
         if (api.api?.onZoomIn) {
@@ -1253,6 +1337,15 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         }
         if (api.api?.onZoomReset) {
             cleanups.push(api.api.onZoomReset(() => handleZoom('reset')));
+        }
+        if (api.api?.onPaneZoomIn) {
+            cleanups.push(api.api.onPaneZoomIn(() => handleFocusedPaneZoom('in')));
+        }
+        if (api.api?.onPaneZoomOut) {
+            cleanups.push(api.api.onPaneZoomOut(() => handleFocusedPaneZoom('out')));
+        }
+        if (api.api?.onPaneZoomReset) {
+            cleanups.push(api.api.onPaneZoomReset(() => handleFocusedPaneZoom('reset')));
         }
 
         return () => {
@@ -7993,6 +8086,11 @@ const layoutComponentApi = useMemo(() => ({
     lockedPanes,
     togglePaneLocked: (nodeId: string) => { setLockedPanes(prev => { const next = new Set(prev); if (next.has(nodeId)) next.delete(nodeId); else next.add(nodeId); localStorage.setItem('incognide_lockedPanes', JSON.stringify([...next])); return next; }); },
     paneUpdateEmitter,
+    getPaneZoomLevel,
+    getEffectivePaneZoom,
+    zoomPaneIn,
+    zoomPaneOut,
+    resetPaneZoom,
 }), [
     findNodeByPath, findNodePath, activeContentPaneId,
     draggedItem, dropTarget, updateContentPane, performSplit, closeContentPane,
@@ -8008,6 +8106,7 @@ const layoutComponentApi = useMemo(() => ({
     renamingPaneId, editedFileName, handleConfirmRename,
     handleRunScript, handleNewBrowserTab, topBarCollapsed,
     currentPath, currentNPC, lockedPanes,
+    getPaneZoomLevel, getEffectivePaneZoom, zoomPaneIn, zoomPaneOut, resetPaneZoom,
 ]);
 
 // Stable ref for layoutComponentApi — LayoutNode reads from this ref so it doesn't

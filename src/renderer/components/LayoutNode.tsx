@@ -318,6 +318,8 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             currentNPC,
 
             lockedPanes, togglePaneLocked,
+            getPaneZoomLevel, getEffectivePaneZoom,
+            zoomPaneIn, zoomPaneOut, resetPaneZoom,
         } = component;
 
         const chatInputProps = getChatInputProps ? getChatInputProps(node.id) : null;
@@ -329,6 +331,10 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
         const [localRenaming, setLocalRenaming] = useState(false);
         const [localEditName, setLocalEditName] = useState('');
         const localRenameRef = useRef<HTMLInputElement>(null);
+        const paneZoomLevel = componentRef.current?.getPaneZoomLevel?.(node.id) ?? 1;
+        const effectivePaneZoom = componentRef.current?.getEffectivePaneZoom?.(node.id) ?? paneZoomLevel;
+        const hasHeaderArea = showTabBar || (contentType !== 'browser' && contentType !== 'docx' && contentType !== 'pptx' && contentType !== 'csv' && contentType !== 'latex');
+        const paneZoomOffsetTop = hasHeaderArea ? 40 : 8;
 
         useEffect(() => {
             const emitter = componentRef.current?.paneUpdateEmitter;
@@ -1700,81 +1706,124 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                 onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
                 onDrop={(e) => { dragCounterRef.current = 0; setLocalDragOver(false); setLocalDropSide(null); onDrop(e, localDropSide || 'center'); }}
             >
-                {showTabBar && (
-                    <PaneTabBar
-                        tabs={tabs}
-                        activeTabIndex={activeTabIndex}
-                        onTabSelect={handleTabSelect}
-                        onTabClose={handleTabClose}
-                        onTabReorder={handleTabReorder}
-                        nodeId={node.id}
-                        onToggleZen={contentType === 'browser' && toggleZenMode ? () => toggleZenMode(node.id) : undefined}
-                        isZenMode={contentType === 'browser' ? zenModePaneId === node.id : undefined}
-                        onClosePane={contentType === 'browser' ? () => closeContentPane(node.id, path) : undefined}
-                        onTabAdd={contentType === 'browser' && component.handleNewBrowserTab ? () => componentRef.current.handleNewBrowserTab('', node.id) : undefined}
-                        setDraggedItem={setDraggedItem}
-                        findNodePath={findNodePath}
-                        rootLayoutNode={rootLayoutNode}
-                        contentDataRef={contentDataRef}
-                        nodePath={path}
-                    />
-                )}
-
-                {contentType !== 'browser' && contentType !== 'docx' && contentType !== 'pptx' && contentType !== 'csv' && contentType !== 'latex' && (
-                    <PaneHeader
-                        nodeId={node.id}
-                        icon={headerIcon}
-                        title={headerTitle}
-
-                        headerContent={headerContent}
-                        findNodePath={findNodePath}
-                        rootLayoutNode={rootLayoutNode}
-                        setDraggedItem={setDraggedItem}
-                        setPaneContextMenu={setPaneContextMenu}
-                        fileChanged={paneData?.fileChanged || activeTab?.fileChanged}
-                        onSave={() => { if (paneData?.onSave) paneData.onSave(); }}
-                        onStartRename={() => {
-                            setLocalRenaming(true);
-                            setLocalEditName(getFileName(contentId) || headerTitle || '');
-                        }}
-
-                        isRenaming={localRenaming}
-                        editedFileName={localEditName}
-                        setEditedFileName={setLocalEditName}
-                        onConfirmRename={(newName?: string) => {
-                            const name = newName || localEditName;
-                            setLocalRenaming(false);
-                            if (name) {
-                                setEditedFileName(name);
-                                handleConfirmRename?.(node.id, contentId, name);
-                            }
-                        }}
-                        onCancelRename={() => setLocalRenaming(false)}
-                        filePath={contentId}
-                        onRunScript={onRunScript}
-
-                        onClose={() => {
-                            const tabs = paneData?.tabs;
-                            if (tabs && tabs.length > 1) {
-                                handleTabClose(paneData.activeTabIndex || 0);
-                            } else {
-                                closeContentPane(node.id, path);
-                            }
-                        }}
-                        onToggleZen={toggleZenMode ? () => toggleZenMode(node.id) : null}
-                        isZenMode={zenModePaneId === node.id}
-
-                        onAddTab={handleAddTab}
-
-                        topBarCollapsed={topBarCollapsed}
-                        onExpandTopBar={onExpandTopBar}
-
-                        panesLocked={lockedPanes.has(node.id)}
-                        onTogglePanesLocked={() => togglePaneLocked(node.id)}
+                <div
+                    className="pointer-events-none absolute z-[25] flex items-center gap-1 rounded-full border theme-border theme-bg-secondary/95 px-2 py-1 text-[10px] shadow-lg backdrop-blur-sm"
+                    style={{ top: paneZoomOffsetTop, right: 8 }}
+                >
+                    <button
+                        type="button"
+                        className="pointer-events-auto p-1 rounded theme-hover"
+                        title="Zoom out focused pane"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); componentRef.current?.setActiveContentPaneId?.(node.id); componentRef.current?.zoomPaneOut?.(node.id); }}
                     >
-                        {paneHeaderChildren}
-                    </PaneHeader>
-                )}
+                        <ZoomOut size={12} />
+                    </button>
+                    <button
+                        type="button"
+                        className="pointer-events-auto flex items-center gap-1 rounded px-1 py-0.5 theme-hover"
+                        title={`Reset pane zoom to 100% (effective ${Math.round(effectivePaneZoom * 100)}%)`}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); componentRef.current?.setActiveContentPaneId?.(node.id); componentRef.current?.resetPaneZoom?.(node.id); }}
+                    >
+                        <Search size={12} />
+                        <span className="min-w-[34px] text-center">{Math.round(paneZoomLevel * 100)}%</span>
+                    </button>
+                    <button
+                        type="button"
+                        className="pointer-events-auto p-1 rounded theme-hover"
+                        title="Zoom in focused pane"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); componentRef.current?.setActiveContentPaneId?.(node.id); componentRef.current?.zoomPaneIn?.(node.id); }}
+                    >
+                        <ZoomIn size={12} />
+                    </button>
+                </div>
+
+                <div
+                    className="flex-1 flex flex-col min-h-0 min-w-0"
+                    style={{
+                        transform: `scale(${effectivePaneZoom})`,
+                        transformOrigin: 'top left',
+                        width: `${100 / effectivePaneZoom}%`,
+                        height: `${100 / effectivePaneZoom}%`,
+                    }}
+                >
+                    {showTabBar && (
+                        <PaneTabBar
+                            tabs={tabs}
+                            activeTabIndex={activeTabIndex}
+                            onTabSelect={handleTabSelect}
+                            onTabClose={handleTabClose}
+                            onTabReorder={handleTabReorder}
+                            nodeId={node.id}
+                            onToggleZen={contentType === 'browser' && toggleZenMode ? () => toggleZenMode(node.id) : undefined}
+                            isZenMode={contentType === 'browser' ? zenModePaneId === node.id : undefined}
+                            onClosePane={contentType === 'browser' ? () => closeContentPane(node.id, path) : undefined}
+                            onTabAdd={contentType === 'browser' && component.handleNewBrowserTab ? () => componentRef.current.handleNewBrowserTab('', node.id) : undefined}
+                            setDraggedItem={setDraggedItem}
+                            findNodePath={findNodePath}
+                            rootLayoutNode={rootLayoutNode}
+                            contentDataRef={contentDataRef}
+                            nodePath={path}
+                        />
+                    )}
+
+                    {contentType !== 'browser' && contentType !== 'docx' && contentType !== 'pptx' && contentType !== 'csv' && contentType !== 'latex' && (
+                        <PaneHeader
+                            nodeId={node.id}
+                            icon={headerIcon}
+                            title={headerTitle}
+
+                            headerContent={headerContent}
+                            findNodePath={findNodePath}
+                            rootLayoutNode={rootLayoutNode}
+                            setDraggedItem={setDraggedItem}
+                            setPaneContextMenu={setPaneContextMenu}
+                            fileChanged={paneData?.fileChanged || activeTab?.fileChanged}
+                            onSave={() => { if (paneData?.onSave) paneData.onSave(); }}
+                            onStartRename={() => {
+                                setLocalRenaming(true);
+                                setLocalEditName(getFileName(contentId) || headerTitle || '');
+                            }}
+
+                            isRenaming={localRenaming}
+                            editedFileName={localEditName}
+                            setEditedFileName={setLocalEditName}
+                            onConfirmRename={(newName?: string) => {
+                                const name = newName || localEditName;
+                                setLocalRenaming(false);
+                                if (name) {
+                                    setEditedFileName(name);
+                                    handleConfirmRename?.(node.id, contentId, name);
+                                }
+                            }}
+                            onCancelRename={() => setLocalRenaming(false)}
+                            filePath={contentId}
+                            onRunScript={onRunScript}
+
+                            onClose={() => {
+                                const tabs = paneData?.tabs;
+                                if (tabs && tabs.length > 1) {
+                                    handleTabClose(paneData.activeTabIndex || 0);
+                                } else {
+                                    closeContentPane(node.id, path);
+                                }
+                            }}
+                            onToggleZen={toggleZenMode ? () => toggleZenMode(node.id) : null}
+                            isZenMode={zenModePaneId === node.id}
+
+                            onAddTab={handleAddTab}
+
+                            topBarCollapsed={topBarCollapsed}
+                            onExpandTopBar={onExpandTopBar}
+
+                            panesLocked={lockedPanes.has(node.id)}
+                            onTogglePanesLocked={() => togglePaneLocked(node.id)}
+                        >
+                            {paneHeaderChildren}
+                        </PaneHeader>
+                    )}
 
                 {localDragOver && !lockedPanes.has(node.id) && (
                     <>
@@ -1789,21 +1838,22 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                         <div className={`absolute left-0 bottom-0 right-0 h-1/4 z-[20] ${localDropSide === 'bottom' ? 'bg-blue-500/30' : ''}`} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setLocalDropSide('bottom'); }} onDrop={(e) => { e.preventDefault(); e.stopPropagation(); dragCounterRef.current = 0; setLocalDragOver(false); setLocalDropSide(null); onDrop(e, 'bottom'); }} />
                     </>
                 )}
-                {tabs.length > 1 ? (
+                    {tabs.length > 1 ? (
 
-                    tabs.map((tab, index) => (
-                        <div
-                            key={tab.id}
-                            className="flex-1 flex flex-col min-h-0"
-                            style={{ display: index === activeTabIndex ? 'flex' : 'none' }}
-                        >
-                            {renderTabContent(tab, index) || renderPaneContent()}
-                        </div>
-                    ))
-                ) : (
+                        tabs.map((tab, index) => (
+                            <div
+                                key={tab.id}
+                                className="flex-1 flex flex-col min-h-0"
+                                style={{ display: index === activeTabIndex ? 'flex' : 'none' }}
+                            >
+                                {renderTabContent(tab, index) || renderPaneContent()}
+                            </div>
+                        ))
+                    ) : (
 
-                    renderPaneContent()
-                )}
+                        renderPaneContent()
+                    )}
+                </div>
             </div>
         );
     }

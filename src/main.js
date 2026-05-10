@@ -2153,7 +2153,14 @@ function createWindow(cliArgs = {}) {
 
     registerGlobalShortcut(mainWindow);
 
-    applyAppMenu();
+applyAppMenu();
+    
+    // Add Referer header for tile servers that require it (OSM, OpenTopoMap)
+    mainWindow.webContents.session.webRequest.onBeforeSendHeaders({ urls: ['*://*.tile.openstreetmap.org/*', '*://*.tile.opentopomap.org/*'] }, (details, callback) => {
+      details.requestHeaders['Referer'] = 'https://incognide.com';
+      details.requestHeaders['User-Agent'] = 'Incognide/0.1 (https://incognide.com)';
+      callback({ requestHeaders: details.requestHeaders });
+    });
 
     // Add Referer header for tile servers that require it (OSM, OpenTopoMap)
     mainWindow.webContents.session.webRequest.onBeforeSendHeaders({ urls: ['*://*.tile.openstreetmap.org/*', '*://*.tile.opentopomap.org/*'] }, (details, callback) => {

@@ -830,6 +830,9 @@
     onZoomIn: (callback) => onChannel('zoom-in', callback),
     onZoomOut: (callback) => onChannel('zoom-out', callback),
     onZoomReset: (callback) => onChannel('zoom-reset', callback),
+    onPaneZoomIn: (callback) => onChannel('pane-zoom-in', callback),
+    onPaneZoomOut: (callback) => onChannel('pane-zoom-out', callback),
+    onPaneZoomReset: (callback) => onChannel('pane-zoom-reset', callback),
 
     // ==================== Updates ====================
     checkForUpdates: () => invoke('check-for-updates'),
