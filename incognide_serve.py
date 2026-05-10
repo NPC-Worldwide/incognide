@@ -53,6 +53,17 @@ _install_log_tee()
 from npcpy.serve import start_flask_server
 
 if __name__ == "__main__":
+    # --test-import: smoke test that all critical imports resolve (for CI)
+    if sys.argv[1:] == ['--test-import']:
+        print("[TEST] Importing npcpy.serve...")
+        from npcpy.serve import app
+        print("[TEST] Importing npcpy.npc_compiler...")
+        from npcpy.npc_compiler import CLIAgent, NPC, Team
+        print("[TEST] Importing npcpy.gen.cli_agent...")
+        from npcpy.gen.cli_agent import run_cli_agent, _is_cli_provider
+        print("[TEST] All imports OK")
+        sys.exit(0)
+
     # Detect if running as compiled executable (prod) or Python script (dev)
     is_frozen = getattr(sys, 'frozen', False)
     is_dev = not is_frozen
