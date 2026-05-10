@@ -1244,10 +1244,10 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('createConversation', async (_, { title, model, provider, directory }) => {
+  ipcMain.handle('createConversation', async (_, { title, model, provider }) => {
     try {
       const conversationId = Date.now().toString();
-      const conversation = {
+      return {
         id: conversationId,
         title: title || 'New Conversation',
         model: model || DEFAULT_CONFIG.model,
@@ -1255,11 +1255,6 @@ function register(ctx) {
         created: new Date().toISOString(),
         messages: []
       };
-      const targetDir = directory || path.join(DEFAULT_CONFIG.baseDir, 'conversations');
-      const filePath = path.join(targetDir, `${conversationId}.json`);
-      await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
-      await fsPromises.writeFile(filePath, JSON.stringify(conversation, null, 2));
-      return conversation;
     } catch (err) {
       console.error('Error creating conversation:', err);
       throw err;

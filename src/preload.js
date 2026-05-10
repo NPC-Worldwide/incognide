@@ -853,6 +853,21 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
         ipcRenderer.on('zoom-reset', handler);
         return () => ipcRenderer.removeListener('zoom-reset', handler);
     },
+    onPaneZoomIn: (callback) => {
+        const handler = () => callback();
+        ipcRenderer.on('pane-zoom-in', handler);
+        return () => ipcRenderer.removeListener('pane-zoom-in', handler);
+    },
+    onPaneZoomOut: (callback) => {
+        const handler = () => callback();
+        ipcRenderer.on('pane-zoom-out', handler);
+        return () => ipcRenderer.removeListener('pane-zoom-out', handler);
+    },
+    onPaneZoomReset: (callback) => {
+        const handler = () => callback();
+        ipcRenderer.on('pane-zoom-reset', handler);
+        return () => ipcRenderer.removeListener('pane-zoom-reset', handler);
+    },
 
     checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),

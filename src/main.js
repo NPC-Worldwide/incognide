@@ -511,7 +511,7 @@ function getDefaultModelConfig() {
 const defaultModelConfig = getDefaultModelConfig();
 
 const DEFAULT_CONFIG = {
-  baseDir: path.resolve(os.homedir(), '.npcsh'),
+  baseDir: path.resolve(os.homedir(), '.npcsh', 'incognide'),
   stream: true,
   model: defaultModelConfig.model,
   provider: defaultModelConfig.provider,
@@ -736,7 +736,6 @@ function findJinxFile(dir, name) {
 async function ensureBaseDir() {
   try {
     await fsPromises.mkdir(DEFAULT_CONFIG.baseDir, { recursive: true });
-    await fsPromises.mkdir(path.join(DEFAULT_CONFIG.baseDir, 'conversations'), { recursive: true });
     await fsPromises.mkdir(path.join(DEFAULT_CONFIG.baseDir, 'config'), { recursive: true });
     await fsPromises.mkdir(path.join(DEFAULT_CONFIG.baseDir, 'images'), { recursive: true });
     await fsPromises.mkdir(path.join(DEFAULT_CONFIG.baseDir, 'screenshots'), { recursive: true });
@@ -2154,7 +2153,14 @@ function createWindow(cliArgs = {}) {
 
     registerGlobalShortcut(mainWindow);
 
-    applyAppMenu();
+applyAppMenu();
+    
+    // Add Referer header for tile servers that require it (OSM, OpenTopoMap)
+    mainWindow.webContents.session.webRequest.onBeforeSendHeaders({ urls: ['*://*.tile.openstreetmap.org/*', '*://*.tile.opentopomap.org/*'] }, (details, callback) => {
+      details.requestHeaders['Referer'] = 'https://incognide.com';
+      details.requestHeaders['User-Agent'] = 'Incognide/0.1 (https://incognide.com)';
+      callback({ requestHeaders: details.requestHeaders });
+    });
 
     // Add Referer header for tile servers that require it (OSM, OpenTopoMap)
     mainWindow.webContents.session.webRequest.onBeforeSendHeaders({ urls: ['*://*.tile.openstreetmap.org/*', '*://*.tile.opentopomap.org/*'] }, (details, callback) => {

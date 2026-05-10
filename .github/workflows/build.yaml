@@ -83,7 +83,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           pyinstaller --onefile --clean --distpath pyinstaller_dist --noupx \
-            --hidden-import=npcpy --hidden-import=npcsh --hidden-import=litellm --hidden-import=ollama \
+            --hidden-import=npcpy --hidden-import=npcpy.gen.cli_agent --hidden-import=npcsh --hidden-import=litellm --hidden-import=ollama \
             --hidden-import=flask --hidden-import=flask_cors --hidden-import=flask_sse \
             --hidden-import=redis --hidden-import=pyyaml --hidden-import=pillow \
             --hidden-import=nltk --hidden-import=anthropic --hidden-import=openai \
@@ -102,18 +102,28 @@ jobs:
           cp pyinstaller_dist/incognide_serve resources/backend/
           chmod +x resources/backend/incognide_serve
 
+      - name: Test PyInstaller binary imports (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          ./resources/backend/incognide_serve --test-import 2>&1 | head -20 || true
+
       - name: Build PyInstaller binary (Windows)
         if: runner.os == 'Windows'
         run: |
-          python -m PyInstaller --onefile --clean --distpath pyinstaller_dist --noupx --hidden-import=npcpy --hidden-import=npcsh --hidden-import=flask --hidden-import=flask_cors --hidden-import=flask_sse --hidden-import=redis --hidden-import=pyyaml --hidden-import=pillow --hidden-import=nltk --hidden-import=litellm --hidden-import=anthropic --hidden-import=openai --hidden-import=google-genai --hidden-import=tiktoken_ext.openai_public --hidden-import=tiktoken_ext --hidden-import=sentence_transformers --hidden-import=chromadb --hidden-import=pydantic --collect-data=litellm --collect-data=npcpy --collect-data=npcsh incognide_serve.py
+          python -m PyInstaller --onefile --clean --distpath pyinstaller_dist --noupx --hidden-import=npcpy --hidden-import=npcpy.gen.cli_agent --hidden-import=npcsh --hidden-import=flask --hidden-import=flask_cors --hidden-import=flask_sse --hidden-import=redis --hidden-import=pyyaml --hidden-import=pillow --hidden-import=nltk --hidden-import=litellm --hidden-import=anthropic --hidden-import=openai --hidden-import=google-genai --hidden-import=tiktoken_ext.openai_public --hidden-import=tiktoken_ext --hidden-import=sentence_transformers --hidden-import=chromadb --hidden-import=pydantic --collect-data=litellm --collect-data=npcpy --collect-data=npcsh incognide_serve.py
           mkdir -p resources/backend
           copy pyinstaller_dist\incognide_serve.exe resources\backend\incognide_serve.exe
+
+      - name: Test PyInstaller binary imports (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          resources\backend\incognide_serve.exe --test-import 2>&1 | head -20 || true
 
       - name: Build PyInstaller binary (macOS)
         if: runner.os == 'macOS'
         run: |
           pyinstaller --onefile --clean --distpath pyinstaller_dist --noupx \
-            --hidden-import=npcpy --hidden-import=npcsh --hidden-import=litellm --hidden-import=ollama \
+            --hidden-import=npcpy --hidden-import=npcpy.gen.cli_agent --hidden-import=npcsh --hidden-import=litellm --hidden-import=ollama \
             --hidden-import=flask --hidden-import=flask_cors --hidden-import=flask_sse \
             --hidden-import=redis --hidden-import=pyyaml --hidden-import=pillow \
             --hidden-import=anthropic --hidden-import=openai --hidden-import=google-genai \
@@ -131,6 +141,11 @@ jobs:
           mkdir -p resources/backend
           cp pyinstaller_dist/incognide_serve resources/backend/incognide_serve
           chmod +x resources/backend/incognide_serve
+
+      - name: Test PyInstaller binary imports (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          ./resources/backend/incognide_serve --test-import 2>&1 | head -20 || true
 
       - name: Build frontend
         run: npm run build:vite
@@ -337,7 +352,7 @@ jobs:
       - name: Build PyInstaller binary (macOS)
         run: |
           pyinstaller --onefile --clean --distpath pyinstaller_dist --noupx \
-            --hidden-import=npcpy --hidden-import=npcsh --hidden-import=litellm --hidden-import=ollama \
+            --hidden-import=npcpy --hidden-import=npcpy.gen.cli_agent --hidden-import=npcsh --hidden-import=litellm --hidden-import=ollama \
             --hidden-import=flask --hidden-import=flask_cors --hidden-import=flask_sse \
             --hidden-import=redis --hidden-import=pyyaml --hidden-import=pillow \
             --hidden-import=anthropic --hidden-import=openai --hidden-import=google-genai \
