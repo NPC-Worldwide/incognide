@@ -333,8 +333,6 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
         const localRenameRef = useRef<HTMLInputElement>(null);
         const paneZoomLevel = componentRef.current?.getPaneZoomLevel?.(node.id) ?? 1;
         const effectivePaneZoom = componentRef.current?.getEffectivePaneZoom?.(node.id) ?? paneZoomLevel;
-        const hasHeaderArea = showTabBar || (contentType !== 'browser' && contentType !== 'docx' && contentType !== 'pptx' && contentType !== 'csv' && contentType !== 'latex');
-        const paneZoomOffsetTop = hasHeaderArea ? 40 : 8;
 
         useEffect(() => {
             const emitter = componentRef.current?.paneUpdateEmitter;
@@ -916,6 +914,8 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
 
         const activeTab = tabs.length > 0 ? tabs[activeTabIndex] : null;
         const contentType = activeTab?.contentType || paneData?.contentType;
+        const hasHeaderArea = showTabBar || (contentType !== 'browser' && contentType !== 'docx' && contentType !== 'pptx' && contentType !== 'csv' && contentType !== 'latex');
+        const paneZoomOffsetTop = hasHeaderArea ? 40 : 8;
         const contentId = activeTab?.contentId || paneData?.contentId;
 
         const handleTabSelect = (index: number) => {
