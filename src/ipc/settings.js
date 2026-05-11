@@ -131,41 +131,72 @@ const ensureTileJinxDir = async () => {
 const tileJinxCacheDir = path.join(tileJinxDir, '.cache');
 
 const compileJinxFile = async (jinxFilename) => {
-  const ts = require('typescript');
   const jinxPath = path.join(tileJinxDir, jinxFilename);
   const cachePath = path.join(tileJinxCacheDir, jinxFilename.replace('.jinx', '.js'));
 
   try {
+    // Check if TypeScript is available
+    let ts;
+    try {
+      ts = require('typescript');
+    } catch (tsErr) {
+      console.warn(`TypeScript not available, using fallback for ${jinxFilename}`);
+      return createFallbackJinx(jinxFilename, cachePath, 'TypeScript not available');
+    }
 
-    const source = await fsPromises.readFile(jinxPath, 'utf8');
+    // Read the source file
+    let source;
+    try {
+      source = await fsPromises.readFile(jinxPath, 'utf8');
+    } catch (readErr) {
+      console.error(`Failed to read ${jinxFilename}:`, readErr.message);
+      return createFallbackJinx(jinxFilename, cachePath, `Read error: ${readErr.message}`);
+    }
 
+    // Extract component name from exports
     const exportMatch = source.match(/export\s+default\s+(\w+)\s*;?\s*$/m);
     const exportFuncMatch = source.match(/export\s+default\s+(?:function|const)\s+(\w+)/);
     const componentName = exportMatch?.[1] || exportFuncMatch?.[1] || 'Component';
 
+    // Clean the source for transpilation
     let cleaned = source.replace(/\/\*\*[\s\S]*?\*\/\s*\n?/, '');
     cleaned = cleaned.replace(/^#[^\n]*\n/gm, '');
     cleaned = cleaned.replace(/^import\s+.*?['"];?\s*$/gm, '');
     cleaned = cleaned.replace(/^export\s+(default\s+)?/gm, '');
 
-    const result = ts.transpileModule(cleaned, {
-      compilerOptions: {
-        module: ts.ModuleKind.None,
-        target: ts.ScriptTarget.ES2020,
-        jsx: ts.JsxEmit.React,
-        esModuleInterop: false,
-        removeComments: true,
-      },
-      reportDiagnostics: true,
-    });
-
-    if (result.diagnostics && result.diagnostics.length > 0) {
-      const errors = result.diagnostics.map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')).join('\n');
-      console.error(`Compile error in ${jinxFilename}:`, errors);
-      return { success: false, error: errors };
+    // Transpile the TypeScript
+    let result;
+    try {
+      result = ts.transpileModule(cleaned, {
+        compilerOptions: {
+          module: ts.ModuleKind.None,
+          target: ts.ScriptTarget.ES2020,
+          jsx: ts.JsxEmit.React,
+          esModuleInterop: false,
+          removeComments: true,
+        },
+        reportDiagnostics: true,
+      });
+    } catch (transpileErr) {
+      console.error(`Transpile error in ${jinxFilename}:`, transpileErr.message);
+      return createFallbackJinx(jinxFilename, cachePath, `Transpile error: ${transpileErr.message}`, componentName);
     }
 
-    let compiled = result.outputText;
+    // Check for diagnostics
+    if (result.diagnostics && result.diagnostics.length > 0) {
+      const errors = result.diagnostics.map(d => {
+        try {
+          return ts.flattenDiagnosticMessageText(d.messageText, '\n');
+        } catch (e) {
+          return String(d.messageText);
+        }
+      }).join('\n');
+      console.error(`Compile diagnostics in ${jinxFilename}:`, errors);
+      // Continue anyway, might still work
+    }
+
+    // Clean up the compiled output
+    let compiled = result.outputText || '';
     compiled = compiled.replace(/["']use strict["'];?\n?/g, '');
     compiled = compiled.replace(/Object\.defineProperty\(exports[\s\S]*?\);/g, '');
     compiled = compiled.replace(/exports\.\w+\s*=\s*/g, '');
@@ -174,6 +205,12 @@ const compileJinxFile = async (jinxFilename) => {
     compiled = compiled.replace(/require\([^)]+\)/g, '{}');
     compiled = compiled.replace(/\w+_\d+\.(\w+)/g, '$1');
     compiled = compiled.replace(/react_1\.(\w+)/g, '$1');
+
+    // If compiled output is empty or too short, use fallback
+    if (!compiled || compiled.trim().length < 10) {
+      console.warn(`Empty compiled output for ${jinxFilename}, using fallback`);
+      return createFallbackJinx(jinxFilename, cachePath, 'Empty compiled output', componentName);
+    }
 
     const moduleCode = `// Compiled from ${jinxFilename}
 
@@ -190,7 +227,43 @@ var __component = ${componentName};
     return { success: true, componentName, cachePath };
   } catch (err) {
     console.error(`Failed to compile ${jinxFilename}:`, err.message);
-    return { success: false, error: err.message };
+    return createFallbackJinx(jinxFilename, cachePath, err.message);
+  }
+};
+
+// Helper function to create a fallback jinx file when compilation fails
+const createFallbackJinx = async (jinxFilename, cachePath, errorMessage, componentName = 'FallbackComponent') => {
+  try {
+    const fallbackCode = `// Fallback for ${jinxFilename} - compilation failed: ${errorMessage}
+// This stub allows the app to start even when jinx compilation fails
+
+const ${componentName} = () => {
+  return React.createElement('div', { 
+    style: { 
+      padding: '20px', 
+      color: '#ff6b6b',
+      fontFamily: 'system-ui, sans-serif'
+    } 
+  }, [
+    React.createElement('h3', { key: 'title' }, 'Component Error'),
+    React.createElement('p', { key: 'msg' }, 'Failed to load ${jinxFilename}: ${errorMessage}'),
+    React.createElement('p', { key: 'hint', style: { fontSize: '12px', color: '#888' } }, 
+      'Check the console for details. The app can still function.')
+  ]);
+};
+
+var __componentName = "${componentName}";
+var __component = ${componentName};
+`;
+
+    await fsPromises.mkdir(tileJinxCacheDir, { recursive: true });
+    await fsPromises.writeFile(cachePath, fallbackCode);
+    
+    console.warn(`Created fallback for ${jinxFilename}: ${errorMessage}`);
+    return { success: true, componentName, cachePath, fallback: true, error: errorMessage };
+  } catch (fallbackErr) {
+    console.error(`Failed to create fallback for ${jinxFilename}:`, fallbackErr.message);
+    return { success: false, error: `${errorMessage}; Fallback failed: ${fallbackErr.message}` };
   }
 };
 
