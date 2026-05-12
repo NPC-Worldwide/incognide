@@ -4,8 +4,8 @@ flask_sse
 redis
 pyyaml
 pillow
-npcpy>=1.4.23
-npcsh>=1.1.36
+npcpy>=1.4.24
+npcsh>=1.2.10
 anthropic
 google-genai
 ollama
