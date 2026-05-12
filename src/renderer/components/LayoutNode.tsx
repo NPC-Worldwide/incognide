@@ -795,6 +795,8 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                 else if (ext === 'tex') contentType = 'latex';
                 else if (['mapx', 'geojson', 'kml', 'kmz', 'gpx', 'shp', 'mindmap'].includes(ext)) contentType = 'cartoglyph';
                 else if (ext === 'zip') contentType = 'zip';
+                else if (ext === 'ipynb') contentType = 'notebook';
+                else if (ext === 'exp') contentType = 'exp';
                 else contentType = 'editor';
             } else if (comp.draggedItem.type === 'browser') {
                 contentType = 'browser';
