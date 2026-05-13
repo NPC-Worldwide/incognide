@@ -380,7 +380,7 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('generate_images', async (event, { prompt, n, model, provider, attachments, baseFilename='vixynt_gen_', currentPath='~/.npcsh/images', workspacePath, width, height, customModelPath }) => {
+  ipcMain.handle('generate_images', async (event, { prompt, n, model, provider, attachments, baseFilename='image_gen_', currentPath='~/.npcsh/images', workspacePath, width, height, customModelPath }) => {
     log(`[Main Process] Image gen request: n=${n} prompt="${prompt}" model="${model}" provider=${provider}`);
 
     if (!prompt) return { error: 'Prompt cannot be empty' };

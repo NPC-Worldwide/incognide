@@ -15,15 +15,14 @@ const PANE_TYPE_INFO: Record<string, { title: string; description: string; needs
   'latex':            { title: 'LaTeX',             description: 'Edit LaTeX documents', needsPath: true },
   'notebook':         { title: 'Notebook',          description: 'Jupyter notebook', needsPath: true },
   'exp':              { title: 'Experiment',        description: 'Experiment file', needsPath: true },
-  'mindmap':          { title: 'Mind Map',          description: 'Mind map document', needsPath: true },
+  'image':            { title: 'Image',             description: 'View image files', needsPath: true },
   'zip':              { title: 'Archive',           description: 'Browse ZIP archives', needsPath: true },
   'image':            { title: 'Image',             description: 'View image files', needsPath: true },
   'graph-viewer':     { title: 'Knowledge Graph',   description: 'View and edit the knowledge graph' },
   'datadash':         { title: 'Dashboard',         description: 'Data dashboard with analytics and stats' },
   'dbtool':           { title: 'Database Tool',     description: 'Query and manage databases' },
   'memory-manager':   { title: 'Memory Manager',    description: 'Manage AI memory and training data' },
-  'photoviewer':      { title: 'Photo Viewer',      description: 'Browse and view photos' },
-  'scherzo':          { title: 'Audio Studio',      description: 'Audio playback and generation' },
+  'browser':          { title: 'Browser',           description: 'Web browser', needsUrl: true },
   'npcteam':          { title: 'NPC Team',          description: 'View and manage NPC agents' },
   'jinx':             { title: 'Jinxes',             description: 'View and manage jinx actions' },
   'teammanagement':   { title: 'Team Management',   description: 'Manage NPCs, jinxes, databases, MCP servers, cron jobs' },
@@ -44,7 +43,7 @@ const PANE_TYPE_INFO: Record<string, { title: string; description: string; needs
 };
 
 const TOOL_PANE_TYPES = new Set([
-  'graph-viewer', 'datadash', 'dbtool', 'memory-manager', 'photoviewer', 'scherzo',
+  'graph-viewer', 'datadash', 'dbtool', 'memory-manager', 'browser', 'image',
   'npcteam', 'jinx', 'teammanagement', 'search', 'library', 'diskusage', 'help',
   'settings', 'cron-daemon', 'projectenv', 'browsergraph', 'data-labeler', 'git',
   'mcp-manager', 'skills-manager', 'chat', 'terminal',

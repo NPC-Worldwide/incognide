@@ -29,7 +29,7 @@ import DocxViewer from './DocxViewer';
 import MacroInput from './MacroInput';
 import SettingsMenu from './SettingsMenu';
 import NPCTeamMenu from './NPCTeamMenu';
-import PhotoViewer from './PhotoViewer';
+// PhotoViewer, Scherzo, LibraryViewer, MindMapViewer extracted to standalone apps
 import JinxMenu from './JinxMenu';
 import '../../index.css';
 import CtxEditor from './CtxEditor';
@@ -50,16 +50,12 @@ import NotebookViewer from './NotebookViewer';
 import ExpViewer from './ExpViewer';
 import PicViewer from './PicViewer';
 import StlViewer from './StlViewer';
-import MindMapViewer from './MindMapViewer';
-import CartoglyphIcon from './icons/CartoglyphIcon';
 import RadioTowerIcon from './icons/RadioTowerIcon';
 import { RadioPane } from 'npcts';
 import ZipViewer from './ZipViewer';
-import Scherzo from './Scherzo';
 import DiskUsageAnalyzer from './DiskUsageAnalyzer';
 import ProjectEnvEditor from './ProjectEnvEditor';
 import DBTool from './DBTool';
-import LibraryViewer from './LibraryViewer';
 import HelpViewer from './HelpViewer';
 import FolderViewer from './FolderViewer';
 import PathSwitcher from './PathSwitcher';
@@ -355,9 +351,6 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const [updateAvailable, setUpdateAvailable] = useState<{latestVersion: string; releaseUrl: string} | null>(null);
     const [appVersion, setAppVersion] = useState<string>('');
     const [projectEnvEditorOpen, setProjectEnvEditorOpen] = useState(false);
-    const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
-    const [photoViewerType, setPhotoViewerType] = useState('images');
-    const [libraryViewerOpen, setLibraryViewerOpen] = useState(false);
     const [selectedConvos, setSelectedConvos] = useState(new Set());
     const [lastClickedIndex, setLastClickedIndex] = useState(null);
     const [contextMenuPos, setContextMenuPos] = useState(null);
@@ -3502,35 +3495,6 @@ const renderStlViewer = useCallback(({ nodeId }) => {
     );
 }, []);
 
-const renderMindMapViewer = useCallback(({ nodeId }) => {
-    return (
-        <MindMapViewer
-            nodeId={nodeId}
-            contentDataRef={contentDataRef}
-            findNodePath={findNodePath}
-            rootLayoutNode={rootLayoutNode}
-            setDraggedItem={setDraggedItem}
-            setPaneContextMenu={setPaneContextMenu}
-            closeContentPane={closeContentPane}
-        />
-    );
-}, [rootLayoutNode, closeContentPane]);
-
-// Render Cartoglyph (GIS mapping) pane — same component, standalone mode
-const renderCartoglyphPane = useCallback(({ nodeId }) => {
-    return (
-        <MindMapViewer
-            nodeId={nodeId}
-            contentDataRef={contentDataRef}
-            findNodePath={findNodePath}
-            rootLayoutNode={rootLayoutNode}
-            setDraggedItem={setDraggedItem}
-            setPaneContextMenu={setPaneContextMenu}
-            closeContentPane={closeContentPane}
-        />
-    );
-}, [rootLayoutNode, closeContentPane]);
-
 // Render Radio pane
 const renderRadioPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return (
@@ -3574,45 +3538,6 @@ const renderBrowserGraphPane = useCallback(({ nodeId }: { nodeId: string }) => {
     );
 }, [currentPath]);
 
-// Handle starting conversation from a viewer (PhotoViewer, etc.)
-const handleStartConversationFromViewer = useCallback(async (images?: Array<{ path: string }>) => {
-    console.log('[handleStartConversationFromViewer] Called with images:', images);
-    if (!images || images.length === 0) {
-        console.log('[handleStartConversationFromViewer] No images provided, returning');
-        return;
-    }
-
-    // Helper to get mime type from extension
-    const getMimeType = (filePath: string): string => {
-        const ext = filePath.split('.').pop()?.toLowerCase() || '';
-        const mimeTypes: { [key: string]: string } = {
-            'jpg': 'image/jpeg',
-            'jpeg': 'image/jpeg',
-            'png': 'image/png',
-            'gif': 'image/gif',
-            'webp': 'image/webp',
-            'bmp': 'image/bmp',
-            'svg': 'image/svg+xml',
-        };
-        return mimeTypes[ext] || 'image/jpeg';
-    };
-
-    const attachmentsToAdd = images.map(img => ({
-        id: generateId(),
-        name: getFileName(img.path) || 'image',
-        type: getMimeType(img.path),
-        path: img.path,
-        size: 0,
-        preview: `file://${img.path}`
-    }));
-
-    console.log('[handleStartConversationFromViewer] Adding attachments:', attachmentsToAdd);
-    setUploadedFiles(prev => {
-        const newFiles = [...prev, ...attachmentsToAdd];
-        console.log('[handleStartConversationFromViewer] New uploadedFiles:', newFiles);
-        return newFiles;
-    });
-}, [setUploadedFiles]);
 
 // Render DataDash pane (for pane-based viewing)
 const renderDataDashPane = useCallback(({ nodeId }: { nodeId: string }) => {
@@ -3635,57 +3560,6 @@ const renderDataDashPane = useCallback(({ nodeId }: { nodeId: string }) => {
 const renderBackendPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return <BackendPane />;
 }, []);
-
-// Render PhotoViewer pane (for pane-based viewing)
-const renderPhotoViewerPane = useCallback(({ nodeId }: { nodeId: string }) => {
-    return (
-        <PhotoViewer
-            currentPath={currentPathRef.current}
-            onStartConversation={handleStartConversationFromViewer}
-        />
-    );
-}, [handleStartConversationFromViewer]);
-
-// Render Scherzo (audio studio) pane
-const renderScherzoPane = useCallback(({ nodeId }: { nodeId: string }) => {
-    return (
-        <Scherzo
-            currentPath={currentPathRef.current}
-        />
-    );
-}, []);
-
-// Handle opening a document from the library viewer
-const handleOpenDocumentFromLibrary = useCallback(async (path: string, type: 'pdf' | 'epub') => {
-    // Open the document in a new pane
-    const newPaneId = generateId();
-
-    // Set content BEFORE creating layout node - never create empty panes
-    contentDataRef.current[newPaneId] = {
-        contentType: type,
-        contentId: path
-    };
-
-    addPaneOrTab(newPaneId);
-
-    const targetPaneId = contentDataRef.current[newPaneId] ? newPaneId : activeContentPaneIdRef.current;
-    setTimeout(async () => {
-        if (targetPaneId) {
-            await updateContentPane(targetPaneId, type, path);
-            notifyAllPanes();
-        }
-    }, 0);
-}, [updateContentPane]);
-
-// Render LibraryViewer pane (for pane-based viewing)
-const renderLibraryViewerPane = useCallback(({ nodeId }: { nodeId: string }) => {
-    return (
-        <LibraryViewer
-            currentPath={currentPathRef.current}
-            onOpenDocument={handleOpenDocumentFromLibrary}
-        />
-    );
-}, [handleOpenDocumentFromLibrary]);
 
 // Render HelpViewer pane
 const renderHelpPane = useCallback(({ nodeId }: { nodeId: string }) => {
@@ -4407,38 +4281,10 @@ const renderMessageContextMenu = () => null;
         addPaneOrTab(newPaneId);
     }, []);
 
-    // Create PhotoViewer pane
-    const createPhotoViewerPane = useCallback(async () => {
-        const newPaneId = generateId();
-        contentDataRef.current[newPaneId] = { contentType: 'photoviewer', contentId: 'photoviewer' };
-        addPaneOrTab(newPaneId);
-    }, []);
-
-    // Create Scherzo (audio studio) pane
-    const createScherzoPane = useCallback(async () => {
-        const newPaneId = generateId();
-        contentDataRef.current[newPaneId] = { contentType: 'scherzo', contentId: 'scherzo' };
-        addPaneOrTab(newPaneId);
-    }, []);
-
-    // Create Cartoglyph (GIS mapping) pane
-    const createCartoglyphPane = useCallback(async () => {
-        const newPaneId = generateId();
-        contentDataRef.current[newPaneId] = { contentType: 'cartoglyph', contentId: 'cartoglyph' };
-        addPaneOrTab(newPaneId);
-    }, []);
-
     // Create Radio pane
     const createRadioPane = useCallback(async () => {
         const newPaneId = generateId();
         contentDataRef.current[newPaneId] = { contentType: 'radio', contentId: 'radio' };
-        addPaneOrTab(newPaneId);
-    }, []);
-
-    // Create LibraryViewer pane
-    const createLibraryViewerPane = useCallback(async () => {
-        const newPaneId = generateId();
-        contentDataRef.current[newPaneId] = { contentType: 'library', contentId: 'library' };
         addPaneOrTab(newPaneId);
     }, []);
 
@@ -5754,20 +5600,17 @@ ${contextPrompt}`;
         return () => window.removeEventListener('terminal-open-file', handleTerminalOpenFile as EventListener);
     }, [currentPath, createAndAddPaneNodeToLayout, setActiveContentPaneId]);
 
-    const createNewDocument = async (docType: 'docx' | 'xlsx' | 'pptx' | 'mapx' | 'tex') => {
+    const createNewDocument = async (docType: 'docx' | 'xlsx' | 'pptx' | 'tex') => {
         try {
             const ext = docType === 'mapx' ? 'mapx' : docType;
-            const contentType = ext === 'xlsx' ? 'csv' : ext === 'mapx' ? 'mindmap' : ext === 'tex' ? 'latex' : ext;
+            const contentType = ext === 'xlsx' ? 'csv' : ext === 'tex' ? 'latex' : ext;
             const filename = `untitled-${Date.now()}.${ext}`;
             // Use a temp dir so user's directories stay clean
             const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.npcsh`;
             const tmpDir = normalizePath(`${npcshHome}/tmp`);
             await window.api.ensureDir?.(tmpDir).catch(() => {});
             const filepath = normalizePath(`${tmpDir}/${filename}`);
-            if (docType === 'mapx') {
-                const initialMindMap = { nodes: [{ id: 'root', label: 'Central Idea', x: 400, y: 300, color: '#3b82f6' }], links: [] };
-                await window.api.writeFileContent(filepath, JSON.stringify(initialMindMap, null, 2));
-            } else if (docType === 'docx') {
+            if (docType === 'docx') {
                 await window.api.writeDocxContent(filepath, '<p></p>');
             } else if (docType === 'xlsx') {
                 // Create valid empty xlsx
@@ -7988,8 +7831,6 @@ const paneRenderers = useMemo(() => ({
     exp: renderExpViewer,
     image: renderPicViewer,
     stl: renderStlViewer,
-    mindmap: renderMindMapViewer,
-    cartoglyph: renderCartoglyphPane,
     radio: renderRadioPane,
     zip: renderZipViewer,
     'data-labeler': renderDataLabelerPane,
@@ -8004,9 +7845,6 @@ const paneRenderers = useMemo(() => ({
     settings: renderSettingsPane,
     'mcp-manager': renderMcpManagerPane,
     'skills-manager': renderSkillsManagerPane,
-    photoviewer: renderPhotoViewerPane,
-    scherzo: renderScherzoPane,
-    library: renderLibraryViewerPane,
     help: renderHelpPane,
     git: renderGitPane,
     folder: renderFolderViewerPane,
@@ -8030,10 +7868,9 @@ const paneRenderers = useMemo(() => ({
     renderChatView, renderFileEditor, renderTerminalView, renderPdfViewer,
     renderCsvViewer, renderDocxViewer, renderBrowserViewer, renderPptxViewer,
     renderLatexViewer, renderNotebookViewer, renderExpViewer, renderPicViewer, renderStlViewer,
-    renderMindMapViewer, renderCartoglyphPane, renderRadioPane, renderZipViewer, renderDataLabelerPane, renderGraphViewerPane,
+    renderRadioPane, renderZipViewer, renderDataLabelerPane, renderGraphViewerPane,
     renderBrowserGraphPane, renderDataDashPane, renderDBToolPane, renderNPCTeamPane,
-    renderJinxPane, renderTeamManagementPane, renderMcpManagerPane, renderSkillsManagerPane, renderSettingsPane, renderPhotoViewerPane,
-    renderScherzoPane, renderLibraryViewerPane, renderHelpPane, renderGitPane,
+    renderJinxPane, renderTeamManagementPane, renderMcpManagerPane, renderSkillsManagerPane, renderSettingsPane, renderHelpPane, renderGitPane,
     renderFolderViewerPane, renderProjectEnvPane, renderDiskUsagePane, renderMemoryManagerPane,
     renderCronDaemonPane, renderSearchPane, renderMarkdownPreviewPane, renderHtmlPreviewPane,
     renderTileJinxPane, renderBranchComparisonPane, renderWindowManagerPane,
@@ -8220,7 +8057,6 @@ const handleFileClick = useCallback(async (filePath: string) => {
     else if (extension === 'exp') contentType = 'exp';
     else if (extension === 'pltx') contentType = 'exp';
     else if (['docx', 'doc'].includes(extension)) contentType = 'docx';
-    else if (['mapx', 'geojson', 'kml', 'kmz', 'gpx', 'shp'].includes(extension)) contentType = 'cartoglyph';
     else if (extension === 'zip') contentType = 'zip';
     else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(extension)) contentType = 'image';
     else if (extension === 'stl') contentType = 'stl';
@@ -8289,11 +8125,6 @@ const renderPaneContextMenu = () => {
         setPaneContextMenu(null);
     };
 
-    const handleNewLibrary = () => {
-        createLibraryViewerPane();
-        setPaneContextMenu(null);
-    };
-
     const handleRenamePane = () => {
         const paneData = contentDataRef.current[nodeId];
         if (paneData?.contentId) {
@@ -8354,9 +8185,6 @@ const renderPaneContextMenu = () => {
                 </div>
                 <button onClick={handleNewBrowser} className="flex items-center gap-2 px-4 py-2 w-full text-left theme-hover">
                     <Globe size={14} className="text-cyan-400" /> Browser
-                </button>
-                <button onClick={handleNewLibrary} className="flex items-center gap-2 px-4 py-2 w-full text-left theme-hover">
-                    <BookOpen size={14} className="text-red-400" /> Library
                 </button>
                 <button onClick={handleNewFolder} className="flex items-center gap-2 px-4 py-2 w-full text-left theme-hover">
                     <Folder size={14} className="text-yellow-400" /> Folder
@@ -9062,16 +8890,9 @@ const renderMainContent = () => {
 
             <div className="flex-1" />
 
-            {/* Right side - Library, Photo, Scherzo */}
+            {/* Right side - standalone app launchers removed */}
             <div className="flex items-center gap-2">
-                {topBarWidth >= 650 ? (
-                    <>
-                        <button onClick={() => createLibraryViewerPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Grimoire"><BookOpen size={18} /></button>
-                        <button onClick={() => createPhotoViewerPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Vixynt" data-tutorial="vixynt-button"><Image size={18} /></button>
-                        <button onClick={() => createScherzoPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Scherzo" data-tutorial="scherzo-button"><Music size={18} /></button>
-                        <button onClick={() => createCartoglyphPane?.()} className="p-2 theme-hover rounded theme-text-muted" title="Cartoglyph" data-tutorial="cartoglyph-button"><CartoglyphIcon size={18} /></button>
-                    </>
-                ) : (
+                {topBarWidth < 650 && (
                     <div className="relative">
                         <button
                             onClick={() => setTopBarMenuOpen(!topBarMenuOpen)}
@@ -9084,10 +8905,6 @@ const renderMainContent = () => {
                             <>
                                 <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setTopBarMenuOpen(false)} />
                                 <div className="absolute right-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-50 py-1 min-w-[160px]">
-                                    <button onClick={() => { createLibraryViewerPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><BookOpen size={14} /> Grimoire</button>
-                                    <button onClick={() => { createPhotoViewerPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><Image size={14} /> Vixynt</button>
-                                    <button onClick={() => { createScherzoPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><Music size={14} /> Scherzo</button>
-                                    <button onClick={() => { createCartoglyphPane?.(); setTopBarMenuOpen(false); }} className="flex items-center gap-2 px-3 py-1.5 w-full text-left theme-hover text-xs theme-text-primary"><CartoglyphIcon size={14} /> Cartoglyph</button>
                                 </div>
                             </>
                         )}
@@ -9136,7 +8953,6 @@ const renderMainContent = () => {
     else if (extension === 'exp') contentType = 'exp';
     else if (extension === 'pltx') contentType = 'exp';
                             else if (['docx', 'doc'].includes(extension)) contentType = 'docx';
-                            else if (['mapx', 'geojson', 'kml', 'kmz', 'gpx', 'shp'].includes(extension)) contentType = 'cartoglyph';
                             else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(extension)) contentType = 'image';
                             else if (extension === 'stl') contentType = 'stl';
     else if (['db', 'sqlite', 'sqlite3'].includes(extension)) contentType = 'dbtool';
@@ -9436,7 +9252,6 @@ const renderMainContent = () => {
         'datadash': 'Dashboard',
         'dbtool': 'Database',
         'memory-manager': 'Memory',
-        'photoviewer': 'Photos',
         'npcteam': 'NPCs',
         'jinx': 'Jinxes',
         'teammanagement': 'Team',
@@ -9711,7 +9526,6 @@ const renderMainContent = () => {
         setSettingsOpen={setSettingsOpen}
         setProjectEnvEditorOpen={setProjectEnvEditorOpen}
         setBrowserUrlDialogOpen={setBrowserUrlDialogOpen}
-        setPhotoViewerOpen={setPhotoViewerOpen}
         setDashboardMenuOpen={setDashboardMenuOpen}
         setJinxMenuOpen={setJinxMenuOpen}
         setCtxEditorOpen={setCtxEditorOpen}
@@ -9730,12 +9544,7 @@ const renderMainContent = () => {
         createBrowserSettingsPane={createBrowserSettingsPane}
         createSkillsManagerPane={createSkillsManagerPane}
         createSettingsPane={createSettingsPane}
-        createPhotoViewerPane={createPhotoViewerPane}
-        createScherzoPane={createScherzoPane}
-        createCartoglyphPane={createCartoglyphPane}
         createProjectEnvPane={createProjectEnvPane}
-        createDiskUsagePane={createDiskUsagePane}
-        createLibraryViewerPane={createLibraryViewerPane}
         createHelpPane={createHelpPane}
         createTileJinxPane={createTileJinxPane}
         createGitPane={createGitPane}
@@ -9802,7 +9611,6 @@ const renderMainContent = () => {
             onCommand={(cmdId: string) => {
                 const paneMap: Record<string, string> = {
                     chat: 'chat', terminal: 'terminal', browser: 'browser',
-                    vixynt: 'vixynt', scherzo: 'scherzo', cartoglyph: 'cartoglyph',
                     radio: 'radio', editor: 'editor', word: 'word', ppt: 'ppt',
                     excel: 'spreadsheet', git: 'git', teammanagement: 'teammanagement',
                     logs: 'logs', settings: 'settings', help: 'help',
@@ -9890,10 +9698,6 @@ const renderMainContent = () => {
                                     return renderPicViewer({ nodeId: zenModePaneId });
                                 case 'stl':
                                     return renderStlViewer({ nodeId: zenModePaneId });
-                                case 'mindmap':
-                                    return renderMindMapViewer({ nodeId: zenModePaneId });
-                                case 'cartoglyph':
-                                    return renderCartoglyphPane({ nodeId: zenModePaneId });
                                 case 'notebook':
                                     return renderNotebookViewer({ nodeId: zenModePaneId });
                                 case 'exp':
@@ -9906,10 +9710,6 @@ const renderMainContent = () => {
                                     return renderDataDashPane({ nodeId: zenModePaneId });
                                 case 'backend':
                                     return renderBackendPane({ nodeId: zenModePaneId });
-                                case 'photoviewer':
-                                    return renderPhotoViewerPane({ nodeId: zenModePaneId });
-                                case 'library':
-                                    return renderLibraryViewerPane({ nodeId: zenModePaneId });
                                 case 'projectenv':
                                     return renderProjectEnvPane({ nodeId: zenModePaneId });
                                 case 'diskusage':

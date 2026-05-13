@@ -81,9 +81,7 @@ const tileJinxDir = path.join(os.homedir(), '.npcsh', 'incognide', 'tiles');
 
 const tileSourceMap = {
   'db.jinx': { source: 'DBTool.tsx', label: 'DB Tool', icon: 'Database', order: 0 },
-  'photo.jinx': { source: 'PhotoViewer.tsx', label: 'Photo', icon: 'Image', order: 1 },
-  'library.jinx': { source: 'LibraryViewer.tsx', label: 'Library', icon: 'BookOpen', order: 2 },
-  'datadash.jinx': { source: 'DataDash.tsx', label: 'Data Dash', icon: 'BarChart3', order: 3 },
+  'datadash.jinx': { source: 'DataDash.tsx', label: 'Data Dash', icon: 'BarChart3', order: 1 },
 };
 
 const componentsDir = path.join(__dirname, '..', 'renderer', 'components');

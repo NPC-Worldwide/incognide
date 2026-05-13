@@ -38,9 +38,7 @@ import NPCTeamMenu from './NPCTeamMenu';
 import PythonEnvSettings from './PythonEnvSettings';
 import DBTool from './DBTool';
 import DataDash from './DataDash';
-import LibraryViewer from './LibraryViewer';
 import GraphViewer from './GraphViewer';
-import PhotoViewer from './PhotoViewer';
 import SettingsMenu from './SettingsMenu';
 import npcLogo from '../../assets/icon.png';
 
@@ -70,10 +68,10 @@ const Sidebar = (props: any) => {
         setInput, setContextMenuPos, setSidebarItemContextMenuPos, setSearchTerm,
         setIsSearching, setDeepSearchResults, setMessageSearchResults,
         setIsEditingPath, setEditedPath, setSettingsOpen, setProjectEnvEditorOpen, setBrowserUrlDialogOpen,
-        setPhotoViewerOpen, setDashboardMenuOpen, setJinxMenuOpen,
+        setDashboardMenuOpen, setJinxMenuOpen,
         setCtxEditorOpen, setTeamManagementOpen, setNpcTeamMenuOpen, setSidebarCollapsed,
         createGraphViewerPane, createBrowserGraphPane, createDataLabelerPane,
-        createDataDashPane, createDBToolPane, createNPCTeamPane, createJinxPane, createTeamManagementPane, createMcpManagerPane, createSkillsManagerPane, createSettingsPane, createPhotoViewerPane, createScherzoPane, createProjectEnvPane, createDiskUsagePane, createLibraryViewerPane, createHelpPane, createTileJinxPane, createGitPane, createBrowserSettingsPane,
+        createDataDashPane, createDBToolPane, createNPCTeamPane, createJinxPane, createTeamManagementPane, createMcpManagerPane, createSkillsManagerPane, createSettingsPane, createProjectEnvPane, createDiskUsagePane, createHelpPane, createTileJinxPane, createGitPane, createBrowserSettingsPane,
 
         createNewConversation, generateId, streamToPaneRef, availableNPCs, currentNPC, currentModel,
         currentProvider, executionMode, mcpServerPath, selectedMcpTools, updateContentPane,
@@ -551,7 +549,7 @@ const Sidebar = (props: any) => {
     const [openFilesCollapsed, setOpenFilesCollapsed] = useState(() => localStorage.getItem('sidebar_openFilesCollapsed') === 'true');
     const [openConvosCollapsed, setOpenConvosCollapsed] = useState(() => localStorage.getItem('sidebar_openConvosCollapsed') === 'true');
 
-    const FILE_CONTENT_TYPES = new Set(['editor', 'pdf', 'csv', 'docx', 'pptx', 'latex', 'notebook', 'image', 'mindmap', 'zip', 'exp']);
+    const FILE_CONTENT_TYPES = new Set(['editor', 'pdf', 'csv', 'docx', 'pptx', 'latex', 'notebook', 'image', 'zip', 'exp']);
     const openFiles = useMemo(() => {
         if (!contentDataRef?.current || !rootLayoutNode) return [];
         const files: { paneId: string; path: string; type: string }[] = [];
@@ -945,9 +943,7 @@ const Sidebar = (props: any) => {
         PythonEnvSettings,
         DBTool,
         DataDash,
-        LibraryViewer,
         GraphViewer,
-        PhotoViewer,
         SettingsMenu,
         SettingsPanel: SettingsMenu,
 

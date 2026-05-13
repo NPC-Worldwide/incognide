@@ -91,27 +91,6 @@ const TUTORIAL_STEPS: TutorialStep[] = [
         position: 'bottom',
     },
     {
-        selector: '[data-tutorial="vixynt-button"]',
-        title: 'Vixynt — Image Studio',
-        description: 'Generate images from text prompts, edit photos, apply generative fill, and manage your image library.',
-        paths: ['cloud-ai', 'local-ai'],
-        position: 'bottom',
-    },
-    {
-        selector: '[data-tutorial="scherzo-button"]',
-        title: 'Scherzo — Audio Studio',
-        description: 'Multi-track audio editor with waveform visualization. Record, trim, and mix clips; DJ mixer, beat maker, and MusicXML import/export.',
-        paths: ['cloud-ai', 'local-ai'],
-        position: 'bottom',
-    },
-    {
-        selector: '[data-tutorial="cartoglyph-button"]',
-        title: 'Cartoglyph — GIS Mapping',
-        description: 'Full GIS mapping pane with Leaflet. Five basemaps, drawing tools, import/export GeoJSON and KML, OSINT data from Overpass and Nominatim, reference layers from Natural Earth, and sample maps to explore.',
-        paths: ['no-ai', 'cloud-ai', 'local-ai'],
-        position: 'bottom',
-    },
-    {
         selector: '[data-tutorial="settings-button"]',
         title: 'Settings',
         description: 'Global preferences, theme, keyboard shortcuts, and permissions. Also where you re-run this tutorial or the setup wizard.',

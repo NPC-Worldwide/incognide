@@ -20,7 +20,7 @@ async function read_pane(
 
   let content: any = null;
 
-  const fileContentTypes = ['editor', 'markdown-preview', 'latex', 'notebook', 'exp', 'mindmap'];
+  const fileContentTypes = ['editor', 'markdown-preview', 'latex', 'notebook', 'exp'];
 
   if (fileContentTypes.includes(contentType)) {
     content = fileContent || null;
@@ -85,7 +85,7 @@ async function read_pane(
       case 'dbtool':
       case 'memory-manager':
       case 'photoviewer':
-      case 'scherzo':
+      case 'image':
       case 'npcteam':
       case 'jinx':
       case 'teammanagement':
@@ -264,7 +264,7 @@ async function write_pane(
   if (!args.content) return { success: false, error: 'content is required' };
 
   const { contentType } = data;
-  const fileTypes = ['editor', 'markdown-preview', 'latex', 'notebook', 'exp', 'mindmap'];
+  const fileTypes = ['editor', 'markdown-preview', 'latex', 'notebook', 'exp'];
 
   if (fileTypes.includes(contentType)) {
     ctx.contentDataRef.current[paneId] = { ...data, fileContent: args.content, fileChanged: true };
