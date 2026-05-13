@@ -916,11 +916,11 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
             'graph-viewer': 'Knowledge Graph', 'datadash': 'Dashboard', 'dbtool': 'Database',
             'memory-manager': 'Memory', 'photoviewer': 'Photos', 'npcteam': 'NPCs',
             'jinx': 'Jinxes', 'teammanagement': 'Team', 'diff': 'Diff',
-            'browsergraph': 'Web Graph', 'scherzo': 'Audio', 'library': 'Library',
+            'browsergraph': 'Web Graph', 'library': 'Library',
             'diskusage': 'Disk Usage', 'help': 'Help', 'cron-daemon': 'Cron',
             'projectenv': 'Environment', 'search': 'Search', 'settings': 'Settings',
             'data-labeler': 'Data Labeler', 'tilejinx': 'Tile Jinx', 'git': 'Git',
-            'docx': 'Document', 'pptx': 'Presentation', 'mindmap': 'Mind Map',
+            'docx': 'Document', 'pptx': 'Presentation', 'zip': 'Archive',
             'zip': 'Archive', 'exp': 'Experiment', 'folder': 'Folder',
         };
         Object.entries(contentDataRef.current).forEach(([paneId, paneData]: [string, any]) => {
@@ -957,14 +957,14 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
             case 'terminal': return <TerminalIcon size={s} className={cls} />;
             case 'image': case 'photoviewer': return <Image size={s} className={cls} />;
             case 'csv': return <FileText size={s} className={cls} />;
-            case 'graph-viewer': case 'diff': case 'git': case 'mindmap': return <GitBranch size={s} className={cls} />;
+            case 'graph-viewer': case 'diff': case 'git': return <GitBranch size={s} className={cls} />;
             case 'datadash': return <BarChart3 size={s} className={cls} />;
             case 'dbtool': return <Database size={s} className={cls} />;
             case 'memory-manager': return <BrainCircuit size={s} className={cls} />;
             case 'npcteam': return <Bot size={s} className={cls} />;
             case 'jinx': case 'tilejinx': return <Zap size={s} className={cls} />;
             case 'teammanagement': return <Users size={s} className={cls} />;
-            case 'scherzo': return <Music size={s} className={cls} />;
+            case 'image': return <Image size={s} className={cls} />;
             case 'search': return <Search size={s} className={cls} />;
             case 'library': return <BookOpen size={s} className={cls} />;
             case 'folder': return <Folder size={s} className={cls} />;

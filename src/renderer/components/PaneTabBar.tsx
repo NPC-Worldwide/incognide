@@ -70,8 +70,6 @@ const getTabIcon = (contentType: string) => {
             return <Settings size={12} className="text-gray-400" />;
         case 'photoviewer':
             return <Images size={12} className="text-pink-400" />;
-        case 'scherzo':
-            return <Music size={12} className="text-purple-400" />;
         case 'library':
             return <BookOpen size={12} className="text-amber-400" />;
         case 'projectenv':
@@ -86,8 +84,6 @@ const getTabIcon = (contentType: string) => {
             return <Share2 size={12} className="text-sky-400" />;
         case 'datadash':
             return <LayoutDashboard size={12} className="text-emerald-400" />;
-        case 'mindmap':
-            return <Brain size={12} className="text-rose-400" />;
         case 'markdown-preview':
             return <FileText size={12} className="text-blue-400" />;
         case 'csv':
@@ -149,12 +145,6 @@ const getTabTitle = (tab: Tab, contentDataRef?: any, nodeId?: string): string =>
             return 'Team Management';
         case 'settings':
             return 'Settings';
-        case 'photoviewer':
-            return 'Vixynt';
-        case 'scherzo':
-            return 'Scherzo';
-        case 'cartoglyph':
-            return 'Cartoglyph';
         case 'radio':
             return 'Radio';
         case 'library':
@@ -171,8 +161,6 @@ const getTabTitle = (tab: Tab, contentDataRef?: any, nodeId?: string): string =>
             return 'Browser Graph';
         case 'datadash':
             return 'Data Dashboard';
-        case 'mindmap':
-            return 'Mind Map';
         case 'markdown-preview':
             return `Preview: ${getFileName(tab.contentId) || 'Markdown'}`;
         case 'pdf':

@@ -51,7 +51,9 @@ export const PaneHeader = React.memo(({
     onExpandTopBar,
 
     panesLocked,
-    onTogglePanesLocked
+    onTogglePanesLocked,
+
+    zoomControls
 }) => {
     const isPythonFile = filePath?.endsWith('.py');
     const nodePath = findNodePath?.(rootLayoutNode, nodeId);
@@ -216,6 +218,10 @@ export const PaneHeader = React.memo(({
             )}
 
             {headerContent || defaultContent}
+
+            {zoomControls && (
+                <div className="flex items-center gap-1 px-1">{zoomControls}</div>
+            )}
 
             {!headerContent && topBarCollapsed && onExpandTopBar && (
                 <button

@@ -10,7 +10,6 @@ const music = require('./music');
 const npc = require('./npc');
 const filesystem = require('./filesystem');
 const settings = require('./settings');
-const repertoire = require('./repertoire');
 
 function registerAll(ctx) {
 
@@ -30,7 +29,6 @@ function registerAll(ctx) {
   npc.register(fullCtx);
   filesystem.register(fullCtx);
   settings.register(fullCtx);
-  repertoire.register(fullCtx);
 }
 
 module.exports = {

@@ -878,21 +878,4 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
         return () => ipcRenderer.removeListener('update-download-progress', handler);
     },
 
-    // Repertoire (Scherzo)
-    repertoireList: () => ipcRenderer.invoke('repertoire:list'),
-    repertoireGet: (id) => ipcRenderer.invoke('repertoire:get', id),
-    repertoireGetSheetXml: (sheetId) => ipcRenderer.invoke('repertoire:getSheetXml', sheetId),
-    repertoireCreate: (args) => ipcRenderer.invoke('repertoire:create', args),
-    repertoireUpdate: (args) => ipcRenderer.invoke('repertoire:update', args),
-    repertoireDelete: (id) => ipcRenderer.invoke('repertoire:delete', id),
-    repertoireAttachSheet: (args) => ipcRenderer.invoke('repertoire:attachSheet', args),
-    repertoireDeleteSheet: (sheetId) => ipcRenderer.invoke('repertoire:deleteSheet', sheetId),
-    repertoireImportLocalFile: (args) => ipcRenderer.invoke('repertoire:importLocalFile', args),
-    repertoireDownloadYouTube: (args) => ipcRenderer.invoke('repertoire:downloadYouTube', args),
-    repertoireDeriveSheet: (args) => ipcRenderer.invoke('repertoire:deriveSheet', args),
-    onRepertoireDownloadProgress: (callback) => {
-        const handler = (_, data) => callback(data);
-        ipcRenderer.on('repertoire:downloadProgress', handler);
-        return () => ipcRenderer.removeListener('repertoire:downloadProgress', handler);
-    },
 });
