@@ -361,7 +361,7 @@ export const gatherWorkspaceContext = (contentDataRef: React.MutableRefObject<an
     Object.entries(contentDataRef.current).forEach(([paneId, paneData]: [string, any]) => {
 
         if (excludedPaneIds && excludedPaneIds.has(paneId)) return;
-        const fileContentTypes = ['editor', 'latex', 'csv', 'notebook', 'docx', 'pptx', 'exp', 'mindmap'];
+        const fileContentTypes = ['editor', 'latex', 'csv', 'notebook', 'docx', 'pptx', 'exp'];
         if (fileContentTypes.includes(paneData.contentType) && (paneData.fileContent || paneData.contentId)) {
             contexts.push({
                 type: 'file',

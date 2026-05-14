@@ -125,7 +125,7 @@ const NotebookViewer = ({
     const [availableJinxes, setAvailableJinxes] = useState<any[]>([]);
     const [showAddCellMenu, setShowAddCellMenu] = useState<number | null>(null);
 
-    const [showVariablesPanel, setShowVariablesPanel] = useState(true);
+    const [showVariablesPanel, setShowVariablesPanel] = useState(false);
     const [variables, setVariables] = useState<any[]>([]);
     const variablesRef = useRef<any[]>([]);
     const [variablesLoading, setVariablesLoading] = useState(false);

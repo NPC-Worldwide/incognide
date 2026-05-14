@@ -378,7 +378,6 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                     if (ext === 'ipynb') return 'notebook';
                     if (ext === 'exp') return 'exp';
                     if (['docx', 'doc'].includes(ext)) return 'docx';
-                    if (['mapx', 'geojson', 'kml', 'kmz', 'gpx', 'shp'].includes(ext)) return 'cartoglyph';
                     if (ext === 'zip') return 'zip';
                     if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(ext)) return 'image';
                     if (ext === 'stl') return 'stl';
@@ -793,8 +792,9 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                 else if (['docx', 'doc'].includes(ext)) contentType = 'docx';
                 else if (ext === 'pptx') contentType = 'pptx';
                 else if (ext === 'tex') contentType = 'latex';
-                else if (['mapx', 'geojson', 'kml', 'kmz', 'gpx', 'shp', 'mindmap'].includes(ext)) contentType = 'cartoglyph';
                 else if (ext === 'zip') contentType = 'zip';
+                else if (ext === 'ipynb') contentType = 'notebook';
+                else if (ext === 'exp') contentType = 'exp';
                 else contentType = 'editor';
             } else if (comp.draggedItem.type === 'browser') {
                 contentType = 'browser';
@@ -915,7 +915,6 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
         const activeTab = tabs.length > 0 ? tabs[activeTabIndex] : null;
         const contentType = activeTab?.contentType || paneData?.contentType;
         const hasHeaderArea = showTabBar || (contentType !== 'browser' && contentType !== 'docx' && contentType !== 'pptx' && contentType !== 'csv' && contentType !== 'latex');
-        const paneZoomOffsetTop = hasHeaderArea ? 40 : 8;
         const contentId = activeTab?.contentId || paneData?.contentId;
 
         const handleTabSelect = (index: number) => {
@@ -1249,9 +1248,6 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
         } else if (contentType === 'photoviewer') {
             headerIcon = <Images size={14} className="text-pink-400" />;
             headerTitle = 'Vixynt';
-        } else if (contentType === 'scherzo') {
-            headerIcon = <Music size={14} className="text-purple-400" />;
-            headerTitle = 'Scherzo';
         } else if (contentType === 'library') {
             headerIcon = <BookOpen size={14} className="text-amber-400" />;
             headerTitle = 'Library';
@@ -1279,12 +1275,6 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
         } else if (contentType === 'datadash') {
             headerIcon = <LayoutDashboard size={14} className="text-emerald-400" />;
             headerTitle = 'Data Dashboard';
-        } else if (contentType === 'mindmap') {
-            headerIcon = <Brain size={14} className="text-rose-400" />;
-            headerTitle = 'Map Document';
-        } else if (contentType === 'cartoglyph') {
-            headerIcon = <Globe size={14} className="text-emerald-400" />;
-            headerTitle = 'Cartoglyph';
         } else if (contentType === 'radio') {
             headerIcon = <Radio size={14} className="text-orange-400" />;
             headerTitle = 'Radio';
@@ -1707,46 +1697,14 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                 onDrop={(e) => { dragCounterRef.current = 0; setLocalDragOver(false); setLocalDropSide(null); onDrop(e, localDropSide || 'center'); }}
             >
                 <div
-                    className="pointer-events-none absolute z-[25] flex items-center gap-1 rounded-full border theme-border theme-bg-secondary/95 px-2 py-1 text-[10px] shadow-lg backdrop-blur-sm"
-                    style={{ top: paneZoomOffsetTop, right: 8 }}
-                >
-                    <button
-                        type="button"
-                        className="pointer-events-auto p-1 rounded theme-hover"
-                        title="Zoom out focused pane"
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => { e.stopPropagation(); componentRef.current?.setActiveContentPaneId?.(node.id); componentRef.current?.zoomPaneOut?.(node.id); }}
-                    >
-                        <ZoomOut size={12} />
-                    </button>
-                    <button
-                        type="button"
-                        className="pointer-events-auto flex items-center gap-1 rounded px-1 py-0.5 theme-hover"
-                        title={`Reset pane zoom to 100% (effective ${Math.round(effectivePaneZoom * 100)}%)`}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => { e.stopPropagation(); componentRef.current?.setActiveContentPaneId?.(node.id); componentRef.current?.resetPaneZoom?.(node.id); }}
-                    >
-                        <Search size={12} />
-                        <span className="min-w-[34px] text-center">{Math.round(paneZoomLevel * 100)}%</span>
-                    </button>
-                    <button
-                        type="button"
-                        className="pointer-events-auto p-1 rounded theme-hover"
-                        title="Zoom in focused pane"
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => { e.stopPropagation(); componentRef.current?.setActiveContentPaneId?.(node.id); componentRef.current?.zoomPaneIn?.(node.id); }}
-                    >
-                        <ZoomIn size={12} />
-                    </button>
-                </div>
-
-                <div
-                    className="flex-1 flex flex-col min-h-0 min-w-0"
+                    className="flex flex-col flex-none"
                     style={{
                         transform: `scale(${effectivePaneZoom})`,
                         transformOrigin: 'top left',
                         width: `${100 / effectivePaneZoom}%`,
                         height: `${100 / effectivePaneZoom}%`,
+                        minHeight: 0,
+                        minWidth: 0,
                     }}
                 >
                     {showTabBar && (
@@ -1820,6 +1778,29 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
 
                             panesLocked={lockedPanes.has(node.id)}
                             onTogglePanesLocked={() => togglePaneLocked(node.id)}
+                            zoomControls={(
+                                <>
+                                    <button
+                                        type="button"
+                                        className="p-1 rounded theme-hover"
+                                        title="Zoom out focused pane"
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onClick={(e) => { e.stopPropagation(); componentRef.current?.setActiveContentPaneId?.(node.id); componentRef.current?.zoomPaneOut?.(node.id); }}
+                                    >
+                                        <ZoomOut size={12} />
+                                    </button>
+                                    <span className="min-w-[28px] text-center text-[10px] theme-text-muted">{Math.round(paneZoomLevel * 100)}%</span>
+                                    <button
+                                        type="button"
+                                        className="p-1 rounded theme-hover"
+                                        title="Zoom in focused pane"
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onClick={(e) => { e.stopPropagation(); componentRef.current?.setActiveContentPaneId?.(node.id); componentRef.current?.zoomPaneIn?.(node.id); }}
+                                    >
+                                        <ZoomIn size={12} />
+                                    </button>
+                                </>
+                            )}
                         >
                             {paneHeaderChildren}
                         </PaneHeader>
