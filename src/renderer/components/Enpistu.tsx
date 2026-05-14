@@ -8817,26 +8817,6 @@ const renderMainContent = () => {
                     </div>
                 )}
 
-                {/* Clock — upper right */}
-                <span
-                    className="theme-text-muted tabular-nums cursor-pointer hover:text-gray-300 flex-shrink-0"
-                    onClick={() => setClockMode(prev => prev === 'analog' ? 'digital' : prev === 'digital' ? 'digital-date' : 'analog')}
-                    title="Click to cycle clock mode"
-                >
-                    {clockMode === 'analog' ? (
-                        <svg width="18" height="18" viewBox="0 0 20 20" className="inline-block">
-                            <circle cx="10" cy="10" r="9" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.5" />
-                            <line x1="10" y1="10" x2={10 + 4.5 * Math.sin(((currentTime.getHours() % 12) + currentTime.getMinutes() / 60) * Math.PI / 6)} y2={10 - 4.5 * Math.cos(((currentTime.getHours() % 12) + currentTime.getMinutes() / 60) * Math.PI / 6)} stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                            <line x1="10" y1="10" x2={10 + 6.5 * Math.sin(currentTime.getMinutes() * Math.PI / 30)} y2={10 - 6.5 * Math.cos(currentTime.getMinutes() * Math.PI / 30)} stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-                            <circle cx="10" cy="10" r="1" fill="currentColor" />
-                        </svg>
-                    ) : clockMode === 'digital' ? (
-                        currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                    ) : (
-                        `${currentTime.toLocaleDateString()} ${currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                    )}
-                </span>
-
                 {/* Pomodoro timer — upper right, next to clock */}
                 <div className="relative">
                     <button
@@ -8910,6 +8890,26 @@ const renderMainContent = () => {
                         </>
                     )}
                 </div>
+
+                {/* Clock — upper right */}
+                <span
+                    className="theme-text-muted tabular-nums cursor-pointer hover:text-gray-300 flex-shrink-0"
+                    onClick={() => setClockMode(prev => prev === 'analog' ? 'digital' : prev === 'digital' ? 'digital-date' : 'analog')}
+                    title="Click to cycle clock mode"
+                >
+                    {clockMode === 'analog' ? (
+                        <svg width="18" height="18" viewBox="0 0 20 20" className="inline-block">
+                            <circle cx="10" cy="10" r="9" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.5" />
+                            <line x1="10" y1="10" x2={10 + 4.5 * Math.sin(((currentTime.getHours() % 12) + currentTime.getMinutes() / 60) * Math.PI / 6)} y2={10 - 4.5 * Math.cos(((currentTime.getHours() % 12) + currentTime.getMinutes() / 60) * Math.PI / 6)} stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                            <line x1="10" y1="10" x2={10 + 6.5 * Math.sin(currentTime.getMinutes() * Math.PI / 30)} y2={10 - 6.5 * Math.cos(currentTime.getMinutes() * Math.PI / 30)} stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                            <circle cx="10" cy="10" r="1" fill="currentColor" />
+                        </svg>
+                    ) : clockMode === 'digital' ? (
+                        currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    ) : (
+                        `${currentTime.toLocaleDateString()} ${currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                    )}
+                </span>
             </div>
             </div>
             {/* Resize handle for top bar */}
