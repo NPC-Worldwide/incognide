@@ -182,7 +182,7 @@ const ModelManager = () => {
     });
     const [ggufDirectory, setGgufDirectory] = useState('');
     const [scannedDirectories, setScannedDirectories] = useState<string[]>([]);
-    const [pullModelName, setPullModelName] = useState('llama3.1');
+    const [pullModelName, setPullModelName] = useState('qwen3.5:4b');
     const [pullProgress, setPullProgress] = useState(null);
     const [isPulling, setIsPulling] = useState(false);
     const [isDeleting, setIsDeleting] = useState(null);
@@ -489,7 +489,7 @@ const ModelManager = () => {
                             value={pullModelName}
                             onChange={(e) => setPullModelName(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handlePullModel()}
-                            placeholder="e.g., llama3.1, mistral, codellama"
+                            placeholder=""
                             disabled={isPulling}
                             className="flex-1"
                         />

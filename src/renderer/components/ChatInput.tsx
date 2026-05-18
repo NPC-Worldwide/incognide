@@ -863,7 +863,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
             'projectenv': 'Environment', 'search': 'Search', 'settings': 'Settings',
             'data-labeler': 'Data Labeler', 'tilejinx': 'Tile Jinx', 'git': 'Git',
             'docx': 'Document', 'pptx': 'Presentation', 'zip': 'Archive',
-            'zip': 'Archive', 'exp': 'Experiment', 'folder': 'Folder',
+            'exp': 'Experiment', 'folder': 'Folder',
         };
         Object.entries(contentDataRef.current).forEach(([paneId, paneData]: [string, any]) => {
             if (!paneData.contentType || paneData.contentType === 'chat') return;
@@ -897,7 +897,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
             case 'browser': case 'browsergraph': return <Globe size={s} className={cls} />;
             case 'pdf': case 'docx': case 'pptx': return <FileText size={s} className={cls} />;
             case 'terminal': return <TerminalIcon size={s} className={cls} />;
-            case 'image': case 'photoviewer': return <Image size={s} className={cls} />;
+
             case 'csv': return <FileText size={s} className={cls} />;
             case 'graph-viewer': case 'diff': case 'git': return <GitBranch size={s} className={cls} />;
             case 'datadash': return <BarChart3 size={s} className={cls} />;

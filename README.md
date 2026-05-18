@@ -620,7 +620,7 @@ npm start                     # Electron
 
 ## Community
 
-- **Discord**: [Join us](https://discord.gg/FwnSygWc)
+- **Discord**: [Join us](https://discord.gg/XrjTFmDAna)
 - **Issues & Bugs**: [GitHub Issues](https://github.com/npc-worldwide/incognide/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/npc-worldwide/incognide/discussions)
 - **NPC Ecosystem**: [npcpy](https://github.com/npc-worldwide/npcpy) | [npcsh](https://github.com/npc-worldwide/npcsh) | [npcts](https://github.com/npc-worldwide/npcts)

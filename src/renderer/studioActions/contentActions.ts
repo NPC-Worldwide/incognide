@@ -85,7 +85,7 @@ async function read_pane(
       case 'dbtool':
       case 'memory-manager':
       case 'photoviewer':
-      case 'image':
+
       case 'npcteam':
       case 'jinx':
       case 'teammanagement':
