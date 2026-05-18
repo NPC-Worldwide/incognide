@@ -18,9 +18,10 @@ function hashBuffer(buf) {
 }
 
 function register(ctx) {
-  const { ipcMain, getMainWindow, callBackendApi, BACKEND_URL, log, generateId, activeStreams, appDir, dbQuery } = ctx;
+  const { ipcMain, getMainWindow, callBackendApi, BACKEND_URL, log, generateId, activeStreams, appDir, dbQuery, INCOGNIDE_HOME: ctxIncognideHome } = ctx;
 
-  const INCOGNIDE_TEAM_PATH = path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team');
+  const INCOGNIDE_HOME = ctxIncognideHome || path.join(os.homedir(), '.incognide');
+  const INCOGNIDE_TEAM_PATH = path.join(INCOGNIDE_HOME, 'npc_team');
 
   (async () => {
     const destBase = INCOGNIDE_TEAM_PATH;
@@ -374,27 +375,56 @@ function register(ctx) {
 
   ipcMain.handle('get-jinxes-all-teams', async (event, currentPath) => {
     try {
-      const [npcshRes, incognideRes, projectRes] = await Promise.all([
-        fetch(`${BACKEND_URL}/api/jinxes/global`),
-        fetch(`${BACKEND_URL}/api/jinxes/project?currentPath=${encodeURIComponent(INCOGNIDE_TEAM_PATH)}`),
-        currentPath
-          ? fetch(`${BACKEND_URL}/api/jinxes/project?currentPath=${encodeURIComponent(currentPath)}`)
-          : Promise.resolve(null),
-      ]);
+      // Read registered teams to fetch jinxes from all of them
+      let registeredTeams = {};
+      try {
+        const teamsYaml = require('js-yaml');
+        const teamsPath = path.join(INCOGNIDE_HOME, 'registered_teams.yaml');
+        const content = await fsPromises.readFile(teamsPath, 'utf8');
+        const parsed = teamsYaml.load(content);
+        registeredTeams = parsed?.teams || {};
+      } catch {}
 
-      const npcsh = npcshRes.ok ? await npcshRes.json() : { jinxes: [] };
-      const incognide = incognideRes.ok ? await incognideRes.json() : { jinxes: [] };
-      const project = projectRes?.ok ? await projectRes.json() : { jinxes: [] };
+      const fetchPromises = [];
 
-      return {
-        npcsh: (npcsh.jinxes || []).map(j => ({ ...j, team: 'npcsh', scope: 'global' })),
-        incognide: (incognide.jinxes || []).map(j => ({ ...j, team: 'incognide', scope: 'global' })),
-        project: (project.jinxes || []).map(j => ({ ...j, team: 'project', scope: 'project' })),
-        error: null,
-      };
+      // Always include project jinxes
+      if (currentPath) {
+        fetchPromises.push(
+          fetch(`${BACKEND_URL}/api/jinxes/project?currentPath=${encodeURIComponent(currentPath)}`)
+            .then(r => r.ok ? r.json() : { jinxes: [] })
+            .then(data => ({ key: 'project', data }))
+            .catch(() => ({ key: 'project', data: { jinxes: [] } }))
+        );
+      }
+
+      // Fetch jinxes from each registered team
+      for (const [teamKey, team] of Object.entries(registeredTeams)) {
+        const teamData = team;
+        const teamPath = (teamData.path || '').replace(/^~(?=\/|$)/, os.homedir());
+        if (!teamPath) continue;
+        fetchPromises.push(
+          fetch(`${BACKEND_URL}/api/jinxes/project?currentPath=${encodeURIComponent(teamPath)}`)
+            .then(r => r.ok ? r.json() : { jinxes: [] })
+            .then(data => ({ key: teamKey, data }))
+            .catch(() => ({ key: teamKey, data: { jinxes: [] } }))
+        );
+      }
+
+      const results = await Promise.all(fetchPromises);
+      const response = {};
+      for (const result of results) {
+        const jinxes = (result.data?.jinxes || []).map(j => ({
+          ...j,
+          team: result.key,
+          scope: result.key === 'project' ? 'project' : 'global',
+        }));
+        response[result.key] = jinxes;
+      }
+
+      return { ...response, error: null };
     } catch (err) {
       console.error('Error loading all teams jinxes:', err);
-      return { npcsh: [], incognide: [], project: [], error: err.message };
+      return { project: [], error: err.message };
     }
   });
 
@@ -448,6 +478,21 @@ function register(ctx) {
 
   ipcMain.handle('getNPCTeamGlobal', async (event, globalPath) => {
     try {
+      // Resolve team key to path from registered_teams.yaml
+      if (globalPath && globalPath !== 'npcsh' && globalPath !== 'incognide') {
+        try {
+          const yaml = require('js-yaml');
+          const teamsPath = path.join(INCOGNIDE_HOME, 'registered_teams.yaml');
+          const content = await fsPromises.readFile(teamsPath, 'utf8');
+          const parsed = yaml.load(content);
+          const teams = parsed?.teams || {};
+          if (teams[globalPath]?.path) {
+            const resolved = teams[globalPath].path.replace(/^~(?=\/|$)/, os.homedir());
+            const npcs = await readNPCTeamFromDir(resolved, globalPath);
+            return { npcs };
+          }
+        } catch {}
+      }
       if (globalPath === 'npcsh') {
         const npcshTeamDir = path.join(os.homedir(), '.npcsh', 'npc_team');
         const npcs = await readNPCTeamFromDir(npcshTeamDir, 'npcsh');
@@ -796,6 +841,64 @@ function register(ctx) {
       return { servers: statuses, error: null };
     } catch (err) {
       console.error('Error in mcp:getServers', err);
+      return { servers: [], error: err.message };
+    }
+  });
+
+  ipcMain.handle('mcp:getServersForSidebar', async (event, currentPath) => {
+    try {
+      const ctxServers = await fetchCtxMcpServers(currentPath);
+      const servers = ctxServers.map(s => ({
+        id: s.id || s.serverPath,
+        name: s.name || s.serverPath,
+        command: s.serverPath,
+        origin: s.origin,
+        status: 'unknown',
+      }));
+
+      // Also read .mcp*.json from registered team directories
+      let registeredTeams = {};
+      try {
+        const teamsContent = await fsPromises.readFile(path.join(INCOGNIDE_HOME, 'registered_teams.yaml'), 'utf8');
+        const teamsParsed = yaml.load(teamsContent);
+        registeredTeams = teamsParsed?.teams || {};
+      } catch {}
+
+      for (const [key, team] of Object.entries(registeredTeams)) {
+        const teamData = team;
+        const teamPath = (teamData.path || '').replace(/^~(?=\/|$)/, os.homedir());
+        if (!teamPath) continue;
+
+        try {
+          const entries = await fsPromises.readdir(teamPath);
+          const mcpFiles = entries.filter(f =>
+            f === '.mcp.json' || f === '.mcp_servers.json' || f === 'mcp_servers.json'
+          );
+          for (const mcpFile of mcpFiles) {
+            try {
+              const content = await fsPromises.readFile(path.join(teamPath, mcpFile), 'utf8');
+              const parsed = JSON.parse(content);
+              const mcpServers = parsed.mcpServers || parsed.mcp_servers || {};
+              for (const [srvName, srvConfig] of Object.entries(mcpServers)) {
+                const cfg = srvConfig;
+                const command = [cfg.command, ...(cfg.args || [])].join(' ');
+                servers.push({
+                  id: `${key}:${srvName}`,
+                  name: srvName,
+                  command,
+                  origin: key,
+                  status: 'unknown',
+                  env: cfg.env || {},
+                });
+              }
+            } catch {}
+          }
+        } catch {}
+      }
+
+      return { servers, error: null };
+    } catch (err) {
+      console.error('Error in mcp:getServersForSidebar', err);
       return { servers: [], error: err.message };
     }
   });

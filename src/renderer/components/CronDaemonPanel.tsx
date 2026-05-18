@@ -307,6 +307,9 @@ const CronDaemonPanel = ({
     const [newJobCommand, setNewJobCommand] = useState('');
     const [newJobNpc, setNewJobNpc] = useState('');
     const [newJobJinx, setNewJobJinx] = useState('');
+    const [newJobType, setNewJobType] = useState<'jinx' | 'finetune_instruction' | 'finetune_diffusers' | 'inference'>('jinx');
+    const [daemonStatus, setDaemonStatus] = useState<{ running?: boolean; pid?: number; port?: number; lastHeartbeat?: string; error?: string } | null>(null);
+    const [jobHistory, setJobHistory] = useState<Record<string, any[]>>({});
 
     const [appDaemons, setAppDaemons] = useState<any[]>([]);
     const [systemData, setSystemData] = useState<any>(null);
@@ -328,8 +331,29 @@ const CronDaemonPanel = ({
 
     const fetchJobs = useCallback(async () => {
         try {
-            const r = await api?.getCronJobs?.();
-            if (Array.isArray(r)) setJobs(r);
+            const r = await api?.scheduledJobList?.();
+            const list = r?.jobs || r;
+            if (Array.isArray(list)) {
+                setJobs(list.map((j: any) => ({
+                    id: j.id,
+                    name: j.name,
+                    active: j.enabled === 1,
+                    job_type: j.job_type,
+                    schedule: j.schedule,
+                    command: j.command,
+                    npc_name: j.npc_name,
+                    jinx_name: j.jinx_name,
+                    last_run_at: j.last_run_at,
+                    next_run_at: j.next_run_at,
+                })));
+            }
+        } catch {}
+    }, []);
+
+    const fetchDaemonStatus = useCallback(async () => {
+        try {
+            const r = await api?.daemonStatus?.();
+            if (r) setDaemonStatus(r);
         } catch {}
     }, []);
 
@@ -408,14 +432,20 @@ const CronDaemonPanel = ({
         }
     }, [scriptDrafts]);
 
-    const runJobNow = useCallback(async (name: string) => {
-        setRunningJob(name);
-        setRunResults(prev => ({ ...prev, [name]: {} }));
+    const runJobNow = useCallback(async (job: any) => {
+        const key = job.name || job.id;
+        setRunningJob(key);
+        setRunResults(prev => ({ ...prev, [key]: {} }));
         try {
-            const r = await api?.jobRunNow?.(name);
-            setRunResults(prev => ({ ...prev, [name]: r || { error: 'no response' } }));
+            let r;
+            if (job.id) {
+                r = await api?.scheduledJobRunNow?.(job.id);
+            } else {
+                r = await api?.jobRunNow?.(job.name);
+            }
+            setRunResults(prev => ({ ...prev, [key]: r || { error: 'no response' } }));
         } catch (e: any) {
-            setRunResults(prev => ({ ...prev, [name]: { error: e.message } }));
+            setRunResults(prev => ({ ...prev, [key]: { error: e.message } }));
         } finally {
             setRunningJob(null);
         }
@@ -449,9 +479,9 @@ const CronDaemonPanel = ({
 
     const fetchAll = useCallback(async () => {
         setLoading(true); setError(null);
-        await Promise.all([fetchJobs(), fetchDaemons(), fetchModels()]);
+        await Promise.all([fetchJobs(), fetchDaemons(), fetchModels(), fetchDaemonStatus()]);
         setLoading(false);
-    }, [fetchJobs, fetchDaemons, fetchModels]);
+    }, [fetchJobs, fetchDaemons, fetchModels, fetchDaemonStatus]);
 
     useEffect(() => { if (isOpen) fetchAll(); }, [isOpen, fetchAll]);
 
@@ -483,23 +513,35 @@ const CronDaemonPanel = ({
         }
     }, []);
 
-    const scheduleJob = async (name: string, schedule: string, command: string) => {
+    const scheduleJob = async (name: string, schedule: string, command: string, jobType?: string, npc?: string, jinx?: string) => {
         if (!name || !schedule || !command) return;
         setLoading(true); setError(null);
         try {
-            const r = await api?.scheduleJob?.({ schedule, command, jobName: name });
-            if (r?.success) { setShowAddJob(false); setNewJobName(''); setNewJobCommand(''); await fetchJobs(); }
+            const r = await api?.scheduledJobCreate?.({
+                name,
+                schedule,
+                command,
+                jobType: jobType || newJobType,
+                npcName: npc || newJobNpc || undefined,
+                jinxName: jinx || newJobJinx || undefined,
+            });
+            if (r?.success) { setShowAddJob(false); setNewJobName(''); setNewJobCommand(''); setNewJobType('jinx'); await fetchJobs(); }
             else setError(r?.message || r?.error || 'Failed to schedule');
         } catch (e: any) { setError(e.message); }
         finally { setLoading(false); }
     };
 
-    const removeJob = async (name: string) => {
-        if (!window.confirm(`Remove job "${name}"?`)) return;
+    const removeJob = async (job: any) => {
+        if (!window.confirm(`Remove job "${job.name}"?`)) return;
         setLoading(true);
         try {
-            const r = await api?.unscheduleJob?.(name);
-            if (!r?.success) setError(r?.message || 'Failed');
+            if (job.id) {
+                const r = await api?.scheduledJobDelete?.(job.id);
+                if (!r?.success) setError(r?.error || 'Failed');
+            } else {
+                const r = await api?.unscheduleJob?.(job.name);
+                if (!r?.success) setError(r?.message || 'Failed');
+            }
             await fetchJobs();
         } catch (e: any) { setError(e.message); }
         finally { setLoading(false); }
@@ -657,6 +699,24 @@ const CronDaemonPanel = ({
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
 
                 {activeTab === 'jobs' && (<>
+                    {daemonStatus && (
+                        <div className="flex items-center gap-2 text-xs px-2 py-1.5 rounded bg-black/20 border theme-border">
+                            <span className={`w-2 h-2 rounded-full ${daemonStatus.running ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`} />
+                            <span className={daemonStatus.running ? 'text-green-400' : 'text-gray-400'}>
+                                {daemonStatus.running ? `Daemon running (pid ${daemonStatus.pid})` : 'Daemon stopped'}
+                            </span>
+                            <div className="ml-auto flex items-center gap-1">
+                                {!daemonStatus.running ? (
+                                    <button onClick={async () => { await api?.daemonStart?.(); await fetchDaemonStatus(); }} className="px-2 py-0.5 rounded bg-green-600/20 text-green-400 hover:bg-green-600/30 text-[10px]">Start</button>
+                                ) : (
+                                    <>
+                                        <button onClick={async () => { await api?.daemonStop?.(); await fetchDaemonStatus(); }} className="px-2 py-0.5 rounded bg-red-600/20 text-red-400 hover:bg-red-600/30 text-[10px]">Stop</button>
+                                        <button onClick={async () => { await api?.daemonRestart?.(); await fetchDaemonStatus(); }} className="px-2 py-0.5 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 text-[10px]">Restart</button>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    )}
                     <div className="flex items-center gap-2">
                         <div className="relative flex-1">
                             <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
@@ -671,10 +731,19 @@ const CronDaemonPanel = ({
 
                     {showAddJob && (
                         <div className="p-3 bg-blue-900/15 border border-blue-500/30 rounded-lg space-y-2">
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-3 gap-2">
                                 <div>
                                     <label className="text-[10px] text-gray-400 mb-0.5 block">Job Name</label>
                                     <input type="text" value={newJobName} onChange={e => setNewJobName(e.target.value.replace(/[^a-zA-Z0-9_-]/g,'_'))} placeholder="my_job" className={inputCls} />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] text-gray-400 mb-0.5 block">Job Type</label>
+                                    <select value={newJobType} onChange={e => setNewJobType(e.target.value as any)} className={inputCls}>
+                                        <option value="jinx">Jinx</option>
+                                        <option value="finetune_instruction">Fine-tune (instruction)</option>
+                                        <option value="finetune_diffusers">Fine-tune (diffusers)</option>
+                                        <option value="inference">Inference</option>
+                                    </select>
                                 </div>
                                 <div>
                                     <label className="text-[10px] text-gray-400 mb-0.5 block">Schedule</label>
@@ -761,10 +830,15 @@ const CronDaemonPanel = ({
                                     <span className={`text-[10px] px-1.5 py-0.5 rounded ${job.active ? 'bg-green-900/30 text-green-400' : 'bg-gray-700 text-gray-400'}`}>
                                         {job.active ? 'active' : 'inactive'}
                                     </span>
+                                    {job.job_type && (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-900/30 text-blue-400">
+                                            {job.job_type}
+                                        </span>
+                                    )}
                                     <div className="ml-auto flex items-center gap-1" onClick={e => e.stopPropagation()}>
                                         <button onClick={() => fetchJobStatus(job.name)} className="p-1 text-gray-400 hover:text-blue-400 rounded" title="Refresh"><RefreshCw size={12} /></button>
                                         <button onClick={async () => { await fetchJobStatus(job.name); startEditJob(job); }} className="p-1 text-gray-400 hover:text-yellow-400 rounded" title="Edit"><Edit2 size={12} /></button>
-                                        <button onClick={() => removeJob(job.name)} className="p-1 text-gray-400 hover:text-red-400 rounded" title="Remove"><Trash2 size={12} /></button>
+                                        <button onClick={() => removeJob(job)} className="p-1 text-gray-400 hover:text-red-400 rounded" title="Remove"><Trash2 size={12} /></button>
                                     </div>
                                 </>}>
                                     <div className="space-y-2">
@@ -831,8 +905,8 @@ const CronDaemonPanel = ({
                                                             Revert
                                                         </button>
                                                         <button
-                                                            onClick={() => runJobNow(job.name)}
-                                                            disabled={runningJob === job.name}
+                                                            onClick={() => runJobNow(job)}
+                                                            disabled={runningJob === job.name || runningJob === job.id}
                                                             className="px-2 py-1 text-[10px] bg-green-600 hover:bg-green-500 text-white rounded disabled:opacity-50 flex items-center gap-1 ml-auto"
                                                         >
                                                             {runningJob === job.name ? <><Loader size={10} className="animate-spin" /> Running…</> : <><Play size={10} /> Run now</>}
@@ -855,6 +929,35 @@ const CronDaemonPanel = ({
                                                 </div>
                                             )}
                                             <Field label="Log file"><span className="font-mono text-[10px] text-gray-400 select-all break-all">{status.log}</span></Field>
+                                            {job.id && (
+                                                <div className="mt-1">
+                                                    <button
+                                                        onClick={async () => {
+                                                            try {
+                                                                const r = await api?.scheduledJobHistory?.(job.id);
+                                                                setJobHistory(prev => ({ ...prev, [job.id]: r?.logs || [] }));
+                                                            } catch {}
+                                                        }}
+                                                        className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                                                    >
+                                                        <Clock size={10} /> View execution history
+                                                    </button>
+                                                    {(jobHistory[job.id] || []).length > 0 && (
+                                                        <div className="mt-1 space-y-1 max-h-40 overflow-y-auto bg-black/20 rounded p-2">
+                                                            {jobHistory[job.id].map((entry: any, i: number) => (
+                                                                <div key={i} className="text-[10px] border-b theme-border last:border-0 pb-1">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className={`px-1 rounded ${entry.status === 'success' ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'}`}>{entry.status}</span>
+                                                                        <span className="text-gray-500">{entry.timestamp}</span>
+                                                                        {entry.duration_ms > 0 && <span className="text-gray-500">{entry.duration_ms}ms</span>}
+                                                                    </div>
+                                                                    {entry.output_summary && <div className="text-gray-400 truncate">{entry.output_summary}</div>}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                             {fullLogs[job.name] ? (
                                                 <pre className="text-[10px] font-mono text-gray-400 whitespace-pre-wrap max-h-72 overflow-y-auto bg-black/20 rounded p-2 select-all mt-1">{fullLogs[job.name]}</pre>
                                             ) : status.recent_log?.length > 0 ? (
@@ -863,7 +966,7 @@ const CronDaemonPanel = ({
                                                     <button onClick={() => loadFullLog(job.name)} className="text-[10px] text-blue-400 hover:text-blue-300">Load full log</button>
                                                 </>
                                             ) : <div className="text-[10px] text-gray-600 italic">No log output yet</div>}
-                                        </>)}
+                                        </>)};
                                     </div>
                                 </ExpandRow>);
                             })}

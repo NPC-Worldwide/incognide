@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { MessageSquare, Bot, Search, X, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Users, Zap, FileCode } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { MessageSquare, Bot, Search, X, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Users, Zap, FileCode, Server } from 'lucide-react';
 
 interface RightSidebarProps {
     collapsed: boolean;
@@ -105,13 +105,18 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     const [jinxesCollapsed, setJinxesCollapsed] = useState(() => {
         try { return localStorage.getItem('incognide_rs_jinxesCollapsed') === 'true'; } catch { return true; }
     });
+    const [mcpCollapsed, setMcpCollapsed] = useState(() => {
+        try { return localStorage.getItem('incognide_rs_mcpCollapsed') === 'true'; } catch { return true; }
+    });
     React.useEffect(() => { try { localStorage.setItem('incognide_rs_convosCollapsed', String(convosCollapsed)); } catch {} }, [convosCollapsed]);
     React.useEffect(() => { try { localStorage.setItem('incognide_rs_npcsCollapsed', String(npcsCollapsed)); } catch {} }, [npcsCollapsed]);
     React.useEffect(() => { try { localStorage.setItem('incognide_rs_jinxesCollapsed', String(jinxesCollapsed)); } catch {} }, [jinxesCollapsed]);
+    React.useEffect(() => { try { localStorage.setItem('incognide_rs_mcpCollapsed', String(mcpCollapsed)); } catch {} }, [mcpCollapsed]);
 
     const [convoSearch, setConvoSearch] = useState('');
     const [npcSearch, setNpcSearch] = useState('');
     const [jinxSearch, setJinxSearch] = useState('');
+    const [mcpServers, setMcpServers] = useState<any[]>([]);
     const [groupBy, setGroupBy] = useState<'time' | 'npc' | 'model' | 'none'>('time');
 
     const filteredConvos = useMemo(() => {
@@ -167,21 +172,49 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         );
     }, [availableNPCs, npcSearch]);
 
+    const [registeredTeams, setRegisteredTeams] = useState<Record<string, any>>({});
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const data = await (window as any).api.registeredTeamsRead();
+                if (data?.teams) setRegisteredTeams(data.teams);
+            } catch {}
+        })();
+    }, []);
+
     const groupedNpcs = useMemo(() => {
-        const teamOrder = ['project', 'incognide', 'npcsh'];
-        const teamLabels: Record<string, string> = { project: 'Project', incognide: 'Incognide', npcsh: 'npcsh' };
+        // Find which registered team matches the current project folder
+        let currentTeamKey: string | null = null;
+        if (currentPath) {
+            for (const [key, team] of Object.entries(registeredTeams)) {
+                const teamPath = (team as any)?.path;
+                if (teamPath && currentPath.startsWith(teamPath)) {
+                    currentTeamKey = key;
+                    break;
+                }
+            }
+        }
+        const otherTeams = Object.keys(registeredTeams).filter(k => k !== currentTeamKey);
+        const teamOrder = currentTeamKey
+            ? ['project', currentTeamKey, ...otherTeams]
+            : ['project', ...Object.keys(registeredTeams)];
+        const teamLabels: Record<string, string> = { project: 'Project', ...Object.fromEntries(Object.entries(registeredTeams).map(([k, v]: [string, any]) => [k, v.name || k])) };
+        if (currentTeamKey && currentTeamKey !== 'project') {
+            teamLabels[currentTeamKey] = (teamLabels[currentTeamKey] || currentTeamKey) + ' (current)';
+        }
         const buckets: Record<string, any[]> = {};
         (filteredNpcs || []).forEach((n: any) => {
-            const team = n.team || (n.source === 'project' ? 'project' : 'npcsh');
+            const team = n.team || (n.source === 'project' ? 'project' : 'incognide');
             (buckets[team] = buckets[team] || []).push(n);
         });
         const ordered: Array<[string, any[]]> = [];
         teamOrder.forEach(k => { if (buckets[k]?.length) ordered.push([teamLabels[k] || k, buckets[k]]); delete buckets[k]; });
         Object.entries(buckets).forEach(([k, v]) => ordered.push([teamLabels[k] || k, v]));
         return ordered;
-    }, [filteredNpcs]);
+    }, [filteredNpcs, registeredTeams, currentPath]);
 
-    const [expandedTeams, setExpandedTeams] = useState<Set<string>>(() => new Set(['Project', 'Incognide', 'npcsh']));
+    const [expandedTeams, setExpandedTeams] = useState<Set<string>>(() => new Set(['Project', 'Incognide']));
     const toggleTeam = (key: string) => {
         setExpandedTeams(prev => {
             const next = new Set(prev);
@@ -189,6 +222,15 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             return next;
         });
     };
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const result = await (window as any).api?.mcpGetServersForSidebar?.(currentPath);
+                if (result?.servers) setMcpServers(result.servers);
+            } catch {}
+        })();
+    }, [currentPath]);
 
     const filteredJinxes = useMemo(() => {
         if (!jinxSearch.trim()) return jinxesToDisplay || [];
@@ -626,6 +668,38 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     </div>
                 </div>
             )}
+
+            <div data-tutorial="mcp-section" className="flex flex-col min-h-0" style={{ flex: mcpCollapsed ? '0 0 auto' : 1, overflow: 'hidden' }}>
+            <SectionHeader
+                label="MCP Servers"
+                color="amber"
+                count={mcpServers.length}
+                collapsed={mcpCollapsed}
+                onToggle={() => setMcpCollapsed(!mcpCollapsed)}
+            />
+            {!mcpCollapsed && (
+                <div className="flex flex-col min-h-0 border-b theme-border" style={{ flex: 1, overflow: 'hidden' }}>
+                    <div className="flex-1 overflow-y-auto min-h-0">
+                        {mcpServers.map((srv: any) => (
+                            <div key={srv.id || srv.command} className="px-2 py-1.5 border-b theme-border last:border-b-0 hover:bg-white/5">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-[11px] font-medium theme-text-primary truncate">{srv.name}</div>
+                                        <div className="text-[10px] theme-text-muted truncate">{srv.command}</div>
+                                    </div>
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-cyan-900/30 text-cyan-300 ml-1 whitespace-nowrap">{srv.origin}</span>
+                                </div>
+                            </div>
+                        ))}
+                        {mcpServers.length === 0 && (
+                            <div className="px-2 py-4 text-[11px] theme-text-muted text-center italic">
+                                No MCP servers configured
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+            </div>
             </div>
 
         </div>

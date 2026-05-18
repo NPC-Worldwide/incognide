@@ -647,6 +647,7 @@ const AiSettingsContent = () => {
     const [globalVars, setGlobalVars] = useState<{ key: string; value: string }[]>([{ key: '', value: '' }]);
     const [visibleFields, setVisibleFields] = useState<Record<string, boolean>>({});
     const [saving, setSaving] = useState(false);
+    const [customProviders, setCustomProviders] = useState<Record<string, any>>({});
 
     const isSensitiveField = (key: string) => {
         const sensitiveWords = ['key', 'token', 'secret', 'password', 'api'];
@@ -660,10 +661,13 @@ const AiSettingsContent = () => {
             setSettings({ ...AI_DEFAULT_SETTINGS, ...(data.global_settings || {}) });
             if (data.global_vars && Object.keys(data.global_vars).length > 0) {
                 const parsed = Object.entries(data.global_vars)
-                    .filter(([key]) => !key.startsWith('CUSTOM_PROVIDER_'))
                     .map(([key, value]) => ({ key, value: value as string }));
                 setGlobalVars(parsed.length > 0 ? parsed : [{ key: '', value: '' }]);
             }
+            try {
+                const cpData = await (window as any).api.customProvidersRead();
+                if (cpData?.providers) setCustomProviders(cpData.providers);
+            } catch {}
         })();
     }, []);
 
@@ -672,15 +676,10 @@ const AiSettingsContent = () => {
         try {
             const existingData = await (window as any).api.loadGlobalSettings();
             const existingSettings = existingData.global_settings || {};
-            const existingVars = existingData.global_vars || {};
 
             const newVars: Record<string, string> = {};
             globalVars.forEach(({ key, value }) => {
                 if (key && value) newVars[key] = value;
-            });
-            // Preserve CUSTOM_PROVIDER_ entries
-            Object.keys(existingVars).forEach(key => {
-                if (key.startsWith('CUSTOM_PROVIDER_')) newVars[key] = existingVars[key];
             });
 
             await (window as any).api.saveGlobalSettings({
@@ -692,7 +691,7 @@ const AiSettingsContent = () => {
         }
     };
 
-    const providerOptions = [
+    const baseProviderOptions = [
         { value: 'ollama', label: 'Ollama' },
         { value: 'openai', label: 'OpenAI' },
         { value: 'anthropic', label: 'Anthropic' },
@@ -700,6 +699,12 @@ const AiSettingsContent = () => {
         { value: 'lmstudio', label: 'LM Studio' },
         { value: 'llamacpp', label: 'llama.cpp' },
     ];
+    const customProviderOptions = Object.entries(customProviders).map(([name]) => ({
+        value: name, label: name.charAt(0).toUpperCase() + name.slice(1),
+    }));
+    const providerOptions = [...baseProviderOptions, ...customProviderOptions.filter(
+        cp => !baseProviderOptions.some(bp => bp.value === cp.value)
+    )];
 
     const searchProviderOptions = [
         { value: 'duckduckgo', label: 'DuckDuckGo' },
@@ -890,7 +895,7 @@ const ProvidersContent = () => {
     const [providers, setProviders] = useState<{ name: string; baseUrl: string; apiKeyVar: string; headers: string }[]>([
         { name: '', baseUrl: '', apiKeyVar: '', headers: '' }
     ]);
-    const [detectedProviders, setDetectedProviders] = useState<{ provider: string; envVar: string; baseUrl: string }[]>([]);
+    const [detectedProviders, setDetectedProviders] = useState<{ provider: string; envVar: string; baseUrl: string; custom?: boolean }[]>([]);
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
@@ -899,38 +904,25 @@ const ProvidersContent = () => {
             if (Array.isArray(detected)) setDetectedProviders(detected);
         })();
         (async () => {
-            const data = await (window as any).api.loadGlobalSettings();
-            if (data.error || !data.global_vars) return;
-            const loaded = Object.keys(data.global_vars)
-                .filter(key => key.startsWith('CUSTOM_PROVIDER_'))
-                .map(key => {
-                    const providerName = key.replace('CUSTOM_PROVIDER_', '');
-                    try {
-                        const config = JSON.parse(data.global_vars[key]);
-                        return {
-                            name: providerName.toLowerCase(),
-                            baseUrl: config.base_url || '',
-                            apiKeyVar: config.api_key_var || '',
-                            headers: config.headers ? JSON.stringify(config.headers, null, 2) : ''
-                        };
-                    } catch {
-                        return null;
-                    }
-                }).filter(Boolean) as { name: string; baseUrl: string; apiKeyVar: string; headers: string }[];
-            if (loaded.length > 0) setProviders(loaded);
+            try {
+                const cpData = await (window as any).api.customProvidersRead();
+                if (cpData?.providers) {
+                    const loaded = Object.entries(cpData.providers as Record<string, any>).map(([name, config]: [string, any]) => ({
+                        name: name.toLowerCase(),
+                        baseUrl: config.base_url || '',
+                        apiKeyVar: config.api_key_var || '',
+                        headers: config.headers ? JSON.stringify(config.headers, null, 2) : ''
+                    }));
+                    if (loaded.length > 0) setProviders(loaded);
+                }
+            } catch {}
         })();
     }, []);
 
     const handleSave = async () => {
         setSaving(true);
         try {
-            const existingData = await (window as any).api.loadGlobalSettings();
-            const existingVars = existingData.global_vars || {};
-            // Keep non-provider vars
-            const newVars: Record<string, string> = {};
-            Object.keys(existingVars).forEach(key => {
-                if (!key.startsWith('CUSTOM_PROVIDER_')) newVars[key] = existingVars[key];
-            });
+            const providersMap: Record<string, any> = {};
             providers.forEach(provider => {
                 if (provider.name && provider.baseUrl) {
                     const config: Record<string, any> = {
@@ -940,13 +932,10 @@ const ProvidersContent = () => {
                     if (provider.headers) {
                         try { config.headers = JSON.parse(provider.headers); } catch {}
                     }
-                    newVars[`CUSTOM_PROVIDER_${provider.name.toUpperCase()}`] = JSON.stringify(config);
+                    providersMap[provider.name.toLowerCase()] = config;
                 }
             });
-            await (window as any).api.saveGlobalSettings({
-                global_settings: existingData.global_settings || {},
-                global_vars: newVars,
-            });
+            await (window as any).api.customProvidersWrite(providersMap);
         } finally {
             setSaving(false);
         }
@@ -1065,13 +1054,46 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
     useEffect(() => { if (forceTab) setActiveTab(forceTab); }, [forceTab]);
     const changeTab = (tab: TabId) => { setActiveTab(tab); onTabChange?.(tab); };
     const [isGlobal, setIsGlobal] = useState(false);
-    const [globalSource, setGlobalSource] = useState<'incognide' | 'npcsh'>('incognide');
+    const [registeredTeams, setRegisteredTeams] = useState<Record<string, { path: string; name: string }>>({});
+    const [globalSource, setGlobalSource] = useState<string>('incognide');
     const [hasProjectTeam, setHasProjectTeam] = useState<boolean | null>(null);
     const [initializingTeam, setInitializingTeam] = useState(false);
+    const [discoveredTeams, setDiscoveredTeams] = useState<any[]>([]);
+    const [scanning, setScanning] = useState(false);
+
+    const loadRegisteredTeams = async () => {
+        try {
+            const data = await (window as any).api.registeredTeamsRead();
+            if (data?.teams) setRegisteredTeams(data.teams);
+        } catch {}
+    };
+
+    useEffect(() => { loadRegisteredTeams(); }, []);
+
+    const handleScanTeams = async () => {
+        setScanning(true);
+        try {
+            const result = await (window as any).api.registeredTeamsScan(currentPath);
+            if (result?.discovered) setDiscoveredTeams(result.discovered);
+        } catch {}
+        setScanning(false);
+    };
+
+    const handleRegisterTeam = async (team: any) => {
+        try {
+            const data = await (window as any).api.registeredTeamsRead();
+            const teams = data?.teams || {};
+            const key = team.name.toLowerCase().replace(/[^a-z0-9_]/g, '');
+            teams[key] = { path: team.path, name: team.name };
+            await (window as any).api.registeredTeamsWrite(teams);
+            setRegisteredTeams(teams);
+            setDiscoveredTeams(prev => prev.filter(t => t.path !== team.path));
+        } catch {}
+    };
     const [resyncModal, setResyncModal] = useState(false);
     const [resyncing, setResyncing] = useState(false);
 
-    const globalPath = isGlobal ? (globalSource === 'npcsh' ? 'npcsh' : undefined) : undefined;
+    const globalPath = isGlobal ? (globalSource === 'npcsh' ? 'npcsh' : (registeredTeams[globalSource]?.path || undefined)) : undefined;
 
     useEffect(() => {
         const checkProjectTeam = async () => {
@@ -1175,19 +1197,46 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                         </button>
                     </div>
                     {isGlobal && (
-                        <div className="flex items-center theme-bg-secondary rounded-lg p-0.5">
+                        <div className="flex items-center gap-1">
+                            <div className="flex items-center theme-bg-secondary rounded-lg p-0.5">
+                                {Object.entries(registeredTeams).map(([key, team]: [string, any]) => (
+                                    <button
+                                        key={key}
+                                        onClick={() => setGlobalSource(key)}
+                                        className={`px-2 py-1 rounded text-xs font-medium transition ${globalSource === key ? 'bg-purple-600 text-white' : 'theme-text-muted hover:text-white'}`}
+                                    >
+                                        {team.name || key}
+                                    </button>
+                                ))}
+                            </div>
                             <button
-                                onClick={() => setGlobalSource('incognide')}
-                                className={`px-2 py-1 rounded text-xs font-medium transition ${globalSource === 'incognide' ? 'bg-amber-600 text-white' : 'theme-text-muted hover:text-white'}`}
+                                onClick={handleScanTeams}
+                                disabled={scanning}
+                                className="px-2 py-1 rounded text-xs theme-text-muted hover:text-white hover:bg-white/5 transition flex items-center gap-1"
+                                title="Discover team directories"
                             >
-                                Incognide
+                                <Search size={12} /> {scanning ? 'Scanning...' : 'Discover'}
                             </button>
-                            <button
-                                onClick={() => setGlobalSource('npcsh')}
-                                className={`px-2 py-1 rounded text-xs font-medium transition ${globalSource === 'npcsh' ? 'bg-green-600 text-white' : 'theme-text-muted hover:text-white'}`}
-                            >
-                                npcsh
-                            </button>
+                        </div>
+                    )}
+                    {isGlobal && discoveredTeams.length > 0 && (
+                        <div className="theme-bg-tertiary p-3 rounded-lg space-y-2">
+                            <h4 className="text-xs font-semibold theme-text-secondary">Discovered Teams</h4>
+                            {discoveredTeams.map((team, i) => (
+                                <div key={i} className="flex items-center justify-between theme-bg-primary p-2 rounded text-xs">
+                                    <div>
+                                        <span className="font-medium theme-text-primary">{team.name}</span>
+                                        <span className="theme-text-muted ml-2">{team.npcCount} NPC{team.npcCount !== 1 ? 's' : ''}</span>
+                                        <div className="theme-text-muted truncate max-w-[200px]">{team.path}</div>
+                                    </div>
+                                    <button
+                                        onClick={() => handleRegisterTeam(team)}
+                                        className="px-2 py-1 rounded theme-button-primary text-xs"
+                                    >
+                                        Register
+                                    </button>
+                                </div>
+                            ))}
                         </div>
                     )}
                     {!embedded && (

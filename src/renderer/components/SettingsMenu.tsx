@@ -455,10 +455,10 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                             <div className="flex gap-2">
                                 <input
                                     type="text"
-                                    value={globalSettings.data_directory || '~/.npcsh/incognide'}
+                                    value={globalSettings.data_directory || '~/.incognide'}
                                     onChange={(e) => setGlobalSettings({...globalSettings, data_directory: e.target.value})}
                                     className="flex-1 px-3 py-1.5 text-sm rounded border border-gray-700 bg-gray-800 text-gray-200"
-                                    placeholder="~/.npcsh/incognide"
+                                    placeholder="~/.incognide"
                                 />
                                 <button
                                     onClick={async () => {

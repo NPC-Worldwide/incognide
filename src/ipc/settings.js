@@ -5,8 +5,11 @@ const os = require('os');
 const { dialog } = require('electron');
 const { spawn, execSync } = require('child_process');
 const fetch = require('node-fetch');
+const yaml = require('js-yaml');
 
-const pythonEnvConfigPath = path.join(os.homedir(), '.npcsh', 'incognide', 'python_envs.json');
+let INCOGNIDE_HOME = process.env.INCOGNIDE_HOME || path.join(os.homedir(), '.incognide');
+
+const pythonEnvConfigPath = path.join(INCOGNIDE_HOME, 'python_envs.json');
 
 const ensurePythonEnvConfig = async () => {
   const dir = path.dirname(pythonEnvConfigPath);
@@ -29,7 +32,7 @@ const writePythonEnvConfig = async (data) => {
   await fsPromises.writeFile(pythonEnvConfigPath, JSON.stringify(data, null, 2));
 };
 
-const tilesConfigPath = path.join(os.homedir(), '.npcsh', 'incognide', 'tiles.json');
+const tilesConfigPath = path.join(INCOGNIDE_HOME, 'tiles.json');
 
 const defaultTilesConfig = {
   tiles: [
@@ -77,7 +80,7 @@ const writeTilesConfig = async (data) => {
   await fsPromises.writeFile(tilesConfigPath, JSON.stringify(data, null, 2));
 };
 
-const tileJinxDir = path.join(os.homedir(), '.npcsh', 'incognide', 'tiles');
+const tileJinxDir = path.join(INCOGNIDE_HOME, 'tiles');
 
 const tileSourceMap = {
   'db.jinx': { source: 'DBTool.tsx', label: 'DB Tool', icon: 'Database', order: 0 },
@@ -397,7 +400,11 @@ function register(ctx) {
           ensureUserDataDirectory, waitForServer, logBackend,
           logsDir, electronLogPath, backendLogPath,
           dbQuery,
-          readPythonEnvConfig: ctxReadPythonEnvConfig } = ctx;
+          readPythonEnvConfig: ctxReadPythonEnvConfig,
+          INCOGNIDE_HOME: ctxIncognideHome,
+          spawnDaemon, killDaemon, getDaemonStatus } = ctx;
+
+  if (ctxIncognideHome) INCOGNIDE_HOME = ctxIncognideHome;
 
   const _readPythonEnvConfig = ctxReadPythonEnvConfig || readPythonEnvConfig;
 
@@ -417,24 +424,211 @@ function register(ctx) {
     }
   });
 
+  // --- Daemon lifecycle ---
+  ipcMain.handle('daemon:start', async () => {
+    try {
+      spawnDaemon();
+      await new Promise(r => setTimeout(r, 500));
+      return await getDaemonStatus();
+    } catch (err) {
+      return { running: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('daemon:stop', async () => {
+    try {
+      killDaemon();
+      await new Promise(r => setTimeout(r, 500));
+      return await getDaemonStatus();
+    } catch (err) {
+      return { running: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('daemon:status', async () => {
+    try { return await getDaemonStatus(); } catch (err) { return { running: false, error: err.message }; }
+  });
+
+  ipcMain.handle('daemon:restart', async () => {
+    try {
+      killDaemon();
+      await new Promise(r => setTimeout(r, 1000));
+      spawnDaemon();
+      await new Promise(r => setTimeout(r, 500));
+      return await getDaemonStatus();
+    } catch (err) {
+      return { running: false, error: err.message };
+    }
+  });
+
+  // --- Scheduled jobs (local SQLite) ---
+  ipcMain.handle('scheduledJob:list', async () => {
+    try {
+      const rows = await dbQuery(`SELECT * FROM scheduled_jobs ORDER BY created_at DESC`);
+      return { jobs: rows };
+    } catch (err) {
+      return { jobs: [], error: err.message };
+    }
+  });
+
+  ipcMain.handle('scheduledJob:create', async (event, params) => {
+    try {
+      const id = params.id || generateId?.() || `job_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      await dbQuery(
+        `INSERT INTO scheduled_jobs (id, name, job_type, schedule, command, npc_name, jinx_name, payload, workspace_path, python_env_config, enabled, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+        [
+          id, params.name, params.jobType, params.schedule, params.command || null,
+          params.npcName || null, params.jinxName || null,
+          params.payload ? JSON.stringify(params.payload) : null,
+          params.workspacePath || null,
+          params.pythonEnvConfig ? JSON.stringify(params.pythonEnvConfig) : null,
+          params.enabled !== undefined ? params.enabled : 1,
+        ]
+      );
+      // Notify daemon to reload
+      try {
+        const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+        if (state?.[0]?.port) {
+          await fetch(`http://127.0.0.1:${state[0].port}/reload`, { method: 'POST', signal: AbortSignal.timeout(2000) });
+        }
+      } catch {}
+      return { success: true, id };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('scheduledJob:update', async (event, params) => {
+    try {
+      await dbQuery(
+        `UPDATE scheduled_jobs SET
+          name = COALESCE(?, name),
+          schedule = COALESCE(?, schedule),
+          command = COALESCE(?, command),
+          npc_name = COALESCE(?, npc_name),
+          jinx_name = COALESCE(?, jinx_name),
+          payload = COALESCE(?, payload),
+          workspace_path = COALESCE(?, workspace_path),
+          python_env_config = COALESCE(?, python_env_config),
+          updated_at = datetime('now')
+         WHERE id = ?`,
+        [
+          params.name, params.schedule, params.command, params.npcName, params.jinxName,
+          params.payload ? JSON.stringify(params.payload) : null,
+          params.workspacePath, params.pythonEnvConfig ? JSON.stringify(params.pythonEnvConfig) : null,
+          params.id,
+        ]
+      );
+      try {
+        const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+        if (state?.[0]?.port) {
+          await fetch(`http://127.0.0.1:${state[0].port}/reload`, { method: 'POST', signal: AbortSignal.timeout(2000) });
+        }
+      } catch {}
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('scheduledJob:delete', async (event, jobId) => {
+    try {
+      await dbQuery(`DELETE FROM scheduled_jobs WHERE id = ?`, [jobId]);
+      try {
+        const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+        if (state?.[0]?.port) {
+          await fetch(`http://127.0.0.1:${state[0].port}/reload`, { method: 'POST', signal: AbortSignal.timeout(2000) });
+        }
+      } catch {}
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('scheduledJob:toggle', async (event, { jobId, enabled }) => {
+    try {
+      await dbQuery(`UPDATE scheduled_jobs SET enabled = ?, updated_at = datetime('now') WHERE id = ?`, [enabled ? 1 : 0, jobId]);
+      try {
+        const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+        if (state?.[0]?.port) {
+          await fetch(`http://127.0.0.1:${state[0].port}/reload`, { method: 'POST', signal: AbortSignal.timeout(2000) });
+        }
+      } catch {}
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('scheduledJob:runNow', async (event, jobId) => {
+    try {
+      const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+      if (state?.[0]?.port) {
+        const res = await fetch(`http://127.0.0.1:${state[0].port}/run_now`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jobId }),
+          signal: AbortSignal.timeout(5000),
+        });
+        return await res.json();
+      }
+      return { error: 'Daemon not running' };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('scheduledJob:history', async (event, jobId) => {
+    try {
+      const rows = await dbQuery(
+        `SELECT * FROM jinx_execution_log WHERE job_id = ? ORDER BY timestamp DESC LIMIT 100`,
+        [jobId]
+      );
+      return { logs: rows };
+    } catch (err) {
+      return { logs: [], error: err.message };
+    }
+  });
+
+  // Legacy cron job handlers (now backed by local scheduled_jobs table)
   ipcMain.handle('getCronJobs', async () => {
-    return await callBackendApi(`${BACKEND_URL}/api/cron/jobs`);
+    const rows = await dbQuery(`SELECT * FROM scheduled_jobs WHERE job_type = 'jinx' ORDER BY created_at DESC`);
+    return { jobs: rows };
   });
 
   ipcMain.handle('scheduleJob', async (event, params) => {
-    return await callBackendApi(`${BACKEND_URL}/api/cron/schedule`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params)
-    });
+    const id = params.id || generateId?.() || `job_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    await dbQuery(
+      `INSERT INTO scheduled_jobs (id, name, job_type, schedule, command, enabled, created_at, updated_at)
+       VALUES (?, ?, 'jinx', ?, ?, ?, datetime('now'), datetime('now'))`,
+      [id, params.name, params.schedule, params.command, params.enabled !== undefined ? params.enabled : 1]
+    );
+    try {
+      const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+      if (state?.[0]?.port) {
+        await fetch(`http://127.0.0.1:${state[0].port}/reload`, { method: 'POST', signal: AbortSignal.timeout(2000) });
+      }
+    } catch {}
+    return { success: true, id };
   });
 
   ipcMain.handle('unscheduleJob', async (event, jobName) => {
-    return await callBackendApi(`${BACKEND_URL}/api/cron/unschedule`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobName })
-    });
+    await dbQuery(`DELETE FROM scheduled_jobs WHERE name = ? AND job_type = 'jinx'`, [jobName]);
+    try {
+      const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+      if (state?.[0]?.port) {
+        await fetch(`http://127.0.0.1:${state[0].port}/reload`, { method: 'POST', signal: AbortSignal.timeout(2000) });
+      }
+    } catch {}
+    return { success: true };
   });
 
   ipcMain.handle('jobStatus', async (event, jobName) => {
-    return await callBackendApi(`${BACKEND_URL}/api/cron/status/${encodeURIComponent(jobName)}`);
+    const rows = await dbQuery(`SELECT * FROM scheduled_jobs WHERE name = ? AND job_type = 'jinx' LIMIT 1`, [jobName]);
+    if (!rows.length) return { error: 'Job not found' };
+    return { job: rows[0] };
   });
 
   ipcMain.handle('jobReadScript', async (event, jobName) => {
@@ -442,7 +636,7 @@ function register(ctx) {
       const safeName = String(jobName || '').replace(/[^a-zA-Z0-9_-]/g, '');
       if (!safeName) return { error: 'invalid job name' };
       const candidates = [
-        path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team', 'jobs', `${safeName}.sh`),
+        path.join(INCOGNIDE_HOME, 'npc_team', 'jobs', `${safeName}.sh`),
         path.join(os.homedir(), '.npcsh', 'npc_team', 'jobs', `${safeName}.sh`),
       ];
       for (const scriptPath of candidates) {
@@ -463,7 +657,7 @@ function register(ctx) {
       const safeName = String(jobName || '').replace(/[^a-zA-Z0-9_-]/g, '');
       if (!safeName) return { error: 'invalid job name' };
       const candidates = [
-        path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team', 'jobs', `${safeName}.sh`),
+        path.join(INCOGNIDE_HOME, 'npc_team', 'jobs', `${safeName}.sh`),
         path.join(os.homedir(), '.npcsh', 'npc_team', 'jobs', `${safeName}.sh`),
       ];
       for (const scriptPath of candidates) {
@@ -486,7 +680,7 @@ function register(ctx) {
       const safeName = String(jobName || '').replace(/[^a-zA-Z0-9_-]/g, '');
       if (!safeName) return { error: 'invalid job name' };
       const candidates = [
-        path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team', 'jobs', `${safeName}.sh`),
+        path.join(INCOGNIDE_HOME, 'npc_team', 'jobs', `${safeName}.sh`),
         path.join(os.homedir(), '.npcsh', 'npc_team', 'jobs', `${safeName}.sh`),
       ];
       let scriptPath = null;
@@ -536,7 +730,7 @@ function register(ctx) {
       const safeName = String(jobName || '').replace(/[^a-zA-Z0-9_-]/g, '');
       if (!safeName) return { error: 'invalid job name' };
       const candidates = [
-        path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team', 'logs', `${safeName}.log`),
+        path.join(INCOGNIDE_HOME, 'npc_team', 'logs', `${safeName}.log`),
         path.join(os.homedir(), '.npcsh', 'npc_team', 'logs', `${safeName}.log`),
       ];
       for (const logPath of candidates) {
@@ -1620,7 +1814,26 @@ function register(ctx) {
         for (const m of matches) envSources.add(m[1]);
       } catch {}
     }
-    return KNOWN.filter(k => envSources.has(k.envVar));
+    const detected = KNOWN.filter(k => envSources.has(k.envVar));
+
+    // Add custom providers from YAML
+    try {
+      const cpPath = path.join(INCOGNIDE_HOME, 'custom_providers.yaml');
+      const content = await fsPromises.readFile(cpPath, 'utf8');
+      const parsed = yaml.load(content);
+      const providers = parsed?.providers || {};
+      for (const [name, config] of Object.entries(providers)) {
+        const apiKeyVar = config.api_key_var || `${name.toUpperCase()}_API_KEY`;
+        detected.push({
+          provider: name,
+          envVar: apiKeyVar,
+          baseUrl: config.base_url || '',
+          custom: true,
+        });
+      }
+    } catch {}
+
+    return detected;
   });
 
   ipcMain.handle('run-install-command', async (event, cmd) => {
@@ -1718,7 +1931,7 @@ function register(ctx) {
   });
 
   ipcMain.handle('setup:createVenv', async () => {
-    const venvDir = path.join(os.homedir(), '.npcsh', 'incognide', 'venv');
+    const venvDir = path.join(INCOGNIDE_HOME, 'venv');
 
     try {
 
@@ -1879,7 +2092,7 @@ function register(ctx) {
   });
 
   ipcMain.handle('setup:reset', async () => {
-    const setupMarkerPath = path.join(os.homedir(), '.npcsh', 'incognide', '.setup_complete');
+    const setupMarkerPath = path.join(INCOGNIDE_HOME, '.setup_complete');
     try {
       await fsPromises.unlink(setupMarkerPath);
       return { success: true };
@@ -2235,7 +2448,7 @@ function register(ctx) {
     embedding_provider: 'ollama',
     search_provider: 'perplexity',
     default_folder: '~/.npcsh/',
-    data_directory: '~/.npcsh/incognide',
+    data_directory: '~/.incognide',
     is_predictive_text_enabled: false,
     predictive_text_model: 'llama3.2',
     predictive_text_provider: 'ollama',
@@ -2251,6 +2464,7 @@ function register(ctx) {
             lines.push(`export ${envKey}=${value}`);
         }
         for (const [envKey, value] of Object.entries(global_vars || {})) {
+            if (envKey.startsWith('CUSTOM_PROVIDER_')) continue;
             lines.push(`export ${envKey}=${value}`);
         }
         await fsPromises.writeFile(rcPath, lines.join('\n') + (lines.length ? '\n' : ''));
@@ -2289,7 +2503,7 @@ function register(ctx) {
                     } else {
                         global_settings[settingKey] = value;
                     }
-                } else if (envKey) {
+                } else if (envKey && !envKey.startsWith('CUSTOM_PROVIDER_')) {
                     global_vars[envKey] = value;
                 }
             }
@@ -2951,7 +3165,7 @@ function register(ctx) {
     return { success: true, message: 'Activity patterns computed from local history' };
   });
 
-  const finetuneJobsDir = path.join(os.homedir(), '.npcsh', 'incognide', 'finetune_jobs');
+  const finetuneJobsDir = path.join(INCOGNIDE_HOME, 'finetune_jobs');
 
   function resolveFinetuneHelper(scriptName) {
     const { app } = require('electron');
@@ -3010,6 +3224,36 @@ function register(ctx) {
   ipcMain.handle('finetune-diffusers', async (event, params) => {
     try {
       const workspacePath = params.workspacePath || params.currentPath;
+      if (params.schedule) {
+        const id = generateId?.() || `ft_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        await dbQuery(
+          `INSERT INTO scheduled_jobs (id, name, job_type, schedule, workspace_path, python_env_config, payload, enabled, created_at, updated_at)
+           VALUES (?, ?, 'finetune_diffusers', ?, ?, ?, ?, 1, datetime('now'), datetime('now'))`,
+          [
+            id,
+            params.name || `Diffusers fine-tune ${new Date().toLocaleString()}`,
+            params.schedule,
+            workspacePath,
+            params.pythonEnvConfig ? JSON.stringify(params.pythonEnvConfig) : null,
+            JSON.stringify({
+              images: params.images,
+              captions: params.captions,
+              output_name: params.outputName,
+              output_path: params.outputPath,
+              epochs: params.epochs,
+              batch_size: params.batchSize,
+              learning_rate: params.learningRate,
+            }),
+          ]
+        );
+        try {
+          const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+          if (state?.[0]?.port) {
+            await fetch(`http://127.0.0.1:${state[0].port}/reload`, { method: 'POST', signal: AbortSignal.timeout(2000) });
+          }
+        } catch {}
+        return { scheduled: true, id };
+      }
       return await spawnFinetuneJob('run_finetune_diffusers.py', workspacePath, {
         images: params.images,
         captions: params.captions,
@@ -3030,6 +3274,28 @@ function register(ctx) {
   ipcMain.handle('finetune-instruction', async (event, params) => {
     try {
       const workspacePath = params.workspacePath || params.currentPath;
+      if (params.schedule) {
+        const id = generateId?.() || `ft_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        await dbQuery(
+          `INSERT INTO scheduled_jobs (id, name, job_type, schedule, workspace_path, python_env_config, payload, enabled, created_at, updated_at)
+           VALUES (?, ?, 'finetune_instruction', ?, ?, ?, ?, 1, datetime('now'), datetime('now'))`,
+          [
+            id,
+            params.name || `Instruction fine-tune ${new Date().toLocaleString()}`,
+            params.schedule,
+            workspacePath,
+            params.pythonEnvConfig ? JSON.stringify(params.pythonEnvConfig) : null,
+            JSON.stringify(params),
+          ]
+        );
+        try {
+          const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+          if (state?.[0]?.port) {
+            await fetch(`http://127.0.0.1:${state[0].port}/reload`, { method: 'POST', signal: AbortSignal.timeout(2000) });
+          }
+        } catch {}
+        return { scheduled: true, id };
+      }
       return await spawnFinetuneJob('run_finetune_instruction.py', workspacePath, params);
     } catch (error) {
       console.error('Finetune instruction error:', error);
@@ -3283,6 +3549,169 @@ function register(ctx) {
     } catch (err) {
       log(`[UPDATE] Download error: ${err.message}`);
       return { success: false, error: err.message };
+    }
+  });
+
+  // ── Custom Providers YAML ──────────────────────────────────────────────
+  ipcMain.handle('custom-providers:read', async () => {
+    try {
+      const filePath = path.join(INCOGNIDE_HOME, 'custom_providers.yaml');
+      await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
+      try {
+        const content = await fsPromises.readFile(filePath, 'utf8');
+        const parsed = yaml.load(content);
+        return { providers: parsed?.providers || {} };
+      } catch {
+        return { providers: {} };
+      }
+    } catch (err) {
+      return { error: err.message, providers: {} };
+    }
+  });
+
+  ipcMain.handle('custom-providers:write', async (event, providers) => {
+    try {
+      const filePath = path.join(INCOGNIDE_HOME, 'custom_providers.yaml');
+      await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
+      const content = yaml.dump({ providers: providers || {} }, { lineWidth: -1 });
+      await fsPromises.writeFile(filePath, content, 'utf8');
+      return { success: true };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  // ── Registered Teams YAML ──────────────────────────────────────────────
+  ipcMain.handle('registered-teams:read', async () => {
+    try {
+      const filePath = path.join(INCOGNIDE_HOME, 'registered_teams.yaml');
+      await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
+      let teams;
+      try {
+        const content = await fsPromises.readFile(filePath, 'utf8');
+        const parsed = yaml.load(content);
+        teams = parsed?.teams || {};
+      } catch {
+        teams = {
+          incognide: { path: path.join(INCOGNIDE_HOME, 'npc_team'), name: 'Incognide' },
+        };
+      }
+      // Resolve ~ in paths for frontend consumption
+      for (const [key, team] of Object.entries(teams)) {
+        if (team.path && typeof team.path === 'string') {
+          team.path = team.path.replace(/^~(?=\/|$)/, os.homedir());
+        }
+      }
+      return { teams };
+    } catch (err) {
+      return { error: err.message, teams: {} };
+    }
+  });
+
+  ipcMain.handle('registered-teams:write', async (event, teams) => {
+    try {
+      const filePath = path.join(INCOGNIDE_HOME, 'registered_teams.yaml');
+      await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
+      const content = yaml.dump({ teams: teams || {} }, { lineWidth: -1 });
+      await fsPromises.writeFile(filePath, content, 'utf8');
+      return { success: true };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('registered-teams:scan', async (event, currentPath) => {
+    try {
+      const teamsPath = path.join(INCOGNIDE_HOME, 'registered_teams.yaml');
+      let registered = {};
+      try {
+        const content = await fsPromises.readFile(teamsPath, 'utf8');
+        const parsed = yaml.load(content);
+        registered = parsed?.teams || {};
+      } catch {}
+
+      const registeredPaths = new Set(Object.values(registered).map((t) => {
+        return (t.path || '').replace(/^~(?=\/|$)/, os.homedir());
+      }));
+
+      const discovered = [];
+
+      // Scan candidate directories for npc_team/ presence
+      const candidates = [
+        { name: 'npcsh', dir: path.join(os.homedir(), '.npcsh') },
+        { name: 'incognide', dir: INCOGNIDE_HOME },
+      ];
+
+      // Also check npcpy teams.yaml
+      try {
+        const npcpyTeamsPath = path.join(os.homedir(), '.npcsh', 'teams.yaml');
+        const content = await fsPromises.readFile(npcpyTeamsPath, 'utf8');
+        const parsed = yaml.load(content);
+        if (parsed?.teams) {
+          for (const [key, teamPath] of Object.entries(parsed.teams)) {
+            candidates.push({ name: key, dir: String(teamPath).replace(/^~(?=\/|$)/, os.homedir()) });
+          }
+        }
+      } catch {}
+
+      // Also check one level deep under .npcsh for subdirectories that might be teams
+      try {
+        const npcshEntries = await fsPromises.readdir(path.join(os.homedir(), '.npcsh'));
+        for (const entry of npcshEntries) {
+          if (entry.startsWith('.') || entry === 'incognide' || entry === 'npc_team') continue;
+          candidates.push({ name: entry, dir: path.join(os.homedir(), '.npcsh', entry) });
+        }
+      } catch {}
+
+      // Check project directory
+      if (currentPath) {
+        candidates.push({ name: 'project', dir: currentPath });
+      }
+
+      for (const candidate of candidates) {
+        // The candidate itself might be a npc_team dir, or it might contain one
+        const dirsToCheck = [candidate.dir];
+
+        // Check if the candidate dir itself looks like a team dir
+        const npcTeamDir = path.join(candidate.dir, 'npc_team');
+        try { await fsPromises.access(npcTeamDir); dirsToCheck.push(npcTeamDir); } catch {}
+
+        for (const dir of dirsToCheck) {
+          if (registeredPaths.has(dir)) continue;
+
+          let hasNpcs = false, hasCtx = false, hasJinxes = false, hasAgents = false, npcCount = 0, ctxName = '';
+
+          try {
+            const entries = await fsPromises.readdir(dir);
+            const npcFiles = entries.filter(f => f.endsWith('.npc'));
+            const ctxFiles = entries.filter(f => f.endsWith('.ctx'));
+            const hasMcpJson = entries.some(f => f === '.mcp.json' || f === '.mcp_servers.json' || f === 'mcp_servers.json');
+
+            if (npcFiles.length > 0) { hasNpcs = true; npcCount = npcFiles.length; }
+            if (ctxFiles.length > 0) { hasCtx = true; ctxName = ctxFiles[0].replace('.ctx', ''); }
+            try { await fsPromises.access(path.join(dir, 'jinxes')); hasJinxes = true; } catch {}
+            try { await fsPromises.access(path.join(dir, 'agents')); hasAgents = true; } catch {}
+            try { const agMs = entries.filter(f => f.toLowerCase() === 'agents.md'); if (agMs.length > 0) hasAgents = true; } catch {}
+
+            if (hasNpcs || hasCtx || hasJinxes || hasAgents || hasMcpJson) {
+              const name = ctxName || candidate.name;
+              discovered.push({
+                name,
+                path: dir,
+                hasNpcs,
+                hasJinxes,
+                hasCtx,
+                hasAgents,
+                npcCount,
+              });
+            }
+          } catch {}
+        }
+      }
+
+      return { discovered };
+    } catch (err) {
+      return { error: err.message, discovered: [] };
     }
   });
 }

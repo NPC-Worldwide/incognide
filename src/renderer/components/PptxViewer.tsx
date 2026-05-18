@@ -2203,7 +2203,10 @@ const PptxViewer = ({
           <div className="w-px h-4 bg-gray-600 mx-1" />
           <button onClick={enterPresentation} className="p-1.5 theme-hover rounded" title="Present"><Play size={14} /></button>
           <button onClick={save} disabled={!hasChanges} className="p-1.5 theme-hover rounded disabled:opacity-30" title="Save"><Save size={14} /></button>
-          <button onClick={() => closeContentPane?.(nodeId, findNodePath?.(rootLayoutNode, nodeId) || [])} className="p-1.5 theme-hover rounded-full" title="Close"><X size={14} /></button>
+          <button onClick={() => {
+            const np = findNodePath?.(rootLayoutNode, nodeId);
+            if (np) closeContentPane?.(nodeId, np);
+          }} className="p-1.5 theme-hover rounded-full" title="Close"><X size={14} /></button>
         </div>
       </div>
 

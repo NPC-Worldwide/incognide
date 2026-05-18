@@ -1206,7 +1206,10 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
             cleanups.push(api.api.onMenuCloseTab(() => {
                 const activePaneId = activeContentPaneIdRef.current;
                 if (activePaneId) {
-                    closeContentPaneRef.current?.(activePaneId, []);
+                    const nodePath = findNodePath(rootLayoutNodeRef.current, activePaneId);
+                    if (nodePath) {
+                        closeContentPaneRef.current?.(activePaneId, nodePath);
+                    }
                 }
             }));
         }
@@ -3499,7 +3502,10 @@ const renderStlViewer = useCallback(({ nodeId }) => {
 const renderRadioPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return (
         <RadioPane
-            onClose={() => closeContentPane?.(nodeId, findNodePath?.(rootLayoutNode, nodeId) || [])}
+            onClose={() => {
+                const np = findNodePath?.(rootLayoutNode, nodeId);
+                if (np) closeContentPane?.(nodeId, np);
+            }}
             fetchFn={(url: string, options?: any) => (window as any).api?.proxyFetch?.(url, options)}
             listPortsFn={() => (window as any).api?.listSerialPorts?.()}
         />

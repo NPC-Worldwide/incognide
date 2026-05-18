@@ -68,6 +68,9 @@ jobs:
           fi
           echo "No import errors in build"
 
+      - name: Run unit tests
+        run: npm test
+
   # =============================================================================
   # Backend serve.py tests (cross-platform)
   # =============================================================================

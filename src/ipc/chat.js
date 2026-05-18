@@ -7,6 +7,7 @@ const { shell } = require('electron');
 const { spawn } = require('child_process');
 const crypto = require('crypto');
 const sqlite3 = require('sqlite3');
+const yaml = require('js-yaml');
 
 const dbPath = path.join(os.homedir(), 'npcsh_history.db');
 
@@ -190,7 +191,21 @@ function register(ctx) {
     DEFAULT_CONFIG,
     readPythonEnvConfig,
     resolvePythonPath,
+    INCOGNIDE_HOME: ctxIncognideHome,
   } = ctx;
+
+  const INCOGNIDE_HOME = ctxIncognideHome || path.join(os.homedir(), '.incognide');
+
+  async function getCustomProviders() {
+    try {
+      const cpPath = path.join(INCOGNIDE_HOME, 'custom_providers.yaml');
+      const content = await fsPromises.readFile(cpPath, 'utf8');
+      const parsed = yaml.load(content);
+      return parsed?.providers || {};
+    } catch {
+      return {};
+    }
+  }
 
   async function resolveWorkspacePython(workspacePath) {
     if (!workspacePath) return null;
@@ -621,6 +636,7 @@ function register(ctx) {
         max_tokens: data.max_tokens,
 
         disableThinking: data.disableThinking || false,
+        customProviders: await getCustomProviders(),
       };
 
       const response = await fetch(apiUrl, {

@@ -2035,7 +2035,9 @@ const PdfViewer = ({
 };
 
 const arePropsEqual = (prevProps: any, nextProps: any) => {
-    return prevProps.nodeId === nextProps.nodeId;
+    return prevProps.nodeId === nextProps.nodeId &&
+        prevProps.pdfHighlightsTrigger === nextProps.pdfHighlightsTrigger &&
+        prevProps.currentPath === nextProps.currentPath;
 };
 
 export default memo(PdfViewer, arePropsEqual);

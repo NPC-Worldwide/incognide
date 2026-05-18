@@ -385,7 +385,35 @@ const ensureTablesExist = async () => {
       status TEXT DEFAULT 'success',
       duration_ms INTEGER,
       folder_path TEXT,
+      job_id TEXT,
+      job_type TEXT,
+      log_file_path TEXT,
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS scheduled_jobs (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      job_type TEXT NOT NULL CHECK(job_type IN ('jinx','finetune_instruction','finetune_diffusers','inference')),
+      schedule TEXT NOT NULL,
+      command TEXT,
+      npc_name TEXT,
+      jinx_name TEXT,
+      payload TEXT,
+      workspace_path TEXT,
+      python_env_config TEXT,
+      enabled INTEGER DEFAULT 1,
+      next_run_at DATETIME,
+      last_run_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS daemon_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      pid INTEGER,
+      port INTEGER,
+      started_at DATETIME,
+      last_heartbeat DATETIME,
+      status TEXT
     )`,
   ];
 
@@ -401,6 +429,9 @@ const ensureTablesExist = async () => {
     CREATE INDEX IF NOT EXISTS idx_navigations_folder ON browser_navigations(folder_path);
     CREATE INDEX IF NOT EXISTS idx_jinx_log_name ON jinx_execution_log(jinx_name);
     CREATE INDEX IF NOT EXISTS idx_jinx_log_folder ON jinx_execution_log(folder_path);
+    CREATE INDEX IF NOT EXISTS idx_jinx_log_job_id ON jinx_execution_log(job_id);
+    CREATE INDEX IF NOT EXISTS idx_sched_jobs_enabled ON scheduled_jobs(enabled);
+    CREATE INDEX IF NOT EXISTS idx_sched_jobs_next ON scheduled_jobs(next_run_at);
   `;
 
   try {
@@ -420,6 +451,9 @@ const ensureTablesExist = async () => {
     await addColumnIfMissing('browser_history', 'pane_id', 'TEXT');
     await addColumnIfMissing('browser_history', 'navigation_type', "TEXT DEFAULT 'click'");
     await addColumnIfMissing('pdf_highlights', 'color', "TEXT DEFAULT 'yellow'");
+    await addColumnIfMissing('jinx_execution_log', 'job_id', 'TEXT');
+    await addColumnIfMissing('jinx_execution_log', 'job_type', 'TEXT');
+    await addColumnIfMissing('jinx_execution_log', 'log_file_path', 'TEXT');
 
     log('[DB] All tables are ready.');
   } catch (error) {
