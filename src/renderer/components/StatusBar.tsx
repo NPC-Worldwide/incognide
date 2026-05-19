@@ -101,7 +101,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
 
     useEffect(() => {
         checkHealth();
-        pollRef.current = setInterval(checkHealth, 10000);
+        pollRef.current = setInterval(checkHealth, 600000);
         return () => { if (pollRef.current) clearInterval(pollRef.current); };
     }, [checkHealth]);
 
