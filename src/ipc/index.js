@@ -17,6 +17,7 @@ function registerAll(ctx) {
     ...ctx,
     readPythonEnvConfig: settings.readPythonEnvConfig,
     resolvePythonPath: settings.resolvePythonPath,
+    INCOGNIDE_HOME: ctx.INCOGNIDE_HOME,
   };
 
   browser.register(fullCtx);

@@ -75,6 +75,11 @@ const NPCTeamMenu = ({
     });
     const [isFineTuning, setIsFineTuning] = useState(false);
     const [fineTuneStatus, setFineTuneStatus] = useState(null);
+    const [fineTuneRunMode, setFineTuneRunMode] = useState<'now' | 'schedule'>('now');
+    const [fineTuneSchedule, setFineTuneSchedule] = useState('0 0 * * *');
+    const [fineTunePythonEnv, setFineTunePythonEnv] = useState<any>(null);
+    const [pythonEnvs, setPythonEnvs] = useState<any[]>([]);
+    const [pythonEnvsLoading, setPythonEnvsLoading] = useState(false);
 
     const [kgData, setKgData] = useState({ nodes: [], links: [] });
     const [kgLoading, setKgLoading] = useState(false);
@@ -91,6 +96,13 @@ const NPCTeamMenu = ({
     useEffect(() => {
         const loadData = async () => {
             if (!isOpen) return;
+            
+            // Validate paths before making API calls
+            if (!isGlobal && (!currentPath || typeof currentPath !== 'string')) {
+                setError('No project folder selected');
+                setLoading(false);
+                return;
+            }
             setLoading(true);
             setError(null);
 
@@ -194,7 +206,7 @@ const NPCTeamMenu = ({
 
             console.log('Starting NPC fine-tune with', trainingData.length, 'examples');
 
-            const response = await window.api?.fineTuneInstruction?.({
+            const params: any = {
                 trainingData,
                 outputName: fineTuneConfig.outputName || `${selectedNpc.name}_model`,
                 baseModel: fineTuneConfig.baseModel,
@@ -208,12 +220,32 @@ const NPCTeamMenu = ({
                 npc: selectedNpc.name,
                 formatStyle: 'gemma',
                 workspacePath: currentPath,
-            });
+            };
+
+            if (fineTuneRunMode === 'schedule') {
+                params.schedule = fineTuneSchedule;
+                params.name = `${selectedNpc.name}_scheduled_finetune`;
+                if (fineTunePythonEnv) {
+                    params.pythonEnvConfig = {
+                        type: fineTunePythonEnv.type,
+                        venvPath: fineTunePythonEnv.venvPath,
+                        pyenvVersion: fineTunePythonEnv.pyenvVersion,
+                        condaEnv: fineTunePythonEnv.condaEnv,
+                        condaRoot: fineTunePythonEnv.condaRoot,
+                        customPath: fineTunePythonEnv.customPath,
+                    };
+                }
+            }
+
+            const response = await window.api?.fineTuneInstruction?.(params);
 
             console.log('Fine-tune response:', response);
 
             if (response?.error) {
                 setFineTuneStatus(`Error: ${response.error}`);
+                setIsFineTuning(false);
+            } else if (response?.scheduled) {
+                setFineTuneStatus(`Scheduled! Job will run on cron: ${fineTuneSchedule}`);
                 setIsFineTuning(false);
             } else if (response?.job_id) {
                 setFineTuneStatus(`Training started! Job: ${response.job_id}`);
@@ -1286,6 +1318,84 @@ const NPCTeamMenu = ({
                                     />
                                 </div>
                             </div>
+                        </div>
+
+                        <div className="space-y-3 mb-4 border-t theme-border pt-3">
+                            <div className="flex items-center gap-4">
+                                <label className="flex items-center gap-2 text-sm">
+                                    <input
+                                        type="radio"
+                                        checked={fineTuneRunMode === 'now'}
+                                        onChange={() => setFineTuneRunMode('now')}
+                                        className="accent-amber-500"
+                                    />
+                                    Run now
+                                </label>
+                                <label className="flex items-center gap-2 text-sm">
+                                    <input
+                                        type="radio"
+                                        checked={fineTuneRunMode === 'schedule'}
+                                        onChange={() => setFineTuneRunMode('schedule')}
+                                        className="accent-amber-500"
+                                    />
+                                    Schedule
+                                </label>
+                            </div>
+
+                            {fineTuneRunMode === 'schedule' && (
+                                <>
+                                    <div>
+                                        <label className="text-xs theme-text-secondary block mb-1">Cron Schedule</label>
+                                        <input
+                                            type="text"
+                                            value={fineTuneSchedule}
+                                            onChange={(e) => setFineTuneSchedule(e.target.value)}
+                                            placeholder="0 0 * * *"
+                                            className="w-full theme-input p-2 text-sm font-mono"
+                                        />
+                                        <p className="text-[10px] text-gray-500 mt-1">Example: 0 2 * * 0 = weekly on Sunday at 2am</p>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs theme-text-secondary block mb-1">Python Environment</label>
+                                        <button
+                                            onClick={async () => {
+                                                setPythonEnvsLoading(true);
+                                                try {
+                                                    const detected = await (window as any).api?.pythonEnvDetect?.({ workspacePath: currentPath });
+                                                    setPythonEnvs(detected || []);
+                                                    if (detected?.length > 0 && !fineTunePythonEnv) {
+                                                        const firstUsable = detected.find((d: any) => d.path && !d.notInstalled);
+                                                        if (firstUsable) setFineTunePythonEnv(firstUsable);
+                                                    }
+                                                } catch {}
+                                                setPythonEnvsLoading(false);
+                                            }}
+                                            disabled={pythonEnvsLoading}
+                                            className="w-full theme-input p-2 text-sm text-left flex items-center justify-between"
+                                        >
+                                            <span>{fineTunePythonEnv ? `${fineTunePythonEnv.name} (${fineTunePythonEnv.type})` : 'Detect environments...'}</span>
+                                            {pythonEnvsLoading ? <Loader size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                                        </button>
+                                        {pythonEnvs.length > 0 && (
+                                            <select
+                                                value={fineTunePythonEnv?.path || ''}
+                                                onChange={(e) => {
+                                                    const env = pythonEnvs.find((p: any) => p.path === e.target.value);
+                                                    setFineTunePythonEnv(env || null);
+                                                }}
+                                                className="w-full theme-input p-2 text-sm mt-1"
+                                            >
+                                                <option value="">Select environment...</option>
+                                                {pythonEnvs.map((env: any) => (
+                                                    <option key={env.path || env.name} value={env.path || ''}>
+                                                        {env.name}{env.notInstalled ? ' (not installed)' : ''}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        )}
+                                    </div>
+                                </>
+                            )}
                         </div>
 
                         {fineTuneStatus && (

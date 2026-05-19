@@ -168,7 +168,7 @@ const McpManager: React.FC<McpManagerProps> = ({ currentPath, embedded = true })
                     path: s.path || s.url || '',
                     label: s.label || s.path || '',
                     command: s.path || '',
-                    scope: s.path?.includes('.npcsh') ? 'global' : 'project',
+                    scope: s.path?.includes('.incognide') || s.path?.includes('.npcsh') ? 'global' : 'project',
                 })));
             }
         } catch {}
@@ -279,7 +279,7 @@ const McpManager: React.FC<McpManagerProps> = ({ currentPath, embedded = true })
                 : serverValue;
 
             if (addScope === 'global') {
-                const current = await (window as any).api.getGlobalContext('npcsh');
+                const current = await (window as any).api.getGlobalContext('incognide');
                 const ctx = current?.context || {};
                 const servers = ctx.mcp_servers || [];
 
@@ -291,7 +291,7 @@ const McpManager: React.FC<McpManagerProps> = ({ currentPath, embedded = true })
                 } else {
                     servers.push(entry);
                 }
-                await (window as any).api.saveGlobalContext({ ...ctx, mcp_servers: servers }, 'npcsh');
+                await (window as any).api.saveGlobalContext({ ...ctx, mcp_servers: servers }, 'incognide');
             } else {
                 const current = await (window as any).api.getProjectContext(currentPath);
                 const ctx = current?.context || {};
@@ -353,7 +353,7 @@ const McpManager: React.FC<McpManagerProps> = ({ currentPath, embedded = true })
             }
             if (!url.endsWith('.git')) url += '.git';
             const repoName = url.split('/').pop()?.replace('.git', '') || 'team';
-            const destPath = `~/.npcsh/teams/${repoName}`;
+            const destPath = `~/.incognide/teams/${repoName}`;
 
             // Clone via terminal-like exec
             await (window as any).api.executeCommand?.(`git clone ${url} ${destPath}`);
@@ -386,12 +386,12 @@ const McpManager: React.FC<McpManagerProps> = ({ currentPath, embedded = true })
 
             const isGlobal = server.origin?.includes('global') || server.origin?.startsWith('auto:');
             if (isGlobal) {
-                const current = await (window as any).api.getGlobalContext('npcsh');
+                const current = await (window as any).api.getGlobalContext('incognide');
                 const ctx = current?.context || {};
                 ctx.mcp_servers = (ctx.mcp_servers || []).filter(
                     (s: any) => (typeof s === 'string' ? s : s.value) !== server.serverPath
                 );
-                await (window as any).api.saveGlobalContext(ctx, 'npcsh');
+                await (window as any).api.saveGlobalContext(ctx, 'incognide');
             } else {
                 const current = await (window as any).api.getProjectContext(currentPath);
                 const ctx = current?.context || {};
@@ -578,7 +578,7 @@ const McpManager: React.FC<McpManagerProps> = ({ currentPath, embedded = true })
                                         type="text"
                                         value={newServerPath}
                                         onChange={(e) => setNewServerPath(e.target.value)}
-                                        placeholder="Path to MCP server script (e.g., ~/.npcsh/my_mcp_server.py)"
+                                        placeholder="Path to MCP server script (e.g., ~/.incognide/my_mcp_server.py)"
                                         className="flex-1 theme-input text-xs font-mono px-2 py-1.5 rounded"
                                         onKeyDown={(e) => e.key === 'Enter' && handleAddServer()}
                                         autoFocus
@@ -736,7 +736,7 @@ const McpManager: React.FC<McpManagerProps> = ({ currentPath, embedded = true })
                                         </button>
                                     </div>
                                     <div className="text-[9px] theme-text-muted mt-1">
-                                        Clones the repo into <code>~/.npcsh/teams/</code> and registers it as an MCP server
+                                        Clones the repo into <code>~/.incognide/teams/</code> and registers it as an MCP server
                                     </div>
                                 </div>
                             </div>

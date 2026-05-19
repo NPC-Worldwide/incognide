@@ -1,6 +1,6 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import {
-    X, FileJson, Users, Wrench, Clock, Database, Plus, Trash2, Play, Pause, Server, Mail, Save,
+    X, FileJson, Search, Users, Wrench, Clock, Database, Plus, Trash2, Play, Pause, Server, Mail, Save,
     Brain, GitBranch, Cpu, Box, Code, Mic, Globe, Eye, EyeOff, Check, Zap
 } from 'lucide-react';
 import SmokestackIcon from './icons/SmokestackIcon';
@@ -17,7 +17,6 @@ import CronDaemonPanel from './CronDaemonPanel';
 import MemoryManagement from './MemoryManagement';
 import ModelManager from './ModelManager';
 import VoiceManager from './VoiceManager';
-import PythonEnvSettings from './PythonEnvSettings';
 const KnowledgeGraphEditor = lazy(() => import('./KnowledgeGraphEditor'));
 
 interface TeamManagementProps {
@@ -25,6 +24,7 @@ interface TeamManagementProps {
     onClose: () => void;
     currentPath: string;
     startNewConversation?: (npc: any) => Promise<any>;
+    startNewChat?: (model: string, provider: string) => void;
     npcList?: any[];
     jinxList?: any[];
     embedded?: boolean;
@@ -34,7 +34,7 @@ interface TeamManagementProps {
     onTabChange?: (tab: TabId) => void;
 }
 
-type TabId = 'context' | 'npcs' | 'jinxes' | 'memory' | 'knowledge' | 'cron' | 'mcp' | 'models' | 'databases' | 'ai-settings' | 'llm-models' | 'python' | 'voice' | 'providers';
+type TabId = 'context' | 'npcs' | 'jinxes' | 'memory' | 'knowledge' | 'cron' | 'mcp' | 'models' | 'databases' | 'ai-settings' | 'llm-models' | 'voice';
 
 const SqlModelsContent = ({ currentPath, npcList = [], jinxList = [], isGlobal }: { currentPath: string; npcList?: any[]; jinxList?: any[]; isGlobal: boolean }) => {
     const [models, setModels] = useState<any[]>([]);
@@ -47,7 +47,7 @@ const SqlModelsContent = ({ currentPath, npcList = [], jinxList = [], isGlobal }
     const [jinxes, setJinxes] = useState<any[]>([]);
 
     const [availableDatabases, setAvailableDatabases] = useState<{ name: string; path: string }[]>([]);
-    const [selectedDatabase, setSelectedDatabase] = useState<string>('~/npcsh_history.db');
+    const [selectedDatabase, setSelectedDatabase] = useState<string>('~/incognide_history.db');
 
     const [modelName, setModelName] = useState('');
     const [modelDescription, setModelDescription] = useState('');
@@ -91,7 +91,7 @@ const SqlModelsContent = ({ currentPath, npcList = [], jinxList = [], isGlobal }
 
     const fetchAvailableDatabases = async () => {
         const databases: { name: string; path: string }[] = [
-            { name: 'Global History (npcsh_history.db)', path: '~/npcsh_history.db' }
+            { name: 'Global History (incognide_history.db)', path: '~/incognide_history.db' }
         ];
 
         try {
@@ -612,7 +612,7 @@ const DatabasesContent = ({ currentPath, isGlobal }: { currentPath: string; isGl
                     type="text"
                     value={newDbPath}
                     onChange={(e) => setNewDbPath(e.target.value)}
-                    placeholder="~/npcsh_history.db"
+                    placeholder="~/incognide_history.db"
                     className="flex-1 theme-input text-sm font-mono"
                     onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
                 />
@@ -631,14 +631,14 @@ const DatabasesContent = ({ currentPath, isGlobal }: { currentPath: string; isGl
 };
 
 const AI_DEFAULT_SETTINGS = {
-    model: 'llama3.2',
+    model: 'llama3',
     provider: 'ollama',
     embedding_model: 'nomic-text-embed',
     embedding_provider: 'ollama',
     search_provider: 'duckduckgo',
     default_to_agent: false,
     is_predictive_text_enabled: false,
-    predictive_text_model: 'llama3.2',
+    predictive_text_model: 'llama3',
     predictive_text_provider: 'ollama',
 };
 
@@ -647,6 +647,7 @@ const AiSettingsContent = () => {
     const [globalVars, setGlobalVars] = useState<{ key: string; value: string }[]>([{ key: '', value: '' }]);
     const [visibleFields, setVisibleFields] = useState<Record<string, boolean>>({});
     const [saving, setSaving] = useState(false);
+    const [customProviders, setCustomProviders] = useState<Record<string, any>>({});
 
     const isSensitiveField = (key: string) => {
         const sensitiveWords = ['key', 'token', 'secret', 'password', 'api'];
@@ -660,10 +661,13 @@ const AiSettingsContent = () => {
             setSettings({ ...AI_DEFAULT_SETTINGS, ...(data.global_settings || {}) });
             if (data.global_vars && Object.keys(data.global_vars).length > 0) {
                 const parsed = Object.entries(data.global_vars)
-                    .filter(([key]) => !key.startsWith('CUSTOM_PROVIDER_'))
                     .map(([key, value]) => ({ key, value: value as string }));
                 setGlobalVars(parsed.length > 0 ? parsed : [{ key: '', value: '' }]);
             }
+            try {
+                const cpData = await (window as any).api.customProvidersRead();
+                if (cpData?.providers) setCustomProviders(cpData.providers);
+            } catch {}
         })();
     }, []);
 
@@ -672,15 +676,10 @@ const AiSettingsContent = () => {
         try {
             const existingData = await (window as any).api.loadGlobalSettings();
             const existingSettings = existingData.global_settings || {};
-            const existingVars = existingData.global_vars || {};
 
             const newVars: Record<string, string> = {};
             globalVars.forEach(({ key, value }) => {
                 if (key && value) newVars[key] = value;
-            });
-            // Preserve CUSTOM_PROVIDER_ entries
-            Object.keys(existingVars).forEach(key => {
-                if (key.startsWith('CUSTOM_PROVIDER_')) newVars[key] = existingVars[key];
             });
 
             await (window as any).api.saveGlobalSettings({
@@ -692,7 +691,7 @@ const AiSettingsContent = () => {
         }
     };
 
-    const providerOptions = [
+    const baseProviderOptions = [
         { value: 'ollama', label: 'Ollama' },
         { value: 'openai', label: 'OpenAI' },
         { value: 'anthropic', label: 'Anthropic' },
@@ -700,6 +699,12 @@ const AiSettingsContent = () => {
         { value: 'lmstudio', label: 'LM Studio' },
         { value: 'llamacpp', label: 'llama.cpp' },
     ];
+    const customProviderOptions = Object.entries(customProviders).map(([name]) => ({
+        value: name, label: name.charAt(0).toUpperCase() + name.slice(1),
+    }));
+    const providerOptions = [...baseProviderOptions, ...customProviderOptions.filter(
+        cp => !baseProviderOptions.some(bp => bp.value === cp.value)
+    )];
 
     const searchProviderOptions = [
         { value: 'duckduckgo', label: 'DuckDuckGo' },
@@ -720,7 +725,7 @@ const AiSettingsContent = () => {
                             value={settings.model || ''}
                             onChange={e => setSettings({ ...settings, model: e.target.value })}
                             className="w-full theme-input text-sm"
-                            placeholder="llama3.2"
+                            placeholder="llama3"
                         />
                     </div>
                     <div>
@@ -776,44 +781,12 @@ const AiSettingsContent = () => {
                     <label className="flex items-center gap-2 cursor-pointer">
                         <input
                             type="checkbox"
-                            checked={!!settings.default_to_agent}
-                            onChange={e => setSettings({ ...settings, default_to_agent: e.target.checked })}
-                            className="w-4 h-4"
-                        />
-                        <span className="text-sm">Default to Agent Mode</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                            type="checkbox"
                             checked={!!settings.is_predictive_text_enabled}
                             onChange={e => setSettings({ ...settings, is_predictive_text_enabled: e.target.checked })}
                             className="w-4 h-4"
                         />
                         <span className="text-sm">Predictive Text (Copilot)</span>
                     </label>
-                    {settings.is_predictive_text_enabled && (
-                        <div className="grid grid-cols-2 gap-3 ml-6">
-                            <div>
-                                <label className="text-xs theme-text-muted block mb-1">Prediction Model</label>
-                                <input
-                                    type="text"
-                                    value={settings.predictive_text_model || ''}
-                                    onChange={e => setSettings({ ...settings, predictive_text_model: e.target.value })}
-                                    className="w-full theme-input text-sm"
-                                />
-                            </div>
-                            <div>
-                                <label className="text-xs theme-text-muted block mb-1">Prediction Provider</label>
-                                <select
-                                    value={settings.predictive_text_provider || 'ollama'}
-                                    onChange={e => setSettings({ ...settings, predictive_text_provider: e.target.value })}
-                                    className="w-full theme-input text-sm"
-                                >
-                                    {providerOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                </select>
-                            </div>
-                        </div>
-                    )}
                 </div>
 
                 <h3 className="text-sm font-semibold theme-text-secondary pt-2">API Keys &amp; Global Variables</h3>
@@ -886,173 +859,12 @@ const AiSettingsContent = () => {
     );
 };
 
-const ProvidersContent = () => {
-    const [providers, setProviders] = useState<{ name: string; baseUrl: string; apiKeyVar: string; headers: string }[]>([
-        { name: '', baseUrl: '', apiKeyVar: '', headers: '' }
-    ]);
-    const [detectedProviders, setDetectedProviders] = useState<{ provider: string; envVar: string; baseUrl: string }[]>([]);
-    const [saving, setSaving] = useState(false);
-
-    useEffect(() => {
-        (async () => {
-            const detected = await (window as any).api?.detectProviderKeys?.();
-            if (Array.isArray(detected)) setDetectedProviders(detected);
-        })();
-        (async () => {
-            const data = await (window as any).api.loadGlobalSettings();
-            if (data.error || !data.global_vars) return;
-            const loaded = Object.keys(data.global_vars)
-                .filter(key => key.startsWith('CUSTOM_PROVIDER_'))
-                .map(key => {
-                    const providerName = key.replace('CUSTOM_PROVIDER_', '');
-                    try {
-                        const config = JSON.parse(data.global_vars[key]);
-                        return {
-                            name: providerName.toLowerCase(),
-                            baseUrl: config.base_url || '',
-                            apiKeyVar: config.api_key_var || '',
-                            headers: config.headers ? JSON.stringify(config.headers, null, 2) : ''
-                        };
-                    } catch {
-                        return null;
-                    }
-                }).filter(Boolean) as { name: string; baseUrl: string; apiKeyVar: string; headers: string }[];
-            if (loaded.length > 0) setProviders(loaded);
-        })();
-    }, []);
-
-    const handleSave = async () => {
-        setSaving(true);
-        try {
-            const existingData = await (window as any).api.loadGlobalSettings();
-            const existingVars = existingData.global_vars || {};
-            // Keep non-provider vars
-            const newVars: Record<string, string> = {};
-            Object.keys(existingVars).forEach(key => {
-                if (!key.startsWith('CUSTOM_PROVIDER_')) newVars[key] = existingVars[key];
-            });
-            providers.forEach(provider => {
-                if (provider.name && provider.baseUrl) {
-                    const config: Record<string, any> = {
-                        base_url: provider.baseUrl,
-                        api_key_var: provider.apiKeyVar || `${provider.name.toUpperCase()}_API_KEY`,
-                    };
-                    if (provider.headers) {
-                        try { config.headers = JSON.parse(provider.headers); } catch {}
-                    }
-                    newVars[`CUSTOM_PROVIDER_${provider.name.toUpperCase()}`] = JSON.stringify(config);
-                }
-            });
-            await (window as any).api.saveGlobalSettings({
-                global_settings: existingData.global_settings || {},
-                global_vars: newVars,
-            });
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    return (
-        <div className="space-y-4">
-            {detectedProviders.length > 0 && (
-                <div className="theme-bg-tertiary p-4 rounded-lg">
-                    <h4 className="text-sm font-semibold theme-text-secondary mb-2 flex items-center gap-2">
-                        <Check size={14} className="text-green-400" /> Detected Providers ({detectedProviders.length})
-                    </h4>
-                    <p className="text-xs theme-text-muted mb-2">Found API keys for these providers in your environment or shell config.</p>
-                    <div className="grid grid-cols-2 gap-2">
-                        {detectedProviders.map(d => (
-                            <div key={d.envVar} className="flex items-center gap-2 px-2 py-1.5 theme-bg-primary rounded text-xs">
-                                <span className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" />
-                                <span className="font-medium capitalize">{d.provider}</span>
-                                <span className="font-mono text-[10px] theme-text-muted ml-auto">{d.envVar}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-            <p className="text-sm theme-text-muted">Define custom API providers for your models.</p>
-            {providers.map((provider, index) => (
-                <div key={index} className="theme-bg-tertiary p-4 rounded-lg space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                        <div>
-                            <label className="text-xs theme-text-muted block mb-1">Provider Name</label>
-                            <input
-                                type="text"
-                                value={provider.name}
-                                onChange={e => {
-                                    const next = [...providers];
-                                    next[index] = { ...next[index], name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') };
-                                    setProviders(next);
-                                }}
-                                placeholder="mycustomllm"
-                                className="w-full theme-input text-sm"
-                            />
-                        </div>
-                        <div>
-                            <label className="text-xs theme-text-muted block mb-1">Base URL</label>
-                            <input
-                                type="text"
-                                value={provider.baseUrl}
-                                onChange={e => {
-                                    const next = [...providers];
-                                    next[index] = { ...next[index], baseUrl: e.target.value };
-                                    setProviders(next);
-                                }}
-                                placeholder="https://api.example.com/v1"
-                                className="w-full theme-input text-sm"
-                            />
-                        </div>
-                    </div>
-                    <div>
-                        <label className="text-xs theme-text-muted block mb-1">API Key Env Var</label>
-                        <input
-                            type="text"
-                            value={provider.apiKeyVar}
-                            onChange={e => {
-                                const next = [...providers];
-                                next[index] = { ...next[index], apiKeyVar: e.target.value };
-                                setProviders(next);
-                            }}
-                            placeholder="MYCUSTOMLLM_API_KEY"
-                            className="w-full theme-input text-sm font-mono"
-                        />
-                    </div>
-                    <button
-                        onClick={() => {
-                            const next = providers.filter((_, i) => i !== index);
-                            setProviders(next.length > 0 ? next : [{ name: '', baseUrl: '', apiKeyVar: '', headers: '' }]);
-                        }}
-                        className="text-red-400 hover:bg-red-900/20 px-3 py-1.5 rounded text-sm flex items-center gap-2"
-                    >
-                        <Trash2 size={14} /> Remove Provider
-                    </button>
-                </div>
-            ))}
-            <div className="flex gap-3 pt-2">
-                <button
-                    onClick={() => setProviders([...providers, { name: '', baseUrl: '', apiKeyVar: '', headers: '' }])}
-                    className="theme-button px-3 py-1.5 rounded text-sm flex items-center gap-2"
-                >
-                    <Plus size={14} /> Add Provider
-                </button>
-                <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="theme-button-primary px-4 py-1.5 rounded text-sm flex items-center gap-2 disabled:opacity-50"
-                >
-                    <Save size={14} /> {saving ? 'Saving...' : 'Save Providers'}
-                </button>
-            </div>
-        </div>
-    );
-};
-
 const TeamManagement: React.FC<TeamManagementProps> = ({
     isOpen,
     onClose,
     currentPath,
     startNewConversation,
+    startNewChat,
     npcList = [],
     jinxList = [],
     embedded = false,
@@ -1065,13 +877,46 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
     useEffect(() => { if (forceTab) setActiveTab(forceTab); }, [forceTab]);
     const changeTab = (tab: TabId) => { setActiveTab(tab); onTabChange?.(tab); };
     const [isGlobal, setIsGlobal] = useState(false);
-    const [globalSource, setGlobalSource] = useState<'incognide' | 'npcsh'>('incognide');
+    const [registeredTeams, setRegisteredTeams] = useState<Record<string, { path: string; name: string }>>({});
+    const [globalSource, setGlobalSource] = useState<string>('incognide');
     const [hasProjectTeam, setHasProjectTeam] = useState<boolean | null>(null);
     const [initializingTeam, setInitializingTeam] = useState(false);
+    const [discoveredTeams, setDiscoveredTeams] = useState<any[]>([]);
+    const [scanning, setScanning] = useState(false);
+
+    const loadRegisteredTeams = async () => {
+        try {
+            const data = await (window as any).api.registeredTeamsRead();
+            if (data?.teams) setRegisteredTeams(data.teams);
+        } catch {}
+    };
+
+    useEffect(() => { loadRegisteredTeams(); }, []);
+
+    const handleScanTeams = async () => {
+        setScanning(true);
+        try {
+            const result = await (window as any).api.registeredTeamsScan(currentPath);
+            if (result?.discovered) setDiscoveredTeams(result.discovered);
+        } catch {}
+        setScanning(false);
+    };
+
+    const handleRegisterTeam = async (team: any) => {
+        try {
+            const data = await (window as any).api.registeredTeamsRead();
+            const teams = data?.teams || {};
+            const key = team.name.toLowerCase().replace(/[^a-z0-9_]/g, '');
+            teams[key] = { path: team.path, name: team.name };
+            await (window as any).api.registeredTeamsWrite(teams);
+            setRegisteredTeams(teams);
+            setDiscoveredTeams(prev => prev.filter(t => t.path !== team.path));
+        } catch {}
+    };
     const [resyncModal, setResyncModal] = useState(false);
     const [resyncing, setResyncing] = useState(false);
 
-    const globalPath = isGlobal ? (globalSource === 'npcsh' ? 'npcsh' : undefined) : undefined;
+    const globalPath = isGlobal ? (globalSource === 'npcsh' ? 'npcsh' : (registeredTeams[globalSource]?.path || undefined)) : undefined;
 
     useEffect(() => {
         const checkProjectTeam = async () => {
@@ -1132,8 +977,6 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
         { id: 'memory', label: 'Memory', icon: <MemoryIcon size={16} /> },
         { id: 'llm-models', label: 'Models', icon: <Box size={16} /> },
         { id: 'npcs', label: 'NPCs', icon: <Users size={16} /> },
-        { id: 'providers', label: 'Providers', icon: <Globe size={16} /> },
-        { id: 'python', label: 'Python Env', icon: <Code size={16} /> },
         { id: 'cron', label: 'Scheduler', icon: <SmokestackIcon size={16} /> },
         { id: 'voice', label: 'Voice / TTS', icon: <Mic size={16} /> },
     ];
@@ -1175,19 +1018,46 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                         </button>
                     </div>
                     {isGlobal && (
-                        <div className="flex items-center theme-bg-secondary rounded-lg p-0.5">
+                        <div className="flex items-center gap-1">
+                            <div className="flex items-center theme-bg-secondary rounded-lg p-0.5">
+                                {Object.entries(registeredTeams).map(([key, team]: [string, any]) => (
+                                    <button
+                                        key={key}
+                                        onClick={() => setGlobalSource(key)}
+                                        className={`px-2 py-1 rounded text-xs font-medium transition ${globalSource === key ? 'bg-purple-600 text-white' : 'theme-text-muted hover:text-white'}`}
+                                    >
+                                        {team.name || key}
+                                    </button>
+                                ))}
+                            </div>
                             <button
-                                onClick={() => setGlobalSource('incognide')}
-                                className={`px-2 py-1 rounded text-xs font-medium transition ${globalSource === 'incognide' ? 'bg-amber-600 text-white' : 'theme-text-muted hover:text-white'}`}
+                                onClick={handleScanTeams}
+                                disabled={scanning}
+                                className="px-2 py-1 rounded text-xs theme-text-muted hover:text-white hover:bg-white/5 transition flex items-center gap-1"
+                                title="Discover team directories"
                             >
-                                Incognide
+                                <Search size={12} /> {scanning ? 'Scanning...' : 'Discover'}
                             </button>
-                            <button
-                                onClick={() => setGlobalSource('npcsh')}
-                                className={`px-2 py-1 rounded text-xs font-medium transition ${globalSource === 'npcsh' ? 'bg-green-600 text-white' : 'theme-text-muted hover:text-white'}`}
-                            >
-                                npcsh
-                            </button>
+                        </div>
+                    )}
+                    {isGlobal && discoveredTeams.length > 0 && (
+                        <div className="relative">
+                            <div className="theme-bg-tertiary rounded-lg border theme-border max-h-60 overflow-y-auto">
+                                {discoveredTeams.map((team, i) => (
+                                    <div key={i} className="flex items-center justify-between px-3 py-1.5 border-b theme-border last:border-b-0 hover:bg-white/5 text-xs">
+                                        <div className="flex-1 min-w-0">
+                                            <span className="font-medium theme-text-primary">{team.name}</span>
+                                            <span className="theme-text-muted ml-1.5">{team.npcCount} NPC{team.npcCount !== 1 ? 's' : ''}</span>
+                                        </div>
+                                        <button
+                                            onClick={() => handleRegisterTeam(team)}
+                                            className="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-purple-600 hover:bg-purple-500 text-white flex-shrink-0"
+                                        >
+                                            Register
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     )}
                     {!embedded && (
@@ -1220,7 +1090,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
 
                 {/* Content */}
                 <div className="flex-1 flex flex-col overflow-hidden">
-                    {(activeTab === 'memory' || activeTab === 'cron' || activeTab === 'llm-models' || activeTab === 'python' || activeTab === 'voice' || activeTab === 'knowledge') ? null : (
+                    {(activeTab === 'memory' || activeTab === 'cron' || activeTab === 'llm-models' || activeTab === 'voice' || activeTab === 'knowledge') ? null : (
                         <div className="flex-1 overflow-auto p-6">
                             {activeTab === 'context' && (
                                 <CtxEditor
@@ -1286,9 +1156,6 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                             {activeTab === 'ai-settings' && (
                                 <AiSettingsContent />
                             )}
-                            {activeTab === 'providers' && (
-                                <ProvidersContent />
-                            )}
                         </div>
                     )}
                     {activeTab === 'memory' && (
@@ -1307,12 +1174,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                     )}
                     {activeTab === 'llm-models' && (
                         <div className="flex-1 flex flex-col overflow-hidden">
-                            <ModelManager />
-                        </div>
-                    )}
-                    {activeTab === 'python' && (
-                        <div className="flex-1 flex flex-col overflow-hidden">
-                            <PythonEnvSettings currentPath={currentPath} />
+                            <ModelManager onStartChat={startNewChat} />
                         </div>
                     )}
                     {activeTab === 'voice' && (
@@ -1684,14 +1546,14 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                             </li>
                                             <li className="flex items-start gap-2">
                                                 <span className="text-blue-400 mt-1">•</span>
-                                                <span>~/.npcshrc config is created if missing</span>
+                                                <span>~/.incogniderc config is created if missing</span>
                                             </li>
                                         </ul>
                                     </div>
 
                                     <div className="theme-bg-tertiary rounded-lg p-4">
                                         <h4 className="text-sm font-medium mb-2">Configuration Location</h4>
-                                        <code className="text-xs theme-text-muted font-mono">~/.npcsh/</code>
+                                        <code className="text-xs theme-text-muted font-mono">~/.incognide/</code>
                                         <div className="mt-2 text-xs theme-text-muted grid grid-cols-2 gap-1">
                                             <span>├── npc_team/</span>
                                             <span className="text-purple-400">NPCs</span>

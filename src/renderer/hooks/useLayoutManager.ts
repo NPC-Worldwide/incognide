@@ -25,6 +25,39 @@ export function getConversationStats(messages: any[]) {
     }, { messageCount: messages.length, inputTokens: 0, outputTokens: 0, totalCost: 0, models: new Set(), agents: new Set(), providers: new Set() });
 }
 
+export function removePaneFromTree(oldRoot: any, paneId: string, nodePath: number[]): any {
+    const newRoot = { ...oldRoot, children: [...oldRoot.children], sizes: oldRoot.sizes ? [...oldRoot.sizes] : undefined };
+    let parentNode = newRoot;
+    for (let i = 0; i < nodePath.length - 1; i++) {
+        const idx = nodePath[i];
+        parentNode.children[idx] = { ...parentNode.children[idx], children: [...parentNode.children[idx].children], sizes: parentNode.children[idx].sizes ? [...parentNode.children[idx].sizes] : undefined };
+        parentNode = parentNode.children[idx];
+    }
+
+    const indexToRemove = nodePath[nodePath.length - 1];
+
+    if (parentNode.type === 'split' && parentNode.children.length === 2) {
+        const siblingIndex = indexToRemove === 0 ? 1 : 0;
+        const sibling = parentNode.children[siblingIndex];
+
+        if (nodePath.length === 1) {
+            return sibling;
+        } else {
+            let grandParentNode = newRoot;
+            for (let i = 0; i < nodePath.length - 2; i++) {
+                grandParentNode = grandParentNode.children[nodePath[i]];
+            }
+            grandParentNode.children[nodePath[nodePath.length - 2]] = sibling;
+        }
+    } else if (parentNode.type === 'split' && parentNode.children.length > 2) {
+        parentNode.children.splice(indexToRemove, 1);
+        const equalSize = 100 / parentNode.children.length;
+        parentNode.sizes = parentNode.children.map(() => equalSize);
+    }
+
+    return newRoot;
+}
+
 export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter }: UseLayoutManagerParams) {
     const [rootLayoutNode, rawSetRootLayoutNode] = useState<any>(null);
     const [contentVersion, setContentVersion] = useState(0);
@@ -331,6 +364,12 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
             nodePath = findNodePath(rootLayoutNodeRef.current, paneId) || [];
         }
 
+        // Defensive: if path is empty but pane isn't root, recompute
+        if (nodePath.length === 0 && rootLayoutNodeRef.current?.type !== 'content') {
+            const computed = findNodePath(rootLayoutNodeRef.current, paneId);
+            if (computed) nodePath = computed;
+        }
+
         setRootLayoutNode((oldRoot: any) => {
             if (!oldRoot) return oldRoot;
 
@@ -340,41 +379,11 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
             }
 
             if (!nodePath || nodePath.length === 0) {
-                delete contentDataRef.current[paneId];
-                return null;
+                console.warn('[closeContentPane] No valid path for pane', paneId, '- skipping');
+                return oldRoot;
             }
 
-            const newRoot = { ...oldRoot, children: [...oldRoot.children], sizes: oldRoot.sizes ? [...oldRoot.sizes] : undefined };
-            let parentNode = newRoot;
-            for (let i = 0; i < nodePath.length - 1; i++) {
-                const idx = nodePath[i];
-                parentNode.children[idx] = { ...parentNode.children[idx], children: [...parentNode.children[idx].children], sizes: parentNode.children[idx].sizes ? [...parentNode.children[idx].sizes] : undefined };
-                parentNode = parentNode.children[idx];
-            }
-
-            const indexToRemove = nodePath[nodePath.length - 1];
-
-            if (parentNode.type === 'split' && parentNode.children.length === 2) {
-                const siblingIndex = indexToRemove === 0 ? 1 : 0;
-                const sibling = parentNode.children[siblingIndex];
-
-                if (nodePath.length === 1) {
-                    delete contentDataRef.current[paneId];
-                    return sibling;
-                } else {
-
-                    let grandParentNode = newRoot;
-                    for (let i = 0; i < nodePath.length - 2; i++) {
-                        grandParentNode = grandParentNode.children[nodePath[i]];
-                    }
-                    grandParentNode.children[nodePath[nodePath.length - 2]] = sibling;
-                }
-            } else if (parentNode.type === 'split' && parentNode.children.length > 2) {
-                parentNode.children.splice(indexToRemove, 1);
-                const equalSize = 100 / parentNode.children.length;
-                parentNode.sizes = parentNode.children.map(() => equalSize);
-            }
-
+            const newRoot = removePaneFromTree(oldRoot, paneId, nodePath);
             delete contentDataRef.current[paneId];
 
             setActiveContentPaneId((currentActive: string | null) => {

@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { MessageSquare, Bot, Search, X, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Users, Zap, FileCode } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { MessageSquare, Bot, Search, X, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Users, Zap, FileCode, Server, CircleDot, Circle, Settings2 } from 'lucide-react';
 
 interface RightSidebarProps {
     collapsed: boolean;
@@ -23,11 +23,69 @@ interface RightSidebarProps {
     createTeamManagementPane?: (opts?: { npcName?: string; tab?: string }) => void;
     onNpcSave?: (npc: any, changes: { model?: string; provider?: string; jinxes?: any[] }) => Promise<void> | void;
     onOpenFile?: (path: string) => void;
+    predictiveTextEnabled?: boolean;
+    onTogglePredictiveText?: () => void;
+    predictiveTextModel?: string | null;
+    predictiveTextProvider?: string | null;
+    predictiveTextDelay?: number;
+    onPredictiveTextSettingsChange?: (settings: { model?: string | null; provider?: string | null; delay?: number }) => void;
 }
+
+const CopilotSettingsPanel: React.FC<{
+    model: string | null;
+    delay: number;
+    availableModels?: any[];
+    onSave: (model: string | null, provider: string | null, delay: number) => void;
+}> = ({ model: propModel, delay: propDelay, availableModels, onSave }) => {
+    const [localModel, setLocalModel] = useState(propModel || '');
+    const [localDelay, setLocalDelay] = useState(propDelay);
+
+    useEffect(() => { setLocalModel(propModel || ''); }, [propModel]);
+    useEffect(() => { setLocalDelay(propDelay); }, [propDelay]);
+
+    const dirty = localModel !== (propModel || '') || localDelay !== propDelay;
+
+    const selectedModelObj = (availableModels || []).find((m: any) => m.value === localModel);
+
+    return (
+        <div className="px-2 pb-2 space-y-1.5">
+            <div className="flex items-center gap-1.5">
+                <span className="text-[10px] theme-text-muted w-14 shrink-0">Model</span>
+                <select
+                    value={localModel}
+                    onChange={(e) => setLocalModel(e.target.value)}
+                    className="flex-1 text-[10px] theme-bg-tertiary theme-border border rounded px-1 py-0.5 theme-text-primary"
+                >
+                    <option value="">—</option>
+                    {(availableModels || []).map((m: any) => (
+                        <option key={m.value} value={m.value}>{m.display_name || m.value}</option>
+                    ))}
+                </select>
+            </div>
+            <div className="flex items-center gap-1.5">
+                <span className="text-[10px] theme-text-muted w-14 shrink-0">Delay ms</span>
+                <input
+                    type="number"
+                    value={localDelay}
+                    onChange={(e) => setLocalDelay(parseInt(e.target.value) || 250)}
+                    className="flex-1 theme-input text-[10px] py-0.5 px-1 w-16"
+                />
+            </div>
+            {dirty && (
+                <button
+                    onClick={() => onSave(localModel || null, selectedModelObj?.provider || null, localDelay)}
+                    className="w-full text-[10px] py-1 bg-violet-600 hover:bg-violet-500 text-white rounded"
+                >
+                    Save
+                </button>
+            )}
+        </div>
+    );
+};
 
 const SectionHeader: React.FC<{
     label: string;
-    color: 'green' | 'indigo' | 'amber';
+    color: 'green' | 'indigo' | 'amber' | 'teal';
     count?: number;
     collapsed: boolean;
     onToggle: () => void;
@@ -37,7 +95,9 @@ const SectionHeader: React.FC<{
         ? 'from-green-800/40 to-emerald-700/35'
         : color === 'indigo'
             ? 'from-indigo-800/40 to-violet-700/35'
-            : 'from-amber-800/40 to-orange-700/35';
+            : color === 'teal'
+                ? 'from-teal-800/40 to-cyan-700/35'
+                : 'from-amber-800/40 to-orange-700/35';
     return (
         <div
             onClick={onToggle}
@@ -79,8 +139,15 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     createTeamManagementPane,
     onNpcSave,
     onOpenFile,
+    predictiveTextEnabled,
+    onTogglePredictiveText,
+    predictiveTextModel,
+    predictiveTextProvider,
+    predictiveTextDelay,
+    onPredictiveTextSettingsChange,
 }) => {
     const [expandedNpcs, setExpandedNpcs] = useState<Set<string>>(new Set());
+    const [copilotSettingsOpen, setCopilotSettingsOpen] = useState(false);
     const [expandedJinxGroups, setExpandedJinxGroups] = useState<Set<string>>(new Set());
     const toggleNpcExpanded = (key: string) => {
         setExpandedNpcs(prev => {
@@ -105,13 +172,18 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     const [jinxesCollapsed, setJinxesCollapsed] = useState(() => {
         try { return localStorage.getItem('incognide_rs_jinxesCollapsed') === 'true'; } catch { return true; }
     });
+    const [mcpCollapsed, setMcpCollapsed] = useState(() => {
+        try { return localStorage.getItem('incognide_rs_mcpCollapsed') === 'true'; } catch { return true; }
+    });
     React.useEffect(() => { try { localStorage.setItem('incognide_rs_convosCollapsed', String(convosCollapsed)); } catch {} }, [convosCollapsed]);
     React.useEffect(() => { try { localStorage.setItem('incognide_rs_npcsCollapsed', String(npcsCollapsed)); } catch {} }, [npcsCollapsed]);
     React.useEffect(() => { try { localStorage.setItem('incognide_rs_jinxesCollapsed', String(jinxesCollapsed)); } catch {} }, [jinxesCollapsed]);
+    React.useEffect(() => { try { localStorage.setItem('incognide_rs_mcpCollapsed', String(mcpCollapsed)); } catch {} }, [mcpCollapsed]);
 
     const [convoSearch, setConvoSearch] = useState('');
     const [npcSearch, setNpcSearch] = useState('');
     const [jinxSearch, setJinxSearch] = useState('');
+    const [mcpServers, setMcpServers] = useState<any[]>([]);
     const [groupBy, setGroupBy] = useState<'time' | 'npc' | 'model' | 'none'>('time');
 
     const filteredConvos = useMemo(() => {
@@ -167,21 +239,49 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         );
     }, [availableNPCs, npcSearch]);
 
+    const [registeredTeams, setRegisteredTeams] = useState<Record<string, any>>({});
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const data = await (window as any).api.registeredTeamsRead();
+                if (data?.teams) setRegisteredTeams(data.teams);
+            } catch {}
+        })();
+    }, []);
+
     const groupedNpcs = useMemo(() => {
-        const teamOrder = ['project', 'incognide', 'npcsh'];
-        const teamLabels: Record<string, string> = { project: 'Project', incognide: 'Incognide', npcsh: 'npcsh' };
+        // Find which registered team matches the current project folder
+        let currentTeamKey: string | null = null;
+        if (currentPath) {
+            for (const [key, team] of Object.entries(registeredTeams)) {
+                const teamPath = (team as any)?.path;
+                if (teamPath && currentPath.startsWith(teamPath)) {
+                    currentTeamKey = key;
+                    break;
+                }
+            }
+        }
+        const otherTeams = Object.keys(registeredTeams).filter(k => k !== currentTeamKey);
+        const teamOrder = currentTeamKey
+            ? ['project', currentTeamKey, ...otherTeams]
+            : ['project', ...Object.keys(registeredTeams)];
+        const teamLabels: Record<string, string> = { project: 'Project', ...Object.fromEntries(Object.entries(registeredTeams).map(([k, v]: [string, any]) => [k, v.name || k])) };
+        if (currentTeamKey && currentTeamKey !== 'project') {
+            teamLabels[currentTeamKey] = (teamLabels[currentTeamKey] || currentTeamKey) + ' (current)';
+        }
         const buckets: Record<string, any[]> = {};
         (filteredNpcs || []).forEach((n: any) => {
-            const team = n.team || (n.source === 'project' ? 'project' : 'npcsh');
+            const team = n.team || (n.source === 'project' ? 'project' : 'incognide');
             (buckets[team] = buckets[team] || []).push(n);
         });
         const ordered: Array<[string, any[]]> = [];
         teamOrder.forEach(k => { if (buckets[k]?.length) ordered.push([teamLabels[k] || k, buckets[k]]); delete buckets[k]; });
         Object.entries(buckets).forEach(([k, v]) => ordered.push([teamLabels[k] || k, v]));
         return ordered;
-    }, [filteredNpcs]);
+    }, [filteredNpcs, registeredTeams, currentPath]);
 
-    const [expandedTeams, setExpandedTeams] = useState<Set<string>>(() => new Set(['Project', 'Incognide', 'npcsh']));
+    const [expandedTeams, setExpandedTeams] = useState<Set<string>>(() => new Set(['Project', 'Incognide']));
     const toggleTeam = (key: string) => {
         setExpandedTeams(prev => {
             const next = new Set(prev);
@@ -189,6 +289,15 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             return next;
         });
     };
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const result = await (window as any).api?.mcpGetServersForSidebar?.(currentPath);
+                if (result?.servers) setMcpServers(result.servers);
+            } catch {}
+        })();
+    }, [currentPath]);
 
     const filteredJinxes = useMemo(() => {
         if (!jinxSearch.trim()) return jinxesToDisplay || [];
@@ -256,7 +365,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 <button
                     data-tutorial="new-chat-button"
                     onClick={() => createNewConversation?.()}
-                    className="flex-1 flex items-center justify-center py-2 hover:bg-green-500/20 text-green-300 border-r theme-border"
+                    className="flex-1 flex items-center justify-center py-2 hover:bg-green-500/20 text-green-300 border-l theme-border"
                     title="New Chat"
                 >
                     <MessageSquare size={14} />
@@ -264,7 +373,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 <button
                     data-tutorial="new-agent-button"
                     onClick={() => createNewConversation?.({ contentType: 'agent' })}
-                    className="flex-1 flex items-center justify-center py-2 hover:bg-amber-500/20 text-amber-300 border-r theme-border"
+                    className="flex-1 flex items-center justify-center py-2 hover:bg-amber-500/20 text-amber-300 border-l theme-border"
                     title="New Agent"
                 >
                     <Bot size={14} />
@@ -292,6 +401,47 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 >
                     <ChevronRight size={12} />
                 </button>
+            </div>
+            <div className="border-b theme-border">
+                <div className="flex items-center justify-between px-2 py-1 hover:bg-white/5">
+                    <div
+                        className="flex items-center gap-1.5 cursor-pointer"
+                        onClick={() => onTogglePredictiveText?.()}
+                    >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="9" />
+                            <circle cx="12" cy="12" r="3" />
+                            <line x1="12" y1="3" x2="12" y2="6" />
+                            <line x1="12" y1="18" x2="12" y2="21" />
+                            <line x1="3" y1="12" x2="6" y2="12" />
+                            <line x1="18" y1="12" x2="21" y2="12" />
+                        </svg>
+                        <span className="text-[11px] theme-text-muted">Predictive Text</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <button
+                            onClick={() => setCopilotSettingsOpen(!copilotSettingsOpen)}
+                            className="p-0.5 hover:bg-white/10 rounded theme-text-muted hover:theme-text-primary"
+                            title="Copilot settings"
+                        >
+                            <Settings2 size={11} />
+                        </button>
+                        <input
+                            type="checkbox"
+                            checked={!!predictiveTextEnabled}
+                            onChange={() => onTogglePredictiveText?.()}
+                            className="w-3.5 h-3.5 accent-violet-500 cursor-pointer"
+                        />
+                    </div>
+                </div>
+                {copilotSettingsOpen && (
+                    <CopilotSettingsPanel
+                        model={predictiveTextModel}
+                        delay={predictiveTextDelay ?? 250}
+                        availableModels={availableModels}
+                        onSave={(m, p, d) => onPredictiveTextSettingsChange?.({ model: m, provider: p, delay: d })}
+                    />
+                )}
             </div>
 
             <div data-tutorial="conversations" className="flex flex-col min-h-0" style={{ flex: convosCollapsed ? '0 0 auto' : 2, overflow: 'hidden' }}>
@@ -626,6 +776,38 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     </div>
                 </div>
             )}
+
+            <div data-tutorial="mcp-section" className="flex flex-col min-h-0" style={{ flex: mcpCollapsed ? '0 0 auto' : 1, overflow: 'hidden' }}>
+            <SectionHeader
+                label="MCP Servers"
+                color="teal"
+                count={mcpServers.length}
+                collapsed={mcpCollapsed}
+                onToggle={() => setMcpCollapsed(!mcpCollapsed)}
+            />
+            {!mcpCollapsed && (
+                <div className="flex flex-col min-h-0 border-b theme-border" style={{ flex: 1, overflow: 'hidden' }}>
+                    <div className="flex-1 overflow-y-auto min-h-0">
+                        {mcpServers.map((srv: any) => (
+                            <div key={srv.id || srv.command} className="px-2 py-1.5 border-b theme-border last:border-b-0 hover:bg-white/5">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-[11px] font-medium theme-text-primary truncate">{srv.name}</div>
+                                        <div className="text-[10px] theme-text-muted truncate">{srv.command}</div>
+                                    </div>
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-cyan-900/30 text-cyan-300 ml-1 whitespace-nowrap">{srv.origin}</span>
+                                </div>
+                            </div>
+                        ))}
+                        {mcpServers.length === 0 && (
+                            <div className="px-2 py-4 text-[11px] theme-text-muted text-center italic">
+                                No MCP servers configured
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+            </div>
             </div>
 
         </div>

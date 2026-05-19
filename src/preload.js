@@ -55,6 +55,19 @@ readDocxContent: (filePath) =>
     removeDaemon: (daemonId) => ipcRenderer.invoke('removeDaemon', daemonId),
     getDaemons: () => ipcRenderer.invoke('getDaemons'),
 
+    daemonStart: () => ipcRenderer.invoke('daemon:start'),
+    daemonStop: () => ipcRenderer.invoke('daemon:stop'),
+    daemonStatus: () => ipcRenderer.invoke('daemon:status'),
+    daemonRestart: () => ipcRenderer.invoke('daemon:restart'),
+
+    scheduledJobList: () => ipcRenderer.invoke('scheduledJob:list'),
+    scheduledJobCreate: (params) => ipcRenderer.invoke('scheduledJob:create', params),
+    scheduledJobUpdate: (params) => ipcRenderer.invoke('scheduledJob:update', params),
+    scheduledJobDelete: (jobId) => ipcRenderer.invoke('scheduledJob:delete', jobId),
+    scheduledJobToggle: (jobId, enabled) => ipcRenderer.invoke('scheduledJob:toggle', { jobId, enabled }),
+    scheduledJobRunNow: (jobId) => ipcRenderer.invoke('scheduledJob:runNow', jobId),
+    scheduledJobHistory: (jobId) => ipcRenderer.invoke('scheduledJob:history', jobId),
+
     generateImages: (prompt, n, model, provider, attachments, baseFilename, currentPath, opts = {}) => ipcRenderer.invoke('generate_images', { prompt, n, model, provider, attachments, baseFilename, currentPath, workspacePath: opts.workspacePath, width: opts.width, height: opts.height, customModelPath: opts.customModelPath }),
 
     generateMusic: (prompt, provider, model, duration, currentPath, opts = {}) => ipcRenderer.invoke('generate_music', { prompt, provider, model, duration, currentPath, workspacePath: opts.workspacePath, baseFilename: opts.baseFilename, apiKey: opts.apiKey }),
@@ -877,5 +890,13 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
         ipcRenderer.on('update-download-progress', handler);
         return () => ipcRenderer.removeListener('update-download-progress', handler);
     },
+
+    customProvidersRead: () => ipcRenderer.invoke('custom-providers:read'),
+    customProvidersWrite: (providers) => ipcRenderer.invoke('custom-providers:write', providers),
+    getProviderModels: (opts) => ipcRenderer.invoke('get-provider-models', opts),
+    registeredTeamsRead: () => ipcRenderer.invoke('registered-teams:read'),
+    registeredTeamsWrite: (teams) => ipcRenderer.invoke('registered-teams:write', teams),
+    registeredTeamsScan: (currentPath) => ipcRenderer.invoke('registered-teams:scan', currentPath),
+    mcpGetServersForSidebar: (currentPath) => ipcRenderer.invoke('mcp:getServersForSidebar', currentPath),
 
 });

@@ -1831,13 +1831,23 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                             </div>
                         ))
                     ) : (
-
-                        renderPaneContent()
+                        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                            {renderPaneContent()}
+                        </div>
                     )}
                 </div>
             </div>
         );
     }
     return null;
-}, (prev, next) => prev.node === next.node);
+}, (prev, next) => {
+    if (prev.node !== next.node) return false;
+    if (prev.path?.length !== next.path?.length) return false;
+    if (prev.path && next.path) {
+        for (let i = 0; i < prev.path.length; i++) {
+            if (prev.path[i] !== next.path[i]) return false;
+        }
+    }
+    return true;
+});
 

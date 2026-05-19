@@ -3,7 +3,7 @@ import { Save } from 'lucide-react';
 import { Modal, Card, Button, Input, Select } from 'npcts';
 
 
-const HOME_DIR = '~/.npcsh';
+const HOME_DIR = '~/.incognide';
 
 const defaultKeyboardShortcuts = {
     newConversation: 'Ctrl+Shift+C',
@@ -21,7 +21,7 @@ const defaultKeyboardShortcuts = {
 };
 
 const defaultSettings = {
-    model: 'llama3.2',
+    model: 'llama3',
     provider: 'ollama',
     embedding_model: 'nomic-text-embed',
     embedding_provider: 'ollama',
@@ -30,7 +30,7 @@ const defaultSettings = {
     data_directory: '',
     default_to_agent: false,
     is_predictive_text_enabled: false,
-    predictive_text_model: 'llama3.2',
+    predictive_text_model: 'llama3',
     predictive_text_provider: 'ollama',
     keyboard_shortcuts: defaultKeyboardShortcuts,
     backend_python_path: '',
@@ -455,10 +455,10 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                             <div className="flex gap-2">
                                 <input
                                     type="text"
-                                    value={globalSettings.data_directory || '~/.npcsh/incognide'}
+                                    value={globalSettings.data_directory || '~/.incognide'}
                                     onChange={(e) => setGlobalSettings({...globalSettings, data_directory: e.target.value})}
                                     className="flex-1 px-3 py-1.5 text-sm rounded border border-gray-700 bg-gray-800 text-gray-200"
-                                    placeholder="~/.npcsh/incognide"
+                                    placeholder="~/.incognide"
                                 />
                                 <button
                                     onClick={async () => {
@@ -478,7 +478,7 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                                 </button>
                             </div>
                             <p className="text-[10px] text-gray-500 mt-1">
-                                Base directory for Incognide data (teams, models, configs). Saved as INCOGNIDE_HOME in ~/.npcshrc. Requires restart.
+                                Base directory for Incognide data (teams, models, configs). Saved as INCOGNIDE_HOME in ~/.incogniderc. Requires restart.
                             </p>
                         </div>
                         <Select

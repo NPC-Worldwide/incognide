@@ -20,7 +20,7 @@ import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } 
 import { lintKeymap, linter, lintGutter, type Diagnostic } from '@codemirror/lint';
 import { BrainCircuit, Edit, FileText, MessageSquare, GitBranch, X, Play, HelpCircle, RefreshCw } from 'lucide-react';
 
-const appHighlightStyle = HighlightStyle.define([
+const appHighlightStyleDark = HighlightStyle.define([
     { tag: t.keyword, color: '#c678dd' },
     { tag: [t.name, t.deleted, t.character, t.propertyName, t.macroName], color: '#e06c75' },
     { tag: [t.function(t.variableName), t.labelName], color: '#61afef' },
@@ -33,7 +33,20 @@ const appHighlightStyle = HighlightStyle.define([
     { tag: t.invalid, color: '#ff5555' },
 ]);
 
-const editorTheme = EditorView.theme({
+const appHighlightStyleLight = HighlightStyle.define([
+    { tag: t.keyword, color: '#a626a4' },
+    { tag: [t.name, t.deleted, t.character, t.propertyName, t.macroName], color: '#e45649' },
+    { tag: [t.function(t.variableName), t.labelName], color: '#4078f2' },
+    { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#986801' },
+    { tag: [t.definition(t.name), t.function(t.definition(t.name))], color: '#c18401' },
+    { tag: [t.typeName, t.className, t.number, t.changed, t.annotation, t.modifier, t.self, t.namespace], color: '#986801' },
+    { tag: [t.operator, t.operatorKeyword], color: '#0184bc' },
+    { tag: [t.meta, t.comment], color: '#a0a1a7', fontStyle: 'italic' },
+    { tag: [t.string, t.inserted], color: '#50a14f' },
+    { tag: t.invalid, color: '#ff0000' },
+]);
+
+const editorThemeDark = EditorView.theme({
     '&': {
         height: '100%',
         fontSize: '14px',
@@ -201,6 +214,171 @@ const editorTheme = EditorView.theme({
     },
 }, { dark: true });
 
+const editorThemeLight = EditorView.theme({
+    '&': {
+        height: '100%',
+        fontSize: '14px',
+        backgroundColor: '#fafafa',
+    },
+    '.cm-content': {
+        fontFamily: '"Fira Code", "JetBrains Mono", "Cascadia Code", Menlo, Monaco, monospace',
+        caretColor: '#2563eb',
+    },
+    '.cm-cursor': {
+        borderLeftColor: '#2563eb',
+        borderLeftWidth: '2px',
+    },
+    '& .cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
+        backgroundColor: 'rgba(37, 99, 235, 0.15)',
+    },
+    '& .cm-content ::selection': {
+        backgroundColor: 'transparent',
+    },
+    '& .cm-activeLine, &.cm-focused .cm-activeLine': {
+        backgroundColor: '#f0f0f0',
+    },
+    '& .cm-activeLineGutter': {
+        backgroundColor: '#f0f0f0',
+    },
+    '.cm-gutters': {
+        backgroundColor: '#fafafa',
+        color: '#9ca3af',
+        border: 'none',
+        borderRight: '1px solid #e5e7eb',
+    },
+    '.cm-lineNumbers .cm-gutterElement': {
+        padding: '0 2px 0 4px',
+        minWidth: 'unset',
+    },
+    '.cm-lineNumbers': {
+        minWidth: 'unset',
+        width: 'auto',
+    },
+    '.cm-gutter.cm-lineNumbers': {
+        minWidth: 'unset',
+        width: 'auto',
+    },
+    '.cm-foldGutter .cm-gutterElement': {
+        padding: '0 4px',
+        cursor: 'pointer',
+    },
+    '.cm-foldGutter .cm-gutterElement:hover': {
+        color: '#2563eb',
+    },
+    '&.cm-focused .cm-matchingBracket': {
+        backgroundColor: 'rgba(37, 99, 235, 0.15)',
+        outline: '1px solid #2563eb',
+    },
+    '.cm-searchMatch': {
+        backgroundColor: 'rgba(234, 179, 8, 0.3)',
+        outline: '1px solid #f59e0b',
+    },
+    '.cm-searchMatch.cm-searchMatch-selected': {
+        backgroundColor: 'rgba(34, 197, 94, 0.3)',
+    },
+    '.cm-lint-marker-error': {
+        content: '"!"',
+        color: '#dc2626',
+    },
+    '.cm-lint-marker-warning': {
+        content: '"⚠"',
+        color: '#f59e0b',
+    },
+    '.cm-lintRange-error': {
+        backgroundImage: 'none',
+        textDecoration: 'underline wavy #dc2626',
+        textUnderlineOffset: '3px',
+    },
+    '.cm-lintRange-warning': {
+        backgroundImage: 'none',
+        textDecoration: 'underline wavy #f59e0b',
+        textUnderlineOffset: '3px',
+    },
+    '.cm-tooltip-lint': {
+        backgroundColor: '#ffffff',
+        border: '1px solid #e5e7eb',
+        borderRadius: '4px',
+        color: '#1f2937',
+        padding: '4px 8px',
+        fontSize: '12px',
+    },
+    '& .cm-selectionMatch': {
+        backgroundColor: '#fef3c7',
+        outline: '1px solid #fbbf24',
+    },
+    '.cm-panels': {
+        backgroundColor: '#fafafa',
+        color: '#374151',
+    },
+    '.cm-panels.cm-panels-top': {
+        borderBottom: '1px solid #e5e7eb',
+    },
+    '.cm-panel.cm-search': {
+        padding: '8px 12px',
+        backgroundColor: '#f3f4f6',
+    },
+    '.cm-panel.cm-search input, .cm-panel.cm-search button': {
+        margin: '0 4px',
+        padding: '4px 8px',
+        borderRadius: '4px',
+        backgroundColor: '#ffffff',
+        border: '1px solid #d1d5db',
+        color: '#374151',
+    },
+    '.cm-panel.cm-search button:hover': {
+        backgroundColor: '#f3f4f6',
+    },
+    '.cm-panel.cm-search label': {
+        margin: '0 8px',
+        color: '#6b7280',
+    },
+    '.cm-tooltip': {
+        backgroundColor: '#ffffff',
+        border: '1px solid #e5e7eb',
+        borderRadius: '6px',
+    },
+    '.cm-tooltip.cm-tooltip-autocomplete': {
+        '& > ul': {
+            fontFamily: '"Fira Code", monospace',
+            maxHeight: '200px',
+        },
+        '& > ul > li': {
+            padding: '4px 8px',
+        },
+        '& > ul > li[aria-selected]': {
+            backgroundColor: '#eff6ff',
+            color: '#1e40af',
+        },
+    },
+    '.cm-completionIcon': {
+        width: '1em',
+        marginRight: '0.5em',
+    },
+    '.cm-vim-panel': {
+        backgroundColor: '#f3f4f6',
+        color: '#374151',
+        padding: '2px 8px',
+        fontFamily: '"Fira Code", monospace',
+        fontSize: '12px',
+    },
+    '.cm-vim-panel input': {
+        backgroundColor: 'transparent',
+        color: '#374151',
+        border: 'none',
+        outline: 'none',
+        fontFamily: '"Fira Code", monospace',
+    },
+    '&.cm-focused .cm-fat-cursor': {
+        background: '#2563eb !important',
+        color: '#ffffff !important',
+    },
+    '&:not(.cm-focused) .cm-fat-cursor': {
+        background: 'none !important',
+        outline: '1px solid #2563eb !important',
+        color: 'transparent !important',
+    },
+});
+
 const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMenu, onSelect, onSendToTerminal, savedEditorState, onEditorStateChange, keybindMode }) => {
     const editorRef = useRef(null);
 
@@ -214,6 +392,16 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
     onSendToTerminalRef.current = onSendToTerminal;
     onSaveRef.current = onSave;
     onEditorStateChangeRef.current = onEditorStateChange;
+
+    const [isDarkMode, setIsDarkMode] = useState(() => !document.body.classList.contains('light-mode'));
+
+    useEffect(() => {
+        const observer = new MutationObserver(() => {
+            setIsDarkMode(!document.body.classList.contains('light-mode'));
+        });
+        observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+        return () => observer.disconnect();
+    }, []);
 
     const languageExtension = useMemo(() => {
         const ext = filePath?.split('.').pop()?.toLowerCase();
@@ -436,13 +624,13 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
         ...keymapExtensions,
         customKeymap,
 
-        editorTheme,
-        syntaxHighlighting(appHighlightStyle),
+        isDarkMode ? editorThemeDark : editorThemeLight,
+        syntaxHighlighting(isDarkMode ? appHighlightStyleDark : appHighlightStyleLight),
 
         EditorView.lineWrapping,
 
         scrollPreserverPlugin,
-    ], [languageExtension, lintExtension, customKeymap, tabSize, keymapExtensions, vimExtension]);
+    ], [languageExtension, lintExtension, customKeymap, tabSize, keymapExtensions, vimExtension, isDarkMode]);
 
     const handleUpdate = useCallback((viewUpdate) => {
         if (viewUpdate.selectionSet && onSelectRef.current) {

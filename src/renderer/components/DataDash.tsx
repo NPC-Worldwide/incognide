@@ -1285,7 +1285,7 @@ const DataDash = ({ initialAnalysisContext, currentPath, currentModel, currentPr
     const [newEdgeTarget, setNewEdgeTarget] = useState('');
 
     const [availableDatabases, setAvailableDatabases] = useState<{ name: string; path: string; type: 'global' | 'project' }[]>([]);
-    const [selectedDatabase, setSelectedDatabase] = useState<string>('~/npcsh_history.db');
+    const [selectedDatabase, setSelectedDatabase] = useState<string>('~/incognide_history.db');
 
     const [dbConnectionStatus, setDbConnectionStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
     const [dbConnectionInfo, setDbConnectionInfo] = useState<{
@@ -2455,12 +2455,12 @@ const handleAcceptGeneratedSql = () => {
 
     const loadAvailableDatabases = useCallback(async () => {
         const databases: { name: string; path: string; type: 'global' | 'project' }[] = [
-            { name: 'npcsh_history.db', path: '~/npcsh_history.db', type: 'global' }
+            { name: 'incognide_history.db', path: '~/incognide_history.db', type: 'global' }
         ];
 
         if (currentPath) {
             try {
-                const projectDb = `${currentPath}/.npcsh/project.db`;
+                const projectDb = `${currentPath}/.incognide/project.db`;
                 databases.push({ name: `Project DB (${getFileName(currentPath)})`, path: projectDb, type: 'project' });
             } catch (e) {
 
@@ -2468,7 +2468,7 @@ const handleAcceptGeneratedSql = () => {
         }
 
         try {
-            databases.push({ name: 'Global NPC Config', path: '~/.npcsh/npc_config.db', type: 'global' });
+            databases.push({ name: 'Global NPC Config', path: '~/.incognide/npc_config.db', type: 'global' });
         } catch (e) {
 
         }

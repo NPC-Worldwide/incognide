@@ -849,6 +849,20 @@
     showPromptDialog: (options) => invoke('showPromptDialog', options),
     checkServerConnection: () => invoke('checkServerConnection'),
     openExternal: (url) => invoke('openExternal', url),
+
+    // ==================== Daemon / Scheduled Jobs ====================
+    daemonStart: () => invoke('daemon:start'),
+    daemonStop: () => invoke('daemon:stop'),
+    daemonStatus: () => invoke('daemon:status'),
+    daemonRestart: () => invoke('daemon:restart'),
+
+    scheduledJobList: () => invoke('scheduledJob:list'),
+    scheduledJobCreate: (params) => invoke('scheduledJob:create', params),
+    scheduledJobUpdate: (params) => invoke('scheduledJob:update', params),
+    scheduledJobDelete: (jobId) => invoke('scheduledJob:delete', jobId),
+    scheduledJobToggle: (jobId, enabled) => invoke('scheduledJob:toggle', { jobId, enabled }),
+    scheduledJobRunNow: (jobId) => invoke('scheduledJob:runNow', jobId),
+    scheduledJobHistory: (jobId) => invoke('scheduledJob:history', jobId),
   };
 
   console.log('[web-preload] window.api initialized with', Object.keys(window.api).length, 'methods');

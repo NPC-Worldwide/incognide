@@ -7,8 +7,9 @@ const { shell } = require('electron');
 const { spawn } = require('child_process');
 const crypto = require('crypto');
 const sqlite3 = require('sqlite3');
+const yaml = require('js-yaml');
 
-const dbPath = path.join(os.homedir(), 'npcsh_history.db');
+const dbPath = path.join(os.homedir(), 'incognide_history.db');
 
 /**
  * Categorize backend errors into user-friendly messages
@@ -129,8 +130,8 @@ function categorizeBackendError(error) {
   };
 }
 
-function parseNpcshrc() {
-  const rcPath = path.join(os.homedir(), '.npcshrc');
+function parseIncogniderc() {
+  const rcPath = path.join(os.homedir(), '.incogniderc');
   const result = {};
   try {
     if (fs.existsSync(rcPath)) {
@@ -151,13 +152,13 @@ function parseNpcshrc() {
       }
     }
   } catch (e) {
-    console.log('Error reading .npcshrc:', e.message);
+    console.log('Error reading .incogniderc:', e.message);
   }
   return result;
 }
 
 function getBackendPythonPath() {
-  const rcPath = path.join(os.homedir(), '.npcshrc');
+  const rcPath = path.join(os.homedir(), '.incogniderc');
   try {
     if (fs.existsSync(rcPath)) {
       const rcContent = fs.readFileSync(rcPath, 'utf8');
@@ -171,7 +172,7 @@ function getBackendPythonPath() {
       }
     }
   } catch (err) {
-    console.log('Error reading backend Python path from .npcshrc:', err);
+    console.log('Error reading backend Python path from .incogniderc:', err);
   }
   return null;
 }
@@ -190,7 +191,21 @@ function register(ctx) {
     DEFAULT_CONFIG,
     readPythonEnvConfig,
     resolvePythonPath,
+    INCOGNIDE_HOME: ctxIncognideHome,
   } = ctx;
+
+  const INCOGNIDE_HOME = ctxIncognideHome || path.join(os.homedir(), '.incognide');
+
+  async function getCustomProviders() {
+    try {
+      const cpPath = path.join(INCOGNIDE_HOME, 'custom_providers.yaml');
+      const content = await fsPromises.readFile(cpPath, 'utf8');
+      const parsed = yaml.load(content);
+      return parsed?.providers || {};
+    } catch {
+      return {};
+    }
+  }
 
   async function resolveWorkspacePython(workspacePath) {
     if (!workspacePath) return null;
@@ -290,8 +305,8 @@ function register(ctx) {
             path.join(homeDir, '.cache', 'lm-studio', 'models'),
             path.join(homeDir, '.lmstudio', 'models'),
             path.join(homeDir, 'llama.cpp', 'models'),
-            path.join(homeDir, '.npcsh', 'models', 'gguf'),
-            path.join(homeDir, '.npcsh', 'models'),
+            path.join(homeDir, '.incognide', 'models', 'gguf'),
+            path.join(homeDir, '.incognide', 'models'),
             path.join(homeDir, 'models'),
         ];
 
@@ -310,13 +325,13 @@ function register(ctx) {
                             await scanDir(fullPath, depth + 1);
                         } else if (stats.isFile()) {
                             const ext = path.extname(entry.name).toLowerCase();
-                            if (ext === '.gguf' && !seenPaths.has(fullPath)) {
+                            if (ext === '.gguf' && !seenPaths.has(fullPath) && !entry.name.toLowerCase().startsWith('mmproj')) {
                                 seenPaths.add(fullPath);
                                 if (stats.size > 50 * 1024 * 1024) {
                                     ggufModels.push({
                                         value: fullPath,
                                         display_name: `[GGUF] ${entry.name}`,
-                                        provider: 'gguf',
+                                        provider: 'llamacpp',
                                         size: stats.size,
                                         path: fullPath
                                     });
@@ -337,13 +352,145 @@ function register(ctx) {
         log('Error scanning GGUF models:', ggufErr);
     }
 
-    const allModels = [...backendModels, ...ggufModels];
+    const customProviderModels = [];
+    try {
+      const customProviders = await getCustomProviders();
+      for (const [cpName, cpConfig] of Object.entries(customProviders)) {
+        const cfg = cpConfig;
+        if (!cfg?.base_url) continue;
+        let apiKey = process.env[cfg.api_key_var];
+        if (!apiKey) apiKey = findApiKeyInShellConfigs(cfg.api_key_var);
+        if (!apiKey) {
+          log(`[getAvailableModels] No API key for custom provider ${cpName}`);
+          continue;
+        }
+        const cleanUrl = cfg.base_url.replace(/\/+$/, '');
+        const modelsUrl = cleanUrl.endsWith('/models') ? cleanUrl : cleanUrl + '/models';
+        const headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 8000);
+          let cpResponse;
+          try {
+            cpResponse = await fetch(modelsUrl, { headers, signal: controller.signal });
+          } finally {
+            clearTimeout(timeoutId);
+          }
+          if (cpResponse.ok) {
+            const cpData = await cpResponse.json();
+            const cpModels = (cpData.data || cpData.models || []).map((m) => ({
+              value: `${cpName}/${m.id || m.name || m}`,
+              display_name: `${m.id || m.name || m} (${cpName})`,
+              provider: cpName,
+              base_url: cfg.base_url,
+              api_key_var: cfg.api_key_var,
+            }));
+            customProviderModels.push(...cpModels);
+            log(`[getAvailableModels] ${cpName}: fetched ${cpModels.length} models`);
+          }
+        } catch (cpErr) {
+          log(`[getAvailableModels] ${cpName} model fetch failed:`, cpErr.message);
+        }
+      }
+    } catch (cpErr) {
+      log('[getAvailableModels] Error loading custom providers:', cpErr.message);
+    }
+
+    const allModels = [...backendModels, ...ggufModels, ...customProviderModels];
 
     if (allModels.length === 0 && backendError) {
         return { models: [], error: backendError };
     }
 
     return { models: allModels };
+  });
+
+  // Providers that don't have a /models endpoint — return known model lists
+  const KNOWN_PROVIDER_MODELS = {
+    anthropic: [
+      'claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5',
+      'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229',
+    ],
+    huggingface: [
+      'Inference API — use custom base URL for specific models',
+    ],
+    perplexity: [
+      'sonar-pro', 'sonar', 'sonar-reasoning-pro', 'sonar-reasoning', 'sonar-deep-research',
+    ],
+  };
+
+  function findApiKeyInShellConfigs(apiKeyVar) {
+    const sourceFiles = [
+      path.join(os.homedir(), '.incogniderc'),
+      path.join(os.homedir(), '.env'),
+      path.join(os.homedir(), '.zshrc'),
+      path.join(os.homedir(), '.bashrc'),
+      path.join(os.homedir(), '.bash_profile'),
+    ];
+    for (const f of sourceFiles) {
+      try {
+        const content = fs.readFileSync(f, 'utf-8');
+        const match = content.match(new RegExp(`(?:export\\s+)?${apiKeyVar}=(.*)`, 'm'));
+        if (match) {
+          let val = match[1].trim();
+          if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+            val = val.slice(1, -1);
+          }
+          if (val) return val;
+        }
+      } catch {}
+    }
+    return null;
+  }
+
+  ipcMain.handle('get-provider-models', async (event, { provider, baseUrl, apiKeyVar }) => {
+    try {
+      let apiKey = process.env[apiKeyVar];
+      if (!apiKey) {
+        apiKey = findApiKeyInShellConfigs(apiKeyVar);
+      }
+      if (!apiKey) return { models: [], error: `No API key found for ${apiKeyVar}` };
+
+      // Return static model list for providers without a /models endpoint
+      if (KNOWN_PROVIDER_MODELS[provider]) {
+        return { models: KNOWN_PROVIDER_MODELS[provider].map(id => ({ id, name: id, provider })) };
+      }
+
+      // Standard OpenAI-compatible /models endpoint
+      const cleanUrl = baseUrl.replace(/\/+$/, '');
+      const modelsUrl = cleanUrl.endsWith('/models') ? cleanUrl : cleanUrl + '/models';
+      const headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      let response;
+      try {
+        response = await fetch(modelsUrl, { headers, signal: controller.signal });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      if (!response.ok) {
+        const errText = await response.text().catch(() => '');
+        // If we get HTML back (not a JSON API), report it cleanly
+        if (errText.startsWith('<') || errText.includes('<!doctype')) {
+          return { models: [], error: `${provider} does not support listing models via API` };
+        }
+        return { models: [], error: `HTTP ${response.status}: ${errText.slice(0, 200)}` };
+      }
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        return { models: [], error: `${provider} returned non-JSON response` };
+      }
+      const models = (data.data || data.models || []).map((m) => ({
+        id: m.id || m.name || m,
+        name: m.id || m.name || m,
+        provider,
+      }));
+      return { models };
+    } catch (err) {
+      return { models: [], error: err.message };
+    }
   });
 
   ipcMain.handle('getAvailableImageModels', async (event, currentPath) => {
@@ -380,7 +527,7 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('generate_images', async (event, { prompt, n, model, provider, attachments, baseFilename='image_gen_', currentPath='~/.npcsh/images', workspacePath, width, height, customModelPath }) => {
+  ipcMain.handle('generate_images', async (event, { prompt, n, model, provider, attachments, baseFilename='image_gen_', currentPath='~/.incognide/images', workspacePath, width, height, customModelPath }) => {
     log(`[Main Process] Image gen request: n=${n} prompt="${prompt}" model="${model}" provider=${provider}`);
 
     if (!prompt) return { error: 'Prompt cannot be empty' };
@@ -591,15 +738,35 @@ function register(ctx) {
     log(`[Main Process] executeCommandStream: Starting stream with ID: ${currentStreamId}`);
 
     try {
-      const apiUrl = `${BACKEND_URL}/api/stream`;
+      const customProviders = await getCustomProviders();
+      let model = data.model;
+      let provider = data.provider;
+      let apiUrlOverride = null;
+      let apiKeyOverride = null;
+
+      if (customProviders[provider]) {
+        const cp = customProviders[provider];
+        let apiKey = process.env[cp.api_key_var];
+        if (!apiKey) apiKey = findApiKeyInShellConfigs(cp.api_key_var);
+        if (apiKey) {
+          apiKeyOverride = apiKey;
+          apiUrlOverride = cp.base_url;
+          // Strip provider prefix from model value if present
+          const prefix = `${data.provider}/`;
+          if (model && model.startsWith(prefix)) {
+            model = model.slice(prefix.length);
+          }
+          log(`[Main Process] Custom provider '${data.provider}' resolved to openai-like endpoint: ${apiUrlOverride}`);
+        }
+      }
 
       const payload = {
         streamId: currentStreamId,
         commandstr: data.commandstr,
         currentPath: data.currentPath,
         conversationId: data.conversationId,
-        model: data.model,
-        provider: data.provider,
+        model,
+        provider,
         npc: data.npc,
         npcSource: data.npcSource || 'global',
         attachments: data.attachments || [],
@@ -621,9 +788,15 @@ function register(ctx) {
         max_tokens: data.max_tokens,
 
         disableThinking: data.disableThinking || false,
+        customProviders,
       };
 
-      const response = await fetch(apiUrl, {
+      if (apiUrlOverride) {
+        payload.api_url = apiUrlOverride;
+        payload.api_key = apiKeyOverride;
+      }
+
+      const response = await fetch(`${BACKEND_URL}/api/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -1070,7 +1243,7 @@ function register(ctx) {
     const yaml = require('js-yaml');
     let result = { model: null, provider: null, npc: null };
 
-    const npcshrcEnv = parseNpcshrc();
+    const rcEnv = parseIncogniderc();
 
     try {
       const npcTeamDir = path.join(currentPath, 'npc_team');
@@ -1102,10 +1275,10 @@ function register(ctx) {
     }
 
     if (!result.model) {
-      result.model = process.env.NPCSH_CHAT_MODEL || npcshrcEnv.NPCSH_CHAT_MODEL;
+      result.model = process.env.INCOGNIDE_CHAT_MODEL || rcEnv.INCOGNIDE_CHAT_MODEL;
     }
     if (!result.provider) {
-      result.provider = process.env.NPCSH_CHAT_PROVIDER || npcshrcEnv.NPCSH_CHAT_PROVIDER;
+      result.provider = process.env.INCOGNIDE_CHAT_PROVIDER || rcEnv.INCOGNIDE_CHAT_PROVIDER;
     }
 
     console.log('getProjectCtx result:', result);
@@ -1335,7 +1508,7 @@ function register(ctx) {
     }
   });
 
-  // ---- Sync: export data from npcsh_history.db ----
+  // ---- Sync: export data from incognide_history.db ----
 
   ipcMain.handle('sync:export-data', async (_, { since, fullDump }) => {
     const sinceTs = (fullDump || !since) ? '1970-01-01T00:00:00.000Z' : since;

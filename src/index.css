@@ -1199,7 +1199,9 @@ body.light-mode .cm-gutters {
 }
 
 body.light-mode .cm-activeLine,
-body.light-mode .cm-activeLineGutter {
+body.light-mode .cm-activeLineGutter,
+body.light-mode .cm-focused .cm-activeLine,
+body.light-mode .cm-focused .cm-activeLineGutter {
   background-color: var(--theme-bg-tertiary);
 }
 /* Code blocks inside tertiary bg in light mode */

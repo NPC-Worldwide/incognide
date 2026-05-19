@@ -650,7 +650,7 @@ const Sidebar = (props: any) => {
     });
     const [tileEditMode, setTileEditMode] = useState(false);
     const [bottomGridEditMode, setBottomGridEditMode] = useState(false);
-    // Tile jinx state - loaded from ~/.npcsh/incognide/tiles/*.jinx
+    // Tile jinx state - loaded from ~/.incognide/incognide/tiles/*.jinx
     const [tileJinxes, setTileJinxes] = useState<Array<{
         filename: string;
         jinx_name: string;

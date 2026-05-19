@@ -117,7 +117,7 @@ function register(ctx) {
 
     const outputDir = currentPath && currentPath.startsWith('~')
       ? path.join(os.homedir(), currentPath.slice(1).replace(/^\//, ''))
-      : (currentPath || path.join(os.homedir(), '.npcsh', 'audio'));
+      : (currentPath || path.join(os.homedir(), '.incognide', 'audio'));
 
     const python = await resolveWorkspacePython(workspacePath);
     if (!python) {

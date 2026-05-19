@@ -538,7 +538,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         const n = name.toLowerCase();
         if (n.includes('path') || n.includes('file') || n.includes('dir')) return `e.g. ~/documents/file.txt`;
         if (n.includes('url') || n.includes('link')) return `e.g. https://example.com`;
-        if (n.includes('model')) return `e.g. gpt-4, llama3.2`;
+        if (n.includes('model')) return `e.g. gpt-4, llama3`;
         if (n.includes('query') || n.includes('sql')) return `e.g. SELECT * FROM table`;
         if (n.includes('prompt') || n.includes('text') || n.includes('content')) return `Enter ${name}...`;
         if (n.includes('code')) return `# Enter code here...`;
@@ -863,7 +863,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
             'projectenv': 'Environment', 'search': 'Search', 'settings': 'Settings',
             'data-labeler': 'Data Labeler', 'tilejinx': 'Tile Jinx', 'git': 'Git',
             'docx': 'Document', 'pptx': 'Presentation', 'zip': 'Archive',
-            'zip': 'Archive', 'exp': 'Experiment', 'folder': 'Folder',
+            'exp': 'Experiment', 'folder': 'Folder',
         };
         Object.entries(contentDataRef.current).forEach(([paneId, paneData]: [string, any]) => {
             if (!paneData.contentType || paneData.contentType === 'chat') return;
@@ -897,7 +897,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
             case 'browser': case 'browsergraph': return <Globe size={s} className={cls} />;
             case 'pdf': case 'docx': case 'pptx': return <FileText size={s} className={cls} />;
             case 'terminal': return <TerminalIcon size={s} className={cls} />;
-            case 'image': case 'photoviewer': return <Image size={s} className={cls} />;
+
             case 'csv': return <FileText size={s} className={cls} />;
             case 'graph-viewer': case 'diff': case 'git': return <GitBranch size={s} className={cls} />;
             case 'datadash': return <BarChart3 size={s} className={cls} />;

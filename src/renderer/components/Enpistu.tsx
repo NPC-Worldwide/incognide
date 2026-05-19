@@ -274,6 +274,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const [isPredictiveTextEnabled, setIsPredictiveTextEnabled] = useState(false);
     const [predictiveTextModel, setPredictiveTextModel] = useState<string | null>(null);
     const [predictiveTextProvider, setPredictiveTextProvider] = useState<string | null>(null);
+    const [predictiveTextDelay, setPredictiveTextDelay] = useState(250);
     const [predictionSuggestion, setPredictionSuggestion] = useState('');
     const [predictionTargetElement, setPredictionTargetElement] = useState<HTMLElement | null>(null);
 
@@ -1067,6 +1068,9 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         predictiveTextModel,
         predictiveTextProvider,
         currentPath,
+        currentModel,
+        currentProvider,
+        predictiveTextDelay,
         predictionSuggestion,
         setPredictionSuggestion,
         predictionTargetElement,
@@ -1206,7 +1210,10 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
             cleanups.push(api.api.onMenuCloseTab(() => {
                 const activePaneId = activeContentPaneIdRef.current;
                 if (activePaneId) {
-                    closeContentPaneRef.current?.(activePaneId, []);
+                    const nodePath = findNodePath(rootLayoutNodeRef.current, activePaneId);
+                    if (nodePath) {
+                        closeContentPaneRef.current?.(activePaneId, nodePath);
+                    }
                 }
             }));
         }
@@ -1790,7 +1797,7 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
     // Refs to hold callbacks for use in keyboard handler and menu handlers
     const handleFileClickRef = useRef<((filePath: string) => void) | null>(null);
     const createNewTerminalRef = useRef<(() => void) | null>(null);
-    const createNewConversationRef = useRef<(() => void) | null>(null);
+    const createNewConversationRef = useRef<((opts?: any) => void) | null>(null);
     const createNewBrowserRef = useRef<(() => void) | null>(null);
     const handleCreateNewFolderRef = useRef<(() => void) | null>(null);
     const createSettingsPaneRef = useRef<(() => void) | null>(null);
@@ -3499,7 +3506,10 @@ const renderStlViewer = useCallback(({ nodeId }) => {
 const renderRadioPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return (
         <RadioPane
-            onClose={() => closeContentPane?.(nodeId, findNodePath?.(rootLayoutNode, nodeId) || [])}
+            onClose={() => {
+                const np = findNodePath?.(rootLayoutNode, nodeId);
+                if (np) closeContentPane?.(nodeId, np);
+            }}
             fetchFn={(url: string, options?: any) => (window as any).api?.proxyFetch?.(url, options)}
             listPortsFn={() => (window as any).api?.listSerialPorts?.()}
         />
@@ -3680,7 +3690,11 @@ const renderBrowserSettingsPane = useCallback(({ nodeId }: { nodeId: string }) =
 }, []);
 
 const renderModelManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
-    return <ModelManager />;
+    return <ModelManager onStartChat={(model: string, provider: string) => {
+        setCurrentModel(model);
+        setCurrentProvider(provider);
+        createNewConversationRef.current?.({ contentType: 'chat', model });
+    }} />;
 }, []);
 
 const renderVoiceManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
@@ -4177,7 +4191,7 @@ const renderMessageContextMenu = () => null;
     // Create a new experiment (.exp)
     const createNewExperiment = useCallback(async () => {
         try {
-            const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.npcsh`;
+            const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.incognide`;
             const tmpDir = normalizePath(`${npcshHome}/tmp`);
             await window.api.ensureDir?.(tmpDir).catch(() => {});
             const filepath = normalizePath(`${tmpDir}/experiment-${Date.now()}.exp`);
@@ -4549,7 +4563,7 @@ const handleBrowserDialogNavigate = (url) => {
     // Create a new Jupyter notebook (.ipynb)
     const createNewJupyterNotebook = useCallback(async () => {
         try {
-            const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.npcsh`;
+            const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.incognide`;
             const tmpDir = normalizePath(`${npcshHome}/tmp`);
             await window.api.ensureDir?.(tmpDir).catch(() => {});
             const filepath = normalizePath(`${tmpDir}/notebook-${Date.now()}.ipynb`);
@@ -5408,6 +5422,11 @@ ${contextPrompt}`;
                     setCurrentNPC(npc.name || npc);
                     createNewConversation();
                 }}
+                startNewChat={(model: string, provider: string) => {
+                    setCurrentModel(model);
+                    setCurrentProvider(provider);
+                    createNewConversation({ contentType: 'chat', model });
+                }}
                 embedded={true}
                 npcList={availableNPCs}
                 jinxList={availableJinxes}
@@ -5512,7 +5531,7 @@ ${contextPrompt}`;
         const extTypeMap: Record<string, string> = { tex: 'latex', csv: 'csv', xlsx: 'csv', docx: 'docx', pptx: 'pptx' };
         const contentType = extTypeMap[extension] || 'editor';
         const filename = `untitled-${Date.now()}.${extension}`;
-        const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.npcsh`;
+        const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.incognide`;
         const tmpDir = normalizePath(`${npcshHome}/tmp`);
         await window.api.ensureDir?.(tmpDir).catch(() => {});
         const filepath = normalizePath(`${tmpDir}/${filename}`);
@@ -5606,7 +5625,7 @@ ${contextPrompt}`;
             const contentType = ext === 'xlsx' ? 'csv' : ext === 'tex' ? 'latex' : ext;
             const filename = `untitled-${Date.now()}.${ext}`;
             // Use a temp dir so user's directories stay clean
-            const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.npcsh`;
+            const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.incognide`;
             const tmpDir = normalizePath(`${npcshHome}/tmp`);
             await window.api.ensureDir?.(tmpDir).catch(() => {});
             const filepath = normalizePath(`${tmpDir}/${filename}`);
@@ -5960,8 +5979,9 @@ ${contextPrompt}`;
             if (globalSettings) {
                 // ... (existing global settings loading) ...
                 setIsPredictiveTextEnabled(globalSettings.global_settings?.is_predictive_text_enabled || false);
-                setPredictiveTextModel(globalSettings.global_settings?.predictive_text_model || 'llama3.2'); // Default to a reasonable model
-                setPredictiveTextProvider(globalSettings.global_settings?.predictive_text_provider || 'ollama'); // Default to a reasonable provider
+                setPredictiveTextModel(globalSettings.global_settings?.predictive_text_model || null);
+                setPredictiveTextProvider(globalSettings.global_settings?.predictive_text_provider || null);
+                setPredictiveTextDelay(globalSettings.global_settings?.predictive_text_delay || 250);
             }
 
             // Check if npcsh is initialized
@@ -6082,7 +6102,7 @@ ${contextPrompt}`;
             // 1. Project ctx (from npc_team/*.ctx or env vars)
             // 2. Previously saved model in localStorage
             // 3. Global config default
-            let modelToSet = projectCtx.model || config.model || 'llama3.2';
+            let modelToSet = projectCtx.model || config.model || 'qwen3.5:0.8b';
             let providerToSet = projectCtx.provider || config.provider || 'ollama';
             let npcToSet = projectCtx.npc || config.npc || 'sibiji';
 
@@ -6160,50 +6180,11 @@ ${contextPrompt}`;
             }
             
             if (!fetchedModels.some(m => m.value === modelToSet) && fetchedModels.length > 0) {
-                // Config model not found - try favorites first, then fall back to a reasonable default
-                // Load favorites from localStorage (since state might be stale in closure)
-                const savedFavorites = localStorage.getItem('incognideFavoriteModels');
-                const favModels = savedFavorites ? new Set(JSON.parse(savedFavorites)) : new Set();
-
-                // Find first favorite that exists in available models
-                const firstFavorite = fetchedModels.find(m => favModels.has(m.value));
-                if (firstFavorite) {
-                    modelToSet = firstFavorite.value;
-                    providerToSet = firstFavorite.provider;
-                } else {
-                    // No favorites found, try to pick a reasonable default (not first alphabetical)
-                    // Prefer local models, then cheap cloud models - avoid expensive ones like claude-opus
-                    const preferredDefaults = [
-                        'llama3.2', 'llama3.2:latest', 'llama3.1', 'llama3', 'mistral', 'mixtral',  // Local
-                        'gpt-4o-mini', 'gpt-3.5-turbo',  // Cheap OpenAI
-                        'claude-3-5-sonnet', 'claude-3-sonnet', 'claude-3-haiku', 'claude-sonnet-4-20250514',  // Cheaper Claude
-                        'gemini-pro', 'gemini-1.5-flash',  // Google
-                    ];
-                    const preferredModel = fetchedModels.find(m =>
-                        preferredDefaults.some(pref => m.value.includes(pref))
-                    );
-                    if (preferredModel) {
-                        modelToSet = preferredModel.value;
-                        providerToSet = preferredModel.provider;
-                    } else {
-                        // Last resort: pick one that's NOT opus/expensive
-                        const notExpensive = fetchedModels.find(m =>
-                            !m.value.toLowerCase().includes('opus') &&
-                            !m.value.toLowerCase().includes('gpt-4-turbo') &&
-                            !m.value.toLowerCase().includes('gpt-4-32k')
-                        );
-                        if (notExpensive) {
-                            modelToSet = notExpensive.value;
-                            providerToSet = notExpensive.provider;
-                        } else {
-                            modelToSet = fetchedModels[0].value;
-                            providerToSet = fetchedModels[0].provider;
-                        }
-                    }
-                }
+                modelToSet = fetchedModels[0].value;
+                providerToSet = fetchedModels[0].provider;
             } else if (fetchedModels.length === 0) {
-                modelToSet = 'llama3.2';
-                providerToSet = 'ollama';
+                modelToSet = 'No models found';
+                providerToSet = 'No providers found';
             }
 
             if (!fetchedNPCs.some(n => n.value === npcToSet) && fetchedNPCs.length > 0) {
@@ -7272,6 +7253,11 @@ ${contextPrompt}`;
                 onClose={() => setTeamManagementOpen(false)}
                 currentPath={currentPath}
                 startNewConversation={startNewConversationWithNpc}
+                startNewChat={(model: string, provider: string) => {
+                    setCurrentModel(model);
+                    setCurrentProvider(provider);
+                    createNewConversation({ contentType: 'chat', model });
+                }}
                 npcList={availableNPCs.map(npc => ({ name: npc.name, display_name: npc.display_name }))}
                 jinxList={availableJinxes.map(jinx => ({ jinx_name: jinx.name, description: jinx.description }))}
             />
@@ -9203,6 +9189,22 @@ const renderMainContent = () => {
                         contentDataRef.current[newPaneId] = { contentType: 'editor', contentId: path };
                         addPaneOrTab(newPaneId);
                     }}
+                    predictiveTextEnabled={isPredictiveTextEnabled}
+                    onTogglePredictiveText={() => {
+                        setIsPredictiveTextEnabled(prev => {
+                            const next = !prev;
+                            (window as any).api?.saveGlobalSettings?.({ global_settings: { is_predictive_text_enabled: next } });
+                            return next;
+                        });
+                    }}
+                    predictiveTextModel={predictiveTextModel}
+                    predictiveTextProvider={predictiveTextProvider}
+                    predictiveTextDelay={predictiveTextDelay}
+                    onPredictiveTextSettingsChange={(s) => {
+                        if (s.model !== undefined) { setPredictiveTextModel(s.model); (window as any).api?.saveGlobalSettings?.({ global_settings: { predictive_text_model: s.model } }); }
+                        if (s.provider !== undefined) { setPredictiveTextProvider(s.provider); (window as any).api?.saveGlobalSettings?.({ global_settings: { predictive_text_provider: s.provider } }); }
+                        if (s.delay !== undefined) { setPredictiveTextDelay(s.delay); }
+                    }}
                 />
                 )}
                 </div>
@@ -9349,6 +9351,22 @@ const renderMainContent = () => {
                         const newPaneId = generateId();
                         contentDataRef.current[newPaneId] = { contentType: 'editor', contentId: path };
                         addPaneOrTab(newPaneId);
+                    }}
+                    predictiveTextEnabled={isPredictiveTextEnabled}
+                    onTogglePredictiveText={() => {
+                        setIsPredictiveTextEnabled(prev => {
+                            const next = !prev;
+                            (window as any).api?.saveGlobalSettings?.({ global_settings: { is_predictive_text_enabled: next } });
+                            return next;
+                        });
+                    }}
+                    predictiveTextModel={predictiveTextModel}
+                    predictiveTextProvider={predictiveTextProvider}
+                    predictiveTextDelay={predictiveTextDelay}
+                    onPredictiveTextSettingsChange={(s) => {
+                        if (s.model !== undefined) { setPredictiveTextModel(s.model); (window as any).api?.saveGlobalSettings?.({ global_settings: { predictive_text_model: s.model } }); }
+                        if (s.provider !== undefined) { setPredictiveTextProvider(s.provider); (window as any).api?.saveGlobalSettings?.({ global_settings: { predictive_text_provider: s.provider } }); }
+                        if (s.delay !== undefined) { setPredictiveTextDelay(s.delay); }
                     }}
                 />
                 )}

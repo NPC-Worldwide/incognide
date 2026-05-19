@@ -32,9 +32,11 @@ const FRONTEND_PORT = IS_DEV_MODE ? 7337 : 6337;
 const BACKEND_PORT = IS_DEV_MODE ? 5437 : 5337;
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
 
-let NPCSH_BASE = path.join(os.homedir(), '.npcsh');
+const NPCSH_BASE = path.join(os.homedir(), '.npcsh');
+
+let INCOGNIDE_HOME = process.env.INCOGNIDE_HOME || path.join(os.homedir(), '.incognide');
 try {
-  const _rcPath = path.join(os.homedir(), '.npcshrc');
+  const _rcPath = path.join(os.homedir(), '.incogniderc');
   if (fs.existsSync(_rcPath)) {
     const _rcContent = fs.readFileSync(_rcPath, 'utf-8');
     const _match = _rcContent.match(/^(?:export\s+)?INCOGNIDE_HOME=(.*)$/m);
@@ -42,18 +44,89 @@ try {
       let _val = _match[1].trim();
       if ((_val.startsWith('"') && _val.endsWith('"')) || (_val.startsWith("'") && _val.endsWith("'"))) _val = _val.slice(1, -1);
       if (_val.startsWith('~')) _val = _val.replace('~', os.homedir());
-      if (_val) NPCSH_BASE = _val;
+      if (_val) INCOGNIDE_HOME = _val;
     }
   }
 } catch {}
 
-if (IS_DEV_MODE) {
-  app.setPath('userData', path.join(NPCSH_BASE, 'incognide-dev'));
-} else {
-  app.setPath('userData', path.join(NPCSH_BASE, 'incognide'));
+function readRcFile(rcPath) {
+  const result = {};
+  try {
+    if (fs.existsSync(rcPath)) {
+      for (const line of fs.readFileSync(rcPath, 'utf-8').split('\n')) {
+        const m = line.trim().replace(/^export\s+/, '').match(/^(\w+)=(.*)$/);
+        if (m) {
+          let v = m[2].trim();
+          if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+          result[m[1]] = v;
+        }
+      }
+    }
+  } catch {}
+  return result;
 }
 
-const logsDir = path.join(NPCSH_BASE, 'incognide', 'logs');
+function ensureIncognideRc() {
+  const rcPath = path.join(os.homedir(), '.incogniderc');
+  let lines = [];
+  if (fs.existsSync(rcPath)) {
+    lines = fs.readFileSync(rcPath, 'utf-8').split('\n').filter(l => l.trim());
+  }
+  const has = (key) => lines.some(l => l.match(new RegExp(`^(?:export\\s+)?${key}=`)));
+  const seed = (key, fallback) => {
+    if (!has(key)) {
+      const val = process.env[key] || fallback || '';
+      if (val) lines.push(`export ${key}=${val}`);
+    }
+  };
+  if (!has('INCOGNIDE_HOME')) lines.push('export INCOGNIDE_HOME=~/.incognide');
+  seed('INCOGNIDE_CHAT_MODEL');
+  seed('INCOGNIDE_CHAT_PROVIDER');
+  seed('INCOGNIDE_DEFAULT_NPC', 'ledbi');
+  try {
+    fs.writeFileSync(rcPath, lines.join('\n') + '\n');
+  } catch (err) {
+    console.error('Failed to write .incogniderc:', err);
+  }
+  if (!fs.existsSync(INCOGNIDE_HOME)) {
+    fs.mkdirSync(INCOGNIDE_HOME, { recursive: true });
+  }
+}
+ensureIncognideRc();
+
+function loadShellEnv() {
+  const rcPath = path.join(os.homedir(), '.incogniderc');
+  try {
+    if (fs.existsSync(rcPath)) {
+      const content = fs.readFileSync(rcPath, 'utf-8');
+      const lines = content.split('\n');
+      for (const line of lines) {
+        const match = line.match(/^(?:export\s+)?(\w+)=(.*)$/);
+        if (match) {
+          let value = match[2].trim();
+          if ((value.startsWith('"') && value.endsWith('"')) ||
+              (value.startsWith("'") && value.endsWith("'"))) {
+            value = value.slice(1, -1);
+          }
+          if (value && !process.env[match[1]]) {
+            process.env[match[1]] = value;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.log('Error loading .incogniderc into env:', e.message);
+  }
+}
+loadShellEnv();
+
+if (IS_DEV_MODE) {
+  app.setPath('userData', path.join(INCOGNIDE_HOME, 'dev'));
+} else {
+  app.setPath('userData', INCOGNIDE_HOME);
+}
+
+const logsDir = path.join(INCOGNIDE_HOME, 'logs');
 try {
   fs.mkdirSync(logsDir, { recursive: true });
 } catch (err) {
@@ -303,7 +376,41 @@ const ensureTablesExist = async () => {
           status TEXT DEFAULT 'success',
           duration_ms INTEGER,
           folder_path TEXT,
+          job_id TEXT,
+          job_type TEXT,
+          log_file_path TEXT,
           timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+  `;
+
+  const createScheduledJobsTable = `
+      CREATE TABLE IF NOT EXISTS scheduled_jobs (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL UNIQUE,
+          job_type TEXT NOT NULL CHECK(job_type IN ('jinx','finetune_instruction','finetune_diffusers','inference')),
+          schedule TEXT NOT NULL,
+          command TEXT,
+          npc_name TEXT,
+          jinx_name TEXT,
+          payload TEXT,
+          workspace_path TEXT,
+          python_env_config TEXT,
+          enabled INTEGER DEFAULT 1,
+          next_run_at DATETIME,
+          last_run_at DATETIME,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+  `;
+
+  const createDaemonStateTable = `
+      CREATE TABLE IF NOT EXISTS daemon_state (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          pid INTEGER,
+          port INTEGER,
+          started_at DATETIME,
+          last_heartbeat DATETIME,
+          status TEXT
       );
   `;
 
@@ -319,6 +426,9 @@ const ensureTablesExist = async () => {
       CREATE INDEX IF NOT EXISTS idx_navigations_folder ON browser_navigations(folder_path);
       CREATE INDEX IF NOT EXISTS idx_jinx_log_name ON jinx_execution_log(jinx_name);
       CREATE INDEX IF NOT EXISTS idx_jinx_log_folder ON jinx_execution_log(folder_path);
+      CREATE INDEX IF NOT EXISTS idx_jinx_log_job_id ON jinx_execution_log(job_id);
+      CREATE INDEX IF NOT EXISTS idx_sched_jobs_enabled ON scheduled_jobs(enabled);
+      CREATE INDEX IF NOT EXISTS idx_sched_jobs_next ON scheduled_jobs(next_run_at);
   `;
 
   try {
@@ -329,6 +439,8 @@ const ensureTablesExist = async () => {
       await dbQuery(createBrowserNavigationsTable);
       await dbQuery(createDrawingsTable);
       await dbQuery(createJinxExecutionLogTable);
+      await dbQuery(createScheduledJobsTable);
+      await dbQuery(createDaemonStateTable);
       await dbQuery(createIndexes);
 
       const addColumnIfMissing = async (table, column, definition) => {
@@ -342,6 +454,9 @@ const ensureTablesExist = async () => {
       await addColumnIfMissing('browser_history', 'pane_id', 'TEXT');
       await addColumnIfMissing('browser_history', 'navigation_type', "TEXT DEFAULT 'click'");
       await addColumnIfMissing('pdf_highlights', 'color', "TEXT DEFAULT 'yellow'");
+      await addColumnIfMissing('jinx_execution_log', 'job_id', 'TEXT');
+      await addColumnIfMissing('jinx_execution_log', 'job_type', 'TEXT');
+      await addColumnIfMissing('jinx_execution_log', 'log_file_path', 'TEXT');
 
       console.log('[DB] All tables are ready.');
   } catch (error) {
@@ -411,19 +526,17 @@ const dbQuery = (query, params = []) => {
   });
 };
 
-function parseNpcshrc() {
-  const rcPath = path.join(os.homedir(), '.npcshrc');
+function parseIncogniderc() {
+  const rcPath = path.join(os.homedir(), '.incogniderc');
   const result = {};
   try {
     if (fs.existsSync(rcPath)) {
       const content = fs.readFileSync(rcPath, 'utf-8');
       const lines = content.split('\n');
       for (const line of lines) {
-
         const match = line.match(/^(?:export\s+)?(\w+)=(.*)$/);
         if (match) {
           let value = match[2].trim();
-
           if ((value.startsWith('"') && value.endsWith('"')) ||
               (value.startsWith("'") && value.endsWith("'"))) {
             value = value.slice(1, -1);
@@ -433,44 +546,38 @@ function parseNpcshrc() {
       }
     }
   } catch (e) {
-    console.log('Error reading .npcshrc:', e.message);
+    console.log('Error reading .incogniderc:', e.message);
   }
   return result;
 }
 
 function getDefaultModelConfig() {
   const yaml = require('js-yaml');
-  let model = 'llama3.2';
-  let provider = 'ollama';
-  let npc = 'sibiji';
+  let model = '';
+  let provider = '';
+  let npc = 'ledbi';
 
-  const npcshrcEnv = parseNpcshrc();
+  const rcEnv = parseIncogniderc();
 
-  const chatModel = process.env.NPCSH_CHAT_MODEL || npcshrcEnv.NPCSH_CHAT_MODEL;
-  const chatProvider = process.env.NPCSH_CHAT_PROVIDER || npcshrcEnv.NPCSH_CHAT_PROVIDER;
-  const defaultNpc = process.env.NPCSH_DEFAULT_NPC || npcshrcEnv.NPCSH_DEFAULT_NPC;
+  const chatModel = process.env.INCOGNIDE_CHAT_MODEL || rcEnv.INCOGNIDE_CHAT_MODEL;
+  const chatProvider = process.env.INCOGNIDE_CHAT_PROVIDER || rcEnv.INCOGNIDE_CHAT_PROVIDER;
+  const defaultNpc = process.env.INCOGNIDE_DEFAULT_NPC || rcEnv.INCOGNIDE_DEFAULT_NPC;
 
-  if (chatModel) {
-    model = chatModel;
-  }
-  if (chatProvider) {
-    provider = chatProvider;
-  }
-  if (defaultNpc) {
-    npc = defaultNpc;
-  }
+  if (chatModel) model = chatModel;
+  if (chatProvider) provider = chatProvider;
+  if (defaultNpc) npc = defaultNpc;
 
   if (!chatModel) {
     try {
-      const globalCtx = path.join(os.homedir(), '.npcsh', 'npc_team', 'npcsh.ctx');
+      const globalCtx = path.join(INCOGNIDE_HOME, 'npc_team', 'incognide.ctx');
       if (fs.existsSync(globalCtx)) {
         const ctxData = yaml.load(fs.readFileSync(globalCtx, 'utf-8')) || {};
         if (ctxData.model) model = ctxData.model;
         if (ctxData.provider) provider = ctxData.provider;
-        if (ctxData.npc) npc = ctxData.npc;
+        if (ctxData.forenpc) npc = ctxData.forenpc;
       }
     } catch (e) {
-      console.log('Error reading global ctx for default model:', e.message);
+      console.log('Error reading incognide.ctx for default model:', e.message);
     }
   }
 
@@ -481,14 +588,14 @@ function getDefaultModelConfig() {
 const defaultModelConfig = getDefaultModelConfig();
 
 const DEFAULT_CONFIG = {
-  baseDir: path.resolve(os.homedir(), '.npcsh', 'incognide'),
+  baseDir: path.resolve(INCOGNIDE_HOME),
   stream: true,
   model: defaultModelConfig.model,
   provider: defaultModelConfig.provider,
   npc: defaultModelConfig.npc,
 };
 
-const DEVICE_CONFIG_PATH = path.join(os.homedir(), '.npcsh', 'incognide', 'device.json');
+const DEVICE_CONFIG_PATH = path.join(INCOGNIDE_HOME, 'device.json');
 
 function getOrCreateDeviceId() {
   try {
@@ -579,6 +686,84 @@ function killBackendProcess() {
   }
 }
 
+let daemonProcess = null;
+const DAEMON_SCRIPT_PATH = app.isPackaged
+  ? path.join(process.resourcesPath, 'daemon', 'incognide-daemon.js')
+  : path.join(__dirname, 'daemon', 'incognide-daemon.js');
+
+function spawnDaemon() {
+  if (daemonProcess) {
+    log('[daemon] Already spawned');
+    return;
+  }
+  const scriptPath = fs.existsSync(DAEMON_SCRIPT_PATH)
+    ? DAEMON_SCRIPT_PATH
+    : path.join(__dirname, 'src', 'daemon', 'incognide-daemon.js');
+  if (!fs.existsSync(scriptPath)) {
+    log(`[daemon] Script not found at ${scriptPath}`);
+    return;
+  }
+  log(`[daemon] Spawning daemon: ${scriptPath}`);
+  daemonProcess = spawn(process.execPath, [scriptPath], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+    detached: process.platform !== 'win32',
+    env: { ...process.env, INCOGNIDE_HOME },
+  });
+  daemonProcess.stdout.on('data', (d) => {
+    log('[daemon stdout]', d.toString().trim());
+  });
+  daemonProcess.stderr.on('data', (d) => {
+    log('[daemon stderr]', d.toString().trim());
+  });
+  daemonProcess.on('close', (code) => {
+    log(`[daemon] exited with code ${code}`);
+    daemonProcess = null;
+  });
+  daemonProcess.on('error', (err) => {
+    log(`[daemon] spawn error: ${err.message}`);
+    daemonProcess = null;
+  });
+}
+
+function killDaemon() {
+  if (!daemonProcess) {
+    log('[daemon] Not running');
+    return;
+  }
+  log('[daemon] Stopping daemon');
+  if (process.platform === 'win32') {
+    try {
+      execSync(`taskkill /F /T /PID ${daemonProcess.pid}`, { stdio: 'ignore' });
+    } catch (e) {
+      try { daemonProcess.kill('SIGKILL'); } catch (e2) {}
+    }
+  } else {
+    try { process.kill(-daemonProcess.pid, 'SIGTERM'); } catch (e) {
+      try { daemonProcess.kill('SIGTERM'); } catch (e2) {}
+    }
+  }
+  daemonProcess = null;
+}
+
+async function getDaemonStatus() {
+  try {
+    const rows = await dbQuery(`SELECT * FROM daemon_state WHERE id = 1`);
+    if (!rows.length) return { running: false };
+    const state = rows[0];
+    let alive = false;
+    if (state.pid && state.status === 'running') {
+      try {
+        process.kill(state.pid, 0);
+        alive = true;
+      } catch {}
+    }
+    return { running: alive, pid: state.pid, port: state.port, lastHeartbeat: state.last_heartbeat };
+  } catch (err) {
+    return { running: false, error: err.message };
+  }
+}
+
 function spawnBackendProcess(bPath, bArgs, label, env) {
   log(`Spawning backend (${label}): ${bPath} ${bArgs.join(' ')}`);
   const proc = spawn(bPath, bArgs, {
@@ -646,7 +831,7 @@ function scheduleCronJob(job) {
   if (job.task) job.task.stop();
   job.task = cron.schedule(job.schedule, async () => {
     console.log(`[cron] ${job.id}: ${job.command}`);
-    const logDir = path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team', 'logs');
+    const logDir = path.join(INCOGNIDE_HOME, 'npc_team', 'logs');
     const logFile = path.join(logDir, `${job.id}.log`);
     try { await fsPromises.mkdir(logDir, { recursive: true }); } catch {}
 
@@ -658,7 +843,7 @@ function scheduleCronJob(job) {
     // Search for the jinx file in npc_team dirs
     const searchDirs = [
       path.join(os.homedir(), '.npcsh', 'npc_team', 'jinxes'),
-      path.join(os.homedir(), '.npcsh', 'incognide', 'npc_team', 'jinxes'),
+      path.join(INCOGNIDE_HOME, 'npc_team', 'jinxes'),
     ];
     let jinxFile = null;
     for (const dir of searchDirs) {
@@ -1174,10 +1359,77 @@ app.on('web-contents-created', (event, contents) => {
   }
 });
 
+async function deployIncognideTeamOnStartup() {
+  const INCOGNIDE_TEAM_PATH = path.join(INCOGNIDE_HOME, 'npc_team');
+  const destBase = INCOGNIDE_TEAM_PATH;
+  const manifestPath = path.join(destBase, '.deploy_manifest.json');
+  try {
+    await fsPromises.mkdir(destBase, { recursive: true });
+    const npcTeamSrc = app.isPackaged
+      ? path.join(process.resourcesPath, 'npc_team')
+      : path.join(__dirname, 'npc_team');
+    if (!fs.existsSync(npcTeamSrc)) {
+      log(`[Deploy] npc_team source not found at: ${npcTeamSrc}`);
+      return { success: false, error: 'Source not found' };
+    }
+    // Only deploy if directory is empty or missing manifest (first-run)
+    const entries = await fsPromises.readdir(destBase);
+    const hasManifest = fs.existsSync(manifestPath);
+    if (entries.length > 0 && hasManifest) {
+      log(`[Deploy] npc_team already present at ${destBase}, skipping auto-deploy`);
+      return { success: true, skipped: true };
+    }
+    const newManifest = {};
+    const copyAndTrack = async (src, dest, relBase = '') => {
+      const stat = await fsPromises.stat(src);
+      if (stat.isDirectory()) {
+        await fsPromises.mkdir(dest, { recursive: true });
+        const items = await fsPromises.readdir(src);
+        for (const item of items) {
+          await copyAndTrack(path.join(src, item), path.join(dest, item), relBase ? `${relBase}/${item}` : item);
+        }
+      } else {
+        await fsPromises.copyFile(src, dest);
+        newManifest[relBase] = crypto.createHash('sha256').update(await fsPromises.readFile(dest)).digest('hex');
+      }
+    };
+    await copyAndTrack(npcTeamSrc, destBase);
+    await fsPromises.writeFile(manifestPath, JSON.stringify(newManifest, null, 2));
+    log(`[Deploy] Deployed incognide npc_team to ${destBase}`);
+    return { success: true };
+  } catch (e) {
+    log(`[Deploy] Error deploying team: ${e.message}`);
+    return { success: false, error: e.message };
+  }
+}
+
 app.whenReady().then(async () => {
 
   const dataPath = ensureUserDataDirectory();
   await ensureTablesExist();
+
+  // Ensure bundled npc_team is deployed so daemon jinx paths resolve
+  try {
+    await deployIncognideTeamOnStartup();
+  } catch (e) {
+    log(`[Deploy] Startup deploy error: ${e.message}`);
+  }
+
+  // Auto-start daemon if it was running or if there are enabled scheduled jobs
+  try {
+    const daemonStatus = await getDaemonStatus();
+    if (daemonStatus.running) {
+      log('[daemon] Reconnecting to existing daemon');
+    } else {
+      const enabledJobs = await dbQuery(`SELECT COUNT(*) as count FROM scheduled_jobs WHERE enabled = 1`);
+      if (enabledJobs?.[0]?.count > 0 || daemonStatus.lastHeartbeat) {
+        log('[daemon] Auto-starting daemon (enabled jobs exist or was previously running)');
+        spawnDaemon();
+      }
+    }
+  } catch (err) {
+    log(`[daemon] Status check failed: ${err.message}`);
+  }
 
   protocol.registerFileProtocol('file', (request, callback) => {
     const filepath = request.url.replace('file://', '');
@@ -1286,7 +1538,8 @@ app.whenReady().then(async () => {
         PYTHONIOENCODING: 'utf-8',
         HOME: os.homedir(),
         NPCSH_BASE: path.join(os.homedir(), '.npcsh'),
-        INCOGNIDE_DATA_DIR: path.join(os.homedir(), '.npcsh', 'incognide', 'data'),
+        INCOGNIDE_HOME: INCOGNIDE_HOME,
+        INCOGNIDE_DATA_DIR: path.join(INCOGNIDE_HOME, 'data'),
       };
 
       backendProcess = spawnBackendProcess(_backendPath, _spawnArgs, spawnMode, _backendEnv);
@@ -1386,7 +1639,7 @@ async function callBackendApi(url, options = {}) {
   }
 }
 function ensureUserDataDirectory() {
-  const userDataPath = path.join(os.homedir(), '.npcsh', 'incognide', 'data');
+  const userDataPath = path.join(INCOGNIDE_HOME, 'data');
   log('Creating user data directory:', userDataPath);
 
   try {
@@ -1401,7 +1654,7 @@ function ensureUserDataDirectory() {
 
 function getBackendPythonPath() {
 
-  const rcPath = path.join(os.homedir(), '.npcshrc');
+  const rcPath = path.join(os.homedir(), '.incogniderc');
   try {
     if (fs.existsSync(rcPath)) {
       const rcContent = fs.readFileSync(rcPath, 'utf8');
@@ -1418,7 +1671,7 @@ function getBackendPythonPath() {
       }
     }
   } catch (err) {
-    log('Error reading backend Python path from .npcshrc:', err);
+    log('Error reading backend Python path from .incogniderc:', err);
   }
   return null;
 }
@@ -1439,7 +1692,7 @@ function needsFirstRunSetup() {
     return false;
   }
 
-  const setupMarkerPath = path.join(os.homedir(), '.npcsh', 'incognide', '.setup_complete');
+  const setupMarkerPath = path.join(INCOGNIDE_HOME, '.setup_complete');
   if (fs.existsSync(setupMarkerPath)) {
     return false;
   }
@@ -1449,7 +1702,7 @@ function needsFirstRunSetup() {
 }
 
 function saveBackendPythonPath(pythonPath) {
-  const rcPath = path.join(os.homedir(), '.npcshrc');
+  const rcPath = path.join(os.homedir(), '.incogniderc');
   let rcContent = '';
 
   try {
@@ -1457,7 +1710,7 @@ function saveBackendPythonPath(pythonPath) {
       rcContent = fs.readFileSync(rcPath, 'utf8');
     }
   } catch (err) {
-    log('Error reading .npcshrc:', err);
+    log('Error reading .incogniderc:', err);
   }
 
   rcContent = rcContent.replace(/^BACKEND_PYTHON_PATH=.*$/gm, '').trim();
@@ -1466,16 +1719,16 @@ function saveBackendPythonPath(pythonPath) {
 
   try {
     fs.writeFileSync(rcPath, rcContent);
-    log(`Saved BACKEND_PYTHON_PATH to .npcshrc: ${pythonPath}`);
+    log(`Saved BACKEND_PYTHON_PATH to .incogniderc: ${pythonPath}`);
     return true;
   } catch (err) {
-    log('Error saving to .npcshrc:', err);
+    log('Error saving to .incogniderc:', err);
     return false;
   }
 }
 
 function markSetupComplete() {
-  const setupMarkerPath = path.join(os.homedir(), '.npcsh', 'incognide', '.setup_complete');
+  const setupMarkerPath = path.join(INCOGNIDE_HOME, '.setup_complete');
   try {
     fs.mkdirSync(path.dirname(setupMarkerPath), { recursive: true });
     fs.writeFileSync(setupMarkerPath, new Date().toISOString());
@@ -1486,7 +1739,7 @@ function markSetupComplete() {
   }
 }
 
-const userProfilePath = path.join(os.homedir(), '.npcsh', 'incognide', 'user_profile.json');
+const userProfilePath = path.join(INCOGNIDE_HOME, 'user_profile.json');
 
 const defaultUserProfile = {
   path: 'local-ai',
@@ -1530,7 +1783,7 @@ function registerGlobalShortcut(win) {
   globalShortcut.unregisterAll();
 
   try {
-    const rcPath = path.join(os.homedir(), '.npcshrc');
+    const rcPath = path.join(os.homedir(), '.incogniderc');
     let shortcut = DEFAULT_SHORTCUT;
 
     if (fs.existsSync(rcPath)) {
@@ -1826,7 +2079,7 @@ if (!gotTheLock) {
     }
   });
 
-  const interceptFilePath = path.join(os.homedir(), '.npcsh', 'incognide', 'browser_intercept.txt');
+  const interceptFilePath = path.join(INCOGNIDE_HOME, 'browser_intercept.txt');
   let interceptWatcher = null;
   const startInterceptFileWatcher = () => {
     try {
@@ -2275,6 +2528,9 @@ registerAll({
   registerGlobalShortcut,
   backendProcess,
   killBackendProcess,
+  spawnDaemon,
+  killDaemon,
+  getDaemonStatus,
   ensureUserDataDirectory,
   waitForServer,
   logsDir,
@@ -2283,6 +2539,7 @@ registerAll({
   ensureTablesExist,
   appDir: __dirname,
   NPCSH_BASE,
+  INCOGNIDE_HOME,
 });
 
 // Generic proxy fetch — bypasses CORS for renderer requests to external APIs
@@ -2582,7 +2839,7 @@ ipcMain.handle('backend:installAndStart', async (event, { pythonPath, npcpyExtra
   };
 
   try {
-    const venvDir = path.join(os.homedir(), '.npcsh', 'incognide', 'venv');
+    const venvDir = path.join(INCOGNIDE_HOME, 'venv');
 
     sendProgress(`Creating virtual environment at ${venvDir}...`);
 
@@ -2636,7 +2893,8 @@ ipcMain.handle('backend:installAndStart', async (event, { pythonPath, npcpyExtra
       PYTHONIOENCODING: 'utf-8',
       HOME: os.homedir(),
       NPCSH_BASE: path.join(os.homedir(), '.npcsh'),
-      INCOGNIDE_DATA_DIR: path.join(os.homedir(), '.npcsh', 'incognide', 'data'),
+      INCOGNIDE_HOME: INCOGNIDE_HOME,
+      INCOGNIDE_DATA_DIR: path.join(INCOGNIDE_HOME, 'data'),
     };
 
     _backendPath = venvPython;
@@ -2647,7 +2905,7 @@ ipcMain.handle('backend:installAndStart', async (event, { pythonPath, npcpyExtra
 
     if (ready) {
       _backendStartupError = null;
-      // Save the venv python path to .npcshrc
+      // Save the venv python path to .incogniderc
       saveBackendPythonPath(venvPython);
       sendProgress('Backend started successfully.');
       if (mainWindow && !mainWindow.isDestroyed()) {

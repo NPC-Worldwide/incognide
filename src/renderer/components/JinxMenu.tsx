@@ -30,6 +30,14 @@ const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = t
     useEffect(() => {
         const loadJinxes = async () => {
             if (!isOpen) return;
+            
+            // Validate paths before making API calls
+            if (!isGlobal && (!currentPath || typeof currentPath !== 'string')) {
+                setError('No project folder selected');
+                setLoading(false);
+                return;
+            }
+            
             setLoading(true);
             setError(null);
 

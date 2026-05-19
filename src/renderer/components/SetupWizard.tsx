@@ -150,7 +150,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     const skipInstall = (name: string) => setSkippedInstalls(prev => new Set(prev).add(name));
 
     const [isDarkMode, setIsDarkMode] = useState(() => document.body.classList.contains('dark-mode'));
-    const [dataDirectory, setDataDirectory] = useState('~/.npcsh/incognide');
+    const [dataDirectory, setDataDirectory] = useState('~/.incognide');
     const [searchEngine, setSearchEngine] = useState(() => localStorage.getItem('npc-browser-search-engine') || 'sibiji');
     const [defaultShell, setDefaultShell] = useState(() => localStorage.getItem('terminal-default-shell') || detectDefaultShell());
     const [activityTrackingEnabled, setActivityTrackingEnabled] = useState(() => {
@@ -296,7 +296,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         setError(null);
         setInstallOutput([]);
         setStep('creating');
-        setInstallOutput(['Creating virtual environment at ~/.npcsh/incognide/venv...']);
+        setInstallOutput(['Creating virtual environment at ~/.incognide/venv...']);
 
         try {
             const result = await (window as any).api?.setupCreateVenv?.();
@@ -522,7 +522,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                         value={dataDirectory}
                         onChange={(e) => setDataDirectory(e.target.value)}
                         className="flex-1 px-3 py-2 text-sm bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none"
-                        placeholder="~/.npcsh"
+                        placeholder="~/.incognide"
                     />
                     <button
                         onClick={async () => {
@@ -541,7 +541,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                         <FolderOpen size={16} />
                     </button>
                 </div>
-                <p className="text-[10px] text-gray-500">Where Incognide stores teams, models, and configs. Default: ~/.npcsh/incognide</p>
+                <p className="text-[10px] text-gray-500">Where Incognide stores teams, models, and configs. Default: ~/.incognide</p>
             </div>
 
             <div className="flex gap-3">
@@ -554,7 +554,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 <button
                     onClick={() => {
 
-                        if (dataDirectory && dataDirectory !== '~/.npcsh/incognide') {
+                        if (dataDirectory && dataDirectory !== '~/.incognide') {
                             (window as any).api?.saveGlobalSettings?.({
                                 global_settings: { data_directory: dataDirectory },
                                 global_vars: {}

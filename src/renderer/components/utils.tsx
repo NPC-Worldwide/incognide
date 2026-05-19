@@ -306,30 +306,41 @@ export const loadAvailableNPCs = async (
     setNpcsLoading(true);
     setNpcsError(null);
     try {
-
-        const [projectResult, globalResult] = await Promise.allSettled([
+        const teamFetches: Promise<any>[] = [
             window.api.getNPCTeamProject(pathToUse),
-            window.api.getNPCTeamGlobal('npcsh'),
-        ]);
+        ];
+        const teamKeys: string[] = ['project'];
 
-        const projectNPCs = projectResult.status === 'fulfilled' ? (projectResult.value.npcs || []) : [];
-        const globalNPCs = globalResult.status === 'fulfilled' ? (globalResult.value.npcs || []) : [];
+        try {
+            const teamsData = await window.api.registeredTeamsRead();
+            if (teamsData?.teams) {
+                for (const [key, team] of Object.entries(teamsData.teams)) {
+                    teamKeys.push(key);
+                    teamFetches.push(window.api.getNPCTeamGlobal(key));
+                }
+            }
+        } catch {
+            teamKeys.push('incognide');
+            teamFetches.push(window.api.getNPCTeamGlobal(undefined));
+        }
 
-        const formattedProjectNPCs = projectNPCs.map(npc => ({
-            ...npc,
-            value: npc.name,
-            display_name: `${npc.name} | Project`,
-            source: 'project'
-        }));
+        const results = await Promise.allSettled(teamFetches);
 
-        const formattedGlobalNPCs = globalNPCs.map(npc => ({
-            ...npc,
-            value: npc.name,
-            display_name: `${npc.name} | Global`,
-            source: 'global'
-        }));
+        const combinedNPCs: any[] = [];
+        results.forEach((result, idx) => {
+            const teamKey = teamKeys[idx];
+            const npcs = result.status === 'fulfilled' ? (result.value.npcs || []) : [];
+            npcs.forEach((npc: any) => {
+                combinedNPCs.push({
+                    ...npc,
+                    value: npc.name,
+                    display_name: `${npc.name} | ${teamKey === 'project' ? 'Project' : (npc.team_name || teamKey)}`,
+                    source: teamKey === 'project' ? 'project' : 'global',
+                    team: teamKey,
+                });
+            });
+        });
 
-        const combinedNPCs = [...formattedProjectNPCs, ...formattedGlobalNPCs];
         setAvailableNPCs(combinedNPCs);
         return combinedNPCs;
     } catch (err: any) {

@@ -7,7 +7,7 @@ const PANE_TYPE_INFO: Record<string, { title: string; description: string; needs
   'agent':            { title: 'Agent',            description: 'AI agent with tools' },
   'editor':           { title: 'Code Editor',      description: 'Edit code and text files', needsPath: true },
   'terminal':         { title: 'Terminal',          description: 'Shell terminal (system, npcsh, guac)' },
-  'browser':          { title: 'Browser',           description: 'Web browser', needsUrl: true },
+
   'pdf':              { title: 'PDF Viewer',        description: 'View PDF documents', needsPath: true },
   'csv':              { title: 'Spreadsheet',       description: 'View/edit CSV and Excel files', needsPath: true },
   'docx':             { title: 'Document',          description: 'View/edit Word documents', needsPath: true },
@@ -15,7 +15,8 @@ const PANE_TYPE_INFO: Record<string, { title: string; description: string; needs
   'latex':            { title: 'LaTeX',             description: 'Edit LaTeX documents', needsPath: true },
   'notebook':         { title: 'Notebook',          description: 'Jupyter notebook', needsPath: true },
   'exp':              { title: 'Experiment',        description: 'Experiment file', needsPath: true },
-  'image':            { title: 'Image',             description: 'View image files', needsPath: true },
+
+    
   'zip':              { title: 'Archive',           description: 'Browse ZIP archives', needsPath: true },
   'image':            { title: 'Image',             description: 'View image files', needsPath: true },
   'graph-viewer':     { title: 'Knowledge Graph',   description: 'View and edit the knowledge graph' },
