@@ -522,7 +522,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                         value={dataDirectory}
                         onChange={(e) => setDataDirectory(e.target.value)}
                         className="flex-1 px-3 py-2 text-sm bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none"
-                        placeholder="~/.npcsh"
+                        placeholder="~/.incognide"
                     />
                     <button
                         onClick={async () => {

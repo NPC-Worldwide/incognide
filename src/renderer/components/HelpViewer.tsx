@@ -162,7 +162,7 @@ export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
                                     NPCs are customizable personas with specific system prompts and behaviors.
                                     Use them for chat, as agents with tools, or in any execution mode.
                                     Create project-specific ones in <code className="px-1 py-0.5 bg-gray-700 rounded text-[10px]">./npc_team/npcs/</code>
-                                    or global ones in <code className="px-1 py-0.5 bg-gray-700 rounded text-[10px]">~/.npcsh/npc_team/npcs/</code>.
+                                    or global ones in <code className="px-1 py-0.5 bg-gray-700 rounded text-[10px]">~/.incognide/npc_team/npcs/</code>.
                                 </p>
                             </div>
                             <div>
@@ -295,15 +295,15 @@ export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
                     <CollapsibleSection title="File Locations" icon={<FolderOpen size={18} />}>
                         <div className="space-y-2 text-xs font-mono">
                             <div>
-                                <div className="theme-text-primary">~/.npcsh/</div>
+                                <div className="theme-text-primary">~/.incognide/</div>
                                 <div className="text-[10px] theme-text-muted pl-3">Global config, passwords, memories</div>
                             </div>
                             <div>
-                                <div className="theme-text-primary">~/.npcsh/npc_team/</div>
+                                <div className="theme-text-primary">~/.incognide/npc_team/</div>
                                 <div className="text-[10px] theme-text-muted pl-3">Global NPCs, jinxes, contexts</div>
                             </div>
                             <div>
-                                <div className="theme-text-primary">~/.npcshrc</div>
+                                <div className="theme-text-primary">~/.incogniderc</div>
                                 <div className="text-[10px] theme-text-muted pl-3">API keys, shell settings</div>
                             </div>
                             <div>
@@ -311,7 +311,7 @@ export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
                                 <div className="text-[10px] theme-text-muted pl-3">Project-local NPCs and jinxes</div>
                             </div>
                             <div>
-                                <div className="theme-text-primary">./.npcsh/</div>
+                                <div className="theme-text-primary">./.incognide/</div>
                                 <div className="text-[10px] theme-text-muted pl-3">Project workspace, conversations</div>
                             </div>
                         </div>

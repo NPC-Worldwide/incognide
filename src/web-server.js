@@ -43,9 +43,9 @@ const cors = require('cors');
 const PORT = parseInt(process.env.PORT || process.env.FRONTEND_PORT || '3000', 10);
 const BACKEND_PORT = parseInt(process.env.BACKEND_PORT || '5337', 10);
 const BACKEND_URL = process.env.BACKEND_URL || `http://127.0.0.1:${BACKEND_PORT}`;
-const DATABASE_PATH = process.env.DATABASE_PATH || path.join(os.homedir(), 'npcsh_history.db');
+const DATABASE_PATH = process.env.INCOGNIDE_DB_PATH || process.env.DATABASE_PATH || path.join(os.homedir(), 'incognide_history.db');
 const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || '/data/workspace';
-const NPCSH_BASE = process.env.NPCSH_BASE || path.join(os.homedir(), '.npcsh');
+const INCOGNIDE_HOME = process.env.INCOGNIDE_HOME || path.join(os.homedir(), '.incognide');
 const DIST_DIR = path.join(__dirname, '..', 'dist');
 const IS_DEV_MODE = process.env.NODE_ENV === 'development';
 
@@ -53,7 +53,7 @@ const IS_DEV_MODE = process.env.NODE_ENV === 'development';
 // Logging
 // ---------------------------------------------------------------------------
 
-const logsDir = path.join(NPCSH_BASE, 'incognide', 'logs');
+const logsDir = path.join(INCOGNIDE_HOME, 'logs');
 try { fs.mkdirSync(logsDir, { recursive: true }); } catch {}
 
 const log = (...messages) => {
@@ -120,8 +120,8 @@ async function callBackendApi(url, options = {}) {
   }
 }
 
-function parseNpcshrc() {
-  const rcPath = path.join(os.homedir(), '.npcshrc');
+function parseIncogniderc() {
+  const rcPath = path.join(os.homedir(), '.incogniderc');
   const result = {};
   try {
     if (fs.existsSync(rcPath)) {
@@ -142,7 +142,7 @@ function parseNpcshrc() {
       }
     }
   } catch (e) {
-    log('Error reading .npcshrc:', e.message);
+    log('Error reading .incogniderc:', e.message);
   }
   return result;
 }
@@ -151,15 +151,15 @@ function getDefaultModelConfig() {
   let yaml;
   try { yaml = require('js-yaml'); } catch { yaml = null; }
 
-  let model = 'llama3.2';
-  let provider = 'ollama';
-  let npc = 'sibiji';
+  let model = '';
+  let provider = '';
+  let npc = 'ledbi';
 
-  const npcshrcEnv = parseNpcshrc();
+  const incognidercEnv = parseIncogniderc();
 
-  const chatModel = process.env.NPCSH_CHAT_MODEL || npcshrcEnv.NPCSH_CHAT_MODEL;
-  const chatProvider = process.env.NPCSH_CHAT_PROVIDER || npcshrcEnv.NPCSH_CHAT_PROVIDER;
-  const defaultNpc = process.env.NPCSH_DEFAULT_NPC || npcshrcEnv.NPCSH_DEFAULT_NPC;
+  const chatModel = process.env.INCOGNIDE_CHAT_MODEL || incognidercEnv.INCOGNIDE_CHAT_MODEL;
+  const chatProvider = process.env.INCOGNIDE_CHAT_PROVIDER || incognidercEnv.INCOGNIDE_CHAT_PROVIDER;
+  const defaultNpc = process.env.INCOGNIDE_DEFAULT_NPC || incognidercEnv.INCOGNIDE_DEFAULT_NPC;
 
   if (chatModel) model = chatModel;
   if (chatProvider) provider = chatProvider;
@@ -167,12 +167,12 @@ function getDefaultModelConfig() {
 
   if (!chatModel && yaml) {
     try {
-      const globalCtx = path.join(os.homedir(), '.npcsh', 'npc_team', 'npcsh.ctx');
+      const globalCtx = path.join(INCOGNIDE_HOME, 'npc_team', 'incognide.ctx');
       if (fs.existsSync(globalCtx)) {
         const ctxData = yaml.load(fs.readFileSync(globalCtx, 'utf-8')) || {};
         if (ctxData.model) model = ctxData.model;
         if (ctxData.provider) provider = ctxData.provider;
-        if (ctxData.npc) npc = ctxData.npc;
+        if (ctxData.forenpc) npc = ctxData.forenpc;
       }
     } catch (e) {
       log('Error reading global ctx for default model:', e.message);
@@ -185,7 +185,7 @@ function getDefaultModelConfig() {
 const defaultModelConfig = getDefaultModelConfig();
 
 const DEFAULT_CONFIG = {
-  baseDir: path.resolve(NPCSH_BASE),
+  baseDir: path.resolve(INCOGNIDE_HOME),
   stream: true,
   model: defaultModelConfig.model,
   provider: defaultModelConfig.provider,
@@ -193,7 +193,7 @@ const DEFAULT_CONFIG = {
 };
 
 // Device config
-const DEVICE_CONFIG_PATH = path.join(NPCSH_BASE, 'incognide', 'device.json');
+const DEVICE_CONFIG_PATH = path.join(INCOGNIDE_HOME, 'device.json');
 
 function getOrCreateDeviceId() {
   try {
@@ -232,12 +232,12 @@ function updateDeviceConfig(updates) {
 }
 
 function needsFirstRunSetup() {
-  const setupFlagPath = path.join(NPCSH_BASE, 'incognide', '.setup_complete');
+  const setupFlagPath = path.join(INCOGNIDE_HOME, '.setup_complete');
   return !fs.existsSync(setupFlagPath);
 }
 
 function markSetupComplete() {
-  const setupFlagPath = path.join(NPCSH_BASE, 'incognide', '.setup_complete');
+  const setupFlagPath = path.join(INCOGNIDE_HOME, '.setup_complete');
   try {
     fs.mkdirSync(path.dirname(setupFlagPath), { recursive: true });
     fs.writeFileSync(setupFlagPath, new Date().toISOString());
@@ -245,7 +245,7 @@ function markSetupComplete() {
 }
 
 function getBackendPythonPath() {
-  const rcPath = path.join(os.homedir(), '.npcshrc');
+  const rcPath = path.join(os.homedir(), '.incogniderc');
   try {
     if (fs.existsSync(rcPath)) {
       const rcContent = fs.readFileSync(rcPath, 'utf8');
@@ -260,7 +260,7 @@ function getBackendPythonPath() {
 }
 
 function saveBackendPythonPath(pythonPath) {
-  const rcPath = path.join(os.homedir(), '.npcshrc');
+  const rcPath = path.join(os.homedir(), '.incogniderc');
   try {
     let content = '';
     if (fs.existsSync(rcPath)) content = fs.readFileSync(rcPath, 'utf8');
@@ -275,7 +275,7 @@ function saveBackendPythonPath(pythonPath) {
   }
 }
 
-const userProfilePath = path.join(NPCSH_BASE, 'incognide', 'profile.json');
+const userProfilePath = path.join(INCOGNIDE_HOME, 'profile.json');
 
 function getUserProfile() {
   try {
@@ -298,7 +298,7 @@ function saveUserProfile(profile) {
 }
 
 function ensureUserDataDirectory() {
-  const userDataPath = path.join(NPCSH_BASE, 'incognide', 'data');
+  const userDataPath = path.join(INCOGNIDE_HOME, 'data');
   try { fs.mkdirSync(userDataPath, { recursive: true }); } catch {}
   return userDataPath;
 }
@@ -611,11 +611,11 @@ const ctx = {
   DEFAULT_CONFIG,
   app: {
     getPath(name) {
-      if (name === 'userData') return path.join(NPCSH_BASE, 'incognide');
+      if (name === 'userData') return INCOGNIDE_HOME;
       if (name === 'home') return os.homedir();
       if (name === 'temp') return os.tmpdir();
-      if (name === 'appData') return NPCSH_BASE;
-      return NPCSH_BASE;
+      if (name === 'appData') return INCOGNIDE_HOME;
+      return INCOGNIDE_HOME;
     },
     getVersion() { return require('../package.json').version; },
     getName() { return 'incognide'; },
@@ -645,7 +645,7 @@ const ctx = {
   backendLogPath: path.join(logsDir, 'backend.log'),
   ensureTablesExist,
   appDir: __dirname,
-  NPCSH_BASE,
+  INCOGNIDE_HOME,
 };
 
 // ---------------------------------------------------------------------------
@@ -1099,10 +1099,10 @@ async function start() {
     log(`[FS] Workspace root: ${WORKSPACE_ROOT}`);
   } catch {}
 
-  // Ensure NPCSH directories
+  // Ensure INCOGNIDE directories
   try {
-    await fsPromises.mkdir(path.join(NPCSH_BASE, 'npc_team'), { recursive: true });
-    await fsPromises.mkdir(path.join(NPCSH_BASE, 'incognide'), { recursive: true });
+    await fsPromises.mkdir(path.join(INCOGNIDE_HOME, 'npc_team'), { recursive: true });
+    await fsPromises.mkdir(INCOGNIDE_HOME, { recursive: true });
   } catch {}
 
   // Create DB tables

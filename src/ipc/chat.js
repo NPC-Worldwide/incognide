@@ -9,7 +9,7 @@ const crypto = require('crypto');
 const sqlite3 = require('sqlite3');
 const yaml = require('js-yaml');
 
-const dbPath = path.join(os.homedir(), 'npcsh_history.db');
+const dbPath = path.join(os.homedir(), 'incognide_history.db');
 
 /**
  * Categorize backend errors into user-friendly messages
@@ -130,8 +130,8 @@ function categorizeBackendError(error) {
   };
 }
 
-function parseNpcshrc() {
-  const rcPath = path.join(os.homedir(), '.npcshrc');
+function parseIncogniderc() {
+  const rcPath = path.join(os.homedir(), '.incogniderc');
   const result = {};
   try {
     if (fs.existsSync(rcPath)) {
@@ -152,13 +152,13 @@ function parseNpcshrc() {
       }
     }
   } catch (e) {
-    console.log('Error reading .npcshrc:', e.message);
+    console.log('Error reading .incogniderc:', e.message);
   }
   return result;
 }
 
 function getBackendPythonPath() {
-  const rcPath = path.join(os.homedir(), '.npcshrc');
+  const rcPath = path.join(os.homedir(), '.incogniderc');
   try {
     if (fs.existsSync(rcPath)) {
       const rcContent = fs.readFileSync(rcPath, 'utf8');
@@ -172,7 +172,7 @@ function getBackendPythonPath() {
       }
     }
   } catch (err) {
-    console.log('Error reading backend Python path from .npcshrc:', err);
+    console.log('Error reading backend Python path from .incogniderc:', err);
   }
   return null;
 }
@@ -305,8 +305,8 @@ function register(ctx) {
             path.join(homeDir, '.cache', 'lm-studio', 'models'),
             path.join(homeDir, '.lmstudio', 'models'),
             path.join(homeDir, 'llama.cpp', 'models'),
-            path.join(homeDir, '.npcsh', 'models', 'gguf'),
-            path.join(homeDir, '.npcsh', 'models'),
+            path.join(homeDir, '.incognide', 'models', 'gguf'),
+            path.join(homeDir, '.incognide', 'models'),
             path.join(homeDir, 'models'),
         ];
 
@@ -361,6 +361,94 @@ function register(ctx) {
     return { models: allModels };
   });
 
+  // Providers that don't have a /models endpoint — return known model lists
+  const KNOWN_PROVIDER_MODELS = {
+    anthropic: [
+      'claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5',
+      'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229',
+    ],
+    huggingface: [
+      'Inference API — use custom base URL for specific models',
+    ],
+    perplexity: [
+      'sonar-pro', 'sonar', 'sonar-reasoning-pro', 'sonar-reasoning', 'sonar-deep-research',
+    ],
+  };
+
+  function findApiKeyInShellConfigs(apiKeyVar) {
+    const sourceFiles = [
+      path.join(os.homedir(), '.incogniderc'),
+      path.join(os.homedir(), '.env'),
+      path.join(os.homedir(), '.zshrc'),
+      path.join(os.homedir(), '.bashrc'),
+      path.join(os.homedir(), '.bash_profile'),
+    ];
+    for (const f of sourceFiles) {
+      try {
+        const content = fs.readFileSync(f, 'utf-8');
+        const match = content.match(new RegExp(`(?:export\\s+)?${apiKeyVar}=(.*)`, 'm'));
+        if (match) {
+          let val = match[1].trim();
+          if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+            val = val.slice(1, -1);
+          }
+          if (val) return val;
+        }
+      } catch {}
+    }
+    return null;
+  }
+
+  ipcMain.handle('get-provider-models', async (event, { provider, baseUrl, apiKeyVar }) => {
+    try {
+      let apiKey = process.env[apiKeyVar];
+      if (!apiKey) {
+        apiKey = findApiKeyInShellConfigs(apiKeyVar);
+      }
+      if (!apiKey) return { models: [], error: `No API key found for ${apiKeyVar}` };
+
+      // Return static model list for providers without a /models endpoint
+      if (KNOWN_PROVIDER_MODELS[provider]) {
+        return { models: KNOWN_PROVIDER_MODELS[provider].map(id => ({ id, name: id, provider })) };
+      }
+
+      // Standard OpenAI-compatible /models endpoint
+      const cleanUrl = baseUrl.replace(/\/+$/, '');
+      const modelsUrl = cleanUrl.endsWith('/models') ? cleanUrl : cleanUrl + '/models';
+      const headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      let response;
+      try {
+        response = await fetch(modelsUrl, { headers, signal: controller.signal });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      if (!response.ok) {
+        const errText = await response.text().catch(() => '');
+        // If we get HTML back (not a JSON API), report it cleanly
+        if (errText.startsWith('<') || errText.includes('<!doctype')) {
+          return { models: [], error: `${provider} does not support listing models via API` };
+        }
+        return { models: [], error: `HTTP ${response.status}: ${errText.slice(0, 200)}` };
+      }
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        return { models: [], error: `${provider} returned non-JSON response` };
+      }
+      const models = (data.data || data.models || []).map((m) => ({
+        id: m.id || m.name || m,
+        name: m.id || m.name || m,
+        provider,
+      }));
+      return { models };
+    } catch (err) {
+      return { models: [], error: err.message };
+    }
+  });
+
   ipcMain.handle('getAvailableImageModels', async (event, currentPath) => {
     log('[Main Process] getAvailableImageModels called for path:', currentPath);
     if (!currentPath) {
@@ -395,7 +483,7 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('generate_images', async (event, { prompt, n, model, provider, attachments, baseFilename='image_gen_', currentPath='~/.npcsh/images', workspacePath, width, height, customModelPath }) => {
+  ipcMain.handle('generate_images', async (event, { prompt, n, model, provider, attachments, baseFilename='image_gen_', currentPath='~/.incognide/images', workspacePath, width, height, customModelPath }) => {
     log(`[Main Process] Image gen request: n=${n} prompt="${prompt}" model="${model}" provider=${provider}`);
 
     if (!prompt) return { error: 'Prompt cannot be empty' };
@@ -1086,7 +1174,7 @@ function register(ctx) {
     const yaml = require('js-yaml');
     let result = { model: null, provider: null, npc: null };
 
-    const npcshrcEnv = parseNpcshrc();
+    const rcEnv = parseIncogniderc();
 
     try {
       const npcTeamDir = path.join(currentPath, 'npc_team');
@@ -1118,10 +1206,10 @@ function register(ctx) {
     }
 
     if (!result.model) {
-      result.model = process.env.NPCSH_CHAT_MODEL || npcshrcEnv.NPCSH_CHAT_MODEL;
+      result.model = process.env.INCOGNIDE_CHAT_MODEL || rcEnv.INCOGNIDE_CHAT_MODEL;
     }
     if (!result.provider) {
-      result.provider = process.env.NPCSH_CHAT_PROVIDER || npcshrcEnv.NPCSH_CHAT_PROVIDER;
+      result.provider = process.env.INCOGNIDE_CHAT_PROVIDER || rcEnv.INCOGNIDE_CHAT_PROVIDER;
     }
 
     console.log('getProjectCtx result:', result);
@@ -1351,7 +1439,7 @@ function register(ctx) {
     }
   });
 
-  // ---- Sync: export data from npcsh_history.db ----
+  // ---- Sync: export data from incognide_history.db ----
 
   ipcMain.handle('sync:export-data', async (_, { since, fullDump }) => {
     const sinceTs = (fullDump || !since) ? '1970-01-01T00:00:00.000Z' : since;

@@ -36,7 +36,7 @@ const NPCSH_BASE = path.join(os.homedir(), '.npcsh');
 
 let INCOGNIDE_HOME = process.env.INCOGNIDE_HOME || path.join(os.homedir(), '.incognide');
 try {
-  const _rcPath = path.join(os.homedir(), '.npcshrc');
+  const _rcPath = path.join(os.homedir(), '.incogniderc');
   if (fs.existsSync(_rcPath)) {
     const _rcContent = fs.readFileSync(_rcPath, 'utf-8');
     const _match = _rcContent.match(/^(?:export\s+)?INCOGNIDE_HOME=(.*)$/m);
@@ -49,46 +49,76 @@ try {
   }
 } catch {}
 
-function migrateIncognideHome() {
-  const newDir = INCOGNIDE_HOME;
-  const oldDir = path.join(NPCSH_BASE, 'incognide');
-  const marker = path.join(newDir, '.migrated');
-
-  if (fs.existsSync(marker)) return;
-
-  if (!fs.existsSync(newDir)) {
-    if (fs.existsSync(oldDir)) {
-      try {
-        fs.cpSync(oldDir, newDir, { recursive: true });
-      } catch (err) {
-        console.error('Failed to migrate incognide home:', err);
+function readRcFile(rcPath) {
+  const result = {};
+  try {
+    if (fs.existsSync(rcPath)) {
+      for (const line of fs.readFileSync(rcPath, 'utf-8').split('\n')) {
+        const m = line.trim().replace(/^export\s+/, '').match(/^(\w+)=(.*)$/);
+        if (m) {
+          let v = m[2].trim();
+          if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+          result[m[1]] = v;
+        }
       }
-    } else {
-      fs.mkdirSync(newDir, { recursive: true });
     }
-  }
-
-  try {
-    fs.writeFileSync(marker, new Date().toISOString());
   } catch {}
+  return result;
+}
 
-  const rcPath = path.join(os.homedir(), '.npcshrc');
-  try {
-    let content = '';
-    if (fs.existsSync(rcPath)) content = fs.readFileSync(rcPath, 'utf-8');
-    const newLine = `INCOGNIDE_HOME=~/.incognide`;
-    const existingRegex = /^(?:export\s+)?INCOGNIDE_HOME=.*$/m;
-    if (existingRegex.test(content)) {
-      content = content.replace(existingRegex, newLine);
-    } else {
-      content = content.trimEnd() + '\n' + newLine + '\n';
+function ensureIncognideRc() {
+  const rcPath = path.join(os.homedir(), '.incogniderc');
+  let lines = [];
+  if (fs.existsSync(rcPath)) {
+    lines = fs.readFileSync(rcPath, 'utf-8').split('\n').filter(l => l.trim());
+  }
+  const has = (key) => lines.some(l => l.match(new RegExp(`^(?:export\\s+)?${key}=`)));
+  const seed = (key, fallback) => {
+    if (!has(key)) {
+      const val = process.env[key] || fallback || '';
+      if (val) lines.push(`export ${key}=${val}`);
     }
-    fs.writeFileSync(rcPath, content);
+  };
+  if (!has('INCOGNIDE_HOME')) lines.push('export INCOGNIDE_HOME=~/.incognide');
+  seed('INCOGNIDE_CHAT_MODEL');
+  seed('INCOGNIDE_CHAT_PROVIDER');
+  seed('INCOGNIDE_DEFAULT_NPC', 'ledbi');
+  try {
+    fs.writeFileSync(rcPath, lines.join('\n') + '\n');
   } catch (err) {
-    console.error('Failed to update .npcshrc with INCOGNIDE_HOME:', err);
+    console.error('Failed to write .incogniderc:', err);
+  }
+  if (!fs.existsSync(INCOGNIDE_HOME)) {
+    fs.mkdirSync(INCOGNIDE_HOME, { recursive: true });
   }
 }
-migrateIncognideHome();
+ensureIncognideRc();
+
+function loadShellEnv() {
+  const rcPath = path.join(os.homedir(), '.incogniderc');
+  try {
+    if (fs.existsSync(rcPath)) {
+      const content = fs.readFileSync(rcPath, 'utf-8');
+      const lines = content.split('\n');
+      for (const line of lines) {
+        const match = line.match(/^(?:export\s+)?(\w+)=(.*)$/);
+        if (match) {
+          let value = match[2].trim();
+          if ((value.startsWith('"') && value.endsWith('"')) ||
+              (value.startsWith("'") && value.endsWith("'"))) {
+            value = value.slice(1, -1);
+          }
+          if (value && !process.env[match[1]]) {
+            process.env[match[1]] = value;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.log('Error loading .incogniderc into env:', e.message);
+  }
+}
+loadShellEnv();
 
 if (IS_DEV_MODE) {
   app.setPath('userData', path.join(INCOGNIDE_HOME, 'dev'));
@@ -496,19 +526,17 @@ const dbQuery = (query, params = []) => {
   });
 };
 
-function parseNpcshrc() {
-  const rcPath = path.join(os.homedir(), '.npcshrc');
+function parseIncogniderc() {
+  const rcPath = path.join(os.homedir(), '.incogniderc');
   const result = {};
   try {
     if (fs.existsSync(rcPath)) {
       const content = fs.readFileSync(rcPath, 'utf-8');
       const lines = content.split('\n');
       for (const line of lines) {
-
         const match = line.match(/^(?:export\s+)?(\w+)=(.*)$/);
         if (match) {
           let value = match[2].trim();
-
           if ((value.startsWith('"') && value.endsWith('"')) ||
               (value.startsWith("'") && value.endsWith("'"))) {
             value = value.slice(1, -1);
@@ -518,44 +546,38 @@ function parseNpcshrc() {
       }
     }
   } catch (e) {
-    console.log('Error reading .npcshrc:', e.message);
+    console.log('Error reading .incogniderc:', e.message);
   }
   return result;
 }
 
 function getDefaultModelConfig() {
   const yaml = require('js-yaml');
-  let model = 'llama3.2';
-  let provider = 'ollama';
-  let npc = 'sibiji';
+  let model = '';
+  let provider = '';
+  let npc = 'ledbi';
 
-  const npcshrcEnv = parseNpcshrc();
+  const rcEnv = parseIncogniderc();
 
-  const chatModel = process.env.NPCSH_CHAT_MODEL || npcshrcEnv.NPCSH_CHAT_MODEL;
-  const chatProvider = process.env.NPCSH_CHAT_PROVIDER || npcshrcEnv.NPCSH_CHAT_PROVIDER;
-  const defaultNpc = process.env.NPCSH_DEFAULT_NPC || npcshrcEnv.NPCSH_DEFAULT_NPC;
+  const chatModel = process.env.INCOGNIDE_CHAT_MODEL || rcEnv.INCOGNIDE_CHAT_MODEL;
+  const chatProvider = process.env.INCOGNIDE_CHAT_PROVIDER || rcEnv.INCOGNIDE_CHAT_PROVIDER;
+  const defaultNpc = process.env.INCOGNIDE_DEFAULT_NPC || rcEnv.INCOGNIDE_DEFAULT_NPC;
 
-  if (chatModel) {
-    model = chatModel;
-  }
-  if (chatProvider) {
-    provider = chatProvider;
-  }
-  if (defaultNpc) {
-    npc = defaultNpc;
-  }
+  if (chatModel) model = chatModel;
+  if (chatProvider) provider = chatProvider;
+  if (defaultNpc) npc = defaultNpc;
 
   if (!chatModel) {
     try {
-      const globalCtx = path.join(os.homedir(), '.npcsh', 'npc_team', 'npcsh.ctx');
+      const globalCtx = path.join(INCOGNIDE_HOME, 'npc_team', 'incognide.ctx');
       if (fs.existsSync(globalCtx)) {
         const ctxData = yaml.load(fs.readFileSync(globalCtx, 'utf-8')) || {};
         if (ctxData.model) model = ctxData.model;
         if (ctxData.provider) provider = ctxData.provider;
-        if (ctxData.npc) npc = ctxData.npc;
+        if (ctxData.forenpc) npc = ctxData.forenpc;
       }
     } catch (e) {
-      console.log('Error reading global ctx for default model:', e.message);
+      console.log('Error reading incognide.ctx for default model:', e.message);
     }
   }
 
@@ -1337,10 +1359,61 @@ app.on('web-contents-created', (event, contents) => {
   }
 });
 
+async function deployIncognideTeamOnStartup() {
+  const INCOGNIDE_TEAM_PATH = path.join(INCOGNIDE_HOME, 'npc_team');
+  const destBase = INCOGNIDE_TEAM_PATH;
+  const manifestPath = path.join(destBase, '.deploy_manifest.json');
+  try {
+    await fsPromises.mkdir(destBase, { recursive: true });
+    const npcTeamSrc = app.isPackaged
+      ? path.join(process.resourcesPath, 'npc_team')
+      : path.join(__dirname, 'npc_team');
+    if (!fs.existsSync(npcTeamSrc)) {
+      log(`[Deploy] npc_team source not found at: ${npcTeamSrc}`);
+      return { success: false, error: 'Source not found' };
+    }
+    // Only deploy if directory is empty or missing manifest (first-run)
+    const entries = await fsPromises.readdir(destBase);
+    const hasManifest = fs.existsSync(manifestPath);
+    if (entries.length > 0 && hasManifest) {
+      log(`[Deploy] npc_team already present at ${destBase}, skipping auto-deploy`);
+      return { success: true, skipped: true };
+    }
+    const newManifest = {};
+    const copyAndTrack = async (src, dest, relBase = '') => {
+      const stat = await fsPromises.stat(src);
+      if (stat.isDirectory()) {
+        await fsPromises.mkdir(dest, { recursive: true });
+        const items = await fsPromises.readdir(src);
+        for (const item of items) {
+          await copyAndTrack(path.join(src, item), path.join(dest, item), relBase ? `${relBase}/${item}` : item);
+        }
+      } else {
+        await fsPromises.copyFile(src, dest);
+        newManifest[relBase] = crypto.createHash('sha256').update(await fsPromises.readFile(dest)).digest('hex');
+      }
+    };
+    await copyAndTrack(npcTeamSrc, destBase);
+    await fsPromises.writeFile(manifestPath, JSON.stringify(newManifest, null, 2));
+    log(`[Deploy] Deployed incognide npc_team to ${destBase}`);
+    return { success: true };
+  } catch (e) {
+    log(`[Deploy] Error deploying team: ${e.message}`);
+    return { success: false, error: e.message };
+  }
+}
+
 app.whenReady().then(async () => {
 
   const dataPath = ensureUserDataDirectory();
   await ensureTablesExist();
+
+  // Ensure bundled npc_team is deployed so daemon jinx paths resolve
+  try {
+    await deployIncognideTeamOnStartup();
+  } catch (e) {
+    log(`[Deploy] Startup deploy error: ${e.message}`);
+  }
 
   // Auto-start daemon if it was running or if there are enabled scheduled jobs
   try {
@@ -1581,7 +1654,7 @@ function ensureUserDataDirectory() {
 
 function getBackendPythonPath() {
 
-  const rcPath = path.join(os.homedir(), '.npcshrc');
+  const rcPath = path.join(os.homedir(), '.incogniderc');
   try {
     if (fs.existsSync(rcPath)) {
       const rcContent = fs.readFileSync(rcPath, 'utf8');
@@ -1598,7 +1671,7 @@ function getBackendPythonPath() {
       }
     }
   } catch (err) {
-    log('Error reading backend Python path from .npcshrc:', err);
+    log('Error reading backend Python path from .incogniderc:', err);
   }
   return null;
 }
@@ -1629,7 +1702,7 @@ function needsFirstRunSetup() {
 }
 
 function saveBackendPythonPath(pythonPath) {
-  const rcPath = path.join(os.homedir(), '.npcshrc');
+  const rcPath = path.join(os.homedir(), '.incogniderc');
   let rcContent = '';
 
   try {
@@ -1637,7 +1710,7 @@ function saveBackendPythonPath(pythonPath) {
       rcContent = fs.readFileSync(rcPath, 'utf8');
     }
   } catch (err) {
-    log('Error reading .npcshrc:', err);
+    log('Error reading .incogniderc:', err);
   }
 
   rcContent = rcContent.replace(/^BACKEND_PYTHON_PATH=.*$/gm, '').trim();
@@ -1646,10 +1719,10 @@ function saveBackendPythonPath(pythonPath) {
 
   try {
     fs.writeFileSync(rcPath, rcContent);
-    log(`Saved BACKEND_PYTHON_PATH to .npcshrc: ${pythonPath}`);
+    log(`Saved BACKEND_PYTHON_PATH to .incogniderc: ${pythonPath}`);
     return true;
   } catch (err) {
-    log('Error saving to .npcshrc:', err);
+    log('Error saving to .incogniderc:', err);
     return false;
   }
 }
@@ -1710,7 +1783,7 @@ function registerGlobalShortcut(win) {
   globalShortcut.unregisterAll();
 
   try {
-    const rcPath = path.join(os.homedir(), '.npcshrc');
+    const rcPath = path.join(os.homedir(), '.incogniderc');
     let shortcut = DEFAULT_SHORTCUT;
 
     if (fs.existsSync(rcPath)) {
@@ -2832,7 +2905,7 @@ ipcMain.handle('backend:installAndStart', async (event, { pythonPath, npcpyExtra
 
     if (ready) {
       _backendStartupError = null;
-      // Save the venv python path to .npcshrc
+      // Save the venv python path to .incogniderc
       saveBackendPythonPath(venvPython);
       sendProgress('Backend started successfully.');
       if (mainWindow && !mainWindow.isDestroyed()) {

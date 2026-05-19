@@ -1,52 +1,28 @@
-import React, { useState, useEffect, useRef } from "react";
-import { DownloadCloud, Trash2, MessageSquare, Send, X } from "lucide-react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { DownloadCloud, Trash2, MessageSquare, Send, X, ChevronRight, RefreshCw, Plus, Globe } from "lucide-react";
 import { Card, Button, Input } from "npcts";
 
 const isMac = navigator.platform.toLowerCase().includes('mac') || navigator.userAgent.toLowerCase().includes('mac');
 
 const LOCAL_PROVIDERS: Record<string, any> = {
-    gguf: {
-        name: 'GGUF/GGML',
-        description: 'Direct GGUF/GGML model files (offline, no server)',
-        defaultPort: null,
-        docsUrl: 'https://huggingface.co/docs/hub/gguf',
-        color: 'text-orange-400',
-        bgColor: 'bg-orange-600'
-    },
-    llamacpp: {
-        name: 'llama.cpp Server',
-        description: 'High-performance C++ inference server',
-        defaultPort: 8080,
-        docsUrl: 'https://github.com/ggerganov/llama.cpp',
-        color: 'text-green-400',
-        bgColor: 'bg-green-600'
-    },
-    lmstudio: {
-        name: 'LM Studio',
-        description: 'Desktop app for running local LLMs',
-        defaultPort: 1234,
-        docsUrl: 'https://lmstudio.ai',
-        color: 'text-purple-400',
-        bgColor: 'bg-purple-600'
-    },
-    ollama: {
-        name: 'Ollama',
-        description: 'Local LLM server with model management',
-        defaultPort: 11434,
-        docsUrl: 'https://ollama.ai',
-        color: 'text-blue-400',
-        bgColor: 'bg-blue-600'
-    },
-    ...(isMac ? {
-        omlx: {
-            name: 'OMLX',
-            description: 'Apple Silicon optimized LLM server',
-            defaultPort: 8000,
-            docsUrl: 'https://github.com/jundot/omlx',
-            color: 'text-pink-400',
-            bgColor: 'bg-pink-600'
-        }
-    } : {}),
+    gguf: { name: 'GGUF/GGML', description: 'Direct model files (no server)', defaultPort: null, docsUrl: 'https://huggingface.co/docs/hub/gguf', color: 'text-orange-400', bgColor: 'bg-orange-600', local: true },
+    llamacpp: { name: 'llama.cpp', description: 'C++ inference server', defaultPort: 8080, docsUrl: 'https://github.com/ggerganov/llama.cpp', color: 'text-green-400', bgColor: 'bg-green-600', local: true },
+    lmstudio: { name: 'LM Studio', description: 'Desktop local LLM runner', defaultPort: 1234, docsUrl: 'https://lmstudio.ai', color: 'text-purple-400', bgColor: 'bg-purple-600', local: true },
+    ollama: { name: 'Ollama', description: 'Local LLM server', defaultPort: 11434, docsUrl: 'https://ollama.ai', color: 'text-blue-400', bgColor: 'bg-blue-600', local: true },
+    ...(isMac ? { omlx: { name: 'OMLX', description: 'Apple Silicon optimized', defaultPort: 8000, docsUrl: 'https://github.com/jundot/omlx', color: 'text-pink-400', bgColor: 'bg-pink-600', local: true } } : {}),
+};
+
+const API_PROVIDER_META: Record<string, { name: string; color: string; bgColor: string; docsUrl: string }> = {
+    anthropic: { name: 'Anthropic', color: 'text-amber-400', bgColor: 'bg-amber-600', docsUrl: 'https://docs.anthropic.com/en/docs/about-claude/models' },
+    deepseek: { name: 'DeepSeek', color: 'text-cyan-400', bgColor: 'bg-cyan-600', docsUrl: 'https://api-docs.deepseek.com/' },
+    gemini: { name: 'Gemini', color: 'text-blue-400', bgColor: 'bg-blue-600', docsUrl: 'https://ai.google.dev/gemini-api/docs/models' },
+    groq: { name: 'Groq', color: 'text-orange-400', bgColor: 'bg-orange-600', docsUrl: 'https://console.groq.com/docs/models' },
+    mistral: { name: 'Mistral', color: 'text-indigo-400', bgColor: 'bg-indigo-600', docsUrl: 'https://docs.mistral.ai/getting-started/models/models_overview/' },
+    openai: { name: 'OpenAI', color: 'text-green-400', bgColor: 'bg-green-600', docsUrl: 'https://platform.openai.com/docs/models' },
+    openrouter: { name: 'OpenRouter', color: 'text-violet-400', bgColor: 'bg-violet-600', docsUrl: 'https://openrouter.ai/models' },
+    perplexity: { name: 'Perplexity', color: 'text-sky-400', bgColor: 'bg-sky-600', docsUrl: 'https://docs.perplexity.ai/' },
+    together: { name: 'Together', color: 'text-teal-400', bgColor: 'bg-teal-600', docsUrl: 'https://docs.together.ai/docs/models' },
+    xai: { name: 'xAI', color: 'text-gray-300', bgColor: 'bg-gray-600', docsUrl: 'https://docs.x.ai/' },
 };
 
 const ModelList = ({ models, activeProvider, isDeleting, onDelete }: any) => {
@@ -67,93 +43,67 @@ const ModelList = ({ models, activeProvider, isDeleting, onDelete }: any) => {
         try {
             const port = activeProvider === 'omlx' ? 8000 : activeProvider === 'lmstudio' ? 1234 : activeProvider === 'llamacpp' ? 8080 : 11434;
             const isOllama = activeProvider === 'ollama';
-            const url = isOllama
-                ? `http://127.0.0.1:11434/api/chat`
-                : `http://127.0.0.1:${port}/v1/chat/completions`;
-            const body = isOllama
-                ? { model: modelName, messages: next, stream: false }
-                : { model: modelName, messages: next };
+            const url = isOllama ? `http://127.0.0.1:11434/api/chat` : `http://127.0.0.1:${port}/v1/chat/completions`;
+            const body = isOllama ? { model: modelName, messages: next, stream: false } : { model: modelName, messages: next };
             const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-            if (!res.ok) {
-                const errText = await res.text().catch(() => '');
-                throw new Error(`HTTP ${res.status}${errText ? `: ${errText.slice(0, 200)}` : ''}`);
-            }
+            if (!res.ok) { const errText = await res.text().catch(() => ''); throw new Error(`HTTP ${res.status}${errText ? `: ${errText.slice(0, 200)}` : ''}`); }
             const data = await res.json();
-            const reply = isOllama
-                ? (data?.message?.content || data?.error || '(no response)')
-                : (data?.choices?.[0]?.message?.content || data?.error?.message || '(no response)');
+            const reply = isOllama ? (data?.message?.content || data?.error || '(no response)') : (data?.choices?.[0]?.message?.content || data?.error?.message || '(no response)');
             setChatMessages(m => ({ ...m, [modelName]: [...next, { role: 'assistant', content: reply }] }));
         } catch (err: any) {
-            console.error('Quick chat error:', err);
-            const errMsg = err?.message || String(err) || 'unknown error';
-            setChatMessages(m => ({ ...m, [modelName]: [...next, { role: 'assistant', content: `(error) ${errMsg}` }] }));
+            setChatMessages(m => ({ ...m, [modelName]: [...next, { role: 'assistant', content: `(error) ${err?.message || err}` }] }));
         }
         setChatLoading(null);
     };
 
-    if (!models.length) {
-        return (
-            <p className="text-gray-500 text-center py-4 text-sm">
-                {activeProvider === 'ollama' ? 'No models found. Pull a model above.' :
-                 activeProvider === 'gguf' ? 'No GGUF/GGML files found. Scan to search.' :
-                 'No models found. Load models in the app.'}
-            </p>
-        );
-    }
+    if (!models.length) return <p className="text-gray-500 text-center py-3 text-xs">No models found</p>;
 
     return (
-        <div className="overflow-y-auto max-h-72 border border-gray-700 rounded divide-y divide-gray-700/50">
+        <div className="overflow-y-auto max-h-48 border border-gray-700 rounded divide-y divide-gray-700/50">
             {models.map((model: any, idx: number) => {
                 const name = model.name || model.id || model.filename || model;
+                const source = model.source || model.provider || '';
+                const modelPath = model.path || '';
                 const isOpen = openChat === name;
+                const isLocal = LOCAL_PROVIDERS[activeProvider];
                 return (
                     <div key={name || idx}>
-                        <div className="flex items-center gap-2 px-3 py-2 hover:bg-gray-800/50 group">
-                            <span className="text-sm text-white truncate flex-1 font-mono">{name}</span>
-                            {model.size > 0 && <span className="text-xs text-gray-500 flex-shrink-0">{(model.size / 1e9).toFixed(1)}GB</span>}
-                            <button
-                                onClick={() => { setOpenChat(isOpen ? null : name); setTimeout(() => inputRef.current?.focus(), 50); }}
-                                className="p-1 text-gray-500 hover:text-purple-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                                title="Quick chat"
-                            >
-                                <MessageSquare size={13} />
-                            </button>
-                            {activeProvider === 'ollama' && (
-                                <button
-                                    onClick={() => onDelete(name)}
-                                    disabled={isDeleting === name}
-                                    className="p-1 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-30"
-                                >
-                                    {isDeleting === name ? '…' : <Trash2 size={13} />}
-                                </button>
+                        <div className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-800/50 group">
+                            <span className="text-xs text-white truncate flex-1 font-mono">{name}</span>
+                            {source && <span className="text-[9px] px-1 py-0.5 rounded bg-gray-700 text-gray-400 flex-shrink-0">{source}</span>}
+                            {model.size > 0 && <span className="text-[10px] text-gray-500 flex-shrink-0">{(model.size / 1e9).toFixed(1)}GB</span>}
+                            {isLocal && (
+                                <>
+                                    <button onClick={() => { setOpenChat(isOpen ? null : name); setTimeout(() => inputRef.current?.focus(), 50); }}
+                                        className="p-0.5 text-gray-500 hover:text-purple-400 opacity-0 group-hover:opacity-100 transition-opacity" title="Quick chat">
+                                        <MessageSquare size={11} />
+                                    </button>
+                                    {activeProvider === 'ollama' && (
+                                        <button onClick={() => onDelete(name)} disabled={isDeleting === name}
+                                            className="p-0.5 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-30">
+                                            {isDeleting === name ? '…' : <Trash2 size={11} />}
+                                        </button>
+                                    )}
+                                </>
                             )}
                         </div>
-                        {isOpen && (
-                            <div className="border-t border-gray-700 bg-gray-900/50 px-3 py-2">
-                                <div className="max-h-40 overflow-y-auto space-y-1 mb-2">
+                        {isOpen && isLocal && (
+                            <div className="border-t border-gray-700 bg-gray-900/50 px-2 py-1.5">
+                                <div className="max-h-32 overflow-y-auto space-y-1 mb-1.5">
                                     {(chatMessages[name] || []).map((m, i) => (
-                                        <div key={i} className={`text-xs px-2 py-1 rounded ${m.role === 'user' ? 'bg-blue-900/40 text-blue-200 ml-4' : 'bg-gray-800 text-gray-300 mr-4'}`}>
+                                        <div key={i} className={`text-[10px] px-1.5 py-0.5 rounded ${m.role === 'user' ? 'bg-blue-900/40 text-blue-200 ml-3' : 'bg-gray-800 text-gray-300 mr-3'}`}>
                                             {m.content}
                                         </div>
                                     ))}
-                                    {chatLoading === name && <div className="text-xs text-gray-500 italic">thinking...</div>}
+                                    {chatLoading === name && <div className="text-[10px] text-gray-500 italic">thinking...</div>}
                                 </div>
                                 <div className="flex gap-1">
-                                    <input
-                                        ref={inputRef}
-                                        value={chatInput}
-                                        onChange={e => setChatInput(e.target.value)}
-                                        onKeyDown={e => e.key === 'Enter' && sendMessage(name)}
-                                        placeholder="Say something..."
-                                        className="flex-1 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-white outline-none focus:border-purple-500"
-                                    />
+                                    <input ref={inputRef} value={chatInput} onChange={e => setChatInput(e.target.value)}
+                                        onKeyDown={e => e.key === 'Enter' && sendMessage(name)} placeholder="Say something..."
+                                        className="flex-1 bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-[10px] text-white outline-none focus:border-purple-500" />
                                     <button onClick={() => sendMessage(name)} disabled={!chatInput.trim() || !!chatLoading}
-                                        className="p-1.5 bg-purple-600 hover:bg-purple-500 rounded disabled:opacity-40 text-white">
-                                        <Send size={11} />
-                                    </button>
-                                    <button onClick={() => setOpenChat(null)} className="p-1.5 hover:bg-gray-700 rounded text-gray-400">
-                                        <X size={11} />
-                                    </button>
+                                        className="p-1 bg-purple-600 hover:bg-purple-500 rounded disabled:opacity-40 text-white"><Send size={9} /></button>
+                                    <button onClick={() => setOpenChat(null)} className="p-1 hover:bg-gray-700 rounded text-gray-400"><X size={9} /></button>
                                 </div>
                             </div>
                         )}
@@ -165,66 +115,79 @@ const ModelList = ({ models, activeProvider, isDeleting, onDelete }: any) => {
 };
 
 const ModelManager = () => {
-    const [activeProvider, setActiveProvider] = useState('ollama');
+    // Local provider state
     const [providerStatuses, setProviderStatuses] = useState<Record<string, string>>({
-        ollama: 'checking',
-        lmstudio: 'checking',
-        llamacpp: 'checking',
-        ...(isMac ? { omlx: 'checking' } : {}),
-        gguf: 'ready'
+        gguf: 'ready', llamacpp: 'checking', lmstudio: 'checking',
+        ollama: 'checking', ...(isMac ? { omlx: 'checking' } : {})
     });
     const [providerModels, setProviderModels] = useState<Record<string, any[]>>({
-        ollama: [],
-        lmstudio: [],
-        llamacpp: [],
-        ...(isMac ? { omlx: [] } : {}),
-        gguf: []
+        gguf: [], llamacpp: [], lmstudio: [], ollama: [],
+        ...(isMac ? { omlx: [] } : {})
     });
     const [ggufDirectory, setGgufDirectory] = useState('');
     const [scannedDirectories, setScannedDirectories] = useState<string[]>([]);
     const [pullModelName, setPullModelName] = useState('qwen3.5:4b');
-    const [pullProgress, setPullProgress] = useState(null);
+    const [pullProgress, setPullProgress] = useState<any>(null);
     const [isPulling, setIsPulling] = useState(false);
-    const [isDeleting, setIsDeleting] = useState(null);
+    const [isDeleting, setIsDeleting] = useState<any>(null);
     const [isScanning, setIsScanning] = useState(false);
-
     const [hfModelUrl, setHfModelUrl] = useState('');
-    const [hfDownloadProgress, setHfDownloadProgress] = useState(null);
+    const [hfDownloadProgress, setHfDownloadProgress] = useState<any>(null);
     const [isDownloadingHf, setIsDownloadingHf] = useState(false);
-
     const [hfSearchQuery, setHfSearchQuery] = useState('');
-    const [hfSearchResults, setHfSearchResults] = useState([]);
+    const [hfSearchResults, setHfSearchResults] = useState<any[]>([]);
     const [isSearchingHf, setIsSearchingHf] = useState(false);
-    const [selectedHfRepo, setSelectedHfRepo] = useState(null);
-    const [hfRepoFiles, setHfRepoFiles] = useState([]);
+    const [selectedHfRepo, setSelectedHfRepo] = useState<any>(null);
+    const [hfRepoFiles, setHfRepoFiles] = useState<any[]>([]);
     const [isLoadingFiles, setIsLoadingFiles] = useState(false);
 
-    const fetchModelsForProvider = async (provider) => {
+    // API provider state
+    const [detectedProviders, setDetectedProviders] = useState<any[]>([]);
+    const [customProviders, setCustomProviders] = useState<Record<string, any>>({});
+    const [apiModels, setApiModels] = useState<Record<string, any[]>>({});
+    const [apiLoading, setApiLoading] = useState<Record<string, boolean>>({});
+    const [apiErrors, setApiErrors] = useState<Record<string, string>>({});
+    const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+    const [showAddProvider, setShowAddProvider] = useState(false);
+    const [newProviderName, setNewProviderName] = useState('');
+    const [newProviderUrl, setNewProviderUrl] = useState('');
+    const [newProviderKeyVar, setNewProviderKeyVar] = useState('');
+
+    const fetchModelsForProvider = async (provider: string) => {
         if (provider === 'ollama') {
             const result = await window.api.getLocalOllamaModels();
-            if (result && !result.error) {
-                setProviderModels(prev => ({ ...prev, ollama: result.models || [] }));
-            }
+            if (result && !result.error) setProviderModels(prev => ({ ...prev, ollama: result.models || [] }));
         } else if (provider === 'gguf') {
-
             const result = await window.api.scanGgufModels?.(ggufDirectory || null);
             if (result && !result.error) {
                 setProviderModels(prev => ({ ...prev, gguf: result.models || [] }));
-                if (result.scannedDirectories) {
-                    setScannedDirectories(result.scannedDirectories);
-                }
+                if (result.scannedDirectories) setScannedDirectories(result.scannedDirectories);
             }
         } else {
-
             const result = await window.api.scanLocalModels?.(provider);
-            if (result && !result.error) {
-                setProviderModels(prev => ({ ...prev, [provider]: result.models || [] }));
+            if (result && !result.error) setProviderModels(prev => ({ ...prev, [provider]: result.models || [] }));
+        }
+    };
+
+    const fetchApiModels = async (providerKey: string, baseUrl: string, apiKeyVar: string) => {
+        setApiLoading(prev => ({ ...prev, [providerKey]: true }));
+        setApiErrors(prev => ({ ...prev, [providerKey]: '' }));
+        try {
+            const result = await (window as any).api.getProviderModels({ provider: providerKey, baseUrl, apiKeyVar });
+            if (result.error) {
+                setApiErrors(prev => ({ ...prev, [providerKey]: result.error }));
+                setApiModels(prev => ({ ...prev, [providerKey]: [] }));
+            } else {
+                setApiModels(prev => ({ ...prev, [providerKey]: result.models || [] }));
             }
+        } catch (err: any) {
+            setApiErrors(prev => ({ ...prev, [providerKey]: err.message || 'Failed to fetch' }));
+        } finally {
+            setApiLoading(prev => ({ ...prev, [providerKey]: false }));
         }
     };
 
     const checkAllStatuses = async () => {
-
         const ollamaStatus = await window.api.checkOllamaStatus();
         const ollamaStatusStr = ollamaStatus?.running ? 'running' : (ollamaStatus?.installed === false ? 'not_found' : 'not_running');
         setProviderStatuses(prev => ({ ...prev, ollama: ollamaStatusStr }));
@@ -239,46 +202,121 @@ const ModelManager = () => {
                 setProviderStatuses(prev => ({ ...prev, [provider]: s }));
                 if (status?.running) fetchModelsForProvider(provider);
             } catch {
-                const s = 'not_found';
-                if (provider === 'llamacpp') llamacppStatus = s;
-                setProviderStatuses(prev => ({ ...prev, [provider]: s }));
+                if (provider === 'llamacpp') llamacppStatus = 'not_found';
+                setProviderStatuses(prev => ({ ...prev, [provider]: 'not_found' }));
             }
         }
-
-        setProviderStatuses(prev => ({
-            ...prev,
-            gguf: llamacppStatus === 'not_found' ? 'not_found' : 'ready',
-        }));
+        setProviderStatuses(prev => ({ ...prev, gguf: llamacppStatus === 'not_found' ? 'not_found' : 'ready' }));
     };
 
-    const handleScanModels = async () => {
-        setIsScanning(true);
-        await fetchModelsForProvider(activeProvider);
-        setIsScanning(false);
+    const loadApiProviders = async () => {
+        try {
+            const detected = await (window as any).api?.detectProviderKeys?.();
+            if (Array.isArray(detected)) setDetectedProviders(detected);
+        } catch {}
+        try {
+            const cpData = await (window as any).api.customProvidersRead();
+            if (cpData?.providers) setCustomProviders(cpData.providers);
+        } catch {}
+    };
+
+    const handleAddCustomProvider = async () => {
+        if (!newProviderName.trim() || !newProviderUrl.trim()) return;
+        const updated = {
+            ...customProviders,
+            [newProviderName.toLowerCase()]: {
+                base_url: newProviderUrl,
+                api_key_var: newProviderKeyVar || `${newProviderName.toUpperCase()}_API_KEY`,
+            },
+        };
+        await (window as any).api.customProvidersWrite(updated);
+        setCustomProviders(updated);
+        setNewProviderName(''); setNewProviderUrl(''); setNewProviderKeyVar('');
+        setShowAddProvider(false);
+        loadApiProviders();
+    };
+
+    const toggleExpand = (key: string) => {
+        setExpanded(prev => {
+            const next = !prev[key];
+            // Auto-fetch models on first expand
+            if (next && !providerModels[key] && !apiModels[key] && !apiLoading[key]) {
+                const local = LOCAL_PROVIDERS[key];
+                if (local) {
+                    fetchModelsForProvider(key);
+                } else {
+                    const p = allProviders.find(a => a.key === key);
+                    if (p && p.baseUrl) fetchApiModels(key, p.baseUrl, p.apiKeyVar);
+                }
+            }
+            return { ...prev, [key]: next };
+        });
     };
 
     useEffect(() => {
         checkAllStatuses();
-        const cleanupProgress = window.api.onOllamaPullProgress((progress) => setPullProgress(progress));
+        loadApiProviders();
+        const cleanupProgress = window.api.onOllamaPullProgress((progress: any) => setPullProgress(progress));
         const cleanupComplete = window.api.onOllamaPullComplete(() => {
             setIsPulling(false);
             setPullProgress({ status: 'Success!', details: 'Model installed.' });
-            setTimeout(() => {
-                setPullProgress(null);
-                setPullModelName('');
-                fetchModelsForProvider('ollama');
-            }, 2000);
+            setTimeout(() => { setPullProgress(null); setPullModelName(''); fetchModelsForProvider('ollama'); }, 2000);
         });
-        const cleanupError = window.api.onOllamaPullError((error) => {
-            setIsPulling(false);
-            setPullProgress({ status: 'Error', details: error });
-        });
-        return () => {
-            cleanupProgress();
-            cleanupComplete();
-            cleanupError();
-        };
+        const cleanupError = window.api.onOllamaPullError((error: any) => { setIsPulling(false); setPullProgress({ status: 'Error', details: error }); });
+        return () => { cleanupProgress(); cleanupComplete(); cleanupError(); };
     }, []);
+
+    // Build unified provider list: local first, then detected API, then custom
+    const allProviders = useMemo(() => {
+        const seen = new Set<string>();
+        const list: Array<{ key: string; name: string; baseUrl: string; apiKeyVar: string; local: boolean; custom?: boolean; color: string; bgColor: string; description?: string; docsUrl?: string; defaultPort?: number | null }> = [];
+
+        // Local providers
+        for (const [key, info] of Object.entries(LOCAL_PROVIDERS)) {
+            if (seen.has(key)) continue;
+            seen.add(key);
+            list.push({ key, name: info.name, baseUrl: '', apiKeyVar: '', local: true, color: info.color, bgColor: info.bgColor, description: info.description, docsUrl: info.docsUrl, defaultPort: info.defaultPort });
+        }
+
+        // Detected API providers from env
+        for (const d of detectedProviders) {
+            if (seen.has(d.provider)) continue;
+            seen.add(d.provider);
+            const meta = API_PROVIDER_META[d.provider];
+            list.push({
+                key: d.provider,
+                name: meta?.name || d.provider.charAt(0).toUpperCase() + d.provider.slice(1),
+                baseUrl: d.baseUrl,
+                apiKeyVar: d.envVar,
+                local: false,
+                custom: d.custom,
+                color: meta?.color || 'text-cyan-400',
+                bgColor: meta?.bgColor || 'bg-cyan-600',
+                docsUrl: meta?.docsUrl,
+            });
+        }
+
+        // Custom providers from YAML — only show if the API key exists in environment
+        const detectedEnvVars = new Set(detectedProviders.map(d => d.envVar));
+        for (const [name, config] of Object.entries(customProviders)) {
+            if (seen.has(name)) continue;
+            const apiKeyVar = (config as any).api_key_var || `${name.toUpperCase()}_API_KEY`;
+            if (!detectedEnvVars.has(apiKeyVar)) continue;
+            seen.add(name);
+            list.push({
+                key: name,
+                name: name.charAt(0).toUpperCase() + name.slice(1),
+                baseUrl: (config as any).base_url || '',
+                apiKeyVar,
+                local: false,
+                custom: true,
+                color: 'text-cyan-400',
+                bgColor: 'bg-cyan-600',
+            });
+        }
+        list.sort((a, b) => a.name.localeCompare(b.name));
+        return list;
+    }, [detectedProviders, customProviders]);
 
     const handlePullModel = async () => {
         if (!pullModelName.trim() || isPulling) return;
@@ -287,7 +325,7 @@ const ModelManager = () => {
         await window.api.pullOllamaModel({ model: pullModelName });
     };
 
-    const handleDeleteModel = async (modelName) => {
+    const handleDeleteModel = async (modelName: string) => {
         if (isDeleting) return;
         setIsDeleting(modelName);
         await window.api.deleteOllamaModel({ model: modelName });
@@ -295,455 +333,226 @@ const ModelManager = () => {
         setIsDeleting(null);
     };
 
-    const handleDownloadHfModel = async () => {
-        if (!hfModelUrl.trim() || isDownloadingHf) return;
-        setIsDownloadingHf(true);
-        setHfDownloadProgress({ status: 'Starting download...', percent: 0 });
-        try {
-            const targetDir = ggufDirectory || '~/.npcsh/models/gguf';
-            const result = await (window as any).api.downloadHfModel?.({
-                url: hfModelUrl,
-                targetDir
-            });
-            if (result?.error) {
-                setHfDownloadProgress({ status: 'Error', details: result.error });
-            } else {
-                setHfDownloadProgress({ status: 'Success!', details: `Downloaded to ${result.path}` });
-                setTimeout(() => {
-                    setHfDownloadProgress(null);
-                    setHfModelUrl('');
-                    fetchModelsForProvider('gguf');
-                }, 2000);
-            }
-        } catch (err: any) {
-            setHfDownloadProgress({ status: 'Error', details: err.message });
-        } finally {
-            setIsDownloadingHf(false);
-        }
-    };
+    const handleScanModels = async () => { setIsScanning(true); await fetchModelsForProvider('ollama' /* use currently expanded local */); setIsScanning(false); };
 
     const handleSearchHf = async () => {
         if (!hfSearchQuery.trim() || isSearchingHf) return;
-        setIsSearchingHf(true);
-        setSelectedHfRepo(null);
-        setHfRepoFiles([]);
+        setIsSearchingHf(true); setSelectedHfRepo(null); setHfRepoFiles([]);
         try {
             const result = await (window as any).api.searchHfModels?.({ query: hfSearchQuery, limit: 20 });
-            if (result?.error) {
-                console.error('HF search error:', result.error);
-                setHfSearchResults([]);
-            } else {
-                setHfSearchResults(result.models || []);
-            }
-        } catch (err) {
-            console.error('HF search error:', err);
-            setHfSearchResults([]);
-        } finally {
-            setIsSearchingHf(false);
-        }
+            setHfSearchResults(result?.error ? [] : (result?.models || []));
+        } catch { setHfSearchResults([]); }
+        finally { setIsSearchingHf(false); }
     };
 
-    const handleSelectHfRepo = async (repoId) => {
-        setSelectedHfRepo(repoId);
-        setIsLoadingFiles(true);
+    const handleSelectHfRepo = async (repoId: string) => {
+        setSelectedHfRepo(repoId); setIsLoadingFiles(true);
         try {
             const result = await (window as any).api.listHfFiles?.({ repoId });
-            if (result?.error) {
-                console.error('HF files error:', result.error);
-                setHfRepoFiles([]);
-            } else {
-                setHfRepoFiles(result.files || []);
-            }
-        } catch (err) {
-            console.error('HF files error:', err);
-            setHfRepoFiles([]);
-        } finally {
-            setIsLoadingFiles(false);
-        }
+            setHfRepoFiles(result?.error ? [] : (result?.files || []));
+        } catch { setHfRepoFiles([]); }
+        finally { setIsLoadingFiles(false); }
     };
 
-    const handleDownloadHfFile = async (filename) => {
-        if (!selectedHfRepo || isDownloadingHf) return;
-        setIsDownloadingHf(true);
-        setHfDownloadProgress({ status: `Downloading ${filename}...`, percent: 0 });
-        try {
-            const targetDir = ggufDirectory || '~/.npcsh/models/gguf';
-            const result = await (window as any).api.downloadHfFile?.({
-                repoId: selectedHfRepo,
-                filename,
-                targetDir
-            });
-            if (result?.error) {
-                setHfDownloadProgress({ status: 'Error', details: result.error });
-            } else {
-                setHfDownloadProgress({ status: 'Success!', details: `Downloaded to ${result.path}` });
-                setTimeout(() => {
-                    setHfDownloadProgress(null);
-                    fetchModelsForProvider('gguf');
-                }, 2000);
-            }
-        } catch (err: any) {
-            setHfDownloadProgress({ status: 'Error', details: err.message });
-        } finally {
-            setIsDownloadingHf(false);
-        }
-    };
-
-    const currentStatus = providerStatuses[activeProvider];
-    const currentModels = providerModels[activeProvider] || [];
-    const providerInfo = LOCAL_PROVIDERS[activeProvider];
+    const statusColor = (s: string) => s === 'running' || s === 'ready' ? 'bg-green-400' : s === 'checking' ? 'bg-yellow-400 animate-pulse' : s === 'not_running' ? 'bg-yellow-600' : 'bg-red-400';
+    const statusLabel = (s: string) => s === 'running' ? 'Running' : s === 'ready' ? 'Ready' : s === 'checking' ? 'Checking...' : s === 'not_running' ? 'Not Running' : 'Not Found';
 
     return (
-        <div className="space-y-4">
-            <div className="flex gap-2 border-b border-gray-700 pb-2">
-                {Object.entries(LOCAL_PROVIDERS).map(([key, info]) => (
-                    <button
-                        key={key}
-                        onClick={() => setActiveProvider(key)}
-                        className={`px-3 py-2 rounded-t text-sm font-medium transition-colors ${
-                            activeProvider === key
-                                ? `${info.bgColor} text-white`
-                                : 'text-gray-400 hover:text-white hover:bg-gray-700'
-                        }`}
-                    >
-                        <span className="flex items-center gap-2">
-                            {info.name}
-                            <span className={`w-2 h-2 rounded-full ${
-                                providerStatuses[key] === 'running' || providerStatuses[key] === 'ready' ? 'bg-green-400' :
-                                providerStatuses[key] === 'checking' ? 'bg-yellow-400 animate-pulse' :
-                                'bg-red-400'
-                            }`} />
-                        </span>
-                    </button>
-                ))}
+        <div className="space-y-3 h-full overflow-y-auto">
+            {/* Add custom provider */}
+            <div className="flex items-center justify-between">
+                <h4 className="text-xs font-semibold theme-text-secondary">All Providers</h4>
+                <button onClick={() => setShowAddProvider(!showAddProvider)}
+                    className="text-[10px] px-2 py-1 rounded bg-cyan-700 hover:bg-cyan-600 text-white flex items-center gap-1">
+                    <Plus size={10} /> Add Provider
+                </button>
             </div>
 
-            <Card className="!h-auto">
-                <div className="p-3">
-                    <div className="flex items-center justify-between">
+            {showAddProvider && (
+                <div className="theme-bg-tertiary p-3 rounded-lg border theme-border space-y-2">
+                    <div className="grid grid-cols-3 gap-2">
                         <div>
-                            <h4 className={`font-semibold text-lg ${providerInfo.color}`}>{providerInfo.name}</h4>
-                            <p className="text-xs text-gray-400">{providerInfo.description}</p>
+                            <label className="text-[10px] theme-text-muted block mb-0.5">Name</label>
+                            <input value={newProviderName} onChange={e => setNewProviderName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                                placeholder="myllm" className="w-full theme-input text-xs" />
                         </div>
-                        <div className="flex items-center gap-2">
-                            <span className={`px-2 py-1 rounded text-xs ${
-                                currentStatus === 'running' || currentStatus === 'ready' ? 'bg-green-900 text-green-300' :
-                                currentStatus === 'checking' ? 'bg-yellow-900 text-yellow-300' :
-                                currentStatus === 'not_running' ? 'bg-yellow-900/70 text-yellow-300' :
-                                'bg-red-900 text-red-300'
-                            }`}>
-                                {currentStatus === 'running' ? 'Running' :
-                                 currentStatus === 'ready' ? 'Ready' :
-                                 currentStatus === 'checking' ? 'Checking...' :
-                                 currentStatus === 'not_running' ? 'Not Running' : 'Not Found'}
-                            </span>
-                            {activeProvider !== 'gguf' && currentStatus === 'not_running' && (
-                                <button
-                                    onClick={async () => {
-                                        setProviderStatuses(prev => ({ ...prev, [activeProvider]: 'checking' }));
-                                        const res = await (window as any).api.startLocalProvider?.(activeProvider);
-                                        if (res && !res.success) alert(res.error || 'Failed to start');
-                                        setTimeout(() => checkAllStatuses(), 1500);
-                                    }}
-                                    className="text-xs px-2 py-1 bg-green-700 hover:bg-green-600 text-white rounded"
-                                >
-                                    Start
-                                </button>
-                            )}
-                            {activeProvider !== 'gguf' && currentStatus === 'running' && (
-                                <button
-                                    onClick={async () => {
-                                        const res = await (window as any).api.stopLocalProvider?.(activeProvider);
-                                        if (res && !res.success) alert(res.error || 'Failed to stop');
-                                        setTimeout(() => checkAllStatuses(), 1000);
-                                    }}
-                                    className="text-xs px-2 py-1 bg-red-700 hover:bg-red-600 text-white rounded"
-                                >
-                                    Stop
-                                </button>
-                            )}
-                            <a
-                                href={providerInfo.docsUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-xs text-cyan-400 hover:text-cyan-300"
-                            >
-                                Docs
-                            </a>
+                        <div>
+                            <label className="text-[10px] theme-text-muted block mb-0.5">Base URL</label>
+                            <input value={newProviderUrl} onChange={e => setNewProviderUrl(e.target.value)}
+                                placeholder="https://api.example.com/v1" className="w-full theme-input text-xs" />
+                        </div>
+                        <div>
+                            <label className="text-[10px] theme-text-muted block mb-0.5">API Key Env Var</label>
+                            <input value={newProviderKeyVar} onChange={e => setNewProviderKeyVar(e.target.value)}
+                                placeholder="MYLLM_API_KEY" className="w-full theme-input text-xs" />
                         </div>
                     </div>
-                    {providerInfo.defaultPort && (
-                        <p className="text-xs text-gray-500 mt-2">Default Port: {providerInfo.defaultPort}</p>
-                    )}
-                    {activeProvider === 'gguf' && (
-                        <p className="text-xs text-gray-500 mt-2">No server required - runs locally via llama-cpp-python</p>
-                    )}
-                </div>
-            </Card>
-
-            {activeProvider === 'ollama' && currentStatus === 'running' && (
-                <div>
-                    <label className="block text-sm text-gray-400 mb-2">Pull Model from Ollama Hub</label>
-                    <div className="flex gap-2">
-                        <Input
-                            value={pullModelName}
-                            onChange={(e) => setPullModelName(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && handlePullModel()}
-                            placeholder=""
-                            disabled={isPulling}
-                            className="flex-1"
-                        />
-                        <Button variant="primary" onClick={handlePullModel} disabled={isPulling || !pullModelName.trim()}>
-                            {isPulling ? 'Pulling...' : 'Pull'}
-                        </Button>
+                    <div className="flex gap-2 justify-end">
+                        <button onClick={() => setShowAddProvider(false)} className="text-xs px-2 py-1 theme-text-muted hover:theme-text-primary">Cancel</button>
+                        <button onClick={handleAddCustomProvider} disabled={!newProviderName.trim() || !newProviderUrl.trim()}
+                            className="text-xs px-2 py-1 rounded bg-cyan-700 hover:bg-cyan-600 text-white disabled:opacity-40">Save</button>
                     </div>
                 </div>
             )}
 
-            {isPulling && pullProgress && (
-                <Card>
-                    <div className="p-3">
-                        <p className="text-sm font-semibold text-white">{pullProgress.status}</p>
-                        {pullProgress.details && <p className="text-xs text-gray-400 mt-1 font-mono">{pullProgress.details}</p>}
-                        {pullProgress.percent && (
-                            <div className="w-full bg-gray-600 rounded-full h-2.5 mt-2">
-                                <div className="bg-blue-500 h-2.5 rounded-full transition-all" style={{ width: `${pullProgress.percent}%` }} />
-                            </div>
-                        )}
-                    </div>
-                </Card>
-            )}
+            {/* Provider list */}
+            {allProviders.map(p => {
+                const isExpanded = expanded[p.key];
+                const isLocal = p.local;
+                const status = isLocal ? providerStatuses[p.key] : undefined;
+                const models = isLocal ? (providerModels[p.key] || []) : (apiModels[p.key] || []);
+                const error = isLocal ? undefined : apiErrors[p.key];
+                const loading = isLocal ? false : apiLoading[p.key];
 
-            {currentStatus === 'not_found' && activeProvider === 'ollama' && (
-                <Card>
-                    <div className="text-center p-4">
-                        <h4 className="font-semibold text-lg text-white">Ollama Not Found</h4>
-                        <p className="text-gray-400 my-2">Ollama is required to run local models.</p>
-                        <Button variant="primary" onClick={async () => {
-                            setProviderStatuses(prev => ({ ...prev, ollama: 'installing' }));
-                            await window.api.installOllama();
-                            checkAllStatuses();
-                        }}>
-                            <DownloadCloud size={18}/> Install Ollama
-                        </Button>
-                    </div>
-                </Card>
-            )}
-
-            {(currentStatus === 'not_found' || currentStatus === 'not_running') && activeProvider !== 'ollama' && activeProvider !== 'gguf' && (
-                <Card>
-                    <div className="text-center p-4">
-                        <h4 className="font-semibold text-lg text-white">{providerInfo.name} Not Detected</h4>
-                        <p className="text-gray-400 my-2">
-                            {activeProvider === 'lmstudio'
-                                ? 'Start LM Studio and enable the local server (usually on port 1234).'
-                                : 'Start llama.cpp server (usually on port 8080).'}
-                        </p>
-                        <div className="flex gap-2 justify-center mt-3">
-                            <Button variant="secondary" onClick={checkAllStatuses}>
-                                Refresh Status
-                            </Button>
-                            <a
-                                href={providerInfo.docsUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-sm"
-                            >
-                                Get {providerInfo.name}
-                            </a>
-                        </div>
-                    </div>
-                </Card>
-            )}
-
-            {activeProvider === 'gguf' && (
-                <div className="space-y-3">
-                    <div>
-                        <label className="block text-sm text-gray-400 mb-2">Add Model File</label>
-                        <Button
-                            variant="primary"
-                            onClick={async () => {
-                                const result = await window.api.browseGgufFile?.();
-                                if (result?.success && result.model) {
-                                    setProviderModels(prev => ({
-                                        ...prev,
-                                        gguf: [...(prev.gguf || []).filter(m => m.path !== result.model.path), result.model]
-                                    }));
-                                }
-                            }}
-                            className="w-full"
+                return (
+                    <div key={p.key} className="border theme-border rounded-lg overflow-hidden">
+                        <button
+                            onClick={() => toggleExpand(p.key)}
+                            className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/5 transition-colors text-left"
                         >
-                            Browse for GGUF/GGML File...
-                        </Button>
-                        <p className="text-xs text-gray-500 mt-1">
-                            Select a specific .gguf, .ggml, or .bin model file from your filesystem.
-                        </p>
-                    </div>
+                            <ChevronRight size={14} className={`theme-text-muted transition-transform flex-shrink-0 ${isExpanded ? 'rotate-90' : ''}`} />
+                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${p.bgColor}`} />
+                            <span className={`text-sm font-medium flex-1 ${p.color}`}>{p.name}</span>
+                            {p.custom && <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-400">custom</span>}
+                            {p.apiKeyVar && <span className="text-[9px] theme-text-muted font-mono">{p.apiKeyVar}</span>}
+                            {isLocal && <span className={`text-[9px] px-1.5 py-0.5 rounded ${status === 'running' || status === 'ready' ? 'bg-green-900/50 text-green-300' : status === 'not_running' ? 'bg-yellow-900/50 text-yellow-300' : status === 'checking' ? 'bg-yellow-900/50 text-yellow-300 animate-pulse' : 'bg-red-900/50 text-red-300'}`}>{statusLabel(status || '')}</span>}
+                            {models.length > 0 && <span className="text-[10px] theme-text-muted">{models.length}</span>}
+                            {loading && <span className="text-[10px] theme-text-muted animate-pulse">loading</span>}
+                        </button>
 
-                    <div className="border-t border-gray-700 pt-3">
-                        <label className="block text-sm text-gray-400 mb-2">Scan Directory (optional)</label>
-                        <div className="flex gap-2">
-                            <Input
-                                value={ggufDirectory}
-                                onChange={(e) => setGgufDirectory(e.target.value)}
-                                placeholder="Leave empty to scan all default locations"
-                                className="flex-1"
-                            />
-                            <Button variant="secondary" onClick={() => fetchModelsForProvider('gguf')} disabled={isScanning}>
-                                {isScanning ? 'Scanning...' : 'Scan'}
-                            </Button>
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">
-                            Leave empty to auto-scan HuggingFace cache, LM Studio, llama.cpp, KoboldCPP, GPT4All, and more.
-                        </p>
-                    </div>
-
-                    {scannedDirectories.length > 0 && (
-                        <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
-                            <p className="text-xs text-gray-400 mb-2">Scanned locations ({scannedDirectories.length} found):</p>
-                            <div className="max-h-24 overflow-y-auto">
-                                {scannedDirectories.map((dir, idx) => (
-                                    <p key={idx} className="text-xs text-gray-500 font-mono truncate" title={dir}>
-                                        {dir.replace(/^\/home\/[^/]+/, '~')}
-                                    </p>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="space-y-3">
-                        <label className="block text-sm text-gray-400">Search HuggingFace for GGUF Models</label>
-                        <div className="flex gap-2">
-                            <Input
-                                value={hfSearchQuery}
-                                onChange={(e) => setHfSearchQuery(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleSearchHf()}
-                                placeholder="Search: llama, qwen, mistral, phi..."
-                                className="flex-1"
-                            />
-                            <Button variant="primary" onClick={handleSearchHf} disabled={isSearchingHf || !hfSearchQuery.trim()}>
-                                {isSearchingHf ? 'Searching...' : 'Search'}
-                            </Button>
-                        </div>
-
-                        {hfSearchResults.length > 0 && (
-                            <div className="max-h-40 overflow-y-auto space-y-1 border border-gray-700 rounded p-2">
-                                {hfSearchResults.map((repo: any) => (
-                                    <button
-                                        key={repo.id}
-                                        onClick={() => handleSelectHfRepo(repo.id)}
-                                        className={`w-full text-left px-2 py-1.5 rounded text-xs transition-colors ${
-                                            selectedHfRepo === repo.id
-                                                ? 'bg-orange-600 text-white'
-                                                : 'hover:bg-gray-700 text-gray-300'
-                                        }`}
-                                    >
-                                        <div className="flex justify-between items-center">
-                                            <span className="font-medium truncate">{repo.id}</span>
-                                            <span className="text-gray-500 ml-2">↓{repo.downloads?.toLocaleString()}</span>
-                                        </div>
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-
-                        {selectedHfRepo && (
-                            <div className="border border-gray-700 rounded p-2">
-                                <div className="flex justify-between items-center mb-2">
-                                    <span className="text-xs text-orange-400 font-medium">{selectedHfRepo}</span>
-                                    <button onClick={() => { setSelectedHfRepo(null); setHfRepoFiles([]); }} className="text-xs text-gray-500 hover:text-white">✕</button>
-                                </div>
-                                {isLoadingFiles ? (
-                                    <p className="text-xs text-gray-500">Loading files...</p>
-                                ) : hfRepoFiles.length > 0 ? (
-                                    <div className="max-h-32 overflow-y-auto space-y-1">
-                                        {hfRepoFiles.map((file: any) => (
-                                            <div key={file.filename} className="flex justify-between items-center px-2 py-1 hover:bg-gray-700 rounded text-xs">
-                                                <div className="flex-1 truncate">
-                                                    <span className="text-gray-300">{file.filename}</span>
-                                                    {file.size_gb && <span className="text-gray-500 ml-2">({file.size_gb} GB)</span>}
-                                                    {file.quantization !== 'unknown' && (
-                                                        <span className="ml-2 px-1 py-0.5 bg-gray-700 rounded text-green-400">{file.quantization}</span>
-                                                    )}
-                                                </div>
-                                                <Button
-                                                    variant="secondary"
-                                                    onClick={() => handleDownloadHfFile(file.filename)}
-                                                    disabled={isDownloadingHf}
-                                                    className="ml-2 text-xs px-2 py-1"
-                                                >
-                                                    Download
-                                                </Button>
+                        {isExpanded && (
+                            <div className="border-t theme-border bg-black/10 px-3 py-2 space-y-2">
+                                {/* Local provider controls */}
+                                {isLocal && (
+                                    <>
+                                        <div className="flex items-center justify-between">
+                                            <p className="text-[10px] theme-text-muted">{p.description}</p>
+                                            <div className="flex items-center gap-1">
+                                                {p.defaultPort && <span className="text-[9px] theme-text-muted">Port {p.defaultPort}</span>}
+                                                {status === 'not_running' && p.key !== 'gguf' && (
+                                                    <button onClick={async () => {
+                                                        setProviderStatuses(prev => ({ ...prev, [p.key]: 'checking' }));
+                                                        const res = await (window as any).api.startLocalProvider?.(p.key);
+                                                        if (res && !res.success) alert(res.error || 'Failed to start');
+                                                        setTimeout(() => checkAllStatuses(), 1500);
+                                                    }} className="text-[10px] px-1.5 py-0.5 rounded bg-green-700 hover:bg-green-600 text-white">Start</button>
+                                                )}
+                                                {status === 'running' && p.key !== 'gguf' && (
+                                                    <button onClick={async () => {
+                                                        const res = await (window as any).api.stopLocalProvider?.(p.key);
+                                                        if (res && !res.success) alert(res.error || 'Failed to stop');
+                                                        setTimeout(() => checkAllStatuses(), 1000);
+                                                    }} className="text-[10px] px-1.5 py-0.5 rounded bg-red-700 hover:bg-red-600 text-white">Stop</button>
+                                                )}
+                                                {p.docsUrl && <a href={p.docsUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-cyan-400 hover:text-cyan-300">Docs</a>}
                                             </div>
-                                        ))}
+                                        </div>
+
+                                        {/* Ollama pull */}
+                                        {p.key === 'ollama' && status === 'running' && (
+                                            <div className="flex gap-1.5">
+                                                <input value={pullModelName} onChange={e => setPullModelName(e.target.value)}
+                                                    onKeyDown={e => e.key === 'Enter' && handlePullModel()}
+                                                    placeholder="model name" disabled={isPulling}
+                                                    className="flex-1 theme-input text-xs" />
+                                                <button onClick={handlePullModel} disabled={isPulling || !pullModelName.trim()}
+                                                    className="text-[10px] px-2 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40">
+                                                    {isPulling ? 'Pulling...' : 'Pull'}
+                                                </button>
+                                            </div>
+                                        )}
+                                        {isPulling && pullProgress && p.key === 'ollama' && (
+                                            <div className="text-xs theme-text-muted">
+                                                <span className="font-medium">{pullProgress.status}</span>
+                                                {pullProgress.details && <span className="ml-1 font-mono">{pullProgress.details}</span>}
+                                                {pullProgress.percent && (
+                                                    <div className="w-full bg-gray-600 rounded-full h-1.5 mt-1">
+                                                        <div className="bg-blue-500 h-1.5 rounded-full transition-all" style={{ width: `${pullProgress.percent}%` }} />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* GGUF section */}
+                                        {p.key === 'gguf' && (
+                                            <div className="space-y-2">
+                                                <div className="flex gap-1.5">
+                                                    <button onClick={async () => {
+                                                        const result = await window.api.browseGgufFile?.();
+                                                        if (result?.success && result.model) {
+                                                            setProviderModels(prev => ({ ...prev, gguf: [...(prev.gguf || []).filter(m => m.path !== result.model.path), result.model] }));
+                                                        }
+                                                    }} className="text-[10px] px-2 py-1 rounded bg-orange-600 hover:bg-orange-500 text-white">Browse GGUF File...</button>
+                                                    <button onClick={() => fetchModelsForProvider('gguf')} disabled={isScanning}
+                                                        className="text-[10px] px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-white disabled:opacity-40">
+                                                        {isScanning ? 'Scanning...' : 'Scan'}
+                                                    </button>
+                                                </div>
+                                                <details className="text-[10px]">
+                                                    <summary className="theme-text-muted cursor-pointer">Search HuggingFace for GGUF models</summary>
+                                                    <div className="flex gap-1.5 mt-1.5">
+                                                        <input value={hfSearchQuery} onChange={e => setHfSearchQuery(e.target.value)}
+                                                            onKeyDown={e => e.key === 'Enter' && handleSearchHf()}
+                                                            placeholder="Search: llama, qwen, phi..." className="flex-1 theme-input text-[10px]" />
+                                                        <button onClick={handleSearchHf} disabled={isSearchingHf || !hfSearchQuery.trim()}
+                                                            className="text-[10px] px-2 py-1 rounded bg-orange-600 hover:bg-orange-500 text-white disabled:opacity-40">
+                                                            {isSearchingHf ? '...' : 'Search'}
+                                                        </button>
+                                                    </div>
+                                                    {hfSearchResults.length > 0 && (
+                                                        <div className="max-h-32 overflow-y-auto mt-1 border border-gray-700 rounded p-1">
+                                                            {hfSearchResults.map((repo: any) => (
+                                                                <button key={repo.id} onClick={() => handleSelectHfRepo(repo.id)}
+                                                                    className={`w-full text-left px-1.5 py-1 rounded text-[10px] ${selectedHfRepo === repo.id ? 'bg-orange-600 text-white' : 'hover:bg-gray-700 text-gray-300'}`}>
+                                                                    {repo.id} <span className="text-gray-500">↓{repo.downloads?.toLocaleString()}</span>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </details>
+                                                {hfDownloadProgress && (
+                                                    <div className="text-[10px] theme-text-muted">
+                                                        <span className="font-medium">{hfDownloadProgress.status}</span>
+                                                        {hfDownloadProgress.details && <span className="ml-1 font-mono">{hfDownloadProgress.details}</span>}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+
+                                {/* API provider controls */}
+                                {!isLocal && (
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[10px] theme-text-muted truncate max-w-[70%]">{p.baseUrl}</span>
+                                        <button onClick={() => fetchApiModels(p.key, p.baseUrl, p.apiKeyVar)} disabled={loading}
+                                            className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700 hover:bg-gray-600 theme-text-primary flex items-center gap-1 disabled:opacity-40">
+                                            <RefreshCw size={9} /> Refresh
+                                        </button>
                                     </div>
-                                ) : (
-                                    <p className="text-xs text-gray-500">No GGUF files found in this repository.</p>
+                                )}
+
+                                {error && <p className="text-[10px] text-red-400">{error}</p>}
+
+                                {/* Models list */}
+                                {models.length > 0 ? (
+                                    <ModelList models={models} activeProvider={p.key} isDeleting={isDeleting} onDelete={handleDeleteModel} />
+                                ) : !loading && !error && (
+                                    <p className="text-[10px] theme-text-muted text-center py-2">
+                                        {isLocal ? (status === 'running' ? 'No models found. Try scanning.' : 'Provider not running.') : 'Click Refresh to load models.'}
+                                    </p>
                                 )}
                             </div>
                         )}
-
-                        <details className="text-xs">
-                            <summary className="text-gray-500 cursor-pointer hover:text-gray-300">Or enter direct URL/model ID</summary>
-                            <div className="flex gap-2 mt-2">
-                                <Input
-                                    value={hfModelUrl}
-                                    onChange={(e) => setHfModelUrl(e.target.value)}
-                                    placeholder="unsloth/Qwen3-4B-GGUF"
-                                    className="flex-1 text-xs"
-                                />
-                                <Button variant="secondary" onClick={handleDownloadHfModel} disabled={isDownloadingHf || !hfModelUrl.trim()}>
-                                    {isDownloadingHf ? '...' : 'Go'}
-                                </Button>
-                            </div>
-                        </details>
                     </div>
+                );
+            })}
 
-                    {hfDownloadProgress && (
-                        <div className="bg-gray-800 border border-gray-700 rounded p-3">
-                            <p className="text-sm font-semibold text-white">{hfDownloadProgress.status}</p>
-                            {hfDownloadProgress.details && <p className="text-xs text-gray-400 mt-1 font-mono break-all">{hfDownloadProgress.details}</p>}
-                            {hfDownloadProgress.percent > 0 && (
-                                <div className="w-full bg-gray-600 rounded-full h-2.5 mt-2">
-                                    <div className="bg-orange-500 h-2.5 rounded-full transition-all" style={{ width: `${hfDownloadProgress.percent}%` }} />
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    <Card>
-                        <div className="p-3">
-                            <p className="text-sm text-gray-300">
-                                <strong>Auto-scanned locations:</strong>
-                            </p>
-                            <ul className="text-xs text-gray-500 mt-1 space-y-0.5 list-disc list-inside">
-                                <li>~/.cache/huggingface/hub (HuggingFace transformers)</li>
-                                <li>~/.cache/lm-studio/models, ~/.lmstudio/models (LM Studio)</li>
-                                <li>~/llama.cpp/models, ~/.llama.cpp/models (llama.cpp)</li>
-                                <li>~/koboldcpp/models (KoboldCPP)</li>
-                                <li>~/.cache/gpt4all (GPT4All)</li>
-                                <li>~/text-generation-webui/models (oobabooga)</li>
-                                <li>~/.npcsh/models/gguf, ~/models (general)</li>
-                            </ul>
-                        </div>
-                    </Card>
-                </div>
-            )}
-
-            {(currentStatus === 'running' || activeProvider === 'gguf') && (
-                <div>
-                    <div className="flex items-center justify-between mb-2">
-                        <h4 className="text-sm text-gray-400">Available Models ({currentModels.length})</h4>
-                        <Button variant="secondary" onClick={handleScanModels} disabled={isScanning}>
-                            {isScanning ? 'Scanning...' : 'Scan Models'}
-                        </Button>
-                    </div>
-                    <ModelList
-                        models={currentModels}
-                        activeProvider={activeProvider}
-                        isDeleting={isDeleting}
-                        onDelete={handleDeleteModel}
-                    />
+            {allProviders.length === 0 && (
+                <div className="text-center py-8 theme-text-muted text-sm">
+                    <Globe size={24} className="mx-auto mb-2 opacity-50" />
+                    <p>No providers detected.</p>
+                    <p className="text-xs mt-1">Set API keys in your shell config or add a custom provider above.</p>
                 </div>
             )}
         </div>

@@ -538,7 +538,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         const n = name.toLowerCase();
         if (n.includes('path') || n.includes('file') || n.includes('dir')) return `e.g. ~/documents/file.txt`;
         if (n.includes('url') || n.includes('link')) return `e.g. https://example.com`;
-        if (n.includes('model')) return `e.g. gpt-4, llama3.2`;
+        if (n.includes('model')) return `e.g. gpt-4, llama3`;
         if (n.includes('query') || n.includes('sql')) return `e.g. SELECT * FROM table`;
         if (n.includes('prompt') || n.includes('text') || n.includes('content')) return `Enter ${name}...`;
         if (n.includes('code')) return `# Enter code here...`;

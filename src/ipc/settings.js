@@ -925,7 +925,7 @@ function register(ctx) {
   });
 
   ipcMain.handle('update-shortcut', (event, newShortcut) => {
-    const rcPath = path.join(os.homedir(), '.npcshrc');
+    const rcPath = path.join(os.homedir(), '.incogniderc');
     try {
       let rcContent = '';
       if (fs.existsSync(rcPath)) {
@@ -1284,7 +1284,7 @@ function register(ctx) {
           saveBackendPythonPath(pythonInfo.pythonPath);
         }
       } catch (rcErr) {
-        console.error('Error updating .npcshrc:', rcErr);
+        console.error('Error updating .incogniderc:', rcErr);
       }
 
       return { success: true };
@@ -1784,24 +1784,23 @@ function register(ctx) {
 
   ipcMain.handle('detect-provider-keys', async () => {
     const KNOWN = [
-      { provider: 'openai', envVar: 'OPENAI_API_KEY', baseUrl: 'https://api.openai.com/v1' },
       { provider: 'anthropic', envVar: 'ANTHROPIC_API_KEY', baseUrl: 'https://api.anthropic.com/v1' },
+      { provider: 'deepseek', envVar: 'DEEPSEEK_API_KEY', baseUrl: 'https://api.deepseek.com/v1' },
       { provider: 'gemini', envVar: 'GEMINI_API_KEY', baseUrl: 'https://generativelanguage.googleapis.com/v1beta' },
       { provider: 'google', envVar: 'GOOGLE_API_KEY', baseUrl: 'https://generativelanguage.googleapis.com/v1beta' },
-      { provider: 'deepseek', envVar: 'DEEPSEEK_API_KEY', baseUrl: 'https://api.deepseek.com/v1' },
       { provider: 'groq', envVar: 'GROQ_API_KEY', baseUrl: 'https://api.groq.com/openai/v1' },
+      { provider: 'huggingface', envVar: 'HF_TOKEN', baseUrl: 'https://api-inference.huggingface.co' },
       { provider: 'mistral', envVar: 'MISTRAL_API_KEY', baseUrl: 'https://api.mistral.ai/v1' },
+      { provider: 'openai', envVar: 'OPENAI_API_KEY', baseUrl: 'https://api.openai.com/v1' },
+      { provider: 'openrouter', envVar: 'OPENROUTER_API_KEY', baseUrl: 'https://openrouter.ai/api/v1' },
       { provider: 'perplexity', envVar: 'PERPLEXITY_API_KEY', baseUrl: 'https://api.perplexity.ai' },
       { provider: 'together', envVar: 'TOGETHER_API_KEY', baseUrl: 'https://api.together.xyz/v1' },
       { provider: 'xai', envVar: 'XAI_API_KEY', baseUrl: 'https://api.x.ai/v1' },
-      { provider: 'openrouter', envVar: 'OPENROUTER_API_KEY', baseUrl: 'https://openrouter.ai/api/v1' },
-      { provider: 'elevenlabs', envVar: 'ELEVENLABS_API_KEY', baseUrl: 'https://api.elevenlabs.io/v1' },
-      { provider: 'huggingface', envVar: 'HF_TOKEN', baseUrl: 'https://api-inference.huggingface.co' },
     ];
     const envSources = new Set();
     for (const key of Object.keys(process.env)) envSources.add(key);
     const sourceFiles = [
-      path.join(os.homedir(), '.npcshrc'),
+      path.join(os.homedir(), '.incogniderc'),
       path.join(os.homedir(), '.env'),
       path.join(os.homedir(), '.zshrc'),
       path.join(os.homedir(), '.bashrc'),
@@ -1816,7 +1815,7 @@ function register(ctx) {
     }
     const detected = KNOWN.filter(k => envSources.has(k.envVar));
 
-    // Add custom providers from YAML
+    // Add custom providers from YAML — only if their API key exists in environment
     try {
       const cpPath = path.join(INCOGNIDE_HOME, 'custom_providers.yaml');
       const content = await fsPromises.readFile(cpPath, 'utf8');
@@ -1824,6 +1823,7 @@ function register(ctx) {
       const providers = parsed?.providers || {};
       for (const [name, config] of Object.entries(providers)) {
         const apiKeyVar = config.api_key_var || `${name.toUpperCase()}_API_KEY`;
+        if (!envSources.has(apiKeyVar)) continue;
         detected.push({
           provider: name,
           envVar: apiKeyVar,
@@ -2075,7 +2075,7 @@ function register(ctx) {
       if (pythonPath) {
         const saved = saveBackendPythonPath(pythonPath);
         if (!saved) {
-          return { success: false, error: 'Failed to save Python path to .npcshrc' };
+          return { success: false, error: 'Failed to save Python path to .incogniderc' };
         }
       }
 
@@ -2424,50 +2424,81 @@ function register(ctx) {
     }
   });
 
-  // Map of .npcshrc env var names -> settings keys
+  // Map of .incogniderc env var names -> settings keys
   const SETTINGS_KEY_MAP = {
-    NPCSH_CHAT_MODEL: 'model',
-    NPCSH_CHAT_PROVIDER: 'provider',
-    NPCSH_EMBEDDING_MODEL: 'embedding_model',
-    NPCSH_EMBEDDING_PROVIDER: 'embedding_provider',
-    NPCSH_SEARCH_PROVIDER: 'search_provider',
-    NPC_STUDIO_DEFAULT_FOLDER: 'default_folder',
+    INCOGNIDE_CHAT_MODEL: 'model',
+    INCOGNIDE_CHAT_PROVIDER: 'provider',
+    INCOGNIDE_EMBEDDING_MODEL: 'embedding_model',
+    INCOGNIDE_EMBEDDING_PROVIDER: 'embedding_provider',
+    INCOGNIDE_SEARCH_PROVIDER: 'search_provider',
+    INCOGNIDE_DEFAULT_FOLDER: 'default_folder',
     INCOGNIDE_HOME: 'data_directory',
-    NPC_STUDIO_PREDICTIVE_TEXT_ENABLED: 'is_predictive_text_enabled',
-    NPC_STUDIO_PREDICTIVE_TEXT_MODEL: 'predictive_text_model',
-    NPC_STUDIO_PREDICTIVE_TEXT_PROVIDER: 'predictive_text_provider',
+    INCOGNIDE_PREDICTIVE_TEXT_ENABLED: 'is_predictive_text_enabled',
+    INCOGNIDE_PREDICTIVE_TEXT_MODEL: 'predictive_text_model',
+    INCOGNIDE_PREDICTIVE_TEXT_PROVIDER: 'predictive_text_provider',
     BACKEND_PYTHON_PATH: 'backend_python_path',
   };
   const SETTINGS_KEY_MAP_REVERSE = Object.fromEntries(
     Object.entries(SETTINGS_KEY_MAP).map(([k, v]) => [v, k])
   );
   const GLOBAL_SETTINGS_DEFAULTS = {
-    model: 'llama3.2',
-    provider: 'ollama',
+    model: '',
+    provider: '',
     embedding_model: 'nomic-embed-text',
     embedding_provider: 'ollama',
     search_provider: 'perplexity',
-    default_folder: '~/.npcsh/',
+    default_folder: '~/.incognide/',
     data_directory: '~/.incognide',
     is_predictive_text_enabled: false,
-    predictive_text_model: 'llama3.2',
-    predictive_text_provider: 'ollama',
+    predictive_text_model: '',
+    predictive_text_provider: '',
     backend_python_path: '',
   };
 
   ipcMain.handle('saveGlobalSettings', async (event, { global_settings, global_vars }) => {
     try {
-        const rcPath = path.join(os.homedir(), '.npcshrc');
-        const lines = [];
+        const rcPath = path.join(os.homedir(), '.incogniderc');
+
+        // Read existing file to merge with new values
+        let existing = {};
+        try {
+            const content = await fsPromises.readFile(rcPath, 'utf8');
+            for (const line of content.split('\n')) {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed.startsWith('#')) continue;
+                const stripped = trimmed.replace(/^export\s+/, '');
+                const eqIdx = stripped.indexOf('=');
+                if (eqIdx === -1) continue;
+                const key = stripped.slice(0, eqIdx).trim();
+                let val = stripped.slice(eqIdx + 1).trim();
+                if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+                    val = val.slice(1, -1);
+                }
+                existing[key] = val;
+            }
+        } catch {}
+
+        // Merge new global_settings into existing
         for (const [settingKey, value] of Object.entries(global_settings || {})) {
             const envKey = SETTINGS_KEY_MAP_REVERSE[settingKey] || settingKey;
-            lines.push(`export ${envKey}=${value}`);
+            if (value === '' || value === null || value === undefined) {
+                delete existing[envKey];
+            } else {
+                existing[envKey] = String(value);
+            }
         }
+        // Merge new global_vars into existing
         for (const [envKey, value] of Object.entries(global_vars || {})) {
             if (envKey.startsWith('CUSTOM_PROVIDER_')) continue;
-            lines.push(`export ${envKey}=${value}`);
+            if (value === '' || value === null || value === undefined) {
+                delete existing[envKey];
+            } else {
+                existing[envKey] = String(value);
+            }
         }
-        await fsPromises.writeFile(rcPath, lines.join('\n') + (lines.length ? '\n' : ''));
+
+        const lines = Object.entries(existing).map(([k, v]) => `export ${k}=${v}`);
+        await fsPromises.writeFile(rcPath, lines.join('\n') + '\n');
         return { success: true };
     } catch (err) {
         console.error('[SETTINGS] Error saving global settings:', err);
@@ -2477,7 +2508,7 @@ function register(ctx) {
 
   ipcMain.handle('loadGlobalSettings', async () => {
     try {
-        const rcPath = path.join(os.homedir(), '.npcshrc');
+        const rcPath = path.join(os.homedir(), '.incogniderc');
         const global_settings = { ...GLOBAL_SETTINGS_DEFAULTS };
         const global_vars = {};
 
@@ -2508,7 +2539,7 @@ function register(ctx) {
                 }
             }
         } catch (readErr) {
-            // .npcshrc may not exist — return defaults
+            // .incogniderc may not exist — return defaults
         }
 
         return { global_settings, global_vars };
@@ -2735,7 +2766,7 @@ function register(ctx) {
             path.join(homeDir, '.lmstudio', 'models'),
             path.join(homeDir, 'LM Studio', 'models'),
             path.join(homeDir, '.cache', 'huggingface', 'hub'),
-            path.join(homeDir, '.npcsh', 'models'),
+            path.join(homeDir, '.incognide', 'models'),
             path.join(homeDir, 'models'),
         ];
 
@@ -2809,13 +2840,17 @@ function register(ctx) {
         if (!cfg) return { running: false, installed: false, error: `Unknown provider: ${provider}` };
 
         let running = false;
+        // Only consider running if the API endpoint responds with valid models data
         if (cfg.tagsUrl) {
             try {
                 const res = await fetch(cfg.tagsUrl, { signal: AbortSignal.timeout(2000) });
-                if (res.ok) running = true;
+                if (res.ok) {
+                    const data = await res.json();
+                    const models = data[cfg.modelsKey] || data.models || data.data;
+                    if (Array.isArray(models)) running = true;
+                }
             } catch {}
         }
-        if (!running) running = await _checkPort('127.0.0.1', cfg.port);
 
         const isMac = process.platform === 'darwin';
         const isWin = process.platform === 'win32';
@@ -2896,9 +2931,9 @@ function register(ctx) {
             // oobabooga
             path.join(homeDir, 'text-generation-webui', 'models'),
 
-            // npcsh / generic
-            path.join(homeDir, '.npcsh', 'models', 'gguf'),
-            path.join(homeDir, '.npcsh', 'models'),
+            // incognide / generic
+            path.join(homeDir, '.incognide', 'models', 'gguf'),
+            path.join(homeDir, '.incognide', 'models'),
             path.join(homeDir, 'models'),
             path.join(homeDir, 'Models'),
         ];
@@ -3635,78 +3670,91 @@ function register(ctx) {
       }));
 
       const discovered = [];
+      const seen = new Set();
 
-      // Scan candidate directories for npc_team/ presence
-      const candidates = [
-        { name: 'npcsh', dir: path.join(os.homedir(), '.npcsh') },
-        { name: 'incognide', dir: INCOGNIDE_HOME },
-      ];
-
-      // Also check npcpy teams.yaml
-      try {
-        const npcpyTeamsPath = path.join(os.homedir(), '.npcsh', 'teams.yaml');
-        const content = await fsPromises.readFile(npcpyTeamsPath, 'utf8');
-        const parsed = yaml.load(content);
-        if (parsed?.teams) {
-          for (const [key, teamPath] of Object.entries(parsed.teams)) {
-            candidates.push({ name: key, dir: String(teamPath).replace(/^~(?=\/|$)/, os.homedir()) });
-          }
+      const checkDir = async (dir, name) => {
+        if (seen.has(dir)) return;
+        if (registeredPaths.has(dir)) return;
+        // Skip if this dir is inside an already-registered path
+        for (const rp of registeredPaths) {
+          if (dir.startsWith(rp + path.sep) || rp.startsWith(dir + path.sep)) return;
         }
-      } catch {}
+        seen.add(dir);
 
-      // Also check one level deep under .npcsh for subdirectories that might be teams
-      try {
-        const npcshEntries = await fsPromises.readdir(path.join(os.homedir(), '.npcsh'));
-        for (const entry of npcshEntries) {
-          if (entry.startsWith('.') || entry === 'incognide' || entry === 'npc_team') continue;
-          candidates.push({ name: entry, dir: path.join(os.homedir(), '.npcsh', entry) });
-        }
-      } catch {}
+        // Also check if dir contains a npc_team/ subdirectory
+        const dirsToCheck = [dir];
+        const npcTeamDir = path.join(dir, 'npc_team');
+        try { await fsPromises.access(npcTeamDir); if (!seen.has(npcTeamDir) && !registeredPaths.has(npcTeamDir)) dirsToCheck.push(npcTeamDir); } catch {}
 
-      // Check project directory
-      if (currentPath) {
-        candidates.push({ name: 'project', dir: currentPath });
-      }
-
-      for (const candidate of candidates) {
-        // The candidate itself might be a npc_team dir, or it might contain one
-        const dirsToCheck = [candidate.dir];
-
-        // Check if the candidate dir itself looks like a team dir
-        const npcTeamDir = path.join(candidate.dir, 'npc_team');
-        try { await fsPromises.access(npcTeamDir); dirsToCheck.push(npcTeamDir); } catch {}
-
-        for (const dir of dirsToCheck) {
-          if (registeredPaths.has(dir)) continue;
+        for (const d of dirsToCheck) {
+          if (registeredPaths.has(d) || seen.has(d)) continue;
+          seen.add(d);
 
           let hasNpcs = false, hasCtx = false, hasJinxes = false, hasAgents = false, npcCount = 0, ctxName = '';
-
           try {
-            const entries = await fsPromises.readdir(dir);
+            const entries = await fsPromises.readdir(d);
             const npcFiles = entries.filter(f => f.endsWith('.npc'));
             const ctxFiles = entries.filter(f => f.endsWith('.ctx'));
             const hasMcpJson = entries.some(f => f === '.mcp.json' || f === '.mcp_servers.json' || f === 'mcp_servers.json');
 
             if (npcFiles.length > 0) { hasNpcs = true; npcCount = npcFiles.length; }
             if (ctxFiles.length > 0) { hasCtx = true; ctxName = ctxFiles[0].replace('.ctx', ''); }
-            try { await fsPromises.access(path.join(dir, 'jinxes')); hasJinxes = true; } catch {}
-            try { await fsPromises.access(path.join(dir, 'agents')); hasAgents = true; } catch {}
+            try { await fsPromises.access(path.join(d, 'jinxes')); hasJinxes = true; } catch {}
+            try { await fsPromises.access(path.join(d, 'agents')); hasAgents = true; } catch {}
             try { const agMs = entries.filter(f => f.toLowerCase() === 'agents.md'); if (agMs.length > 0) hasAgents = true; } catch {}
 
             if (hasNpcs || hasCtx || hasJinxes || hasAgents || hasMcpJson) {
-              const name = ctxName || candidate.name;
-              discovered.push({
-                name,
-                path: dir,
-                hasNpcs,
-                hasJinxes,
-                hasCtx,
-                hasAgents,
-                npcCount,
-              });
+              discovered.push({ name: ctxName || name, path: d, hasNpcs, hasJinxes, hasCtx, hasAgents, npcCount });
             }
           } catch {}
         }
+      };
+
+      // Check incognide teams.yaml for explicit team paths
+      try {
+        const teamsYamlPath = path.join(INCOGNIDE_HOME, 'teams.yaml');
+        const content = await fsPromises.readFile(teamsYamlPath, 'utf8');
+        const parsed = yaml.load(content);
+        if (parsed?.teams) {
+          for (const [key, teamPath] of Object.entries(parsed.teams)) {
+            await checkDir(String(teamPath).replace(/^~(?=\/|$)/, os.homedir()), key);
+          }
+        }
+      } catch {}
+
+      // Check project directory
+      if (currentPath) {
+        await checkDir(currentPath, path.basename(currentPath));
+      }
+
+      // Check well-known locations (only npc_team subdirectories)
+      const wellKnown = [
+        { name: 'incognide', dir: path.join(INCOGNIDE_HOME, 'npc_team') },
+      ];
+      for (const wk of wellKnown) {
+        await checkDir(wk.dir, wk.name);
+      }
+
+      // Check subdirectories one level deep under .incognide for teams
+      try {
+        const incognideEntries = await fsPromises.readdir(INCOGNIDE_HOME);
+        for (const entry of incognideEntries) {
+          if (entry.startsWith('.') || entry === 'npc_team') continue;
+          const subTeamDir = path.join(INCOGNIDE_HOME, entry, 'npc_team');
+          await checkDir(subTeamDir, entry);
+        }
+      } catch {}
+
+      // Check one level deep under the project directory too
+      if (currentPath) {
+        try {
+          const entries = await fsPromises.readdir(currentPath);
+          for (const entry of entries) {
+            if (entry.startsWith('.') || entry === 'node_modules') continue;
+            const subTeamDir = path.join(currentPath, entry, 'npc_team');
+            await checkDir(subTeamDir, entry);
+          }
+        } catch {}
       }
 
       return { discovered };

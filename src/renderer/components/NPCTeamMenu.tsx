@@ -96,6 +96,13 @@ const NPCTeamMenu = ({
     useEffect(() => {
         const loadData = async () => {
             if (!isOpen) return;
+            
+            // Validate paths before making API calls
+            if (!isGlobal && (!currentPath || typeof currentPath !== 'string')) {
+                setError('No project folder selected');
+                setLoading(false);
+                return;
+            }
             setLoading(true);
             setError(null);
 

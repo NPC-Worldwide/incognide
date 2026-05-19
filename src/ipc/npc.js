@@ -448,6 +448,25 @@ function register(ctx) {
     }
   });
 
+  const normalizeJinxes = (jinxes) => {
+    if (!Array.isArray(jinxes)) return [];
+    return jinxes.map(j => {
+      if (typeof j === 'string') return j;
+      if (typeof j === 'object' && j !== null) {
+        // Handle template objects like { "Jinx('open_pane')": null }
+        const keys = Object.keys(j);
+        for (const k of keys) {
+          const match = k.match(/Jinx\(['"]([^'"]+)['"]\)/);
+          if (match) return match[1];
+        }
+        // Fallback: use the key itself if it looks like a name
+        if (keys.length === 1 && typeof keys[0] === 'string' && keys[0].length < 100) return keys[0];
+        if (j.name) return j.name;
+      }
+      return String(j);
+    }).filter(j => j && j !== '[object Object]');
+  };
+
   const readNPCTeamFromDir = async (teamDir, source) => {
     try {
       const entries = await fsPromises.readdir(teamDir);
@@ -460,6 +479,7 @@ function register(ctx) {
           if (parsed && parsed.name) {
             npcs.push({
               ...parsed,
+              jinxes: normalizeJinxes(parsed.jinxes),
               source,
               source_path: path.join(teamDir, entry),
               source_ext: '.npc',
@@ -479,9 +499,8 @@ function register(ctx) {
   ipcMain.handle('getNPCTeamGlobal', async (event, globalPath) => {
     try {
       // Resolve team key to path from registered_teams.yaml
-      if (globalPath && globalPath !== 'npcsh' && globalPath !== 'incognide') {
+      if (globalPath) {
         try {
-          const yaml = require('js-yaml');
           const teamsPath = path.join(INCOGNIDE_HOME, 'registered_teams.yaml');
           const content = await fsPromises.readFile(teamsPath, 'utf8');
           const parsed = yaml.load(content);
@@ -493,12 +512,8 @@ function register(ctx) {
           }
         } catch {}
       }
-      if (globalPath === 'npcsh') {
-        const npcshTeamDir = path.join(os.homedir(), '.npcsh', 'npc_team');
-        const npcs = await readNPCTeamFromDir(npcshTeamDir, 'npcsh');
-        return { npcs };
-      }
-      const teamDir = globalPath || INCOGNIDE_TEAM_PATH;
+      // Fallback: no YAML or key not found
+      const teamDir = INCOGNIDE_TEAM_PATH;
       const npcs = await readNPCTeamFromDir(teamDir, globalPath || 'incognide');
       return { npcs };
     } catch (error) {
@@ -848,7 +863,11 @@ function register(ctx) {
   ipcMain.handle('mcp:getServersForSidebar', async (event, currentPath) => {
     try {
       const ctxServers = await fetchCtxMcpServers(currentPath);
-      const servers = ctxServers.map(s => ({
+      // Filter out servers pointing to old ~/.npcsh/incognide/ path (migrated to ~/.incognide/)
+      const oldIncognidePath = path.join(os.homedir(), '.incognide');
+      const servers = ctxServers
+        .filter(s => !s.serverPath.includes(oldIncognidePath))
+        .map(s => ({
         id: s.id || s.serverPath,
         name: s.name || s.serverPath,
         command: s.serverPath,
@@ -969,8 +988,8 @@ function register(ctx) {
   ipcMain.handle('mcp:addIntegration', async (event, { integrationId, serverScript, envVars, name } = {}) => {
     try {
 
-      const npcshDir = ctx.NPCSH_BASE || path.join(os.homedir(), '.npcsh');
-      const mcpServersDir = path.join(npcshDir, 'mcp_servers');
+      const incognideDir = ctx.INCOGNIDE_HOME || path.join(os.homedir(), '.incognide');
+      const mcpServersDir = path.join(incognideDir, 'mcp_servers');
 
       await fsPromises.mkdir(mcpServersDir, { recursive: true });
 
@@ -987,7 +1006,7 @@ function register(ctx) {
       const serverPath = destPath;
 
       let globalContext = {};
-      const globalCtxPath = path.join(npcshDir, '.ctx');
+      const globalCtxPath = path.join(incognideDir, '.ctx');
       try {
         const ctxContent = await fsPromises.readFile(globalCtxPath, 'utf-8');
         globalContext = JSON.parse(ctxContent);

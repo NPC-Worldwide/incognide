@@ -274,6 +274,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const [isPredictiveTextEnabled, setIsPredictiveTextEnabled] = useState(false);
     const [predictiveTextModel, setPredictiveTextModel] = useState<string | null>(null);
     const [predictiveTextProvider, setPredictiveTextProvider] = useState<string | null>(null);
+    const [predictiveTextDelay, setPredictiveTextDelay] = useState(250);
     const [predictionSuggestion, setPredictionSuggestion] = useState('');
     const [predictionTargetElement, setPredictionTargetElement] = useState<HTMLElement | null>(null);
 
@@ -1067,6 +1068,9 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         predictiveTextModel,
         predictiveTextProvider,
         currentPath,
+        currentModel,
+        currentProvider,
+        predictiveTextDelay,
         predictionSuggestion,
         setPredictionSuggestion,
         predictionTargetElement,
@@ -4183,7 +4187,7 @@ const renderMessageContextMenu = () => null;
     // Create a new experiment (.exp)
     const createNewExperiment = useCallback(async () => {
         try {
-            const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.npcsh`;
+            const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.incognide`;
             const tmpDir = normalizePath(`${npcshHome}/tmp`);
             await window.api.ensureDir?.(tmpDir).catch(() => {});
             const filepath = normalizePath(`${tmpDir}/experiment-${Date.now()}.exp`);
@@ -4555,7 +4559,7 @@ const handleBrowserDialogNavigate = (url) => {
     // Create a new Jupyter notebook (.ipynb)
     const createNewJupyterNotebook = useCallback(async () => {
         try {
-            const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.npcsh`;
+            const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.incognide`;
             const tmpDir = normalizePath(`${npcshHome}/tmp`);
             await window.api.ensureDir?.(tmpDir).catch(() => {});
             const filepath = normalizePath(`${tmpDir}/notebook-${Date.now()}.ipynb`);
@@ -5518,7 +5522,7 @@ ${contextPrompt}`;
         const extTypeMap: Record<string, string> = { tex: 'latex', csv: 'csv', xlsx: 'csv', docx: 'docx', pptx: 'pptx' };
         const contentType = extTypeMap[extension] || 'editor';
         const filename = `untitled-${Date.now()}.${extension}`;
-        const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.npcsh`;
+        const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.incognide`;
         const tmpDir = normalizePath(`${npcshHome}/tmp`);
         await window.api.ensureDir?.(tmpDir).catch(() => {});
         const filepath = normalizePath(`${tmpDir}/${filename}`);
@@ -5612,7 +5616,7 @@ ${contextPrompt}`;
             const contentType = ext === 'xlsx' ? 'csv' : ext === 'tex' ? 'latex' : ext;
             const filename = `untitled-${Date.now()}.${ext}`;
             // Use a temp dir so user's directories stay clean
-            const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.npcsh`;
+            const npcshHome = await window.api.getNpcshHome?.() || `${await window.api.getHomeDir?.() || '~'}/.incognide`;
             const tmpDir = normalizePath(`${npcshHome}/tmp`);
             await window.api.ensureDir?.(tmpDir).catch(() => {});
             const filepath = normalizePath(`${tmpDir}/${filename}`);
@@ -5966,8 +5970,9 @@ ${contextPrompt}`;
             if (globalSettings) {
                 // ... (existing global settings loading) ...
                 setIsPredictiveTextEnabled(globalSettings.global_settings?.is_predictive_text_enabled || false);
-                setPredictiveTextModel(globalSettings.global_settings?.predictive_text_model || 'qwen3.5:0.8b'); // Default to a reasonable model
-                setPredictiveTextProvider(globalSettings.global_settings?.predictive_text_provider || 'ollama'); // Default to a reasonable provider
+                setPredictiveTextModel(globalSettings.global_settings?.predictive_text_model || null);
+                setPredictiveTextProvider(globalSettings.global_settings?.predictive_text_provider || null);
+                setPredictiveTextDelay(globalSettings.global_settings?.predictive_text_delay || 250);
             }
 
             // Check if npcsh is initialized
@@ -9170,6 +9175,22 @@ const renderMainContent = () => {
                         contentDataRef.current[newPaneId] = { contentType: 'editor', contentId: path };
                         addPaneOrTab(newPaneId);
                     }}
+                    predictiveTextEnabled={isPredictiveTextEnabled}
+                    onTogglePredictiveText={() => {
+                        setIsPredictiveTextEnabled(prev => {
+                            const next = !prev;
+                            (window as any).api?.saveGlobalSettings?.({ global_settings: { is_predictive_text_enabled: next } });
+                            return next;
+                        });
+                    }}
+                    predictiveTextModel={predictiveTextModel}
+                    predictiveTextProvider={predictiveTextProvider}
+                    predictiveTextDelay={predictiveTextDelay}
+                    onPredictiveTextSettingsChange={(s) => {
+                        if (s.model !== undefined) { setPredictiveTextModel(s.model); (window as any).api?.saveGlobalSettings?.({ global_settings: { predictive_text_model: s.model } }); }
+                        if (s.provider !== undefined) { setPredictiveTextProvider(s.provider); (window as any).api?.saveGlobalSettings?.({ global_settings: { predictive_text_provider: s.provider } }); }
+                        if (s.delay !== undefined) { setPredictiveTextDelay(s.delay); }
+                    }}
                 />
                 )}
                 </div>
@@ -9316,6 +9337,22 @@ const renderMainContent = () => {
                         const newPaneId = generateId();
                         contentDataRef.current[newPaneId] = { contentType: 'editor', contentId: path };
                         addPaneOrTab(newPaneId);
+                    }}
+                    predictiveTextEnabled={isPredictiveTextEnabled}
+                    onTogglePredictiveText={() => {
+                        setIsPredictiveTextEnabled(prev => {
+                            const next = !prev;
+                            (window as any).api?.saveGlobalSettings?.({ global_settings: { is_predictive_text_enabled: next } });
+                            return next;
+                        });
+                    }}
+                    predictiveTextModel={predictiveTextModel}
+                    predictiveTextProvider={predictiveTextProvider}
+                    predictiveTextDelay={predictiveTextDelay}
+                    onPredictiveTextSettingsChange={(s) => {
+                        if (s.model !== undefined) { setPredictiveTextModel(s.model); (window as any).api?.saveGlobalSettings?.({ global_settings: { predictive_text_model: s.model } }); }
+                        if (s.provider !== undefined) { setPredictiveTextProvider(s.provider); (window as any).api?.saveGlobalSettings?.({ global_settings: { predictive_text_provider: s.provider } }); }
+                        if (s.delay !== undefined) { setPredictiveTextDelay(s.delay); }
                     }}
                 />
                 )}

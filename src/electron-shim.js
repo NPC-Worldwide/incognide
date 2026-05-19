@@ -178,12 +178,12 @@ const nativeImage = {
 
 const app = {
   getPath(name) {
-    const NPCSH_BASE = process.env.NPCSH_BASE || path.join(os.homedir(), '.npcsh');
-    if (name === 'userData') return path.join(NPCSH_BASE, 'incognide');
+    const INCOGNIDE_HOME = process.env.INCOGNIDE_HOME || path.join(os.homedir(), '.incognide');
+    if (name === 'userData') return INCOGNIDE_HOME;
     if (name === 'home') return os.homedir();
     if (name === 'temp') return os.tmpdir();
-    if (name === 'appData') return NPCSH_BASE;
-    return NPCSH_BASE;
+    if (name === 'appData') return INCOGNIDE_HOME;
+    return INCOGNIDE_HOME;
   },
   getVersion() {
     try { return require('../package.json').version; } catch { return '0.0.0'; }

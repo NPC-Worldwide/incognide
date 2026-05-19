@@ -8,6 +8,9 @@ interface UsePredictiveTextProps {
     predictiveTextModel: string | null;
     predictiveTextProvider: string | null;
     currentPath: string | null;
+    currentModel?: string;
+    currentProvider?: string;
+    predictiveTextDelay?: number;
     predictionSuggestion: string;
     setPredictionSuggestion: (value: string | ((prev: string) => string)) => void;
     predictionTargetElement: HTMLElement | null;
@@ -19,6 +22,9 @@ export const usePredictiveText = ({
     predictiveTextModel,
     predictiveTextProvider,
     currentPath,
+    currentModel,
+    currentProvider,
+    predictiveTextDelay,
     predictionSuggestion,
     setPredictionSuggestion,
     predictionTargetElement,
@@ -29,7 +35,10 @@ export const usePredictiveText = ({
     const streamBuffersRef = useRef(new Map<string, string>());
 
     const handleGlobalPredictionTrigger = useCallback((e: KeyboardEvent) => {
-        if (!isPredictiveTextEnabled || !predictiveTextModel || !predictiveTextProvider) {
+        const modelToUse = predictiveTextModel || currentModel;
+        const providerToUse = predictiveTextProvider || currentProvider;
+
+        if (!isPredictiveTextEnabled || !modelToUse || !providerToUse) {
             setPredictionSuggestion('');
             setPredictionTargetElement(null);
             return;
@@ -123,18 +132,6 @@ export const usePredictiveText = ({
             return;
         }
 
-        if (predictionStreamIdRef.current) {
-            (window as any).api?.interruptStream?.(predictionStreamIdRef.current);
-            predictionStreamIdRef.current = null;
-        }
-
-        setPredictionTargetElement(activeElement);
-        setPredictionSuggestion(PRED_PLACEHOLDER);
-
-        const newStreamId = generateId();
-        predictionStreamIdRef.current = newStreamId;
-        console.log('[PRED] Created new prediction request, streamId:', newStreamId);
-
         let contextType = 'general';
         let filePathForContext: string | null = null;
         if ((activeElement as any).dataset?.contextType) {
@@ -152,21 +149,35 @@ export const usePredictiveText = ({
         }
 
         predictionTimeoutRef.current = setTimeout(async () => {
+            if (predictionStreamIdRef.current) {
+                (window as any).api?.interruptStream?.(predictionStreamIdRef.current);
+                predictionStreamIdRef.current = null;
+            }
+
+            const newStreamId = generateId();
+            predictionStreamIdRef.current = newStreamId;
+
+            setPredictionTargetElement(activeElement);
+            setPredictionSuggestion(PRED_PLACEHOLDER);
+
             await (window as any).api?.textPredict?.({
                 streamId: newStreamId,
                 text_content: textContent,
                 cursor_position: cursorPosition,
                 currentPath,
-                model: predictiveTextModel,
-                provider: predictiveTextProvider,
+                model: modelToUse,
+                provider: providerToUse,
                 context_type: contextType,
                 file_path: filePathForContext,
             });
-        }, 250);
+        }, predictiveTextDelay || 250);
     }, [
         isPredictiveTextEnabled,
         predictiveTextModel,
         predictiveTextProvider,
+        currentModel,
+        currentProvider,
+        predictiveTextDelay,
         currentPath,
         setPredictionSuggestion,
         setPredictionTargetElement,

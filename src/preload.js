@@ -893,6 +893,7 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
 
     customProvidersRead: () => ipcRenderer.invoke('custom-providers:read'),
     customProvidersWrite: (providers) => ipcRenderer.invoke('custom-providers:write', providers),
+    getProviderModels: (opts) => ipcRenderer.invoke('get-provider-models', opts),
     registeredTeamsRead: () => ipcRenderer.invoke('registered-teams:read'),
     registeredTeamsWrite: (teams) => ipcRenderer.invoke('registered-teams:write', teams),
     registeredTeamsScan: (currentPath) => ipcRenderer.invoke('registered-teams:scan', currentPath),

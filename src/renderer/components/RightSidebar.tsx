@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { MessageSquare, Bot, Search, X, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Users, Zap, FileCode, Server } from 'lucide-react';
+import { MessageSquare, Bot, Search, X, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Users, Zap, FileCode, Server, CircleDot, Circle, Settings2 } from 'lucide-react';
 
 interface RightSidebarProps {
     collapsed: boolean;
@@ -23,7 +23,65 @@ interface RightSidebarProps {
     createTeamManagementPane?: (opts?: { npcName?: string; tab?: string }) => void;
     onNpcSave?: (npc: any, changes: { model?: string; provider?: string; jinxes?: any[] }) => Promise<void> | void;
     onOpenFile?: (path: string) => void;
+    predictiveTextEnabled?: boolean;
+    onTogglePredictiveText?: () => void;
+    predictiveTextModel?: string | null;
+    predictiveTextProvider?: string | null;
+    predictiveTextDelay?: number;
+    onPredictiveTextSettingsChange?: (settings: { model?: string | null; provider?: string | null; delay?: number }) => void;
 }
+
+const CopilotSettingsPanel: React.FC<{
+    model: string | null;
+    delay: number;
+    availableModels?: any[];
+    onSave: (model: string | null, provider: string | null, delay: number) => void;
+}> = ({ model: propModel, delay: propDelay, availableModels, onSave }) => {
+    const [localModel, setLocalModel] = useState(propModel || '');
+    const [localDelay, setLocalDelay] = useState(propDelay);
+
+    useEffect(() => { setLocalModel(propModel || ''); }, [propModel]);
+    useEffect(() => { setLocalDelay(propDelay); }, [propDelay]);
+
+    const dirty = localModel !== (propModel || '') || localDelay !== propDelay;
+
+    const selectedModelObj = (availableModels || []).find((m: any) => m.value === localModel);
+
+    return (
+        <div className="px-2 pb-2 space-y-1.5">
+            <div className="flex items-center gap-1.5">
+                <span className="text-[10px] theme-text-muted w-14 shrink-0">Model</span>
+                <select
+                    value={localModel}
+                    onChange={(e) => setLocalModel(e.target.value)}
+                    className="flex-1 text-[10px] theme-bg-tertiary theme-border border rounded px-1 py-0.5 theme-text-primary"
+                >
+                    <option value="">—</option>
+                    {(availableModels || []).map((m: any) => (
+                        <option key={m.value} value={m.value}>{m.display_name || m.value}</option>
+                    ))}
+                </select>
+            </div>
+            <div className="flex items-center gap-1.5">
+                <span className="text-[10px] theme-text-muted w-14 shrink-0">Delay ms</span>
+                <input
+                    type="number"
+                    value={localDelay}
+                    onChange={(e) => setLocalDelay(parseInt(e.target.value) || 250)}
+                    className="flex-1 theme-input text-[10px] py-0.5 px-1 w-16"
+                />
+            </div>
+            {dirty && (
+                <button
+                    onClick={() => onSave(localModel || null, selectedModelObj?.provider || null, localDelay)}
+                    className="w-full text-[10px] py-1 bg-violet-600 hover:bg-violet-500 text-white rounded"
+                >
+                    Save
+                </button>
+            )}
+        </div>
+    );
+};
 
 const SectionHeader: React.FC<{
     label: string;
@@ -79,8 +137,15 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     createTeamManagementPane,
     onNpcSave,
     onOpenFile,
+    predictiveTextEnabled,
+    onTogglePredictiveText,
+    predictiveTextModel,
+    predictiveTextProvider,
+    predictiveTextDelay,
+    onPredictiveTextSettingsChange,
 }) => {
     const [expandedNpcs, setExpandedNpcs] = useState<Set<string>>(new Set());
+    const [copilotSettingsOpen, setCopilotSettingsOpen] = useState(false);
     const [expandedJinxGroups, setExpandedJinxGroups] = useState<Set<string>>(new Set());
     const toggleNpcExpanded = (key: string) => {
         setExpandedNpcs(prev => {
@@ -298,7 +363,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 <button
                     data-tutorial="new-chat-button"
                     onClick={() => createNewConversation?.()}
-                    className="flex-1 flex items-center justify-center py-2 hover:bg-green-500/20 text-green-300 border-r theme-border"
+                    className="flex-1 flex items-center justify-center py-2 hover:bg-green-500/20 text-green-300 border-l theme-border"
                     title="New Chat"
                 >
                     <MessageSquare size={14} />
@@ -306,7 +371,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 <button
                     data-tutorial="new-agent-button"
                     onClick={() => createNewConversation?.({ contentType: 'agent' })}
-                    className="flex-1 flex items-center justify-center py-2 hover:bg-amber-500/20 text-amber-300 border-r theme-border"
+                    className="flex-1 flex items-center justify-center py-2 hover:bg-amber-500/20 text-amber-300 border-l theme-border"
                     title="New Agent"
                 >
                     <Bot size={14} />
@@ -334,6 +399,47 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 >
                     <ChevronRight size={12} />
                 </button>
+            </div>
+            <div className="border-b theme-border">
+                <div className="flex items-center justify-between px-2 py-1 hover:bg-white/5">
+                    <div
+                        className="flex items-center gap-1.5 cursor-pointer"
+                        onClick={() => onTogglePredictiveText?.()}
+                    >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="9" />
+                            <circle cx="12" cy="12" r="3" />
+                            <line x1="12" y1="3" x2="12" y2="6" />
+                            <line x1="12" y1="18" x2="12" y2="21" />
+                            <line x1="3" y1="12" x2="6" y2="12" />
+                            <line x1="18" y1="12" x2="21" y2="12" />
+                        </svg>
+                        <span className="text-[11px] theme-text-muted">Predictive Text</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <button
+                            onClick={() => setCopilotSettingsOpen(!copilotSettingsOpen)}
+                            className="p-0.5 hover:bg-white/10 rounded theme-text-muted hover:theme-text-primary"
+                            title="Copilot settings"
+                        >
+                            <Settings2 size={11} />
+                        </button>
+                        <input
+                            type="checkbox"
+                            checked={!!predictiveTextEnabled}
+                            onChange={() => onTogglePredictiveText?.()}
+                            className="w-3.5 h-3.5 accent-violet-500 cursor-pointer"
+                        />
+                    </div>
+                </div>
+                {copilotSettingsOpen && (
+                    <CopilotSettingsPanel
+                        model={predictiveTextModel}
+                        delay={predictiveTextDelay ?? 250}
+                        availableModels={availableModels}
+                        onSave={(m, p, d) => onPredictiveTextSettingsChange?.({ model: m, provider: p, delay: d })}
+                    />
+                )}
             </div>
 
             <div data-tutorial="conversations" className="flex flex-col min-h-0" style={{ flex: convosCollapsed ? '0 0 auto' : 2, overflow: 'hidden' }}>

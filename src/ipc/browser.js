@@ -10,8 +10,8 @@ const browserViews = new Map();
 const activeDownloads = new Map();
 const sessionsWithDownloadHandler = new WeakSet();
 
-const extensionsDir = path.join(os.homedir(), '.npcsh', 'incognide', 'extensions');
-const extensionsConfigPath = path.join(os.homedir(), '.npcsh', 'incognide', 'extensions.json');
+const extensionsDir = path.join(os.homedir(), '.incognide', 'extensions');
+const extensionsConfigPath = path.join(os.homedir(), '.incognide', 'extensions.json');
 const loadedExtensions = new Map();
 
 const ensureExtensionsDir = async () => {
@@ -54,8 +54,8 @@ const loadSavedExtensions = async () => {
   }
 };
 
-const cookieInheritanceConfigPath = path.join(os.homedir(), '.npcsh', 'incognide', 'cookie-inheritance.json');
-const knownPartitionsPath = path.join(os.homedir(), '.npcsh', 'incognide', 'known-partitions.json');
+const cookieInheritanceConfigPath = path.join(os.homedir(), '.incognide', 'cookie-inheritance.json');
+const knownPartitionsPath = path.join(os.homedir(), '.incognide', 'known-partitions.json');
 
 const loadKnownPartitions = async () => {
   try {
@@ -87,7 +87,7 @@ const saveCookieInheritanceConfig = async (data) => {
   await fsPromises.writeFile(cookieInheritanceConfigPath, JSON.stringify(data, null, 2));
 };
 
-const passwordsFilePath = path.join(os.homedir(), '.npcsh', 'incognide', 'credentials.enc');
+const passwordsFilePath = path.join(os.homedir(), '.incognide', 'credentials.enc');
 
 const ensurePasswordsFile = async () => {
   const dir = path.dirname(passwordsFilePath);

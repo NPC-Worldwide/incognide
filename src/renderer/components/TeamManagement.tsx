@@ -1,6 +1,6 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import {
-    X, FileJson, Users, Wrench, Clock, Database, Plus, Trash2, Play, Pause, Server, Mail, Save,
+    X, FileJson, Search, Users, Wrench, Clock, Database, Plus, Trash2, Play, Pause, Server, Mail, Save,
     Brain, GitBranch, Cpu, Box, Code, Mic, Globe, Eye, EyeOff, Check, Zap
 } from 'lucide-react';
 import SmokestackIcon from './icons/SmokestackIcon';
@@ -17,7 +17,6 @@ import CronDaemonPanel from './CronDaemonPanel';
 import MemoryManagement from './MemoryManagement';
 import ModelManager from './ModelManager';
 import VoiceManager from './VoiceManager';
-import PythonEnvSettings from './PythonEnvSettings';
 const KnowledgeGraphEditor = lazy(() => import('./KnowledgeGraphEditor'));
 
 interface TeamManagementProps {
@@ -34,7 +33,7 @@ interface TeamManagementProps {
     onTabChange?: (tab: TabId) => void;
 }
 
-type TabId = 'context' | 'npcs' | 'jinxes' | 'memory' | 'knowledge' | 'cron' | 'mcp' | 'models' | 'databases' | 'ai-settings' | 'llm-models' | 'python' | 'voice' | 'providers';
+type TabId = 'context' | 'npcs' | 'jinxes' | 'memory' | 'knowledge' | 'cron' | 'mcp' | 'models' | 'databases' | 'ai-settings' | 'llm-models' | 'voice';
 
 const SqlModelsContent = ({ currentPath, npcList = [], jinxList = [], isGlobal }: { currentPath: string; npcList?: any[]; jinxList?: any[]; isGlobal: boolean }) => {
     const [models, setModels] = useState<any[]>([]);
@@ -47,7 +46,7 @@ const SqlModelsContent = ({ currentPath, npcList = [], jinxList = [], isGlobal }
     const [jinxes, setJinxes] = useState<any[]>([]);
 
     const [availableDatabases, setAvailableDatabases] = useState<{ name: string; path: string }[]>([]);
-    const [selectedDatabase, setSelectedDatabase] = useState<string>('~/npcsh_history.db');
+    const [selectedDatabase, setSelectedDatabase] = useState<string>('~/incognide_history.db');
 
     const [modelName, setModelName] = useState('');
     const [modelDescription, setModelDescription] = useState('');
@@ -91,7 +90,7 @@ const SqlModelsContent = ({ currentPath, npcList = [], jinxList = [], isGlobal }
 
     const fetchAvailableDatabases = async () => {
         const databases: { name: string; path: string }[] = [
-            { name: 'Global History (npcsh_history.db)', path: '~/npcsh_history.db' }
+            { name: 'Global History (incognide_history.db)', path: '~/incognide_history.db' }
         ];
 
         try {
@@ -612,7 +611,7 @@ const DatabasesContent = ({ currentPath, isGlobal }: { currentPath: string; isGl
                     type="text"
                     value={newDbPath}
                     onChange={(e) => setNewDbPath(e.target.value)}
-                    placeholder="~/npcsh_history.db"
+                    placeholder="~/incognide_history.db"
                     className="flex-1 theme-input text-sm font-mono"
                     onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
                 />
@@ -631,14 +630,14 @@ const DatabasesContent = ({ currentPath, isGlobal }: { currentPath: string; isGl
 };
 
 const AI_DEFAULT_SETTINGS = {
-    model: 'llama3.2',
+    model: 'llama3',
     provider: 'ollama',
     embedding_model: 'nomic-text-embed',
     embedding_provider: 'ollama',
     search_provider: 'duckduckgo',
     default_to_agent: false,
     is_predictive_text_enabled: false,
-    predictive_text_model: 'llama3.2',
+    predictive_text_model: 'llama3',
     predictive_text_provider: 'ollama',
 };
 
@@ -725,7 +724,7 @@ const AiSettingsContent = () => {
                             value={settings.model || ''}
                             onChange={e => setSettings({ ...settings, model: e.target.value })}
                             className="w-full theme-input text-sm"
-                            placeholder="llama3.2"
+                            placeholder="llama3"
                         />
                     </div>
                     <div>
@@ -781,44 +780,12 @@ const AiSettingsContent = () => {
                     <label className="flex items-center gap-2 cursor-pointer">
                         <input
                             type="checkbox"
-                            checked={!!settings.default_to_agent}
-                            onChange={e => setSettings({ ...settings, default_to_agent: e.target.checked })}
-                            className="w-4 h-4"
-                        />
-                        <span className="text-sm">Default to Agent Mode</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                            type="checkbox"
                             checked={!!settings.is_predictive_text_enabled}
                             onChange={e => setSettings({ ...settings, is_predictive_text_enabled: e.target.checked })}
                             className="w-4 h-4"
                         />
                         <span className="text-sm">Predictive Text (Copilot)</span>
                     </label>
-                    {settings.is_predictive_text_enabled && (
-                        <div className="grid grid-cols-2 gap-3 ml-6">
-                            <div>
-                                <label className="text-xs theme-text-muted block mb-1">Prediction Model</label>
-                                <input
-                                    type="text"
-                                    value={settings.predictive_text_model || ''}
-                                    onChange={e => setSettings({ ...settings, predictive_text_model: e.target.value })}
-                                    className="w-full theme-input text-sm"
-                                />
-                            </div>
-                            <div>
-                                <label className="text-xs theme-text-muted block mb-1">Prediction Provider</label>
-                                <select
-                                    value={settings.predictive_text_provider || 'ollama'}
-                                    onChange={e => setSettings({ ...settings, predictive_text_provider: e.target.value })}
-                                    className="w-full theme-input text-sm"
-                                >
-                                    {providerOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                </select>
-                            </div>
-                        </div>
-                    )}
                 </div>
 
                 <h3 className="text-sm font-semibold theme-text-secondary pt-2">API Keys &amp; Global Variables</h3>
@@ -885,152 +852,6 @@ const AiSettingsContent = () => {
                     className="theme-button-primary px-4 py-2 rounded text-sm flex items-center gap-2 disabled:opacity-50"
                 >
                     <Save size={16} /> {saving ? 'Saving...' : 'Save AI Settings'}
-                </button>
-            </div>
-        </div>
-    );
-};
-
-const ProvidersContent = () => {
-    const [providers, setProviders] = useState<{ name: string; baseUrl: string; apiKeyVar: string; headers: string }[]>([
-        { name: '', baseUrl: '', apiKeyVar: '', headers: '' }
-    ]);
-    const [detectedProviders, setDetectedProviders] = useState<{ provider: string; envVar: string; baseUrl: string; custom?: boolean }[]>([]);
-    const [saving, setSaving] = useState(false);
-
-    useEffect(() => {
-        (async () => {
-            const detected = await (window as any).api?.detectProviderKeys?.();
-            if (Array.isArray(detected)) setDetectedProviders(detected);
-        })();
-        (async () => {
-            try {
-                const cpData = await (window as any).api.customProvidersRead();
-                if (cpData?.providers) {
-                    const loaded = Object.entries(cpData.providers as Record<string, any>).map(([name, config]: [string, any]) => ({
-                        name: name.toLowerCase(),
-                        baseUrl: config.base_url || '',
-                        apiKeyVar: config.api_key_var || '',
-                        headers: config.headers ? JSON.stringify(config.headers, null, 2) : ''
-                    }));
-                    if (loaded.length > 0) setProviders(loaded);
-                }
-            } catch {}
-        })();
-    }, []);
-
-    const handleSave = async () => {
-        setSaving(true);
-        try {
-            const providersMap: Record<string, any> = {};
-            providers.forEach(provider => {
-                if (provider.name && provider.baseUrl) {
-                    const config: Record<string, any> = {
-                        base_url: provider.baseUrl,
-                        api_key_var: provider.apiKeyVar || `${provider.name.toUpperCase()}_API_KEY`,
-                    };
-                    if (provider.headers) {
-                        try { config.headers = JSON.parse(provider.headers); } catch {}
-                    }
-                    providersMap[provider.name.toLowerCase()] = config;
-                }
-            });
-            await (window as any).api.customProvidersWrite(providersMap);
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    return (
-        <div className="space-y-4">
-            {detectedProviders.length > 0 && (
-                <div className="theme-bg-tertiary p-4 rounded-lg">
-                    <h4 className="text-sm font-semibold theme-text-secondary mb-2 flex items-center gap-2">
-                        <Check size={14} className="text-green-400" /> Detected Providers ({detectedProviders.length})
-                    </h4>
-                    <p className="text-xs theme-text-muted mb-2">Found API keys for these providers in your environment or shell config.</p>
-                    <div className="grid grid-cols-2 gap-2">
-                        {detectedProviders.map(d => (
-                            <div key={d.envVar} className="flex items-center gap-2 px-2 py-1.5 theme-bg-primary rounded text-xs">
-                                <span className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" />
-                                <span className="font-medium capitalize">{d.provider}</span>
-                                <span className="font-mono text-[10px] theme-text-muted ml-auto">{d.envVar}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-            <p className="text-sm theme-text-muted">Define custom API providers for your models.</p>
-            {providers.map((provider, index) => (
-                <div key={index} className="theme-bg-tertiary p-4 rounded-lg space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                        <div>
-                            <label className="text-xs theme-text-muted block mb-1">Provider Name</label>
-                            <input
-                                type="text"
-                                value={provider.name}
-                                onChange={e => {
-                                    const next = [...providers];
-                                    next[index] = { ...next[index], name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') };
-                                    setProviders(next);
-                                }}
-                                placeholder="mycustomllm"
-                                className="w-full theme-input text-sm"
-                            />
-                        </div>
-                        <div>
-                            <label className="text-xs theme-text-muted block mb-1">Base URL</label>
-                            <input
-                                type="text"
-                                value={provider.baseUrl}
-                                onChange={e => {
-                                    const next = [...providers];
-                                    next[index] = { ...next[index], baseUrl: e.target.value };
-                                    setProviders(next);
-                                }}
-                                placeholder="https://api.example.com/v1"
-                                className="w-full theme-input text-sm"
-                            />
-                        </div>
-                    </div>
-                    <div>
-                        <label className="text-xs theme-text-muted block mb-1">API Key Env Var</label>
-                        <input
-                            type="text"
-                            value={provider.apiKeyVar}
-                            onChange={e => {
-                                const next = [...providers];
-                                next[index] = { ...next[index], apiKeyVar: e.target.value };
-                                setProviders(next);
-                            }}
-                            placeholder="MYCUSTOMLLM_API_KEY"
-                            className="w-full theme-input text-sm font-mono"
-                        />
-                    </div>
-                    <button
-                        onClick={() => {
-                            const next = providers.filter((_, i) => i !== index);
-                            setProviders(next.length > 0 ? next : [{ name: '', baseUrl: '', apiKeyVar: '', headers: '' }]);
-                        }}
-                        className="text-red-400 hover:bg-red-900/20 px-3 py-1.5 rounded text-sm flex items-center gap-2"
-                    >
-                        <Trash2 size={14} /> Remove Provider
-                    </button>
-                </div>
-            ))}
-            <div className="flex gap-3 pt-2">
-                <button
-                    onClick={() => setProviders([...providers, { name: '', baseUrl: '', apiKeyVar: '', headers: '' }])}
-                    className="theme-button px-3 py-1.5 rounded text-sm flex items-center gap-2"
-                >
-                    <Plus size={14} /> Add Provider
-                </button>
-                <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="theme-button-primary px-4 py-1.5 rounded text-sm flex items-center gap-2 disabled:opacity-50"
-                >
-                    <Save size={14} /> {saving ? 'Saving...' : 'Save Providers'}
                 </button>
             </div>
         </div>
@@ -1154,8 +975,6 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
         { id: 'memory', label: 'Memory', icon: <MemoryIcon size={16} /> },
         { id: 'llm-models', label: 'Models', icon: <Box size={16} /> },
         { id: 'npcs', label: 'NPCs', icon: <Users size={16} /> },
-        { id: 'providers', label: 'Providers', icon: <Globe size={16} /> },
-        { id: 'python', label: 'Python Env', icon: <Code size={16} /> },
         { id: 'cron', label: 'Scheduler', icon: <SmokestackIcon size={16} /> },
         { id: 'voice', label: 'Voice / TTS', icon: <Mic size={16} /> },
     ];
@@ -1220,23 +1039,23 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                         </div>
                     )}
                     {isGlobal && discoveredTeams.length > 0 && (
-                        <div className="theme-bg-tertiary p-3 rounded-lg space-y-2">
-                            <h4 className="text-xs font-semibold theme-text-secondary">Discovered Teams</h4>
-                            {discoveredTeams.map((team, i) => (
-                                <div key={i} className="flex items-center justify-between theme-bg-primary p-2 rounded text-xs">
-                                    <div>
-                                        <span className="font-medium theme-text-primary">{team.name}</span>
-                                        <span className="theme-text-muted ml-2">{team.npcCount} NPC{team.npcCount !== 1 ? 's' : ''}</span>
-                                        <div className="theme-text-muted truncate max-w-[200px]">{team.path}</div>
+                        <div className="relative">
+                            <div className="theme-bg-tertiary rounded-lg border theme-border max-h-60 overflow-y-auto">
+                                {discoveredTeams.map((team, i) => (
+                                    <div key={i} className="flex items-center justify-between px-3 py-1.5 border-b theme-border last:border-b-0 hover:bg-white/5 text-xs">
+                                        <div className="flex-1 min-w-0">
+                                            <span className="font-medium theme-text-primary">{team.name}</span>
+                                            <span className="theme-text-muted ml-1.5">{team.npcCount} NPC{team.npcCount !== 1 ? 's' : ''}</span>
+                                        </div>
+                                        <button
+                                            onClick={() => handleRegisterTeam(team)}
+                                            className="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-purple-600 hover:bg-purple-500 text-white flex-shrink-0"
+                                        >
+                                            Register
+                                        </button>
                                     </div>
-                                    <button
-                                        onClick={() => handleRegisterTeam(team)}
-                                        className="px-2 py-1 rounded theme-button-primary text-xs"
-                                    >
-                                        Register
-                                    </button>
-                                </div>
-                            ))}
+                                ))}
+                            </div>
                         </div>
                     )}
                     {!embedded && (
@@ -1269,7 +1088,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
 
                 {/* Content */}
                 <div className="flex-1 flex flex-col overflow-hidden">
-                    {(activeTab === 'memory' || activeTab === 'cron' || activeTab === 'llm-models' || activeTab === 'python' || activeTab === 'voice' || activeTab === 'knowledge') ? null : (
+                    {(activeTab === 'memory' || activeTab === 'cron' || activeTab === 'llm-models' || activeTab === 'voice' || activeTab === 'knowledge') ? null : (
                         <div className="flex-1 overflow-auto p-6">
                             {activeTab === 'context' && (
                                 <CtxEditor
@@ -1335,9 +1154,6 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                             {activeTab === 'ai-settings' && (
                                 <AiSettingsContent />
                             )}
-                            {activeTab === 'providers' && (
-                                <ProvidersContent />
-                            )}
                         </div>
                     )}
                     {activeTab === 'memory' && (
@@ -1357,11 +1173,6 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                     {activeTab === 'llm-models' && (
                         <div className="flex-1 flex flex-col overflow-hidden">
                             <ModelManager />
-                        </div>
-                    )}
-                    {activeTab === 'python' && (
-                        <div className="flex-1 flex flex-col overflow-hidden">
-                            <PythonEnvSettings currentPath={currentPath} />
                         </div>
                     )}
                     {activeTab === 'voice' && (
@@ -1733,14 +1544,14 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                             </li>
                                             <li className="flex items-start gap-2">
                                                 <span className="text-blue-400 mt-1">•</span>
-                                                <span>~/.npcshrc config is created if missing</span>
+                                                <span>~/.incogniderc config is created if missing</span>
                                             </li>
                                         </ul>
                                     </div>
 
                                     <div className="theme-bg-tertiary rounded-lg p-4">
                                         <h4 className="text-sm font-medium mb-2">Configuration Location</h4>
-                                        <code className="text-xs theme-text-muted font-mono">~/.npcsh/</code>
+                                        <code className="text-xs theme-text-muted font-mono">~/.incognide/</code>
                                         <div className="mt-2 text-xs theme-text-muted grid grid-cols-2 gap-1">
                                             <span>├── npc_team/</span>
                                             <span className="text-purple-400">NPCs</span>

@@ -1831,8 +1831,9 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                             </div>
                         ))
                     ) : (
-
-                        renderPaneContent()
+                        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                            {renderPaneContent()}
+                        </div>
                     )}
                 </div>
             </div>

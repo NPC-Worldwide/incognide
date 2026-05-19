@@ -1112,7 +1112,7 @@ function register(ctx) {
   });
 
   ipcMain.handle('getNpcshHome', async () => {
-    return ctx.NPCSH_BASE || path.join(os.homedir(), '.npcsh');
+    return ctx.INCOGNIDE_HOME || path.join(os.homedir(), '.incognide');
   });
 
   ipcMain.handle('readDirectory', async (_, dir) => {
