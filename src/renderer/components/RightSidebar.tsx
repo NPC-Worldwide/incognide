@@ -85,7 +85,7 @@ const CopilotSettingsPanel: React.FC<{
 
 const SectionHeader: React.FC<{
     label: string;
-    color: 'green' | 'indigo' | 'amber';
+    color: 'green' | 'indigo' | 'amber' | 'teal';
     count?: number;
     collapsed: boolean;
     onToggle: () => void;
@@ -95,7 +95,9 @@ const SectionHeader: React.FC<{
         ? 'from-green-800/40 to-emerald-700/35'
         : color === 'indigo'
             ? 'from-indigo-800/40 to-violet-700/35'
-            : 'from-amber-800/40 to-orange-700/35';
+            : color === 'teal'
+                ? 'from-teal-800/40 to-cyan-700/35'
+                : 'from-amber-800/40 to-orange-700/35';
     return (
         <div
             onClick={onToggle}
@@ -778,7 +780,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             <div data-tutorial="mcp-section" className="flex flex-col min-h-0" style={{ flex: mcpCollapsed ? '0 0 auto' : 1, overflow: 'hidden' }}>
             <SectionHeader
                 label="MCP Servers"
-                color="amber"
+                color="teal"
                 count={mcpServers.length}
                 collapsed={mcpCollapsed}
                 onToggle={() => setMcpCollapsed(!mcpCollapsed)}

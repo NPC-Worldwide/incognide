@@ -325,13 +325,13 @@ function register(ctx) {
                             await scanDir(fullPath, depth + 1);
                         } else if (stats.isFile()) {
                             const ext = path.extname(entry.name).toLowerCase();
-                            if (ext === '.gguf' && !seenPaths.has(fullPath)) {
+                            if (ext === '.gguf' && !seenPaths.has(fullPath) && !entry.name.toLowerCase().startsWith('mmproj')) {
                                 seenPaths.add(fullPath);
                                 if (stats.size > 50 * 1024 * 1024) {
                                     ggufModels.push({
                                         value: fullPath,
                                         display_name: `[GGUF] ${entry.name}`,
-                                        provider: 'gguf',
+                                        provider: 'llamacpp',
                                         size: stats.size,
                                         path: fullPath
                                     });
@@ -352,7 +352,51 @@ function register(ctx) {
         log('Error scanning GGUF models:', ggufErr);
     }
 
-    const allModels = [...backendModels, ...ggufModels];
+    const customProviderModels = [];
+    try {
+      const customProviders = await getCustomProviders();
+      for (const [cpName, cpConfig] of Object.entries(customProviders)) {
+        const cfg = cpConfig;
+        if (!cfg?.base_url) continue;
+        let apiKey = process.env[cfg.api_key_var];
+        if (!apiKey) apiKey = findApiKeyInShellConfigs(cfg.api_key_var);
+        if (!apiKey) {
+          log(`[getAvailableModels] No API key for custom provider ${cpName}`);
+          continue;
+        }
+        const cleanUrl = cfg.base_url.replace(/\/+$/, '');
+        const modelsUrl = cleanUrl.endsWith('/models') ? cleanUrl : cleanUrl + '/models';
+        const headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 8000);
+          let cpResponse;
+          try {
+            cpResponse = await fetch(modelsUrl, { headers, signal: controller.signal });
+          } finally {
+            clearTimeout(timeoutId);
+          }
+          if (cpResponse.ok) {
+            const cpData = await cpResponse.json();
+            const cpModels = (cpData.data || cpData.models || []).map((m) => ({
+              value: `${cpName}/${m.id || m.name || m}`,
+              display_name: `${m.id || m.name || m} (${cpName})`,
+              provider: cpName,
+              base_url: cfg.base_url,
+              api_key_var: cfg.api_key_var,
+            }));
+            customProviderModels.push(...cpModels);
+            log(`[getAvailableModels] ${cpName}: fetched ${cpModels.length} models`);
+          }
+        } catch (cpErr) {
+          log(`[getAvailableModels] ${cpName} model fetch failed:`, cpErr.message);
+        }
+      }
+    } catch (cpErr) {
+      log('[getAvailableModels] Error loading custom providers:', cpErr.message);
+    }
+
+    const allModels = [...backendModels, ...ggufModels, ...customProviderModels];
 
     if (allModels.length === 0 && backendError) {
         return { models: [], error: backendError };
@@ -694,15 +738,35 @@ function register(ctx) {
     log(`[Main Process] executeCommandStream: Starting stream with ID: ${currentStreamId}`);
 
     try {
-      const apiUrl = `${BACKEND_URL}/api/stream`;
+      const customProviders = await getCustomProviders();
+      let model = data.model;
+      let provider = data.provider;
+      let apiUrlOverride = null;
+      let apiKeyOverride = null;
+
+      if (customProviders[provider]) {
+        const cp = customProviders[provider];
+        let apiKey = process.env[cp.api_key_var];
+        if (!apiKey) apiKey = findApiKeyInShellConfigs(cp.api_key_var);
+        if (apiKey) {
+          apiKeyOverride = apiKey;
+          apiUrlOverride = cp.base_url;
+          // Strip provider prefix from model value if present
+          const prefix = `${data.provider}/`;
+          if (model && model.startsWith(prefix)) {
+            model = model.slice(prefix.length);
+          }
+          log(`[Main Process] Custom provider '${data.provider}' resolved to openai-like endpoint: ${apiUrlOverride}`);
+        }
+      }
 
       const payload = {
         streamId: currentStreamId,
         commandstr: data.commandstr,
         currentPath: data.currentPath,
         conversationId: data.conversationId,
-        model: data.model,
-        provider: data.provider,
+        model,
+        provider,
         npc: data.npc,
         npcSource: data.npcSource || 'global',
         attachments: data.attachments || [],
@@ -724,10 +788,15 @@ function register(ctx) {
         max_tokens: data.max_tokens,
 
         disableThinking: data.disableThinking || false,
-        customProviders: await getCustomProviders(),
+        customProviders,
       };
 
-      const response = await fetch(apiUrl, {
+      if (apiUrlOverride) {
+        payload.api_url = apiUrlOverride;
+        payload.api_key = apiKeyOverride;
+      }
+
+      const response = await fetch(`${BACKEND_URL}/api/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

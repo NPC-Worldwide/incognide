@@ -25,37 +25,7 @@ const API_PROVIDER_META: Record<string, { name: string; color: string; bgColor: 
     xai: { name: 'xAI', color: 'text-gray-300', bgColor: 'bg-gray-600', docsUrl: 'https://docs.x.ai/' },
 };
 
-const ModelList = ({ models, activeProvider, isDeleting, onDelete }: any) => {
-    const [openChat, setOpenChat] = useState<string | null>(null);
-    const [chatInput, setChatInput] = useState('');
-    const [chatMessages, setChatMessages] = useState<Record<string, { role: string; content: string }[]>>({});
-    const [chatLoading, setChatLoading] = useState<string | null>(null);
-    const inputRef = useRef<HTMLInputElement>(null);
-
-    const sendMessage = async (modelName: string) => {
-        if (!chatInput.trim() || chatLoading) return;
-        const msg = chatInput.trim();
-        setChatInput('');
-        const prev = chatMessages[modelName] || [];
-        const next = [...prev, { role: 'user', content: msg }];
-        setChatMessages(m => ({ ...m, [modelName]: next }));
-        setChatLoading(modelName);
-        try {
-            const port = activeProvider === 'omlx' ? 8000 : activeProvider === 'lmstudio' ? 1234 : activeProvider === 'llamacpp' ? 8080 : 11434;
-            const isOllama = activeProvider === 'ollama';
-            const url = isOllama ? `http://127.0.0.1:11434/api/chat` : `http://127.0.0.1:${port}/v1/chat/completions`;
-            const body = isOllama ? { model: modelName, messages: next, stream: false } : { model: modelName, messages: next };
-            const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-            if (!res.ok) { const errText = await res.text().catch(() => ''); throw new Error(`HTTP ${res.status}${errText ? `: ${errText.slice(0, 200)}` : ''}`); }
-            const data = await res.json();
-            const reply = isOllama ? (data?.message?.content || data?.error || '(no response)') : (data?.choices?.[0]?.message?.content || data?.error?.message || '(no response)');
-            setChatMessages(m => ({ ...m, [modelName]: [...next, { role: 'assistant', content: reply }] }));
-        } catch (err: any) {
-            setChatMessages(m => ({ ...m, [modelName]: [...next, { role: 'assistant', content: `(error) ${err?.message || err}` }] }));
-        }
-        setChatLoading(null);
-    };
-
+const ModelList = ({ models, activeProvider, isDeleting, onDelete, onStartChat }: any) => {
     if (!models.length) return <p className="text-gray-500 text-center py-3 text-xs">No models found</p>;
 
     return (
@@ -64,49 +34,28 @@ const ModelList = ({ models, activeProvider, isDeleting, onDelete }: any) => {
                 const name = model.name || model.id || model.filename || model;
                 const source = model.source || model.provider || '';
                 const modelPath = model.path || '';
-                const isOpen = openChat === name;
                 const isLocal = LOCAL_PROVIDERS[activeProvider];
+                const key = model.path || model.id || `${name}-${idx}`;
                 return (
-                    <div key={name || idx}>
-                        <div className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-800/50 group">
-                            <span className="text-xs text-white truncate flex-1 font-mono">{name}</span>
-                            {source && <span className="text-[9px] px-1 py-0.5 rounded bg-gray-700 text-gray-400 flex-shrink-0">{source}</span>}
-                            {model.size > 0 && <span className="text-[10px] text-gray-500 flex-shrink-0">{(model.size / 1e9).toFixed(1)}GB</span>}
-                            {isLocal && (
-                                <>
-                                    <button onClick={() => { setOpenChat(isOpen ? null : name); setTimeout(() => inputRef.current?.focus(), 50); }}
-                                        className="p-0.5 text-gray-500 hover:text-purple-400 opacity-0 group-hover:opacity-100 transition-opacity" title="Quick chat">
-                                        <MessageSquare size={11} />
-                                    </button>
-                                    {activeProvider === 'ollama' && (
-                                        <button onClick={() => onDelete(name)} disabled={isDeleting === name}
-                                            className="p-0.5 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-30">
-                                            {isDeleting === name ? '…' : <Trash2 size={11} />}
-                                        </button>
-                                    )}
-                                </>
+                    <div key={key} className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-800/50 group">
+                        <span className="text-xs text-white truncate flex-1 font-mono">{name}</span>
+                        {source && <span className="text-[9px] px-1 py-0.5 rounded bg-gray-700 text-gray-400 flex-shrink-0">{source}</span>}
+                        {model.size > 0 && <span className="text-[10px] text-gray-500 flex-shrink-0">{(model.size / 1e9).toFixed(1)}GB</span>}
+                        <>
+                            <button onClick={() => {
+                                const chatProvider = activeProvider === 'gguf' || activeProvider === 'ggml' ? 'llamacpp' : activeProvider;
+                                onStartChat?.(modelPath || name, chatProvider);
+                            }}
+                                className="p-0.5 text-gray-500 hover:text-purple-400 opacity-0 group-hover:opacity-100 transition-opacity" title="New chat">
+                                <MessageSquare size={11} />
+                            </button>
+                            {isLocal && activeProvider === 'ollama' && (
+                                <button onClick={() => onDelete(name)} disabled={isDeleting === name}
+                                    className="p-0.5 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-30">
+                                    {isDeleting === name ? '…' : <Trash2 size={11} />}
+                                </button>
                             )}
-                        </div>
-                        {isOpen && isLocal && (
-                            <div className="border-t border-gray-700 bg-gray-900/50 px-2 py-1.5">
-                                <div className="max-h-32 overflow-y-auto space-y-1 mb-1.5">
-                                    {(chatMessages[name] || []).map((m, i) => (
-                                        <div key={i} className={`text-[10px] px-1.5 py-0.5 rounded ${m.role === 'user' ? 'bg-blue-900/40 text-blue-200 ml-3' : 'bg-gray-800 text-gray-300 mr-3'}`}>
-                                            {m.content}
-                                        </div>
-                                    ))}
-                                    {chatLoading === name && <div className="text-[10px] text-gray-500 italic">thinking...</div>}
-                                </div>
-                                <div className="flex gap-1">
-                                    <input ref={inputRef} value={chatInput} onChange={e => setChatInput(e.target.value)}
-                                        onKeyDown={e => e.key === 'Enter' && sendMessage(name)} placeholder="Say something..."
-                                        className="flex-1 bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-[10px] text-white outline-none focus:border-purple-500" />
-                                    <button onClick={() => sendMessage(name)} disabled={!chatInput.trim() || !!chatLoading}
-                                        className="p-1 bg-purple-600 hover:bg-purple-500 rounded disabled:opacity-40 text-white"><Send size={9} /></button>
-                                    <button onClick={() => setOpenChat(null)} className="p-1 hover:bg-gray-700 rounded text-gray-400"><X size={9} /></button>
-                                </div>
-                            </div>
-                        )}
+                        </>
                     </div>
                 );
             })}
@@ -114,7 +63,7 @@ const ModelList = ({ models, activeProvider, isDeleting, onDelete }: any) => {
     );
 };
 
-const ModelManager = () => {
+const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider: string) => void } = {}) => {
     // Local provider state
     const [providerStatuses, setProviderStatuses] = useState<Record<string, string>>({
         gguf: 'ready', llamacpp: 'checking', lmstudio: 'checking',
@@ -206,7 +155,7 @@ const ModelManager = () => {
                 setProviderStatuses(prev => ({ ...prev, [provider]: 'not_found' }));
             }
         }
-        setProviderStatuses(prev => ({ ...prev, gguf: llamacppStatus === 'not_found' ? 'not_found' : 'ready' }));
+        setProviderStatuses(prev => ({ ...prev, gguf: 'ready' }));
     };
 
     const loadApiProviders = async () => {
@@ -536,7 +485,7 @@ const ModelManager = () => {
 
                                 {/* Models list */}
                                 {models.length > 0 ? (
-                                    <ModelList models={models} activeProvider={p.key} isDeleting={isDeleting} onDelete={handleDeleteModel} />
+                                    <ModelList models={models} activeProvider={p.key} isDeleting={isDeleting} onDelete={handleDeleteModel} onStartChat={onStartChat} />
                                 ) : !loading && !error && (
                                     <p className="text-[10px] theme-text-muted text-center py-2">
                                         {isLocal ? (status === 'running' ? 'No models found. Try scanning.' : 'Provider not running.') : 'Click Refresh to load models.'}

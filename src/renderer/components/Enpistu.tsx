@@ -1797,7 +1797,7 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
     // Refs to hold callbacks for use in keyboard handler and menu handlers
     const handleFileClickRef = useRef<((filePath: string) => void) | null>(null);
     const createNewTerminalRef = useRef<(() => void) | null>(null);
-    const createNewConversationRef = useRef<(() => void) | null>(null);
+    const createNewConversationRef = useRef<((opts?: any) => void) | null>(null);
     const createNewBrowserRef = useRef<(() => void) | null>(null);
     const handleCreateNewFolderRef = useRef<(() => void) | null>(null);
     const createSettingsPaneRef = useRef<(() => void) | null>(null);
@@ -3690,7 +3690,11 @@ const renderBrowserSettingsPane = useCallback(({ nodeId }: { nodeId: string }) =
 }, []);
 
 const renderModelManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
-    return <ModelManager />;
+    return <ModelManager onStartChat={(model: string, provider: string) => {
+        setCurrentModel(model);
+        setCurrentProvider(provider);
+        createNewConversationRef.current?.({ contentType: 'chat', model });
+    }} />;
 }, []);
 
 const renderVoiceManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
@@ -5417,6 +5421,11 @@ ${contextPrompt}`;
                 startNewConversation={(npc) => {
                     setCurrentNPC(npc.name || npc);
                     createNewConversation();
+                }}
+                startNewChat={(model: string, provider: string) => {
+                    setCurrentModel(model);
+                    setCurrentProvider(provider);
+                    createNewConversation({ contentType: 'chat', model });
                 }}
                 embedded={true}
                 npcList={availableNPCs}
@@ -7244,6 +7253,11 @@ ${contextPrompt}`;
                 onClose={() => setTeamManagementOpen(false)}
                 currentPath={currentPath}
                 startNewConversation={startNewConversationWithNpc}
+                startNewChat={(model: string, provider: string) => {
+                    setCurrentModel(model);
+                    setCurrentProvider(provider);
+                    createNewConversation({ contentType: 'chat', model });
+                }}
                 npcList={availableNPCs.map(npc => ({ name: npc.name, display_name: npc.display_name }))}
                 jinxList={availableJinxes.map(jinx => ({ jinx_name: jinx.name, description: jinx.description }))}
             />

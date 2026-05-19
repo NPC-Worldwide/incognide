@@ -24,6 +24,7 @@ interface TeamManagementProps {
     onClose: () => void;
     currentPath: string;
     startNewConversation?: (npc: any) => Promise<any>;
+    startNewChat?: (model: string, provider: string) => void;
     npcList?: any[];
     jinxList?: any[];
     embedded?: boolean;
@@ -863,6 +864,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
     onClose,
     currentPath,
     startNewConversation,
+    startNewChat,
     npcList = [],
     jinxList = [],
     embedded = false,
@@ -1172,7 +1174,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                     )}
                     {activeTab === 'llm-models' && (
                         <div className="flex-1 flex flex-col overflow-hidden">
-                            <ModelManager />
+                            <ModelManager onStartChat={startNewChat} />
                         </div>
                     )}
                     {activeTab === 'voice' && (

@@ -3679,7 +3679,6 @@ function register(ctx) {
         for (const rp of registeredPaths) {
           if (dir.startsWith(rp + path.sep) || rp.startsWith(dir + path.sep)) return;
         }
-        seen.add(dir);
 
         // Also check if dir contains a npc_team/ subdirectory
         const dirsToCheck = [dir];
