@@ -49,7 +49,7 @@ const BackendPane: React.FC<BackendPaneProps> = ({ onClose }) => {
             }
         };
         fetchHealth();
-        const interval = setInterval(fetchHealth, 5000);
+        const interval = setInterval(fetchHealth, 600000);
         return () => clearInterval(interval);
     }, []);
 
