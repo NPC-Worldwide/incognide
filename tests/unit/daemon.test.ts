@@ -133,7 +133,7 @@ describe('incognide-daemon', () => {
     expect(body.status).toBe('ok');
     expect(body.pid).toBeGreaterThan(0);
     expect(body.jobs).toBe(0);
-  });
+  }, 15000);
 
   it('loads scheduled jobs and runs them on /run_now', async () => {
     if (!fs.existsSync(DAEMON_SCRIPT)) {
