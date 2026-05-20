@@ -272,6 +272,49 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
         }, 500);
     }, [filePath]);
 
+    useEffect(() => {
+        const discover = async () => {
+            try {
+                const result = await (window as any).api?.jupyterListKernels?.({ workspacePath: currentPath });
+                if (result?.success && result.kernels) {
+                    setAvailableKernels(result.kernels);
+                    const ready = result.kernels.find((k: any) => !k.needsIpykernel);
+                    if (ready && !selectedKernel) {
+                        setSelectedKernel(ready.name);
+                    }
+                }
+            } catch (err) {
+                console.error('[ExpViewer] Failed to discover kernels:', err);
+            }
+        };
+        discover();
+    }, [currentPath]);
+
+    const ensureKernel = async () => {
+        if (kernelId && kernelStatus === 'connected') return kernelId;
+        setKernelStatus('starting');
+        const newKernelId = `exp_kernel_${Date.now()}`;
+        const selectedKernelObj = availableKernels.find((k: any) => k.name === selectedKernel);
+        try {
+            const result = await (window as any).api?.jupyterStartKernel?.({
+                kernelId: newKernelId,
+                kernelName: selectedKernel,
+                workspacePath: currentPath,
+                pythonOverridePath: selectedKernelObj?.pythonPath,
+                needsRegistration: selectedKernelObj?.needsRegistration,
+            });
+            if (result?.success) {
+                setKernelId(newKernelId);
+                setKernelStatus('connected');
+                return newKernelId;
+            }
+            throw new Error(result?.error || 'Kernel start failed');
+        } catch (err: any) {
+            setKernelStatus('disconnected');
+            throw err;
+        }
+    };
+
     const updateExpData = useCallback((updater: (prev: ExpFile) => ExpFile) => {
         setExpData(prev => {
             if (!prev) return prev;
