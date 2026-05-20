@@ -10,7 +10,6 @@ import {
 import CodeMirror from '@uiw/react-codemirror';
 import { python } from '@codemirror/lang-python';
 import { javascript } from '@codemirror/lang-javascript';
-import { json } from '@codemirror/lang-json';
 import { markdown } from '@codemirror/lang-markdown';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -120,9 +119,8 @@ const generateId = () => `${Date.now()}-${Math.random().toString(36).substr(2, 9
 const CODE_LANGS: Record<string, any> = {
     python: python(),
     javascript: javascript(),
-    typescript: javascript({ typescript: true }),
-    json: json(),
-    markdown: markdown(),
+    r: python(),
+    julia: python(),
 };
 
 const getCodeExtension = (lang?: string) => {
