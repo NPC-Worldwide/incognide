@@ -9,7 +9,7 @@ const crypto = require('crypto');
 const sqlite3 = require('sqlite3');
 const yaml = require('js-yaml');
 
-const dbPath = path.join(os.homedir(), 'incognide_history.db');
+const dbPath = path.join(os.homedir(), 'npcsh_history.db');
 
 /**
  * Categorize backend errors into user-friendly messages
@@ -1474,7 +1474,7 @@ function register(ctx) {
     }
   });
 
-  // ---- Sync: export data from incognide_history.db ----
+  // ---- Sync: export data from npcsh_history.db ----
 
   ipcMain.handle('sync:export-data', async (_, { since, fullDump }) => {
     const sinceTs = (fullDump || !since) ? '1970-01-01T00:00:00.000Z' : since;
@@ -1501,7 +1501,8 @@ function register(ctx) {
             `SELECT message_id, timestamp, role, content, conversation_id,
                     directory_path, model, provider, npc, team,
                     reasoning_content, tool_calls, tool_results,
-                    parent_message_id, branch_id, input_tokens, output_tokens, cost
+                    parent_message_id, branch_id, device_id, device_name,
+                    input_tokens, output_tokens, cost
              FROM conversation_history
              WHERE timestamp > ?
              ORDER BY timestamp ASC LIMIT ${msgLimit}`,
@@ -1511,8 +1512,8 @@ function register(ctx) {
 
               db.all(
                 `SELECT id, title, url, folder_path, is_global, timestamp
-                 FROM bookmarks ORDER BY timestamp DESC LIMIT ${bmLimit}`,
-                [],
+                 FROM bookmarks WHERE timestamp > ? ORDER BY timestamp DESC LIMIT ${bmLimit}`,
+                [sinceTs],
                 (err3, bmRows) => {
                   if (!err3 && bmRows) result.bookmarks = bmRows;
 
@@ -1550,8 +1551,9 @@ function register(ctx) {
              (message_id, timestamp, role, content, conversation_id,
               directory_path, model, provider, npc, team,
               reasoning_content, tool_calls, tool_results,
-              parent_message_id, branch_id, input_tokens, output_tokens, cost)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              parent_message_id, branch_id, device_id, device_name,
+              input_tokens, output_tokens, cost)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           );
           for (const m of messages) {
             stmt.run(
@@ -1559,6 +1561,7 @@ function register(ctx) {
               m.directory_path, m.model, m.provider, m.npc, m.team,
               m.reasoning_content, m.tool_calls, m.tool_results,
               m.parent_message_id, m.branch_id || 'main',
+              m.device_id || null, m.device_name || null,
               m.input_tokens, m.output_tokens, m.cost
             );
             imported.messages++;
@@ -1566,9 +1569,15 @@ function register(ctx) {
           stmt.finalize();
         }
 
+        // Prevent duplicate bookmarks: delete existing URLs before inserting
         if (bookmarks && bookmarks.length) {
+          const urls = [...new Set(bookmarks.map(b => b.url).filter(Boolean))];
+          if (urls.length > 0) {
+            const placeholders = urls.map(() => '?').join(',');
+            db.run(`DELETE FROM bookmarks WHERE url IN (${placeholders})`, urls);
+          }
           const stmt = db.prepare(
-            `INSERT OR IGNORE INTO bookmarks (title, url, folder_path, is_global, timestamp)
+            `INSERT INTO bookmarks (title, url, folder_path, is_global, timestamp)
              VALUES (?, ?, ?, ?, ?)`
           );
           for (const b of bookmarks) {
@@ -1578,9 +1587,15 @@ function register(ctx) {
           stmt.finalize();
         }
 
+        // Prevent duplicate browser history: delete matching (url, last_visited) pairs before inserting
         if (history && history.length) {
+          for (const h of history) {
+            if (h.url && h.last_visited) {
+              db.run('DELETE FROM browser_history WHERE url = ? AND last_visited = ?', [h.url, h.last_visited]);
+            }
+          }
           const stmt = db.prepare(
-            `INSERT OR IGNORE INTO browser_history (title, url, folder_path, visit_count, last_visited)
+            `INSERT INTO browser_history (title, url, folder_path, visit_count, last_visited)
              VALUES (?, ?, ?, ?, ?)`
           );
           for (const h of history) {

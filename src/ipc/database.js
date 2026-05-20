@@ -6,7 +6,7 @@ const sqlite3 = require('sqlite3');
 
 const parseConnectionString = (connString) => {
   if (!connString) {
-    return { type: 'sqlite', path: path.join(os.homedir(), 'incognide_history.db') };
+    return { type: 'sqlite', path: path.join(os.homedir(), 'npcsh_history.db') };
   }
 
   const str = connString.trim();
@@ -805,7 +805,7 @@ function register(ctx) {
               ? path.join(os.homedir(), '.npcsh', 'npc_team')
               : path.join(projectPath, 'npc_team');
 
-          let targetDb = userTargetDb || '~/incognide_history.db';
+          let targetDb = userTargetDb || '~/npcsh_history.db';
 
           if (targetDb.startsWith('~')) {
               targetDb = path.join(os.homedir(), targetDb.slice(1));
@@ -848,7 +848,7 @@ function register(ctx) {
   ipcMain.handle('runAllSqlModels', async (event, { path: projectPath, isGlobal, targetDb: userTargetDb }) => {
       const send = (data) => getMainWindow()?.webContents.send('sqlModels:runProgress', data);
 
-      let targetDb = userTargetDb || '~/incognide_history.db';
+      let targetDb = userTargetDb || '~/npcsh_history.db';
       if (targetDb.startsWith('~')) targetDb = path.join(os.homedir(), targetDb.slice(1));
 
       const results = [];

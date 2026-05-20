@@ -47,7 +47,7 @@ const SqlModelsContent = ({ currentPath, npcList = [], jinxList = [], isGlobal }
     const [jinxes, setJinxes] = useState<any[]>([]);
 
     const [availableDatabases, setAvailableDatabases] = useState<{ name: string; path: string }[]>([]);
-    const [selectedDatabase, setSelectedDatabase] = useState<string>('~/incognide_history.db');
+    const [selectedDatabase, setSelectedDatabase] = useState<string>('~/npcsh_history.db');
 
     const [modelName, setModelName] = useState('');
     const [modelDescription, setModelDescription] = useState('');
@@ -91,7 +91,7 @@ const SqlModelsContent = ({ currentPath, npcList = [], jinxList = [], isGlobal }
 
     const fetchAvailableDatabases = async () => {
         const databases: { name: string; path: string }[] = [
-            { name: 'Global History (incognide_history.db)', path: '~/incognide_history.db' }
+            { name: 'Global History (npcsh_history.db)', path: '~/npcsh_history.db' }
         ];
 
         try {
@@ -612,7 +612,7 @@ const DatabasesContent = ({ currentPath, isGlobal }: { currentPath: string; isGl
                     type="text"
                     value={newDbPath}
                     onChange={(e) => setNewDbPath(e.target.value)}
-                    placeholder="~/incognide_history.db"
+                    placeholder="~/npcsh_history.db"
                     className="flex-1 theme-input text-sm font-mono"
                     onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
                 />
