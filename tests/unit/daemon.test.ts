@@ -275,15 +275,15 @@ describe('daemon pure functions', () => {
       case 'uv': {
         const binDir = isWin ? 'Scripts' : 'bin';
         const venvPath = pythonEnvConfig.venvPath || '.venv';
-        return path.join(workspacePath, venvPath, binDir, pythonBin);
+        return path.posix.join(workspacePath, venvPath, binDir, pythonBin);
       }
       case 'pyenv': {
-        const pyenvRoot = process.env.PYENV_ROOT || path.join(os.homedir(), '.pyenv');
-        return path.join(pyenvRoot, 'versions', pythonEnvConfig.pyenvVersion, 'bin', pythonBin);
+        const pyenvRoot = process.env.PYENV_ROOT || path.posix.join(os.homedir(), '.pyenv');
+        return path.posix.join(pyenvRoot, 'versions', pythonEnvConfig.pyenvVersion, 'bin', pythonBin);
       }
       case 'conda': {
-        const condaRoot = pythonEnvConfig.condaRoot || path.join(os.homedir(), 'anaconda3');
-        return path.join(condaRoot, 'envs', pythonEnvConfig.condaEnv, 'bin', pythonBin);
+        const condaRoot = pythonEnvConfig.condaRoot || path.posix.join(os.homedir(), 'anaconda3');
+        return path.posix.join(condaRoot, 'envs', pythonEnvConfig.condaEnv, 'bin', pythonBin);
       }
       case 'custom':
         return pythonEnvConfig.customPath;
