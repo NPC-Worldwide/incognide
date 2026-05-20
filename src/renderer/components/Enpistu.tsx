@@ -4198,14 +4198,7 @@ const renderMessageContextMenu = () => null;
             const emptyExp = {
                 exp_version: '1.0', created_at: new Date().toISOString(), modified_at: new Date().toISOString(),
                 hypothesis: '', status: 'draft', conclusion: null, tags: [], session_ids: [], notes: [], artifacts: [],
-                sections: [
-                    { id: 'hypothesis', type: 'hypothesis', title: 'Hypothesis', order: 0, blocks: [] },
-                    { id: 'methods', type: 'methods', title: 'Methods', order: 1, blocks: [] },
-                    { id: 'data', type: 'data', title: 'Data', order: 2, blocks: [] },
-                    { id: 'results', type: 'results', title: 'Results', order: 3, blocks: [] },
-                    { id: 'discussion', type: 'discussion', title: 'Discussion', order: 4, blocks: [] },
-                    { id: 'conclusion', type: 'conclusion', title: 'Conclusion', order: 5, blocks: [] },
-                ],
+                sections: [],
             };
             await (window as any).api.writeFileContent(filepath, JSON.stringify(emptyExp, null, 2));
             createAndAddPaneNodeToLayout({ contentType: 'exp', contentId: filepath, isUntitled: true });

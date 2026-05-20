@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import CodeMirror from '@uiw/react-codemirror';
 import { python } from '@codemirror/lang-python';
+import { javascript } from '@codemirror/lang-javascript';
+import { json } from '@codemirror/lang-json';
 import { markdown } from '@codemirror/lang-markdown';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -31,7 +33,7 @@ interface ExpFile {
 
 interface ExpSection {
     id: string;
-    type: 'hypothesis' | 'methods' | 'data' | 'results' | 'discussion' | 'conclusion' | 'custom';
+    type: string;
     title: string;
     order: number;
     blocks: ExpBlock[];
@@ -39,7 +41,7 @@ interface ExpSection {
 
 interface ExpBlock {
     id: string;
-    block_type: 'markdown' | 'code' | 'latex' | 'chat' | 'jinx' | 'data' | 'figure';
+    block_type: 'markdown' | 'code' | 'latex' | 'chat' | 'jinx' | 'data' | 'figure' | 'query';
     source: string;
     outputs?: any[];
     in_paper: boolean;
@@ -57,6 +59,7 @@ interface ExpBlock {
         hash: string;
         version: number;
     }[];
+    language?: string;
 }
 
 interface BlockExecution {
@@ -91,15 +94,6 @@ interface ExpViewerProps {
     jinxesToDisplay?: any[];
 }
 
-const DEFAULT_SECTIONS: ExpSection[] = [
-    { id: 'hypothesis', type: 'hypothesis', title: 'Hypothesis', order: 0, blocks: [] },
-    { id: 'methods', type: 'methods', title: 'Methods', order: 1, blocks: [] },
-    { id: 'data', type: 'data', title: 'Data', order: 2, blocks: [] },
-    { id: 'results', type: 'results', title: 'Results', order: 3, blocks: [] },
-    { id: 'discussion', type: 'discussion', title: 'Discussion', order: 4, blocks: [] },
-    { id: 'conclusion', type: 'conclusion', title: 'Conclusion', order: 5, blocks: [] },
-];
-
 const SECTION_ICONS: Record<string, React.ReactNode> = {
     hypothesis: <Lightbulb size={14} />,
     methods: <Beaker size={14} />,
@@ -118,9 +112,23 @@ const BLOCK_TYPE_ICONS: Record<string, React.ReactNode> = {
     jinx: <Zap size={12} />,
     data: <Database size={12} />,
     figure: <Image size={12} />,
+    query: <Database size={12} />,
 };
 
 const generateId = () => `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+const CODE_LANGS: Record<string, any> = {
+    python: python(),
+    javascript: javascript(),
+    typescript: javascript({ typescript: true }),
+    json: json(),
+    markdown: markdown(),
+};
+
+const getCodeExtension = (lang?: string) => {
+    if (!lang) return python();
+    return CODE_LANGS[lang] || python();
+};
 
 const ExpViewer: React.FC<ExpViewerProps> = ({
     filePath,
@@ -130,7 +138,7 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
     jinxesToDisplay = [],
 }) => {
     const [expData, setExpData] = useState<ExpFile | null>(null);
-    const [activeSection, setActiveSection] = useState<string>('hypothesis');
+    const [activeSection, setActiveSection] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [editingHypothesis, setEditingHypothesis] = useState(false);
@@ -142,6 +150,11 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
     const [streamingContent, setStreamingContent] = useState<string>('');
     const [streamingReasoningContent, setStreamingReasoningContent] = useState<string>('');
     const [streamingToolCalls, setStreamingToolCalls] = useState<any[]>([]);
+    const [addingSection, setAddingSection] = useState(false);
+    const [newSectionTitle, setNewSectionTitle] = useState('');
+    const [renamingSectionId, setRenamingSectionId] = useState<string | null>(null);
+    const [renameInput, setRenameInput] = useState('');
+    const [dragSectionId, setDragSectionId] = useState<string | null>(null);
     const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const streamingContentRef = useRef<string>('');
     const streamingReasoningRef = useRef<string>('');
@@ -151,11 +164,17 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
         const loadExp = async () => {
             setLoading(true);
             try {
-                const content = await (window as any).api?.readFileContent?.(filePath);
+                const result = await (window as any).api?.readFileContent?.(filePath);
+                const content = result?.content;
                 if (content) {
                     const parsed = JSON.parse(content);
                     setExpData(parsed);
                     setHypothesisInput(parsed.hypothesis || '');
+                    if (parsed.sections?.length > 0) {
+                        setActiveSection(parsed.sections.sort((a: ExpSection, b: ExpSection) => a.order - b.order)[0].id);
+                    } else {
+                        setActiveSection(null);
+                    }
                 }
             } catch (err) {
                 console.error('[ExpViewer] Error loading exp file:', err);
@@ -163,6 +182,7 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                 const newExp = createEmptyExp();
                 setExpData(newExp);
                 setHypothesisInput('');
+                setActiveSection(null);
             } finally {
                 setLoading(false);
             }
@@ -175,7 +195,7 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
         created_at: new Date().toISOString(),
         modified_at: new Date().toISOString(),
         hypothesis: '',
-        sections: DEFAULT_SECTIONS.map(s => ({ ...s, blocks: [] })),
+        sections: [],
         status: 'draft',
         conclusion: null,
         tags: [],
@@ -183,6 +203,54 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
         notes: [],
         artifacts: [],
     });
+
+    const addSection = (title: string) => {
+        const newSection: ExpSection = {
+            id: generateId(),
+            type: 'custom',
+            title,
+            order: expData?.sections.length || 0,
+            blocks: [],
+        };
+        updateExpData(prev => ({
+            ...prev,
+            sections: [...prev.sections, newSection],
+        }));
+        setActiveSection(newSection.id);
+    };
+
+    const removeSection = (sectionId: string) => {
+        updateExpData(prev => {
+            const filtered = prev.sections.filter(s => s.id !== sectionId);
+            const reordered = filtered.map((s, i) => ({ ...s, order: i }));
+            return { ...prev, sections: reordered };
+        });
+        if (activeSection === sectionId) {
+            const remaining = expData?.sections.filter(s => s.id !== sectionId).sort((a, b) => a.order - b.order);
+            setActiveSection(remaining && remaining.length > 0 ? remaining[0].id : null);
+        }
+    };
+
+    const renameSection = (sectionId: string, newTitle: string) => {
+        updateExpData(prev => ({
+            ...prev,
+            sections: prev.sections.map(s =>
+                s.id === sectionId ? { ...s, title: newTitle } : s
+            ),
+        }));
+    };
+
+    const moveSection = (sectionId: string, direction: -1 | 1) => {
+        updateExpData(prev => {
+            const idx = prev.sections.findIndex(s => s.id === sectionId);
+            if (idx < 0) return prev;
+            const newIdx = idx + direction;
+            if (newIdx < 0 || newIdx >= prev.sections.length) return prev;
+            const sections = [...prev.sections];
+            [sections[idx], sections[newIdx]] = [sections[newIdx], sections[idx]];
+            return { ...prev, sections: sections.map((s, i) => ({ ...s, order: i })) };
+        });
+    };
 
     const saveExp = useCallback(async (data: ExpFile) => {
         if (saveTimeoutRef.current) {
@@ -558,6 +626,28 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                     outputs: [{ output_type: 'error', text: err.message }],
                 });
             }
+        } else if (block.block_type === 'query') {
+            try {
+                const result = await (window as any).api?.executeSQL?.({ query: block.source });
+                const execution: BlockExecution = {
+                    timestamp: new Date().toISOString(),
+                    duration_ms: Date.now() - startTime,
+                    config: {},
+                    input_hashes: [],
+                    output_hash: '',
+                    status: result?.error ? 'error' : 'success',
+                };
+                updateBlock(sectionId, block.id, {
+                    outputs: result?.error
+                        ? [{ output_type: 'error', text: result.error }]
+                        : [{ output_type: 'execute_result', text: typeof result?.result === 'string' ? result.result : JSON.stringify(result?.result, null, 2) }],
+                    execution_history: [...block.execution_history, execution],
+                });
+            } catch (err: any) {
+                updateBlock(sectionId, block.id, {
+                    outputs: [{ output_type: 'error', text: err.message }],
+                });
+            }
         }
     };
 
@@ -585,14 +675,27 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
 
             case 'code':
                 return (
-                    <CodeMirror
-                        value={block.source}
-                        extensions={[python()]}
-                        onChange={(value) => updateBlock(sectionId, block.id, { source: value })}
-                        className="text-sm border border-white/10 rounded"
-                        theme="dark"
-                        readOnly={!isEditing}
-                    />
+                    <div className="space-y-1">
+                        {isEditing && (
+                            <select
+                                value={block.language || 'python'}
+                                onChange={(e) => updateBlock(sectionId, block.id, { language: e.target.value })}
+                                className="bg-white/5 border border-white/10 rounded px-2 py-0.5 text-xs text-gray-300"
+                            >
+                                {Object.keys(CODE_LANGS).map(lang => (
+                                    <option key={lang} value={lang}>{lang}</option>
+                                ))}
+                            </select>
+                        )}
+                        <CodeMirror
+                            value={block.source}
+                            extensions={[getCodeExtension(block.language)]}
+                            onChange={(value) => updateBlock(sectionId, block.id, { source: value })}
+                            className="text-sm border border-white/10 rounded"
+                            theme="dark"
+                            readOnly={!isEditing}
+                        />
+                    </div>
                 );
 
             case 'latex':
@@ -697,6 +800,22 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                                 <span>No figure generated yet</span>
                             </div>
                         )}
+                    </div>
+                );
+
+            case 'query':
+                return isEditing ? (
+                    <CodeMirror
+                        value={block.source}
+                        extensions={[markdown()]}
+                        onChange={(value) => updateBlock(sectionId, block.id, { source: value })}
+                        className="text-sm border border-white/10 rounded"
+                        theme="dark"
+                        basicSetup={{ lineNumbers: false }}
+                    />
+                ) : (
+                    <div className="prose prose-invert prose-sm max-w-none">
+                        <pre className="bg-black/30 p-2 rounded text-xs text-gray-300">{block.source || '/* Click edit to write SQL */'}</pre>
                     </div>
                 );
 
@@ -842,7 +961,7 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                         )}
                     </div>
                     <div className="flex items-center gap-1">
-                        {(block.block_type === 'code' || block.block_type === 'chat' || block.block_type === 'jinx') && (
+                        {(block.block_type === 'code' || block.block_type === 'chat' || block.block_type === 'jinx' || block.block_type === 'query') && (
                             <button
                                 onClick={() => !isExecuting && executeBlock(sectionId, block)}
                                 className={`p-1.5 rounded ${isExecuting ? 'bg-purple-500/20 text-purple-400 cursor-wait' : 'hover:bg-green-500/20 text-green-400'}`}
@@ -894,7 +1013,7 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
         return (
             <div className="space-y-3">
                 <div className="flex flex-wrap gap-1">
-                    {(['markdown', 'code', 'latex', 'chat', 'jinx', 'data', 'figure'] as const).map(type => (
+                    {(['markdown', 'code', 'latex', 'chat', 'jinx', 'data', 'figure', 'query'] as const).map(type => (
                         <button
                             key={type}
                             onClick={() => addBlock(section.id, type)}
@@ -927,6 +1046,143 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
         );
     }
 
+    const compileToPDF = async () => {
+        if (!expData) return;
+        try {
+            const { PDFDocument, rgb, StandardFonts } = await import('pdf-lib');
+            const pdfDoc = await PDFDocument.create();
+            const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+            const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+            let page = pdfDoc.addPage([612, 792]);
+            const { width, height } = page.getSize();
+            let y = height - 50;
+            const margin = 50;
+            const lineHeight = 14;
+
+            const wrapText = (text: string, maxWidth: number, size: number) => {
+                const words = (text || '').split(' ');
+                const lines: string[] = [];
+                let current = '';
+                for (const word of words) {
+                    const test = current ? current + ' ' + word : word;
+                    if (font.widthOfTextAtSize(test, size) > maxWidth) {
+                        if (current) lines.push(current);
+                        current = word;
+                    } else {
+                        current = test;
+                    }
+                }
+                if (current) lines.push(current);
+                return lines.length ? lines : [''];
+            };
+
+            const drawText = (text: string, size: number, color = rgb(0, 0, 0), isBold = false) => {
+                const f = isBold ? boldFont : font;
+                const lines = wrapText(text, width - margin * 2, size);
+                for (const line of lines) {
+                    if (y < margin + lineHeight) {
+                        page = pdfDoc.addPage([612, 792]);
+                        y = height - 50;
+                    }
+                    page.drawText(line, { x: margin, y, size, font: f, color });
+                    y -= lineHeight * (size / 12);
+                }
+                y -= 4;
+            };
+
+            const drawCodeBlock = (text: string) => {
+                const lines = (text || '').split('\n');
+                const boxHeight = lines.length * 11 + 16;
+                if (y - boxHeight < margin) {
+                    page = pdfDoc.addPage([612, 792]);
+                    y = height - 50;
+                }
+                page.drawRectangle({
+                    x: margin - 4,
+                    y: y - boxHeight + 10,
+                    width: width - margin * 2 + 8,
+                    height: boxHeight,
+                    color: rgb(0.95, 0.95, 0.95),
+                    borderColor: rgb(0.85, 0.85, 0.85),
+                    borderWidth: 1,
+                });
+                let ly = y - 14;
+                for (const line of lines) {
+                    page.drawText(line || ' ', { x: margin, y: ly, size: 9, font, color: rgb(0.2, 0.2, 0.2) });
+                    ly -= 11;
+                }
+                y = ly - 10;
+            };
+
+            // Title
+            drawText(getFileName(filePath).replace(/\.[^.]+$/, ''), 20, rgb(0.1, 0.1, 0.1), true);
+            if (expData.hypothesis) {
+                drawText('Hypothesis: ' + expData.hypothesis, 11, rgb(0.3, 0.3, 0.3));
+            }
+            y -= 10;
+
+            for (const section of expData.sections.sort((a, b) => a.order - b.order)) {
+                drawText(section.title, 16, rgb(0.1, 0.1, 0.1), true);
+                for (const block of section.blocks) {
+                    if (!block.in_paper) continue;
+                    switch (block.block_type) {
+                        case 'markdown':
+                            drawText(block.source, 11);
+                            break;
+                        case 'code':
+                        case 'query':
+                            drawCodeBlock(block.source);
+                            break;
+                        case 'latex':
+                            drawText(block.source, 11);
+                            break;
+                        case 'chat':
+                            if (block.outputs?.[0]?.text) {
+                                drawText('Chat Response:', 11, rgb(0.1, 0.1, 0.1), true);
+                                drawText(block.outputs[0].text, 10);
+                            }
+                            break;
+                        case 'jinx':
+                            if (block.outputs?.[0]?.text) {
+                                drawText('Jinx Output:', 11, rgb(0.1, 0.1, 0.1), true);
+                                drawText(block.outputs[0].text, 10);
+                            }
+                            break;
+                        case 'figure':
+                            if (block.outputs?.[0]?.image) {
+                                drawText('[Figure: ' + (block.paper_label || 'Untitled') + ']', 10, rgb(0.4, 0.4, 0.4));
+                            }
+                            break;
+                        case 'data':
+                            if (block.data_refs?.length) {
+                                drawText('Data refs: ' + block.data_refs.map(r => r.path).join(', '), 10);
+                            }
+                            break;
+                    }
+                    if (block.outputs?.[0]?.text && block.block_type !== 'chat' && block.block_type !== 'jinx') {
+                        drawText('Output:', 10, rgb(0.3, 0.3, 0.3), true);
+                        drawText(block.outputs[0].text, 10);
+                    }
+                    y -= 6;
+                }
+                y -= 10;
+            }
+
+            const pdfBytes = await pdfDoc.save();
+            const defaultName = getFileName(filePath).replace(/\.[^.]+$/, '') + '.pdf';
+            const saveResult = await (window as any).api?.showSaveDialog?.({
+                defaultPath: defaultName,
+                filters: [{ name: 'PDF', extensions: ['pdf'] }],
+            });
+            if (saveResult?.filePath) {
+                await (window as any).api?.writeFileContent?.(saveResult.filePath, pdfBytes);
+            }
+        } catch (err) {
+            console.error('[ExpViewer] PDF compilation failed:', err);
+            alert('PDF compilation failed: ' + (err as Error).message);
+        }
+    };
+
     if (!expData) {
         return (
             <div className="flex items-center justify-center h-full text-gray-500">
@@ -947,23 +1203,16 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                             {getFileName(filePath)}
                         </div>
                         <div className="text-xs text-gray-500">
-                            {expData.status} • Modified {new Date(expData.modified_at).toLocaleString()}
+                            Modified {new Date(expData.modified_at).toLocaleString()}
                         </div>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
                     {saving && <span className="text-xs text-gray-500">Saving...</span>}
-                    <select
-                        value={expData.status}
-                        onChange={(e) => updateExpData(prev => ({ ...prev, status: e.target.value as any }))}
-                        className="bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-gray-300"
+                    <button
+                        onClick={compileToPDF}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 rounded text-xs text-white"
                     >
-                        <option value="draft">Draft</option>
-                        <option value="in_progress">In Progress</option>
-                        <option value="concluded">Concluded</option>
-                        <option value="archived">Archived</option>
-                    </select>
-                    <button className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 rounded text-xs text-white">
                         <FileDown size={12} />
                         Compile
                     </button>
@@ -1003,29 +1252,170 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
             </div>
 
             <div className="flex items-center gap-1 px-4 py-2 bg-white/5 border-b border-white/10 overflow-x-auto">
-                {expData.sections.sort((a, b) => a.order - b.order).map(section => (
-                    <button
+                {expData.sections.sort((a, b) => a.order - b.order).map((section, idx) => (
+                    <div
                         key={section.id}
-                        onClick={() => setActiveSection(section.id)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium whitespace-nowrap transition-colors ${
-                            activeSection === section.id
-                                ? 'bg-purple-600 text-white'
-                                : 'text-gray-400 hover:text-white hover:bg-white/10'
-                        }`}
+                        draggable
+                        onDragStart={() => setDragSectionId(section.id)}
+                        onDragOver={(e) => {
+                            e.preventDefault();
+                            if (dragSectionId && dragSectionId !== section.id) {
+                                const fromIdx = expData.sections.findIndex(s => s.id === dragSectionId);
+                                if (fromIdx < 0) return;
+                                const toIdx = idx;
+                                if (fromIdx === toIdx) return;
+                                updateExpData(prev => {
+                                    const secs = [...prev.sections];
+                                    const [moved] = secs.splice(fromIdx, 1);
+                                    secs.splice(toIdx, 0, moved);
+                                    return { ...prev, sections: secs.map((s, i) => ({ ...s, order: i })) };
+                                });
+                            }
+                        }}
+                        onDragEnd={() => setDragSectionId(null)}
+                        className={`flex items-center cursor-move ${dragSectionId === section.id ? 'opacity-50' : ''}`}
                     >
-                        {SECTION_ICONS[section.type]}
-                        {section.title}
-                        {section.blocks.length > 0 && (
-                            <span className="ml-1 px-1.5 py-0.5 bg-white/20 rounded-full text-[10px]">
-                                {section.blocks.length}
-                            </span>
+                        <button
+                            onClick={() => setActiveSection(section.id)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium whitespace-nowrap transition-colors ${
+                                activeSection === section.id
+                                    ? 'bg-purple-600 text-white'
+                                    : 'text-gray-400 hover:text-white hover:bg-white/10'
+                            }`}
+                        >
+                            {SECTION_ICONS[section.type] || <FileText size={14} />}
+                            {section.title}
+                            {section.blocks.length > 0 && (
+                                <span className="ml-1 px-1.5 py-0.5 bg-white/20 rounded-full text-[10px]">
+                                    {section.blocks.length}
+                                </span>
+                            )}
+                        </button>
+                        {activeSection === section.id && (
+                            <div className="flex items-center gap-0.5 ml-1">
+                                {renamingSectionId === section.id ? (
+                                    <>
+                                        <input
+                                            type="text"
+                                            value={renameInput}
+                                            onChange={(e) => setRenameInput(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    renameSection(section.id, renameInput);
+                                                    setRenamingSectionId(null);
+                                                } else if (e.key === 'Escape') {
+                                                    setRenamingSectionId(null);
+                                                }
+                                            }}
+                                            autoFocus
+                                            className="w-24 bg-white/10 border border-white/20 rounded px-1 py-0.5 text-xs text-white"
+                                        />
+                                        <button
+                                            onClick={() => {
+                                                renameSection(section.id, renameInput);
+                                                setRenamingSectionId(null);
+                                            }}
+                                            className="p-0.5 text-green-400 hover:bg-green-500/10 rounded"
+                                        >
+                                            <Check size={10} />
+                                        </button>
+                                        <button
+                                            onClick={() => setRenamingSectionId(null)}
+                                            className="p-0.5 text-red-400 hover:bg-red-500/10 rounded"
+                                        >
+                                            <X size={10} />
+                                        </button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <button
+                                            onClick={() => {
+                                                setRenamingSectionId(section.id);
+                                                setRenameInput(section.title);
+                                            }}
+                                            className="p-0.5 text-gray-500 hover:text-white hover:bg-white/10 rounded"
+                                            title="Rename"
+                                        >
+                                            <Edit3 size={10} />
+                                        </button>
+                                        <button
+                                            onClick={() => removeSection(section.id)}
+                                            className="p-0.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded"
+                                            title="Delete section"
+                                        >
+                                            <Trash2 size={10} />
+                                        </button>
+                                    </>
+                                )}
+                            </div>
                         )}
-                    </button>
+                    </div>
                 ))}
+                {addingSection ? (
+                    <div className="flex items-center gap-1 ml-2">
+                        <input
+                            type="text"
+                            value={newSectionTitle}
+                            onChange={(e) => setNewSectionTitle(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    if (newSectionTitle.trim()) addSection(newSectionTitle.trim());
+                                    setAddingSection(false);
+                                    setNewSectionTitle('');
+                                } else if (e.key === 'Escape') {
+                                    setAddingSection(false);
+                                    setNewSectionTitle('');
+                                }
+                            }}
+                            placeholder="Section title..."
+                            autoFocus
+                            className="w-32 bg-white/10 border border-white/20 rounded px-2 py-1 text-xs text-white placeholder-gray-500"
+                        />
+                        <button
+                            onClick={() => {
+                                if (newSectionTitle.trim()) addSection(newSectionTitle.trim());
+                                setAddingSection(false);
+                                setNewSectionTitle('');
+                            }}
+                            className="p-1 text-green-400 hover:bg-green-500/10 rounded"
+                        >
+                            <Check size={12} />
+                        </button>
+                        <button
+                            onClick={() => {
+                                setAddingSection(false);
+                                setNewSectionTitle('');
+                            }}
+                            className="p-1 text-red-400 hover:bg-red-500/10 rounded"
+                        >
+                            <X size={12} />
+                        </button>
+                    </div>
+                ) : (
+                    <button
+                        onClick={() => setAddingSection(true)}
+                        className="flex items-center gap-1 px-2 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-white/10 rounded ml-2"
+                    >
+                        <Plus size={12} />
+                        Add Section
+                    </button>
+                )}
             </div>
 
             <div className="flex-1 overflow-y-auto p-4">
-                {currentSection && renderSection(currentSection)}
+                {currentSection ? renderSection(currentSection) : (
+                    <div className="flex flex-col items-center justify-center h-full text-gray-500 space-y-4">
+                        <FileText size={48} className="opacity-20" />
+                        <p>No sections yet.</p>
+                        <button
+                            onClick={() => setAddingSection(true)}
+                            className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded text-sm text-white"
+                        >
+                            <Plus size={16} />
+                            Add your first section
+                        </button>
+                    </div>
+                )}
             </div>
 
             <div className="border-t border-white/10 bg-white/5">
