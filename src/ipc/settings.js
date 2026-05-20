@@ -1789,7 +1789,7 @@ function register(ctx) {
       { provider: 'gemini', envVar: 'GEMINI_API_KEY', baseUrl: 'https://generativelanguage.googleapis.com/v1beta' },
       { provider: 'google', envVar: 'GOOGLE_API_KEY', baseUrl: 'https://generativelanguage.googleapis.com/v1beta' },
       { provider: 'groq', envVar: 'GROQ_API_KEY', baseUrl: 'https://api.groq.com/openai/v1' },
-      { provider: 'huggingface', envVar: 'HF_TOKEN', baseUrl: 'https://api-inference.huggingface.co' },
+      { provider: 'huggingFace', envVar: 'HF_TOKEN', baseUrl: 'https://api-inference.huggingface.co' },
       { provider: 'mistral', envVar: 'MISTRAL_API_KEY', baseUrl: 'https://api.mistral.ai/v1' },
       { provider: 'openai', envVar: 'OPENAI_API_KEY', baseUrl: 'https://api.openai.com/v1' },
       { provider: 'openrouter', envVar: 'OPENROUTER_API_KEY', baseUrl: 'https://openrouter.ai/api/v1' },

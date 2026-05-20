@@ -409,9 +409,8 @@ function register(ctx) {
   const KNOWN_PROVIDER_MODELS = {
     anthropic: [
       'claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5',
-      'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229',
     ],
-    huggingface: [
+    huggingFace: [
       'Inference API — use custom base URL for specific models',
     ],
     perplexity: [
@@ -443,53 +442,20 @@ function register(ctx) {
     return null;
   }
 
-  ipcMain.handle('get-provider-models', async (event, { provider, baseUrl, apiKeyVar }) => {
+  ipcMain.handle('get-provider-models', async (event, { provider }) => {
+    // Delegate to the backend /api/models endpoint which already handles all provider auth
     try {
-      let apiKey = process.env[apiKeyVar];
-      if (!apiKey) {
-        apiKey = findApiKeyInShellConfigs(apiKeyVar);
-      }
-      if (!apiKey) return { models: [], error: `No API key found for ${apiKeyVar}` };
-
-      // Return static model list for providers without a /models endpoint
+      const response = await fetch(`${BACKEND_URL}/api/models?currentPath=~`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      const filtered = (data.models || []).filter((m) => m.provider === provider || m.provider === provider.toLowerCase());
+      return { models: filtered.map((m) => ({ id: m.value || m.id || m.name, name: m.display_name || m.value || m.id || m.name, provider: m.provider })) };
+    } catch {
+      // Fallback: return static list if backend fails
       if (KNOWN_PROVIDER_MODELS[provider]) {
-        return { models: KNOWN_PROVIDER_MODELS[provider].map(id => ({ id, name: id, provider })) };
+        return { models: KNOWN_PROVIDER_MODELS[provider].map((id) => ({ id, name: id, provider })) };
       }
-
-      // Standard OpenAI-compatible /models endpoint
-      const cleanUrl = baseUrl.replace(/\/+$/, '');
-      const modelsUrl = cleanUrl.endsWith('/models') ? cleanUrl : cleanUrl + '/models';
-      const headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-      let response;
-      try {
-        response = await fetch(modelsUrl, { headers, signal: controller.signal });
-      } finally {
-        clearTimeout(timeoutId);
-      }
-      if (!response.ok) {
-        const errText = await response.text().catch(() => '');
-        // If we get HTML back (not a JSON API), report it cleanly
-        if (errText.startsWith('<') || errText.includes('<!doctype')) {
-          return { models: [], error: `${provider} does not support listing models via API` };
-        }
-        return { models: [], error: `HTTP ${response.status}: ${errText.slice(0, 200)}` };
-      }
-      let data;
-      try {
-        data = await response.json();
-      } catch {
-        return { models: [], error: `${provider} returned non-JSON response` };
-      }
-      const models = (data.data || data.models || []).map((m) => ({
-        id: m.id || m.name || m,
-        name: m.id || m.name || m,
-        provider,
-      }));
-      return { models };
-    } catch (err) {
-      return { models: [], error: err.message };
+      return { models: [], error: 'Backend unavailable and no static model list' };
     }
   });
 
