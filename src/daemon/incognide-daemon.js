@@ -31,7 +31,7 @@ const INCOGNIDE_HOME = (() => {
   return path.join(os.homedir(), '.incognide');
 })();
 
-const DB_PATH = process.env.INCOGNIDE_DB_PATH || path.join(os.homedir(), 'incognide_history.db');
+const DB_PATH = process.env.INCOGNIDE_DB_PATH || path.join(os.homedir(), 'npcsh_history.db');
 const JOBS_LOG_DIR = path.join(INCOGNIDE_HOME, 'jobs');
 const FINETUNE_JOBS_DIR = path.join(INCOGNIDE_HOME, 'finetune_jobs');
 const HEARTBEAT_INTERVAL_MS = 30_000;

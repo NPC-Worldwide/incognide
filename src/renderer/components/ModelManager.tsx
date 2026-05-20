@@ -6,7 +6,7 @@ const isMac = navigator.platform.toLowerCase().includes('mac') || navigator.user
 
 const LOCAL_PROVIDERS: Record<string, any> = {
     gguf: { name: 'GGUF/GGML', description: 'Direct model files (no server)', defaultPort: null, docsUrl: 'https://huggingface.co/docs/hub/gguf', color: 'text-orange-400', bgColor: 'bg-orange-600', local: true },
-    llamacpp: { name: 'llama.cpp', description: 'C++ inference server', defaultPort: 8080, docsUrl: 'https://github.com/ggerganov/llama.cpp', color: 'text-green-400', bgColor: 'bg-green-600', local: true },
+    llamacpp: { name: 'llama.cpp Server', description: 'C++ inference server', defaultPort: 8080, docsUrl: 'https://github.com/ggerganov/llama.cpp', color: 'text-green-400', bgColor: 'bg-green-600', local: true },
     lmstudio: { name: 'LM Studio', description: 'Desktop local LLM runner', defaultPort: 1234, docsUrl: 'https://lmstudio.ai', color: 'text-purple-400', bgColor: 'bg-purple-600', local: true },
     ollama: { name: 'Ollama', description: 'Local LLM server', defaultPort: 11434, docsUrl: 'https://ollama.ai', color: 'text-blue-400', bgColor: 'bg-blue-600', local: true },
     ...(isMac ? { omlx: { name: 'OMLX', description: 'Apple Silicon optimized', defaultPort: 8000, docsUrl: 'https://github.com/jundot/omlx', color: 'text-pink-400', bgColor: 'bg-pink-600', local: true } } : {}),

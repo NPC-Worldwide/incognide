@@ -9,7 +9,7 @@ const crypto = require('crypto');
 const sqlite3 = require('sqlite3');
 const yaml = require('js-yaml');
 
-const dbPath = path.join(os.homedir(), 'incognide_history.db');
+const dbPath = path.join(os.homedir(), 'npcsh_history.db');
 
 /**
  * Categorize backend errors into user-friendly messages
@@ -174,7 +174,7 @@ function getBackendPythonPath() {
   } catch (err) {
     console.log('Error reading backend Python path from .incogniderc:', err);
   }
-  return null;
+  return process.platform === 'win32' ? 'python' : 'python3';
 }
 
 function register(ctx) {
@@ -409,9 +409,8 @@ function register(ctx) {
   const KNOWN_PROVIDER_MODELS = {
     anthropic: [
       'claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5',
-      'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229',
     ],
-    huggingface: [
+    huggingFace: [
       'Inference API — use custom base URL for specific models',
     ],
     perplexity: [
@@ -443,53 +442,20 @@ function register(ctx) {
     return null;
   }
 
-  ipcMain.handle('get-provider-models', async (event, { provider, baseUrl, apiKeyVar }) => {
+  ipcMain.handle('get-provider-models', async (event, { provider }) => {
+    // Delegate to the backend /api/models endpoint which already handles all provider auth
     try {
-      let apiKey = process.env[apiKeyVar];
-      if (!apiKey) {
-        apiKey = findApiKeyInShellConfigs(apiKeyVar);
-      }
-      if (!apiKey) return { models: [], error: `No API key found for ${apiKeyVar}` };
-
-      // Return static model list for providers without a /models endpoint
+      const response = await fetch(`${BACKEND_URL}/api/models?currentPath=~`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      const filtered = (data.models || []).filter((m) => m.provider === provider || m.provider === provider.toLowerCase());
+      return { models: filtered.map((m) => ({ id: m.value || m.id || m.name, name: m.display_name || m.value || m.id || m.name, provider: m.provider })) };
+    } catch {
+      // Fallback: return static list if backend fails
       if (KNOWN_PROVIDER_MODELS[provider]) {
-        return { models: KNOWN_PROVIDER_MODELS[provider].map(id => ({ id, name: id, provider })) };
+        return { models: KNOWN_PROVIDER_MODELS[provider].map((id) => ({ id, name: id, provider })) };
       }
-
-      // Standard OpenAI-compatible /models endpoint
-      const cleanUrl = baseUrl.replace(/\/+$/, '');
-      const modelsUrl = cleanUrl.endsWith('/models') ? cleanUrl : cleanUrl + '/models';
-      const headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-      let response;
-      try {
-        response = await fetch(modelsUrl, { headers, signal: controller.signal });
-      } finally {
-        clearTimeout(timeoutId);
-      }
-      if (!response.ok) {
-        const errText = await response.text().catch(() => '');
-        // If we get HTML back (not a JSON API), report it cleanly
-        if (errText.startsWith('<') || errText.includes('<!doctype')) {
-          return { models: [], error: `${provider} does not support listing models via API` };
-        }
-        return { models: [], error: `HTTP ${response.status}: ${errText.slice(0, 200)}` };
-      }
-      let data;
-      try {
-        data = await response.json();
-      } catch {
-        return { models: [], error: `${provider} returned non-JSON response` };
-      }
-      const models = (data.data || data.models || []).map((m) => ({
-        id: m.id || m.name || m,
-        name: m.id || m.name || m,
-        provider,
-      }));
-      return { models };
-    } catch (err) {
-      return { models: [], error: err.message };
+      return { models: [], error: 'Backend unavailable and no static model list' };
     }
   });
 
@@ -1508,7 +1474,7 @@ function register(ctx) {
     }
   });
 
-  // ---- Sync: export data from incognide_history.db ----
+  // ---- Sync: export data from npcsh_history.db ----
 
   ipcMain.handle('sync:export-data', async (_, { since, fullDump }) => {
     const sinceTs = (fullDump || !since) ? '1970-01-01T00:00:00.000Z' : since;
@@ -1535,7 +1501,8 @@ function register(ctx) {
             `SELECT message_id, timestamp, role, content, conversation_id,
                     directory_path, model, provider, npc, team,
                     reasoning_content, tool_calls, tool_results,
-                    parent_message_id, branch_id, input_tokens, output_tokens, cost
+                    parent_message_id, branch_id, device_id, device_name,
+                    input_tokens, output_tokens, cost
              FROM conversation_history
              WHERE timestamp > ?
              ORDER BY timestamp ASC LIMIT ${msgLimit}`,
@@ -1545,8 +1512,8 @@ function register(ctx) {
 
               db.all(
                 `SELECT id, title, url, folder_path, is_global, timestamp
-                 FROM bookmarks ORDER BY timestamp DESC LIMIT ${bmLimit}`,
-                [],
+                 FROM bookmarks WHERE timestamp > ? ORDER BY timestamp DESC LIMIT ${bmLimit}`,
+                [sinceTs],
                 (err3, bmRows) => {
                   if (!err3 && bmRows) result.bookmarks = bmRows;
 
@@ -1584,8 +1551,9 @@ function register(ctx) {
              (message_id, timestamp, role, content, conversation_id,
               directory_path, model, provider, npc, team,
               reasoning_content, tool_calls, tool_results,
-              parent_message_id, branch_id, input_tokens, output_tokens, cost)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              parent_message_id, branch_id, device_id, device_name,
+              input_tokens, output_tokens, cost)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           );
           for (const m of messages) {
             stmt.run(
@@ -1593,6 +1561,7 @@ function register(ctx) {
               m.directory_path, m.model, m.provider, m.npc, m.team,
               m.reasoning_content, m.tool_calls, m.tool_results,
               m.parent_message_id, m.branch_id || 'main',
+              m.device_id || null, m.device_name || null,
               m.input_tokens, m.output_tokens, m.cost
             );
             imported.messages++;
@@ -1600,9 +1569,15 @@ function register(ctx) {
           stmt.finalize();
         }
 
+        // Prevent duplicate bookmarks: delete existing URLs before inserting
         if (bookmarks && bookmarks.length) {
+          const urls = [...new Set(bookmarks.map(b => b.url).filter(Boolean))];
+          if (urls.length > 0) {
+            const placeholders = urls.map(() => '?').join(',');
+            db.run(`DELETE FROM bookmarks WHERE url IN (${placeholders})`, urls);
+          }
           const stmt = db.prepare(
-            `INSERT OR IGNORE INTO bookmarks (title, url, folder_path, is_global, timestamp)
+            `INSERT INTO bookmarks (title, url, folder_path, is_global, timestamp)
              VALUES (?, ?, ?, ?, ?)`
           );
           for (const b of bookmarks) {
@@ -1612,9 +1587,15 @@ function register(ctx) {
           stmt.finalize();
         }
 
+        // Prevent duplicate browser history: delete matching (url, last_visited) pairs before inserting
         if (history && history.length) {
+          for (const h of history) {
+            if (h.url && h.last_visited) {
+              db.run('DELETE FROM browser_history WHERE url = ? AND last_visited = ?', [h.url, h.last_visited]);
+            }
+          }
           const stmt = db.prepare(
-            `INSERT OR IGNORE INTO browser_history (title, url, folder_path, visit_count, last_visited)
+            `INSERT INTO browser_history (title, url, folder_path, visit_count, last_visited)
              VALUES (?, ?, ?, ?, ?)`
           );
           for (const h of history) {
