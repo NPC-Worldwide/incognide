@@ -153,6 +153,10 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
     const [renamingSectionId, setRenamingSectionId] = useState<string | null>(null);
     const [renameInput, setRenameInput] = useState('');
     const [dragSectionId, setDragSectionId] = useState<string | null>(null);
+    const [kernelId, setKernelId] = useState<string | null>(null);
+    const [kernelStatus, setKernelStatus] = useState<'disconnected' | 'starting' | 'connected' | 'busy'>('disconnected');
+    const [availableKernels, setAvailableKernels] = useState<any[]>([]);
+    const [selectedKernel, setSelectedKernel] = useState<string>('python3');
     const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const streamingContentRef = useRef<string>('');
     const streamingReasoningRef = useRef<string>('');
@@ -789,13 +793,65 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                 );
 
             case 'figure':
+                const handleFigureDrop = async (e: React.DragEvent) => {
+                    e.preventDefault();
+                    const files = e.dataTransfer.files;
+                    if (files.length > 0) {
+                        const file = files[0];
+                        if (file.type.startsWith('image/')) {
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                                updateBlock(sectionId, block.id, {
+                                    outputs: [{ output_type: 'image', image: ev.target?.result }]
+                                });
+                            };
+                            reader.readAsDataURL(file);
+                        }
+                    }
+                };
+                const pickFigureFile = async () => {
+                    const result = await (window as any).api?.showOpenDialog?.({
+                        properties: ['openFile'],
+                        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'] }],
+                    });
+                    if (result?.filePaths?.[0]) {
+                        const content = await (window as any).api?.readFileContent?.(result.filePaths[0]);
+                        if (content?.content) {
+                            const ext = result.filePaths[0].split('.').pop()?.toLowerCase();
+                            const mime = ext === 'png' ? 'image/png' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'gif' ? 'image/gif' : ext === 'svg' ? 'image/svg+xml' : ext === 'webp' ? 'image/webp' : 'image/png';
+                            const dataUrl = `data:${mime};base64,${btoa(content.content)}`;
+                            updateBlock(sectionId, block.id, {
+                                outputs: [{ output_type: 'image', image: dataUrl }]
+                            });
+                        }
+                    }
+                };
                 return (
-                    <div className="text-sm text-gray-400">
+                    <div
+                        className="text-sm text-gray-400"
+                        onDrop={handleFigureDrop}
+                        onDragOver={(e) => e.preventDefault()}
+                    >
                         {block.outputs?.[0]?.image ? (
-                            <img src={block.outputs[0].image} alt={block.paper_label || 'Figure'} className="max-w-full rounded" />
+                            <div className="relative group">
+                                <img src={block.outputs[0].image} alt={block.paper_label || 'Figure'} className="max-w-full rounded" />
+                                <button
+                                    onClick={() => updateBlock(sectionId, block.id, { outputs: [] })}
+                                    className="absolute top-2 right-2 p-1 bg-black/60 rounded text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                    title="Remove image"
+                                >
+                                    <Trash2 size={12} />
+                                </button>
+                            </div>
                         ) : (
-                            <div className="flex items-center justify-center h-32 bg-white/5 rounded border border-dashed border-white/20">
-                                <span>No figure generated yet</span>
+                            <div className="flex flex-col items-center justify-center h-32 bg-white/5 rounded border border-dashed border-white/20 gap-2">
+                                <span className="text-gray-500">Drag image here</span>
+                                <button
+                                    onClick={pickFigureFile}
+                                    className="text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1"
+                                >
+                                    <Plus size={12} /> Browse
+                                </button>
                             </div>
                         )}
                     </div>

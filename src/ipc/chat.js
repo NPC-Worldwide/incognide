@@ -174,7 +174,7 @@ function getBackendPythonPath() {
   } catch (err) {
     console.log('Error reading backend Python path from .incogniderc:', err);
   }
-  return null;
+  return process.platform === 'win32' ? 'python' : 'python3';
 }
 
 function register(ctx) {
