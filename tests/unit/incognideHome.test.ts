@@ -335,10 +335,10 @@ describe('INCOGNIDE_HOME path replacement', () => {
   it('replaces .npcsh/incognide paths with INCOGNIDE_HOME', () => {
     const INCOGNIDE_HOME = '/home/user/.incognide';
     const paths = {
-      venv: path.join(INCOGNIDE_HOME, 'venv'),
-      data: path.join(INCOGNIDE_HOME, 'data'),
-      npc_team: path.join(INCOGNIDE_HOME, 'npc_team'),
-      logs: path.join(INCOGNIDE_HOME, 'logs'),
+      venv: path.posix.join(INCOGNIDE_HOME, 'venv'),
+      data: path.posix.join(INCOGNIDE_HOME, 'data'),
+      npc_team: path.posix.join(INCOGNIDE_HOME, 'npc_team'),
+      logs: path.posix.join(INCOGNIDE_HOME, 'logs'),
     };
 
     expect(paths.venv).toBe('/home/user/.incognide/venv');
@@ -349,7 +349,7 @@ describe('INCOGNIDE_HOME path replacement', () => {
 
   it('INCOGNIDE_TEAM_PATH uses INCOGNIDE_HOME', () => {
     const INCOGNIDE_HOME = '/home/user/.incognide';
-    const INCOGNIDE_TEAM_PATH = path.join(INCOGNIDE_HOME, 'npc_team');
+    const INCOGNIDE_TEAM_PATH = path.posix.join(INCOGNIDE_HOME, 'npc_team');
 
     expect(INCOGNIDE_TEAM_PATH).toBe('/home/user/.incognide/npc_team');
   });
