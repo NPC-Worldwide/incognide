@@ -758,6 +758,11 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
         ipcRenderer.on('browser-show-context-menu', handler);
         return () => ipcRenderer.removeListener('browser-show-context-menu', handler);
     },
+    onBrowserContextAction: (callback) => {
+        const handler = (_, data) => callback(data);
+        ipcRenderer.on('browser-context-action', handler);
+        return () => ipcRenderer.removeListener('browser-context-action', handler);
+    },
     browserGetPageContent: (args) => ipcRenderer.invoke('browser-get-page-content', args),
 
     getMessageAttachments: (messageId) => ipcRenderer.invoke('get-message-attachments', messageId),
