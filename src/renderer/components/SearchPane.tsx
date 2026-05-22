@@ -156,11 +156,19 @@ const SearchPane: React.FC<SearchPaneProps> = ({
         }
     }, [query, category, useSemanticSearch]);
 
+    // Sync query state when initialQuery prop changes
     useEffect(() => {
-        if (initialQuery) {
+        if (initialQuery && initialQuery !== query) {
+            setQuery(initialQuery);
+        }
+    }, [initialQuery]);
+
+    // Trigger search when query is set from initialQuery
+    useEffect(() => {
+        if (initialQuery && query === initialQuery) {
             performSearch();
         }
-    }, []);
+    }, [initialQuery, query]);
 
     const handleResultClick = (e: React.MouseEvent, result: SearchResult) => {
         e.stopPropagation();

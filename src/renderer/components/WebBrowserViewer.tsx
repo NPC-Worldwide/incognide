@@ -879,6 +879,39 @@ const WebBrowserViewer = memo(({
         return () => window.removeEventListener('incognide-zoom', handleZoom as EventListener);
     }, [nodeId]);
 
+    // Handle browser context menu actions (save image, open link, etc.)
+    useEffect(() => {
+        const handleContextAction = async (data: any) => {
+            const { action, url } = data || {};
+            if (!url) return;
+            
+            if (action === 'saveImage') {
+                try {
+                    console.log('[WebBrowser] Saving image:', url);
+                    const result = await (window as any).api?.browserSaveImage?.(url, currentPath);
+                    if (result?.success) {
+                        console.log('[WebBrowser] Image saved to:', result.path);
+                    } else if (result?.canceled) {
+                        console.log('[WebBrowser] Save image canceled');
+                    } else {
+                        console.error('[WebBrowser] Failed to save image:', result?.error);
+                    }
+                } catch (err) {
+                    console.error('[WebBrowser] Error calling browserSaveImage:', err);
+                }
+            } else if (action === 'openLink') {
+                // Handle open link if needed
+                console.log('[WebBrowser] Open link:', url);
+            }
+        };
+        
+        // Use the exposed Electron API to listen for context actions
+        const unsubscribe = (window as any).api?.onBrowserContextAction?.(handleContextAction);
+        return () => {
+            if (unsubscribe) unsubscribe();
+        };
+    }, [currentPath]);
+
     const handleHardRefresh = useCallback(() => {
         const webview = webviewRef.current;
         if (!webview) return;

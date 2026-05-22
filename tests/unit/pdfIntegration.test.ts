@@ -4,7 +4,9 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 
-const TEST_DB = path.join(os.tmpdir(), `incognide-pdf-integration-${Date.now()}.db`);
+// Generate unique DB path per test to avoid conflicts on Windows
+let testDbCounter = 0;
+const getTestDbPath = () => path.join(os.tmpdir(), `incognide-pdf-integration-${Date.now()}-${testDbCounter++}.db`);
 
 /**
  * Integration test for PDF workflow:
@@ -21,6 +23,7 @@ describe('PDF Workflow Integration', () => {
   const testFilePath = '/test/workspace/document.pdf';
 
   beforeEach(async () => {
+    const TEST_DB = getTestDbPath();
     try { fs.unlinkSync(TEST_DB); } catch {}
     db = new sqlite3.Database(TEST_DB);
     
@@ -60,7 +63,15 @@ describe('PDF Workflow Integration', () => {
 
   afterAll(async () => {
     await new Promise<void>((resolve) => db.close(() => resolve()));
-    try { fs.unlinkSync(TEST_DB); } catch {}
+    // Clean up all test DB files
+    try {
+      const files = fs.readdirSync(os.tmpdir());
+      files.forEach(f => {
+        if (f.startsWith('incognide-pdf-integration-') && f.endsWith('.db')) {
+          try { fs.unlinkSync(path.join(os.tmpdir(), f)); } catch {}
+        }
+      });
+    } catch {}
   });
 
   it('should complete full PDF annotation workflow', async () => {
@@ -319,6 +330,7 @@ describe('PDF Workflow Integration', () => {
   });
 
   it('should handle large numbers of annotations', async () => {
+    // Increase timeout for this test as it inserts many records
     const filePath = '/test/large-doc.pdf';
     const numHighlights = 100;
     const numDrawings = 50;
@@ -369,7 +381,7 @@ describe('PDF Workflow Integration', () => {
       });
     });
     expect(drCount).toBe(numDrawings);
-  });
+  }, 20000);
 
   it('should handle special characters in annotations', async () => {
     const filePath = '/test/special-chars.pdf';
