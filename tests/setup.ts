@@ -1,6 +1,9 @@
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
 
+// Store original fetch before any mocking
+const originalFetch = global.fetch;
+
 // Mock window.api (Electron IPC bridge)
 const mockApi: Record<string, any> = {
   readFile: vi.fn(),
@@ -74,8 +77,7 @@ Object.defineProperty(window, 'matchMedia', {
 global.URL.createObjectURL = vi.fn(() => 'blob:mock-url');
 global.URL.revokeObjectURL = vi.fn();
 
-// Mock fetch for loading fonts
-global.fetch = vi.fn().mockResolvedValue({
-  ok: true,
-  text: vi.fn().mockResolvedValue(''),
-});
+// Restore original fetch for daemon tests (they need real fetch)
+// This will be used by any test that imports this setup file
+// Tests that need the mock can override it
+global.originalFetch = originalFetch;

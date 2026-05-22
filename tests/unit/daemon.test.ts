@@ -6,6 +6,10 @@ import os from 'os';
 import sqlite3 from 'sqlite3';
 
 const DAEMON_SCRIPT = path.join(__dirname, '../../src/daemon/incognide-daemon.js');
+
+// Restore original fetch for daemon tests (they need real HTTP fetch for the spawned daemon)
+const originalFetch = (global as any).originalFetch || global.fetch;
+(global as any).fetch = originalFetch;
 const TEST_DB = path.join(os.tmpdir(), `incognide-daemon-test-${Date.now()}.db`);
 const TEST_HOME = path.join(os.tmpdir(), `incognide-daemon-home-${Date.now()}`);
 
