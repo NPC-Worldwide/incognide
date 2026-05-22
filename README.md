@@ -110,8 +110,6 @@ Incognide stores teams, NPCs, jinxes, memories, knowledge graphs, and model conf
 
 ### 6. Troubleshooting
 
-- **`No matching distribution found for npcpy[local]`** during any Python install step — upgrade pip first: `~/.npcsh/incognide/venv/bin/python -m pip install --upgrade pip`, then retry. Old pip (<23) doesn't resolve modern extras syntax reliably.
-- **Local model tile says "Not found" but you know it's installed** — restart Incognide. Detection runs in the Electron main process, which on macOS uses a stripped PATH that often excludes `/opt/homebrew/bin` and `/usr/local/bin`. The detector also checks those paths directly, but only at main-process startup.
 - **Backend unhealthy indicator in the status bar** — right-click the `npcpy` icon in the status bar for Restart / View Logs. Logs live in `~/Library/Logs/Incognide/` (macOS), `~/.config/Incognide/logs/` (Linux), or `%APPDATA%\Incognide\logs\` (Windows).
 - **Tutorial didn't highlight anything** — the tutorial opens the Help pane before it starts so the workspace highlight has a target. If it runs before any pane is open you'll see an un-highlighted step; re-run it from **Settings → Replay Tutorial**.
 
@@ -121,7 +119,7 @@ Incognide stores teams, NPCs, jinxes, memories, knowledge graphs, and model conf
 
 - [Office & Productivity](#office--productivity)
 - [Development](#development)
-- [3D & Media](#3d--media)
+- [3D & Media](#stl--viewer)
 - [Research & Knowledge Management](#research--knowledge-management)
 - [Model Training & Fine-tuning](#model-training--fine-tuning)
 - [AI Chat & Agents](#ai-chat--agents)
@@ -230,11 +228,10 @@ Manipulate table results and plot data directly for quick analysis:
 
 ---
 
-## 3D & Media
 
-### STL Viewer
+## STL Viewer
 
-View 3D models directly in Incognide with a Three.js-powered viewer.
+View 3D models directly in Incognide.
 
 *Features:*
 - Orbit, pan, and zoom with mouse controls
@@ -244,34 +241,6 @@ View 3D models directly in Incognide with a Three.js-powered viewer.
 - Screenshot export of the current viewport
 - Model info: triangle count, vertex count, and bounding box dimensions
 
-### Music Player (Scherzo)
-
-Play audio files with a built-in music player and playlist management.
-
-**Repertoire** — keep a library of pieces you're learning. Each piece can have:
-- An audio file (local import or YouTube via `yt-dlp`)
-- One or more attached MusicXML sheets (renders in the multi-track Notation editor)
-- Variable playback speed (0.25×–2×) without pitch shift
-- Sheet derivation from audio (demucs stem separation → basic-pitch transcription per stem)
-
-**Optional Scherzo dependencies** (assumed on `PATH`, or in the Python env configured in **Team Management → Python Env**):
-
-| Tool | Purpose | Install |
-|------|---------|---------|
-| `yt-dlp` | YouTube import | `brew install yt-dlp` (or `pip install yt-dlp`) |
-| `ffmpeg` | Audio extraction for yt-dlp; required by demucs | `brew install ffmpeg` |
-| `basic-pitch` | Audio → MIDI transcription | `pip install 'basic-pitch[coreml]'` on macOS, `pip install basic-pitch` elsewhere |
-| `demucs` | Splits audio into vocals/bass/drums/other stems before transcription (multi-track output) | `pip install demucs` |
-
-The **macOS CoreML extra** is important — the default TensorFlow SavedModel ships incompatible weights on TF 2.16+, so basic-pitch falls back to the CoreML model bundled by the `[coreml]` extra. On Linux/Windows the ONNX or TFLite model is used.
-
-**First-run notes:**
-- demucs downloads the `htdemucs` model (~250 MB) to `~/.cache/torch/hub/checkpoints/` on first use.
-- Basic-pitch's quality on dense polyphonic mixes is fundamentally limited; the demucs pre-step (vocals/bass/other separated, drums skipped) is what gives you a readable multi-staff score instead of a single-track wall of notes.
-
-If a dependency is missing, the corresponding button surfaces an inline error rather than failing silently.
-
-Audio downloaded by Repertoire and derived MIDI/MusicXML are stored under `~/.npcsh/incognide/data/repertoire/`.
 
 ---
 
