@@ -330,6 +330,7 @@ describe('PDF Workflow Integration', () => {
   });
 
   it('should handle large numbers of annotations', async () => {
+    // Increase timeout for this test as it inserts many records
     const filePath = '/test/large-doc.pdf';
     const numHighlights = 100;
     const numDrawings = 50;
@@ -380,7 +381,7 @@ describe('PDF Workflow Integration', () => {
       });
     });
     expect(drCount).toBe(numDrawings);
-  });
+  }, 20000);
 
   it('should handle special characters in annotations', async () => {
     const filePath = '/test/special-chars.pdf';

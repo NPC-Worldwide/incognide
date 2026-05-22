@@ -313,7 +313,7 @@ describe('daemon pure functions', () => {
 
   it('resolves conda paths', () => {
     const p = resolvePythonPath('/workspace', { type: 'conda', condaEnv: 'torch', condaRoot: '/opt/conda' });
-    expect(p).toBe('/opt/conda/envs/torch/bin/python');
+    expect(p).toBe(process.platform === 'win32' ? '/opt/conda/envs/torch/bin/python.exe' : '/opt/conda/envs/torch/bin/python');
   });
 
   it('resolves custom path', () => {
