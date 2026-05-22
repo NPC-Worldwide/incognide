@@ -11,6 +11,9 @@ vi.mock('lucide-react', () => ({
   Trash2: () => <span data-testid="trash-icon">Trash</span>,
 }));
 
+// Mock fetch for Google Fonts loading
+vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: true, text: () => Promise.resolve('') })));
+
 describe('SignatureModal', () => {
   const mockOnClose = vi.fn();
   const mockOnSave = vi.fn();
@@ -26,45 +29,53 @@ describe('SignatureModal', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('should render when isOpen is true', () => {
+  it('should render when isOpen is true', async () => {
     render(<SignatureModal isOpen={true} onClose={mockOnClose} onSave={mockOnSave} />);
-    expect(screen.getByText('Create Signature')).toBeInTheDocument();
-  });
+    await waitFor(() => {
+      expect(screen.getByText('Create Signature')).toBeInTheDocument();
+    }, { timeout: 3000 });
+  }, 10000);
 
-  it('should close when close button is clicked', () => {
+  it('should close when close button is clicked', async () => {
     render(<SignatureModal isOpen={true} onClose={mockOnClose} onSave={mockOnSave} />);
+    await waitFor(() => screen.getByTestId('x-icon'), { timeout: 3000 });
     const closeButton = screen.getByTestId('x-icon').parentElement;
     fireEvent.click(closeButton!);
     expect(mockOnClose).toHaveBeenCalled();
-  });
+  }, 10000);
 
-  it('should close when Cancel button is clicked', () => {
+  it('should close when Cancel button is clicked', async () => {
     render(<SignatureModal isOpen={true} onClose={mockOnClose} onSave={mockOnSave} />);
+    await waitFor(() => screen.getByText('Cancel'), { timeout: 3000 });
     const cancelButton = screen.getByText('Cancel');
     fireEvent.click(cancelButton);
     expect(mockOnClose).toHaveBeenCalled();
-  });
+  }, 10000);
 
-  it('should have a canvas element for drawing', () => {
+  it('should have a canvas element for drawing', async () => {
     render(<SignatureModal isOpen={true} onClose={mockOnClose} onSave={mockOnSave} />);
+    await waitFor(() => document.querySelector('canvas'), { timeout: 3000 });
     const canvas = document.querySelector('canvas');
     expect(canvas).toBeInTheDocument();
-  });
+  }, 10000);
 
-  it('should have color picker', () => {
+  it('should have color picker', async () => {
     render(<SignatureModal isOpen={true} onClose={mockOnClose} onSave={mockOnSave} />);
+    await waitFor(() => document.querySelector('input[type="color"]'), { timeout: 3000 });
     const colorInput = document.querySelector('input[type="color"]');
     expect(colorInput).toBeInTheDocument();
-  });
+  }, 10000);
 
-  it('should have Clear button', () => {
+  it('should have Clear button', async () => {
     render(<SignatureModal isOpen={true} onClose={mockOnClose} onSave={mockOnSave} />);
+    await waitFor(() => screen.getByText('Clear'), { timeout: 3000 });
     expect(screen.getByText('Clear')).toBeInTheDocument();
-  });
+  }, 10000);
 
-  it('should have disabled Save button initially in draw mode', () => {
+  it('should have disabled Save button initially in draw mode', async () => {
     render(<SignatureModal isOpen={true} onClose={mockOnClose} onSave={mockOnSave} />);
+    await waitFor(() => screen.getByText('Save Signature'), { timeout: 3000 });
     const saveButton = screen.getByText('Save Signature');
     expect(saveButton).toBeDisabled();
-  });
+  }, 10000);
 });

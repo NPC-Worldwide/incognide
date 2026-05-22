@@ -34,8 +34,7 @@ Built for seamless workflows, Incognide eliminates distractions and context swit
 - Manage agents, have them run on scheduled jobs, edit team context, integrate with MCP Servers, approve or reject suggested memories, prune and evolve knowledge graphs.
 - Schedule automated memory extraction, knowledge graph evolution, and context compression.
 - Fine-tune your own image and text models using curated data from your conversations and memories.
-- Built-in Pomodoro timer with pro
-
+- Built-in Pomodoro timer with programmable schedules and break enforcement.
 ---
 
 ## Setup
@@ -85,13 +84,9 @@ GGUF / GGML model files can be loaded directly without a server, but only if **l
 
 Add API keys on the **Cloud keys** step of the wizard, or later in **Settings → Global Settings** or **Team Management → API keys**. Keys are stored in `~/.npcshrc` as `export <PROVIDER>_API_KEY=...` and are read by `npcsh` and by the in-app provider clients.
 
-### 4. Local setup for image generation, audio generation, and fine-tuning
+### 4. Local setup for fine-tuning
 
-**Cloud providers (OpenAI, Anthropic, Gemini, etc.) and Ollama go through the bundled npcpy backend** — no extra setup required beyond API keys.
-
-**Local inference and fine-tuning (diffusers, torch, custom fine-tuned models) need a Python venv you control**, with the heavy packages (`diffusers`, `torch`, `transformers`, `accelerate`, `openai-whisper`, etc.). Incognide shells out to that venv instead of embedding these dependencies in the bundled backend, so you can pick the torch build that matches your hardware.
-
-Setup happens in **Team Management → Python Env**:
+Inference with LLMs is routed through the bundled backend (including calls to locally running models with llama.cpp, omlx, etc), but users can also fine-tune models within incognide. To accomplish this, you need to specify a Python virtual environment with the heavy packages (`torch`+ `transformers` etc.). For such calls, Incognide shells out to the specified venv instead of including these dependencies in the bundled backend to keep the packaged executable small.
 
 1. Open **Team Management** (Users icon in the right sidebar or the settings screen).
 2. Go to the **Python Env** tab.
@@ -108,11 +103,10 @@ Setup happens in **Team Management → Python Env**:
 
    Or install any specific package by name.
 
-Vixynt routes image generation through the workspace's configured interpreter only when `provider === 'diffusers'` or a custom fine-tuned model path is specified; API providers (OpenAI, Anthropic, Gemini, Ollama) continue to go through the bundled backend.
 
 ### 5. Data directory
 
-Incognide stores teams, NPCs, jinxes, memories, knowledge graphs, and model configs under the data directory you picked in step 2 (default `~/.npcsh/incognide`). Changing it in **Settings → Global Settings → Default Directory** updates `~/.npcshrc`'s `NPCSH_DATA_DIRECTORY`.
+Incognide stores teams, NPCs, jinxes, memories, knowledge graphs, and model configs under the data directory you picked in step 2 (default `~/.incognide`). Changing it in **Settings → Global Settings → Default Directory** updates `~/.incogniderc`'s `INCOGNIDE_DATA_DIRECTORY`.
 
 ### 6. Troubleshooting
 
@@ -389,7 +383,7 @@ Fine-tune language models using curated subsets of your AI interactions and memo
 
 ### Tool Use & MCP
 
-**Agentic Tool Use** - Enable agents to use tools from MCP Servers or local Jinxs:
+**Agentic Tool Use** - Enable agents to use tools from MCP Servers or local jinxes:
 
 ![MCP Tool Use](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/mcp_tool_use.png)
 
@@ -444,17 +438,17 @@ Agents can also interact with terminal panes and files directly within Incognide
 
 ### Jinx Workflows
 
-Jinxs are reusable automation templates that combine natural language prompts with code execution.
+jinxes are reusable automation templates that combine natural language prompts with code execution.
 
 **Jinx Editor** - Create and edit Jinx workflows:
 
 ![Jinx Editor](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/jinx.png)
 
-**Jinx Execution** - Run Jinxs with custom parameters:
+**Jinx Execution** - Run jinxes with custom parameters:
 
 ![Jinx Execution](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/jinx_execution.png)
 
-**SQL Jinx** - Create Jinxs that query databases:
+**SQL Jinx** - Create jinxes that query databases:
 
 ![SQL Jinx](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/sql_jinx.png)
 
@@ -464,7 +458,7 @@ Jinxs are reusable automation templates that combine natural language prompts wi
 
 ### Scheduled Tasks
 
-**Cron Jobs** - Schedule Jinxs and agents to run automatically:
+**Cron Jobs** - Schedule jinxes and agents to run automatically:
 
 ![Cron jobs](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/cron_daemon.png)
 
