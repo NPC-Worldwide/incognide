@@ -846,12 +846,44 @@ const PdfViewer = ({
         loadDrawings();
     }, [textInput, filePath, drawingColor, loadDrawings]);
 
+
+    // Helper to ensure we have the PDF buffer (load from cache or disk)
+    const ensurePdfBuffer = useCallback(async (): Promise<ArrayBuffer | null> => {
+        // First try cache
+        let buffer = pdfBufferCache.get(filePath);
+        if (buffer) {
+            return buffer;
+        }
+        
+        // Cache miss - try to reload from disk
+        if (!filePath) {
+            console.error('[PdfViewer] No filePath available');
+            return null;
+        }
+        
+        try {
+            console.log('[PdfViewer] Cache miss, reloading PDF from disk:', filePath);
+            buffer = await (window as any).api.readFile(filePath);
+            if (buffer && buffer.byteLength > 0) {
+                cachePdfBuffer(filePath, buffer);
+                return buffer;
+            }
+        } catch (err) {
+            console.error('[PdfViewer] Failed to reload PDF:', err);
+        }
+        return null;
+    }, [filePath]);
+
     const buildAnnotatedPdf = useCallback(async (): Promise<Uint8Array | null> => {
         try {
             const { PDFDocument, rgb, StandardFonts } = await import('pdf-lib');
-            const cachedBuffer = pdfBufferCache.get(filePath);
-            if (!cachedBuffer) { alert('PDF not loaded yet'); return null; }
-            const pdfDoc = await PDFDocument.load(new Uint8Array(cachedBuffer));
+            const pdfBuffer = await ensurePdfBuffer();
+            if (!pdfBuffer) { 
+                console.error('[PdfViewer] PDF buffer not available for export');
+                alert('PDF not loaded yet. Please wait for the PDF to fully load or try reopening it.'); 
+                return null; 
+            }
+            const pdfDoc = await PDFDocument.load(new Uint8Array(pdfBuffer));
             const pages = pdfDoc.getPages();
 
             for (const hl of localHighlights) {
@@ -986,48 +1018,119 @@ const PdfViewer = ({
     }, [filePath, localHighlights, drawings]);
 
     const handleExportPdf = useCallback(async () => {
+        console.log('[PdfViewer] Starting PDF export...');
+        
+        if (!filePath) {
+            alert('No PDF file is currently open.');
+            return;
+        }
+        
         const pdfBytes = await buildAnnotatedPdf();
-        if (!pdfBytes) return;
+        if (!pdfBytes) {
+            console.error('[PdfViewer] Export failed: no PDF bytes generated');
+            return;
+        }
+        
         const baseName = getFileName(filePath)?.replace('.pdf', '') || 'document';
+        
         try {
+            console.log('[PdfViewer] Showing save dialog...');
             const result = await (window as any).api.showSaveDialog({
                 defaultPath: `${baseName}_annotated.pdf`,
                 filters: [{ name: 'PDF', extensions: ['pdf'] }],
             });
-            if (result?.filePath) {
-                await (window as any).api.writeFileBuffer(result.filePath, pdfBytes);
+            
+            if (result?.filePath || result) {
+                const savePath = result.filePath || result;
+                console.log('[PdfViewer] Saving to:', savePath);
+                await (window as any).api.writeFileBuffer(savePath, pdfBytes);
+                console.log('[PdfViewer] Export successful');
+            } else {
+                console.log('[PdfViewer] Save dialog was cancelled');
             }
-        } catch {
+        } catch (err) {
+            console.error('[PdfViewer] Save dialog failed, using fallback:', err);
             // Fallback: blob download
-            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `${baseName}_annotated.pdf`;
-            a.click();
-            setTimeout(() => URL.revokeObjectURL(url), 5000);
+            try {
+                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${baseName}_annotated.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
+                console.log('[PdfViewer] Fallback download triggered');
+            } catch (fallbackErr) {
+                console.error('[PdfViewer] Fallback download also failed:', fallbackErr);
+                alert('Failed to export PDF. Please try again.');
+            }
         }
     }, [filePath, buildAnnotatedPdf]);
 
     const handlePrintPdf = useCallback(async () => {
+        console.log('[PdfViewer] Starting PDF print...');
+        
+        if (!filePath) {
+            alert('No PDF file is currently open.');
+            return;
+        }
+        
         const pdfBytes = await buildAnnotatedPdf();
-        if (!pdfBytes) return;
-        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-        const url = URL.createObjectURL(blob);
-        const iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        iframe.src = url;
-        document.body.appendChild(iframe);
-        iframe.onload = () => {
-            setTimeout(() => {
-                iframe.contentWindow?.print();
-                setTimeout(() => {
-                    document.body.removeChild(iframe);
+        if (!pdfBytes) {
+            console.error('[PdfViewer] Print failed: no PDF bytes generated');
+            return;
+        }
+        
+        try {
+            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
+            const iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = url;
+            
+            // Handle print completion and cleanup
+            const cleanup = () => {
+                try {
+                    if (iframe.parentNode) {
+                        document.body.removeChild(iframe);
+                    }
                     URL.revokeObjectURL(url);
-                }, 1000);
-            }, 500);
-        };
-    }, [buildAnnotatedPdf]);
+                    console.log('[PdfViewer] Print cleanup completed');
+                } catch (e) {
+                    console.error('[PdfViewer] Print cleanup error:', e);
+                }
+            };
+            
+            iframe.onload = () => {
+                setTimeout(() => {
+                    try {
+                        iframe.contentWindow?.print();
+                        // Cleanup after print dialog closes
+                        setTimeout(cleanup, 1000);
+                    } catch (err) {
+                        console.error('[PdfViewer] Print command failed:', err);
+                        cleanup();
+                        alert('Failed to print PDF. Please try again.');
+                    }
+                }, 500);
+            };
+            
+            // Handle error case
+            iframe.onerror = () => {
+                console.error('[PdfViewer] Failed to load PDF in print iframe');
+                cleanup();
+                alert('Failed to prepare PDF for printing.');
+            };
+            
+            document.body.appendChild(iframe);
+            console.log('[PdfViewer] Print iframe created');
+        } catch (err) {
+            console.error('[PdfViewer] Print setup failed:', err);
+            alert('Failed to prepare PDF for printing. Please try again.');
+        }
+    }, [filePath, buildAnnotatedPdf]);
 
     const handleTextSelect = useCallback((selection) => {
         setSelectedPdfText(selection);
