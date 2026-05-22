@@ -10,7 +10,10 @@ const DAEMON_SCRIPT = path.join(__dirname, '../../src/daemon/incognide-daemon.js
 // Restore original fetch for daemon tests (they need real HTTP fetch for the spawned daemon)
 const originalFetch = (global as any).originalFetch || global.fetch;
 (global as any).fetch = originalFetch;
-const TEST_DB = path.join(os.tmpdir(), `incognide-daemon-test-${Date.now()}.db`);
+// Generate unique DB path per test to avoid conflicts on Windows
+let testDbCounter = 0;
+const getTestDbPath = () => path.join(os.tmpdir(), `incognide-daemon-test-${Date.now()}-${testDbCounter++}.db`);
+const TEST_DB = getTestDbPath();
 const TEST_HOME = path.join(os.tmpdir(), `incognide-daemon-home-${Date.now()}`);
 
 async function waitForHealth(port: number, maxAttempts = 30): Promise<boolean> {

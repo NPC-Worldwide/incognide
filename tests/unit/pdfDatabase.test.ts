@@ -4,7 +4,9 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 
-const TEST_DB = path.join(os.tmpdir(), `incognide-pdf-test-${Date.now()}.db`);
+// Generate unique DB path per test to avoid conflicts on Windows
+let testDbCounter = 0;
+const getTestDbPath = () => path.join(os.tmpdir(), `incognide-pdf-test-${Date.now()}-${testDbCounter++}.db`);
 
 // Simulated database operations (similar to what database.js does)
 const createPdfTables = async (db: sqlite3.Database) => {
@@ -212,7 +214,8 @@ describe('PDF Database Operations', () => {
   let db: sqlite3.Database;
 
   beforeEach(async () => {
-    // Clean up and create fresh DB
+    // Clean up and create fresh DB with unique path
+    const TEST_DB = getTestDbPath();
     try { fs.unlinkSync(TEST_DB); } catch {}
     db = new sqlite3.Database(TEST_DB);
     await createPdfTables(db);
