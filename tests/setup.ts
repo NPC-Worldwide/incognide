@@ -5,6 +5,7 @@ import { vi } from 'vitest';
 const mockApi: Record<string, any> = {
   readFile: vi.fn(),
   writeFile: vi.fn(),
+  writeFileBuffer: vi.fn().mockResolvedValue({ success: true }),
   readDirectory: vi.fn(),
   closeWindow: vi.fn(),
   profileGet: vi.fn().mockResolvedValue({ setupComplete: true, tutorialComplete: false }),
@@ -20,6 +21,19 @@ const mockApi: Record<string, any> = {
   pauseDownload: vi.fn(),
   resumeDownload: vi.fn(),
   browserSaveLink: vi.fn().mockResolvedValue({ success: true }),
+  
+  // PDF-related mocks
+  addPdfHighlight: vi.fn().mockResolvedValue({ success: true, lastID: 1 }),
+  getHighlightsForFile: vi.fn().mockResolvedValue({ highlights: [] }),
+  updatePdfHighlight: vi.fn().mockResolvedValue({ success: true }),
+  deletePdfHighlight: vi.fn().mockResolvedValue({ success: true }),
+  addPdfDrawing: vi.fn().mockResolvedValue({ success: true, lastID: 1 }),
+  getDrawingsForFile: vi.fn().mockResolvedValue({ drawings: [] }),
+  updatePdfDrawing: vi.fn().mockResolvedValue({ success: true }),
+  deleteDrawing: vi.fn().mockResolvedValue({ success: true }),
+  clearDrawingsForPage: vi.fn().mockResolvedValue({ success: true }),
+  showSaveDialog: vi.fn().mockResolvedValue({ filePath: '/test/annotated.pdf' }),
+  getFileStats: vi.fn().mockResolvedValue({ mtimeMs: Date.now() }),
 };
 
 Object.defineProperty(window, 'api', {
@@ -54,4 +68,14 @@ Object.defineProperty(window, 'matchMedia', {
     removeEventListener: vi.fn(),
     dispatchEvent: vi.fn(),
   })),
+});
+
+// Mock URL.createObjectURL and revokeObjectURL
+global.URL.createObjectURL = vi.fn(() => 'blob:mock-url');
+global.URL.revokeObjectURL = vi.fn();
+
+// Mock fetch for loading fonts
+global.fetch = vi.fn().mockResolvedValue({
+  ok: true,
+  text: vi.fn().mockResolvedValue(''),
 });
