@@ -34,11 +34,7 @@ Built for seamless workflows, Incognide eliminates distractions and context swit
 - Manage agents, have them run on scheduled jobs, edit team context, integrate with MCP Servers, approve or reject suggested memories, prune and evolve knowledge graphs.
 - Schedule automated memory extraction, knowledge graph evolution, and context compression.
 - Fine-tune your own image and text models using curated data from your conversations and memories.
-- Built-in Pomodoro timer with programmable schedules and break enforcement.
-- Specialized tools for image, video, and audio generation. 
-
-## Demo Video 
-Updated version coming soon....
+- Built-in Pomodoro timer with pro
 
 ---
 
@@ -61,7 +57,7 @@ On first launch the wizard walks you through five steps:
    - **Local AI** — Ollama / LM Studio / llama.cpp / oMLX running on your machine.
 5. **Cloud keys** (cloud-ai path) or **Local models** (local-ai path). See step 3 below for details.
 
-The wizard writes preferences to `localStorage` (theme, fonts, shortcuts, UI defaults) and shell/provider settings to `~/.npcshrc` (read by `npcsh`).
+The wizard writes preferences to `localStorage` (theme, fonts, shortcuts, UI defaults) and settings to `~/.incogniderc` .
 
 ### 3. Connect a model provider
 
