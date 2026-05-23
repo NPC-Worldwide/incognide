@@ -35,11 +35,6 @@ Built for seamless workflows, Incognide eliminates distractions and context swit
 - Schedule automated memory extraction, knowledge graph evolution, and context compression.
 - Fine-tune your own image and text models using curated data from your conversations and memories.
 - Built-in Pomodoro timer with programmable schedules and break enforcement.
-- Specialized tools for image, video, and audio generation. 
-
-## Demo Video 
-Updated version coming soon....
-
 ---
 
 ## Setup
@@ -61,7 +56,7 @@ On first launch the wizard walks you through five steps:
    - **Local AI** — Ollama / LM Studio / llama.cpp / oMLX running on your machine.
 5. **Cloud keys** (cloud-ai path) or **Local models** (local-ai path). See step 3 below for details.
 
-The wizard writes preferences to `localStorage` (theme, fonts, shortcuts, UI defaults) and shell/provider settings to `~/.npcshrc` (read by `npcsh`).
+The wizard writes preferences to `localStorage` (theme, fonts, shortcuts, UI defaults) and settings to `~/.incogniderc` .
 
 ### 3. Connect a model provider
 
@@ -89,13 +84,9 @@ GGUF / GGML model files can be loaded directly without a server, but only if **l
 
 Add API keys on the **Cloud keys** step of the wizard, or later in **Settings → Global Settings** or **Team Management → API keys**. Keys are stored in `~/.npcshrc` as `export <PROVIDER>_API_KEY=...` and are read by `npcsh` and by the in-app provider clients.
 
-### 4. Local setup for image generation, audio generation, and fine-tuning
+### 4. Local setup for fine-tuning
 
-**Cloud providers (OpenAI, Anthropic, Gemini, etc.) and Ollama go through the bundled npcpy backend** — no extra setup required beyond API keys.
-
-**Local inference and fine-tuning (diffusers, torch, custom fine-tuned models) need a Python venv you control**, with the heavy packages (`diffusers`, `torch`, `transformers`, `accelerate`, `openai-whisper`, etc.). Incognide shells out to that venv instead of embedding these dependencies in the bundled backend, so you can pick the torch build that matches your hardware.
-
-Setup happens in **Team Management → Python Env**:
+Inference with LLMs is routed through the bundled backend (including calls to locally running models with llama.cpp, omlx, etc), but users can also fine-tune models within incognide. To accomplish this, you need to specify a Python virtual environment with the heavy packages (`torch`+ `transformers` etc.). For such calls, Incognide shells out to the specified venv instead of including these dependencies in the bundled backend to keep the packaged executable small.
 
 1. Open **Team Management** (Users icon in the right sidebar or the settings screen).
 2. Go to the **Python Env** tab.
@@ -112,16 +103,13 @@ Setup happens in **Team Management → Python Env**:
 
    Or install any specific package by name.
 
-Vixynt routes image generation through the workspace's configured interpreter only when `provider === 'diffusers'` or a custom fine-tuned model path is specified; API providers (OpenAI, Anthropic, Gemini, Ollama) continue to go through the bundled backend.
 
 ### 5. Data directory
 
-Incognide stores teams, NPCs, jinxes, memories, knowledge graphs, and model configs under the data directory you picked in step 2 (default `~/.npcsh/incognide`). Changing it in **Settings → Global Settings → Default Directory** updates `~/.npcshrc`'s `NPCSH_DATA_DIRECTORY`.
+Incognide stores teams, NPCs, jinxes, memories, knowledge graphs, and model configs under the data directory you picked in step 2 (default `~/.incognide`). Changing it in **Settings → Global Settings → Default Directory** updates `~/.incogniderc`'s `INCOGNIDE_DATA_DIRECTORY`.
 
 ### 6. Troubleshooting
 
-- **`No matching distribution found for npcpy[local]`** during any Python install step — upgrade pip first: `~/.npcsh/incognide/venv/bin/python -m pip install --upgrade pip`, then retry. Old pip (<23) doesn't resolve modern extras syntax reliably.
-- **Local model tile says "Not found" but you know it's installed** — restart Incognide. Detection runs in the Electron main process, which on macOS uses a stripped PATH that often excludes `/opt/homebrew/bin` and `/usr/local/bin`. The detector also checks those paths directly, but only at main-process startup.
 - **Backend unhealthy indicator in the status bar** — right-click the `npcpy` icon in the status bar for Restart / View Logs. Logs live in `~/Library/Logs/Incognide/` (macOS), `~/.config/Incognide/logs/` (Linux), or `%APPDATA%\Incognide\logs\` (Windows).
 - **Tutorial didn't highlight anything** — the tutorial opens the Help pane before it starts so the workspace highlight has a target. If it runs before any pane is open you'll see an un-highlighted step; re-run it from **Settings → Replay Tutorial**.
 
@@ -131,7 +119,7 @@ Incognide stores teams, NPCs, jinxes, memories, knowledge graphs, and model conf
 
 - [Office & Productivity](#office--productivity)
 - [Development](#development)
-- [3D & Media](#3d--media)
+- [3D & Media](#stl--viewer)
 - [Research & Knowledge Management](#research--knowledge-management)
 - [Model Training & Fine-tuning](#model-training--fine-tuning)
 - [AI Chat & Agents](#ai-chat--agents)
@@ -240,11 +228,10 @@ Manipulate table results and plot data directly for quick analysis:
 
 ---
 
-## 3D & Media
 
-### STL Viewer
+## STL Viewer
 
-View 3D models directly in Incognide with a Three.js-powered viewer.
+View 3D models directly in Incognide.
 
 *Features:*
 - Orbit, pan, and zoom with mouse controls
@@ -254,34 +241,6 @@ View 3D models directly in Incognide with a Three.js-powered viewer.
 - Screenshot export of the current viewport
 - Model info: triangle count, vertex count, and bounding box dimensions
 
-### Music Player (Scherzo)
-
-Play audio files with a built-in music player and playlist management.
-
-**Repertoire** — keep a library of pieces you're learning. Each piece can have:
-- An audio file (local import or YouTube via `yt-dlp`)
-- One or more attached MusicXML sheets (renders in the multi-track Notation editor)
-- Variable playback speed (0.25×–2×) without pitch shift
-- Sheet derivation from audio (demucs stem separation → basic-pitch transcription per stem)
-
-**Optional Scherzo dependencies** (assumed on `PATH`, or in the Python env configured in **Team Management → Python Env**):
-
-| Tool | Purpose | Install |
-|------|---------|---------|
-| `yt-dlp` | YouTube import | `brew install yt-dlp` (or `pip install yt-dlp`) |
-| `ffmpeg` | Audio extraction for yt-dlp; required by demucs | `brew install ffmpeg` |
-| `basic-pitch` | Audio → MIDI transcription | `pip install 'basic-pitch[coreml]'` on macOS, `pip install basic-pitch` elsewhere |
-| `demucs` | Splits audio into vocals/bass/drums/other stems before transcription (multi-track output) | `pip install demucs` |
-
-The **macOS CoreML extra** is important — the default TensorFlow SavedModel ships incompatible weights on TF 2.16+, so basic-pitch falls back to the CoreML model bundled by the `[coreml]` extra. On Linux/Windows the ONNX or TFLite model is used.
-
-**First-run notes:**
-- demucs downloads the `htdemucs` model (~250 MB) to `~/.cache/torch/hub/checkpoints/` on first use.
-- Basic-pitch's quality on dense polyphonic mixes is fundamentally limited; the demucs pre-step (vocals/bass/other separated, drums skipped) is what gives you a readable multi-staff score instead of a single-track wall of notes.
-
-If a dependency is missing, the corresponding button surfaces an inline error rather than failing silently.
-
-Audio downloaded by Repertoire and derived MIDI/MusicXML are stored under `~/.npcsh/incognide/data/repertoire/`.
 
 ---
 
@@ -393,7 +352,7 @@ Fine-tune language models using curated subsets of your AI interactions and memo
 
 ### Tool Use & MCP
 
-**Agentic Tool Use** - Enable agents to use tools from MCP Servers or local Jinxs:
+**Agentic Tool Use** - Enable agents to use tools from MCP Servers or local jinxes:
 
 ![MCP Tool Use](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/mcp_tool_use.png)
 
@@ -448,17 +407,17 @@ Agents can also interact with terminal panes and files directly within Incognide
 
 ### Jinx Workflows
 
-Jinxs are reusable automation templates that combine natural language prompts with code execution.
+jinxes are reusable automation templates that combine natural language prompts with code execution.
 
 **Jinx Editor** - Create and edit Jinx workflows:
 
 ![Jinx Editor](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/jinx.png)
 
-**Jinx Execution** - Run Jinxs with custom parameters:
+**Jinx Execution** - Run jinxes with custom parameters:
 
 ![Jinx Execution](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/jinx_execution.png)
 
-**SQL Jinx** - Create Jinxs that query databases:
+**SQL Jinx** - Create jinxes that query databases:
 
 ![SQL Jinx](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/sql_jinx.png)
 
@@ -468,7 +427,7 @@ Jinxs are reusable automation templates that combine natural language prompts wi
 
 ### Scheduled Tasks
 
-**Cron Jobs** - Schedule Jinxs and agents to run automatically:
+**Cron Jobs** - Schedule jinxes and agents to run automatically:
 
 ![Cron jobs](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/cron_daemon.png)
 
