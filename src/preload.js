@@ -74,6 +74,9 @@ readDocxContent: (filePath) =>
     loadDemoTracks: () => ipcRenderer.invoke('load_demo_tracks'),
 
     openNewWindow: (path, options) => ipcRenderer.invoke('open-new-window', path, options),
+    addRecentPath: (newPath) => ipcRenderer.invoke('add-recent-path', newPath),
+    setRecentPaths: (paths) => ipcRenderer.invoke('set-recent-paths', paths),
+    getRecentPaths: () => ipcRenderer.invoke('get-recent-paths'),
     getWindowCount: () => ipcRenderer.invoke('get-window-count'),
     getAllWindowsInfo: () => ipcRenderer.invoke('get-all-windows-info'),
     closeWindowById: (windowId) => ipcRenderer.invoke('close-window-by-id', windowId),
