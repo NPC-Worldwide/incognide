@@ -324,8 +324,24 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
 
     // Open mode (pane vs tab) - must be before useLayoutManager so the ref can be passed
     const [openMode, setOpenMode] = useState<'pane' | 'tab'>(() => (localStorage.getItem('incognide_openMode') as 'pane' | 'tab') || 'pane');
+    const [recentPaths, setRecentPaths] = useState<string[]>([]);
     const openModeRef = useRef(openMode);
     openModeRef.current = openMode;
+
+    // Load recent paths from file-based storage on mount
+    useEffect(() => {
+        const loadRecent = async () => {
+            try {
+                const filePaths = await (window as any).api?.getRecentPaths?.();
+                if (filePaths && Array.isArray(filePaths) && filePaths.length > 0) {
+                    setRecentPaths(filePaths);
+                    // Also sync to localStorage so PathSwitcher/Sidebar see them
+                    localStorage.setItem('incognide-recent-paths', JSON.stringify(filePaths));
+                }
+            } catch (e) {}
+        };
+        loadRecent();
+    }, []);
 
     // Pane update emitter - must be before useLayoutManager so it can notify specific panes
     const paneUpdateEmitter = useRef(new EventTarget()).current;
@@ -1551,6 +1567,34 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
             window.removeEventListener('beforeunload', saveCurrentWorkspace);
         };
     }, [currentPath, rootLayoutNode, activeContentPaneId]);
+    // Sync recent paths to file storage whenever localStorage changes
+    useEffect(() => {
+        const syncToFile = async () => {
+            try {
+                const stored = localStorage.getItem('incognide-recent-paths');
+                if (stored) {
+                    const paths = JSON.parse(stored);
+                    if (Array.isArray(paths) && paths.length > 0) {
+                        setRecentPaths(paths);
+                        await (window as any).api?.setRecentPaths?.(paths);
+                    }
+                }
+            } catch (e) {}
+        };
+        // Listen for storage changes from other windows
+        const handleStorage = (e: StorageEvent) => {
+            if (e.key === 'incognide-recent-paths') {
+                try {
+                    const paths = e.newValue ? JSON.parse(e.newValue) : [];
+                    setRecentPaths(paths);
+                } catch {}
+            }
+        };
+        window.addEventListener('storage', handleStorage);
+        syncToFile();
+        return () => window.removeEventListener('storage', handleStorage);
+    }, []);
+
 
     // Expose workspace serialization for cross-window preset saving
     useEffect(() => {
@@ -5782,6 +5826,8 @@ ${contextPrompt}`;
                 const filtered = recent.filter(p => p !== currentPath);
                 filtered.unshift(currentPath);
                 localStorage.setItem('incognide-recent-paths', JSON.stringify(filtered.slice(0, 20)));
+                // Also sync to file-based storage for cross-window persistence
+                (window as any).api?.addRecentPath?.(currentPath);
             } catch (e) {}
         }
     }, [currentPath]);
@@ -8986,8 +9032,6 @@ const renderMainContent = () => {
                                 </button>
                                 {(() => {
                                     try {
-                                        const stored = localStorage.getItem('incognide-recent-paths');
-                                        const recentPaths: string[] = stored ? JSON.parse(stored) : [];
                                         if (recentPaths.length === 0) return null;
                                         return (
                                             <div className="w-full mt-2 text-left">

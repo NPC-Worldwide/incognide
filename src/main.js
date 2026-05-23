@@ -120,6 +120,35 @@ function loadShellEnv() {
 }
 loadShellEnv();
 
+const RECENT_PATHS_FILE = path.join(INCOGNIDE_HOME, 'recent_paths.json');
+
+function loadRecentPaths() {
+  try {
+    if (fs.existsSync(RECENT_PATHS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(RECENT_PATHS_FILE, 'utf-8'));
+      if (Array.isArray(data)) return data;
+    }
+  } catch (e) {
+    console.error('[RECENT_PATHS] Error loading:', e.message);
+  }
+  return [];
+}
+
+function saveRecentPaths(paths) {
+  try {
+    fs.writeFileSync(RECENT_PATHS_FILE, JSON.stringify(paths, null, 2));
+  } catch (e) {
+    console.error('[RECENT_PATHS] Error saving:', e.message);
+  }
+}
+
+function addRecentPath(newPath) {
+  const paths = loadRecentPaths();
+  const filtered = paths.filter(p => p !== newPath);
+  filtered.unshift(newPath);
+  saveRecentPaths(filtered.slice(0, 20));
+}
+
 if (IS_DEV_MODE) {
   app.setPath('userData', path.join(INCOGNIDE_HOME, 'dev'));
 } else {
@@ -2543,6 +2572,24 @@ registerAll({
 });
 
 // Generic proxy fetch — bypasses CORS for renderer requests to external APIs
+
+// Recent paths IPC handlers
+ipcMain.handle('get-recent-paths', async () => {
+  return loadRecentPaths();
+});
+
+ipcMain.handle('set-recent-paths', async (_event, paths) => {
+  if (Array.isArray(paths)) {
+    saveRecentPaths(paths.slice(0, 20));
+  }
+});
+
+ipcMain.handle('add-recent-path', async (_event, newPath) => {
+  if (newPath) {
+    addRecentPath(newPath);
+  }
+});
+
 ipcMain.handle('proxy-fetch', async (_event, url, options = {}) => {
   try {
     const resp = await fetch(url, {

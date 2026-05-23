@@ -4,7 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { Terminal as TerminalIcon, Code, Sparkles, Settings, X, Type, Palette } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 
-const SHELL_PROMPT_KEY = 'incognide-shell-profile-prompted';
+const AUTO_SOURCE_KEY = 'incognide-auto-source-profile';
 
 const MAX_TERMINAL_CONTEXT_LINES = 100;
 
@@ -329,12 +329,12 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             const cmd = getShellProfileCommand();
             window.api.writeToTerminal({ id: terminalId, data: cmd + '\n' });
         }
-        localStorage.setItem(SHELL_PROMPT_KEY, 'true');
+        localStorage.setItem(AUTO_SOURCE_KEY, 'true');
         setShowShellPrompt(false);
     }, [terminalId, getShellProfileCommand]);
 
     const handleDismissPrompt = useCallback(() => {
-        localStorage.setItem(SHELL_PROMPT_KEY, 'true');
+        localStorage.setItem(AUTO_SOURCE_KEY, 'false');
         setShowShellPrompt(false);
     }, []);
 
@@ -802,8 +802,11 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                         window.api.writeToTerminal({ id: terminalId, data: '\r' });
                     }
 
-                    const hasBeenPrompted = localStorage.getItem(SHELL_PROMPT_KEY);
-                    if (!hasBeenPrompted && result.shell === 'system') {
+                    const autoSource = localStorage.getItem(AUTO_SOURCE_KEY);
+                    if (autoSource === 'true' && isSessionReady.current && terminalId) {
+                        const cmd = getShellProfileCommand();
+                        window.api.writeToTerminal({ id: terminalId, data: cmd + '\n' });
+                    } else if (autoSource !== 'false' && autoSource !== 'true' && result.shell === 'system') {
                         setShowShellPrompt(true);
                     }
                 } else {
