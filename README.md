@@ -564,7 +564,7 @@ npm install
 
 **Option 2: Via npcsh** (installs to `~/.npcsh/incognide`)
 ```bash
-npcsh> /incognide
+npcsh> /incognidev
 ```
 
 ### Running
