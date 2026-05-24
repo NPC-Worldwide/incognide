@@ -150,23 +150,28 @@ async function open_pane(
 
   const activePath = ctx.findPanePath(ctx.rootLayoutNode, ctx.activeContentPaneId) || [];
 
-  ctx.performSplit(activePath, position, type, contentId);
+  // Pre-generate a pane ID so we know exactly which pane was created
+  const newPaneId = ctx.generateId();
 
-  // Wait for the pane to appear in contentDataRef
-  // Terminals need extra time for the PTY session to initialize
-  const maxWait = type === 'terminal' ? 2000 : 200;
+  // Pre-populate contentData so performSplit uses this exact ID
+  ctx.contentDataRef.current[newPaneId] = {
+    contentType: type,
+    contentId: contentId,
+    ...(type === 'terminal' && shellType ? { shellType } : {}),
+    ...(type === 'browser' && url ? { browserUrl: url } : {}),
+  };
+
+  ctx.performSplit(activePath, position, type, contentId, newPaneId);
+
+  // Wait briefly for layout to settle, then verify the pane exists
+  const maxWait = type === 'terminal' ? 2000 : 300;
   const startTime = Date.now();
   let actualPaneId: string | null = null;
 
   while (Date.now() - startTime < maxWait) {
     await new Promise(resolve => setTimeout(resolve, 50));
-    for (const [paneId, data] of Object.entries(ctx.contentDataRef.current)) {
-      if ((data as any).contentId === contentId && (data as any).contentType === type) {
-        actualPaneId = paneId;
-        break;
-      }
-    }
-    if (actualPaneId) {
+    if (ctx.contentDataRef.current[newPaneId]) {
+      actualPaneId = newPaneId;
       // For terminals, also wait until the backend session exists
       if (type === 'terminal') {
         try {
@@ -179,20 +184,6 @@ async function open_pane(
     }
   }
 
-  if (actualPaneId && type === 'terminal' && shellType) {
-    ctx.contentDataRef.current[actualPaneId] = {
-      ...ctx.contentDataRef.current[actualPaneId],
-      shellType
-    };
-  }
-
-  if (actualPaneId && type === 'browser' && url) {
-    ctx.contentDataRef.current[actualPaneId] = {
-      ...ctx.contentDataRef.current[actualPaneId],
-      browserUrl: url
-    };
-  }
-
   if (actualPaneId && type === 'dbtool') {
     ctx.updateContentPane(actualPaneId, 'dbtool', 'dbtool');
   }
@@ -201,7 +192,7 @@ async function open_pane(
 
   return {
     success: true,
-    paneId: actualPaneId || 'unknown',
+    paneId: actualPaneId || newPaneId,
     type,
     title: info?.title || type,
     contentId
@@ -276,24 +267,31 @@ async function split_pane(
 
   const contentId = path || (TOOL_PANE_TYPES.has(type) ? type : ctx.generateId());
 
-  ctx.performSplit(nodePath, direction, type, contentId);
+  // Pre-generate a pane ID so we know exactly which pane was created
+  const newPaneId = ctx.generateId();
 
-  await new Promise(resolve => setTimeout(resolve, 50));
-  let newPaneId: string | null = null;
-  for (const [pid, data] of Object.entries(ctx.contentDataRef.current)) {
-    if ((data as any).contentId === contentId && (data as any).contentType === type && pid !== paneId) {
-      newPaneId = pid;
-      break;
-    }
+  // Pre-populate contentData so performSplit uses this exact ID
+  ctx.contentDataRef.current[newPaneId] = {
+    contentType: type,
+    contentId: contentId,
+  };
+
+  ctx.performSplit(nodePath, direction, type, contentId, newPaneId);
+
+  // Wait briefly for layout to settle
+  await new Promise(resolve => setTimeout(resolve, 100));
+  let verifiedPaneId: string | null = null;
+  if (ctx.contentDataRef.current[newPaneId]) {
+    verifiedPaneId = newPaneId;
   }
 
-  if (newPaneId && type === 'dbtool') {
-    ctx.updateContentPane(newPaneId, 'dbtool', 'dbtool');
+  if (verifiedPaneId && type === 'dbtool') {
+    ctx.updateContentPane(verifiedPaneId, 'dbtool', 'dbtool');
   }
 
   return {
     success: true,
-    newPaneId: newPaneId || 'unknown',
+    newPaneId: verifiedPaneId || newPaneId,
     type,
     title: PANE_TYPE_INFO[type]?.title || type,
     contentId

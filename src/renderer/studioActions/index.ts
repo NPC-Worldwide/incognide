@@ -8,7 +8,7 @@ export interface StudioContext {
   activeContentPaneId: string;
   setActiveContentPaneId: (id: string) => void;
   setRootLayoutNode: (node: any) => void;
-  performSplit: (targetPath: number[], side: string, contentType: string, contentId: string) => void;
+  performSplit: (targetPath: number[], side: string, contentType: string, contentId: string, targetPaneId?: string) => void;
   closeContentPane: (paneId: string, nodePath: number[]) => void;
   updateContentPane: (paneId: string, contentType: string, contentId: string, skipMessageLoad?: boolean) => void;
   handleAddTab?: (paneId: string, contentType: string) => void;

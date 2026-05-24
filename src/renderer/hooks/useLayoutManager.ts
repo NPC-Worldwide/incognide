@@ -272,9 +272,9 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
         paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
     }, [trackActivity, getConversationStats, paneUpdateEmitter]);
 
-    const performSplit = useCallback((targetNodePath: number[], side: string, newContentType: string, newContentId: string | null) => {
+    const performSplit = useCallback((targetNodePath: number[], side: string, newContentType: string, newContentId: string | null, targetPaneId?: string) => {
         if (!targetNodePath) return;
-        const newPaneId = generateId();
+        const newPaneId = targetPaneId || generateId();
 
         contentDataRef.current[newPaneId] = {
             contentType: newContentType,
