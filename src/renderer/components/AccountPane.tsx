@@ -104,7 +104,7 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                                 </div>
                                 <p className="text-sm mb-1">Not signed in</p>
                                 <p className="text-xs theme-text-muted mb-4">Sign in to encrypt and sync your data across devices.</p>
-                                <button onClick={() => auth.openSignIn()} className="inline-flex items-center gap-2 px-5 py-2.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium">
+                                <button onClick={() => auth.openSignIn({ redirectUrl: window.location.href })} className="inline-flex items-center gap-2 px-5 py-2.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium">
                                     <LogIn size={16} /> Sign In
                                 </button>
                             </div>

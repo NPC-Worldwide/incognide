@@ -803,10 +803,11 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                     }
 
                     const autoSource = localStorage.getItem(AUTO_SOURCE_KEY);
-                    if (autoSource === 'true' && isSessionReady.current && terminalId) {
+                    // Only source profile on NEW sessions — not when resuming a reused session
+                    if (!result.reused && autoSource === 'true' && isSessionReady.current && terminalId) {
                         const cmd = getShellProfileCommand();
                         window.api.writeToTerminal({ id: terminalId, data: cmd + '\n' });
-                    } else if (autoSource !== 'false' && autoSource !== 'true' && result.shell === 'system') {
+                    } else if (!result.reused && autoSource !== 'false' && autoSource !== 'true' && result.shell === 'system') {
                         setShowShellPrompt(true);
                     }
                 } else {

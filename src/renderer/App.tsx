@@ -14,7 +14,10 @@ const AuthWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return <>{children}</>;
   }
   return (
-    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
+    <ClerkProvider
+      publishableKey={CLERK_PUBLISHABLE_KEY}
+      allowedRedirectOrigins={[window.location.origin]}
+    >
       <AuthProvider>
         {children}
       </AuthProvider>
