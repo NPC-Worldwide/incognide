@@ -278,28 +278,9 @@ const compileAllJinxFiles = async () => {
 
     const results = [];
     for (const jinxFile of jinxFiles) {
-      const jinxPath = path.join(tileJinxDir, jinxFile);
-      const cachePath = path.join(tileJinxCacheDir, jinxFile.replace('.jinx', '.js'));
-
       try {
-        const jinxStat = await fsPromises.stat(jinxPath);
-        let needsCompile = true;
-
-        try {
-          const cacheStat = await fsPromises.stat(cachePath);
-
-          needsCompile = jinxStat.mtimeMs > cacheStat.mtimeMs;
-        } catch {
-
-        }
-
-        if (needsCompile) {
-          const result = await compileJinxFile(jinxFile);
-          results.push({ file: jinxFile, ...result });
-        } else {
-          console.log(`Cache valid for ${jinxFile}, skipping compile`);
-          results.push({ file: jinxFile, success: true, cached: true });
-        }
+        const result = await compileJinxFile(jinxFile);
+        results.push({ file: jinxFile, ...result });
       } catch (err) {
         results.push({ file: jinxFile, success: false, error: err.message });
       }
@@ -2232,10 +2213,9 @@ function register(ctx) {
         console.log('First jinx list request - compiling all jinx files...');
         const compileResult = await compileAllJinxFiles();
         if (compileResult.success) {
-          const compiled = compileResult.results.filter(r => r.success && !r.cached).length;
-          const cached = compileResult.results.filter(r => r.cached).length;
+          const compiled = compileResult.results.filter(r => r.success).length;
           const failed = compileResult.results.filter(r => !r.success).length;
-          console.log(`Tile jinx compilation: ${compiled} compiled, ${cached} cached, ${failed} failed`);
+          console.log(`Tile jinx compilation: ${compiled} compiled, ${failed} failed`);
         }
         jinxInitialCompileDone = true;
       }
