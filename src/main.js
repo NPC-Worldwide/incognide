@@ -26,6 +26,7 @@ const sqlite3 = require('sqlite3');
 const dbPath = path.join(os.homedir(), 'npcsh_history.db');
 const fetch = require('node-fetch');
 const crypto = require('crypto');
+const http = require('http');
 
 const IS_DEV_MODE = process.env.NODE_ENV === 'development' || process.argv.includes('--dev');
 const FRONTEND_PORT = IS_DEV_MODE ? 7337 : 6337;
@@ -2446,8 +2447,52 @@ applyAppMenu();
     if (isDev) {
       mainWindow.loadURL(`http://localhost:${FRONTEND_PORT}`);
     } else {
-      const htmlPath = path.join(app.getAppPath(), 'dist', 'index.html');
-      mainWindow.loadFile(htmlPath);
+      const distDir = path.join(app.getAppPath(), 'dist');
+      const mimeTypes = {
+        '.html': 'text/html',
+        '.js': 'application/javascript',
+        '.css': 'text/css',
+        '.json': 'application/json',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.svg': 'image/svg+xml',
+        '.ico': 'image/x-icon',
+        '.woff': 'font/woff',
+        '.woff2': 'font/woff2',
+        '.ttf': 'font/ttf',
+        '.eot': 'application/vnd.ms-fontobject',
+        '.otf': 'font/otf',
+        '.wasm': 'application/wasm',
+        '.map': 'application/json',
+      };
+      const frontendServer = http.createServer((req, res) => {
+        let filePath = path.join(distDir, decodeURIComponent(req.url || '/'));
+        if (filePath.endsWith('/')) filePath += 'index.html';
+        if (!filePath.startsWith(distDir)) {
+          res.writeHead(403); res.end('Forbidden'); return;
+        }
+        fs.readFile(filePath, (err, data) => {
+          if (err) {
+            if (err.code === 'ENOENT') {
+              const indexPath = path.join(distDir, 'index.html');
+              fs.readFile(indexPath, (e2, data2) => {
+                if (e2) { res.writeHead(404); res.end('Not found'); }
+                else { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(data2); }
+              });
+            } else { res.writeHead(500); res.end('Server error'); }
+            return;
+          }
+          const ext = path.extname(filePath).toLowerCase();
+          res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'application/octet-stream' });
+          res.end(data);
+        });
+      });
+      frontendServer.listen(FRONTEND_PORT, '127.0.0.1', () => {
+        console.log(`Frontend server running at http://localhost:${FRONTEND_PORT}`);
+        mainWindow.loadURL(`http://localhost:${FRONTEND_PORT}`);
+      });
     }
 
     mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
