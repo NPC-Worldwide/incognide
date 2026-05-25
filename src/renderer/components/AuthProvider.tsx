@@ -82,6 +82,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [hasPassphrase, setHasPassphrase] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // DEBUG: log clerk state
+    useEffect(() => {
+        console.log('[AUTH DEBUG] clerk instance:', clerk);
+        console.log('[AUTH DEBUG] clerkLoaded:', clerkLoaded);
+        console.log('[AUTH DEBUG] clerkjs loaded:', !!(clerk as any)?.clerkjs);
+        console.log('[AUTH DEBUG] publishableKey:', import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || 'NOT SET');
+    }, [clerk, clerkLoaded]);
+
     useEffect(() => {
         const stored = localStorage.getItem(HAS_PASSPHRASE_KEY);
         setHasPassphrase(stored === 'true');
@@ -343,10 +351,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 refreshUser,
                 getToken,
                 openSignIn: () => {
-                    if (window.location.href.startsWith('http')) {
-                        clerk.openSignIn({ fallbackRedirectUrl: window.location.href });
-                    } else {
-                        clerk.openSignIn();
+                    console.log('[AUTH DEBUG] openSignIn called');
+                    console.log('[AUTH DEBUG] clerk:', clerk);
+                    console.log('[AUTH DEBUG] clerk.clerkjs:', (clerk as any)?.clerkjs);
+                    console.log('[AUTH DEBUG] clerk.openSignIn type:', typeof clerk?.openSignIn);
+                    try {
+                        if (window.location.href.startsWith('http')) {
+                            clerk.openSignIn({ fallbackRedirectUrl: window.location.href });
+                        } else {
+                            clerk.openSignIn();
+                        }
+                        console.log('[AUTH DEBUG] openSignIn executed without error');
+                    } catch (e: any) {
+                        console.error('[AUTH DEBUG] openSignIn threw:', e);
+                        setError(e.message || 'Clerk sign-in failed');
                     }
                 },
                 openUserProfile: () => clerk.openUserProfile(),
