@@ -81,7 +81,7 @@ const INSTALL_OPTIONS: InstallOption[] = [
     },
 ];
 
-type SetupStep = 'welcome' | 'preferences' | 'defaults' | 'path' | 'cloud-keys' | 'extras' | 'models' | 'creating' | 'installing' | 'concepts' | 'complete' | 'error';
+type SetupStep = 'welcome' | 'preferences' | 'defaults' | 'ai-choice' | 'ai-config' | 'extras' | 'creating' | 'installing' | 'concepts' | 'complete' | 'error';
 
 const SEARCH_ENGINES: { id: string; name: string }[] = [
     { id: 'sibiji', name: 'Sibiji (default)' },
@@ -125,7 +125,7 @@ function shellOptions(): { id: string; name: string }[] {
 
 const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
-    const [userPath, setUserPath] = useState<UserPath>('local-ai');
+    const [aiEnabled, setAiEnabled] = useState<boolean | null>(null);
 
     const [detectedPythons, setDetectedPythons] = useState<PythonInfo[]>([]);
     const [selectedPython, setSelectedPython] = useState<PythonInfo | null>(null);
@@ -159,6 +159,14 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     });
 
     const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+    const [knownProviders, setKnownProviders] = useState<{provider: string; envVar: string; baseUrl: string; displayName: string}[]>([]);
+    const [detectedProviders, setDetectedProviders] = useState<{provider: string; envVar: string; baseUrl: string; displayName: string; custom?: boolean}[]>([]);
+    const [selectedProviderToAdd, setSelectedProviderToAdd] = useState<string>('');
+    const [showCustomProvider, setShowCustomProvider] = useState(false);
+    const [customProviderName, setCustomProviderName] = useState('');
+    const [customProviderEnvVar, setCustomProviderEnvVar] = useState('');
+    const [customProviderBaseUrl, setCustomProviderBaseUrl] = useState('');
+    const [customProviderKey, setCustomProviderKey] = useState('');
 
     const [step, setStep] = useState<SetupStep>('welcome');
 
@@ -227,6 +235,30 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         return () => unsubscribe?.();
     }, []);
 
+    useEffect(() => {
+        if (step !== 'ai-config') return;
+        const load = async () => {
+            try {
+                const known = await (window as any).api?.getKnownProviders?.();
+                if (known) setKnownProviders(known);
+                const detected = await (window as any).api?.detectProviderKeys?.();
+                if (detected) {
+                    setDetectedProviders(detected);
+                    const initial: Record<string, string> = {};
+                    for (const d of detected) {
+                        const val = await (window as any).api?.getGlobalSetting?.(d.envVar);
+                        if (val) initial[d.envVar] = val;
+                    }
+                    setApiKeys(prev => ({ ...prev, ...initial }));
+                }
+            } catch (err) {
+                console.error('Error loading providers:', err);
+            }
+        };
+        load();
+        checkLocalModels();
+    }, [step]);
+
     const checkLocalModels = async () => {
         setCheckingModels(true);
         setInstallError(null);
@@ -287,8 +319,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     };
 
     const getExtrasForPath = (): string => {
-        if (userPath === 'no-ai') return 'lite';
-        if (userPath === 'cloud-ai') return selectedExtras === 'local' ? 'lite' : selectedExtras;
+        if (!aiEnabled) return 'lite';
         return selectedExtras;
     };
 
@@ -345,16 +376,17 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
             // Step 2: Save profile configuration
             setInstallOutput(prev => [...prev, 'Saving configuration...']);
-            const aiEnabled = userPath !== 'no-ai';
+            const userPath = aiEnabled ? 'local-ai' : 'no-ai';
+            const extras = aiEnabled ? selectedExtras : 'lite';
             await (window as any).api?.profileSave?.({
                 path: userPath,
                 aiEnabled,
-                extras: getExtrasForPath(),
+                extras,
                 setupComplete: true,
                 tutorialComplete: false,
             });
 
-            if (userPath === 'cloud-ai' && Object.keys(apiKeys).length > 0) {
+            if (aiEnabled && Object.keys(apiKeys).length > 0) {
                 for (const [key, value] of Object.entries(apiKeys)) {
                     if (value.trim()) {
                         await (window as any).api?.saveGlobalSetting?.(key, value.trim());
@@ -396,7 +428,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 setInstallOutput(prev => [...prev, 'Note: NPC team will be set up on next launch']);
             }
 
-            if (userPath !== 'no-ai') {
+            if (aiEnabled) {
                 setStep('concepts');
             } else {
                 setStep('complete');
@@ -418,26 +450,21 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         }
     };
 
-    const handlePathNext = () => {
-        if (userPath === 'no-ai') {
+    const handleAIChoiceNext = () => {
+        if (aiEnabled === null) return;
+        if (!aiEnabled) {
             handleSkip();
-        } else if (userPath === 'cloud-ai') {
-            setStep('cloud-keys');
         } else {
-
-            setSelectedExtras('local');
-            setStep('models');
-            checkLocalModels();
+            setStep('ai-config');
         }
     };
 
-    const handleCloudKeysNext = () => {
-        handleSkip();
+    const handleAIConfigNext = () => {
+        setStep('extras');
     };
 
-    const handleExtrasNext = async () => {
-        setStep('models');
-        await checkLocalModels();
+    const handleExtrasNext = () => {
+        handleStartInstall();
     };
 
     const renderWelcome = () => (
@@ -632,7 +659,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                         localStorage.setItem('npc-browser-search-engine', searchEngine);
                         localStorage.setItem('terminal-default-shell', defaultShell);
                         localStorage.setItem('incognide_activityTrackingEnabled', String(activityTrackingEnabled));
-                        setStep('path');
+                        setStep('ai-choice');
                     }}
                     className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
                 >
@@ -642,18 +669,38 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         </div>
     );
 
-    const renderPathSelection = () => (
+    const renderAIChoice = () => (
         <div className="space-y-5">
             <div className="text-center">
-                <h2 className="text-xl font-bold text-white mb-1">How do you want to use Incognide?</h2>
+                <h2 className="text-xl font-bold text-white mb-1">AI in Incognide?</h2>
                 <p className="text-gray-400 text-sm">You can change this anytime in Settings</p>
             </div>
 
             <div className="space-y-3">
                 <button
-                    onClick={() => setUserPath('no-ai')}
+                    onClick={() => setAiEnabled(true)}
                     className={`w-full p-4 rounded-lg text-left border transition-all ${
-                        userPath === 'no-ai'
+                        aiEnabled === true
+                            ? 'border-blue-500/50 bg-blue-600/20'
+                            : 'border-gray-700 bg-gray-800/50 hover:bg-gray-800'
+                    }`}
+                >
+                    <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-blue-700 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <Sparkles size={20} className="text-blue-300" />
+                        </div>
+                        <div className="flex-1">
+                            <div className="font-medium text-white">Yes, use AI</div>
+                            <div className="text-sm text-gray-400 mt-0.5">Configure local and cloud AI providers</div>
+                        </div>
+                        {aiEnabled === true && <Check size={20} className="text-blue-400 flex-shrink-0 mt-1" />}
+                    </div>
+                </button>
+
+                <button
+                    onClick={() => setAiEnabled(false)}
+                    className={`w-full p-4 rounded-lg text-left border transition-all ${
+                        aiEnabled === false
                             ? 'border-blue-500/50 bg-blue-600/20'
                             : 'border-gray-700 bg-gray-800/50 hover:bg-gray-800'
                     }`}
@@ -663,50 +710,10 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                             <Folder size={20} className="text-gray-300" />
                         </div>
                         <div className="flex-1">
-                            <div className="font-medium text-white">Workspace</div>
-                            <div className="text-sm text-gray-400 mt-0.5">Files, editor, terminal, browser, documents — no AI</div>
+                            <div className="font-medium text-white">No, workspace only</div>
+                            <div className="text-sm text-gray-400 mt-0.5">Files, editor, terminal, browser — no AI</div>
                         </div>
-                        {userPath === 'no-ai' && <Check size={20} className="text-blue-400 flex-shrink-0 mt-1" />}
-                    </div>
-                </button>
-
-                <button
-                    onClick={() => setUserPath('cloud-ai')}
-                    className={`w-full p-4 rounded-lg text-left border transition-all ${
-                        userPath === 'cloud-ai'
-                            ? 'border-blue-500/50 bg-blue-600/20'
-                            : 'border-gray-700 bg-gray-800/50 hover:bg-gray-800'
-                    }`}
-                >
-                    <div className="flex items-start gap-3">
-                        <div className="w-10 h-10 bg-blue-700 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <Cloud size={20} className="text-blue-300" />
-                        </div>
-                        <div className="flex-1">
-                            <div className="font-medium text-white">Cloud AI</div>
-                            <div className="text-sm text-gray-400 mt-0.5">Use OpenAI, Anthropic, Gemini — no local setup needed</div>
-                        </div>
-                        {userPath === 'cloud-ai' && <Check size={20} className="text-blue-400 flex-shrink-0 mt-1" />}
-                    </div>
-                </button>
-
-                <button
-                    onClick={() => setUserPath('local-ai')}
-                    className={`w-full p-4 rounded-lg text-left border transition-all ${
-                        userPath === 'local-ai'
-                            ? 'border-blue-500/50 bg-blue-600/20'
-                            : 'border-gray-700 bg-gray-800/50 hover:bg-gray-800'
-                    }`}
-                >
-                    <div className="flex items-start gap-3">
-                        <div className="w-10 h-10 bg-purple-700 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <Cpu size={20} className="text-purple-300" />
-                        </div>
-                        <div className="flex-1">
-                            <div className="font-medium text-white">Local AI</div>
-                            <div className="text-sm text-gray-400 mt-0.5">Run models locally with Ollama — private and offline</div>
-                        </div>
-                        {userPath === 'local-ai' && <Check size={20} className="text-blue-400 flex-shrink-0 mt-1" />}
+                        {aiEnabled === false && <Check size={20} className="text-blue-400 flex-shrink-0 mt-1" />}
                     </div>
                 </button>
             </div>
@@ -719,8 +726,9 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                     <ChevronLeft size={16} /> Back
                 </button>
                 <button
-                    onClick={handlePathNext}
-                    className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
+                    onClick={handleAIChoiceNext}
+                    disabled={aiEnabled === null}
+                    className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg font-medium flex items-center justify-center gap-2"
                 >
                     Continue <ChevronRight size={18} />
                 </button>
@@ -728,53 +736,251 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         </div>
     );
 
-    const renderCloudKeys = () => (
-        <div className="space-y-5">
-            <div className="text-center">
-                <h2 className="text-xl font-bold text-white mb-1">API Keys (Optional)</h2>
-                <p className="text-gray-400 text-sm">Add keys now or later in Settings</p>
-            </div>
+    const renderAIConfig = () => {
+        const localProviders = detectedModels.filter(m => {
+            if (m.provider === 'omlx' && !platform.includes('linux')) return false;
+            return true;
+        });
+        const addedProviders = knownProviders.filter(k => apiKeys[k.envVar] !== undefined || detectedProviders.some(d => d.envVar === k.envVar));
+        const availableToAdd = knownProviders.filter(k => !apiKeys[k.envVar] && !detectedProviders.some(d => d.envVar === k.envVar));
 
-            <div className="space-y-3">
-                {[
-                    { key: 'OPENAI_API_KEY', label: 'OpenAI', placeholder: 'sk-...' },
-                    { key: 'ANTHROPIC_API_KEY', label: 'Anthropic', placeholder: 'sk-ant-...' },
-                    { key: 'GEMINI_API_KEY', label: 'Google Gemini', placeholder: 'AI...' },
-                ].map(({ key, label, placeholder }) => (
-                    <div key={key}>
-                        <label className="text-xs text-gray-400 font-medium block mb-1">{label}</label>
-                        <input
-                            type="password"
-                            value={apiKeys[key] || ''}
-                            onChange={(e) => setApiKeys(prev => ({ ...prev, [key]: e.target.value }))}
-                            placeholder={placeholder}
-                            className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none"
-                        />
+        return (
+            <div className="space-y-5 max-h-[70vh] overflow-y-auto pr-1">
+                <div className="text-center">
+                    <h2 className="text-xl font-bold text-white mb-1">AI Configuration</h2>
+                    <p className="text-gray-400 text-sm">Set up local and cloud providers. Skip anything you don't need.</p>
+                </div>
+
+                {/* Local Providers */}
+                <div className="space-y-2">
+                    <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
+                        <Cpu size={14} /> Local Providers
+                    </h3>
+                    {checkingModels ? (
+                        <div className="text-center py-4">
+                            <RefreshCw size={18} className="animate-spin mx-auto text-blue-400 mb-2" />
+                            <p className="text-xs text-gray-400">Checking for local model providers...</p>
+                        </div>
+                    ) : localProviders.length > 0 ? (
+                        localProviders.map(info => {
+                            const b = statusBadge(info);
+                            return (
+                                <div key={info.provider} className={`p-3 rounded-lg border ${tileBorder(info)}`}>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <div className="flex items-center gap-2">
+                                            {info.provider === 'ollama' && <Server size={16} className={iconColor(info)} />}
+                                            {info.provider === 'lmstudio' && <HardDrive size={16} className={iconColor(info)} />}
+                                            {info.provider === 'llamacpp' && <Cpu size={16} className={iconColor(info)} />}
+                                            {info.provider === 'omlx' && <Zap size={16} className={iconColor(info)} />}
+                                            <span className="font-medium text-white text-sm">
+                                                {info.provider === 'ollama' && 'Ollama'}
+                                                {info.provider === 'lmstudio' && 'LM Studio'}
+                                                {info.provider === 'llamacpp' && 'llama.cpp / koboldcpp'}
+                                                {info.provider === 'omlx' && 'oMLX'}
+                                            </span>
+                                        </div>
+                                        <span className={`text-xs px-2 py-0.5 rounded ${b.cls}`}>{b.text}</span>
+                                    </div>
+                                    {(info.models?.length || 0) > 0 && (
+                                        <div className="mt-1 flex flex-wrap gap-1">
+                                            {info.models!.slice(0, 4).map(model => (
+                                                <span key={model} className="text-[10px] bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">{model}</span>
+                                            ))}
+                                            {info.models!.length > 4 && (
+                                                <span className="text-[10px] text-gray-500">+{info.models!.length - 4} more</span>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })
+                    ) : (
+                        <p className="text-xs text-gray-500">No local providers detected. Install Ollama, LM Studio, or llama.cpp to run models locally.</p>
+                    )}
+                    <button
+                        onClick={checkLocalModels}
+                        className="w-full py-1.5 text-xs text-gray-400 hover:text-gray-300 flex items-center justify-center gap-1"
+                    >
+                        <RefreshCw size={12} /> Refresh detection
+                    </button>
+                </div>
+
+                {/* Cloud / API Providers */}
+                <div className="space-y-2">
+                    <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
+                        <Cloud size={14} /> Cloud Providers
+                    </h3>
+
+                    {/* Detected keys */}
+                    {detectedProviders.length > 0 && (
+                        <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-2 text-xs text-green-300">
+                            <div className="flex items-center gap-1 mb-1">
+                                <Check size={12} />
+                                <span className="font-medium">Auto-detected from environment:</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                                {detectedProviders.map(d => (
+                                    <span key={d.envVar} className="bg-green-800/40 px-1.5 py-0.5 rounded">{d.displayName}</span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Provider inputs */}
+                    {addedProviders.length > 0 && addedProviders.map(k => (
+                        <div key={k.envVar} className="flex items-center gap-2">
+                            <div className="flex-1">
+                                <label className="text-xs text-gray-400 font-medium block mb-1">{k.displayName}</label>
+                                <input
+                                    type="password"
+                                    value={apiKeys[k.envVar] || ''}
+                                    onChange={(e) => setApiKeys(prev => ({ ...prev, [k.envVar]: e.target.value }))}
+                                    placeholder={k.envVar}
+                                    className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none"
+                                />
+                            </div>
+                            <button
+                                onClick={() => setApiKeys(prev => { const copy = { ...prev }; delete copy[k.envVar]; return copy; })}
+                                className="mt-5 p-1.5 text-gray-500 hover:text-red-400 hover:bg-gray-700 rounded"
+                                title="Remove"
+                            >
+                                <X size={14} />
+                            </button>
+                        </div>
+                    ))}
+
+                    {/* Add provider dropdown */}
+                    <div className="flex gap-2">
+                        <select
+                            value={selectedProviderToAdd}
+                            onChange={(e) => {
+                                if (e.target.value === 'custom') {
+                                    setShowCustomProvider(true);
+                                    setSelectedProviderToAdd('');
+                                } else if (e.target.value) {
+                                    const p = knownProviders.find(k => k.provider === e.target.value);
+                                    if (p) setApiKeys(prev => ({ ...prev, [p.envVar]: '' }));
+                                    setSelectedProviderToAdd('');
+                                }
+                            }}
+                            className="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:border-blue-500 focus:outline-none"
+                        >
+                            <option value="">Add a provider...</option>
+                            {availableToAdd.map(k => (
+                                <option key={k.provider} value={k.provider}>{k.displayName}</option>
+                            ))}
+                            <option value="custom">+ Custom provider...</option>
+                        </select>
                     </div>
-                ))}
-            </div>
 
-            <div className="bg-gray-800/50 rounded-lg p-3 text-xs text-gray-400">
-                <KeyRound size={12} className="inline mr-1" />
-                Keys are stored locally and never sent anywhere except the provider's API.
-            </div>
+                    {/* Custom provider form */}
+                    {showCustomProvider && (
+                        <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3 space-y-3">
+                            <h4 className="text-xs font-medium text-gray-300">Custom Provider</h4>
+                            <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label className="text-[10px] text-gray-500 uppercase block mb-1">Name</label>
+                                    <input
+                                        type="text"
+                                        value={customProviderName}
+                                        onChange={e => setCustomProviderName(e.target.value)}
+                                        placeholder="e.g. MyProvider"
+                                        className="w-full px-2 py-1.5 bg-gray-900 border border-gray-700 rounded text-sm text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] text-gray-500 uppercase block mb-1">API Key Env Var</label>
+                                    <input
+                                        type="text"
+                                        value={customProviderEnvVar}
+                                        onChange={e => setCustomProviderEnvVar(e.target.value)}
+                                        placeholder="e.g. MYPROVIDER_API_KEY"
+                                        className="w-full px-2 py-1.5 bg-gray-900 border border-gray-700 rounded text-sm text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none"
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-[10px] text-gray-500 uppercase block mb-1">Base URL</label>
+                                <input
+                                    type="text"
+                                    value={customProviderBaseUrl}
+                                    onChange={e => setCustomProviderBaseUrl(e.target.value)}
+                                    placeholder="https://api.example.com/v1"
+                                    className="w-full px-2 py-1.5 bg-gray-900 border border-gray-700 rounded text-sm text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[10px] text-gray-500 uppercase block mb-1">API Key</label>
+                                <input
+                                    type="password"
+                                    value={customProviderKey}
+                                    onChange={e => setCustomProviderKey(e.target.value)}
+                                    placeholder="sk-..."
+                                    className="w-full px-2 py-1.5 bg-gray-900 border border-gray-700 rounded text-sm text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none"
+                                />
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => {
+                                        setShowCustomProvider(false);
+                                        setCustomProviderName('');
+                                        setCustomProviderEnvVar('');
+                                        setCustomProviderBaseUrl('');
+                                        setCustomProviderKey('');
+                                    }}
+                                    className="px-3 py-1.5 text-xs bg-gray-700 hover:bg-gray-600 text-white rounded"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (!customProviderName || !customProviderEnvVar) return;
+                                        setApiKeys(prev => ({ ...prev, [customProviderEnvVar]: customProviderKey }));
+                                        setDetectedProviders(prev => [...prev, {
+                                            provider: customProviderName.toLowerCase().replace(/\s+/g, '_'),
+                                            envVar: customProviderEnvVar,
+                                            baseUrl: customProviderBaseUrl,
+                                            displayName: customProviderName,
+                                            custom: true,
+                                        }]);
+                                        setShowCustomProvider(false);
+                                        setCustomProviderName('');
+                                        setCustomProviderEnvVar('');
+                                        setCustomProviderBaseUrl('');
+                                        setCustomProviderKey('');
+                                    }}
+                                    disabled={!customProviderName || !customProviderEnvVar}
+                                    className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded"
+                                >
+                                    Add Provider
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
 
-            <div className="flex gap-3">
-                <button
-                    onClick={() => setStep('path')}
-                    className="py-2 px-4 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center gap-1"
-                >
-                    <ChevronLeft size={16} /> Back
-                </button>
-                <button
-                    onClick={handleCloudKeysNext}
-                    className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
-                >
-                    {Object.values(apiKeys).some(v => v.trim()) ? 'Install' : "I'll do this later"} <ChevronRight size={18} />
-                </button>
+                <div className="bg-gray-800/50 rounded-lg p-3 text-xs text-gray-400">
+                    <KeyRound size={12} className="inline mr-1" />
+                    Keys are stored locally and never sent anywhere except the provider's API.
+                </div>
+
+                <div className="flex gap-3">
+                    <button
+                        onClick={() => setStep('ai-choice')}
+                        className="py-2 px-4 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center gap-1"
+                    >
+                        <ChevronLeft size={16} /> Back
+                    </button>
+                    <button
+                        onClick={handleAIConfigNext}
+                        className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
+                    >
+                        Continue <ChevronRight size={18} />
+                    </button>
+                </div>
             </div>
-        </div>
-    );
+        );
+    };
 
     const renderExtras = () => (
         <div className="space-y-5">
@@ -817,7 +1023,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
             <div className="flex gap-3">
                 <button
-                    onClick={() => setStep('path')}
+                    onClick={() => setStep('ai-config')}
                     className="py-2 px-4 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center gap-1"
                 >
                     <ChevronLeft size={16} /> Back
@@ -1049,7 +1255,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
             <div className="flex gap-3">
                 <button
-                    onClick={() => setStep('path')}
+                    onClick={() => setStep('ai-config')}
                     className="py-2 px-4 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center gap-1"
                 >
                     <ChevronLeft size={16} /> Back
@@ -1092,7 +1298,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
             <button
                 onClick={() => {
-                    if (userPath !== 'no-ai') {
+                    if (aiEnabled) {
                         setStep('concepts');
                     } else {
                         setStep('complete');
@@ -1176,7 +1382,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 </div>
                 <h2 className="text-xl font-bold text-white mb-2">You're All Set!</h2>
                 <p className="text-gray-400 text-sm">
-                    {userPath === 'no-ai'
+                    {!aiEnabled
                         ? 'Your workspace is ready'
                         : 'Your AI-powered workspace is ready'
                     }
@@ -1192,10 +1398,10 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                     <Check size={14} />
                     <span>npcpy installed</span>
                 </div>
-                {userPath !== 'no-ai' && (
+                {aiEnabled && (
                     <div className="flex items-center gap-2 text-green-400">
                         <Check size={14} />
-                        <span>AI features enabled ({userPath === 'cloud-ai' ? 'Cloud' : 'Local'})</span>
+                        <span>AI features enabled</span>
                     </div>
                 )}
                 <div className="flex items-center gap-2 text-green-400">
@@ -1243,7 +1449,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                     onClick={() => {
                         setError(null);
                         setInstallOutput([]);
-                        setStep('path');
+                        setStep('ai-choice');
                     }}
                     className="flex-1 py-2 px-4 bg-gray-700 hover:bg-gray-600 text-white rounded-lg"
                 >
@@ -1265,10 +1471,9 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 {step === 'welcome' && renderWelcome()}
                 {step === 'preferences' && renderPreferences()}
                 {step === 'defaults' && renderDefaults()}
-                {step === 'path' && renderPathSelection()}
-                {step === 'cloud-keys' && renderCloudKeys()}
+                {step === 'ai-choice' && renderAIChoice()}
+                {step === 'ai-config' && renderAIConfig()}
                 {step === 'extras' && renderExtras()}
-                {step === 'models' && renderModels()}
                 {(step === 'creating' || step === 'installing') && renderInstalling()}
                 {step === 'concepts' && renderConcepts()}
                 {step === 'complete' && renderComplete()}

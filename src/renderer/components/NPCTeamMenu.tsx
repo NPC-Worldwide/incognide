@@ -4,7 +4,7 @@ import {
     Bot, Loader, ChevronRight, X, Save, MessageSquare,
     Plus, Trash2, History, CheckCircle, XCircle, Tag,
     Brain, GitBranch, Edit, Search, Download, Filter,
-    Database, ChevronDown, Sparkles, Zap
+    Database, ChevronDown, Sparkles, Zap, LayoutDashboard
 } from 'lucide-react';
 import AutosizeTextarea from './AutosizeTextarea';
 import ForceGraph2D from 'react-force-graph-2d';
@@ -34,6 +34,7 @@ const NPCTeamMenu = ({
     onClose,
     currentPath,
     startNewConversation,
+    createDataDashPane,
     embedded = false,
     isGlobal = true,
     globalPath = undefined,
@@ -1442,6 +1443,17 @@ const NPCTeamMenu = ({
                         <Bot className="text-blue-400" /> NPC Team Editor
                     </h3>
                     <div className="flex items-center gap-4">
+                        {createDataDashPane && (
+                            <button
+                                onClick={() => {
+                                    createDataDashPane();
+                                    onClose();
+                                }}
+                                className="flex items-center gap-2 px-3 py-1.5 text-sm theme-bg-tertiary hover:bg-white/10 rounded-lg transition-colors"
+                            >
+                                <LayoutDashboard size={16} /> Dashboard
+                            </button>
+                        )}
                         <button
                             onClick={onClose}
                             className="p-1 rounded-full theme-hover"
