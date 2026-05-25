@@ -2371,8 +2371,6 @@ function createWindow(cliArgs = {}) {
         enableRemoteModule: true,
         nodeIntegrationInSubFrames: true,
         allowRunningInsecureContent: true,
-      contentSecurityPolicy: `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ${BACKEND_URL};`,
-
         experimentalFeatures: true,
         preload: path.join(__dirname, 'preload.js')
       }
