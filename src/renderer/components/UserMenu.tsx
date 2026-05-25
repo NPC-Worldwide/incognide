@@ -273,14 +273,26 @@ const UserMenu: React.FC<UserMenuProps> = ({ onOpenSettings, compact = false }) 
             <>
                 <div className="flex flex-col gap-2 w-full">
                     <button
-                        onClick={() => openSignIn(window.location.href.startsWith('http') ? { fallbackRedirectUrl: window.location.href } : undefined)}
+                        onClick={() => {
+                            if (window.location.href.startsWith('http')) {
+                                openSignIn({ fallbackRedirectUrl: window.location.href });
+                            } else {
+                                openSignIn();
+                            }
+                        }}
                         className="flex items-center justify-center gap-2 w-full px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors"
                     >
                         <LogIn size={16} />
                         <span className="text-sm font-medium">Sign In</span>
                     </button>
                     <button
-                        onClick={() => openSignUp(window.location.href.startsWith('http') ? { fallbackRedirectUrl: window.location.href } : undefined)}
+                        onClick={() => {
+                            if (window.location.href.startsWith('http')) {
+                                openSignUp({ fallbackRedirectUrl: window.location.href });
+                            } else {
+                                openSignUp();
+                            }
+                        }}
                         className="flex items-center justify-center gap-2 w-full px-3 py-2 rounded-lg border border-gray-600 hover:bg-gray-700/50 text-gray-300 transition-colors"
                     >
                         <User size={16} />

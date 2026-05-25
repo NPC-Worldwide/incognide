@@ -342,7 +342,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 signOut,
                 refreshUser,
                 getToken,
-                openSignIn: () => clerk.openSignIn(window.location.href.startsWith('http') ? { fallbackRedirectUrl: window.location.href } : undefined),
+                openSignIn: () => {
+                    if (window.location.href.startsWith('http')) {
+                        clerk.openSignIn({ fallbackRedirectUrl: window.location.href });
+                    } else {
+                        clerk.openSignIn();
+                    }
+                },
                 openUserProfile: () => clerk.openUserProfile(),
                 error
             }}
