@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { User, LogOut, LogIn, Settings, Cloud, Monitor, ChevronDown, Loader2, Crown, X, Eye, EyeOff, Edit2, Lock, Key } from 'lucide-react';
-import { SignInButton, SignUpButton, useClerk } from '@clerk/clerk-react';
+// Clerk hooks removed — openSignIn/openSignUp come from useAuth to avoid crashes when ClerkProvider is absent
 import { useAuth } from './AuthProvider';
 
 interface UserMenuProps {
@@ -20,9 +20,10 @@ const UserMenu: React.FC<UserMenuProps> = ({ onOpenSettings, compact = false }) 
         setupPassphrase,
         unlockWithPassphrase,
         signOut,
+        openSignIn,
+        openSignUp,
         error
     } = useAuth();
-    const { openSignIn, openSignUp } = useClerk();
 
     const [isOpen, setIsOpen] = useState(false);
     const [showPassphraseModal, setShowPassphraseModal] = useState(false);

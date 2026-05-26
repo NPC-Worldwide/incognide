@@ -99,14 +99,26 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                             </div>
                         ) : (
                             <div className="text-center py-4">
-                                <div className="w-12 h-12 rounded-full theme-bg-tertiary flex items-center justify-center mx-auto mb-3">
-                                    <Shield size={24} className="theme-text-muted" />
-                                </div>
-                                <p className="text-sm mb-1">Not signed in</p>
-                                <p className="text-xs theme-text-muted mb-4">Sign in to encrypt and sync your data across devices.</p>
-                                <button onClick={() => auth.openSignIn()} className="inline-flex items-center gap-2 px-5 py-2.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium">
-                                    <LogIn size={16} /> Sign In
-                                </button>
+                                {auth.error ? (
+                                    <>
+                                        <div className="w-12 h-12 rounded-full bg-red-600/20 flex items-center justify-center mx-auto mb-3">
+                                            <Shield size={24} className="text-red-400" />
+                                        </div>
+                                        <p className="text-sm mb-1 text-red-400">Authentication unavailable</p>
+                                        <p className="text-xs text-red-400/70 mb-4 px-2">{auth.error}</p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="w-12 h-12 rounded-full theme-bg-tertiary flex items-center justify-center mx-auto mb-3">
+                                            <Shield size={24} className="theme-text-muted" />
+                                        </div>
+                                        <p className="text-sm mb-1">Not signed in</p>
+                                        <p className="text-xs theme-text-muted mb-4">Sign in to encrypt and sync your data across devices.</p>
+                                        <button onClick={() => auth.openSignIn()} className="inline-flex items-center gap-2 px-5 py-2.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium">
+                                            <LogIn size={16} /> Sign In
+                                        </button>
+                                    </>
+                                )}
                             </div>
                         )}
                     </div>

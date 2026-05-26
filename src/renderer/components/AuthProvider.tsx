@@ -38,6 +38,7 @@ interface AuthContextType {
     refreshUser: () => Promise<void>;
     getToken: () => Promise<string | null>;
     openSignIn: () => void;
+    openSignUp: () => void;
     openUserProfile: () => void;
     error: string | null;
 }
@@ -56,6 +57,7 @@ const AuthContext = createContext<AuthContextType>({
     refreshUser: async () => {},
     getToken: async () => null,
     openSignIn: () => {},
+    openSignUp: () => {},
     openUserProfile: () => {},
     error: null,
 });
@@ -367,8 +369,38 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                         setError(e.message || 'Clerk sign-in failed');
                     }
                 },
+                openSignUp: () => clerk.openSignUp?.(),
                 openUserProfile: () => clerk.openUserProfile(),
                 error
+            }}
+        >
+            {children}
+        </AuthContext.Provider>
+    );
+};
+
+export const NoClerkAuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+    const configError = 'Authentication is not configured. The Clerk publishable key (VITE_CLERK_PUBLISHABLE_KEY) is missing.';
+
+    return (
+        <AuthContext.Provider
+            value={{
+                user: null,
+                device: null,
+                isAuthenticated: false,
+                isLoading: false,
+                isEncryptionReady: false,
+                hasPassphrase: false,
+                needsPassphraseSetup: false,
+                setupPassphrase: async () => ({ success: false, error: configError }),
+                unlockWithPassphrase: async () => ({ success: false, error: configError }),
+                signOut: async () => {},
+                refreshUser: async () => {},
+                getToken: async () => null,
+                openSignIn: () => console.error('[AUTH]', configError),
+                openSignUp: () => console.error('[AUTH]', configError),
+                openUserProfile: () => console.error('[AUTH]', configError),
+                error: configError,
             }}
         >
             {children}
