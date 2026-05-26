@@ -335,14 +335,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return await getClerkToken();
     }, [getClerkToken]);
 
-    const needsPassphraseSetup = !!user && !hasPassphrase;
+    const needsPassphraseSetup = !!effectiveUser && !hasPassphrase;
+
+    // Fallback user from Clerk data when backend sync hasn't completed yet
+    const clerkFallbackUser: User | null = clerkUser ? {
+        id: clerkUser.id,
+        clerkId: clerkUser.id,
+        email: clerkUser.primaryEmailAddress?.emailAddress || '',
+        name: clerkUser.fullName || clerkUser.firstName || 'User',
+        profilePicture: clerkUser.imageUrl,
+        isPremium: false,
+        storageUsedBytes: 0,
+        storageLimitBytes: 209715200,
+    } : null;
+
+    const effectiveUser = user || clerkFallbackUser;
 
     return (
         <AuthContext.Provider
             value={{
-                user,
+                user: effectiveUser,
                 device,
-                isAuthenticated: !!user,
+                isAuthenticated: !!effectiveUser,
                 isLoading: isLoading || !clerkLoaded,
                 isEncryptionReady,
                 hasPassphrase,
@@ -353,19 +367,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 refreshUser,
                 getToken,
                 openSignIn: () => {
-                    console.log('[AUTH DEBUG] openSignIn called');
-                    console.log('[AUTH DEBUG] clerk:', clerk);
-                    console.log('[AUTH DEBUG] clerk.clerkjs:', (clerk as any)?.clerkjs);
-                    console.log('[AUTH DEBUG] clerk.openSignIn type:', typeof clerk?.openSignIn);
+                    // If already signed in via Clerk, open profile instead
+                    if (clerkUser) {
+                        clerk.openUserProfile?.();
+                        return;
+                    }
                     try {
                         if (window.location.href.startsWith('http')) {
                             clerk.openSignIn({ fallbackRedirectUrl: window.location.href });
                         } else {
                             clerk.openSignIn();
                         }
-                        console.log('[AUTH DEBUG] openSignIn executed without error');
                     } catch (e: any) {
-                        console.error('[AUTH DEBUG] openSignIn threw:', e);
+                        console.error('[AUTH] openSignIn threw:', e);
                         setError(e.message || 'Clerk sign-in failed');
                     }
                 },
