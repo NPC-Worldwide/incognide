@@ -6,7 +6,9 @@ import {
     encryptEntity,
     decryptObject,
 } from '../utils/encryption';
-import { API_BASE_URL } from '../config';
+import { API_BASE_URL, IS_CLERK_DEV } from '../config';
+
+const API_HEADERS: Record<string, string> = IS_CLERK_DEV ? { 'X-Environment': 'dev' } : {};
 
 const LAST_SYNC_KEY = 'incognide-last-sync';
 const SYNC_FREQUENCY_KEY = 'incognide-sync-frequency';
@@ -178,7 +180,7 @@ export const useSync = (): UseSyncReturn => {
                     if (!token) throw new Error('No auth token for push batch');
                     const pushResp = await fetch(`${API_BASE_URL}/api/sync/e2e/push`, {
                         method: 'POST',
-                        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', ...API_HEADERS },
                         body: JSON.stringify({ device_id: deviceId, changes: batch })
                     });
                     if (!pushResp.ok) {
@@ -206,7 +208,7 @@ export const useSync = (): UseSyncReturn => {
 
             const pullResp = await fetch(
                 `${API_BASE_URL}/api/sync/e2e/pull?since=${encodeURIComponent(since)}&device_id=${deviceId}`,
-                { headers: { 'Authorization': `Bearer ${pullToken}` } }
+                { headers: { 'Authorization': `Bearer ${pullToken}`, ...API_HEADERS } }
             );
             if (!pullResp.ok) throw new Error(`Pull failed: ${pullResp.status}`);
 
