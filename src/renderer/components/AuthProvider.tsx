@@ -142,7 +142,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                     headers: {
                         'Authorization': `Bearer ${token}`,
                         'Content-Type': 'application/json',
-                        ...API_HEADERS
                     },
                     body: JSON.stringify({
                         clerk_id: clerkUser.id,
@@ -255,7 +254,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                     headers: {
                         'Authorization': `Bearer ${token}`,
                         'Content-Type': 'application/json',
-                        ...API_HEADERS
                     },
                     body: JSON.stringify({ encryption_salt: salt })
                 });
@@ -341,7 +339,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
-                    ...API_HEADERS
                 }
             });
 
