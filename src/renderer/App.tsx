@@ -4,14 +4,18 @@ import Enpistu from './components/Enpistu';
 import SetupWizard from './components/SetupWizard';
 import AppTutorial from './components/AppTutorial';
 import BackendErrorBanner from './components/BackendErrorBanner';
-import { AuthProvider } from './components/AuthProvider';
+import { AuthProvider, NoClerkAuthProvider } from './components/AuthProvider';
 import { AiFeatureProvider } from './components/AiFeatureContext';
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || '';
 
 const AuthWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   if (!CLERK_PUBLISHABLE_KEY) {
-    return <>{children}</>;
+    return (
+      <NoClerkAuthProvider>
+        {children}
+      </NoClerkAuthProvider>
+    );
   }
   return (
     <ClerkProvider

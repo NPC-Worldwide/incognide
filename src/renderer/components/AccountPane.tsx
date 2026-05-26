@@ -12,7 +12,7 @@ interface AccountPaneProps {
 
 const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
     const auth = useAuth();
-    const { syncStatus, lastSyncTime, pendingChanges, triggerSync, syncFrequency, setSyncFrequency } = useSync();
+    const { syncStatus, lastSyncTime, pendingChanges, triggerSync, syncFrequency, setSyncFrequency, lastSyncStats, syncProgress } = useSync();
     const [passphrase, setPassphrase] = useState('');
     const [passphraseError, setPassphraseError] = useState('');
     const [settingUp, setSettingUp] = useState(false);
@@ -99,14 +99,26 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                             </div>
                         ) : (
                             <div className="text-center py-4">
-                                <div className="w-12 h-12 rounded-full theme-bg-tertiary flex items-center justify-center mx-auto mb-3">
-                                    <Shield size={24} className="theme-text-muted" />
-                                </div>
-                                <p className="text-sm mb-1">Not signed in</p>
-                                <p className="text-xs theme-text-muted mb-4">Sign in to encrypt and sync your data across devices.</p>
-                                <button onClick={() => auth.openSignIn({ fallbackRedirectUrl: window.location.href })} className="inline-flex items-center gap-2 px-5 py-2.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium">
-                                    <LogIn size={16} /> Sign In
-                                </button>
+                                {auth.error ? (
+                                    <>
+                                        <div className="w-12 h-12 rounded-full bg-red-600/20 flex items-center justify-center mx-auto mb-3">
+                                            <Shield size={24} className="text-red-400" />
+                                        </div>
+                                        <p className="text-sm mb-1 text-red-400">Authentication unavailable</p>
+                                        <p className="text-xs text-red-400/70 mb-4 px-2">{auth.error}</p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="w-12 h-12 rounded-full theme-bg-tertiary flex items-center justify-center mx-auto mb-3">
+                                            <Shield size={24} className="theme-text-muted" />
+                                        </div>
+                                        <p className="text-sm mb-1">Not signed in</p>
+                                        <p className="text-xs theme-text-muted mb-4">Sign in to encrypt and sync your data across devices.</p>
+                                        <button onClick={() => auth.openSignIn()} className="inline-flex items-center gap-2 px-5 py-2.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium">
+                                            <LogIn size={16} /> Sign In
+                                        </button>
+                                    </>
+                                )}
                             </div>
                         )}
                     </div>
@@ -208,9 +220,9 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                         <div className="p-5 space-y-3">
                             <div className="flex items-center gap-3">
                                 {auth.isEncryptionReady ? <Cloud size={18} className="text-blue-400" /> : <CloudOff size={18} className="theme-text-muted" />}
-                                <div>
+                                <div className="flex-1">
                                     <p className="text-sm">
-                                        {syncStatus === 'syncing' ? 'Syncing...' :
+                                        {syncStatus === 'syncing' ? `Syncing... ${syncProgress}%` :
                                          syncStatus === 'synced' ? 'Synced' :
                                          syncStatus === 'error' ? 'Sync error' :
                                          syncStatus === 'pending' ? `${pendingChanges} pending` :
@@ -221,6 +233,26 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                                     </p>
                                 </div>
                             </div>
+
+                            {/* Progress bar */}
+                            {syncStatus === 'syncing' && (
+                                <div className="w-full h-1.5 theme-bg-tertiary rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full bg-blue-500 transition-all duration-300"
+                                        style={{ width: `${syncProgress}%` }}
+                                    />
+                                </div>
+                            )}
+
+                            {/* Last sync stats */}
+                            {lastSyncStats && syncStatus === 'synced' && (
+                                <div className="text-xs theme-text-muted flex items-center gap-3">
+                                    <span>Pushed {lastSyncStats.pushed}</span>
+                                    <span>Pulled {lastSyncStats.pulled}</span>
+                                    <span>{(lastSyncStats.durationMs / 1000).toFixed(1)}s</span>
+                                </div>
+                            )}
+
                             {auth.device && (
                                 <div className="text-xs theme-text-muted border-t theme-border pt-3">
                                     Device: {auth.device.deviceName} ({auth.device.deviceType})

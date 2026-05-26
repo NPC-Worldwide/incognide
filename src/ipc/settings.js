@@ -1763,21 +1763,43 @@ function register(ctx) {
     return { pythonPath };
   });
 
+  const KNOWN_PROVIDERS = [
+    { provider: 'anthropic', envVar: 'ANTHROPIC_API_KEY', baseUrl: 'https://api.anthropic.com/v1', displayName: 'Anthropic' },
+    { provider: 'ai21', envVar: 'AI21_API_KEY', baseUrl: 'https://api.ai21.com/studio/v1', displayName: 'AI21 Labs' },
+    { provider: 'azure', envVar: 'AZURE_API_KEY', baseUrl: 'https://{your-resource}.openai.azure.com', displayName: 'Azure OpenAI' },
+    { provider: 'azure_ai', envVar: 'AZURE_AI_API_KEY', baseUrl: 'https://{your-resource}.cognitiveservices.azure.com', displayName: 'Azure AI' },
+    { provider: 'bedrock', envVar: 'AWS_ACCESS_KEY_ID', baseUrl: 'https://bedrock-runtime.{region}.amazonaws.com', displayName: 'Amazon Bedrock' },
+    { provider: 'cerebras', envVar: 'CEREBRAS_API_KEY', baseUrl: 'https://api.cerebras.ai/v1', displayName: 'Cerebras' },
+    { provider: 'cloudflare', envVar: 'CLOUDFLARE_API_KEY', baseUrl: 'https://api.cloudflare.com/client/v4/accounts/{account_id}/ai', displayName: 'Cloudflare AI' },
+    { provider: 'cohere', envVar: 'COHERE_API_KEY', baseUrl: 'https://api.cohere.com/v1', displayName: 'Cohere' },
+    { provider: 'deepinfra', envVar: 'DEEPINFRA_API_KEY', baseUrl: 'https://api.deepinfra.com/v1/openai', displayName: 'DeepInfra' },
+    { provider: 'deepseek', envVar: 'DEEPSEEK_API_KEY', baseUrl: 'https://api.deepseek.com/v1', displayName: 'DeepSeek' },
+    { provider: 'fireworks_ai', envVar: 'FIREWORKS_API_KEY', baseUrl: 'https://api.fireworks.ai/inference/v1', displayName: 'Fireworks AI' },
+    { provider: 'gemini', envVar: 'GEMINI_API_KEY', baseUrl: 'https://generativelanguage.googleapis.com/v1beta', displayName: 'Google Gemini' },
+    { provider: 'groq', envVar: 'GROQ_API_KEY', baseUrl: 'https://api.groq.com/openai/v1', displayName: 'Groq' },
+    { provider: 'huggingFace', envVar: 'HF_TOKEN', baseUrl: 'https://api-inference.huggingface.co', displayName: 'Hugging Face' },
+    { provider: 'hyperbolic', envVar: 'HYPERBOLIC_API_KEY', baseUrl: 'https://api.hyperbolic.xyz/v1', displayName: 'Hyperbolic' },
+    { provider: 'mistral', envVar: 'MISTRAL_API_KEY', baseUrl: 'https://api.mistral.ai/v1', displayName: 'Mistral AI' },
+    { provider: 'moonshot', envVar: 'MOONSHOT_API_KEY', baseUrl: 'https://api.moonshot.cn/v1', displayName: 'Moonshot AI' },
+    { provider: 'nebius', envVar: 'NEBIUS_API_KEY', baseUrl: 'https://api.studio.nebius.ai/v1', displayName: 'Nebius AI' },
+    { provider: 'novita', envVar: 'NOVITA_API_KEY', baseUrl: 'https://api.novita.ai/v3/openai', displayName: 'Novita AI' },
+    { provider: 'nvidia_nim', envVar: 'NVIDIA_NIM_API_KEY', baseUrl: 'https://integrate.api.nvidia.com/v1', displayName: 'NVIDIA NIM' },
+    { provider: 'openai', envVar: 'OPENAI_API_KEY', baseUrl: 'https://api.openai.com/v1', displayName: 'OpenAI' },
+    { provider: 'openrouter', envVar: 'OPENROUTER_API_KEY', baseUrl: 'https://openrouter.ai/api/v1', displayName: 'OpenRouter' },
+    { provider: 'perplexity', envVar: 'PERPLEXITY_API_KEY', baseUrl: 'https://api.perplexity.ai', displayName: 'Perplexity' },
+    { provider: 'replicate', envVar: 'REPLICATE_API_KEY', baseUrl: 'https://api.replicate.com/v1', displayName: 'Replicate' },
+    { provider: 'sambanova', envVar: 'SAMBANOVA_API_KEY', baseUrl: 'https://api.sambanova.ai/v1', displayName: 'SambaNova' },
+    { provider: 'together', envVar: 'TOGETHER_API_KEY', baseUrl: 'https://api.together.xyz/v1', displayName: 'Together AI' },
+    { provider: 'vertex_ai', envVar: 'VERTEX_AI_API_KEY', baseUrl: 'https://{region}-aiplatform.googleapis.com', displayName: 'Google Vertex AI' },
+    { provider: 'watsonx', envVar: 'WATSONX_API_KEY', baseUrl: 'https://{region}.ml.cloud.ibm.com', displayName: 'IBM Watsonx' },
+    { provider: 'xai', envVar: 'XAI_API_KEY', baseUrl: 'https://api.x.ai/v1', displayName: 'xAI' },
+  ];
+
+  ipcMain.handle('get-known-providers', async () => {
+    return KNOWN_PROVIDERS;
+  });
+
   ipcMain.handle('detect-provider-keys', async () => {
-    const KNOWN = [
-      { provider: 'anthropic', envVar: 'ANTHROPIC_API_KEY', baseUrl: 'https://api.anthropic.com/v1' },
-      { provider: 'deepseek', envVar: 'DEEPSEEK_API_KEY', baseUrl: 'https://api.deepseek.com/v1' },
-      { provider: 'gemini', envVar: 'GEMINI_API_KEY', baseUrl: 'https://generativelanguage.googleapis.com/v1beta' },
-      { provider: 'google', envVar: 'GOOGLE_API_KEY', baseUrl: 'https://generativelanguage.googleapis.com/v1beta' },
-      { provider: 'groq', envVar: 'GROQ_API_KEY', baseUrl: 'https://api.groq.com/openai/v1' },
-      { provider: 'huggingFace', envVar: 'HF_TOKEN', baseUrl: 'https://api-inference.huggingface.co' },
-      { provider: 'mistral', envVar: 'MISTRAL_API_KEY', baseUrl: 'https://api.mistral.ai/v1' },
-      { provider: 'openai', envVar: 'OPENAI_API_KEY', baseUrl: 'https://api.openai.com/v1' },
-      { provider: 'openrouter', envVar: 'OPENROUTER_API_KEY', baseUrl: 'https://openrouter.ai/api/v1' },
-      { provider: 'perplexity', envVar: 'PERPLEXITY_API_KEY', baseUrl: 'https://api.perplexity.ai' },
-      { provider: 'together', envVar: 'TOGETHER_API_KEY', baseUrl: 'https://api.together.xyz/v1' },
-      { provider: 'xai', envVar: 'XAI_API_KEY', baseUrl: 'https://api.x.ai/v1' },
-    ];
     const envSources = new Set();
     for (const key of Object.keys(process.env)) envSources.add(key);
     const sourceFiles = [
@@ -1794,7 +1816,7 @@ function register(ctx) {
         for (const m of matches) envSources.add(m[1]);
       } catch {}
     }
-    const detected = KNOWN.filter(k => envSources.has(k.envVar));
+    const detected = KNOWN_PROVIDERS.filter(k => envSources.has(k.envVar));
 
     // Add custom providers from YAML — only if their API key exists in environment
     try {
@@ -1809,6 +1831,7 @@ function register(ctx) {
           provider: name,
           envVar: apiKeyVar,
           baseUrl: config.base_url || '',
+          displayName: config.display_name || name,
           custom: true,
         });
       }

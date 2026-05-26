@@ -6,8 +6,9 @@ import {
     encryptEntity,
     decryptObject,
 } from '../utils/encryption';
+import { API_BASE_URL, IS_CLERK_DEV } from '../config';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.incognide.com';
+const API_HEADERS: Record<string, string> = IS_CLERK_DEV ? { 'X-Environment': 'dev' } : {};
 
 const LAST_SYNC_KEY = 'incognide-last-sync';
 const SYNC_FREQUENCY_KEY = 'incognide-sync-frequency';
@@ -24,6 +25,12 @@ export const SYNC_FREQUENCIES = {
 export type SyncFrequency = keyof typeof SYNC_FREQUENCIES;
 export type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error' | 'no_encryption_key';
 
+export interface SyncStats {
+    pushed: number;
+    pulled: number;
+    durationMs: number;
+}
+
 interface UseSyncReturn {
     syncStatus: SyncStatus;
     isOnline: boolean;
@@ -31,6 +38,8 @@ interface UseSyncReturn {
     pendingChanges: number;
     syncError: string | null;
     syncFrequency: SyncFrequency;
+    lastSyncStats: SyncStats | null;
+    syncProgress: number;
     triggerSync: () => Promise<void>;
     setSyncFrequency: (frequency: SyncFrequency) => void;
 }
@@ -45,6 +54,8 @@ export const useSync = (): UseSyncReturn => {
         return stored ? new Date(stored) : null;
     });
     const [syncError, setSyncError] = useState<string | null>(null);
+    const [lastSyncStats, setLastSyncStats] = useState<SyncStats | null>(null);
+    const [syncProgress, setSyncProgress] = useState<number>(0);
     const [syncFrequency, setSyncFrequencyState] = useState<SyncFrequency>(() => {
         const stored = localStorage.getItem(SYNC_FREQUENCY_KEY);
         if (stored && stored in SYNC_FREQUENCIES) return stored as SyncFrequency;
@@ -86,6 +97,8 @@ export const useSync = (): UseSyncReturn => {
         syncInProgressRef.current = true;
         setSyncStatus('syncing');
         setSyncError(null);
+        setSyncProgress(0);
+        const syncStart = Date.now();
 
         try {
             const deviceId = await (window as any).api?.getDeviceId?.();
@@ -98,6 +111,7 @@ export const useSync = (): UseSyncReturn => {
             const initialSyncDone = localStorage.getItem('incognide-initial-sync-done');
             const needsFullDump = !initialSyncDone;
             const since = needsFullDump ? '1970-01-01T00:00:00.000Z' : (lastSyncRef.current?.toISOString() || '1970-01-01T00:00:00.000Z');
+            setSyncProgress(5); // exporting local data
             const data = await (window as any).api?.syncExportData?.({ since, fullDump: needsFullDump });
             const changes: Array<{
                 entity_type: string; entity_id: string;
@@ -105,55 +119,102 @@ export const useSync = (): UseSyncReturn => {
             }> = [];
 
             if (data) {
-                for (const msg of (data.messages || [])) {
+                const msgs = data.messages || [];
+                const bms = data.bookmarks || [];
+                const hist = data.history || [];
+                const totalItems = msgs.length + bms.length + hist.length;
+                let encryptedCount = 0;
+
+                for (const msg of msgs) {
                     const { encrypted_data, iv } = await encryptEntity(msg, 'message' as any, key);
                     changes.push({ entity_type: 'message', entity_id: msg.message_id, encrypted_data, iv, action: 'upsert' });
+                    encryptedCount++;
+                    if (encryptedCount % 100 === 0) {
+                        const encProgress = 10 + Math.round((encryptedCount / totalItems) * 10); // 10-20%
+                        setSyncProgress(encProgress);
+                    }
                 }
-                for (const bm of (data.bookmarks || [])) {
+                for (const bm of bms) {
                     const { encrypted_data, iv } = await encryptEntity(bm, 'bookmark' as any, key);
                     changes.push({ entity_type: 'bookmark', entity_id: `bm_${bm.id}`, encrypted_data, iv, action: 'upsert' });
+                    encryptedCount++;
                 }
-                for (const h of (data.history || [])) {
+                for (const h of hist) {
                     const { encrypted_data, iv } = await encryptEntity(h, 'history' as any, key);
                     changes.push({ entity_type: 'history', entity_id: `hist_${h.id}`, encrypted_data, iv, action: 'upsert' });
+                    encryptedCount++;
                 }
+                setSyncProgress(25); // encryption done
             }
 
+            let totalPushed = 0;
             if (changes.length > 0) {
-                // Batch into chunks of 500 to avoid 413
-                const BATCH_SIZE = 500;
-                let totalPushed = 0;
-                for (let i = 0; i < changes.length; i += BATCH_SIZE) {
-                    const batch = changes.slice(i, i + BATCH_SIZE);
+                // Size-aware batching: accumulate up to ~500KB per request
+                const MAX_BATCH_BYTES = 500 * 1024;
+                const batches: typeof changes[] = [];
+                let current: typeof changes = [];
+                let currentSize = 0;
+
+                for (const change of changes) {
+                    const itemSize = JSON.stringify(change).length;
+                    if (currentSize + itemSize > MAX_BATCH_BYTES && current.length > 0) {
+                        batches.push(current);
+                        current = [change];
+                        currentSize = itemSize;
+                    } else {
+                        current.push(change);
+                        currentSize += itemSize;
+                    }
+                }
+                if (current.length > 0) batches.push(current);
+
+                const totalBatches = batches.length;
+
+                for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
+                    const batch = batches[batchIdx];
+                    const batchNum = batchIdx + 1;
+                    const startProgress = 25 + Math.round((batchIdx / totalBatches) * 35); // 25-60%
+                    setSyncProgress(startProgress);
+
                     const token = await getToken();
                     if (!token) throw new Error('No auth token for push batch');
                     const pushResp = await fetch(`${API_BASE_URL}/api/sync/e2e/push`, {
                         method: 'POST',
-                        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', ...API_HEADERS },
                         body: JSON.stringify({ device_id: deviceId, changes: batch })
                     });
-                    if (!pushResp.ok) throw new Error(`Push failed: ${pushResp.status}`);
+                    if (!pushResp.ok) {
+                        const errBody = await pushResp.text().catch(() => 'no body');
+                        console.error(`[SYNC] Push batch ${batchNum}/${totalBatches} failed: ${pushResp.status} — ${errBody}`);
+                        throw new Error(`Push failed: ${pushResp.status} — ${errBody.slice(0, 200)}`);
+                    }
                     const pushResult = await pushResp.json();
                     totalPushed += pushResult.processed;
-                    console.log(`[SYNC] Pushed batch ${Math.floor(i / BATCH_SIZE) + 1}: ${pushResult.processed} changes`);
+
+                    const endProgress = 25 + Math.round((batchNum / totalBatches) * 35);
+                    setSyncProgress(endProgress);
+                    console.log(`[SYNC] Pushed batch ${batchNum}/${totalBatches}: ${pushResult.processed} changes`);
                 }
-                console.log(`[SYNC] Pushed ${totalPushed} total changes`);
+
+                console.log(`[SYNC] Pushed ${totalPushed} total changes in ${totalBatches} batches`);
             } else {
                 console.log('[SYNC] Nothing to push');
             }
 
             // --- PULL (fresh token in case push took a while) ---
+            setSyncProgress(65); // pull starts at 65%
             const pullToken = await getToken();
             if (!pullToken) throw new Error('No auth token for pull');
 
             const pullResp = await fetch(
                 `${API_BASE_URL}/api/sync/e2e/pull?since=${encodeURIComponent(since)}&device_id=${deviceId}`,
-                { headers: { 'Authorization': `Bearer ${pullToken}` } }
+                { headers: { 'Authorization': `Bearer ${pullToken}`, ...API_HEADERS } }
             );
             if (!pullResp.ok) throw new Error(`Pull failed: ${pullResp.status}`);
 
             const pullData = await pullResp.json();
             const pullChanges = pullData.changes || [];
+            setSyncProgress(80); // received data = 80%
 
             if (pullChanges.length > 0) {
                 const messages: any[] = [];
@@ -174,6 +235,7 @@ export const useSync = (): UseSyncReturn => {
                     }
                 }
 
+                setSyncProgress(90); // decrypted
                 const imported = await (window as any).api?.syncImportData?.({ messages, bookmarks, history });
                 console.log(`[SYNC] Imported:`, imported);
             } else {
@@ -188,6 +250,8 @@ export const useSync = (): UseSyncReturn => {
                 console.log('[SYNC] Initial full sync completed');
             }
             setSyncStatus('synced');
+            setSyncProgress(100);
+            setLastSyncStats({ pushed: totalPushed, pulled: pullChanges.length, durationMs: Date.now() - syncStart });
             console.log('[SYNC] Sync completed');
         } catch (e: any) {
             console.error('[SYNC] Sync failed:', e);
@@ -229,6 +293,8 @@ export const useSync = (): UseSyncReturn => {
         pendingChanges: 0,
         syncError,
         syncFrequency,
+        lastSyncStats,
+        syncProgress,
         triggerSync,
         setSyncFrequency
     };

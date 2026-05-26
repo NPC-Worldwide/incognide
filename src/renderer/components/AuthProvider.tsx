@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useUser, useAuth as useClerkAuth, useClerk } from '@clerk/clerk-react';
 import { deriveKey, setEncryptionKey, clearEncryptionKey, hasEncryptionKey } from '../utils/encryption';
+import { API_BASE_URL, IS_CLERK_DEV } from '../config';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.incognide.com';
+const API_HEADERS: Record<string, string> = IS_CLERK_DEV ? { 'X-Environment': 'dev' } : {};
 
 interface User {
     id: string;
@@ -38,6 +39,7 @@ interface AuthContextType {
     refreshUser: () => Promise<void>;
     getToken: () => Promise<string | null>;
     openSignIn: () => void;
+    openSignUp: () => void;
     openUserProfile: () => void;
     error: string | null;
 }
@@ -56,6 +58,7 @@ const AuthContext = createContext<AuthContextType>({
     refreshUser: async () => {},
     getToken: async () => null,
     openSignIn: () => {},
+    openSignUp: () => {},
     openUserProfile: () => {},
     error: null,
 });
@@ -69,6 +72,7 @@ interface AuthProviderProps {
 const USER_DATA_KEY = 'incognide-user-data';
 const ENCRYPTION_SALT_KEY = 'incognide-encryption-salt';
 const HAS_PASSPHRASE_KEY = 'incognide-has-passphrase';
+const SESSION_UNLOCKED_KEY = 'incognide-session-unlocked';
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const { user: clerkUser, isLoaded: clerkLoaded, isSignedIn } = useUser();
@@ -82,10 +86,37 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [hasPassphrase, setHasPassphrase] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // DEBUG: log clerk state
+    useEffect(() => {
+        console.log('[AUTH DEBUG] clerk instance:', clerk);
+        console.log('[AUTH DEBUG] clerkLoaded:', clerkLoaded);
+        console.log('[AUTH DEBUG] clerkjs loaded:', !!(clerk as any)?.clerkjs);
+        console.log('[AUTH DEBUG] publishableKey:', import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || 'NOT SET');
+    }, [clerk, clerkLoaded]);
+
     useEffect(() => {
         const stored = localStorage.getItem(HAS_PASSPHRASE_KEY);
         setHasPassphrase(stored === 'true');
+
+        // If already unlocked in this session (e.g., after reload), restore state
+        if (sessionStorage.getItem(SESSION_UNLOCKED_KEY) === 'true') {
+            setIsEncryptionReady(true);
+        }
     }, []);
+
+    // Fallback user from Clerk data when backend sync hasn't completed yet
+    const clerkFallbackUser: User | null = clerkUser ? {
+        id: clerkUser.id,
+        clerkId: clerkUser.id,
+        email: clerkUser.primaryEmailAddress?.emailAddress || '',
+        name: clerkUser.fullName || clerkUser.firstName || 'User',
+        profilePicture: clerkUser.imageUrl,
+        isPremium: false,
+        storageUsedBytes: 0,
+        storageLimitBytes: 209715200,
+    } : null;
+
+    const effectiveUser = user || clerkFallbackUser;
 
     useEffect(() => {
         const syncUserToBackend = async () => {
@@ -112,7 +143,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        ...API_HEADERS
                     },
                     body: JSON.stringify({
                         clerk_id: clerkUser.id,
@@ -197,7 +229,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }, [clerkLoaded, isSignedIn, clerkUser, getClerkToken]);
 
     const setupPassphrase = useCallback(async (passphrase: string): Promise<{ success: boolean; error?: string }> => {
-        if (!user) {
+        if (!effectiveUser) {
             return { success: false, error: 'Not signed in' };
         }
 
@@ -224,7 +256,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        ...API_HEADERS
                     },
                     body: JSON.stringify({ encryption_salt: salt })
                 });
@@ -236,10 +269,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             console.error('[AUTH] Failed to set up passphrase:', e);
             return { success: false, error: e.message || 'Failed to set up passphrase' };
         }
-    }, [user, getClerkToken]);
+    }, [effectiveUser, getClerkToken]);
 
     const unlockWithPassphrase = useCallback(async (passphrase: string): Promise<{ success: boolean; error?: string }> => {
-        if (!user) {
+        if (!effectiveUser) {
             return { success: false, error: 'Not signed in' };
         }
 
@@ -251,7 +284,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 const token = await getClerkToken();
                 if (token) {
                     const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
-                        headers: { 'Authorization': `Bearer ${token}` }
+                        headers: { 'Authorization': `Bearer ${token}`, ...API_HEADERS }
                     });
                     if (response.ok) {
                         const data = await response.json();
@@ -270,6 +303,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             const encryptionKey = await deriveKey(passphrase, salt);
             setEncryptionKey(encryptionKey);
             setIsEncryptionReady(true);
+            sessionStorage.setItem(SESSION_UNLOCKED_KEY, 'true');
 
             console.log('[AUTH] Unlocked with passphrase successfully');
             return { success: true };
@@ -277,7 +311,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             console.error('[AUTH] Failed to unlock:', e);
             return { success: false, error: 'Invalid passphrase' };
         }
-    }, [user, getClerkToken]);
+    }, [effectiveUser, getClerkToken]);
 
     const signOut = useCallback(async () => {
         setIsLoading(true);
@@ -286,6 +320,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
             localStorage.removeItem(USER_DATA_KEY);
             localStorage.removeItem(ENCRYPTION_SALT_KEY);
+            sessionStorage.removeItem(SESSION_UNLOCKED_KEY);
 
             setUser(null);
             setIsEncryptionReady(false);
@@ -307,7 +342,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         try {
             const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
                 headers: {
-                    'Authorization': `Bearer ${token}`
+                    'Authorization': `Bearer ${token}`,
+                    ...API_HEADERS
                 }
             });
 
@@ -325,14 +361,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return await getClerkToken();
     }, [getClerkToken]);
 
-    const needsPassphraseSetup = !!user && !hasPassphrase;
+    const needsPassphraseSetup = !!effectiveUser && !hasPassphrase;
 
     return (
         <AuthContext.Provider
             value={{
-                user,
+                user: effectiveUser,
                 device,
-                isAuthenticated: !!user,
+                isAuthenticated: !!effectiveUser,
                 isLoading: isLoading || !clerkLoaded,
                 isEncryptionReady,
                 hasPassphrase,
@@ -342,9 +378,55 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 signOut,
                 refreshUser,
                 getToken,
-                openSignIn: () => clerk.openSignIn({ fallbackRedirectUrl: window.location.href }),
+                openSignIn: () => {
+                    // If already signed in via Clerk, open profile instead
+                    if (clerkUser) {
+                        clerk.openUserProfile?.();
+                        return;
+                    }
+                    try {
+                        if (window.location.href.startsWith('http')) {
+                            clerk.openSignIn({ fallbackRedirectUrl: window.location.href });
+                        } else {
+                            clerk.openSignIn();
+                        }
+                    } catch (e: any) {
+                        console.error('[AUTH] openSignIn threw:', e);
+                        setError(e.message || 'Clerk sign-in failed');
+                    }
+                },
+                openSignUp: () => clerk.openSignUp?.(),
                 openUserProfile: () => clerk.openUserProfile(),
                 error
+            }}
+        >
+            {children}
+        </AuthContext.Provider>
+    );
+};
+
+export const NoClerkAuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+    const configError = 'Authentication is not configured. The Clerk publishable key (VITE_CLERK_PUBLISHABLE_KEY) is missing.';
+
+    return (
+        <AuthContext.Provider
+            value={{
+                user: null,
+                device: null,
+                isAuthenticated: false,
+                isLoading: false,
+                isEncryptionReady: false,
+                hasPassphrase: false,
+                needsPassphraseSetup: false,
+                setupPassphrase: async () => ({ success: false, error: configError }),
+                unlockWithPassphrase: async () => ({ success: false, error: configError }),
+                signOut: async () => {},
+                refreshUser: async () => {},
+                getToken: async () => null,
+                openSignIn: () => console.error('[AUTH]', configError),
+                openSignUp: () => console.error('[AUTH]', configError),
+                openUserProfile: () => console.error('[AUTH]', configError),
+                error: configError,
             }}
         >
             {children}

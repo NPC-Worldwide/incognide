@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { User, LogOut, LogIn, Settings, Cloud, Monitor, ChevronDown, Loader2, Crown, X, Eye, EyeOff, Edit2, Lock, Key } from 'lucide-react';
-import { SignInButton, SignUpButton, useClerk } from '@clerk/clerk-react';
+// Clerk hooks removed — openSignIn/openSignUp come from useAuth to avoid crashes when ClerkProvider is absent
 import { useAuth } from './AuthProvider';
 
 interface UserMenuProps {
@@ -20,9 +20,10 @@ const UserMenu: React.FC<UserMenuProps> = ({ onOpenSettings, compact = false }) 
         setupPassphrase,
         unlockWithPassphrase,
         signOut,
+        openSignIn,
+        openSignUp,
         error
     } = useAuth();
-    const { openSignIn, openSignUp } = useClerk();
 
     const [isOpen, setIsOpen] = useState(false);
     const [showPassphraseModal, setShowPassphraseModal] = useState(false);
@@ -273,14 +274,26 @@ const UserMenu: React.FC<UserMenuProps> = ({ onOpenSettings, compact = false }) 
             <>
                 <div className="flex flex-col gap-2 w-full">
                     <button
-                        onClick={() => openSignIn({ fallbackRedirectUrl: window.location.href })}
+                        onClick={() => {
+                            if (window.location.href.startsWith('http')) {
+                                openSignIn({ fallbackRedirectUrl: window.location.href });
+                            } else {
+                                openSignIn();
+                            }
+                        }}
                         className="flex items-center justify-center gap-2 w-full px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors"
                     >
                         <LogIn size={16} />
                         <span className="text-sm font-medium">Sign In</span>
                     </button>
                     <button
-                        onClick={() => openSignUp({ fallbackRedirectUrl: window.location.href })}
+                        onClick={() => {
+                            if (window.location.href.startsWith('http')) {
+                                openSignUp({ fallbackRedirectUrl: window.location.href });
+                            } else {
+                                openSignUp();
+                            }
+                        }}
                         className="flex items-center justify-center gap-2 w-full px-3 py-2 rounded-lg border border-gray-600 hover:bg-gray-700/50 text-gray-300 transition-colors"
                     >
                         <User size={16} />

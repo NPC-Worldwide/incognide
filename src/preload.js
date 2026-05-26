@@ -30,6 +30,7 @@ readDocxContent: (filePath) =>
 
     checkBinaries: (names) => ipcRenderer.invoke('check-binaries', names),
     detectProviderKeys: () => ipcRenderer.invoke('detect-provider-keys'),
+    getKnownProviders: () => ipcRenderer.invoke('get-known-providers'),
     runInstallCommand: (cmd) => ipcRenderer.invoke('run-install-command', cmd),
     onInstallProgress: (callback) => {
         const handler = (_, data) => callback(data);
