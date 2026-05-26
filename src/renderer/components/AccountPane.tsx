@@ -12,7 +12,7 @@ interface AccountPaneProps {
 
 const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
     const auth = useAuth();
-    const { syncStatus, lastSyncTime, pendingChanges, triggerSync, syncFrequency, setSyncFrequency } = useSync();
+    const { syncStatus, lastSyncTime, pendingChanges, triggerSync, syncFrequency, setSyncFrequency, lastSyncStats, syncProgress } = useSync();
     const [passphrase, setPassphrase] = useState('');
     const [passphraseError, setPassphraseError] = useState('');
     const [settingUp, setSettingUp] = useState(false);
@@ -220,9 +220,9 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                         <div className="p-5 space-y-3">
                             <div className="flex items-center gap-3">
                                 {auth.isEncryptionReady ? <Cloud size={18} className="text-blue-400" /> : <CloudOff size={18} className="theme-text-muted" />}
-                                <div>
+                                <div className="flex-1">
                                     <p className="text-sm">
-                                        {syncStatus === 'syncing' ? 'Syncing...' :
+                                        {syncStatus === 'syncing' ? `Syncing... ${syncProgress}%` :
                                          syncStatus === 'synced' ? 'Synced' :
                                          syncStatus === 'error' ? 'Sync error' :
                                          syncStatus === 'pending' ? `${pendingChanges} pending` :
@@ -233,6 +233,26 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                                     </p>
                                 </div>
                             </div>
+
+                            {/* Progress bar */}
+                            {syncStatus === 'syncing' && (
+                                <div className="w-full h-1.5 theme-bg-tertiary rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full bg-blue-500 transition-all duration-300"
+                                        style={{ width: `${syncProgress}%` }}
+                                    />
+                                </div>
+                            )}
+
+                            {/* Last sync stats */}
+                            {lastSyncStats && syncStatus === 'synced' && (
+                                <div className="text-xs theme-text-muted flex items-center gap-3">
+                                    <span>Pushed {lastSyncStats.pushed}</span>
+                                    <span>Pulled {lastSyncStats.pulled}</span>
+                                    <span>{(lastSyncStats.durationMs / 1000).toFixed(1)}s</span>
+                                </div>
+                            )}
+
                             {auth.device && (
                                 <div className="text-xs theme-text-muted border-t theme-border pt-3">
                                     Device: {auth.device.deviceName} ({auth.device.deviceType})

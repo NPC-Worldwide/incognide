@@ -2419,6 +2419,15 @@ applyAppMenu();
       callback({ requestHeaders: details.requestHeaders });
     });
 
+    // Clerk requires an Origin header for PATCH requests to /v1/environment.
+    // Electron doesn't send one automatically for cross-origin requests from localhost.
+    mainWindow.webContents.session.webRequest.onBeforeSendHeaders({ urls: ['https://*.clerk.accounts.dev/*', 'https://clerk.app.incognide.com/*'] }, (details, callback) => {
+      if (!details.requestHeaders['Origin']) {
+        details.requestHeaders['Origin'] = `http://localhost:${FRONTEND_PORT}`;
+      }
+      callback({ requestHeaders: details.requestHeaders });
+    });
+
     mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
       callback({
         responseHeaders: {
