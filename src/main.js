@@ -190,6 +190,7 @@ const backendLogStream = fs.createWriteStream(backendLogPath, { flags: 'a' });
 let mainWindow = null;
 let pdfView = null;
 let uiHidden = false;
+let frontendServer = null;
 
 function applyAppMenu() {
   if (!mainWindow) return;
@@ -2455,51 +2456,55 @@ applyAppMenu();
       mainWindow.loadURL(`http://localhost:${FRONTEND_PORT}`);
     } else {
       const distDir = path.join(app.getAppPath(), 'dist');
-      const mimeTypes = {
-        '.html': 'text/html',
-        '.js': 'application/javascript',
-        '.css': 'text/css',
-        '.json': 'application/json',
-        '.png': 'image/png',
-        '.jpg': 'image/jpeg',
-        '.jpeg': 'image/jpeg',
-        '.gif': 'image/gif',
-        '.svg': 'image/svg+xml',
-        '.ico': 'image/x-icon',
-        '.woff': 'font/woff',
-        '.woff2': 'font/woff2',
-        '.ttf': 'font/ttf',
-        '.eot': 'application/vnd.ms-fontobject',
-        '.otf': 'font/otf',
-        '.wasm': 'application/wasm',
-        '.map': 'application/json',
-      };
-      const frontendServer = http.createServer((req, res) => {
-        let filePath = path.join(distDir, decodeURIComponent(req.url || '/'));
-        if (filePath.endsWith('/')) filePath += 'index.html';
-        if (!filePath.startsWith(distDir)) {
-          res.writeHead(403); res.end('Forbidden'); return;
-        }
-        fs.readFile(filePath, (err, data) => {
-          if (err) {
-            if (err.code === 'ENOENT') {
-              const indexPath = path.join(distDir, 'index.html');
-              fs.readFile(indexPath, (e2, data2) => {
-                if (e2) { res.writeHead(404); res.end('Not found'); }
-                else { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(data2); }
-              });
-            } else { res.writeHead(500); res.end('Server error'); }
-            return;
-          }
-          const ext = path.extname(filePath).toLowerCase();
-          res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'application/octet-stream' });
-          res.end(data);
-        });
-      });
-      frontendServer.listen(FRONTEND_PORT, '127.0.0.1', () => {
-        console.log(`Frontend server running at http://localhost:${FRONTEND_PORT}`);
+      if (frontendServer) {
         mainWindow.loadURL(`http://localhost:${FRONTEND_PORT}`);
-      });
+      } else {
+        const mimeTypes = {
+          '.html': 'text/html',
+          '.js': 'application/javascript',
+          '.css': 'text/css',
+          '.json': 'application/json',
+          '.png': 'image/png',
+          '.jpg': 'image/jpeg',
+          '.jpeg': 'image/jpeg',
+          '.gif': 'image/gif',
+          '.svg': 'image/svg+xml',
+          '.ico': 'image/x-icon',
+          '.woff': 'font/woff',
+          '.woff2': 'font/woff2',
+          '.ttf': 'font/ttf',
+          '.eot': 'application/vnd.ms-fontobject',
+          '.otf': 'font/otf',
+          '.wasm': 'application/wasm',
+          '.map': 'application/json',
+        };
+        frontendServer = http.createServer((req, res) => {
+          let filePath = path.join(distDir, decodeURIComponent(req.url || '/'));
+          if (filePath.endsWith('/')) filePath += 'index.html';
+          if (!filePath.startsWith(distDir)) {
+            res.writeHead(403); res.end('Forbidden'); return;
+          }
+          fs.readFile(filePath, (err, data) => {
+            if (err) {
+              if (err.code === 'ENOENT') {
+                const indexPath = path.join(distDir, 'index.html');
+                fs.readFile(indexPath, (e2, data2) => {
+                  if (e2) { res.writeHead(404); res.end('Not found'); }
+                  else { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(data2); }
+                });
+              } else { res.writeHead(500); res.end('Server error'); }
+              return;
+            }
+            const ext = path.extname(filePath).toLowerCase();
+            res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'application/octet-stream' });
+            res.end(data);
+          });
+        });
+        frontendServer.listen(FRONTEND_PORT, '127.0.0.1', () => {
+          console.log(`Frontend server running at http://localhost:${FRONTEND_PORT}`);
+        });
+        mainWindow.loadURL(`http://localhost:${FRONTEND_PORT}`);
+      }
     }
 
     mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
