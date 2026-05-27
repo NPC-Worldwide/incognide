@@ -2434,9 +2434,9 @@ applyAppMenu();
         responseHeaders: {
           ...details.responseHeaders,
           'Content-Security-Policy': [
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://js.stripe.com https://*.clerk.accounts.dev https://clerk.app.incognide.com; " +
-        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://js.stripe.com https://fonts.googleapis.com; " +
-        "style-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://js.stripe.com https://fonts.googleapis.com; " +
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://js.stripe.com https://*.clerk.accounts.dev https://clerk.app.incognide.com https://www.google.com https://www.gstatic.com https://accounts.google.com https://accounts.youtube.com; " +
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://js.stripe.com https://fonts.googleapis.com https://www.google.com https://www.gstatic.com https://accounts.google.com https://accounts.youtube.com; " +
+        "style-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://js.stripe.com https://fonts.googleapis.com https://www.google.com https://www.gstatic.com https://accounts.google.com https://accounts.youtube.com; " +
         "img-src 'self' data: file: media: blob: http: https:; " +
         "font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com; " +
         `connect-src 'self' file: media: http://localhost:${FRONTEND_PORT} http://127.0.0.1:${BACKEND_PORT} ${BACKEND_URL} blob: ws: wss: https://* http://*; ` +
@@ -2449,6 +2449,40 @@ applyAppMenu();
         },
       });
     });
+
+    // Rewrite Clerk cookies to SameSite=None so they survive cross-site (localhost -> clerk.app.incognide.com)
+    const rewriteClerkCookie = async (cookie) => {
+      if (!cookie.domain || !cookie.domain.includes('clerk')) return;
+      try {
+        const url = `https://${cookie.domain.startsWith('.') ? cookie.domain.slice(1) : cookie.domain}${cookie.path || '/'}`;
+        await mainWindow.webContents.session.cookies.remove(url, cookie.name);
+        await mainWindow.webContents.session.cookies.set({
+          url,
+          name: cookie.name,
+          value: cookie.value,
+          domain: cookie.domain,
+          path: cookie.path || '/',
+          secure: true,
+          httpOnly: cookie.httpOnly,
+          sameSite: 'no_restriction',
+          expirationDate: cookie.expirationDate,
+          storeId: cookie.storeId,
+        });
+      } catch (e) { /* cookie may not exist yet */ }
+    };
+    mainWindow.webContents.session.cookies.on('changed', (event, cookie, cause, removed) => {
+      if (!removed) rewriteClerkCookie(cookie);
+    });
+
+    // Clear stale Clerk cookies from old dev instance to avoid key mismatch
+    mainWindow.webContents.session.clearStorageData({
+      storages: ['cookies'],
+      origin: 'https://clerk.app.incognide.com'
+    }).catch(() => {});
+    mainWindow.webContents.session.clearStorageData({
+      storages: ['cookies'],
+      origin: 'https://active-wombat-22.clerk.accounts.dev'
+    }).catch(() => {});
 
     const isDev = process.env.NODE_ENV === 'development' || process.argv.includes('--dev');
 
