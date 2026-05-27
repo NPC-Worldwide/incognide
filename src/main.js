@@ -191,6 +191,7 @@ let mainWindow = null;
 let pdfView = null;
 let uiHidden = false;
 let frontendServer = null;
+let clerkWebRequestRegistered = false;
 
 function applyAppMenu() {
   if (!mainWindow) return;
@@ -2429,50 +2430,42 @@ applyAppMenu();
       callback({ requestHeaders: details.requestHeaders });
     });
 
-    mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-      callback({
-        responseHeaders: {
-          ...details.responseHeaders,
-          'Content-Security-Policy': [
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://js.stripe.com https://*.clerk.accounts.dev https://clerk.app.incognide.com https://www.google.com https://www.gstatic.com https://accounts.google.com https://accounts.youtube.com; " +
-        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://js.stripe.com https://fonts.googleapis.com https://www.google.com https://www.gstatic.com https://accounts.google.com https://accounts.youtube.com; " +
-        "style-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://js.stripe.com https://fonts.googleapis.com https://www.google.com https://www.gstatic.com https://accounts.google.com https://accounts.youtube.com; " +
-        "img-src 'self' data: file: media: blob: http: https:; " +
-        "font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com; " +
-        `connect-src 'self' file: media: http://localhost:${FRONTEND_PORT} http://127.0.0.1:${BACKEND_PORT} ${BACKEND_URL} blob: ws: wss: https://* http://*; ` +
-        "frame-src 'self' file: data: blob: media: chrome-extension: https://js.stripe.com https://m.stripe.network https://checkout.stripe.com https://*.clerk.accounts.dev https://clerk.app.incognide.com https://accounts.youtube.com https://accounts.google.com https://www.google.com https://www.gstatic.com; " +
-        "object-src 'self' file: data: blob: media: chrome-extension:; " +
-        "worker-src 'self' blob: data:; " +
-        "media-src 'self' data: file: blob: http: https:;"
+    if (!clerkWebRequestRegistered) {
+      clerkWebRequestRegistered = true;
+      const defaultSession = require('electron').session.defaultSession;
+      defaultSession.webRequest.onHeadersReceived((details, callback) => {
+        const responseHeaders = { ...details.responseHeaders };
+        // Rewrite Clerk cookies to SameSite=None so they survive cross-site (localhost -> clerk.app.incognide.com)
+        if (responseHeaders['set-cookie']) {
+          responseHeaders['set-cookie'] = responseHeaders['set-cookie'].map(cookie => {
+            if (cookie.toLowerCase().includes('clerk') || cookie.toLowerCase().includes('__client')) {
+              let fixed = cookie.replace(/\s*SameSite=[^;]+/gi, '');
+              fixed = fixed.replace(/\s*Secure/gi, '');
+              return fixed + '; SameSite=None; Secure';
+            }
+            return cookie;
+          });
+        }
+        callback({
+          responseHeaders: {
+            ...responseHeaders,
+            'Content-Security-Policy': [
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://js.stripe.com https://*.clerk.accounts.dev https://clerk.app.incognide.com https://www.google.com https://www.gstatic.com https://accounts.google.com https://accounts.youtube.com; " +
+          "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://js.stripe.com https://fonts.googleapis.com https://www.google.com https://www.gstatic.com https://accounts.google.com https://accounts.youtube.com; " +
+          "style-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://js.stripe.com https://fonts.googleapis.com https://www.google.com https://www.gstatic.com https://accounts.google.com https://accounts.youtube.com; " +
+          "img-src 'self' data: file: media: blob: http: https:; " +
+          "font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com; " +
+          `connect-src 'self' file: media: http://localhost:${FRONTEND_PORT} http://127.0.0.1:${BACKEND_PORT} ${BACKEND_URL} blob: ws: wss: https://* http://*; ` +
+          "frame-src 'self' file: data: blob: media: chrome-extension: https://js.stripe.com https://m.stripe.network https://checkout.stripe.com https://*.clerk.accounts.dev https://clerk.app.incognide.com https://accounts.youtube.com https://accounts.google.com https://www.google.com https://www.gstatic.com; " +
+          "object-src 'self' file: data: blob: media: chrome-extension:; " +
+          "worker-src 'self' blob: data:; " +
+          "media-src 'self' data: file: blob: http: https:;"
 
-          ]
-        },
-      });
-    });
-
-    // Rewrite Clerk cookies to SameSite=None so they survive cross-site (localhost -> clerk.app.incognide.com)
-    const rewriteClerkCookie = async (cookie) => {
-      if (!cookie.domain || !cookie.domain.includes('clerk')) return;
-      try {
-        const url = `https://${cookie.domain.startsWith('.') ? cookie.domain.slice(1) : cookie.domain}${cookie.path || '/'}`;
-        await mainWindow.webContents.session.cookies.remove(url, cookie.name);
-        await mainWindow.webContents.session.cookies.set({
-          url,
-          name: cookie.name,
-          value: cookie.value,
-          domain: cookie.domain,
-          path: cookie.path || '/',
-          secure: true,
-          httpOnly: cookie.httpOnly,
-          sameSite: 'no_restriction',
-          expirationDate: cookie.expirationDate,
-          storeId: cookie.storeId,
+            ]
+          },
         });
-      } catch (e) { /* cookie may not exist yet */ }
-    };
-    mainWindow.webContents.session.cookies.on('changed', (event, cookie, cause, removed) => {
-      if (!removed) rewriteClerkCookie(cookie);
-    });
+      });
+    }
 
     // Clear stale Clerk cookies from old dev instance to avoid key mismatch
     mainWindow.webContents.session.clearStorageData({
