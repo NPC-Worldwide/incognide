@@ -1,9 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useUser, useAuth as useClerkAuth, useClerk } from '@clerk/clerk-react';
 import { deriveKey, setEncryptionKey, clearEncryptionKey, hasEncryptionKey } from '../utils/encryption';
-import { API_BASE_URL, IS_CLERK_DEV } from '../config';
+import { API_BASE_URL } from '../config';
 
-const API_HEADERS: Record<string, string> = IS_CLERK_DEV ? { 'X-Environment': 'dev' } : {};
 
 interface User {
     id: string;
@@ -282,7 +281,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 const token = await getClerkToken();
                 if (token) {
                     const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
-                        headers: { 'Authorization': `Bearer ${token}`, ...API_HEADERS }
+                        headers: { 'Authorization': `Bearer ${token}` }
                     });
                     if (response.ok) {
                         const data = await response.json();
