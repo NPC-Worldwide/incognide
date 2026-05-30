@@ -14,6 +14,11 @@ COPY index.html vite.config.js tailwind.config.js tsconfig.json tsconfig.node.js
 COPY src/ src/
 COPY public/ public/
 
+ARG VITE_CLERK_PUBLISHABLE_KEY
+ENV VITE_CLERK_PUBLISHABLE_KEY=${VITE_CLERK_PUBLISHABLE_KEY}
+ARG VITE_API_BASE_URL
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+
 RUN npx vite build
 
 

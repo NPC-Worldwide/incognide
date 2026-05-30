@@ -16,6 +16,9 @@
   // Skip if window.api already exists (running in Electron)
   if (window.api) return;
 
+  // Mark web mode so the renderer knows to use same-origin backend
+  window.__INCOGNIDE_IS_WEB = true;
+
   // ---------------------------------------------------------------------------
   // Configuration
   // ---------------------------------------------------------------------------
