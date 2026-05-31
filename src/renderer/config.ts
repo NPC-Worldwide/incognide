@@ -12,3 +12,4 @@ export const BACKEND_URL = IS_WEB ? '' : `http://127.0.0.1:${BACKEND_PORT}`;
 export const BACKEND_URL_LOCALHOST = `http://localhost:${BACKEND_PORT}`;
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.incognide.com';
+export { IS_WEB };
