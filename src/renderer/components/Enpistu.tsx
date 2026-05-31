@@ -1,5 +1,5 @@
  import React, { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
-import { BACKEND_URL } from '../config';
+import { BACKEND_URL, IS_WEB } from '../config';
 import { createPortal } from 'react-dom';
 import {
     Folder, File as FileIcon,  Globe, ChevronRight, ChevronLeft, Settings, Edit,
@@ -65,6 +65,7 @@ import CronDaemonPanel from './CronDaemonPanel';
 import MemoryManagement from './MemoryManagement';
 import WindowManagerPane from './WindowManagerPane';
 import AccountPane from './AccountPane';
+import { useAuth } from './AuthProvider';
 import SearchPane from './SearchPane';
 import DownloadManager, { getActiveDownloadsCount, setDownloadToastCallback, setDownloadAllCompleteCallback } from './DownloadManager';
 import { LiveProvider, LivePreview, LiveError } from 'react-live';
@@ -278,8 +279,22 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const [predictionSuggestion, setPredictionSuggestion] = useState('');
     const [predictionTargetElement, setPredictionTargetElement] = useState<HTMLElement | null>(null);
 
+    // Web mode auth gate
+    const auth = useAuth();
+    const [webReady, setWebReady] = useState(!IS_WEB);
+
     // Activity tracking for RNN predictions
     const { trackActivity } = useActivityTracker();
+
+    // Web mode: track auth + encryption readiness
+    useEffect(() => {
+        if (!IS_WEB) return;
+        if (auth.isAuthenticated && auth.isEncryptionReady) {
+            setWebReady(true);
+        } else {
+            setWebReady(false);
+        }
+    }, [auth.isAuthenticated, auth.isEncryptionReady]);
 
     // Global activity instrumentation
     useEffect(() => {
@@ -6000,6 +6015,12 @@ ${contextPrompt}`;
             setLoading(true);
             setError(null);
 
+            // Web mode: gate workspace init behind auth + encryption unlock
+            if (IS_WEB && (!auth.isAuthenticated || !auth.isEncryptionReady)) {
+                setLoading(false);
+                return;
+            }
+
             if (!config) {
                 try {
                     const loadedConfig = await window.api.getDefaultConfig();
@@ -6254,7 +6275,7 @@ ${contextPrompt}`;
 
         initApplicationData();
 
-    }, [currentPath, config]);
+    }, [currentPath, config, auth.isAuthenticated, auth.isEncryptionReady]);
 
 
 
@@ -9442,6 +9463,19 @@ const renderMainContent = () => {
     );
 };
 
+
+    // Web mode gate: show AccountPane until auth + encryption ready
+    if (!webReady) {
+        return (
+            <div className={`chat-container ${isDarkMode ? 'dark-mode' : 'light-mode'} h-screen flex flex-col theme-bg-primary theme-text-primary font-mono`}>
+                <div className="flex-1 flex items-center justify-center overflow-hidden">
+                    <div className="w-full max-w-2xl h-full p-6">
+                        <AccountPane nodeId="account-gate" />
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className={`chat-container ${isDarkMode ? 'dark-mode' : 'light-mode'} h-screen flex flex-col theme-bg-primary theme-text-primary font-mono`}>

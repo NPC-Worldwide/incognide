@@ -43,5 +43,6 @@ jobs:
             ghcr.io/npc-worldwide/incognide:${{ steps.version.outputs.version }}
           build-args: |
             VITE_CLERK_PUBLISHABLE_KEY=${{ secrets.CLERK_PUBLISHABLE_KEY }}
+            VITE_API_BASE_URL=https://api.incognide.com
           cache-from: type=gha
           cache-to: type=gha,mode=max

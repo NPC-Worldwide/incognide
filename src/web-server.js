@@ -35,6 +35,7 @@ const os = require('os');
 const crypto = require('crypto');
 const sqlite3 = require('sqlite3');
 const cors = require('cors');
+const { createProxyMiddleware } = require('http-proxy-middleware');
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -980,6 +981,28 @@ app.post('/api/ipc-multi/:channel', async (req, res) => {
 app.get('/api/ipc', (_req, res) => {
   res.json({ channels: Array.from(ipcHandlers.keys()).sort() });
 });
+
+// ---------------------------------------------------------------------------
+// Python backend proxy: forward /api/* (except IPC bridge) to npcpy backend
+// ---------------------------------------------------------------------------
+
+app.use(
+  '/api',
+  createProxyMiddleware({
+    target: BACKEND_URL,
+    changeOrigin: true,
+    pathFilter: (path) => {
+      // Let IPC bridge routes handle themselves
+      return !path.startsWith('/ipc') && !path.startsWith('/ipc-multi');
+    },
+    onError: (err, _req, res) => {
+      log('[PROXY] Backend error:', err.message);
+      if (!res.headersSent) {
+        res.status(502).json({ error: 'Backend unavailable', message: err.message });
+      }
+    },
+  })
+);
 
 // ---------------------------------------------------------------------------
 // Static file serving (built Vite frontend)
