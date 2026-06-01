@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Terminal, Package, Check, AlertCircle, RefreshCw, ChevronRight, Sparkles, Cpu, Mic, Zap, Box, Wand2, Bot, ChevronLeft, Info, Server, HardDrive, X, Folder, Cloud, KeyRound, Sun, Moon, FolderOpen } from 'lucide-react';
 import incognideLogo from '../../assets/icon.png';
+import { IS_WEB } from '../config';
 
 interface PythonInfo {
     name: string;
@@ -129,7 +130,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
     const [detectedPythons, setDetectedPythons] = useState<PythonInfo[]>([]);
     const [selectedPython, setSelectedPython] = useState<PythonInfo | null>(null);
-    const [selectedExtras, setSelectedExtras] = useState<string>('local');
+    const [selectedExtras, setSelectedExtras] = useState<string>(IS_WEB ? 'lite' : 'local');
     const [pythonPath, setPythonPath] = useState<string>('');
     const [error, setError] = useState<string | null>(null);
     const [installOutput, setInstallOutput] = useState<string[]>([]);
@@ -323,60 +324,10 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         return selectedExtras;
     };
 
-    const handleStartInstall = async () => {
-        setError(null);
-        setInstallOutput([]);
-        setStep('creating');
-        setInstallOutput(['Creating virtual environment at ~/.incognide/venv...']);
-
+    const finishSetup = async () => {
+        setLoading(true);
         try {
-            const result = await (window as any).api?.setupCreateVenv?.();
-            if (!result?.success) {
-                throw new Error(result?.error || 'Failed to create virtual environment');
-            }
-            setInstallOutput(prev => [...prev, result.message || 'Virtual environment created']);
-            setPythonPath(result.pythonPath);
-            await installNpcpy(result.pythonPath);
-        } catch (err: any) {
-            setError(err.message);
-            setStep('error');
-        }
-    };
-
-    const installNpcpy = async (path: string) => {
-        setStep('installing');
-        const extras = getExtrasForPath();
-        const packageSpec = `npcpy[${extras}]`;
-        setInstallOutput(prev => [...prev, `Installing ${packageSpec}...`]);
-        setInstallOutput(prev => [...prev, 'This may take several minutes...']);
-
-        try {
-            const result = await (window as any).api?.setupInstallNpcpy?.(path, extras);
-            if (!result?.success) {
-                throw new Error(result?.error || 'Failed to install npcpy');
-            }
-            setInstallOutput(prev => [...prev, `${packageSpec} installed successfully!`]);
-            await completeSetup(path);
-        } catch (err: any) {
-            setError(err.message);
-            setStep('error');
-        }
-    };
-
-    const completeSetup = async (path: string) => {
-        setInstallOutput(prev => [...prev, 'Verifying dependencies...']);
-
-        try {
-            // Step 1: Verify all dependencies are installed
-            const verifyResult = await (window as any).api?.setupVerifyDependencies?.(path);
-            if (verifyResult && !verifyResult.success) {
-                throw new Error(verifyResult.error || `Missing dependencies: ${verifyResult.missing?.join(', ')}`);
-            }
-            setInstallOutput(prev => [...prev, 'Dependencies verified: npcpy, npcsh, flask']);
-
-            // Step 2: Save profile configuration
-            setInstallOutput(prev => [...prev, 'Saving configuration...']);
-            const userPath = aiEnabled ? 'local-ai' : 'no-ai';
+            const userPath = aiEnabled ? (IS_WEB ? 'cloud-ai' : 'local-ai') : 'no-ai';
             const extras = aiEnabled ? selectedExtras : 'lite';
             await (window as any).api?.profileSave?.({
                 path: userPath,
@@ -394,38 +345,10 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 }
             }
 
-            // Step 3: Start the backend
-            setInstallOutput(prev => [...prev, 'Starting backend...']);
-            const restartResult = await (window as any).api?.setupRestartBackend?.();
-            if (!restartResult?.success) {
-                setInstallOutput(prev => [...prev, `Warning: Backend startup issue - ${restartResult?.error || 'unknown error'}`]);
-                setInstallOutput(prev => [...prev, 'Continuing setup - backend may start on next launch']);
-            } else {
-                setInstallOutput(prev => [...prev, 'Backend started successfully!']);
-
-                // Step 4: Verify backend health
-                setInstallOutput(prev => [...prev, 'Verifying backend health...']);
-                const healthResult = await (window as any).api?.backendHealth?.();
-                if (healthResult?.status !== 'ok') {
-                    setInstallOutput(prev => [...prev, `Warning: Backend health check returned ${healthResult?.status || 'unknown'}`]);
-                } else {
-                    setInstallOutput(prev => [...prev, 'Backend health check passed!']);
-                }
-            }
-
-            // Step 5: Mark setup complete (only after backend verification)
-            const result = await (window as any).api?.setupComplete?.(path);
-            if (!result?.success) {
-                throw new Error(result?.error || 'Failed to complete setup');
-            }
-
-            // Step 6: Deploy NPC team
-            setInstallOutput(prev => [...prev, 'Setting up NPC team...']);
             try {
                 await (window as any).api?.deployNpcTeam?.();
-                setInstallOutput(prev => [...prev, 'NPC team deployed successfully!']);
             } catch (err) {
-                setInstallOutput(prev => [...prev, 'Note: NPC team will be set up on next launch']);
+                console.error('NPC team deploy failed:', err);
             }
 
             if (aiEnabled) {
@@ -437,6 +360,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
             setError(err.message);
             setStep('error');
         }
+        setLoading(false);
     };
 
     const handleSkip = async () => {
@@ -460,11 +384,15 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     };
 
     const handleAIConfigNext = () => {
-        setStep('extras');
+        if (IS_WEB) {
+            finishSetup();
+        } else {
+            setStep('extras');
+        }
     };
 
     const handleExtrasNext = () => {
-        handleStartInstall();
+        finishSetup();
     };
 
     const renderWelcome = () => (
@@ -752,58 +680,60 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 </div>
 
                 {/* Local Providers */}
-                <div className="space-y-2">
-                    <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
-                        <Cpu size={14} /> Local Providers
-                    </h3>
-                    {checkingModels ? (
-                        <div className="text-center py-4">
-                            <RefreshCw size={18} className="animate-spin mx-auto text-blue-400 mb-2" />
-                            <p className="text-xs text-gray-400">Checking for local model providers...</p>
-                        </div>
-                    ) : localProviders.length > 0 ? (
-                        localProviders.map(info => {
-                            const b = statusBadge(info);
-                            return (
-                                <div key={info.provider} className={`p-3 rounded-lg border ${tileBorder(info)}`}>
-                                    <div className="flex items-center justify-between mb-1">
-                                        <div className="flex items-center gap-2">
-                                            {info.provider === 'ollama' && <Server size={16} className={iconColor(info)} />}
-                                            {info.provider === 'lmstudio' && <HardDrive size={16} className={iconColor(info)} />}
-                                            {info.provider === 'llamacpp' && <Cpu size={16} className={iconColor(info)} />}
-                                            {info.provider === 'omlx' && <Zap size={16} className={iconColor(info)} />}
-                                            <span className="font-medium text-white text-sm">
-                                                {info.provider === 'ollama' && 'Ollama'}
-                                                {info.provider === 'lmstudio' && 'LM Studio'}
-                                                {info.provider === 'llamacpp' && 'llama.cpp / koboldcpp'}
-                                                {info.provider === 'omlx' && 'oMLX'}
-                                            </span>
+                {!IS_WEB && (
+                    <div className="space-y-2">
+                        <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
+                            <Cpu size={14} /> Local Providers
+                        </h3>
+                        {checkingModels ? (
+                            <div className="text-center py-4">
+                                <RefreshCw size={18} className="animate-spin mx-auto text-blue-400 mb-2" />
+                                <p className="text-xs text-gray-400">Checking for local model providers...</p>
+                            </div>
+                        ) : localProviders.length > 0 ? (
+                            localProviders.map(info => {
+                                const b = statusBadge(info);
+                                return (
+                                    <div key={info.provider} className={`p-3 rounded-lg border ${tileBorder(info)}`}>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <div className="flex items-center gap-2">
+                                                {info.provider === 'ollama' && <Server size={16} className={iconColor(info)} />}
+                                                {info.provider === 'lmstudio' && <HardDrive size={16} className={iconColor(info)} />}
+                                                {info.provider === 'llamacpp' && <Cpu size={16} className={iconColor(info)} />}
+                                                {info.provider === 'omlx' && <Zap size={16} className={iconColor(info)} />}
+                                                <span className="font-medium text-white text-sm">
+                                                    {info.provider === 'ollama' && 'Ollama'}
+                                                    {info.provider === 'lmstudio' && 'LM Studio'}
+                                                    {info.provider === 'llamacpp' && 'llama.cpp / koboldcpp'}
+                                                    {info.provider === 'omlx' && 'oMLX'}
+                                                </span>
+                                            </div>
+                                            <span className={`text-xs px-2 py-0.5 rounded ${b.cls}`}>{b.text}</span>
                                         </div>
-                                        <span className={`text-xs px-2 py-0.5 rounded ${b.cls}`}>{b.text}</span>
+                                        {(info.models?.length || 0) > 0 && (
+                                            <div className="mt-1 flex flex-wrap gap-1">
+                                                {info.models!.slice(0, 4).map(model => (
+                                                    <span key={model} className="text-[10px] bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">{model}</span>
+                                                ))}
+                                                {info.models!.length > 4 && (
+                                                    <span className="text-[10px] text-gray-500">+{info.models!.length - 4} more</span>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
-                                    {(info.models?.length || 0) > 0 && (
-                                        <div className="mt-1 flex flex-wrap gap-1">
-                                            {info.models!.slice(0, 4).map(model => (
-                                                <span key={model} className="text-[10px] bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">{model}</span>
-                                            ))}
-                                            {info.models!.length > 4 && (
-                                                <span className="text-[10px] text-gray-500">+{info.models!.length - 4} more</span>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })
-                    ) : (
-                        <p className="text-xs text-gray-500">No local providers detected. Install Ollama, LM Studio, or llama.cpp to run models locally.</p>
-                    )}
-                    <button
-                        onClick={checkLocalModels}
-                        className="w-full py-1.5 text-xs text-gray-400 hover:text-gray-300 flex items-center justify-center gap-1"
-                    >
-                        <RefreshCw size={12} /> Refresh detection
-                    </button>
-                </div>
+                                );
+                            })
+                        ) : (
+                            <p className="text-xs text-gray-500">No local providers detected. Install Ollama, LM Studio, or llama.cpp to run models locally.</p>
+                        )}
+                        <button
+                            onClick={checkLocalModels}
+                            className="w-full py-1.5 text-xs text-gray-400 hover:text-gray-300 flex items-center justify-center gap-1"
+                        >
+                            <RefreshCw size={12} /> Refresh detection
+                        </button>
+                    </div>
+                )}
 
                 {/* Cloud / API Providers */}
                 <div className="space-y-2">
@@ -990,7 +920,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
             </div>
 
             <div className="space-y-3">
-                {INSTALL_OPTIONS.map((option) => (
+                {INSTALL_OPTIONS.filter(option => !IS_WEB || option.id !== 'local').map((option) => (
                     <button
                         key={option.id}
                         onClick={() => setSelectedExtras(option.extras)}
@@ -1007,7 +937,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                             <div className="flex-1">
                                 <div className="flex items-center gap-2">
                                     <span className="font-medium text-white">{option.name}</span>
-                                    {option.recommended && (
+                                    {option.recommended && !IS_WEB && (
                                         <span className="text-xs bg-blue-500/30 text-blue-300 px-2 py-0.5 rounded">Recommended</span>
                                     )}
                                 </div>
@@ -1392,11 +1322,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
             <div className="bg-gray-800/50 rounded-lg p-4 space-y-2 text-sm">
                 <div className="flex items-center gap-2 text-green-400">
                     <Check size={14} />
-                    <span>Environment created</span>
-                </div>
-                <div className="flex items-center gap-2 text-green-400">
-                    <Check size={14} />
-                    <span>npcpy installed</span>
+                    <span>Preferences saved</span>
                 </div>
                 {aiEnabled && (
                     <div className="flex items-center gap-2 text-green-400">

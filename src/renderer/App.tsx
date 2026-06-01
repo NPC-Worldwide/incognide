@@ -54,12 +54,6 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const checkSetup = async () => {
-      // Web mode: skip desktop setup wizard, go straight to auth gate in Enpistu
-      if (IS_WEB) {
-        setShowSetup(false);
-        return;
-      }
-
       try {
         const result = await (window as any).api?.setupCheckNeeded?.();
         const needed = result?.needed ?? false;
