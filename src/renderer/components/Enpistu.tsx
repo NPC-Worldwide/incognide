@@ -4426,6 +4426,11 @@ const handleGlobalDragEnd = () => {
     }
     const targetUrl = url || defaultHomepage;
 
+    if (IS_WEB) {
+        window.open(targetUrl, '_blank');
+        return;
+    }
+
     const newBrowserId = `browser_${generateId()}`;
 
     // Check for empty pane to reuse first
@@ -4458,6 +4463,11 @@ const handleGlobalDragEnd = () => {
 // Otherwise creates a new browser pane
 const handleNewBrowserTab = useCallback((url: string, paneId?: string) => {
     const targetUrl = url || 'about:blank';
+
+    if (IS_WEB) {
+        window.open(targetUrl, '_blank');
+        return;
+    }
 
     // If paneId is provided, try to add tab to that existing browser pane
     if (paneId) {
@@ -4582,6 +4592,23 @@ const renderSearchPane = useCallback(({ nodeId, initialQuery }: { nodeId: string
 }, [createAndAddPaneNodeToLayout]);
 
 const renderBrowserViewer = useCallback(({ nodeId, hasTabBar, onToggleZen, isZenMode }) => {
+    if (IS_WEB) {
+        const paneData = contentDataRef.current[nodeId];
+        const browserUrl = paneData?.browserUrl || 'about:blank';
+        return (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-gray-900 p-6">
+                <Globe size={48} className="text-cyan-400 mb-4" />
+                <p className="text-white font-medium mb-2 text-center">Web Browser</p>
+                <p className="text-gray-400 text-sm mb-4 text-center break-all max-w-md">{browserUrl}</p>
+                <button
+                    onClick={() => window.open(browserUrl, '_blank')}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm"
+                >
+                    Open in New Tab
+                </button>
+            </div>
+        );
+    }
     return (
         <WebBrowserViewer
             nodeId={nodeId}
@@ -7872,7 +7899,7 @@ const paneRenderers = useMemo(() => ({
     pdf: renderPdfViewer,
     csv: renderCsvViewer,
     docx: renderDocxViewer,
-    browser: renderBrowserViewer,
+    ...(IS_WEB ? {} : { browser: renderBrowserViewer }),
     pptx: renderPptxViewer,
     latex: renderLatexViewer,
     notebook: renderNotebookViewer,
@@ -8747,49 +8774,51 @@ const renderMainContent = () => {
             </div>
             )}
 
-            {/* Web Search — collapses to icon button when top bar is narrow, expands inline on click */}
-            {topBarWidth < 900 ? (
-                webSearchExpanded ? (
-                    <div className="flex items-center gap-2 w-32 px-2 py-1 bg-black/40 border border-cyan-400 rounded ring-1 ring-cyan-400/30 transition-all">
-                        <Globe size={14} className="text-cyan-400 flex-shrink-0" />
-                        <input
-                            ref={collapsedWebSearchRef}
-                            autoFocus
-                            type="text"
-                            value={webSearchTerm}
-                            onChange={(e) => setWebSearchTerm(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && webSearchTerm.trim()) {
-                                    e.preventDefault();
-                                    const provider = WEB_SEARCH_PROVIDERS[webSearchProvider];
-                                    const url = provider.url + encodeURIComponent(webSearchTerm.trim());
-                                    createNewBrowser(url);
-                                    setWebSearchTerm('');
-                                    setWebSearchExpanded(false);
-                                } else if (e.key === 'Escape') {
-                                    setWebSearchExpanded(false);
-                                }
-                            }}
-                            onBlur={() => { if (!webSearchTerm.trim()) setWebSearchExpanded(false); }}
-                            className="flex-1 bg-transparent theme-text-primary text-xs focus:outline-none min-w-0"
-                            placeholder="Web search..."
-                        />
-                        <button onClick={() => { setWebSearchTerm(''); setWebSearchExpanded(false); }} className="p-0.5 theme-hover rounded">
-                            <X size={10} className="theme-text-muted" />
+            {!IS_WEB && (
+                <>
+                {/* Web Search — collapses to icon button when top bar is narrow, expands inline on click */}
+                {topBarWidth < 900 ? (
+                    webSearchExpanded ? (
+                        <div className="flex items-center gap-2 w-32 px-2 py-1 bg-black/40 border border-cyan-400 rounded ring-1 ring-cyan-400/30 transition-all">
+                            <Globe size={14} className="text-cyan-400 flex-shrink-0" />
+                            <input
+                                ref={collapsedWebSearchRef}
+                                autoFocus
+                                type="text"
+                                value={webSearchTerm}
+                                onChange={(e) => setWebSearchTerm(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && webSearchTerm.trim()) {
+                                        e.preventDefault();
+                                        const provider = WEB_SEARCH_PROVIDERS[webSearchProvider];
+                                        const url = provider.url + encodeURIComponent(webSearchTerm.trim());
+                                        createNewBrowser(url);
+                                        setWebSearchTerm('');
+                                        setWebSearchExpanded(false);
+                                    } else if (e.key === 'Escape') {
+                                        setWebSearchExpanded(false);
+                                    }
+                                }}
+                                onBlur={() => { if (!webSearchTerm.trim()) setWebSearchExpanded(false); }}
+                                className="flex-1 bg-transparent theme-text-primary text-xs focus:outline-none min-w-0"
+                                placeholder="Web search..."
+                            />
+                            <button onClick={() => { setWebSearchTerm(''); setWebSearchExpanded(false); }} className="p-0.5 theme-hover rounded">
+                                <X size={10} className="theme-text-muted" />
+                            </button>
+                        </div>
+                    ) : (
+                        <button
+                            data-tutorial="web-search-bar"
+                            onClick={() => { setWebSearchExpanded(true); }}
+                            className="p-1.5 theme-hover rounded theme-text-muted"
+                            title="Web search"
+                        >
+                            <Globe size={16} className="text-cyan-400" />
                         </button>
-                    </div>
+                    )
                 ) : (
-                    <button
-                        data-tutorial="web-search-bar"
-                        onClick={() => { setWebSearchExpanded(true); }}
-                        className="p-1.5 theme-hover rounded theme-text-muted"
-                        title="Web search"
-                    >
-                        <Globe size={16} className="text-cyan-400" />
-                    </button>
-                )
-            ) : (
-            <div data-tutorial="web-search-bar" className="flex items-center gap-2 w-32 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-cyan-400 focus-within:ring-1 focus-within:ring-cyan-400/30 transition-all">
+                <div data-tutorial="web-search-bar" className="flex items-center gap-2 w-32 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-cyan-400 focus-within:ring-1 focus-within:ring-cyan-400/30 transition-all">
                 <div className="relative flex-shrink-0">
                     <button
                         type="button"
@@ -8840,6 +8869,8 @@ const renderMainContent = () => {
                     className="flex-1 bg-transparent text-gray-100 text-xs focus:outline-none min-w-0"
                 />
             </div>
+            )}
+                </>
             )}
 
             <div className="flex-1" />
