@@ -1720,8 +1720,9 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
         };
     }, [currentPath, rootLayoutNode, serializeWorkspace, saveWorkspaceToStorage]);
 
-    // Fetch tool-capable Ollama models
+    // Fetch tool-capable Ollama models (desktop only)
     useEffect(() => {
+        if (IS_WEB) return;
         const fetchOllamaToolModels = async () => {
             try {
                 const res = await fetch(`${BACKEND_URL}/api/ollama/tool_models`);
@@ -2194,8 +2195,9 @@ useEffect(() => {
     };
 }, [rootLayoutNode, activeContentPaneId, performSplit, closeContentPane, updateContentPane]);
 
-// SSE connection for MCP studio actions from the backend
+// SSE connection for MCP studio actions from the backend (desktop only)
 useEffect(() => {
+    if (IS_WEB) return;
     let eventSource: EventSource | null = null;
     let reconnectTimeout: NodeJS.Timeout | null = null;
 
@@ -2261,7 +2263,7 @@ useEffect(() => {
         lastMessageTime = Date.now();
 
         // Register window metadata
-        if (windowId) {
+        if (windowId && !IS_WEB) {
             window.api.studioRegisterWindow({
                 windowId,
                 folder: currentPathRef.current || '',
