@@ -6,6 +6,7 @@ import AppTutorial from './components/AppTutorial';
 import BackendErrorBanner from './components/BackendErrorBanner';
 import { AuthProvider, NoClerkAuthProvider } from './components/AuthProvider';
 import { AiFeatureProvider } from './components/AiFeatureContext';
+import { IS_WEB } from './config';
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || '';
 
