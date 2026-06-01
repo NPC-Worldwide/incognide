@@ -4426,6 +4426,11 @@ const handleGlobalDragEnd = () => {
     }
     const targetUrl = url || defaultHomepage;
 
+    if (IS_WEB) {
+        window.open(targetUrl, '_blank');
+        return;
+    }
+
     const newBrowserId = `browser_${generateId()}`;
 
     // Check for empty pane to reuse first
@@ -4458,6 +4463,11 @@ const handleGlobalDragEnd = () => {
 // Otherwise creates a new browser pane
 const handleNewBrowserTab = useCallback((url: string, paneId?: string) => {
     const targetUrl = url || 'about:blank';
+
+    if (IS_WEB) {
+        window.open(targetUrl, '_blank');
+        return;
+    }
 
     // If paneId is provided, try to add tab to that existing browser pane
     if (paneId) {
@@ -4582,6 +4592,23 @@ const renderSearchPane = useCallback(({ nodeId, initialQuery }: { nodeId: string
 }, [createAndAddPaneNodeToLayout]);
 
 const renderBrowserViewer = useCallback(({ nodeId, hasTabBar, onToggleZen, isZenMode }) => {
+    if (IS_WEB) {
+        const paneData = contentDataRef.current[nodeId];
+        const browserUrl = paneData?.browserUrl || 'about:blank';
+        return (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-gray-900 p-6">
+                <Globe size={48} className="text-cyan-400 mb-4" />
+                <p className="text-white font-medium mb-2 text-center">Web Browser</p>
+                <p className="text-gray-400 text-sm mb-4 text-center break-all max-w-md">{browserUrl}</p>
+                <button
+                    onClick={() => window.open(browserUrl, '_blank')}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm"
+                >
+                    Open in New Tab
+                </button>
+            </div>
+        );
+    }
     return (
         <WebBrowserViewer
             nodeId={nodeId}
