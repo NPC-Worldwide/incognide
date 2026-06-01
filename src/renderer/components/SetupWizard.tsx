@@ -469,35 +469,37 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 </div>
             </div>
 
-            <div className="space-y-2">
-                <label className="text-xs text-gray-400 font-medium">Data Directory</label>
-                <div className="flex gap-2">
-                    <input
-                        type="text"
-                        value={dataDirectory}
-                        onChange={(e) => setDataDirectory(e.target.value)}
-                        className="flex-1 px-3 py-2 text-sm bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none"
-                        placeholder="~/.incognide"
-                    />
-                    <button
-                        onClick={async () => {
-                            try {
-                                const result = await (window as any).api.showOpenDialog({
-                                    properties: ['openDirectory'],
-                                    title: 'Select Data Directory',
-                                });
-                                if (result?.filePaths?.[0]) {
-                                    setDataDirectory(result.filePaths[0]);
-                                }
-                            } catch {}
-                        }}
-                        className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg"
-                    >
-                        <FolderOpen size={16} />
-                    </button>
+            {!IS_WEB && (
+                <div className="space-y-2">
+                    <label className="text-xs text-gray-400 font-medium">Data Directory</label>
+                    <div className="flex gap-2">
+                        <input
+                            type="text"
+                            value={dataDirectory}
+                            onChange={(e) => setDataDirectory(e.target.value)}
+                            className="flex-1 px-3 py-2 text-sm bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none"
+                            placeholder="~/.incognide"
+                        />
+                        <button
+                            onClick={async () => {
+                                try {
+                                    const result = await (window as any).api.showOpenDialog({
+                                        properties: ['openDirectory'],
+                                        title: 'Select Data Directory',
+                                    });
+                                    if (result?.filePaths?.[0]) {
+                                        setDataDirectory(result.filePaths[0]);
+                                    }
+                                } catch {}
+                            }}
+                            className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg"
+                        >
+                            <FolderOpen size={16} />
+                        </button>
+                    </div>
+                    <p className="text-[10px] text-gray-500">Where Incognide stores teams, models, and configs. Default: ~/.incognide</p>
                 </div>
-                <p className="text-[10px] text-gray-500">Where Incognide stores teams, models, and configs. Default: ~/.incognide</p>
-            </div>
+            )}
 
             <div className="flex gap-3">
                 <button
@@ -508,8 +510,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 </button>
                 <button
                     onClick={() => {
-
-                        if (dataDirectory && dataDirectory !== '~/.incognide') {
+                        if (!IS_WEB && dataDirectory && dataDirectory !== '~/.incognide') {
                             (window as any).api?.saveGlobalSettings?.({
                                 global_settings: { data_directory: dataDirectory },
                                 global_vars: {}
