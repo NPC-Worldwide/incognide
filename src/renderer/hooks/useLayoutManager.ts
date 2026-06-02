@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { generateId, findNodePath } from '../components/utils';
+import { generateId, findNodePath, getFileName } from '../components/utils';
 import { syncLayoutWithContentData, collectPaneIds, addPaneToLayout } from '../components/LayoutNode';
 
 interface UseLayoutManagerParams {
@@ -95,12 +95,20 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
             const newPaneData = contentDataRef.current[newPaneId];
             if (activePaneData && newPaneData) {
 
+                const fileTypes = new Set(['editor', 'image', 'pdf', 'csv', 'latex', 'docx', 'pptx', 'zip', 'folder', 'markdown-preview']);
+                const getTabTitle = (paneData: any) => {
+                    if (fileTypes.has(paneData.contentType)) {
+                        return getFileName(paneData.contentId) || paneData.contentType;
+                    }
+                    return paneData.contentType;
+                };
+
                 if (!activePaneData.tabs || activePaneData.tabs.length === 0) {
                     activePaneData.tabs = [{
                         id: `tab_${Date.now()}_0`,
                         contentType: activePaneData.contentType,
                         contentId: activePaneData.contentId,
-                        title: activePaneData.contentType,
+                        title: getTabTitle(activePaneData),
                         browserUrl: activePaneData.browserUrl,
                         fileContent: activePaneData.fileContent,
                         fileChanged: activePaneData.fileChanged,
@@ -121,7 +129,7 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
                     id: `tab_${Date.now()}_${activePaneData.tabs.length}`,
                     contentType: newPaneData.contentType,
                     contentId: newPaneData.contentId,
-                    title: newPaneData.contentType,
+                    title: getTabTitle(newPaneData),
                     browserUrl: newPaneData.browserUrl,
                     fileContent: newPaneData.fileContent,
                     fileChanged: newPaneData.fileChanged,

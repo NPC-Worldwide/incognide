@@ -6,7 +6,8 @@ export const serializeWorkspace = (
     rootLayoutNode: any,
     currentPath: string,
     contentDataRef: any,
-    activeContentPaneId: string | null
+    activeContentPaneId: string | null,
+    openMode?: 'pane' | 'tab'
 ) => {
     if (!rootLayoutNode || !currentPath) {
         return null;
@@ -43,6 +44,7 @@ export const serializeWorkspace = (
         layoutNode: rootLayoutNode,
         contentData: serializedContentData,
         activeContentPaneId,
+        openMode,
         timestamp: Date.now()
     };
 };
