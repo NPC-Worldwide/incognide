@@ -1,28 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Terminal, Package, Check, AlertCircle, RefreshCw, ChevronRight, Sparkles, Cpu, Mic, Zap, Box, Wand2, Bot, ChevronLeft, Info, Server, HardDrive, X, Folder, Cloud, KeyRound, Sun, Moon, FolderOpen } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Check, AlertCircle, RefreshCw, ChevronRight, Sparkles, Cpu, Zap, Bot, ChevronLeft, Info, Server, HardDrive, X, Folder, Cloud, KeyRound, Sun, Moon, FolderOpen } from 'lucide-react';
 import incognideLogo from '../../assets/icon.png';
-
-interface PythonInfo {
-    name: string;
-    cmd: string;
-    version: string;
-    path: string;
-}
 
 interface SetupWizardProps {
     onComplete: () => void;
 }
-
-interface InstallOption {
-    id: string;
-    name: string;
-    description: string;
-    extras: string;
-    icon: React.ReactNode;
-    recommended?: boolean;
-}
-
-type UserPath = 'no-ai' | 'cloud-ai' | 'local-ai';
 
 interface ModelInfo {
     provider: string;
@@ -49,39 +31,7 @@ const iconColor = (info: ModelInfo | undefined) => {
     return 'text-gray-500';
 };
 
-const INSTALL_OPTIONS: InstallOption[] = [
-    {
-        id: 'lite',
-        name: 'Lite',
-        description: 'Minimal install - basic features only',
-        extras: 'lite',
-        icon: <Zap size={20} className="text-yellow-400" />,
-    },
-    {
-        id: 'local',
-        name: 'Local AI',
-        description: 'Local models with Ollama, image generation with diffusers/torch',
-        extras: 'local',
-        icon: <Cpu size={20} className="text-blue-400" />,
-        recommended: true,
-    },
-    {
-        id: 'yap',
-        name: 'Voice (TTS/STT)',
-        description: 'Text-to-speech and speech-to-text capabilities',
-        extras: 'yap',
-        icon: <Mic size={20} className="text-green-400" />,
-    },
-    {
-        id: 'all',
-        name: 'Everything',
-        description: 'All features including local AI, voice, and extras',
-        extras: 'all',
-        icon: <Box size={20} className="text-purple-400" />,
-    },
-];
-
-type SetupStep = 'welcome' | 'preferences' | 'defaults' | 'ai-choice' | 'ai-config' | 'extras' | 'creating' | 'installing' | 'concepts' | 'complete' | 'error';
+type SetupStep = 'welcome' | 'preferences' | 'defaults' | 'ai-choice' | 'ai-config' | 'concepts' | 'complete' | 'error';
 
 const SEARCH_ENGINES: { id: string; name: string }[] = [
     { id: 'sibiji', name: 'Sibiji (default)' },
@@ -126,28 +76,8 @@ function shellOptions(): { id: string; name: string }[] {
 const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
     const [aiEnabled, setAiEnabled] = useState<boolean | null>(null);
-
-    const [detectedPythons, setDetectedPythons] = useState<PythonInfo[]>([]);
-    const [selectedPython, setSelectedPython] = useState<PythonInfo | null>(null);
-    const [selectedExtras, setSelectedExtras] = useState<string>('local');
-    const [pythonPath, setPythonPath] = useState<string>('');
     const [error, setError] = useState<string | null>(null);
-    const [installOutput, setInstallOutput] = useState<string[]>([]);
     const [loading, setLoading] = useState(false);
-    const logContainerRef = useRef<HTMLDivElement>(null);
-
-    const [detectedModels, setDetectedModels] = useState<ModelInfo[]>([]);
-    const [checkingModels, setCheckingModels] = useState(false);
-    const [platform, setPlatform] = useState<string>('');
-    const [homebrewAvailable, setHomebrewAvailable] = useState(false);
-    const [xcodeAvailable, setXcodeAvailable] = useState(false);
-    const [installingOllama, setInstallingOllama] = useState(false);
-    const [installingHomebrew, setInstallingHomebrew] = useState(false);
-    const [installingXcode, setInstallingXcode] = useState(false);
-    const [installError, setInstallError] = useState<string | null>(null);
-    const [installMessage, setInstallMessage] = useState<string | null>(null);
-    const [skippedInstalls, setSkippedInstalls] = useState<Set<string>>(new Set());
-    const skipInstall = (name: string) => setSkippedInstalls(prev => new Set(prev).add(name));
 
     const [isDarkMode, setIsDarkMode] = useState(() => document.body.classList.contains('dark-mode'));
     const [dataDirectory, setDataDirectory] = useState('~/.incognide');
@@ -172,28 +102,9 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
     const [npcImagesPath, setNpcImagesPath] = useState<string>('');
 
-    useEffect(() => {
-        if (logContainerRef.current) {
-            logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
-        }
-    }, [installOutput]);
-
-    useEffect(() => {
-        const detect = async () => {
-            try {
-                const result = await (window as any).api?.setupDetectPython?.();
-                if (result?.pythons) {
-                    setDetectedPythons(result.pythons);
-                    if (result.pythons.length > 0) {
-                        setSelectedPython(result.pythons[0]);
-                    }
-                }
-            } catch (err) {
-                console.error('Error detecting Python:', err);
-            }
-        };
-        detect();
-    }, []);
+    const [detectedModels, setDetectedModels] = useState<ModelInfo[]>([]);
+    const [checkingModels, setCheckingModels] = useState(false);
+    const [platform, setPlatform] = useState<string>('');
 
     useEffect(() => {
         const getPath = async () => {
@@ -212,27 +123,11 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
             try {
                 const platformResult = await (window as any).api?.getPlatform?.();
                 if (platformResult?.platform) setPlatform(platformResult.platform);
-                const brewResult = await (window as any).api?.checkHomebrew?.();
-                if (brewResult?.available) setHomebrewAvailable(true);
-                const xcodeResult = await (window as any).api?.checkXcode?.();
-                if (xcodeResult?.available) setXcodeAvailable(true);
             } catch (err) {
-                console.error('Error checking platform/tools:', err);
+                console.error('Error checking platform:', err);
             }
         };
         check();
-    }, []);
-
-    useEffect(() => {
-        const unsubscribe = (window as any).api?.onSetupInstallProgress?.((data: { type: string; text: string }) => {
-            if (data.text) {
-                const lines = data.text.split('\n').filter((line: string) => line.trim());
-                if (lines.length > 0) {
-                    setInstallOutput(prev => [...prev, ...lines].slice(-100));
-                }
-            }
-        });
-        return () => unsubscribe?.();
     }, []);
 
     useEffect(() => {
@@ -261,7 +156,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
     const checkLocalModels = async () => {
         setCheckingModels(true);
-        setInstallError(null);
         try {
             const result = await (window as any).api?.detectLocalModels?.();
             if (result?.models) setDetectedModels(result.models);
@@ -271,63 +165,11 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         setCheckingModels(false);
     };
 
-    const handleInstallOllama = async (method?: string) => {
-        setInstallingOllama(true);
-        setInstallError(null);
-        setInstallMessage(null);
-        try {
-            const result = await (window as any).api?.installOllama?.(method);
-            if (result?.success) {
-                await checkLocalModels();
-                setInstallMessage(result.message);
-            } else if (result?.openDownload) {
-                (window as any).api?.openExternal?.(result.downloadUrl);
-                setInstallMessage(result.message || 'Download page opened. Install Ollama, then click Refresh.');
-            } else {
-                setInstallError(result?.error || 'Failed to install Ollama');
-            }
-        } catch (err: any) {
-            setInstallError(err.message || 'Failed to install Ollama');
-        }
-        setInstallingOllama(false);
-    };
-
-    const handleInstallXcode = async () => {
-        setInstallingXcode(true);
-        setInstallError(null);
-        try {
-            const result = await (window as any).api?.installXcode?.();
-            if (result?.success) setInstallMessage(result.message);
-            else setInstallError(result?.error || 'Failed to open Xcode installer');
-        } catch (err: any) {
-            setInstallError(err.message || 'Failed to install Xcode');
-        }
-        setInstallingXcode(false);
-    };
-
-    const handleInstallHomebrew = async () => {
-        setInstallingHomebrew(true);
-        setInstallError(null);
-        try {
-            const result = await (window as any).api?.installHomebrew?.();
-            if (result?.success) setHomebrewAvailable(true);
-            else setInstallError(result?.error || 'Failed to install Homebrew');
-        } catch (err: any) {
-            setInstallError(err.message || 'Failed to install Homebrew');
-        }
-        setInstallingHomebrew(false);
-    };
-
-    const getExtrasForPath = (): string => {
-        if (!aiEnabled) return 'lite';
-        return selectedExtras;
-    };
-
     const finishSetup = async () => {
         setLoading(true);
         try {
             const userPath = aiEnabled ? 'local-ai' : 'no-ai';
-            const extras = aiEnabled ? selectedExtras : 'lite';
+            const extras = aiEnabled ? 'local' : 'lite';
             await (window as any).api?.profileSave?.({
                 path: userPath,
                 aiEnabled,
@@ -383,10 +225,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     };
 
     const handleAIConfigNext = () => {
-        setStep('extras');
-    };
-
-    const handleExtrasNext = () => {
         finishSetup();
     };
 
@@ -904,335 +742,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         );
     };
 
-    const renderExtras = () => (
-        <div className="space-y-5">
-            <div className="text-center">
-                <h2 className="text-xl font-bold text-white mb-1">Choose Features</h2>
-                <p className="text-gray-400 text-sm">Select which capabilities to install</p>
-            </div>
-
-            <div className="space-y-3">
-                {INSTALL_OPTIONS.map((option) => (
-                    <button
-                        key={option.id}
-                        onClick={() => setSelectedExtras(option.extras)}
-                        className={`w-full p-4 rounded-lg text-left border transition-all ${
-                            selectedExtras === option.extras
-                                ? 'border-blue-500/50 bg-blue-600/20'
-                                : 'border-gray-700 bg-gray-800/50 hover:bg-gray-800'
-                        }`}
-                    >
-                        <div className="flex items-start gap-3">
-                            <div className="w-10 h-10 bg-gray-700 rounded-lg flex items-center justify-center flex-shrink-0">
-                                {option.icon}
-                            </div>
-                            <div className="flex-1">
-                                <div className="flex items-center gap-2">
-                                    <span className="font-medium text-white">{option.name}</span>
-                                    {option.recommended && (
-                                        <span className="text-xs bg-blue-500/30 text-blue-300 px-2 py-0.5 rounded">Recommended</span>
-                                    )}
-                                </div>
-                                <div className="text-sm text-gray-400 mt-1">{option.description}</div>
-                            </div>
-                            {selectedExtras === option.extras && (
-                                <Check size={20} className="text-blue-400 flex-shrink-0" />
-                            )}
-                        </div>
-                    </button>
-                ))}
-            </div>
-
-            <div className="flex gap-3">
-                <button
-                    onClick={() => setStep('ai-config')}
-                    className="py-2 px-4 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center gap-1"
-                >
-                    <ChevronLeft size={16} /> Back
-                </button>
-                <button
-                    onClick={handleExtrasNext}
-                    className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
-                >
-                    Next <ChevronRight size={18} />
-                </button>
-            </div>
-        </div>
-    );
-
-    const renderModels = () => (
-        <div className="space-y-5">
-            <div className="text-center">
-                <h2 className="text-xl font-bold text-white mb-1">Local Models</h2>
-                <p className="text-gray-400 text-sm">Run AI models on your machine</p>
-            </div>
-
-            {checkingModels ? (
-                <div className="text-center py-8">
-                    <RefreshCw size={24} className="animate-spin mx-auto text-blue-400 mb-3" />
-                    <p className="text-sm text-gray-400">Checking for local model providers...</p>
-                </div>
-            ) : (
-                <>
-                    <div className="space-y-3">
-                        {(() => {
-                            const info = detectedModels.find(m => m.provider === 'ollama');
-                            const b = statusBadge(info);
-                            if (skippedInstalls.has('ollama')) return null;
-                            return (
-                                <div className={`p-3 rounded-lg border ${tileBorder(info)}`}>
-                                    <div className="flex items-center justify-between mb-1">
-                                        <div className="flex items-center gap-2">
-                                            <Server size={18} className={iconColor(info)} />
-                                            <span className="font-medium text-white">Ollama</span>
-                                        </div>
-                                        {info?.installed ? (
-                                            <span className={`text-xs px-2 py-0.5 rounded ${b.cls}`}>{b.text}</span>
-                                        ) : (
-                                            <div className="flex items-center gap-1">
-                                                <button
-                                                    onClick={() => handleInstallOllama()}
-                                                    disabled={installingOllama}
-                                                    className="text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-2 py-0.5 rounded flex items-center gap-1"
-                                                >
-                                                    {installingOllama ? <><RefreshCw size={10} className="animate-spin" /> ...</> : 'Download'}
-                                                </button>
-                                                {platform === 'darwin' && homebrewAvailable && (
-                                                    <button
-                                                        onClick={() => handleInstallOllama('brew')}
-                                                        disabled={installingOllama}
-                                                        className="text-xs bg-gray-600 hover:bg-gray-500 disabled:bg-gray-700 text-white px-2 py-0.5 rounded"
-                                                        title="Install via Homebrew"
-                                                    >
-                                                        brew
-                                                    </button>
-                                                )}
-                                                <button
-                                                    onClick={() => skipInstall('ollama')}
-                                                    className="text-xs bg-transparent hover:bg-gray-700 text-gray-400 hover:text-gray-200 px-2 py-0.5 rounded"
-                                                    title="Skip Ollama install"
-                                                >
-                                                    Skip
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                    <p className="text-xs text-gray-400">Easy-to-use local model server</p>
-                                    {(info?.models?.length || 0) > 0 && (
-                                        <div className="mt-2 flex flex-wrap gap-1">
-                                            {info!.models.slice(0, 4).map(model => (
-                                                <span key={model} className="text-[10px] bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">{model}</span>
-                                            ))}
-                                            {info!.models.length > 4 && (
-                                                <span className="text-[10px] text-gray-500">+{info!.models.length - 4} more</span>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })()}
-
-                        {(() => {
-                            const info = detectedModels.find(m => m.provider === 'lmstudio');
-                            const b = statusBadge(info);
-                            return (
-                                <div className={`p-3 rounded-lg border ${tileBorder(info)}`}>
-                                    <div className="flex items-center justify-between mb-1">
-                                        <div className="flex items-center gap-2">
-                                            <HardDrive size={18} className={iconColor(info)} />
-                                            <span className="font-medium text-white">LM Studio</span>
-                                        </div>
-                                        <span className={`text-xs px-2 py-0.5 rounded ${b.cls}`}>{b.text}</span>
-                                    </div>
-                                    <p className="text-xs text-gray-400">GUI for running GGUF models — server on port 1234 when started</p>
-                                </div>
-                            );
-                        })()}
-
-                        {(() => {
-                            const info = detectedModels.find(m => m.provider === 'llamacpp');
-                            const b = statusBadge(info);
-                            return (
-                                <div className={`p-3 rounded-lg border ${tileBorder(info)}`}>
-                                    <div className="flex items-center justify-between mb-1">
-                                        <div className="flex items-center gap-2">
-                                            <Cpu size={18} className={iconColor(info)} />
-                                            <span className="font-medium text-white">llama.cpp / koboldcpp</span>
-                                        </div>
-                                        <span className={`text-xs px-2 py-0.5 rounded ${b.cls}`}>{b.text}</span>
-                                    </div>
-                                    <p className="text-xs text-gray-400">Inference engine for GGUF/GGML files. Server on port 8080 when running; binary detected via llama-server / llama-cli / koboldcpp.</p>
-                                    {(info?.models?.length || 0) > 0 && (
-                                        <div className="mt-2 flex flex-wrap gap-1">
-                                            {info!.models.slice(0, 4).map(model => (
-                                                <span key={model} className="text-[10px] bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">{model}</span>
-                                            ))}
-                                            {info!.models.length > 4 && (
-                                                <span className="text-[10px] text-gray-500">+{info!.models.length - 4} more</span>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })()}
-
-                        {(() => {
-                            const info = detectedModels.find(m => m.provider === 'omlx');
-                            const b = statusBadge(info);
-                            return (
-                                <div className={`p-3 rounded-lg border ${tileBorder(info)}`}>
-                                    <div className="flex items-center justify-between mb-1">
-                                        <div className="flex items-center gap-2">
-                                            <Zap size={18} className={iconColor(info)} />
-                                            <span className="font-medium text-white">oMLX</span>
-                                        </div>
-                                        <span className={`text-xs px-2 py-0.5 rounded ${b.cls}`}>{b.text}</span>
-                                    </div>
-                                    <p className="text-xs text-gray-400">MLX inference server for Apple Silicon — server on port 8000 when running</p>
-                                    {(info?.models?.length || 0) > 0 && (
-                                        <div className="mt-2 flex flex-wrap gap-1">
-                                            {info!.models.slice(0, 4).map(model => (
-                                                <span key={model} className="text-[10px] bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">{model}</span>
-                                            ))}
-                                            {info!.models.length > 4 && (
-                                                <span className="text-[10px] text-gray-500">+{info!.models.length - 4} more</span>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })()}
-                    </div>
-
-                    {platform === 'darwin' && !xcodeAvailable && !skippedInstalls.has('xcode') && (
-                        <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
-                            <div className="flex items-center justify-between mb-1">
-                                <p className="text-xs text-blue-300 font-medium">Xcode Command Line Tools</p>
-                                <div className="flex items-center gap-1">
-                                    <button
-                                        onClick={handleInstallXcode}
-                                        disabled={installingXcode}
-                                        className="text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-2 py-0.5 rounded"
-                                    >
-                                        {installingXcode ? 'Opening...' : 'Install'}
-                                    </button>
-                                    <button
-                                        onClick={() => skipInstall('xcode')}
-                                        className="text-xs bg-transparent hover:bg-gray-700 text-gray-400 hover:text-gray-200 px-2 py-0.5 rounded"
-                                        title="Skip Xcode install"
-                                    >
-                                        Skip
-                                    </button>
-                                </div>
-                            </div>
-                            <p className="text-xs text-gray-400">Recommended for compiling packages.</p>
-                        </div>
-                    )}
-
-                    {platform === 'darwin' && !homebrewAvailable && !skippedInstalls.has('homebrew') && (
-                        <div className="bg-gray-800/50 border border-gray-600 rounded-lg p-3">
-                            <div className="flex items-center justify-between mb-1">
-                                <p className="text-xs text-gray-300 font-medium">Homebrew (optional)</p>
-                                <div className="flex items-center gap-1">
-                                    <button
-                                        onClick={handleInstallHomebrew}
-                                        disabled={installingHomebrew}
-                                        className="text-xs bg-gray-600 hover:bg-gray-500 disabled:bg-gray-700 text-white px-2 py-0.5 rounded"
-                                    >
-                                        {installingHomebrew ? <><RefreshCw size={10} className="animate-spin" /> Installing...</> : 'Install'}
-                                    </button>
-                                    <button
-                                        onClick={() => skipInstall('homebrew')}
-                                        className="text-xs bg-transparent hover:bg-gray-700 text-gray-400 hover:text-gray-200 px-2 py-0.5 rounded"
-                                        title="Skip Homebrew install"
-                                    >
-                                        Skip
-                                    </button>
-                                </div>
-                            </div>
-                            <p className="text-xs text-gray-500">Package manager for macOS.</p>
-                        </div>
-                    )}
-
-                    {installMessage && (
-                        <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
-                            <p className="text-xs text-blue-300">{installMessage}</p>
-                        </div>
-                    )}
-
-                    {installError && (
-                        <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-3">
-                            <p className="text-xs text-red-300">{installError}</p>
-                        </div>
-                    )}
-
-                    <button
-                        onClick={checkLocalModels}
-                        className="w-full py-2 text-sm text-gray-400 hover:text-gray-300 flex items-center justify-center gap-2"
-                    >
-                        <RefreshCw size={14} /> Refresh detection
-                    </button>
-                </>
-            )}
-
-            <div className="flex gap-3">
-                <button
-                    onClick={() => setStep('ai-config')}
-                    className="py-2 px-4 bg-gray-700 hover:bg-gray-600 text-white rounded-lg flex items-center gap-1"
-                >
-                    <ChevronLeft size={16} /> Back
-                </button>
-                <button
-                    onClick={handleSkip}
-                    disabled={loading}
-                    className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
-                >
-                    Continue <ChevronRight size={18} />
-                </button>
-            </div>
-        </div>
-    );
-
-    const renderInstalling = () => (
-        <div className="space-y-4">
-            <div className="text-center">
-                <div className="w-12 h-12 mx-auto mb-3 bg-blue-600 rounded-xl flex items-center justify-center">
-                    <RefreshCw size={24} className="text-white animate-spin" />
-                </div>
-                <h2 className="text-lg font-bold text-white mb-1">
-                    {step === 'creating' ? 'Creating Environment' : 'Installing Packages'}
-                </h2>
-                <p className="text-gray-400 text-xs">This may take several minutes...</p>
-            </div>
-
-            <div
-                ref={logContainerRef}
-                className="bg-gray-900 rounded-lg p-3 h-64 overflow-y-auto font-mono text-xs"
-            >
-                {installOutput.length === 0 ? (
-                    <div className="text-gray-500">Waiting for output...</div>
-                ) : (
-                    installOutput.map((line, idx) => (
-                        <div key={idx} className="text-gray-400 whitespace-pre-wrap break-all">{line}</div>
-                    ))
-                )}
-            </div>
-
-            <button
-                onClick={() => {
-                    if (aiEnabled) {
-                        setStep('concepts');
-                    } else {
-                        setStep('complete');
-                    }
-                }}
-                className="w-full py-2 text-sm text-gray-500 hover:text-gray-300 transition-colors"
-            >
-                Skip — continue in background
-            </button>
-        </div>
-    );
-
     const renderConcepts = () => (
         <div className="space-y-5">
             <div className="text-center">
@@ -1351,22 +860,10 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 <p className="text-sm text-red-400">{error}</p>
             </div>
 
-            {installOutput.length > 0 && (
-                <details className="text-xs">
-                    <summary className="text-gray-500 cursor-pointer hover:text-gray-400">Show install log</summary>
-                    <div className="bg-gray-900 rounded-lg p-3 mt-2 h-32 overflow-y-auto font-mono">
-                        {installOutput.map((line, idx) => (
-                            <div key={idx} className="text-gray-500 whitespace-pre-wrap break-all">{line}</div>
-                        ))}
-                    </div>
-                </details>
-            )}
-
             <div className="flex gap-3">
                 <button
                     onClick={() => {
                         setError(null);
-                        setInstallOutput([]);
                         setStep('ai-choice');
                     }}
                     className="flex-1 py-2 px-4 bg-gray-700 hover:bg-gray-600 text-white rounded-lg"
@@ -1391,8 +888,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 {step === 'defaults' && renderDefaults()}
                 {step === 'ai-choice' && renderAIChoice()}
                 {step === 'ai-config' && renderAIConfig()}
-                {step === 'extras' && renderExtras()}
-                {(step === 'creating' || step === 'installing') && renderInstalling()}
                 {step === 'concepts' && renderConcepts()}
                 {step === 'complete' && renderComplete()}
                 {step === 'error' && renderError()}

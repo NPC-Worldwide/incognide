@@ -1,6 +1,7 @@
 import { getFileName } from './utils';
 import { useAiEnabled } from './AiFeatureContext';
 import React, { useMemo, useCallback, useRef, useEffect, useState, memo } from 'react';
+import { createPortal } from 'react-dom';
 import CodeMirror from '@uiw/react-codemirror';
 import { javascript } from '@codemirror/lang-javascript';
 import { python } from '@codemirror/lang-python';
@@ -639,25 +640,18 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
         }
     }, []);
 
-    useEffect(() => {
-        const editorDOM = editorRef.current?.editor;
-        if (editorDOM) {
-            const handleContextMenu = (event) => {
-                if (onContextMenuRef.current) {
-                    const view = editorRef.current?.view;
-                    let selection = '';
-                    if (view) {
-                        const { from, to } = view.state.selection.main;
-                        if (from !== to) {
-                            selection = view.state.sliceDoc(from, to);
-                        }
-                    }
-                    onContextMenuRef.current(event, selection);
-                }
-            };
-            editorDOM.addEventListener('contextmenu', handleContextMenu);
-            return () => editorDOM.removeEventListener('contextmenu', handleContextMenu);
+    const handleContextMenu = useCallback((event: React.MouseEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const view = editorRef.current?.view;
+        let selection = '';
+        if (view) {
+            const { from, to } = view.state.selection.main;
+            if (from !== to) {
+                selection = view.state.sliceDoc(from, to);
+            }
         }
+        onContextMenuRef.current?.(event, selection);
     }, []);
 
     useEffect(() => {
@@ -702,6 +696,7 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
             extensions={extensions}
             onChange={onChange}
             onUpdate={handleUpdate}
+            onContextMenu={handleContextMenu}
         />
     );
 }, (prevProps, nextProps) => {
@@ -723,8 +718,7 @@ const CodeEditorPane = ({
     contentDataRef,
     setRootLayoutNode,
     activeContentPaneId,
-    editorContextMenuPos,
-    setEditorContextMenuPos,
+    setActiveContentPaneId,
     aiEditModal,
     renamingPaneId,
     setRenamingPaneId,
@@ -748,6 +742,7 @@ const CodeEditorPane = ({
     const [blameData, setBlameData] = useState<any[] | null>(null);
     const [blameLoading, setBlameLoading] = useState(false);
     const [contextMenuSelection, setContextMenuSelection] = useState('');
+    const [editorContextMenuPos, setEditorContextMenuPos] = useState<{ x: number; y: number } | null>(null);
     const [keybindMode, setKeybindMode] = useState(() => {
         return localStorage.getItem('incognide_editorKeybindMode') || 'default';
     });
@@ -911,6 +906,14 @@ const CodeEditorPane = ({
     }, [nodeId, contentDataRef, setRootLayoutNode]);
 
     useEffect(() => {
+        const handleEscape = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setEditorContextMenuPos(null);
+        };
+        window.addEventListener('keydown', handleEscape);
+        return () => window.removeEventListener('keydown', handleEscape);
+    }, []);
+
+    useEffect(() => {
         const currentPaneData = contentDataRef.current[nodeId];
         const fp = currentPaneData?.contentId;
         if (!fp || currentPaneData?.isUntitled) return;
@@ -947,11 +950,10 @@ const CodeEditorPane = ({
     const onEditorContextMenu = useCallback((e, selection) => {
         e.preventDefault();
         e.stopPropagation();
-        if (activeContentPaneId === nodeId) {
-            setContextMenuSelection(selection || '');
-            setEditorContextMenuPos({ x: e.clientX, y: e.clientY });
-        }
-    }, [nodeId, activeContentPaneId, setEditorContextMenuPos]);
+        setActiveContentPaneId?.(nodeId);
+        setContextMenuSelection(selection || '');
+        setEditorContextMenuPos({ x: e.clientX, y: e.clientY });
+    }, [nodeId, setActiveContentPaneId, setEditorContextMenuPos]);
 
     const handleStartRename = useCallback(() => {
         setRenamingPaneId(nodeId);
@@ -959,7 +961,10 @@ const CodeEditorPane = ({
     }, [nodeId, fileName, setRenamingPaneId, setEditedFileName]);
 
     return (
-        <div className="flex-1 flex flex-col min-h-0 theme-bg-secondary relative">
+        <div
+            className="flex-1 flex flex-col min-h-0 theme-bg-secondary relative"
+            onMouseDown={() => setActiveContentPaneId?.(nodeId)}
+        >
             {diskChangeContent !== null && (
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-900/40 border-b border-yellow-700/50 text-yellow-200 text-xs shrink-0">
                     <RefreshCw size={12} className="text-yellow-400 shrink-0" />
@@ -1233,14 +1238,14 @@ const CodeEditorPane = ({
                 </div>
             </div>
 
-            {editorContextMenuPos && activeContentPaneId === nodeId && (
+            {editorContextMenuPos && createPortal(
                 <>
                     <div
-                        className="fixed inset-0 z-40 bg-transparent"
+                        className="fixed inset-0 z-[9998] bg-transparent"
                         onMouseDown={() => setEditorContextMenuPos(null)}
                     />
                     <div
-                        className="fixed theme-bg-secondary theme-border border rounded shadow-lg py-1 z-50"
+                        className="fixed theme-bg-secondary theme-border border rounded shadow-lg py-1 z-[9999]"
                         style={{
                             top: `${editorContextMenuPos.y}px`,
                             left: `${editorContextMenuPos.x}px`
@@ -1337,7 +1342,8 @@ const CodeEditorPane = ({
                             </>
                         )}
                     </div>
-                </>
+                </>,
+                document.body
             )}
         </div>
     );

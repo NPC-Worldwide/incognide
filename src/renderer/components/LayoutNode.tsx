@@ -1173,6 +1173,11 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                 } else if (contentType === 'notebook') {
                     newContentId = `notebook_${Date.now()}`;
                     title = 'Notebook';
+                } else {
+                    const fileTypes = new Set(['editor', 'image', 'pdf', 'csv', 'latex', 'docx', 'pptx', 'zip', 'folder', 'markdown-preview']);
+                    if (fileTypes.has(contentType)) {
+                        title = getFileName(newContentId) || contentType;
+                    }
                 }
 
                 const newTab = {
@@ -1691,6 +1696,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                 data-pane-id={node.id}
                 data-pane-type={contentType}
                 onClick={() => componentRef.current.setActiveContentPaneId(node.id)}
+                onMouseDownCapture={() => componentRef.current.setActiveContentPaneId(node.id)}
                 onDragEnter={(e) => { e.preventDefault(); dragCounterRef.current++; setLocalDragOver(true); }}
                 onDragLeave={(e) => { dragCounterRef.current--; if (dragCounterRef.current <= 0) { dragCounterRef.current = 0; setLocalDragOver(false); setLocalDropSide(null); } }}
                 onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
@@ -1826,12 +1832,16 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                                 key={tab.id}
                                 className="flex-1 flex flex-col min-h-0"
                                 style={{ display: index === activeTabIndex ? 'flex' : 'none' }}
+                                onMouseDown={() => componentRef.current.setActiveContentPaneId(node.id)}
                             >
                                 {renderTabContent(tab, index) || renderPaneContent()}
                             </div>
                         ))
                     ) : (
-                        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                        <div
+                            className="flex-1 flex flex-col min-h-0 overflow-hidden"
+                            onMouseDown={() => componentRef.current.setActiveContentPaneId(node.id)}
+                        >
                             {renderPaneContent()}
                         </div>
                     )}
@@ -1848,6 +1858,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             if (prev.path[i] !== next.path[i]) return false;
         }
     }
+    if (prev.activeContentPaneId !== next.activeContentPaneId) return false;
     return true;
 });
 

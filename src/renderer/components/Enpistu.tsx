@@ -1008,7 +1008,6 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         if (changed) paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: activeContentPaneId } }));
     }, [activeContentPaneId, currentNPC, currentModel]);
 
-    const [editorContextMenuPos, setEditorContextMenuPos] = useState(null);
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
     const [lockedPanes, setLockedPanes] = useState<Set<string>>(() => {
         try {
@@ -1551,7 +1550,8 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
                     rootLayoutNode,
                     currentPath,
                     contentDataRef.current,
-                    activeContentPaneId
+                    activeContentPaneId,
+                    openMode
                 );
                 if (workspaceData) {
                     saveWorkspaceToStorage(currentPath, workspaceData);
@@ -1566,7 +1566,7 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
             saveCurrentWorkspace();
             window.removeEventListener('beforeunload', saveCurrentWorkspace);
         };
-    }, [currentPath, rootLayoutNode, activeContentPaneId]);
+    }, [currentPath, rootLayoutNode, activeContentPaneId, openMode]);
     // Sync recent paths to file storage whenever localStorage changes
     useEffect(() => {
         const syncToFile = async () => {
@@ -1600,16 +1600,20 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
     useEffect(() => {
         (window as any).__serializeWorkspace = () => {
             if (!currentPath || !rootLayoutNode) return null;
-            return serializeWorkspace(rootLayoutNode, currentPath, contentDataRef.current, activeContentPaneId);
+            return serializeWorkspace(rootLayoutNode, currentPath, contentDataRef.current, activeContentPaneId, openMode);
         };
         return () => { delete (window as any).__serializeWorkspace; };
-    }, [currentPath, rootLayoutNode, activeContentPaneId]);
+    }, [currentPath, rootLayoutNode, activeContentPaneId, openMode]);
 
     // Listen for cross-window workspace restore requests
     useEffect(() => {
         const removeListener = (window as any).api?.onRestoreWorkspace?.((data: any) => {
             if (!data) return;
             deserializeWorkspace(data, contentDataRef, setRootLayoutNode, setActiveContentPaneId, setIsLoadingWorkspace, generateId, getConversationStats);
+            if (data.openMode) {
+                setOpenMode(data.openMode);
+                localStorage.setItem('incognide_openMode', data.openMode);
+            }
         });
         return () => { removeListener?.(); };
     }, []);
@@ -1617,11 +1621,16 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
     // Resize useEffects now handled by useSidebarResize hook
 
     // Path switching hook
+    const serializeWorkspaceWrapper = useCallback(() => {
+        if (!rootLayoutNode || !currentPath) return null;
+        return serializeWorkspace(rootLayoutNode, currentPath, contentDataRef.current, activeContentPaneId, openMode);
+    }, [rootLayoutNode, currentPath, activeContentPaneId, openMode]);
+
     const switchToPathBase = useSwitchToPath(
         windowId,
         currentPath,
         rootLayoutNode,
-        serializeWorkspace,
+        serializeWorkspaceWrapper,
         saveWorkspaceToStorage,
         setRootLayoutNode,
         setActiveContentPaneId,
@@ -1692,7 +1701,7 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
     useEffect(() => {
         const saveCurrentWorkspace = () => {
             if (currentPath && rootLayoutNode) {
-                const workspaceData = serializeWorkspace();
+                const workspaceData = serializeWorkspace(rootLayoutNode, currentPath, contentDataRef.current, activeContentPaneId, openMode);
                 if (workspaceData) {
                     saveWorkspaceToStorage(currentPath, workspaceData);
                     console.log(`Saved workspace for ${currentPath}`);
@@ -1703,7 +1712,7 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
             saveCurrentWorkspace();
             window.removeEventListener('beforeunload', saveCurrentWorkspace);
         };
-    }, [currentPath, rootLayoutNode, serializeWorkspace, saveWorkspaceToStorage]);
+    }, [currentPath, rootLayoutNode, activeContentPaneId, openMode, serializeWorkspace, saveWorkspaceToStorage]);
 
     // Fetch tool-capable Ollama models (desktop only)
     useEffect(() => {
@@ -2123,15 +2132,15 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
     const handlePathChange = useCallback(async (newPath) => {
         // Save current workspace before switching
         if (currentPath && rootLayoutNode) {
-            const workspaceData = serializeWorkspace();
+            const workspaceData = serializeWorkspace(rootLayoutNode, currentPath, contentDataRef.current, activeContentPaneId, openMode);
             if (workspaceData) {
                 saveWorkspaceToStorage(currentPath, workspaceData);
             }
         }
-        
+
         // Switch to new path
         setCurrentPath(newPath);
-    }, [currentPath, rootLayoutNode, serializeWorkspace, saveWorkspaceToStorage]);
+    }, [currentPath, rootLayoutNode, activeContentPaneId, openMode, serializeWorkspace, saveWorkspaceToStorage]);
 
 
 const validateWorkspaceData = (workspaceData) => {
@@ -3297,8 +3306,7 @@ const renderFileEditor = useCallback(({ nodeId }) => {
             contentDataRef={contentDataRef}
             setRootLayoutNode={setRootLayoutNode}
             activeContentPaneId={activeContentPaneId}
-            editorContextMenuPos={editorContextMenuPos}
-            setEditorContextMenuPos={setEditorContextMenuPos}
+            setActiveContentPaneId={setActiveContentPaneId}
             aiEditModal={aiEditModal}
             renamingPaneId={renamingPaneId}
             setRenamingPaneId={setRenamingPaneId}
@@ -3325,7 +3333,7 @@ const renderFileEditor = useCallback(({ nodeId }) => {
             onSendToTerminal={handleSendToTerminal}
         />
     );
-}, [activeContentPaneId, editorContextMenuPos, aiEditModal, renamingPaneId, editedFileName, setRootLayoutNode, currentPath, handleRunScript, handleSendToTerminal, handleAICodeAction]);
+}, [activeContentPaneId, setActiveContentPaneId, aiEditModal, renamingPaneId, editedFileName, setRootLayoutNode, currentPath, handleRunScript, handleSendToTerminal, handleAICodeAction]);
 
 const renderTerminalView = useCallback(({ nodeId, shell }: { nodeId: string, shell?: string }) => {
     return (
@@ -3334,11 +3342,12 @@ const renderTerminalView = useCallback(({ nodeId, shell }: { nodeId: string, she
             contentDataRef={contentDataRef}
             currentPath={currentPath}
             activeContentPaneId={activeContentPaneId}
+            setActiveContentPaneId={setActiveContentPaneId}
             shell={shell}
             isDarkMode={isDarkMode}
         />
     );
-}, [currentPath, activeContentPaneId, isDarkMode]);
+}, [currentPath, activeContentPaneId, isDarkMode, setActiveContentPaneId]);
 
 // PDF highlight handlers
 const handleCopyPdfText = useCallback((text: string) => {
@@ -4012,7 +4021,6 @@ useEffect(() => {
                 setContextMenuPos(null);
                 setFileContextMenuPos(null);
                 setMessageContextMenuPos(null);
-                setEditorContextMenuPos(null);
                 setBrowserContextMenu({ isOpen: false, x: 0, y: 0, selectedText: '' });
                 // Close status bar modals
                 setGitModalOpen(false);
@@ -5969,12 +5977,12 @@ ${contextPrompt}`;
         const handleBeforeUnload = () => {
             // Save current workspace
             if (currentPath && rootLayoutNode) {
-                const workspaceData = serializeWorkspace();
+                const workspaceData = serializeWorkspace(rootLayoutNode, currentPath, contentDataRef.current, activeContentPaneId, openMode);
                 if (workspaceData) {
                     saveWorkspaceToStorage(currentPath, workspaceData);
                 }
             }
-            
+
             // Mark window as closed but don't remove immediately
             // (in case it's just a refresh)
             try {
@@ -5991,7 +5999,7 @@ ${contextPrompt}`;
 
         window.addEventListener('beforeunload', handleBeforeUnload);
         return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-    }, [windowId, currentPath, rootLayoutNode, serializeWorkspace, saveWorkspaceToStorage]);
+    }, [windowId, currentPath, rootLayoutNode, activeContentPaneId, openMode, serializeWorkspace, saveWorkspaceToStorage]);
     // Remove the separate workspace loading useEffect completely
     // Instead, integrate it directly into initApplicationData
 
@@ -6114,6 +6122,11 @@ ${contextPrompt}`;
                         generateId,
                         getConversationStats
                     );
+
+                    if (savedWorkspace.openMode) {
+                        setOpenMode(savedWorkspace.openMode);
+                        localStorage.setItem('incognide_openMode', savedWorkspace.openMode);
+                    }
                 }
             } catch (error) {
                 console.error(`Error loading workspace:`, error);
@@ -7480,7 +7493,7 @@ ${contextPrompt}`;
                                     <button
                                         onClick={() => {
                                             if (!rootLayoutNode) return;
-                                            const data = serializeWorkspace(rootLayoutNode, currentPath, contentDataRef.current, activeContentPaneId);
+                                            const data = serializeWorkspace(rootLayoutNode, currentPath, contentDataRef.current, activeContentPaneId, openMode);
                                             localStorage.setItem(`incognide-default-layout:${currentPath}`, JSON.stringify(data));
                                             setLayoutPresetModalOpen(false);
                                         }}
@@ -7496,7 +7509,13 @@ ${contextPrompt}`;
                                             try {
                                                 const data = JSON.parse(saved);
                                                 const restored = await deserializeWorkspace(data, contentDataRef, setRootLayoutNode, setActiveContentPaneId, setIsLoadingWorkspace, generateId, getConversationStats);
-                                                if (restored) setLayoutPresetModalOpen(false);
+                                                if (restored) {
+                                                    if (data.openMode) {
+                                                        setOpenMode(data.openMode);
+                                                        localStorage.setItem('incognide_openMode', data.openMode);
+                                                    }
+                                                    setLayoutPresetModalOpen(false);
+                                                }
                                             } catch (e) { console.error('Failed to load default layout:', e); }
                                         }}
                                         disabled={!localStorage.getItem(`incognide-default-layout:${currentPath}`)}
@@ -9267,7 +9286,7 @@ const renderMainContent = () => {
                         onCheckForUpdates={checkForUpdates}
                         onCollapse={() => { setBottomBarCollapsed(true); localStorage.setItem('incognide_bottomBarCollapsed', 'true'); }}
                         openMode={openMode}
-                        onToggleOpenMode={() => { setOpenMode(m => { const next = m === 'pane' ? 'tab' : 'pane'; localStorage.setItem('incognide_openMode', next); return next; }); }}
+                        onToggleOpenMode={() => { setOpenMode(m => { const next = m === 'pane' ? 'tab' : 'pane'; localStorage.setItem('incognide_openMode', next); if (currentPath && rootLayoutNode) { const data = serializeWorkspace(rootLayoutNode, currentPath, contentDataRef.current, activeContentPaneId, next); if (data) saveWorkspaceToStorage(currentPath, data); } return next; }); }}
                         createDataDashPane={createDataDashPane}
                         createDiskUsagePane={createDiskUsagePane}
                         onOpenDownloadManager={() => setDownloadManagerOpen(true)}

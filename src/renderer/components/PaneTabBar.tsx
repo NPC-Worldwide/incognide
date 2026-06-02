@@ -120,7 +120,13 @@ const getTabTitle = (tab: Tab, contentDataRef?: any, nodeId?: string): string =>
         return shortId || (tab.contentType === 'agent' ? 'Agent' : 'Chat');
     }
 
-    if (tab.title) return tab.title;
+    // For file-based types, don't let stale raw content-type strings hide the file name
+    const fileTypes = new Set(['editor', 'image', 'pdf', 'csv', 'latex', 'docx', 'pptx', 'zip', 'folder', 'markdown-preview']);
+    const isFileBased = fileTypes.has(tab.contentType);
+    if (tab.title && !isFileBased) return tab.title;
+    if (tab.title && isFileBased && tab.title !== tab.contentType) return tab.title;
+
+    const filePath = tab.contentId ? String(tab.contentId).replace(/\\/g, '/') : '';
 
     switch (tab.contentType) {
         case 'chat':
@@ -129,7 +135,6 @@ const getTabTitle = (tab: Tab, contentDataRef?: any, nodeId?: string): string =>
         case 'terminal':
             return 'Terminal';
         case 'browser':
-
             if (tab.browserTitle && tab.browserTitle !== 'Browser') {
                 const title = tab.browserTitle;
                 return title.length > 25 ? title.slice(0, 22) + '...' : title;
@@ -162,25 +167,27 @@ const getTabTitle = (tab: Tab, contentDataRef?: any, nodeId?: string): string =>
         case 'datadash':
             return 'Data Dashboard';
         case 'markdown-preview':
-            return `Preview: ${getFileName(tab.contentId) || 'Markdown'}`;
+            return `Preview: ${filePath || 'Markdown'}`;
         case 'pdf':
-            return getFileName(tab.contentId) || 'PDF';
+            return filePath || 'PDF';
         case 'csv':
-            return getFileName(tab.contentId) || 'CSV';
+            return filePath || 'CSV';
         case 'latex':
-            return getFileName(tab.contentId) || 'LaTeX';
+            return filePath || 'LaTeX';
         case 'docx':
-            return getFileName(tab.contentId) || 'Document';
+            return filePath || 'Document';
         case 'pptx':
-            return getFileName(tab.contentId) || 'Presentation';
+            return filePath || 'Presentation';
         case 'zip':
-            return getFileName(tab.contentId) || 'Archive';
+            return filePath || 'Archive';
         case 'image':
-            return getFileName(tab.contentId) || 'Image';
+            return filePath || 'Image';
         case 'folder':
-            return getFileName(tab.contentId) || 'Folder';
+            return filePath || 'Folder';
+        case 'editor':
+            return filePath || 'Editor';
         default:
-            return getFileName(tab.contentId) || 'Tab';
+            return filePath || 'Tab';
     }
 };
 

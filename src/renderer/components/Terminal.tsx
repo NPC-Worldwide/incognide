@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, memo, useCallback, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal as TerminalIcon, Code, Sparkles, Settings, X, Type, Palette } from 'lucide-react';
@@ -172,6 +173,8 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
     const isSessionReady = useRef(false);
     const terminalOutputBuffer = useRef<string[]>([]);
     const initialPathRef = useRef(currentPath);
+    const setActiveContentPaneIdRef = useRef(setActiveContentPaneId);
+    setActiveContentPaneIdRef.current = setActiveContentPaneId;
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
     const [showShellPrompt, setShowShellPrompt] = useState(false);
     const [activeShell, setActiveShell] = useState<string>('system');
@@ -340,6 +343,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
 
     useEffect(() => {
         if (!terminalRef.current || !terminalId) return;
+        let nativeContextHandler: ((e: MouseEvent) => void) | null = null;
 
         if (!xtermInstance.current) {
             const initPresetKey = isDarkMode ? darkThemePreset : lightThemePreset;
@@ -369,6 +373,14 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             term.loadAddon(fitAddon);
             term.open(terminalRef.current);
             xtermInstance.current = term;
+
+            nativeContextHandler = (e: MouseEvent) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setActiveContentPaneIdRef.current?.(nodeId);
+                setContextMenu({ x: e.clientX, y: e.clientY });
+            };
+            terminalRef.current?.addEventListener('contextmenu', nativeContextHandler, true);
 
             // Restore saved terminal buffer from previous mount (move/de-tab)
             const savedBuffer = paneData?._terminalBuffer
@@ -852,6 +864,9 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                 handleWindowResizeRef.current = null;
             }
             pasteContainer?.removeEventListener('paste', handleImagePaste, true);
+            if (nativeContextHandler && terminalRef.current) {
+                terminalRef.current.removeEventListener('contextmenu', nativeContextHandler, true);
+            }
 
             if (xtermInstance.current) {
                 const buf = xtermInstance.current.buffer.active;
@@ -956,6 +971,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
         <div
             className="flex-1 flex flex-col theme-bg-secondary relative h-full min-h-0 overflow-hidden"
             onContextMenu={handleContextMenu}
+            onMouseDown={() => setActiveContentPaneId?.(nodeId)}
             data-terminal="true"
         >
             {showSettings && (
@@ -1328,14 +1344,14 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                 </div>
             )}
 
-            {contextMenu && (
+            {contextMenu && createPortal(
                 <>
                     <div
-                        className="fixed inset-0 z-40 bg-transparent"
+                        className="fixed inset-0 z-[9998] bg-transparent"
                         onMouseDown={() => setContextMenu(null)}
                     />
                     <div
-                        className="fixed theme-bg-tertiary shadow-lg rounded-md py-1 z-50 min-w-[140px] border theme-border"
+                        className="fixed theme-bg-tertiary shadow-lg rounded-md py-1 z-[9999] min-w-[140px] border theme-border"
                         style={{ top: contextMenu.y, left: contextMenu.x }}
                     >
                         <button
@@ -1370,7 +1386,8 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                             Clear
                         </button>
                     </div>
-                </>
+                </>,
+                document.body
             )}
 
             {showShellPrompt && (
