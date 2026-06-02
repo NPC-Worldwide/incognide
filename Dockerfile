@@ -86,16 +86,6 @@ EXPOSE 3000 5337
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:3000/health || exit 1
 
-# Install runtime deps for web-server
-RUN npm install express ws cors --save --ignore-scripts
-
-# Inject web-preload.js into the built frontend index.html
-RUN if [ -f /app/dist/index.html ]; then \
-      sed -i 's|</head>|<script src="/web-preload.js"></script></head>|' /app/dist/index.html; \
-    fi
-# Copy web-preload.js to dist so it's served statically
-RUN cp /app/src/web-preload.js /app/dist/web-preload.js
-
 # Create workspace directory for user files
 RUN mkdir -p /data/workspace
 
