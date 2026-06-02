@@ -1,6 +1,5 @@
 import { getFileName } from './utils';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { IS_WEB } from '../config';
 import { useAiEnabled } from './AiFeatureContext';
 import { createPortal } from 'react-dom';
 import {
@@ -641,7 +640,7 @@ const Sidebar = (props: any) => {
             { id: 'theme', label: 'Theme', icon: 'theme', enabled: true, order: 0 },
             { id: 'chat', label: 'Chat', icon: 'plus', enabled: true, order: 1 },
             { id: 'folder', label: 'Folder', icon: 'folder', enabled: true, order: 2 },
-            ...(IS_WEB ? [] : [{ id: 'browser', label: 'Browser', icon: 'globe', enabled: true, order: 3 } as TileConfig]),
+            { id: 'browser', label: 'Browser', icon: 'globe', enabled: true, order: 3 },
             { id: 'terminal', label: 'Terminal', icon: 'terminal', enabled: true, order: 4, subTypes: ['system', 'npcsh', 'guac'] },
             { id: 'code', label: 'Code', icon: 'code', enabled: true, order: 5 },
             { id: 'document', label: 'Doc', icon: 'file-text', enabled: true, order: 6, subTypes: ['docx', 'xlsx', 'pptx'] },
@@ -5707,7 +5706,7 @@ return (
                         setDropTargetSection(null);
                     }}
                 >
-                    {(sidebarSectionOrder || ['websites', 'files', 'git']).filter((s: string) => ['websites', 'files', 'git'].includes(s)).filter((s: string) => !IS_WEB || s !== 'websites').map((sectionId: string) => {
+                    {(sidebarSectionOrder || ['websites', 'files', 'git']).filter((s: string) => ['websites', 'files', 'git'].includes(s)).map((sectionId: string) => {
                         const sectionColors: Record<string, string> = {
                             websites: 'ring-purple-500',
                             files: 'ring-yellow-500',

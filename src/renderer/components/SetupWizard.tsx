@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Terminal, Package, Check, AlertCircle, RefreshCw, ChevronRight, Sparkles, Cpu, Mic, Zap, Box, Wand2, Bot, ChevronLeft, Info, Server, HardDrive, X, Folder, Cloud, KeyRound, Sun, Moon, FolderOpen } from 'lucide-react';
 import incognideLogo from '../../assets/icon.png';
-import { IS_WEB } from '../config';
 
 interface PythonInfo {
     name: string;
@@ -130,7 +129,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
     const [detectedPythons, setDetectedPythons] = useState<PythonInfo[]>([]);
     const [selectedPython, setSelectedPython] = useState<PythonInfo | null>(null);
-    const [selectedExtras, setSelectedExtras] = useState<string>(IS_WEB ? 'lite' : 'local');
+    const [selectedExtras, setSelectedExtras] = useState<string>('local');
     const [pythonPath, setPythonPath] = useState<string>('');
     const [error, setError] = useState<string | null>(null);
     const [installOutput, setInstallOutput] = useState<string[]>([]);
@@ -327,7 +326,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     const finishSetup = async () => {
         setLoading(true);
         try {
-            const userPath = aiEnabled ? (IS_WEB ? 'cloud-ai' : 'local-ai') : 'no-ai';
+            const userPath = aiEnabled ? 'local-ai' : 'no-ai';
             const extras = aiEnabled ? selectedExtras : 'lite';
             await (window as any).api?.profileSave?.({
                 path: userPath,
@@ -384,11 +383,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     };
 
     const handleAIConfigNext = () => {
-        if (IS_WEB) {
-            finishSetup();
-        } else {
-            setStep('extras');
-        }
+        setStep('extras');
     };
 
     const handleExtrasNext = () => {
@@ -469,37 +464,35 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 </div>
             </div>
 
-            {!IS_WEB && (
-                <div className="space-y-2">
-                    <label className="text-xs text-gray-400 font-medium">Data Directory</label>
-                    <div className="flex gap-2">
-                        <input
-                            type="text"
-                            value={dataDirectory}
-                            onChange={(e) => setDataDirectory(e.target.value)}
-                            className="flex-1 px-3 py-2 text-sm bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none"
-                            placeholder="~/.incognide"
-                        />
-                        <button
-                            onClick={async () => {
-                                try {
-                                    const result = await (window as any).api.showOpenDialog({
-                                        properties: ['openDirectory'],
-                                        title: 'Select Data Directory',
-                                    });
-                                    if (result?.filePaths?.[0]) {
-                                        setDataDirectory(result.filePaths[0]);
-                                    }
-                                } catch {}
-                            }}
-                            className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg"
-                        >
-                            <FolderOpen size={16} />
-                        </button>
-                    </div>
-                    <p className="text-[10px] text-gray-500">Where Incognide stores teams, models, and configs. Default: ~/.incognide</p>
+            <div className="space-y-2">
+                <label className="text-xs text-gray-400 font-medium">Data Directory</label>
+                <div className="flex gap-2">
+                    <input
+                        type="text"
+                        value={dataDirectory}
+                        onChange={(e) => setDataDirectory(e.target.value)}
+                        className="flex-1 px-3 py-2 text-sm bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none"
+                        placeholder="~/.incognide"
+                    />
+                    <button
+                        onClick={async () => {
+                            try {
+                                const result = await (window as any).api.showOpenDialog({
+                                    properties: ['openDirectory'],
+                                    title: 'Select Data Directory',
+                                });
+                                if (result?.filePaths?.[0]) {
+                                    setDataDirectory(result.filePaths[0]);
+                                }
+                            } catch {}
+                        }}
+                        className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg"
+                    >
+                        <FolderOpen size={16} />
+                    </button>
                 </div>
-            )}
+                <p className="text-[10px] text-gray-500">Where Incognide stores teams, models, and configs. Default: ~/.incognide</p>
+            </div>
 
             <div className="flex gap-3">
                 <button
@@ -510,7 +503,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 </button>
                 <button
                     onClick={() => {
-                        if (!IS_WEB && dataDirectory && dataDirectory !== '~/.incognide') {
+                        if (dataDirectory && dataDirectory !== '~/.incognide') {
                             (window as any).api?.saveGlobalSettings?.({
                                 global_settings: { data_directory: dataDirectory },
                                 global_vars: {}
@@ -681,60 +674,58 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 </div>
 
                 {/* Local Providers */}
-                {!IS_WEB && (
-                    <div className="space-y-2">
-                        <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
-                            <Cpu size={14} /> Local Providers
-                        </h3>
-                        {checkingModels ? (
-                            <div className="text-center py-4">
-                                <RefreshCw size={18} className="animate-spin mx-auto text-blue-400 mb-2" />
-                                <p className="text-xs text-gray-400">Checking for local model providers...</p>
-                            </div>
-                        ) : localProviders.length > 0 ? (
-                            localProviders.map(info => {
-                                const b = statusBadge(info);
-                                return (
-                                    <div key={info.provider} className={`p-3 rounded-lg border ${tileBorder(info)}`}>
-                                        <div className="flex items-center justify-between mb-1">
-                                            <div className="flex items-center gap-2">
-                                                {info.provider === 'ollama' && <Server size={16} className={iconColor(info)} />}
-                                                {info.provider === 'lmstudio' && <HardDrive size={16} className={iconColor(info)} />}
-                                                {info.provider === 'llamacpp' && <Cpu size={16} className={iconColor(info)} />}
-                                                {info.provider === 'omlx' && <Zap size={16} className={iconColor(info)} />}
-                                                <span className="font-medium text-white text-sm">
-                                                    {info.provider === 'ollama' && 'Ollama'}
-                                                    {info.provider === 'lmstudio' && 'LM Studio'}
-                                                    {info.provider === 'llamacpp' && 'llama.cpp / koboldcpp'}
-                                                    {info.provider === 'omlx' && 'oMLX'}
-                                                </span>
-                                            </div>
-                                            <span className={`text-xs px-2 py-0.5 rounded ${b.cls}`}>{b.text}</span>
+                <div className="space-y-2">
+                    <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
+                        <Cpu size={14} /> Local Providers
+                    </h3>
+                    {checkingModels ? (
+                        <div className="text-center py-4">
+                            <RefreshCw size={18} className="animate-spin mx-auto text-blue-400 mb-2" />
+                            <p className="text-xs text-gray-400">Checking for local model providers...</p>
+                        </div>
+                    ) : localProviders.length > 0 ? (
+                        localProviders.map(info => {
+                            const b = statusBadge(info);
+                            return (
+                                <div key={info.provider} className={`p-3 rounded-lg border ${tileBorder(info)}`}>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <div className="flex items-center gap-2">
+                                            {info.provider === 'ollama' && <Server size={16} className={iconColor(info)} />}
+                                            {info.provider === 'lmstudio' && <HardDrive size={16} className={iconColor(info)} />}
+                                            {info.provider === 'llamacpp' && <Cpu size={16} className={iconColor(info)} />}
+                                            {info.provider === 'omlx' && <Zap size={16} className={iconColor(info)} />}
+                                            <span className="font-medium text-white text-sm">
+                                                {info.provider === 'ollama' && 'Ollama'}
+                                                {info.provider === 'lmstudio' && 'LM Studio'}
+                                                {info.provider === 'llamacpp' && 'llama.cpp / koboldcpp'}
+                                                {info.provider === 'omlx' && 'oMLX'}
+                                            </span>
                                         </div>
-                                        {(info.models?.length || 0) > 0 && (
-                                            <div className="mt-1 flex flex-wrap gap-1">
-                                                {info.models!.slice(0, 4).map(model => (
-                                                    <span key={model} className="text-[10px] bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">{model}</span>
-                                                ))}
-                                                {info.models!.length > 4 && (
-                                                    <span className="text-[10px] text-gray-500">+{info.models!.length - 4} more</span>
-                                                )}
-                                            </div>
-                                        )}
+                                        <span className={`text-xs px-2 py-0.5 rounded ${b.cls}`}>{b.text}</span>
                                     </div>
-                                );
-                            })
-                        ) : (
-                            <p className="text-xs text-gray-500">No local providers detected. Install Ollama, LM Studio, or llama.cpp to run models locally.</p>
-                        )}
-                        <button
-                            onClick={checkLocalModels}
-                            className="w-full py-1.5 text-xs text-gray-400 hover:text-gray-300 flex items-center justify-center gap-1"
-                        >
-                            <RefreshCw size={12} /> Refresh detection
-                        </button>
-                    </div>
-                )}
+                                    {(info.models?.length || 0) > 0 && (
+                                        <div className="mt-1 flex flex-wrap gap-1">
+                                            {info.models!.slice(0, 4).map(model => (
+                                                <span key={model} className="text-[10px] bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">{model}</span>
+                                            ))}
+                                            {info.models!.length > 4 && (
+                                                <span className="text-[10px] text-gray-500">+{info.models!.length - 4} more</span>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })
+                    ) : (
+                        <p className="text-xs text-gray-500">No local providers detected. Install Ollama, LM Studio, or llama.cpp to run models locally.</p>
+                    )}
+                    <button
+                        onClick={checkLocalModels}
+                        className="w-full py-1.5 text-xs text-gray-400 hover:text-gray-300 flex items-center justify-center gap-1"
+                    >
+                        <RefreshCw size={12} /> Refresh detection
+                    </button>
+                </div>
 
                 {/* Cloud / API Providers */}
                 <div className="space-y-2">
@@ -921,7 +912,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
             </div>
 
             <div className="space-y-3">
-                {INSTALL_OPTIONS.filter(option => !IS_WEB || option.id !== 'local').map((option) => (
+                {INSTALL_OPTIONS.map((option) => (
                     <button
                         key={option.id}
                         onClick={() => setSelectedExtras(option.extras)}
@@ -938,7 +929,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                             <div className="flex-1">
                                 <div className="flex items-center gap-2">
                                     <span className="font-medium text-white">{option.name}</span>
-                                    {option.recommended && !IS_WEB && (
+                                    {option.recommended && (
                                         <span className="text-xs bg-blue-500/30 text-blue-300 px-2 py-0.5 rounded">Recommended</span>
                                     )}
                                 </div>

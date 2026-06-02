@@ -6,8 +6,6 @@ import AppTutorial from './components/AppTutorial';
 import BackendErrorBanner from './components/BackendErrorBanner';
 import { AuthProvider, NoClerkAuthProvider } from './components/AuthProvider';
 import { AiFeatureProvider } from './components/AiFeatureContext';
-import { IS_WEB } from './config';
-
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || '';
 
 const AuthWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -54,12 +52,6 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const checkSetup = async () => {
-      // Web mode: skip desktop setup wizard, go straight to auth gate in Enpistu
-      if (IS_WEB) {
-        setShowSetup(false);
-        return;
-      }
-
       try {
         const result = await (window as any).api?.setupCheckNeeded?.();
         const needed = result?.needed ?? false;

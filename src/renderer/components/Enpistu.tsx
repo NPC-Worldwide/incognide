@@ -1,5 +1,5 @@
  import React, { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
-import { BACKEND_URL, IS_WEB } from '../config';
+import { BACKEND_URL } from '../config';
 import { createPortal } from 'react-dom';
 import {
     Folder, File as FileIcon,  Globe, ChevronRight, ChevronLeft, Settings, Edit,
@@ -65,7 +65,6 @@ import CronDaemonPanel from './CronDaemonPanel';
 import MemoryManagement from './MemoryManagement';
 import WindowManagerPane from './WindowManagerPane';
 import AccountPane from './AccountPane';
-import { useAuth } from './AuthProvider';
 import SearchPane from './SearchPane';
 import DownloadManager, { getActiveDownloadsCount, setDownloadToastCallback, setDownloadAllCompleteCallback } from './DownloadManager';
 import { LiveProvider, LivePreview, LiveError } from 'react-live';
@@ -279,22 +278,8 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const [predictionSuggestion, setPredictionSuggestion] = useState('');
     const [predictionTargetElement, setPredictionTargetElement] = useState<HTMLElement | null>(null);
 
-    // Web mode auth gate
-    const auth = useAuth();
-    const [webReady, setWebReady] = useState(!IS_WEB);
-
     // Activity tracking for RNN predictions
     const { trackActivity } = useActivityTracker();
-
-    // Web mode: track auth + encryption readiness
-    useEffect(() => {
-        if (!IS_WEB) return;
-        if (auth.isAuthenticated && auth.isEncryptionReady) {
-            setWebReady(true);
-        } else {
-            setWebReady(false);
-        }
-    }, [auth.isAuthenticated, auth.isEncryptionReady]);
 
     // Global activity instrumentation
     useEffect(() => {
@@ -1722,7 +1707,6 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
 
     // Fetch tool-capable Ollama models (desktop only)
     useEffect(() => {
-        if (IS_WEB) return;
         const fetchOllamaToolModels = async () => {
             try {
                 const res = await fetch(`${BACKEND_URL}/api/ollama/tool_models`);
@@ -2195,9 +2179,8 @@ useEffect(() => {
     };
 }, [rootLayoutNode, activeContentPaneId, performSplit, closeContentPane, updateContentPane]);
 
-// SSE connection for MCP studio actions from the backend (desktop only)
+// SSE connection for MCP studio actions from the backend
 useEffect(() => {
-    if (IS_WEB) return;
     let eventSource: EventSource | null = null;
     let reconnectTimeout: NodeJS.Timeout | null = null;
 
@@ -2263,7 +2246,7 @@ useEffect(() => {
         lastMessageTime = Date.now();
 
         // Register window metadata
-        if (windowId && !IS_WEB) {
+        if (windowId) {
             window.api.studioRegisterWindow({
                 windowId,
                 folder: currentPathRef.current || '',
@@ -4426,11 +4409,6 @@ const handleGlobalDragEnd = () => {
     }
     const targetUrl = url || defaultHomepage;
 
-    if (IS_WEB) {
-        window.open(targetUrl, '_blank');
-        return;
-    }
-
     const newBrowserId = `browser_${generateId()}`;
 
     // Check for empty pane to reuse first
@@ -4463,11 +4441,6 @@ const handleGlobalDragEnd = () => {
 // Otherwise creates a new browser pane
 const handleNewBrowserTab = useCallback((url: string, paneId?: string) => {
     const targetUrl = url || 'about:blank';
-
-    if (IS_WEB) {
-        window.open(targetUrl, '_blank');
-        return;
-    }
 
     // If paneId is provided, try to add tab to that existing browser pane
     if (paneId) {
@@ -4592,23 +4565,6 @@ const renderSearchPane = useCallback(({ nodeId, initialQuery }: { nodeId: string
 }, [createAndAddPaneNodeToLayout]);
 
 const renderBrowserViewer = useCallback(({ nodeId, hasTabBar, onToggleZen, isZenMode }) => {
-    if (IS_WEB) {
-        const paneData = contentDataRef.current[nodeId];
-        const browserUrl = paneData?.browserUrl || 'about:blank';
-        return (
-            <div className="w-full h-full flex flex-col items-center justify-center bg-gray-900 p-6">
-                <Globe size={48} className="text-cyan-400 mb-4" />
-                <p className="text-white font-medium mb-2 text-center">Web Browser</p>
-                <p className="text-gray-400 text-sm mb-4 text-center break-all max-w-md">{browserUrl}</p>
-                <button
-                    onClick={() => window.open(browserUrl, '_blank')}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm"
-                >
-                    Open in New Tab
-                </button>
-            </div>
-        );
-    }
     return (
         <WebBrowserViewer
             nodeId={nodeId}
@@ -6044,12 +6000,6 @@ ${contextPrompt}`;
             setLoading(true);
             setError(null);
 
-            // Web mode: gate workspace init behind auth + encryption unlock
-            if (IS_WEB && (!auth.isAuthenticated || !auth.isEncryptionReady)) {
-                setLoading(false);
-                return;
-            }
-
             if (!config) {
                 try {
                     const loadedConfig = await window.api.getDefaultConfig();
@@ -6304,7 +6254,7 @@ ${contextPrompt}`;
 
         initApplicationData();
 
-    }, [currentPath, config, auth.isAuthenticated, auth.isEncryptionReady]);
+    }, [currentPath, config]);
 
 
 
@@ -7899,7 +7849,7 @@ const paneRenderers = useMemo(() => ({
     pdf: renderPdfViewer,
     csv: renderCsvViewer,
     docx: renderDocxViewer,
-    ...(IS_WEB ? {} : { browser: renderBrowserViewer }),
+    browser: renderBrowserViewer,
     pptx: renderPptxViewer,
     latex: renderLatexViewer,
     notebook: renderNotebookViewer,
@@ -8774,8 +8724,6 @@ const renderMainContent = () => {
             </div>
             )}
 
-            {!IS_WEB && (
-                <>
                 {/* Web Search — collapses to icon button when top bar is narrow, expands inline on click */}
                 {topBarWidth < 900 ? (
                     webSearchExpanded ? (
@@ -8869,8 +8817,6 @@ const renderMainContent = () => {
                     className="flex-1 bg-transparent text-gray-100 text-xs focus:outline-none min-w-0"
                 />
             </div>
-            )}
-                </>
             )}
 
             <div className="flex-1" />
@@ -9496,19 +9442,6 @@ const renderMainContent = () => {
     );
 };
 
-
-    // Web mode gate: show AccountPane until auth + encryption ready
-    if (!webReady) {
-        return (
-            <div className={`chat-container ${isDarkMode ? 'dark-mode' : 'light-mode'} h-screen flex flex-col theme-bg-primary theme-text-primary font-mono`}>
-                <div className="flex-1 flex items-center justify-center overflow-hidden">
-                    <div className="w-full max-w-2xl h-full p-6">
-                        <AccountPane nodeId="account-gate" />
-                    </div>
-                </div>
-            </div>
-        );
-    }
 
     return (
         <div className={`chat-container ${isDarkMode ? 'dark-mode' : 'light-mode'} h-screen flex flex-col theme-bg-primary theme-text-primary font-mono`}>
