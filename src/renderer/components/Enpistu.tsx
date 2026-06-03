@@ -3324,7 +3324,7 @@ const renderFileEditor = useCallback(({ nodeId }) => {
             handleEditorCopy={() => {}}
             handleEditorPaste={() => {}}
             handleAddToChat={(selectedText: string) => {
-                const editorPaneData = contentDataRef.current[activeContentPaneId || ''];
+                const editorPaneData = contentDataRef.current[nodeId];
                 const filePath = editorPaneData?.contentId;
                 const fileName = filePath ? filePath.split('/').pop() : 'selection';
                 const ext = fileName?.split('.').pop() || '';
@@ -3348,7 +3348,7 @@ const renderFileEditor = useCallback(({ nodeId }) => {
                 }
             }}
             handleAddToAgent={(selectedText: string) => {
-                const editorPaneData = contentDataRef.current[activeContentPaneId || ''];
+                const editorPaneData = contentDataRef.current[nodeId];
                 const filePath = editorPaneData?.contentId;
                 const fileName = filePath ? filePath.split('/').pop() : 'selection';
                 const ext = fileName?.split('.').pop() || '';
