@@ -19,7 +19,7 @@ import { EditorState } from '@codemirror/state';
 import { tags as t } from '@lezer/highlight';
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { lintKeymap, linter, lintGutter, type Diagnostic } from '@codemirror/lint';
-import { BrainCircuit, Edit, FileText, MessageSquare, GitBranch, X, Play, HelpCircle, RefreshCw } from 'lucide-react';
+import { Edit, FileText, MessageSquare, GitBranch, X, Play, HelpCircle, RefreshCw, ChevronDown, Bot } from 'lucide-react';
 
 const appHighlightStyleDark = HighlightStyle.define([
     { tag: t.keyword, color: '#c678dd' },
@@ -190,11 +190,17 @@ const editorThemeDark = EditorView.theme({
     },
 
     '.cm-vim-panel': {
-        backgroundColor: '#181825',
+        backgroundColor: '#0f0f14',
         color: '#cdd6f4',
-        padding: '2px 8px',
+        padding: '4px 12px',
         fontFamily: '"Fira Code", monospace',
-        fontSize: '12px',
+        fontSize: '13px',
+        borderTop: '1px solid #313244',
+        width: '100%',
+        boxSizing: 'border-box',
+        display: 'flex',
+        alignItems: 'center',
+        minHeight: '26px',
     },
     '.cm-vim-panel input': {
         backgroundColor: 'transparent',
@@ -202,6 +208,9 @@ const editorThemeDark = EditorView.theme({
         border: 'none',
         outline: 'none',
         fontFamily: '"Fira Code", monospace',
+        fontSize: '13px',
+        flex: '1',
+        marginLeft: '8px',
     },
 
     '&.cm-focused .cm-fat-cursor': {
@@ -356,11 +365,17 @@ const editorThemeLight = EditorView.theme({
         marginRight: '0.5em',
     },
     '.cm-vim-panel': {
-        backgroundColor: '#f3f4f6',
+        backgroundColor: '#f9fafb',
         color: '#374151',
-        padding: '2px 8px',
+        padding: '4px 12px',
         fontFamily: '"Fira Code", monospace',
-        fontSize: '12px',
+        fontSize: '13px',
+        borderTop: '1px solid #e5e7eb',
+        width: '100%',
+        boxSizing: 'border-box',
+        display: 'flex',
+        alignItems: 'center',
+        minHeight: '26px',
     },
     '.cm-vim-panel input': {
         backgroundColor: 'transparent',
@@ -368,6 +383,9 @@ const editorThemeLight = EditorView.theme({
         border: 'none',
         outline: 'none',
         fontFamily: '"Fira Code", monospace',
+        fontSize: '13px',
+        flex: '1',
+        marginLeft: '8px',
     },
     '&.cm-focused .cm-fat-cursor': {
         background: '#2563eb !important',
@@ -728,6 +746,7 @@ const CodeEditorPane = ({
     handleEditorCopy,
     handleEditorPaste,
     handleAddToChat,
+    handleAddToAgent,
     handleAIEdit,
     startAgenticEdit,
     setPromptModal,
@@ -752,6 +771,8 @@ const CodeEditorPane = ({
     });
     const [showKeybindGuide, setShowKeybindGuide] = useState(false);
     const [diskChangeContent, setDiskChangeContent] = useState<string | null>(null);
+    const [showModeDropdown, setShowModeDropdown] = useState(false);
+    const [refreshTick, setRefreshTick] = useState(0);
 
     useEffect(() => {
         const handleCycleMode = (e: KeyboardEvent) => {
@@ -899,6 +920,7 @@ const CodeEditorPane = ({
                 pd.fileContent = diskContent;
                 pd.fileChanged = false;
                 setRootLayoutNode(p => ({ ...p }));
+                setRefreshTick(prev => prev + 1);
             }
         } catch (e) {
             console.error('[CodeEditor] Reload failed:', e);
@@ -1032,56 +1054,52 @@ const CodeEditorPane = ({
                         savedEditorState={paneData?._scrollTopPos != null ? { scrollTopPos: paneData._scrollTopPos } : undefined}
                         onEditorStateChange={(state) => { if (paneData) { paneData._scrollTopPos = state.scrollTopPos; } }}
                     />
-                    <div className="absolute bottom-1 right-2 z-10 flex items-center gap-1">
-                        {(['default', 'vim', 'emacs', 'nano'] as const).map(mode => {
-                            const isEnabled = enabledModes.includes(mode);
-                            const isActive = keybindMode === mode;
-                            const label = mode === 'default' ? 'Def' : mode.charAt(0).toUpperCase() + mode.slice(1);
-                            return (
-                                <button
-                                    key={mode}
-                                    onClick={() => {
-
-                                        setKeybindMode(mode);
-                                        localStorage.setItem('incognide_editorKeybindMode', mode);
-
-                                        if (!isEnabled) {
-                                            const next = [...enabledModes, mode];
-                                            setEnabledModes(next);
-                                            localStorage.setItem('incognide_editorEnabledModes', JSON.stringify(next));
-                                        }
-                                    }}
-                                    onContextMenu={(e) => {
-                                        e.preventDefault();
-
-                                        if (isEnabled && enabledModes.length > 1) {
-                                            const next = enabledModes.filter(m => m !== mode);
-                                            setEnabledModes(next);
-                                            localStorage.setItem('incognide_editorEnabledModes', JSON.stringify(next));
-
-                                            if (keybindMode === mode) {
-                                                setKeybindMode(next[0]);
-                                                localStorage.setItem('incognide_editorKeybindMode', next[0]);
-                                            }
-                                        } else if (!isEnabled) {
-                                            const next = [...enabledModes, mode];
-                                            setEnabledModes(next);
-                                            localStorage.setItem('incognide_editorEnabledModes', JSON.stringify(next));
-                                        }
-                                    }}
-                                    className={`text-[10px] px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${
-                                        isActive
-                                            ? 'bg-purple-600/60 text-purple-200 border-purple-500/50'
-                                            : isEnabled
-                                                ? 'bg-black/40 text-gray-400 border-white/10 hover:bg-black/60 hover:text-gray-200'
-                                                : 'bg-black/20 text-gray-600 border-white/5 hover:bg-black/40 hover:text-gray-400'
-                                    }`}
-                                    title={`${isActive ? 'Active' : 'Click to switch'}. Right-click to ${isEnabled ? 'exclude from' : 'include in'} Ctrl+Shift+Space cycle.`}
-                                >
-                                    {label}
-                                </button>
-                            );
-                        })}
+                    <div className="absolute bottom-1 right-2 z-10 flex items-center gap-2">
+                        <span className="text-[10px] text-gray-500 font-mono select-none">
+                            {(fileContent || '').split('\n').length} lines
+                        </span>
+                        <div className="relative">
+                            <button
+                                onClick={() => setShowModeDropdown(prev => !prev)}
+                                className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border bg-black/40 text-gray-300 border-white/10 hover:bg-black/60 hover:text-gray-100 cursor-pointer transition-colors"
+                                title="Click to switch keybinding mode. Ctrl+Shift+Space to cycle."
+                            >
+                                {keybindMode === 'default' ? 'Default' : keybindMode.charAt(0).toUpperCase() + keybindMode.slice(1)}
+                                <ChevronDown size={10} />
+                            </button>
+                            {showModeDropdown && (
+                                <>
+                                    <div className="fixed inset-0 z-[9997]" onClick={() => setShowModeDropdown(false)} />
+                                    <div className="absolute bottom-full right-0 mb-1 z-[9998] theme-bg-secondary theme-border border rounded shadow-lg py-1 min-w-[120px]">
+                                        {(['default', 'vim', 'emacs', 'nano'] as const).map(mode => {
+                                            const isEnabled = enabledModes.includes(mode);
+                                            const isActive = keybindMode === mode;
+                                            return (
+                                                <button
+                                                    key={mode}
+                                                    onClick={() => {
+                                                        setKeybindMode(mode);
+                                                        localStorage.setItem('incognide_editorKeybindMode', mode);
+                                                        setShowModeDropdown(false);
+                                                        if (!isEnabled) {
+                                                            const next = [...enabledModes, mode];
+                                                            setEnabledModes(next);
+                                                            localStorage.setItem('incognide_editorEnabledModes', JSON.stringify(next));
+                                                        }
+                                                    }}
+                                                    className={`flex items-center justify-between gap-2 px-3 py-1.5 theme-hover w-full text-left text-xs ${
+                                                        isActive ? 'text-purple-300' : 'theme-text-primary'
+                                                    }`}
+                                                >
+                                                    <span>{mode === 'default' ? 'Default' : mode.charAt(0).toUpperCase() + mode.slice(1)}</span>
+                                                    {isActive && <span className="text-purple-400 text-[10px]">●</span>}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </>
+                            )}
+                        </div>
                         <button
                             onClick={reloadFromDisk}
                             className="p-0.5 rounded hover:bg-black/60 text-gray-500 hover:text-gray-300"
@@ -1261,23 +1279,6 @@ const CodeEditorPane = ({
                             className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-sm">
                             Paste
                         </button>
-                        {aiEnabled && contextMenuSelection && (
-                            <>
-                                <div className="border-t theme-border my-1"></div>
-                                <button onClick={() => { handleAIEdit('ask', contextMenuSelection); setEditorContextMenuPos(null); }}
-                                    className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-sm">
-                                    <MessageSquare size={16} />Explain
-                                </button>
-                                <button onClick={() => { handleAIEdit('document', contextMenuSelection); setEditorContextMenuPos(null); }}
-                                    className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-sm">
-                                    <FileText size={16} />Add Comments
-                                </button>
-                                <button onClick={() => { handleAIEdit('edit', contextMenuSelection); setEditorContextMenuPos(null); }}
-                                    className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-sm">
-                                    <Edit size={16} />Refactor
-                                </button>
-                            </>
-                        )}
                         <div className="border-t theme-border my-1"></div>
                         <button
                             onClick={() => {
@@ -1298,6 +1299,14 @@ const CodeEditorPane = ({
                                     className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left text-blue-400 text-sm">
                                     <MessageSquare size={16} />Add to Chat
                                 </button>
+                                <button
+                                    onClick={() => {
+                                        setEditorContextMenuPos(null);
+                                        handleAddToAgent(contextMenuSelection);
+                                    }}
+                                    className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left text-indigo-400 text-sm">
+                                    <Bot size={16} />Add to Agent
+                                </button>
                             </>
                         )}
                         {onSendToTerminal && contextMenuSelection && (
@@ -1310,34 +1319,6 @@ const CodeEditorPane = ({
                                     }}
                                     className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left text-green-400 text-sm">
                                     <Play size={16} />Send to Terminal
-                                </button>
-                            </>
-                        )}
-                        <div className="border-t theme-border my-1"></div>
-                        <button
-                            onClick={() => {
-                                setEditorContextMenuPos(null);
-                                handleStartRename();
-                            }}
-                            className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-sm">
-                            <Edit size={16} />Rename File
-                        </button>
-                        {aiEnabled && (
-                            <>
-                                <div className="border-t theme-border my-1"></div>
-                                <button
-                                    onClick={() => {
-                                        setEditorContextMenuPos(null);
-                                        setPromptModal({
-                                            isOpen: true,
-                                            title: 'Agentic Code Edit',
-                                            message: 'What would you like AI to do with all open files?',
-                                            defaultValue: 'Add error handling and improve code quality',
-                                            onConfirm: (instruction) => startAgenticEdit(instruction)
-                                        });
-                                    }}
-                                    className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left text-blue-400 text-sm">
-                                    <BrainCircuit size={16} />Agentic Edit
                                 </button>
                             </>
                         )}
