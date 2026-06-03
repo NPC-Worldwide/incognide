@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Check, AlertCircle, RefreshCw, ChevronRight, Sparkles, Cpu, Zap, Bot, ChevronLeft, Info, Server, HardDrive, X, Folder, Cloud, KeyRound, Sun, Moon, FolderOpen } from 'lucide-react';
+import { Check, AlertCircle, RefreshCw, ChevronRight, Sparkles, Cpu, Zap, Bot, ChevronLeft, Info, Server, HardDrive, X, Folder, Cloud, KeyRound, Sun, Moon, FolderOpen, Wand2 } from 'lucide-react';
 import incognideLogo from '../../assets/icon.png';
 
 interface SetupWizardProps {
