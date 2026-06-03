@@ -772,7 +772,6 @@ const CodeEditorPane = ({
     const [showKeybindGuide, setShowKeybindGuide] = useState(false);
     const [diskChangeContent, setDiskChangeContent] = useState<string | null>(null);
     const [showModeDropdown, setShowModeDropdown] = useState(false);
-    const [refreshTick, setRefreshTick] = useState(0);
 
     useEffect(() => {
         const handleCycleMode = (e: KeyboardEvent) => {
@@ -920,7 +919,6 @@ const CodeEditorPane = ({
                 pd.fileContent = diskContent;
                 pd.fileChanged = false;
                 setRootLayoutNode(p => ({ ...p }));
-                setRefreshTick(prev => prev + 1);
             }
         } catch (e) {
             console.error('[CodeEditor] Reload failed:', e);

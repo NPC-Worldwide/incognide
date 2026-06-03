@@ -72,6 +72,7 @@ interface AgentInputProps {
     setContextPaneOverrides: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
     contentDataRef: React.MutableRefObject<any>;
     paneVersion?: number;
+    paneUpdateEmitter?: EventTarget;
 
     executionMode: string;
     setExecutionMode: (val: string) => void;
@@ -142,7 +143,8 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         selectedModels, setSelectedModels, selectedNPCs, setSelectedNPCs,
         broadcastMode, setBroadcastMode,
         availableMcpServers,
-        activeConversationId, onFocus, onOpenFile, onBroadcast
+        activeConversationId, onFocus, onOpenFile, onBroadcast,
+        paneUpdateEmitter
     } = props;
 
     const [isHovering, setIsHovering] = useState(false);
@@ -167,6 +169,19 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
             }
         } catch {}
     }, [localInput, paneId]);
+    useEffect(() => {
+        if (!paneUpdateEmitter) return;
+        const handlePaneUpdate = (e: any) => {
+            if (e.detail?.paneId === paneId || e.detail?.paneId === 'all') {
+                const refInput = contentDataRef?.current?.[paneId]?.localInput;
+                if (refInput !== undefined && refInput !== localInput) {
+                    setLocalInput(refInput);
+                }
+            }
+        };
+        paneUpdateEmitter.addEventListener('pane-update', handlePaneUpdate);
+        return () => paneUpdateEmitter.removeEventListener('pane-update', handlePaneUpdate);
+    }, [paneUpdateEmitter, paneId, localInput]);
     const [isInputMinimized, setIsInputMinimized] = useState(false);
     const [isInputExpanded, setIsInputExpanded] = useState(false);
     const [uploadedFiles, setUploadedFiles] = useState<any[]>(() => {
