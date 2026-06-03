@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Check, AlertCircle, RefreshCw, ChevronRight, Sparkles, Cpu, Zap, Bot, ChevronLeft, Info, Server, HardDrive, X, Folder, Cloud, KeyRound, Sun, Moon, FolderOpen, Wand2 } from 'lucide-react';
+import { Check, AlertCircle, RefreshCw, ChevronRight, Sparkles, Cpu, Zap, Bot, ChevronLeft, Info, Server, HardDrive, X, Folder, Cloud, KeyRound, Sun, Moon, FolderOpen } from 'lucide-react';
 import incognideLogo from '../../assets/icon.png';
 
 interface SetupWizardProps {
@@ -31,7 +31,7 @@ const iconColor = (info: ModelInfo | undefined) => {
     return 'text-gray-500';
 };
 
-type SetupStep = 'welcome' | 'preferences' | 'defaults' | 'ai-choice' | 'ai-config' | 'concepts' | 'complete' | 'error';
+type SetupStep = 'welcome' | 'preferences' | 'defaults' | 'ai-choice' | 'ai-config' | 'complete' | 'error';
 
 const SEARCH_ENGINES: { id: string; name: string }[] = [
     { id: 'sibiji', name: 'Sibiji (default)' },
@@ -192,11 +192,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 console.error('NPC team deploy failed:', err);
             }
 
-            if (aiEnabled) {
-                setStep('concepts');
-            } else {
-                setStep('complete');
-            }
+            setStep('complete');
         } catch (err: any) {
             setError(err.message);
             setStep('error');
@@ -742,69 +738,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         );
     };
 
-    const renderConcepts = () => (
-        <div className="space-y-5">
-            <div className="text-center">
-                <h2 className="text-xl font-bold text-white mb-1">Meet Your AI Team</h2>
-                <p className="text-gray-400 text-sm">AI assistants and tools at your fingertips</p>
-            </div>
-
-            <div className="bg-gradient-to-br from-amber-900/30 to-amber-800/20 border border-amber-500/30 rounded-lg p-4">
-                <div className="flex items-center gap-3 mb-3">
-                    {npcImagesPath ? (
-                        <img
-                            src={`file://${npcImagesPath}/ledbi.png`}
-                            alt="Ledbi"
-                            className="w-14 h-14 rounded-xl object-cover"
-                            style={{ borderColor: 'rgb(139,69,19)', borderWidth: 2 }}
-                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                        />
-                    ) : null}
-                    <div>
-                        <h3 className="font-bold text-white text-lg">Ledbi</h3>
-                        <p className="text-xs text-amber-400">Your UI Assistant</p>
-                    </div>
-                </div>
-                <p className="text-sm text-gray-300 mb-2">
-                    A loyal helper who manages your workspace — opens panes, navigates browsers, and keeps things organized.
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                    {['open_pane', 'close_pane', 'navigate', 'notify'].map(jinx => (
-                        <span key={jinx} className="text-xs bg-amber-900/40 text-amber-300 px-2 py-0.5 rounded">{jinx}</span>
-                    ))}
-                </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-                <div className="bg-gradient-to-br from-purple-900/30 to-purple-800/20 border border-purple-500/30 rounded-lg p-3">
-                    <div className="flex items-center gap-2 mb-2">
-                        <Bot size={16} className="text-purple-400" />
-                        <h4 className="font-semibold text-white text-sm">NPCs</h4>
-                    </div>
-                    <p className="text-xs text-gray-400">
-                        AI personas with specific roles and skills. Chat with them or let them work autonomously.
-                    </p>
-                </div>
-                <div className="bg-gradient-to-br from-green-900/30 to-green-800/20 border border-green-500/30 rounded-lg p-3">
-                    <div className="flex items-center gap-2 mb-2">
-                        <Wand2 size={16} className="text-green-400" />
-                        <h4 className="font-semibold text-white text-sm">Jinxs</h4>
-                    </div>
-                    <p className="text-xs text-gray-400">
-                        Reusable action templates — search, browse, summarize, run code, and more.
-                    </p>
-                </div>
-            </div>
-
-            <button
-                onClick={() => setStep('complete')}
-                className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center justify-center gap-2"
-            >
-                Let's Go <ChevronRight size={18} />
-            </button>
-        </div>
-    );
-
     const renderComplete = () => (
         <div className="space-y-6">
             <div className="text-center">
@@ -888,7 +821,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 {step === 'defaults' && renderDefaults()}
                 {step === 'ai-choice' && renderAIChoice()}
                 {step === 'ai-config' && renderAIConfig()}
-                {step === 'concepts' && renderConcepts()}
                 {step === 'complete' && renderComplete()}
                 {step === 'error' && renderError()}
             </div>
