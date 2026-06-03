@@ -640,7 +640,8 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const [renamingPath, setRenamingPath] = useState(null);
     const [editedSidebarItemName, setEditedSidebarItemName] = useState('');
     
-    const [lastActiveChatPaneId, setLastActiveChatPaneId] = useState(null);    
+    const [lastActiveChatPaneId, setLastActiveChatPaneId] = useState(null);
+    const [lastActiveAgentPaneId, setLastActiveAgentPaneId] = useState(null);
     const [aiEditModal, setAiEditModal] = useState({
         isOpen: false,
         type: '',
@@ -655,8 +656,15 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         modelForEdit: null,
         npcForEdit: null,
         customEditPrompt: ''
-    });    
- 
+    });
+
+    // Track most recently used chat/agent panes
+    useEffect(() => {
+        if (!activeContentPaneId) return;
+        const pd = contentDataRef.current[activeContentPaneId];
+        if (pd?.contentType === 'chat') setLastActiveChatPaneId(activeContentPaneId);
+        if (pd?.contentType === 'agent') setLastActiveAgentPaneId(activeContentPaneId);
+    }, [activeContentPaneId]);
 
     // Sync workspace path to main process for downloads
     useEffect(() => {
@@ -3316,13 +3324,52 @@ const renderFileEditor = useCallback(({ nodeId }) => {
             handleEditorCopy={() => {}}
             handleEditorPaste={() => {}}
             handleAddToChat={(selectedText: string) => {
-                // Get the active pane's file path for context
-                const paneData = contentDataRef.current[activeContentPaneId || ''];
-                const filePath = paneData?.contentId;
+                const editorPaneData = contentDataRef.current[nodeId];
+                const filePath = editorPaneData?.contentId;
                 const fileName = filePath ? filePath.split('/').pop() : 'selection';
                 const ext = fileName?.split('.').pop() || '';
                 const citation = `\`\`\`${ext}\n// From ${fileName}\n${selectedText}\n\`\`\``;
-                setInput(prev => `${prev}${prev ? '\n\n' : ''}${citation}`);
+                const targetPaneId = lastActiveChatPaneId && contentDataRef.current[lastActiveChatPaneId]?.contentType === 'chat'
+                    ? lastActiveChatPaneId
+                    : Object.keys(contentDataRef.current).find(id => contentDataRef.current[id]?.contentType === 'chat');
+                if (targetPaneId) {
+                    const existing = contentDataRef.current[targetPaneId]?.localInput || '';
+                    contentDataRef.current[targetPaneId].localInput = existing ? `${existing}\n\n${citation}` : citation;
+                    setActiveContentPaneId(targetPaneId);
+                    paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: targetPaneId } }));
+                } else {
+                    const newPaneId = createAndAddPaneNodeToLayout('chat', null);
+                    if (newPaneId) {
+                        if (!contentDataRef.current[newPaneId].localInput) contentDataRef.current[newPaneId].localInput = '';
+                        contentDataRef.current[newPaneId].localInput = citation;
+                        setActiveContentPaneId(newPaneId);
+                        paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: newPaneId } }));
+                    }
+                }
+            }}
+            handleAddToAgent={(selectedText: string) => {
+                const editorPaneData = contentDataRef.current[nodeId];
+                const filePath = editorPaneData?.contentId;
+                const fileName = filePath ? filePath.split('/').pop() : 'selection';
+                const ext = fileName?.split('.').pop() || '';
+                const citation = `\`\`\`${ext}\n// From ${fileName}\n${selectedText}\n\`\`\``;
+                const targetPaneId = lastActiveAgentPaneId && contentDataRef.current[lastActiveAgentPaneId]?.contentType === 'agent'
+                    ? lastActiveAgentPaneId
+                    : Object.keys(contentDataRef.current).find(id => contentDataRef.current[id]?.contentType === 'agent');
+                if (targetPaneId) {
+                    const existing = contentDataRef.current[targetPaneId]?.localInput || '';
+                    contentDataRef.current[targetPaneId].localInput = existing ? `${existing}\n\n${citation}` : citation;
+                    setActiveContentPaneId(targetPaneId);
+                    paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: targetPaneId } }));
+                } else {
+                    const newPaneId = createAndAddPaneNodeToLayout('agent', null);
+                    if (newPaneId) {
+                        if (!contentDataRef.current[newPaneId].localInput) contentDataRef.current[newPaneId].localInput = '';
+                        contentDataRef.current[newPaneId].localInput = citation;
+                        setActiveContentPaneId(newPaneId);
+                        paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: newPaneId } }));
+                    }
+                }
             }}
             handleAIEdit={handleAICodeAction}
             startAgenticEdit={() => {}}
@@ -3333,7 +3380,7 @@ const renderFileEditor = useCallback(({ nodeId }) => {
             onSendToTerminal={handleSendToTerminal}
         />
     );
-}, [activeContentPaneId, setActiveContentPaneId, aiEditModal, renamingPaneId, editedFileName, setRootLayoutNode, currentPath, handleRunScript, handleSendToTerminal, handleAICodeAction]);
+}, [activeContentPaneId, setActiveContentPaneId, aiEditModal, renamingPaneId, editedFileName, setRootLayoutNode, currentPath, handleRunScript, handleSendToTerminal, handleAICodeAction, lastActiveChatPaneId, lastActiveAgentPaneId, createAndAddPaneNodeToLayout, paneUpdateEmitter]);
 
 const renderTerminalView = useCallback(({ nodeId, shell }: { nodeId: string, shell?: string }) => {
     return (
@@ -7639,6 +7686,7 @@ const getChatInputProps = useCallback((paneId: string) => {
     setContextPaneOverrides: (updater: any) => { setContextPaneOverrides(updater); notifyUpdate(); },
     contentDataRef,
     paneVersion,
+    paneUpdateEmitter,
     // Per-pane execution mode
     executionMode: getPaneExecutionMode(paneId),
     setExecutionMode: (mode: string) => { setPaneExecutionMode(paneId, mode); notifyUpdate(); },
