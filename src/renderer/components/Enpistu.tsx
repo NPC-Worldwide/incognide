@@ -1960,27 +1960,6 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
                 return;
             }
 
-            // New Terminal: Super+Shift+T (Linux/Win), Ctrl+Shift+T (Mac)
-            // Restore last closed: Ctrl+Shift+T (Linux/Win), Cmd+Shift+T (Mac)
-            if (e.shiftKey && (e.key === 't' || e.key === 'T')) {
-                const isMac = navigator.platform.includes('Mac');
-                const isNewTerminal = isMac ? (e.ctrlKey && !e.metaKey) : (e.metaKey && !e.ctrlKey);
-                const isRestore = isMac ? (e.metaKey && !e.ctrlKey) : (e.ctrlKey && !e.metaKey);
-                if (isNewTerminal) {
-                    e.preventDefault();
-                    createNewTerminalRef.current?.();
-                    return;
-                }
-                if (isRestore) {
-                    e.preventDefault();
-                    const closedTab = closedTabsRef.current.pop();
-                    if (closedTab) {
-                        createAndAddPaneNodeToLayout(closedTab.contentType, closedTab.contentId);
-                    }
-                    return;
-                }
-            }
-
             // Ctrl+Shift+C - New Conversation/Chat (but not when in terminal - let terminal handle copy)
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'c' || e.key === 'C')) {
                 // Check if focus is inside a terminal - if so, let the terminal handle the copy
@@ -9144,7 +9123,10 @@ const renderMainContent = () => {
                                     <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
                                         <div className="text-right text-gray-500">{mod}P</div><div className="text-left">Command palette</div>
                                         <div className="text-right text-gray-500">{mod}{shift}C</div><div className="text-left">New chat</div>
-                                        <div className="text-right text-gray-500">{mod}{shift}T</div><div className="text-left">New terminal</div>
+                                        <div className="text-right text-gray-500">{(() => {
+                                            const isMac = navigator.platform?.toLowerCase().includes('mac');
+                                            return isMac ? '⌃⇧T' : `${mod}${shift}T`;
+                                        })()}</div><div className="text-left">New terminal</div>
                                         <div className="text-right text-gray-500">{mod}O</div><div className="text-left">Open file</div>
                                         <div className="text-right text-gray-500">{mod}B</div><div className="text-left">New browser</div>
                                         <div className="text-right text-gray-500">{mod}{shift}F</div><div className="text-left">Global search</div>
