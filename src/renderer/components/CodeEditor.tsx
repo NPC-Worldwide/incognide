@@ -1,5 +1,6 @@
 import { getFileName } from './utils';
 import { useAiEnabled } from './AiFeatureContext';
+import { readFileContent, writeFileContent } from '../api/fileSystem';
 import React, { useMemo, useCallback, useRef, useEffect, useState, memo } from 'react';
 import { createPortal } from 'react-dom';
 import CodeMirror from '@uiw/react-codemirror';
@@ -796,7 +797,7 @@ const CodeEditorPane = ({
         if (pd?.contentId && !pd.isUntitled && pd.fileContent === undefined) {
             (async () => {
                 try {
-                    const result = await (window as any).api.readFileContent(pd.contentId);
+                    const result = await readFileContent(pd.contentId);
                     const content = typeof result === 'string' ? result : result?.content;
                     if (content != null) {
                         pd.fileContent = content;
@@ -864,7 +865,7 @@ const CodeEditorPane = ({
                     if (!inputFilename || inputFilename.trim() === '') return;
                     const cleanName = inputFilename.trim();
                     const filepath = `${currentPath}/${cleanName}`;
-                    await window.api.writeFileContent(filepath, currentPaneData.fileContent || '');
+                    await writeFileContent(filepath, currentPaneData.fileContent || '');
 
                     currentPaneData.contentId = filepath;
                     currentPaneData.isUntitled = false;
@@ -878,7 +879,7 @@ const CodeEditorPane = ({
         if (currentPaneData.contentId && currentPaneData.fileChanged) {
             currentPaneData._selfWriting = true;
             currentPaneData._lastWrittenContent = currentPaneData.fileContent;
-            await window.api.writeFileContent(currentPaneData.contentId, currentPaneData.fileContent);
+            await writeFileContent(currentPaneData.contentId, currentPaneData.fileContent);
             currentPaneData.fileChanged = false;
             setRootLayoutNode(p => ({ ...p }));
             setTimeout(() => { currentPaneData._selfWriting = false; }, 4000);
@@ -898,7 +899,7 @@ const CodeEditorPane = ({
             try {
                 currentPaneData._selfWriting = true;
                 currentPaneData._lastWrittenContent = currentPaneData.fileContent;
-                await (window as any).api.writeFileContent(currentPaneData.contentId, currentPaneData.fileContent);
+                await writeFileContent(currentPaneData.contentId, currentPaneData.fileContent);
                 currentPaneData.fileChanged = false;
                 setRootLayoutNode(p => ({ ...p }));
                 setTimeout(() => { currentPaneData._selfWriting = false; }, 4000);
@@ -943,7 +944,7 @@ const CodeEditorPane = ({
             if (!pd || pd.contentId !== changedPath) return;
             if (pd._selfWriting) return;
             try {
-                const result = await (window as any).api.readFileContent(changedPath);
+                const result = await readFileContent(changedPath);
                 const diskContent = typeof result === 'string' ? result : result?.content;
                 if (diskContent == null) return;
                 // Echo guard: ignore disk events whose content matches the last bytes we wrote.

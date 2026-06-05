@@ -908,4 +908,37 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
     registeredTeamsScan: (currentPath) => ipcRenderer.invoke('registered-teams:scan', currentPath),
     mcpGetServersForSidebar: (currentPath) => ipcRenderer.invoke('mcp:getServersForSidebar', currentPath),
 
+    sshConnect: (config) => ipcRenderer.invoke('ssh:connect', config),
+    sshDisconnect: (opts) => ipcRenderer.invoke('ssh:disconnect', opts),
+    sshListConnections: () => ipcRenderer.invoke('ssh:list-connections'),
+    sshTestConnection: (config) => ipcRenderer.invoke('ssh:test-connection', config),
+    sshReadDirectory: (opts) => ipcRenderer.invoke('ssh:read-directory', opts),
+    sshReadFile: (opts) => ipcRenderer.invoke('ssh:read-file', opts),
+    sshWriteFile: (opts) => ipcRenderer.invoke('ssh:write-file', opts),
+    sshRename: (opts) => ipcRenderer.invoke('ssh:rename', opts),
+    sshMkdir: (opts) => ipcRenderer.invoke('ssh:mkdir', opts),
+    sshUnlink: (opts) => ipcRenderer.invoke('ssh:unlink', opts),
+    sshStat: (opts) => ipcRenderer.invoke('ssh:stat', opts),
+    sshExec: (opts) => ipcRenderer.invoke('ssh:exec', opts),
+    sshCreateTerminal: (opts) => ipcRenderer.invoke('ssh:create-terminal', opts),
+    sshWriteTerminal: (opts) => ipcRenderer.invoke('ssh:write-terminal', opts),
+    sshResizeTerminal: (opts) => ipcRenderer.invoke('ssh:resize-terminal', opts),
+    sshKillTerminal: (opts) => ipcRenderer.invoke('ssh:kill-terminal', opts),
+    sshReadFileBuffer: (opts) => ipcRenderer.invoke('ssh:read-file-buffer', opts),
+    onSshTerminalData: (callback) => {
+        const handler = (_, data) => callback(data);
+        ipcRenderer.on('ssh:terminal-data', handler);
+        return () => ipcRenderer.removeListener('ssh:terminal-data', handler);
+    },
+    onSshTerminalClosed: (callback) => {
+        const handler = (_, data) => callback(data);
+        ipcRenderer.on('ssh:terminal-closed', handler);
+        return () => ipcRenderer.removeListener('ssh:terminal-closed', handler);
+    },
+    onSshDisconnected: (callback) => {
+        const handler = (_, data) => callback(data);
+        ipcRenderer.on('ssh:disconnected', handler);
+        return () => ipcRenderer.removeListener('ssh:disconnected', handler);
+    },
+
 });

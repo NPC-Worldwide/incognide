@@ -1,6 +1,7 @@
 import { getFileName } from './utils';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAiEnabled } from './AiFeatureContext';
+import { readDirectoryStructure, readFileContent, renameFile, deleteFile, deleteDirectory, createDirectory, writeFileContent } from '../api/fileSystem';
 import { createPortal } from 'react-dom';
 import {
     Folder, File, Globe, ChevronRight, Settings, Edit,
@@ -85,7 +86,8 @@ const Sidebar = (props: any) => {
         isPredictiveTextEnabled, setIsPredictiveTextEnabled,
         topBarHeight = 48, bottomBarHeight = 48, topBarCollapsed = false,
         onExpandTopBar, onCollapseTopBar, setDownloadManagerOpen,
-        openTeamManagementTab
+        openTeamManagementTab,
+        activeConnection, onOpenSSHDialog
     } = props;
 
     const aiEnabled = useAiEnabled();
@@ -1036,7 +1038,7 @@ const handleApplyPromptToFiles = async (operationType, customPrompt = '') => {
     try {
 
         const filesContentPromises = selectedFilePaths.map(async (filePath) => {
-            const response = await window.api.readFileContent(filePath);
+            const response = await readFileContent(filePath);
             if (response.error) {
                 console.warn(`Could not read file ${filePath}:`, response.error);
                 return `File (${getFileName(filePath)}): [Error reading content]`;
@@ -1113,7 +1115,7 @@ const handleApplyPromptToFilesInInput = async (operationType, customPrompt = '')
 
     try {
         const filesContentPromises = selectedFilePaths.map(async (filePath, index) => {
-            const response = await window.api.readFileContent(filePath);
+            const response = await readFileContent(filePath);
             if (response.error) {
                 console.warn(`Could not read file ${filePath}:`, response.error);
                 return `File ${index + 1} (${filePath}): [Error reading content: ${response.error}]`;
@@ -1338,9 +1340,9 @@ const handleSidebarItemDelete = async () => {
     try {
         let response;
         if (type === 'file') {
-            response = await window.api.deleteFile(path);
+            response = await deleteFile(path);
         } else if (type === 'directory') {
-            response = await window.api.deleteDirectory(path);
+            response = await deleteDirectory(path);
         }
 
         if (response?.error) throw new Error(response.error);
@@ -1417,7 +1419,7 @@ const handleFolderOverview = async () => {
         }
 
         const filesContentPromises = response.files.map(async (filePath) => {
-            const fileResponse = await window.api.readFileContent(filePath);
+            const fileResponse = await readFileContent(filePath);
             const fileName = getFileName(filePath);
             return fileResponse.error
                 ? `File (${fileName}): [Error reading content]`
@@ -1636,7 +1638,7 @@ const renderWorkspaceIndicator = () => {
         }
 
         if (selectedFilePaths.length > 0) {
-            await Promise.all(selectedFilePaths.map(filePath => window.api.deleteFile(filePath)));
+            await Promise.all(selectedFilePaths.map(filePath => deleteFile(filePath)));
         }
 
         await loadDirectoryStructure(currentPath);
@@ -1670,7 +1672,7 @@ const refreshDirectoryStructureOnly = async () => {
             console.error('No directory path provided');
             return {};
         }
-        const structureResult = await window.api.readDirectoryStructure(currentPath, getCustomExtensionsOptions());
+        const structureResult = await readDirectoryStructure(currentPath, getCustomExtensionsOptions());
         if (structureResult && !structureResult.error) {
             setFolderStructure(structureResult);
         } else {
@@ -3106,7 +3108,7 @@ const renderWebsiteList = () => {
                   console.error('No directory path provided');
                   return {};
               }
-              const structureResult = await window.api.readDirectoryStructure(dirPath, getCustomExtensionsOptions());
+              const structureResult = await readDirectoryStructure(dirPath, getCustomExtensionsOptions());
               if (structureResult && !structureResult.error) {
                   setFolderStructure(structureResult);
               } else {
@@ -3228,7 +3230,7 @@ const renderWebsiteList = () => {
                   const newPath = `${dir}/${editedSidebarItemName}`;
 
                   try {
-                      const response = await window.api.renameFile(renamingPath, newPath);
+                      const response = await renameFile(renamingPath, newPath);
                       if (response?.error) throw new Error(response.error);
 
                       Object.entries(contentDataRef.current).forEach(([paneId, paneData]) => {
@@ -3421,7 +3423,7 @@ const renderWebsiteList = () => {
                             onClick={async () => {
                                 const newPath = `${path}/New Folder`;
                                 try {
-                                    await (window as any).api?.createDirectory?.(newPath);
+                                    await createDirectory(newPath);
                                     await refreshDirectoryStructureOnly();
                                     setFilesCollapsed(false);
                                     setTimeout(() => setRenamingPath(newPath), 100);
@@ -3448,7 +3450,7 @@ const renderWebsiteList = () => {
                                     } catch { break; }
                                 }
                                 try {
-                                    await (window as any).api?.writeFileContent?.(newFilePath, '');
+                                    await writeFileContent(newFilePath, '');
                                     await refreshDirectoryStructureOnly();
                                     setFilesCollapsed(false);
                                     setTimeout(() => setRenamingPath(newFilePath), 100);
@@ -3686,6 +3688,13 @@ const renderFolderList = (structure) => {
                                 title="Settings"
                             >
                                 <Settings size={11} />
+                            </button>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onOpenSSHDialog?.(); }}
+                                className={`p-1.5 rounded transition-all ${activeConnection ? 'text-green-400 bg-green-500/20' : 'text-gray-400 hover:text-green-400 hover:bg-green-500/20'}`}
+                                title={activeConnection ? `SSH: ${activeConnection.host}` : 'Connect via SSH'}
+                            >
+                                <Server size={11} />
                             </button>
                         </>
                     )}
@@ -4039,7 +4048,7 @@ const renderFolderList = (structure) => {
                                     const fileName = getFileName(sourcePath);
                                     const destPath = `${fullPath}/${fileName}`;
                                     if (sourcePath !== destPath && !destPath.startsWith(sourcePath + '/')) {
-                                        await (window as any).api?.renameFile?.(sourcePath, destPath);
+                                        await renameFile(sourcePath, destPath);
                                         await refreshDirectoryStructureOnly();
                                     }
                                 }
@@ -4230,7 +4239,7 @@ onDragStart={(e) => {
                                 const fileName = getFileName(sourcePath);
                                 const destPath = `${currentPath}/${fileName}`;
                                 if (sourcePath !== destPath && !destPath.startsWith(sourcePath + '/')) {
-                                    await (window as any).api?.renameFile?.(sourcePath, destPath);
+                                    await renameFile(sourcePath, destPath);
                                     await refreshDirectoryStructureOnly();
                                 }
                             }

@@ -10,6 +10,7 @@ const music = require('./music');
 const npc = require('./npc');
 const filesystem = require('./filesystem');
 const settings = require('./settings');
+const ssh = require('./ssh');
 
 function registerAll(ctx) {
 
@@ -30,6 +31,7 @@ function registerAll(ctx) {
   npc.register(fullCtx);
   filesystem.register(fullCtx);
   settings.register(fullCtx);
+  ssh.register(fullCtx);
 }
 
 module.exports = {
