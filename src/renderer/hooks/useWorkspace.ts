@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { normalizePath, loadDirectoryStructure as loadDirectoryStructureUtil } from '../components/utils';
+import { readDirectoryStructure } from '../api/fileSystem';
 
 export function useWorkspace() {
     const [currentPath, setCurrentPath] = useState('');
@@ -52,7 +53,7 @@ export function useWorkspace() {
                 console.error('No directory path provided');
                 return {};
             }
-            const structureResult = await (window as any).api.readDirectoryStructure(dirPath);
+            const structureResult = await readDirectoryStructure(dirPath);
             if (structureResult && !structureResult.error) {
                 setFolderStructure(structureResult);
             } else {
