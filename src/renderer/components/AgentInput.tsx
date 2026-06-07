@@ -1586,24 +1586,17 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                     </div>
 
                     <div className="flex items-center gap-0.5 pl-1 border-l theme-border ml-1">
-                        {(() => {
-                            const m = currentModel?.toLowerCase() || '';
-                            const supportsThinking = m.includes('claude') || m.includes('deepseek-r1') || m.includes('o1') || m.includes('o3') || m.includes('qwq') || m.includes('gemini');
-                            if (!supportsThinking) return null;
-                            return (
-                                <button
-                                    onClick={() => setDisableThinking(!disableThinking)}
-                                    className={`h-9 w-9 rounded-lg flex items-center justify-center transition-all ${
-                                        !disableThinking
-                                            ? 'bg-gradient-to-br from-violet-500/30 to-purple-600/30 text-violet-300 border border-violet-500/40'
-                                            : 'bg-white/5 text-gray-500 border border-white/10 hover:text-gray-300 hover:bg-white/10'
-                                    }`}
-                                    title={disableThinking ? "Thinking disabled — click to enable" : "Thinking enabled — click to disable"}
-                                >
-                                    <BrainCircuit size={14} />
-                                </button>
-                            );
-                        })()}
+                        <button
+                            onClick={() => setDisableThinking(!disableThinking)}
+                            className={`h-9 w-9 rounded-lg flex items-center justify-center transition-all ${
+                                !disableThinking
+                                    ? 'bg-gradient-to-br from-violet-500/30 to-purple-600/30 text-violet-300 border border-violet-500/40'
+                                    : 'bg-white/5 text-gray-500 border border-white/10 hover:text-gray-300 hover:bg-white/10'
+                            }`}
+                            title={disableThinking ? "Thinking disabled — click to enable" : "Thinking enabled — click to disable"}
+                        >
+                            <BrainCircuit size={14} />
+                        </button>
                         <button
                             onClick={() => setUseKgSearch(!useKgSearch)}
                             className={`h-9 w-9 rounded-lg flex items-center justify-center transition-all ${

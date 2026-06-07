@@ -3041,6 +3041,7 @@ const renderChatView = useCallback(({ nodeId }) => {
                         onLabelMessage={handleLabelMessage}
                         messageLabel={messageLabels[msg.id || msg.timestamp]}
                         conversationId={paneData.contentId}
+                        isAgentMode={paneData.executionMode !== 'chat'}
                     availableModels={availableModels}
                     availableNPCs={availableNPCs}
                     onOpenFile={(path: string) => {
@@ -3530,9 +3531,11 @@ const renderLatexViewer = useCallback(({ nodeId, onToggleZen, isZenMode, onClose
             editedFileName={editedFileName}
             setEditedFileName={setEditedFileName}
             handleConfirmRename={handleConfirmRename}
+            predictiveTextModel={predictiveTextModel}
+            predictiveTextProvider={predictiveTextProvider}
         />
     );
-}, [rootLayoutNode, closeContentPane, performSplit, currentPath]);
+}, [rootLayoutNode, closeContentPane, performSplit, currentPath, predictiveTextModel, predictiveTextProvider]);
 
 const renderNotebookViewer = useCallback(({ nodeId }) => {
     return (
@@ -4960,6 +4963,14 @@ ${contextPrompt}`;
                 ...prev,
                 [paneSelectedJinx.name]: {}
             }));
+        }
+
+        // Guard: require model and provider before sending
+        const firstUseModel = branchTargets[0]?.model || currentModel;
+        const firstUseProvider = branchTargets[0]?.provider || currentProvider;
+        if (!firstUseModel || !firstUseProvider) {
+            setError('No model selected. Please select a model from the dropdown before sending a message.');
+            return;
         }
 
         // For each selected branch (or null if none), send a message
@@ -9301,9 +9312,13 @@ const renderMainContent = () => {
                     predictiveTextProvider={predictiveTextProvider}
                     predictiveTextDelay={predictiveTextDelay}
                     onPredictiveTextSettingsChange={(s) => {
-                        if (s.model !== undefined) { setPredictiveTextModel(s.model); (window as any).api?.saveGlobalSettings?.({ global_settings: { predictive_text_model: s.model } }); }
-                        if (s.provider !== undefined) { setPredictiveTextProvider(s.provider); (window as any).api?.saveGlobalSettings?.({ global_settings: { predictive_text_provider: s.provider } }); }
-                        if (s.delay !== undefined) { setPredictiveTextDelay(s.delay); }
+                        const updates: any = {};
+                        if (s.model !== undefined) { setPredictiveTextModel(s.model); updates.predictive_text_model = s.model; }
+                        if (s.provider !== undefined) { setPredictiveTextProvider(s.provider); updates.predictive_text_provider = s.provider; }
+                        if (s.delay !== undefined) { setPredictiveTextDelay(s.delay); updates.predictive_text_delay = s.delay; }
+                        if (Object.keys(updates).length > 0) {
+                            (window as any).api?.saveGlobalSettings?.({ global_settings: updates });
+                        }
                     }}
                 />
                 )}
@@ -9466,9 +9481,13 @@ const renderMainContent = () => {
                     predictiveTextProvider={predictiveTextProvider}
                     predictiveTextDelay={predictiveTextDelay}
                     onPredictiveTextSettingsChange={(s) => {
-                        if (s.model !== undefined) { setPredictiveTextModel(s.model); (window as any).api?.saveGlobalSettings?.({ global_settings: { predictive_text_model: s.model } }); }
-                        if (s.provider !== undefined) { setPredictiveTextProvider(s.provider); (window as any).api?.saveGlobalSettings?.({ global_settings: { predictive_text_provider: s.provider } }); }
-                        if (s.delay !== undefined) { setPredictiveTextDelay(s.delay); }
+                        const updates: any = {};
+                        if (s.model !== undefined) { setPredictiveTextModel(s.model); updates.predictive_text_model = s.model; }
+                        if (s.provider !== undefined) { setPredictiveTextProvider(s.provider); updates.predictive_text_provider = s.provider; }
+                        if (s.delay !== undefined) { setPredictiveTextDelay(s.delay); updates.predictive_text_delay = s.delay; }
+                        if (Object.keys(updates).length > 0) {
+                            (window as any).api?.saveGlobalSettings?.({ global_settings: updates });
+                        }
                     }}
                 />
                 )}
