@@ -1,4 +1,4 @@
-import { getFileName } from './utils';
+import { getFileName, generateId } from './utils';
 import React, { useEffect, useState, useCallback, useMemo, memo, useRef } from 'react';
 import {
     Save, Play, ExternalLink, X, SplitSquareHorizontal, Loader, ChevronDown,
@@ -10,9 +10,9 @@ import {
     ChevronLeft, ChevronsUpDown, Copy, Wand2, GripHorizontal
 } from 'lucide-react';
 import CodeMirror from '@uiw/react-codemirror';
-import { EditorView, ViewPlugin, lineNumbers, highlightActiveLineGutter, highlightActiveLine, drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightSpecialChars } from '@codemirror/view';
+import { EditorView, ViewPlugin, lineNumbers, highlightActiveLineGutter, highlightActiveLine, drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightSpecialChars, Decoration, WidgetType } from '@codemirror/view';
 import { keymap } from '@codemirror/view';
-import { EditorState } from '@codemirror/state';
+import { EditorState, StateField, StateEffect, RangeSet } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab, undo, redo } from '@codemirror/commands';
 import { HighlightStyle, syntaxHighlighting, indentOnInput, bracketMatching, foldGutter, foldKeymap, StreamLanguage } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
@@ -576,6 +576,114 @@ const editorThemeLight = EditorView.theme({
     '.cm-tooltip-autocomplete > ul > li[aria-selected]': { backgroundColor: 'rgba(37, 99, 235, 0.1)', color: '#1e293b' },
 });
 
+function applyUnifiedDiff(content: string, diff: string): { newContent: string; changedLines: number[]; removedLines: {line: number; text: string}[] } {
+    const lines = content.split('\n');
+    const diffLines = diff.split('\n');
+    let idx = 0;
+    const changedLines: number[] = [];
+    const removedLines: {line: number; text: string}[] = [];
+    for (let i = 0; i < diffLines.length; i++) {
+        const line = diffLines[i];
+        if (line.startsWith('---') || line.startsWith('+++')) continue;
+        const hunkMatch = line.match(/@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@/);
+        if (hunkMatch) {
+            idx = parseInt(hunkMatch[3], 10) - 1;
+            continue;
+        }
+        if (line.startsWith('-')) {
+            if (idx >= 0 && idx < lines.length) {
+                removedLines.push({ line: idx, text: lines[idx] });
+                lines.splice(idx, 1);
+            }
+        } else if (line.startsWith('+')) {
+            if (idx >= 0 && idx <= lines.length) {
+                lines.splice(idx, 0, line.slice(1));
+                changedLines.push(idx);
+                idx++;
+            }
+        } else {
+            idx++;
+        }
+    }
+    return { newContent: lines.join('\n'), changedLines, removedLines };
+}
+
+class RemovedLineWidget extends WidgetType {
+    constructor(readonly text: string) { super(); }
+    toDOM() {
+        const div = document.createElement('div');
+        div.className = 'cm-removed-line';
+        div.textContent = this.text;
+        return div;
+    }
+    eq(other: RemovedLineWidget) { return other.text === this.text; }
+}
+
+const setDiffHighlights = StateEffect.define<number[]>();
+const setRemovedLines = StateEffect.define<{line: number; text: string}[]>();
+
+const diffHighlightField = StateField.define<RangeSet<Decoration>>({
+    create() { return RangeSet.empty; },
+    update(value, tr) {
+        value = value.map(tr.changes);
+        for (const e of tr.effects) {
+            if (e.is(setDiffHighlights)) {
+                const decorations = e.value
+                    .filter(lineIdx => lineIdx >= 0 && lineIdx < tr.state.doc.lines)
+                    .map(lineIdx => {
+                        const pos = tr.state.doc.line(lineIdx + 1).from;
+                        return Decoration.line({ class: 'cm-diff-added' }).range(pos);
+                    });
+                value = RangeSet.of(decorations);
+            }
+        }
+        return value;
+    },
+    provide: f => EditorView.decorations.from(f),
+});
+
+const removedLinesField = StateField.define<RangeSet<Decoration>>({
+    create() { return RangeSet.empty; },
+    update(value, tr) {
+        value = value.map(tr.changes);
+        for (const e of tr.effects) {
+            if (e.is(setRemovedLines)) {
+                const decorations = e.value.map(({line, text}) => {
+                    const pos = line < tr.state.doc.lines
+                        ? tr.state.doc.line(line + 1).from
+                        : tr.state.doc.length;
+                    return Decoration.widget({
+                        widget: new RemovedLineWidget(text),
+                        side: -1,
+                        block: true,
+                    }).range(pos);
+                });
+                value = RangeSet.of(decorations);
+            }
+        }
+        return value;
+    },
+    provide: f => EditorView.decorations.from(f),
+});
+
+const diffTheme = EditorView.theme({
+    '.cm-diff-added': {
+        backgroundColor: 'rgba(34, 197, 94, 0.15) !important',
+        borderLeft: '3px solid rgba(34, 197, 94, 0.7) !important',
+    },
+    '.cm-removed-line': {
+        backgroundColor: 'rgba(239, 68, 68, 0.18) !important',
+        color: '#f87171 !important',
+        textDecoration: 'line-through !important',
+        padding: '1px 12px 1px 12px !important',
+        fontFamily: '"Fira Code", "JetBrains Mono", "Cascadia Code", Menlo, monospace !important',
+        fontSize: '13px !important',
+        lineHeight: '1.6 !important',
+        minHeight: '1.4em !important',
+        borderLeft: '3px solid rgba(239, 68, 68, 0.7) !important',
+    },
+});
+
 const LatexViewer = ({
     nodeId,
     contentDataRef,
@@ -594,6 +702,8 @@ const LatexViewer = ({
     editedFileName,
     setEditedFileName,
     handleConfirmRename,
+    predictiveTextModel,
+    predictiveTextProvider,
 }: any) => {
     const paneData = contentDataRef.current[nodeId];
     const filePath = paneData?.contentId;
@@ -635,6 +745,8 @@ const LatexViewer = ({
     const logResizeStartY = useRef(0);
     const logResizeStartH = useRef(0);
     const [copiedLog, setCopiedLog] = useState(false);
+    const [proposedFix, setProposedFix] = useState<string | null>(null);
+    const [isProposingFix, setIsProposingFix] = useState(false);
     const resizeObserverRef = useRef<ResizeObserver | null>(null);
     const toolbarRef = useCallback((node: HTMLDivElement | null) => {
         if (resizeObserverRef.current) {
@@ -653,6 +765,7 @@ const LatexViewer = ({
     }, []);
     const editorRef = useRef<any>(null);
     const editorViewRef = useRef<any>(null);
+    const originalContentRef = useRef<string | null>(null);
 
     useEffect(() => {
         const observer = new MutationObserver(() => {
@@ -1007,6 +1120,9 @@ const LatexViewer = ({
         latexLanguage,
         syntaxHighlighting(isDarkMode ? latexHighlightStyleDark : latexHighlightStyleLight),
         isDarkMode ? editorThemeDark : editorThemeLight,
+        diffHighlightField,
+        removedLinesField,
+        diffTheme,
         lineNumbers(),
         highlightActiveLineGutter(),
         highlightActiveLine(),
@@ -1547,13 +1663,125 @@ const LatexViewer = ({
         }
     }, [compileLog]);
 
-    const proposeFix = useCallback(() => {
-        const errorSummary = parseErrors.map(e => `Line ${e.line}: ${e.message}`).join('\n');
-        const prompt = `I have a LaTeX compilation error. Please analyze and propose a fix.\n\nFile: ${filePath}\nEngine: ${texEngine}\n\nErrors:\n${errorSummary}\n\nRelevant log output:\n\`\`\`\n${compileLog.slice(-2000)}\n\`\`\``;
-        navigator.clipboard.writeText(prompt);
-        // Dispatch event so chat can pick it up if desired
-        window.dispatchEvent(new CustomEvent('latex-propose-fix', { detail: { prompt, filePath, errors: parseErrors, log: compileLog } }));
-    }, [parseErrors, compileLog, filePath, texEngine]);
+    const proposeFix = useCallback(async () => {
+        if (isProposingFix) return;
+        if (!predictiveTextModel) {
+            setError('No AI model selected. Please set a model in the text prediction sidebar (right panel → Predictive Text).');
+            return;
+        }
+        setIsProposingFix(true);
+        setProposedFix(null);
+        setError(null);
+
+        const lines = content.split('\n');
+        const errorContext = parseErrors.map(e => {
+            const start = Math.max(0, e.line - 20);
+            const end = Math.min(lines.length, e.line + 10);
+            const snippet = lines.slice(start, end).map((l, i) => `  ${start + i + 1}: ${l}`).join('\n');
+            return `Line ${e.line}: ${e.message}\nContext:\n${snippet}`;
+        }).join('\n\n');
+
+        const prompt = `Fix this LaTeX compilation error. Return the fix as a unified diff (\`git diff\` style).\n\nFile: ${filePath}\nEngine: ${texEngine}\n\nErrors with context:\n${errorContext}\n\nRelevant log output:\n${compileLog.slice(-2000)}\n\nReturn ONLY a unified diff. Example format:\n--- a/file.tex\n+++ b/file.tex\n@@ -144,1 +144,1 @@\n-    old line\n+    new line\n\nDo not include explanations or markdown code blocks.`;
+
+        const streamId = generateId();
+        const accumulatedRef = { text: '' };
+        const sseBufferRef = { buf: '' };
+
+        const removeData = window.api.onStreamData((_: any, { streamId: sid, chunk }: any) => {
+            if (sid !== streamId) return;
+            const piece = typeof chunk === 'string' ? chunk : chunk?.toString?.() || '';
+            if (!piece) return;
+            let buf = (sseBufferRef.buf + piece).replace(/\r\n/g, '\n');
+            while (true) {
+                const sep = buf.indexOf('\n\n');
+                if (sep === -1) break;
+                const frame = buf.slice(0, sep);
+                buf = buf.slice(sep + 2);
+                const dataLines = frame
+                    .split('\n')
+                    .filter((l: string) => l.startsWith('data:'))
+                    .map((l: string) => l.slice(5).trim());
+                if (dataLines.length === 0) continue;
+                const payload = dataLines.join('\n');
+                if (payload === '[DONE]') continue;
+                try {
+                    const parsed = JSON.parse(payload);
+                    const text = parsed?.choices?.[0]?.delta?.content || '';
+                    if (text) {
+                        accumulatedRef.text += text;
+                    }
+                } catch {
+                    // non-JSON payload, append raw
+                    accumulatedRef.text += payload;
+                }
+            }
+            sseBufferRef.buf = buf;
+        });
+        const removeComplete = window.api.onStreamComplete((_: any, { streamId: sid }: any) => {
+            if (sid !== streamId) return;
+            const diffText = accumulatedRef.text.trim();
+            if (diffText) {
+                const { newContent, changedLines, removedLines } = applyUnifiedDiff(content, diffText);
+                originalContentRef.current = content;
+                setHasChanges(true);
+                setProposedFix(diffText);
+                const view = editorViewRef.current;
+                if (view) {
+                    const effects: any[] = [];
+                    if (changedLines.length > 0) {
+                        effects.push(setDiffHighlights.of(changedLines));
+                    }
+                    if (removedLines.length > 0) {
+                        effects.push(setRemovedLines.of(removedLines));
+                    }
+                    view.dispatch({
+                        changes: { from: 0, to: view.state.doc.length, insert: newContent },
+                        effects: effects.length > 0 ? effects : undefined,
+                    });
+                    const targetLine = changedLines[0] ?? removedLines[0]?.line ?? 0;
+                    const doc = view.state.doc;
+                    const scrollLine = Math.min(targetLine + 1, doc.lines);
+                    const linePos = doc.line(scrollLine).from;
+                    view.dispatch({
+                        selection: { anchor: linePos },
+                        effects: EditorView.scrollIntoView(linePos, { y: 'center', yMargin: 40 }),
+                    });
+                    view.focus();
+                }
+                setContent(newContent);
+            }
+            setIsProposingFix(false);
+            removeData();
+            removeComplete();
+            removeError();
+        });
+        const removeError = window.api.onStreamError((_: any, { streamId: sid, error: err }: any) => {
+            if (sid !== streamId) return;
+            console.error('[LaTeX] proposeFix stream error:', err);
+            setIsProposingFix(false);
+            removeData();
+            removeComplete();
+            removeError();
+        });
+
+        try {
+            await window.api.executeCommandStream({
+                commandstr: prompt,
+                streamId,
+                currentPath,
+                conversationId: `latex-fix-${streamId}`,
+                model: predictiveTextModel,
+                provider: predictiveTextProvider || 'ollama',
+                disableThinking: true,
+            });
+        } catch (err: any) {
+            console.error('[LaTeX] proposeFix invocation error:', err);
+            setIsProposingFix(false);
+            removeData();
+            removeComplete();
+            removeError();
+        }
+    }, [parseErrors, compileLog, filePath, texEngine, content, currentPath, isProposingFix, predictiveTextModel, predictiveTextProvider]);
 
     const applyTemplate = useCallback((templateContent: string) => {
         if (content.trim() && !confirm('Replace current content with template?')) return;
@@ -1934,16 +2162,57 @@ const LatexViewer = ({
                             </div>
                         </div>
                     )}
-                    <div className="flex-1 overflow-hidden">
-                        <CodeMirror
-                            ref={editorRef}
-                            value={content}
-                            onChange={(val) => { setContent(val); setHasChanges(true); }}
-                            extensions={extensions}
-                            basicSetup={false}
-                            className="h-full"
-                            style={{ height: '100%' }}
-                        />
+                    <div className="flex-1 overflow-hidden flex flex-col">
+                        {proposedFix && (
+                            <div className="flex-shrink-0 flex items-center justify-between px-3 h-7 text-[10px]"
+                                style={{ background: isDarkMode ? 'rgba(34,197,94,0.08)' : 'rgba(34,197,94,0.06)', borderBottom: '1px solid var(--theme-border)' }}
+                            >
+                                <span className="flex items-center gap-1.5" style={{ color: isDarkMode ? '#6ee7b7' : '#059669' }}>
+                                    <Check size={10} /> AI fix applied — review highlighted lines
+                                </span>
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        onClick={() => {
+                                            const view = editorViewRef.current;
+                                            if (view) view.dispatch({ effects: [setDiffHighlights.of([]), setRemovedLines.of([])] });
+                                            originalContentRef.current = null;
+                                            setProposedFix(null);
+                                        }}
+                                        className="h-5 px-1.5 flex items-center gap-1 rounded text-[9px] font-medium"
+                                        style={{ color: isDarkMode ? '#6ee7b7' : '#059669', background: isDarkMode ? 'rgba(52,211,153,0.15)' : 'rgba(52,211,153,0.12)' }}
+                                    >
+                                        <Check size={9} /> Keep
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            if (originalContentRef.current !== null) {
+                                                setContent(originalContentRef.current);
+                                                setHasChanges(false);
+                                                originalContentRef.current = null;
+                                            }
+                                            const view = editorViewRef.current;
+                                            if (view) view.dispatch({ effects: [setDiffHighlights.of([]), setRemovedLines.of([])] });
+                                            setProposedFix(null);
+                                        }}
+                                        className="h-5 px-1.5 flex items-center gap-1 rounded text-[9px] font-medium"
+                                        style={{ color: isDarkMode ? '#fca5a5' : '#dc2626', background: isDarkMode ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.12)' }}
+                                    >
+                                        <X size={9} /> Undo
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                        <div className="flex-1 overflow-hidden">
+                            <CodeMirror
+                                ref={editorRef}
+                                value={content}
+                                onChange={(val) => { setContent(val); setHasChanges(true); }}
+                                extensions={extensions}
+                                basicSetup={false}
+                                className="h-full"
+                                style={{ height: '100%' }}
+                            />
+                        </div>
                     </div>
                 </div>
 
@@ -2043,17 +2312,18 @@ const LatexViewer = ({
                                     {copiedLog ? 'Copied' : 'Copy'}
                                 </button>
                             )}
-                            {compileStatus === 'error' && parseErrors.length > 0 && (
+                            {parseErrors.length > 0 && (
                                 <button
                                     onClick={proposeFix}
+                                    disabled={isProposingFix}
                                     className="h-5 px-1.5 flex items-center gap-1 rounded-md text-[9px] font-medium transition-colors"
-                                    style={{ color: isDarkMode ? '#c084fc' : '#7c3aed', background: 'rgba(139,92,246,0.1)' }}
-                                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(139,92,246,0.2)'; }}
-                                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(139,92,246,0.1)'; }}
-                                    title="Copy error context as LLM prompt to clipboard"
+                                    style={{ color: isDarkMode ? '#c084fc' : '#7c3aed', background: 'rgba(139,92,246,0.1)', opacity: isProposingFix ? 0.5 : 1 }}
+                                    onMouseEnter={e => { if (!isProposingFix) e.currentTarget.style.background = 'rgba(139,92,246,0.2)'; }}
+                                    onMouseLeave={e => { if (!isProposingFix) e.currentTarget.style.background = 'rgba(139,92,246,0.1)'; }}
+                                    title="Ask AI to propose a targeted fix for these errors"
                                 >
-                                    <Wand2 size={10} />
-                                    Propose Fix
+                                    {isProposingFix ? <Loader size={10} className="animate-spin" /> : <Wand2 size={10} />}
+                                    {isProposingFix ? 'Thinking...' : 'Propose Fix'}
                                 </button>
                             )}
                             <button onClick={() => setShowLog(false)} className="w-5 h-5 flex items-center justify-center rounded-md theme-hover theme-text-muted transition-colors">
@@ -2084,6 +2354,12 @@ const LatexViewer = ({
                                     <span className="truncate">{err.message}</span>
                                 </button>
                             ))}
+                        </div>
+                    )}
+                    {isProposingFix && (
+                        <div className="px-3 py-2 flex items-center gap-2" style={{ borderTop: '1px solid var(--theme-border)' }}>
+                            <Loader size={12} className="animate-spin text-violet-400" />
+                            <span className="text-[11px] theme-text-muted">Asking AI for a fix...</span>
                         </div>
                     )}
                 </div>
@@ -2129,7 +2405,9 @@ const arePropsEqual = (prevProps: any, nextProps: any) => {
     return prevProps.nodeId === nextProps.nodeId
         && prevProps.renamingPaneId === nextProps.renamingPaneId
         && prevProps.editedFileName === nextProps.editedFileName
-        && prevProps.isZenMode === nextProps.isZenMode;
+        && prevProps.isZenMode === nextProps.isZenMode
+        && prevProps.predictiveTextModel === nextProps.predictiveTextModel
+        && prevProps.predictiveTextProvider === nextProps.predictiveTextProvider;
 };
 
 export default memo(LatexViewer, arePropsEqual);

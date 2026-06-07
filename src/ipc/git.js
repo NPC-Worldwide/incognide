@@ -57,7 +57,7 @@ function register(ctx) {
     log(`[Git] Staging file: ${file} in ${repoPath}`);
     try {
       const git = simpleGit(repoPath);
-      await git.add(file);
+      await git.add([file]);
       return { success: true };
     } catch (err) {
       console.error(`[Git] Error staging file ${file} in ${repoPath}:`, err);
@@ -382,7 +382,7 @@ function register(ctx) {
     try {
       const git = simpleGit(repoPath);
       await git.checkout(['--ours', filePath]);
-      await git.add(filePath);
+      await git.add([filePath]);
       return { success: true };
     } catch (err) {
       console.error(`[Git] Error accepting ours:`, err);
@@ -395,7 +395,7 @@ function register(ctx) {
     try {
       const git = simpleGit(repoPath);
       await git.checkout(['--theirs', filePath]);
-      await git.add(filePath);
+      await git.add([filePath]);
       return { success: true };
     } catch (err) {
       console.error(`[Git] Error accepting theirs:`, err);
@@ -407,7 +407,7 @@ function register(ctx) {
     log(`[Git] Mark resolved ${filePath} in ${repoPath}`);
     try {
       const git = simpleGit(repoPath);
-      await git.add(filePath);
+      await git.add([filePath]);
       return { success: true };
     } catch (err) {
       console.error(`[Git] Error marking resolved:`, err);

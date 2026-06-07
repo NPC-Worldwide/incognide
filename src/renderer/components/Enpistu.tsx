@@ -1,6 +1,7 @@
  import React, { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
 import { BACKEND_URL } from '../config';
 import { createPortal } from 'react-dom';
+import { readFileContent, writeFileContent, createDirectory, renameFile } from '../api/fileSystem';
 import {
     Folder, File as FileIcon,  Globe, ChevronRight, ChevronLeft, Settings, Edit,
     Terminal, Image, Music, Trash, Users, Plus, ArrowUp, Camera, MessageSquare,
@@ -18,6 +19,8 @@ import { useSearch } from '../hooks/useSearch';
 import { useModelSelection } from '../hooks/useModelSelection';
 import { useMemoryAndLabeling } from '../hooks/useMemoryAndLabeling';
 import { useWorkspace } from '../hooks/useWorkspace';
+import { useRemoteConnections } from '../hooks/useRemoteConnections';
+import { RemoteConnectionDialog } from './RemoteConnectionDialog';
 import { useLayoutManager, getConversationStats } from '../hooks/useLayoutManager';
 import GitPane from './GitPane';
 import GitModal from './GitModal';
@@ -387,6 +390,17 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         loadConversationsWithoutAutoSelect, loadDirectoryStructureWithoutConversationLoad,
         loadDirectoryStructure,
     } = useWorkspace();
+
+    const {
+        connections: sshConnections,
+        activeConnection: sshActiveConnection,
+        setActiveConnectionId: setSshActiveConnectionId,
+        addConnection: addSshConnection,
+        removeConnection: removeSshConnection,
+        connect: connectSsh,
+        disconnect: disconnectSsh,
+    } = useRemoteConnections();
+    const [sshDialogOpen, setSshDialogOpen] = useState(false);
 
     // Model/provider/NPC selection from useModelSelection hook
     const {
@@ -2717,7 +2731,7 @@ const handleRunScript = useCallback(async (scriptPath: string) => {
     if (editorPaneId) {
         const paneData = contentDataRef.current[editorPaneId];
         if (paneData?.fileChanged && paneData?.fileContent) {
-            await window.api?.writeFileContent?.(scriptPath, paneData.fileContent);
+            await writeFileContent(scriptPath, paneData.fileContent);
             paneData.fileChanged = false;
             notifyAllPanes();
         }
@@ -3027,6 +3041,7 @@ const renderChatView = useCallback(({ nodeId }) => {
                         onLabelMessage={handleLabelMessage}
                         messageLabel={messageLabels[msg.id || msg.timestamp]}
                         conversationId={paneData.contentId}
+                        isAgentMode={paneData.executionMode !== 'chat'}
                     availableModels={availableModels}
                     availableNPCs={availableNPCs}
                     onOpenFile={(path: string) => {
@@ -3272,7 +3287,7 @@ const handleSaveChat = useCallback(async () => {
     const filepath = `${currentPath}/${filename}`;
 
     try {
-        await window.api.writeFileContent(filepath, `# Conversation Export\n\n${text}`);
+        await writeFileContent(filepath, `# Conversation Export\n\n${text}`);
         if (handleFileClickRef.current) {
             handleFileClickRef.current(filepath);
         }
@@ -3516,9 +3531,11 @@ const renderLatexViewer = useCallback(({ nodeId, onToggleZen, isZenMode, onClose
             editedFileName={editedFileName}
             setEditedFileName={setEditedFileName}
             handleConfirmRename={handleConfirmRename}
+            predictiveTextModel={predictiveTextModel}
+            predictiveTextProvider={predictiveTextProvider}
         />
     );
-}, [rootLayoutNode, closeContentPane, performSplit, currentPath]);
+}, [rootLayoutNode, closeContentPane, performSplit, currentPath, predictiveTextModel, predictiveTextProvider]);
 
 const renderNotebookViewer = useCallback(({ nodeId }) => {
     return (
@@ -3806,7 +3823,7 @@ const MarkdownPreviewContent: React.FC<{ filePath: string }> = ({ filePath }) =>
     useEffect(() => {
         if (filePath) {
             setLoading(true);
-            window.api.readFileContent(filePath).then((result: any) => {
+            readFileContent(filePath).then((result: any) => {
                 setContent(result.content || '');
                 setLoading(false);
             }).catch(() => {
@@ -4125,7 +4142,7 @@ const renderMessageContextMenu = () => null;
                 const newFolderPath = normalizePath(`${currentPath}/${folderName}`);
                 
                 try {
-                    const response = await window.api.createDirectory(newFolderPath);
+                    const response = await createDirectory(newFolderPath);
                     
                     if (response?.error) {
                         throw new Error(response.error);
@@ -4166,13 +4183,13 @@ const renderMessageContextMenu = () => null;
                 // For untitled files, save current content to the new path
                 const pData = realPaneData || contentDataRef.current[paneId];
                 if (pData?.fileContent !== undefined) {
-                    await window.api.writeFileContent(newFilePath, pData.fileContent || '');
+                    await writeFileContent(newFilePath, pData.fileContent || '');
                 }
                 if (pData) pData.isUntitled = false;
             } else if (oldFilePath) {
                 // Rename existing file on disk
                 try {
-                    const result = await window.api.renameFile(oldFilePath, newFilePath);
+                    const result = await renameFile(oldFilePath, newFilePath);
                     if (result?.error) console.warn('Rename on disk failed:', result.error);
                 } catch (diskErr) {
                     console.warn('Rename on disk failed:', diskErr);
@@ -4278,7 +4295,7 @@ const renderMessageContextMenu = () => null;
                 hypothesis: '', status: 'draft', conclusion: null, tags: [], session_ids: [], notes: [], artifacts: [],
                 sections: [],
             };
-            await (window as any).api.writeFileContent(filepath, JSON.stringify(emptyExp, null, 2));
+            await writeFileContent(filepath, JSON.stringify(emptyExp, null, 2));
             createAndAddPaneNodeToLayout({ contentType: 'exp', contentId: filepath, isUntitled: true });
         } catch (err: any) {
             setError(err.message);
@@ -4430,7 +4447,7 @@ const handleGlobalDragEnd = () => {
     let defaultHomepage = 'https://wikipedia.org';
     if (currentPath) {
         try {
-            const envResult = await (window as any).api?.readFileContent?.(`${currentPath}/.env`);
+            const envResult = await readFileContent(`${currentPath}/.env`);
             if (envResult?.content) {
                 const match = envResult.content.match(/^BROWSER_HOMEPAGE=(.+)$/m);
                 if (match) {
@@ -4643,7 +4660,7 @@ const handleBrowserDialogNavigate = (url) => {
                 metadata: { kernelspec: { display_name: 'Python 3', language: 'python', name: 'python3' }, language_info: { name: 'python', version: '3.9.0' } },
                 cells: [{ cell_type: 'code', execution_count: null, metadata: {}, outputs: [], source: [''] }]
             };
-            await (window as any).api.writeFileContent(filepath, JSON.stringify(emptyNotebook, null, 2));
+            await writeFileContent(filepath, JSON.stringify(emptyNotebook, null, 2));
             createAndAddPaneNodeToLayout({ contentType: 'notebook', contentId: filepath, isUntitled: true });
         } catch (err: any) {
             setError(err.message);
@@ -4665,7 +4682,7 @@ const handleBrowserDialogNavigate = (url) => {
                 const data = JSON.parse(sidebarFileData || jsonData);
                 if (data.type === 'sidebar-file' && data.path) {
                     // Add to context files
-                    const response = await window.api?.readFileContent?.(data.path);
+                    const response = await readFileContent(data.path);
                     const content = response?.content || '';
                     const name = getFileName(data.path) || data.path;
 
@@ -4692,7 +4709,7 @@ const handleBrowserDialogNavigate = (url) => {
 
         // Check for file path from sidebar (plain text starting with /)
         if (textData && textData.startsWith('/') && !e.dataTransfer.files.length) {
-            const response = await window.api?.readFileContent?.(textData);
+            const response = await readFileContent(textData);
             const content = response?.content || '';
             const name = getFileName(textData) || textData;
 
@@ -4946,6 +4963,14 @@ ${contextPrompt}`;
                 ...prev,
                 [paneSelectedJinx.name]: {}
             }));
+        }
+
+        // Guard: require model and provider before sending
+        const firstUseModel = branchTargets[0]?.model || currentModel;
+        const firstUseProvider = branchTargets[0]?.provider || currentProvider;
+        if (!firstUseModel || !firstUseProvider) {
+            setError('No model selected. Please select a model from the dropdown before sending a message.');
+            return;
         }
 
         // For each selected branch (or null if none), send a message
@@ -5607,7 +5632,7 @@ ${contextPrompt}`;
         await window.api.ensureDir?.(tmpDir).catch(() => {});
         const filepath = normalizePath(`${tmpDir}/${filename}`);
         const initialContent = extension === 'tex' ? '\\documentclass{article}\n\\begin{document}\n\n\\end{document}\n' : '';
-        await window.api.writeFileContent(filepath, initialContent);
+        await writeFileContent(filepath, initialContent);
         const newPaneId = generateId();
         contentDataRef.current[newPaneId] = {
             contentType,
@@ -5632,7 +5657,7 @@ ${contextPrompt}`;
                     if (!inputFilename || inputFilename.trim() === '') return;
                     const cleanName = inputFilename.trim();
                     const filepath = normalizePath(`${currentPath}/${cleanName}`);
-                    await window.api.writeFileContent(filepath, '');
+                    await writeFileContent(filepath, '');
                     await loadDirectoryStructure(currentPath);
                     // Use ref to avoid forward reference issue
                     if (handleFileClickRef.current) {
@@ -5711,9 +5736,9 @@ ${contextPrompt}`;
                 const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
                 await window.api.writeFileBuffer(filepath, new Uint8Array(wbout));
             } else if (docType === 'tex') {
-                await window.api.writeFileContent(filepath, '\\documentclass{article}\n\\begin{document}\n\n\\end{document}\n');
+                await writeFileContent(filepath, '\\documentclass{article}\n\\begin{document}\n\n\\end{document}\n');
             } else if (docType === 'pptx') {
-                await window.api.writeFileContent(filepath, '');
+                await writeFileContent(filepath, '');
             }
             createAndAddPaneNodeToLayout({ contentType, contentId: filepath, isUntitled: true });
         } catch (err) {
@@ -7066,7 +7091,7 @@ ${contextPrompt}`;
                                                             paneData.fileChanged = true;
                                                             setRootLayoutNode(p => ({...p}));
                                                             try {
-                                                                await window.api.writeFileContent(change.filePath, change.newCode);
+                                                                await writeFileContent(change.filePath, change.newCode);
                                                                 paneData.fileChanged = false;
                                                                 setRootLayoutNode(p => ({...p}));
                                                                 console.log(`Successfully applied and saved file: ${change.filePath}`);
@@ -7142,7 +7167,7 @@ ${contextPrompt}`;
                                             paneData.fileContent = change.newCode;
                                             paneData.fileChanged = true;
                                             savePromises.push(
-                                                window.api.writeFileContent(change.filePath, change.newCode)
+                                                writeFileContent(change.filePath, change.newCode)
                                                     .then(() => {
                                                         paneData.fileChanged = false;
                                                         console.log(`Successfully applied and saved file: ${change.filePath}`);
@@ -9046,7 +9071,7 @@ const renderMainContent = () => {
                         if (contentType === 'editor' && draggedItem.id) {
                             (async () => {
                                 try {
-                                    const response = await window.api?.readFileContent?.(draggedItem.id);
+                                    const response = await readFileContent(draggedItem.id);
                                     if (response && !response.error) {
                                         contentDataRef.current[newPaneId].fileContent = response.content;
                                         contentDataRef.current[newPaneId].fileChanged = false;
@@ -9287,9 +9312,13 @@ const renderMainContent = () => {
                     predictiveTextProvider={predictiveTextProvider}
                     predictiveTextDelay={predictiveTextDelay}
                     onPredictiveTextSettingsChange={(s) => {
-                        if (s.model !== undefined) { setPredictiveTextModel(s.model); (window as any).api?.saveGlobalSettings?.({ global_settings: { predictive_text_model: s.model } }); }
-                        if (s.provider !== undefined) { setPredictiveTextProvider(s.provider); (window as any).api?.saveGlobalSettings?.({ global_settings: { predictive_text_provider: s.provider } }); }
-                        if (s.delay !== undefined) { setPredictiveTextDelay(s.delay); }
+                        const updates: any = {};
+                        if (s.model !== undefined) { setPredictiveTextModel(s.model); updates.predictive_text_model = s.model; }
+                        if (s.provider !== undefined) { setPredictiveTextProvider(s.provider); updates.predictive_text_provider = s.provider; }
+                        if (s.delay !== undefined) { setPredictiveTextDelay(s.delay); updates.predictive_text_delay = s.delay; }
+                        if (Object.keys(updates).length > 0) {
+                            (window as any).api?.saveGlobalSettings?.({ global_settings: updates });
+                        }
                     }}
                 />
                 )}
@@ -9322,6 +9351,8 @@ const renderMainContent = () => {
                         onOpenDownloadManager={() => setDownloadManagerOpen(true)}
                         onOpenLogsViewer={() => setLogsViewerOpen(true)}
                         createBackendPane={createBackendPane}
+                        activeConnection={sshActiveConnection}
+                        onOpenSSHDialog={() => setSshDialogOpen(true)}
                     />
                 )}
             </main>
@@ -9450,9 +9481,13 @@ const renderMainContent = () => {
                     predictiveTextProvider={predictiveTextProvider}
                     predictiveTextDelay={predictiveTextDelay}
                     onPredictiveTextSettingsChange={(s) => {
-                        if (s.model !== undefined) { setPredictiveTextModel(s.model); (window as any).api?.saveGlobalSettings?.({ global_settings: { predictive_text_model: s.model } }); }
-                        if (s.provider !== undefined) { setPredictiveTextProvider(s.provider); (window as any).api?.saveGlobalSettings?.({ global_settings: { predictive_text_provider: s.provider } }); }
-                        if (s.delay !== undefined) { setPredictiveTextDelay(s.delay); }
+                        const updates: any = {};
+                        if (s.model !== undefined) { setPredictiveTextModel(s.model); updates.predictive_text_model = s.model; }
+                        if (s.provider !== undefined) { setPredictiveTextProvider(s.provider); updates.predictive_text_provider = s.provider; }
+                        if (s.delay !== undefined) { setPredictiveTextDelay(s.delay); updates.predictive_text_delay = s.delay; }
+                        if (Object.keys(updates).length > 0) {
+                            (window as any).api?.saveGlobalSettings?.({ global_settings: updates });
+                        }
                     }}
                 />
                 )}
@@ -9697,6 +9732,8 @@ const renderMainContent = () => {
         onExpandTopBar={() => { setTopBarCollapsed(false); localStorage.setItem('incognide_topBarCollapsed', 'false'); }}
         onCollapseTopBar={() => { setTopBarCollapsed(true); localStorage.setItem('incognide_topBarCollapsed', 'true'); }}
         setDownloadManagerOpen={setDownloadManagerOpen}
+        activeConnection={sshActiveConnection}
+        onOpenSSHDialog={() => setSshDialogOpen(true)}
     />
     {renderMainContent()}
         {aiEnabled && (
@@ -9738,6 +9775,14 @@ const renderMainContent = () => {
             folderStructure={folderStructure}
         />
 
+        <RemoteConnectionDialog
+            isOpen={sshDialogOpen}
+            onClose={() => setSshDialogOpen(false)}
+            onSave={(config) => {
+                addSshConnection(config);
+            }}
+            onTest={(config) => (window as any).api.sshTestConnection(config)}
+        />
 </div>
             {renderModals()}
 

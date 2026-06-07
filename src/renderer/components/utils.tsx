@@ -1,5 +1,6 @@
 import React, { useCallback, useState, useEffect } from 'react';
 import { BACKEND_URL } from '../config';
+import { goUpDirectory as goUpDirectoryApi } from '../api/fileSystem';
 import { Code2, FileText, FileJson, BarChart3, File } from 'lucide-react';
 import { executeStudioAction, StudioContext } from '../studioActions';
 
@@ -790,7 +791,7 @@ export const goUpDirectory = async (
 ) => {
     try {
         if (!currentPath || currentPath === baseDir) return;
-        const newPath = await window.api.goUpDirectory(currentPath);
+        const newPath = await goUpDirectoryApi(currentPath);
         await switchToPath(newPath);
     } catch (err: any) {
         console.error('Error going up directory:', err);

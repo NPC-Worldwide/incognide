@@ -3,7 +3,7 @@ import {
     MessageSquare, Terminal, Globe, FileText, File as FileIcon,
     BrainCircuit, Bot, Zap, Users, Database, ChevronRight, ChevronDown,
     GitBranch, Image, BarChart3, AlertCircle, RefreshCw, Check, Columns, Layers,
-    Power, HardDrive, Download, ScrollText
+    Power, HardDrive, Download, ScrollText, Server
 } from 'lucide-react';
 import npcPythonLogo from '../../assets/npc-python.png';
 import { useAiEnabled } from './AiFeatureContext';
@@ -36,6 +36,8 @@ interface StatusBarProps {
     onOpenDownloadManager?: () => void;
     onOpenLogsViewer?: () => void;
     createBackendPane?: () => void;
+    activeConnection?: { host: string } | null;
+    onOpenSSHDialog?: () => void;
 }
 
 type BackendStatus = 'ok' | 'unhealthy' | 'unreachable' | 'restarting' | 'unknown';
@@ -59,6 +61,8 @@ const StatusBar: React.FC<StatusBarProps> = ({
     onOpenDownloadManager,
     onOpenLogsViewer,
     createBackendPane,
+    activeConnection,
+    onOpenSSHDialog,
 }) => {
     const aiEnabled = useAiEnabled();
     const [checkingUpdates, setCheckingUpdates] = useState(false);
@@ -245,6 +249,16 @@ const StatusBar: React.FC<StatusBarProps> = ({
             </div>
 
             <div className="flex-1" />
+
+            {onOpenSSHDialog && (
+                <button
+                    onClick={() => onOpenSSHDialog?.()}
+                    className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors hover:bg-white/10 ${activeConnection ? 'text-green-400' : 'text-gray-500 hover:text-green-400'}`}
+                    title={activeConnection ? `SSH: ${activeConnection.host}` : 'Connect via SSH'}
+                >
+                    <Server size={14} />
+                </button>
+            )}
 
             <div className="relative group/backend">
                 <div
