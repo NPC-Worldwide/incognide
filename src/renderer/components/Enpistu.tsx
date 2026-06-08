@@ -9275,13 +9275,10 @@ const renderMainContent = () => {
                     onNpcSave={async (npc: any, changes: { model?: string; provider?: string; jinxes?: any[] }) => {
                         try {
                             const merged = {
-                                name: npc.name,
-                                primary_directive: npc.primary_directive || '',
+                                ...npc,
                                 model: changes.model !== undefined ? changes.model : (npc.model || ''),
                                 provider: changes.provider !== undefined ? changes.provider : (npc.provider || ''),
-                                api_url: npc.api_url || '',
                                 jinxes: changes.jinxes !== undefined ? changes.jinxes : (npc.jinxes || []),
-                                use_global_jinxes: npc.use_global_jinxes !== undefined ? npc.use_global_jinxes : true,
                             };
                             const res = await fetch(`${BACKEND_URL}/api/save_npc`, {
                                 method: 'POST',
@@ -9444,13 +9441,10 @@ const renderMainContent = () => {
                     onNpcSave={async (npc: any, changes: { model?: string; provider?: string; jinxes?: any[] }) => {
                         try {
                             const merged = {
-                                name: npc.name,
-                                primary_directive: npc.primary_directive || '',
+                                ...npc,
                                 model: changes.model !== undefined ? changes.model : (npc.model || ''),
                                 provider: changes.provider !== undefined ? changes.provider : (npc.provider || ''),
-                                api_url: npc.api_url || '',
                                 jinxes: changes.jinxes !== undefined ? changes.jinxes : (npc.jinxes || []),
-                                use_global_jinxes: npc.use_global_jinxes !== undefined ? npc.use_global_jinxes : true,
                             };
                             const res = await fetch(`${BACKEND_URL}/api/save_npc`, {
                                 method: 'POST',

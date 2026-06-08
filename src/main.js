@@ -2362,6 +2362,7 @@ function createWindow(cliArgs = {}) {
     mainWindow = new BrowserWindow({
       width: 1200,
       height: 800,
+      show: false,
       icon: appIcon || iconPath,
       title: 'Incognide',
       webPreferences: {
@@ -2377,6 +2378,9 @@ function createWindow(cliArgs = {}) {
         preload: path.join(__dirname, 'preload.js')
       }
           });
+    mainWindow.once('ready-to-show', () => {
+      mainWindow.show();
+    });
     mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
       callback(true);
     });
