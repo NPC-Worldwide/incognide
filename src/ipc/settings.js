@@ -3604,10 +3604,10 @@ function register(ctx) {
     }
   });
 
-  // ── Registered Teams YAML ──────────────────────────────────────────────
-  ipcMain.handle('registered-teams:read', async () => {
+  // ── Teams YAML ─────────────────────────────────────────────────────────
+  ipcMain.handle('teams:read', async () => {
     try {
-      const filePath = path.join(INCOGNIDE_HOME, 'registered_teams.yaml');
+      const filePath = path.join(INCOGNIDE_HOME, 'teams.yaml');
       await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
       let teams;
       try {
@@ -3616,13 +3616,13 @@ function register(ctx) {
         teams = parsed?.teams || {};
       } catch {
         teams = {
-          incognide: { path: path.join(INCOGNIDE_HOME, 'npc_team'), name: 'Incognide' },
+          incognide: path.join(INCOGNIDE_HOME, 'npc_team'),
         };
       }
       // Resolve ~ in paths for frontend consumption
-      for (const [key, team] of Object.entries(teams)) {
-        if (team.path && typeof team.path === 'string') {
-          team.path = team.path.replace(/^~(?=\/|$)/, os.homedir());
+      for (const [key, teamPath] of Object.entries(teams)) {
+        if (typeof teamPath === 'string') {
+          teams[key] = teamPath.replace(/^~(?=\/|$)/, os.homedir());
         }
       }
       return { teams };
@@ -3631,9 +3631,9 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('registered-teams:write', async (event, teams) => {
+  ipcMain.handle('teams:write', async (event, teams) => {
     try {
-      const filePath = path.join(INCOGNIDE_HOME, 'registered_teams.yaml');
+      const filePath = path.join(INCOGNIDE_HOME, 'teams.yaml');
       await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
       const content = yaml.dump({ teams: teams || {} }, { lineWidth: -1 });
       await fsPromises.writeFile(filePath, content, 'utf8');
@@ -3643,9 +3643,9 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('registered-teams:scan', async (event, currentPath) => {
+  ipcMain.handle('teams:scan', async (event, currentPath) => {
     try {
-      const teamsPath = path.join(INCOGNIDE_HOME, 'registered_teams.yaml');
+      const teamsPath = path.join(INCOGNIDE_HOME, 'teams.yaml');
       let registered = {};
       try {
         const content = await fsPromises.readFile(teamsPath, 'utf8');
@@ -3654,7 +3654,7 @@ function register(ctx) {
       } catch {}
 
       const registeredPaths = new Set(Object.values(registered).map((t) => {
-        return (t.path || '').replace(/^~(?=\/|$)/, os.homedir());
+        return String(t || '').replace(/^~(?=\/|$)/, os.homedir());
       }));
 
       const discovered = [];
@@ -3696,18 +3696,6 @@ function register(ctx) {
           } catch {}
         }
       };
-
-      // Check incognide teams.yaml for explicit team paths
-      try {
-        const teamsYamlPath = path.join(INCOGNIDE_HOME, 'teams.yaml');
-        const content = await fsPromises.readFile(teamsYamlPath, 'utf8');
-        const parsed = yaml.load(content);
-        if (parsed?.teams) {
-          for (const [key, teamPath] of Object.entries(parsed.teams)) {
-            await checkDir(String(teamPath).replace(/^~(?=\/|$)/, os.homedir()), key);
-          }
-        }
-      } catch {}
 
       // Check project directory
       if (currentPath) {

@@ -1599,6 +1599,7 @@ body { margin:0; background:#0f0f23; display:flex; align-items:center; justify-c
       _backendEnv = {
         ...process.env,
         INCOGNIDE_PORT: String(BACKEND_PORT),
+        INCOGNIDE_FRONTEND_PORT: String(FRONTEND_PORT),
         FLASK_DEBUG: '1',
         PYTHONUNBUFFERED: '1',
         PYTHONIOENCODING: 'utf-8',
@@ -2547,8 +2548,119 @@ applyAppMenu();
           '.wasm': 'application/wasm',
           '.map': 'application/json',
         };
-        frontendServer = http.createServer((req, res) => {
-          let filePath = path.join(distDir, decodeURIComponent(req.url || '/'));
+
+        // Studio action queue (replaces python backend studio endpoints)
+        const _pendingStudioActions = {};
+        let _studioActionCounter = 0;
+        const _studioActionResults = {};
+        const _studioSSESubscribers = [];
+        function _notifyStudioSubscribers(action) {
+          const dead = [];
+          for (const sub of _studioSSESubscribers) {
+            try { sub(action); } catch (e) { dead.push(sub); }
+          }
+          for (const sub of dead) {
+            const idx = _studioSSESubscribers.indexOf(sub);
+            if (idx !== -1) _studioSSESubscribers.splice(idx, 1);
+          }
+        }
+        function _sendJSON(res, status, obj) {
+          res.writeHead(status, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(obj));
+        }
+        function _readBody(req) {
+          return new Promise((resolve) => {
+            let body = '';
+            req.on('data', chunk => body += chunk);
+            req.on('end', () => {
+              try { resolve(JSON.parse(body)); } catch { resolve({}); }
+            });
+          });
+        }
+
+        frontendServer = http.createServer(async (req, res) => {
+          const url = req.url || '/';
+
+          // --- Studio action routes ---
+          if (url === '/api/studio/action' && req.method === 'POST') {
+            const data = await _readBody(req);
+            const action = data.action;
+            const args = data.args || {};
+            const windowId = data.window_id || '';
+            if (!action) { _sendJSON(res, 400, { success: false, error: 'Missing action' }); return; }
+            _studioActionCounter += 1;
+            const actionId = `mcp_action_${_studioActionCounter}`;
+            const actionData = { action, args, status: 'pending' };
+            if (windowId) actionData.window_id = windowId;
+            _pendingStudioActions[actionId] = actionData;
+            console.log(`[Studio] Queued action ${actionId}: ${action}` + (windowId ? ` -> window ${windowId}` : ''));
+            _notifyStudioSubscribers({ id: actionId, ...actionData });
+            const start = Date.now();
+            const interval = setInterval(() => {
+              if (actionId in _studioActionResults || Date.now() - start > 30000) {
+                clearInterval(interval);
+              }
+            }, 100);
+            while (!(actionId in _studioActionResults) && Date.now() - start < 30000) {
+              await new Promise(r => setTimeout(r, 100));
+            }
+            clearInterval(interval);
+            const result = _studioActionResults[actionId];
+            delete _studioActionResults[actionId];
+            delete _pendingStudioActions[actionId];
+            if (result) { _sendJSON(res, 200, result); }
+            else { _sendJSON(res, 504, { success: false, error: 'Action timed out waiting for frontend' }); }
+            return;
+          }
+
+          if (url === '/api/studio/pending_actions' && req.method === 'GET') {
+            const pending = {};
+            for (const [aid, action] of Object.entries(_pendingStudioActions)) {
+              if (action.status === 'pending') pending[aid] = action;
+            }
+            _sendJSON(res, 200, { success: true, actions: pending });
+            return;
+          }
+
+          if (url === '/api/studio/actions_stream' && req.method === 'GET') {
+            res.writeHead(200, {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              'Connection': 'keep-alive',
+              'X-Accel-Buffering': 'no'
+            });
+            const send = (payload) => {
+              try { res.write(`data: ${JSON.stringify(payload)}\n\n`); } catch { /* closed */ }
+            };
+            _studioSSESubscribers.push(send);
+            for (const [aid, action] of Object.entries(_pendingStudioActions)) {
+              if (action.status === 'pending') send({ id: aid, ...action });
+            }
+            const keepalive = setInterval(() => {
+              try { res.write(': keepalive\n\n'); } catch { /* closed */ }
+            }, 30000);
+            req.on('close', () => {
+              clearInterval(keepalive);
+              const idx = _studioSSESubscribers.indexOf(send);
+              if (idx !== -1) _studioSSESubscribers.splice(idx, 1);
+            });
+            return;
+          }
+
+          if (url === '/api/studio/action_complete' && req.method === 'POST') {
+            const data = await _readBody(req);
+            const actionId = data.actionId;
+            const result = data.result || {};
+            if (!actionId) { _sendJSON(res, 400, { success: false, error: 'Missing actionId' }); return; }
+            if (_pendingStudioActions[actionId]) _pendingStudioActions[actionId].status = 'complete';
+            _studioActionResults[actionId] = result;
+            console.log(`[Studio] Action complete ${actionId}: success=${result.success || false}`);
+            _sendJSON(res, 200, { success: true });
+            return;
+          }
+
+          // --- Static file serving ---
+          let filePath = path.join(distDir, decodeURIComponent(url));
           if (filePath.endsWith('/')) filePath += 'index.html';
           if (!filePath.startsWith(distDir)) {
             res.writeHead(403); res.end('Forbidden'); return;
@@ -3061,13 +3173,14 @@ ipcMain.handle('backend:installAndStart', async (event, { pythonPath, npcpyExtra
     _backendEnv = {
       ...process.env,
       INCOGNIDE_PORT: String(BACKEND_PORT),
+      INCOGNIDE_FRONTEND_PORT: String(FRONTEND_PORT),
       FLASK_DEBUG: '1',
       PYTHONUNBUFFERED: '1',
       PYTHONIOENCODING: 'utf-8',
       HOME: os.homedir(),
       NPCSH_BASE: path.join(os.homedir(), '.npcsh'),
       INCOGNIDE_HOME: INCOGNIDE_HOME,
-      INCOGNIDE_DATA_DIR: path.join(INCOGNIDE_HOME, 'data'),
+      NPCSH_DATA_DIR: path.join(INCOGNIDE_HOME, 'data'),
     };
 
     _backendPath = venvPython;

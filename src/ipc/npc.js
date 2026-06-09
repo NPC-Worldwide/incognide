@@ -375,11 +375,11 @@ function register(ctx) {
 
   ipcMain.handle('get-jinxes-all-teams', async (event, currentPath) => {
     try {
-      // Read registered teams to fetch jinxes from all of them
+      // Read teams.yaml to fetch jinxes from all of them
       let registeredTeams = {};
       try {
         const teamsYaml = require('js-yaml');
-        const teamsPath = path.join(INCOGNIDE_HOME, 'registered_teams.yaml');
+        const teamsPath = path.join(INCOGNIDE_HOME, 'teams.yaml');
         const content = await fsPromises.readFile(teamsPath, 'utf8');
         const parsed = teamsYaml.load(content);
         registeredTeams = parsed?.teams || {};
@@ -398,9 +398,8 @@ function register(ctx) {
       }
 
       // Fetch jinxes from each registered team
-      for (const [teamKey, team] of Object.entries(registeredTeams)) {
-        const teamData = team;
-        const teamPath = (teamData.path || '').replace(/^~(?=\/|$)/, os.homedir());
+      for (const [teamKey, teamPathRaw] of Object.entries(registeredTeams)) {
+        const teamPath = String(teamPathRaw || '').replace(/^~(?=\/|$)/, os.homedir());
         if (!teamPath) continue;
         fetchPromises.push(
           fetch(`${BACKEND_URL}/api/jinxes/project?currentPath=${encodeURIComponent(teamPath)}`)
@@ -498,15 +497,15 @@ function register(ctx) {
 
   ipcMain.handle('getNPCTeamGlobal', async (event, globalPath) => {
     try {
-      // Resolve team key to path from registered_teams.yaml
+      // Resolve team key to path from teams.yaml
       if (globalPath) {
         try {
-          const teamsPath = path.join(INCOGNIDE_HOME, 'registered_teams.yaml');
+          const teamsPath = path.join(INCOGNIDE_HOME, 'teams.yaml');
           const content = await fsPromises.readFile(teamsPath, 'utf8');
           const parsed = yaml.load(content);
           const teams = parsed?.teams || {};
-          if (teams[globalPath]?.path) {
-            const resolved = teams[globalPath].path.replace(/^~(?=\/|$)/, os.homedir());
+          if (teams[globalPath]) {
+            const resolved = String(teams[globalPath]).replace(/^~(?=\/|$)/, os.homedir());
             const npcs = await readNPCTeamFromDir(resolved, globalPath);
             return { npcs };
           }
@@ -791,6 +790,17 @@ function register(ctx) {
       }
     };
 
+    // Load teams from frontend config
+    let registeredTeamPaths = [];
+    try {
+      const teamsContent = await fsPromises.readFile(path.join(INCOGNIDE_HOME, 'teams.yaml'), 'utf8');
+      const teamsParsed = yaml.load(teamsContent);
+      for (const teamPath of Object.values(teamsParsed?.teams || {})) {
+        const tp = String(teamPath || '').replace(/^~(?=\/|$)/, os.homedir());
+        if (tp) registeredTeamPaths.push(tp);
+      }
+    } catch {}
+
     // Load servers from backend context endpoints
     try {
       const globalRes = await fetch(`${BACKEND_URL}/api/context/global`);
@@ -810,10 +820,11 @@ function register(ctx) {
       }
     }
 
-    // Load team servers from backend npc_tools endpoint (includes auto-discovered teams)
+    // Load team servers from backend npc_tools endpoint using registered teams
     try {
       const params = new URLSearchParams();
       if (currentPath) params.append('currentPath', currentPath);
+      if (registeredTeamPaths.length) params.append('registered_teams', registeredTeamPaths.join(','));
       const teamRes = await fetch(`${BACKEND_URL}/api/npc_tools?${params.toString()}`);
       const teamJson = await teamRes.json();
       for (const srv of (teamJson.team_servers || [])) {
@@ -864,7 +875,7 @@ function register(ctx) {
     try {
       const ctxServers = await fetchCtxMcpServers(currentPath);
       // Filter out servers pointing to old ~/.npcsh/incognide/ path (migrated to ~/.incognide/)
-      const oldIncognidePath = path.join(os.homedir(), '.incognide');
+      const oldIncognidePath = path.join(os.homedir(), '.npcsh', 'incognide');
       const servers = ctxServers
         .filter(s => !s.serverPath.includes(oldIncognidePath))
         .map(s => ({
@@ -875,17 +886,16 @@ function register(ctx) {
         status: 'unknown',
       }));
 
-      // Also read .mcp*.json from registered team directories
+      // Also read .mcp*.json from team directories
       let registeredTeams = {};
       try {
-        const teamsContent = await fsPromises.readFile(path.join(INCOGNIDE_HOME, 'registered_teams.yaml'), 'utf8');
+        const teamsContent = await fsPromises.readFile(path.join(INCOGNIDE_HOME, 'teams.yaml'), 'utf8');
         const teamsParsed = yaml.load(teamsContent);
         registeredTeams = teamsParsed?.teams || {};
       } catch {}
 
-      for (const [key, team] of Object.entries(registeredTeams)) {
-        const teamData = team;
-        const teamPath = (teamData.path || '').replace(/^~(?=\/|$)/, os.homedir());
+      for (const [key, teamPathRaw] of Object.entries(registeredTeams)) {
+        const teamPath = String(teamPathRaw || '').replace(/^~(?=\/|$)/, os.homedir());
         if (!teamPath) continue;
 
         try {
@@ -1435,93 +1445,6 @@ function register(ctx) {
     });
   });
 
-  // Studio IPC handlers - migrated from direct HTTP fetch
-  ipcMain.handle('studio:registerWindow', async (event, data) => {
-    const maxRetries = 3;
-    const baseDelay = 500;
-    
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        
-        const response = await fetch(`${BACKEND_URL}/api/studio/register_window`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-        
-        // Check if response is actually JSON
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-          const text = await response.text();
-          console.warn(`register_window returned non-JSON (attempt ${attempt}/${maxRetries}):`, text.substring(0, 200));
-          
-          if (attempt === maxRetries) {
-            // Return mock success on final attempt - don't crash the app
-            console.warn('Max retries reached for register_window, returning mock success');
-            return { success: true, windowId: data.windowId, mock: true, warning: 'Backend returned non-JSON response' };
-          }
-          
-          await new Promise(r => setTimeout(r, baseDelay * attempt));
-          continue;
-        }
-        
-        return await response.json();
-        
-      } catch (err) {
-        console.warn(`register_window error (attempt ${attempt}/${maxRetries}):`, err.message);
-        
-        if (attempt === maxRetries) {
-          // Don't crash, return mock success
-          console.warn('Max retries reached for register_window, returning mock success');
-          return { success: true, windowId: data.windowId, mock: true, warning: err.message };
-        }
-        
-        await new Promise(r => setTimeout(r, baseDelay * attempt));
-      }
-    }
-  });
-
-  ipcMain.handle('studio:actionComplete', async (event, data) => {
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/studio/action_complete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
-      return await response.json();
-    } catch (err) {
-      console.error('Error completing studio action:', err);
-      return { success: false, error: err.message };
-    }
-  });
-
-  ipcMain.handle('studio:actionResult', async (event, data) => {
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/studio/action_result`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
-      return await response.json();
-    } catch (err) {
-      console.error('Error sending action result:', err);
-      return { success: false, error: err.message };
-    }
-  });
-
-  ipcMain.handle('studio:listWindows', async () => {
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/studio/windows`);
-      return await response.json();
-    } catch (err) {
-      console.error('Error listing windows:', err);
-      return { success: false, error: err.message, windows: [] };
-    }
-  });
 }
 
 module.exports = { register };

@@ -239,12 +239,12 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         );
     }, [availableNPCs, npcSearch]);
 
-    const [registeredTeams, setRegisteredTeams] = useState<Record<string, any>>({});
+    const [registeredTeams, setRegisteredTeams] = useState<Record<string, string>>({});
 
     useEffect(() => {
         (async () => {
             try {
-                const data = await (window as any).api.registeredTeamsRead();
+                const data = await (window as any).api.teamsRead();
                 if (data?.teams) setRegisteredTeams(data.teams);
             } catch {}
         })();
@@ -254,9 +254,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         // Find which registered team matches the current project folder
         let currentTeamKey: string | null = null;
         if (currentPath) {
-            for (const [key, team] of Object.entries(registeredTeams)) {
-                const teamPath = (team as any)?.path;
-                if (teamPath && currentPath.startsWith(teamPath)) {
+            for (const [key, teamPath] of Object.entries(registeredTeams)) {
+                if (typeof teamPath === 'string' && currentPath.startsWith(teamPath)) {
                     currentTeamKey = key;
                     break;
                 }
@@ -266,7 +265,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         const teamOrder = currentTeamKey
             ? ['project', currentTeamKey, ...otherTeams]
             : ['project', ...Object.keys(registeredTeams)];
-        const teamLabels: Record<string, string> = { project: 'Project', ...Object.fromEntries(Object.entries(registeredTeams).map(([k, v]: [string, any]) => [k, v.name || k])) };
+        const teamLabels: Record<string, string> = { project: 'Project', ...Object.fromEntries(Object.entries(registeredTeams).map(([k, v]: [string, string]) => [k, k])) };
         if (currentTeamKey && currentTeamKey !== 'project') {
             teamLabels[currentTeamKey] = (teamLabels[currentTeamKey] || currentTeamKey) + ' (current)';
         }

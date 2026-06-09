@@ -15,9 +15,9 @@ steps:
       import subprocess
 
       _home = os.path.expanduser('~')
-      _models_dir = context.get('models_dir', '') or os.path.join(_home, '.npcsh', 'incognide', 'npc_team', 'sql_models')
+      _models_dir = context.get('models_dir', '') or os.path.join(_home, '.incognide', 'npc_team', 'sql_models')
       _target_db = context.get('target_db', '') or os.path.join(_home, 'npcsh_history.db')
-      _npc_directory = context.get('npc_directory', '') or os.path.join(_home, '.npcsh', 'incognide', 'npc_team')
+      _npc_directory = context.get('npc_directory', '') or os.path.join(_home, '.incognide', 'npc_team')
       _prefer = (context.get('use_rust', 'auto') or 'auto').lower()
 
       if not os.path.exists(_models_dir):

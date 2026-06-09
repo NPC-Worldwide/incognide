@@ -2189,7 +2189,7 @@ useEffect(() => {
     };
 }, [rootLayoutNode, activeContentPaneId, performSplit, closeContentPane, updateContentPane]);
 
-// SSE connection for MCP studio actions from the backend
+// SSE connection for MCP studio actions from the local frontend server
 useEffect(() => {
     let eventSource: EventSource | null = null;
     let reconnectTimeout: NodeJS.Timeout | null = null;
@@ -2226,11 +2226,19 @@ useEffect(() => {
 
         try {
             const result = await executeStudioAction(actionData.action, actionData.args || {}, ctx);
-            await window.api.studioActionComplete({ actionId, result });
+            await fetch('/api/studio/action_complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ actionId, result })
+            });
             console.log('[MCP] Action complete:', actionId, result.success);
         } catch (err) {
             console.error('[MCP] Action failed:', actionId, err);
-            await window.api.studioActionComplete({ actionId, result: { success: false, error: String(err) } });
+            await fetch('/api/studio/action_complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ actionId, result: { success: false, error: String(err) } })
+            });
         }
     };
 
@@ -2251,18 +2259,9 @@ useEffect(() => {
         if (windowId) params.set('windowId', windowId);
         if (currentPathRef.current) params.set('folder', currentPathRef.current);
         const qs = params.toString();
-        const url = `${BACKEND_URL}/api/studio/actions_stream${qs ? '?' + qs : ''}`;
+        const url = `/api/studio/actions_stream${qs ? '?' + qs : ''}`;
         eventSource = new EventSource(url);
         lastMessageTime = Date.now();
-
-        // Register window metadata
-        if (windowId) {
-            window.api.studioRegisterWindow({
-                windowId,
-                folder: currentPathRef.current || '',
-                title: document.title || 'Incognide',
-            }).catch(() => {});
-        }
 
         eventSource.onmessage = (event) => {
             lastMessageTime = Date.now();

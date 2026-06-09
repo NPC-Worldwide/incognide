@@ -1,10 +1,13 @@
 jinx_name: request_approval
 description: Request user approval before performing an action
-parameters:
-  message:
-    type: string
-    description: The approval message to display
-    required: true
+inputs:
+  - message:
+      type: string
+      description: The approval message to display
+      required: true
 steps:
-  - action: confirm
-    message: "{{ message }}"
+  - name: request_approval
+    engine: incognide
+    action: confirm
+    args:
+      message: "{{ message }}"

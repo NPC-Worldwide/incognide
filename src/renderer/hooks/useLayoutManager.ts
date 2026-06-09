@@ -30,7 +30,12 @@ export function removePaneFromTree(oldRoot: any, paneId: string, nodePath: numbe
     let parentNode = newRoot;
     for (let i = 0; i < nodePath.length - 1; i++) {
         const idx = nodePath[i];
-        parentNode.children[idx] = { ...parentNode.children[idx], children: [...parentNode.children[idx].children], sizes: parentNode.children[idx].sizes ? [...parentNode.children[idx].sizes] : undefined };
+        const child = parentNode.children[idx];
+        parentNode.children[idx] = {
+            ...child,
+            children: child.children ? [...child.children] : undefined,
+            sizes: child.sizes ? [...child.sizes] : undefined
+        };
         parentNode = parentNode.children[idx];
     }
 
@@ -234,6 +239,9 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
                             const msg = { ...m, id: m.message_id || m.id || generateId() };
                             if (msg.role === 'assistant' && msg.toolCalls && Array.isArray(msg.toolCalls)) {
                                 const contentParts: any[] = [];
+                                if (msg.reasoningContent) {
+                                    contentParts.push({ type: 'reasoning', content: msg.reasoningContent });
+                                }
                                 if (msg.content) {
                                     contentParts.push({ type: 'text', content: msg.content });
                                 }

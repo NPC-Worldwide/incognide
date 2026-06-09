@@ -726,6 +726,17 @@ function register(ctx) {
         }
       }
 
+      // Load registered teams from frontend config to pass to backend
+      let registeredTeams = [];
+      try {
+        const teamsContent = await fsPromises.readFile(path.join(INCOGNIDE_HOME, 'teams.yaml'), 'utf8');
+        const teamsParsed = yaml.load(teamsContent);
+        for (const teamPath of Object.values(teamsParsed?.teams || {})) {
+          const tp = String(teamPath || '').replace(/^~(?=\/|$)/, os.homedir());
+          if (tp) registeredTeams.push(tp);
+        }
+      } catch {}
+
       const payload = {
         streamId: currentStreamId,
         commandstr: data.commandstr,
@@ -742,6 +753,7 @@ function register(ctx) {
         isResend: data.isRerun || false,
         jinxes: data.jinxes || [],
         tools: data.tools || [],
+        registered_teams: registeredTeams,
 
         userMessageId: data.userMessageId,
         assistantMessageId: data.assistantMessageId,

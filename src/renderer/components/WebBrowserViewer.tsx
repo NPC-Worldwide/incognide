@@ -349,7 +349,9 @@ const WebBrowserViewer = memo(({
                 if (!webview) return { success: false, error: 'Webview not available' };
 
                 try {
-                    const result = await webview.executeJavaScript(code);
+                    // Wrap in async IIFE so top-level await works in executeJavaScript context
+                    const wrapped = `(async () => {\n${code}\n})()`;
+                    const result = await webview.executeJavaScript(wrapped);
                     return { success: true, result };
                 } catch (err) {
                     console.error('[WebBrowser] Eval failed:', err);

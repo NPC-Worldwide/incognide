@@ -1,15 +1,18 @@
 jinx_name: navigate_browser
 description: Navigate a browser pane to a URL
-parameters:
-  paneId:
-    type: string
-    description: The ID of the browser pane
-    required: true
-  url:
-    type: string
-    description: The URL to navigate to
-    required: true
+inputs:
+  - paneId:
+      type: string
+      description: The ID of the browser pane
+      required: true
+  - url:
+      type: string
+      description: The URL to navigate to
+      required: true
 steps:
-  - action: navigate
-    paneId: "{{ paneId }}"
-    url: "{{ url }}"
+  - name: navigate_browser
+    engine: incognide
+    action: navigate_pane
+    args:
+      paneId: "{{ paneId }}"
+      target: "{{ url }}"
