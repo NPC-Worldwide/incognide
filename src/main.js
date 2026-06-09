@@ -35,6 +35,8 @@ const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
 
 const NPCSH_BASE = path.join(os.homedir(), '.npcsh');
 
+let splashWindow = null;
+
 let INCOGNIDE_HOME = process.env.INCOGNIDE_HOME || path.join(os.homedir(), '.incognide');
 try {
   const _rcPath = path.join(os.homedir(), '.incogniderc');
@@ -1436,6 +1438,38 @@ async function deployIncognideTeamOnStartup() {
 }
 
 app.whenReady().then(async () => {
+  splashWindow = new BrowserWindow({
+    width: 400,
+    height: 300,
+    frame: false,
+    alwaysOnTop: true,
+    transparent: true,
+    show: false,
+    webPreferences: { nodeIntegration: false, contextIsolation: true }
+  });
+  splashWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body { margin:0; background:#0f0f23; display:flex; align-items:center; justify-content:center; height:100vh; font-family:system-ui,sans-serif; }
+.box { text-align:center; color:#cdd6f4; }
+.spinner { width:48px; height:48px; border:4px solid #313244; border-top-color:#89b4fa; border-radius:50%; animation:spin 1s linear infinite; margin:0 auto 20px; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.title { font-size:20px; font-weight:600; margin-bottom:8px; }
+.sub { font-size:13px; color:#6c7086; }
+</style>
+</head>
+<body>
+<div class="box">
+<div class="spinner"></div>
+<div class="title">Incognide</div>
+<div class="sub">Starting backend...</div>
+</div>
+</body>
+</html>
+  `));
+  splashWindow.once('ready-to-show', () => splashWindow.show());
 
   const dataPath = ensureUserDataDirectory();
   await ensureTablesExist();
@@ -2380,6 +2414,10 @@ function createWindow(cliArgs = {}) {
           });
     mainWindow.once('ready-to-show', () => {
       mainWindow.show();
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        splashWindow.close();
+        splashWindow = null;
+      }
     });
     mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
       callback(true);

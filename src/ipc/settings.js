@@ -223,8 +223,6 @@ var __component = ${componentName};
 
     await fsPromises.mkdir(tileJinxCacheDir, { recursive: true });
     await fsPromises.writeFile(cachePath, moduleCode);
-
-    console.log(`Compiled ${jinxFilename} -> ${componentName}`);
     return { success: true, componentName, cachePath };
   } catch (err) {
     console.error(`Failed to compile ${jinxFilename}:`, err.message);
@@ -292,8 +290,6 @@ const compileAllJinxFiles = async () => {
     return { success: false, error: err.message };
   }
 };
-
-let jinxInitialCompileDone = false;
 
 const packageJson = require('../../package.json');
 const APP_VERSION = packageJson.version;
@@ -2231,17 +2227,6 @@ function register(ctx) {
   ipcMain.handle('tile-jinx-list', async () => {
     try {
       await ensureTileJinxDir();
-
-      if (!jinxInitialCompileDone) {
-        console.log('First jinx list request - compiling all jinx files...');
-        const compileResult = await compileAllJinxFiles();
-        if (compileResult.success) {
-          const compiled = compileResult.results.filter(r => r.success).length;
-          const failed = compileResult.results.filter(r => !r.success).length;
-          console.log(`Tile jinx compilation: ${compiled} compiled, ${failed} failed`);
-        }
-        jinxInitialCompileDone = true;
-      }
 
       const files = await fsPromises.readdir(tileJinxDir);
       const jinxFiles = files.filter(f => f.endsWith('.jinx'));
