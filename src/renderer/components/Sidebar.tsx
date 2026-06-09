@@ -3673,22 +3673,22 @@ const renderFolderList = (structure) => {
                 <div className="flex items-center gap-0 pl-1">
                     <ChevronRight size={14} className={`transform transition-transform theme-text-muted dark:text-gray-400 ${filesCollapsed ? "" : "rotate-90"}`} />
                     {!filesCollapsed && (
-                        <>
-                            <button
-                                onClick={(e) => { e.stopPropagation(); handleRefreshFilesAndFolders(); }}
-                                className="p-1.5 hover:bg-yellow-500/20 rounded transition-all text-gray-400 hover:text-yellow-400"
-                                title="Refresh files"
-                            >
-                                <RefreshCw size={11} />
-                            </button>
-                            <button
-                                onClick={(e) => { e.stopPropagation(); setShowFilesSettings(!showFilesSettings); }}
-                                className={`p-1.5 hover:bg-yellow-500/20 rounded transition-all ${showFilesSettings ? 'text-yellow-400 bg-yellow-500/20' : 'text-gray-400 hover:text-yellow-400'}`}
-                                title="Settings"
-                            >
-                                <Settings size={11} />
-                            </button>
-                        </>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); handleRefreshFilesAndFolders(); }}
+                            className="p-1.5 hover:bg-yellow-500/20 rounded transition-all text-gray-400 hover:text-yellow-400"
+                            title="Refresh files"
+                        >
+                            <RefreshCw size={11} />
+                        </button>
+                    )}
+                    {(!filesCollapsed || showFilesSettings) && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setShowFilesSettings(!showFilesSettings); }}
+                            className={`p-1.5 hover:bg-yellow-500/20 rounded transition-all ${showFilesSettings ? 'text-yellow-400 bg-yellow-500/20' : 'text-gray-400 hover:text-yellow-400'}`}
+                            title="Settings"
+                        >
+                            <Settings size={11} />
+                        </button>
                     )}
                 </div>
                 <div className="flex-1 flex items-stretch justify-end" style={{ position: 'relative', overflow: 'visible' }}>
