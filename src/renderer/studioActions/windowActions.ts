@@ -5,14 +5,17 @@ import { collectPaneInfo } from './paneActions';
 
 async function list_windows(
   _args: Record<string, any>,
-  _ctx: StudioContext
+  ctx: StudioContext
 ): Promise<StudioActionResult> {
-  try {
-    const data = await (window as any).api.studioListWindows();
-    return data;
-  } catch (err) {
-    return { success: false, error: `Failed to list windows: ${err}` };
-  }
+  return {
+    success: true,
+    windows: [{
+      id: ctx.windowId || '',
+      currentPath: ctx.currentPath || '',
+      title: document.title || 'Incognide',
+    }],
+    count: 1,
+  };
 }
 
 async function get_window_info(

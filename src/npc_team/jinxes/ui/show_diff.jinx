@@ -1,15 +1,18 @@
 jinx_name: show_diff
 description: Show a diff comparison between two text contents
-parameters:
-  original:
-    type: string
-    description: The original text
-    required: true
-  modified:
-    type: string
-    description: The modified text
-    required: true
+inputs:
+  - original:
+      type: string
+      description: The original text
+      required: true
+  - modified:
+      type: string
+      description: The modified text
+      required: true
 steps:
-  - action: show_diff
-    original: "{{ original }}"
-    modified: "{{ modified }}"
+  - name: show_diff
+    engine: incognide
+    action: show_diff
+    args:
+      original: "{{ original }}"
+      modified: "{{ modified }}"

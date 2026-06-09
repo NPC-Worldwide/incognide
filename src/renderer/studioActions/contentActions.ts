@@ -23,7 +23,16 @@ async function read_pane(
   const fileContentTypes = ['editor', 'markdown-preview', 'latex', 'notebook', 'exp'];
 
   if (fileContentTypes.includes(contentType)) {
-    content = fileContent || null;
+    // Retry if fileContent hasn't loaded yet (editor component loads async after pane creation)
+    let attempts = 0;
+    while (!content && attempts < 20) {
+      const currentData = ctx.contentDataRef.current[paneId];
+      content = currentData?.fileContent || null;
+      if (!content) {
+        await new Promise(resolve => setTimeout(resolve, 150));
+        attempts++;
+      }
+    }
   } else {
     switch (contentType) {
       case 'chat': {

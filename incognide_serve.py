@@ -78,9 +78,10 @@ if __name__ == "__main__":
     mode_str = 'dev' if is_dev else 'prod'
     print(f"Starting Flask server on http://0.0.0.0:{port} ({mode_str} mode)")
 
+    incognide_home = os.environ.get('INCOGNIDE_HOME', os.path.expanduser('~/.incognide'))
     start_flask_server(
         port=port,
         cors_origins=f"localhost:{frontend_port}",
         db_path=os.path.expanduser('~/npcsh_history.db'),
-        user_npc_directory=os.path.expanduser('~/.npcsh/npc_team'),
+        user_npc_directory=os.path.join(incognide_home, 'npc_team'),
         debug=False)

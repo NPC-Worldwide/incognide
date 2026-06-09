@@ -35,6 +35,8 @@ const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
 
 const NPCSH_BASE = path.join(os.homedir(), '.npcsh');
 
+let splashWindow = null;
+
 let INCOGNIDE_HOME = process.env.INCOGNIDE_HOME || path.join(os.homedir(), '.incognide');
 try {
   const _rcPath = path.join(os.homedir(), '.incogniderc');
@@ -1436,6 +1438,38 @@ async function deployIncognideTeamOnStartup() {
 }
 
 app.whenReady().then(async () => {
+  splashWindow = new BrowserWindow({
+    width: 400,
+    height: 300,
+    frame: false,
+    alwaysOnTop: true,
+    transparent: true,
+    show: false,
+    webPreferences: { nodeIntegration: false, contextIsolation: true }
+  });
+  splashWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body { margin:0; background:#0f0f23; display:flex; align-items:center; justify-content:center; height:100vh; font-family:system-ui,sans-serif; }
+.box { text-align:center; color:#cdd6f4; }
+.spinner { width:48px; height:48px; border:4px solid #313244; border-top-color:#89b4fa; border-radius:50%; animation:spin 1s linear infinite; margin:0 auto 20px; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.title { font-size:20px; font-weight:600; margin-bottom:8px; }
+.sub { font-size:13px; color:#6c7086; }
+</style>
+</head>
+<body>
+<div class="box">
+<div class="spinner"></div>
+<div class="title">Incognide</div>
+<div class="sub">Starting backend...</div>
+</div>
+</body>
+</html>
+  `));
+  splashWindow.once('ready-to-show', () => splashWindow.show());
 
   const dataPath = ensureUserDataDirectory();
   await ensureTablesExist();
@@ -1565,6 +1599,7 @@ app.whenReady().then(async () => {
       _backendEnv = {
         ...process.env,
         INCOGNIDE_PORT: String(BACKEND_PORT),
+        INCOGNIDE_FRONTEND_PORT: String(FRONTEND_PORT),
         FLASK_DEBUG: '1',
         PYTHONUNBUFFERED: '1',
         PYTHONIOENCODING: 'utf-8',
@@ -2362,6 +2397,7 @@ function createWindow(cliArgs = {}) {
     mainWindow = new BrowserWindow({
       width: 1200,
       height: 800,
+      show: false,
       icon: appIcon || iconPath,
       title: 'Incognide',
       webPreferences: {
@@ -2377,6 +2413,13 @@ function createWindow(cliArgs = {}) {
         preload: path.join(__dirname, 'preload.js')
       }
           });
+    mainWindow.once('ready-to-show', () => {
+      mainWindow.show();
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        splashWindow.close();
+        splashWindow = null;
+      }
+    });
     mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
       callback(true);
     });
@@ -2505,8 +2548,119 @@ applyAppMenu();
           '.wasm': 'application/wasm',
           '.map': 'application/json',
         };
-        frontendServer = http.createServer((req, res) => {
-          let filePath = path.join(distDir, decodeURIComponent(req.url || '/'));
+
+        // Studio action queue (replaces python backend studio endpoints)
+        const _pendingStudioActions = {};
+        let _studioActionCounter = 0;
+        const _studioActionResults = {};
+        const _studioSSESubscribers = [];
+        function _notifyStudioSubscribers(action) {
+          const dead = [];
+          for (const sub of _studioSSESubscribers) {
+            try { sub(action); } catch (e) { dead.push(sub); }
+          }
+          for (const sub of dead) {
+            const idx = _studioSSESubscribers.indexOf(sub);
+            if (idx !== -1) _studioSSESubscribers.splice(idx, 1);
+          }
+        }
+        function _sendJSON(res, status, obj) {
+          res.writeHead(status, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(obj));
+        }
+        function _readBody(req) {
+          return new Promise((resolve) => {
+            let body = '';
+            req.on('data', chunk => body += chunk);
+            req.on('end', () => {
+              try { resolve(JSON.parse(body)); } catch { resolve({}); }
+            });
+          });
+        }
+
+        frontendServer = http.createServer(async (req, res) => {
+          const url = req.url || '/';
+
+          // --- Studio action routes ---
+          if (url === '/api/studio/action' && req.method === 'POST') {
+            const data = await _readBody(req);
+            const action = data.action;
+            const args = data.args || {};
+            const windowId = data.window_id || '';
+            if (!action) { _sendJSON(res, 400, { success: false, error: 'Missing action' }); return; }
+            _studioActionCounter += 1;
+            const actionId = `mcp_action_${_studioActionCounter}`;
+            const actionData = { action, args, status: 'pending' };
+            if (windowId) actionData.window_id = windowId;
+            _pendingStudioActions[actionId] = actionData;
+            console.log(`[Studio] Queued action ${actionId}: ${action}` + (windowId ? ` -> window ${windowId}` : ''));
+            _notifyStudioSubscribers({ id: actionId, ...actionData });
+            const start = Date.now();
+            const interval = setInterval(() => {
+              if (actionId in _studioActionResults || Date.now() - start > 30000) {
+                clearInterval(interval);
+              }
+            }, 100);
+            while (!(actionId in _studioActionResults) && Date.now() - start < 30000) {
+              await new Promise(r => setTimeout(r, 100));
+            }
+            clearInterval(interval);
+            const result = _studioActionResults[actionId];
+            delete _studioActionResults[actionId];
+            delete _pendingStudioActions[actionId];
+            if (result) { _sendJSON(res, 200, result); }
+            else { _sendJSON(res, 504, { success: false, error: 'Action timed out waiting for frontend' }); }
+            return;
+          }
+
+          if (url === '/api/studio/pending_actions' && req.method === 'GET') {
+            const pending = {};
+            for (const [aid, action] of Object.entries(_pendingStudioActions)) {
+              if (action.status === 'pending') pending[aid] = action;
+            }
+            _sendJSON(res, 200, { success: true, actions: pending });
+            return;
+          }
+
+          if (url === '/api/studio/actions_stream' && req.method === 'GET') {
+            res.writeHead(200, {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              'Connection': 'keep-alive',
+              'X-Accel-Buffering': 'no'
+            });
+            const send = (payload) => {
+              try { res.write(`data: ${JSON.stringify(payload)}\n\n`); } catch { /* closed */ }
+            };
+            _studioSSESubscribers.push(send);
+            for (const [aid, action] of Object.entries(_pendingStudioActions)) {
+              if (action.status === 'pending') send({ id: aid, ...action });
+            }
+            const keepalive = setInterval(() => {
+              try { res.write(': keepalive\n\n'); } catch { /* closed */ }
+            }, 30000);
+            req.on('close', () => {
+              clearInterval(keepalive);
+              const idx = _studioSSESubscribers.indexOf(send);
+              if (idx !== -1) _studioSSESubscribers.splice(idx, 1);
+            });
+            return;
+          }
+
+          if (url === '/api/studio/action_complete' && req.method === 'POST') {
+            const data = await _readBody(req);
+            const actionId = data.actionId;
+            const result = data.result || {};
+            if (!actionId) { _sendJSON(res, 400, { success: false, error: 'Missing actionId' }); return; }
+            if (_pendingStudioActions[actionId]) _pendingStudioActions[actionId].status = 'complete';
+            _studioActionResults[actionId] = result;
+            console.log(`[Studio] Action complete ${actionId}: success=${result.success || false}`);
+            _sendJSON(res, 200, { success: true });
+            return;
+          }
+
+          // --- Static file serving ---
+          let filePath = path.join(distDir, decodeURIComponent(url));
           if (filePath.endsWith('/')) filePath += 'index.html';
           if (!filePath.startsWith(distDir)) {
             res.writeHead(403); res.end('Forbidden'); return;
@@ -3019,13 +3173,14 @@ ipcMain.handle('backend:installAndStart', async (event, { pythonPath, npcpyExtra
     _backendEnv = {
       ...process.env,
       INCOGNIDE_PORT: String(BACKEND_PORT),
+      INCOGNIDE_FRONTEND_PORT: String(FRONTEND_PORT),
       FLASK_DEBUG: '1',
       PYTHONUNBUFFERED: '1',
       PYTHONIOENCODING: 'utf-8',
       HOME: os.homedir(),
       NPCSH_BASE: path.join(os.homedir(), '.npcsh'),
       INCOGNIDE_HOME: INCOGNIDE_HOME,
-      INCOGNIDE_DATA_DIR: path.join(INCOGNIDE_HOME, 'data'),
+      NPCSH_DATA_DIR: path.join(INCOGNIDE_HOME, 'data'),
     };
 
     _backendPath = venvPython;

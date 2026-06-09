@@ -75,6 +75,16 @@ export const ChatMessage = memo(({
 
     const isLongMessage = message.role === 'user' && countLines(message.content) > MAX_COLLAPSED_LINES;
     const [isExpanded, setIsExpanded] = useState(false);
+    const [expandedReasoning, setExpandedReasoning] = useState<Set<number>>(new Set());
+
+    const toggleReasoning = (partIdx: number) => {
+        setExpandedReasoning(prev => {
+            const next = new Set(prev);
+            if (next.has(partIdx)) next.delete(partIdx);
+            else next.add(partIdx);
+            return next;
+        });
+    };
 
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isLoadingTTS, setIsLoadingTTS] = useState(false);
@@ -308,12 +318,25 @@ export const ChatMessage = memo(({
                         <div className="w-1.5 h-1.5 theme-text-muted rounded-full animate-bounce" style={{ animationDelay: '0.3s' }}></div>
                     </div>
                 )}
-                {message.reasoningContent && (
-                    <div className="mb-3 px-3 py-2 theme-bg-tertiary rounded-md border-l-2 border-yellow-500">
-                        <div className="text-xs text-yellow-400 mb-1 font-semibold">Thinking Process:</div>
-                        <div className="prose prose-sm prose-invert max-w-none theme-text-secondary text-sm">
-                            <MarkdownRenderer content={message.reasoningContent || ''} onOpenFile={onOpenFile} />
+                {message.reasoningContent && !message.contentParts?.some((p: any) => p.type === 'reasoning') && (
+                    <div className="mb-3 rounded-md border-l-2 border-yellow-500 overflow-hidden">
+                        <div
+                            className="flex items-center gap-2 px-3 py-1.5 theme-bg-tertiary cursor-pointer hover:brightness-110 transition-all"
+                            onClick={() => toggleReasoning(-1)}
+                        >
+                            <span className="text-xs text-yellow-400 font-semibold">Thinking Process:</span>
+                            {expandedReasoning.has(-1)
+                                ? <ChevronDown size={14} className="theme-text-muted flex-shrink-0" />
+                                : <ChevronRight size={14} className="theme-text-muted flex-shrink-0" />
+                            }
                         </div>
+                        {expandedReasoning.has(-1) && (
+                            <div className="px-3 py-2 theme-bg-primary border-t border-[var(--border-color,#313244)]">
+                                <div className="prose prose-sm prose-invert max-w-none theme-text-secondary text-sm">
+                                    <MarkdownRenderer content={message.reasoningContent || ''} onOpenFile={onOpenFile} />
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
                 {message.contentParts && message.contentParts.length > 0 ? (
@@ -332,6 +355,29 @@ export const ChatMessage = memo(({
                             } else if (part.type === 'tool_call') {
                                 return (
                                     <ToolCallDisplay key={partIdx} tool={part.call} />
+                                );
+                            } else if (part.type === 'reasoning') {
+                                const isReasoningExpanded = expandedReasoning.has(partIdx);
+                                return (
+                                    <div key={partIdx} className="mb-3 rounded-md border-l-2 border-yellow-500 overflow-hidden">
+                                        <div
+                                            className="flex items-center gap-2 px-3 py-1.5 theme-bg-tertiary cursor-pointer hover:brightness-110 transition-all"
+                                            onClick={() => toggleReasoning(partIdx)}
+                                        >
+                                            <span className="text-xs text-yellow-400 font-semibold">Thinking Process:</span>
+                                            {isReasoningExpanded
+                                                ? <ChevronDown size={14} className="theme-text-muted flex-shrink-0" />
+                                                : <ChevronRight size={14} className="theme-text-muted flex-shrink-0" />
+                                            }
+                                        </div>
+                                        {isReasoningExpanded && (
+                                            <div className="px-3 py-2 theme-bg-primary border-t border-[var(--border-color,#313244)]">
+                                                <div className="prose prose-sm prose-invert max-w-none theme-text-secondary text-sm">
+                                                    <MarkdownRenderer content={part.content || ''} onOpenFile={onOpenFile} />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 );
                             }
                             return null;

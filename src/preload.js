@@ -752,11 +752,6 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
 
     getNPCTeamGlobal: (globalPath) => ipcRenderer.invoke('getNPCTeamGlobal', globalPath),
 
-    // Studio IPC handlers
-    studioRegisterWindow: (data) => ipcRenderer.invoke('studio:registerWindow', data),
-    studioActionComplete: (data) => ipcRenderer.invoke('studio:actionComplete', data),
-    studioActionResult: (data) => ipcRenderer.invoke('studio:actionResult', data),
-    studioListWindows: () => ipcRenderer.invoke('studio:listWindows'),
     onBrowserShowContextMenu: (callback) => {
         const handler = (_, data) => callback(data);
         ipcRenderer.on('browser-show-context-menu', handler);
@@ -903,9 +898,9 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
     customProvidersRead: () => ipcRenderer.invoke('custom-providers:read'),
     customProvidersWrite: (providers) => ipcRenderer.invoke('custom-providers:write', providers),
     getProviderModels: (opts) => ipcRenderer.invoke('get-provider-models', opts),
-    registeredTeamsRead: () => ipcRenderer.invoke('registered-teams:read'),
-    registeredTeamsWrite: (teams) => ipcRenderer.invoke('registered-teams:write', teams),
-    registeredTeamsScan: (currentPath) => ipcRenderer.invoke('registered-teams:scan', currentPath),
+    teamsRead: () => ipcRenderer.invoke('teams:read'),
+    teamsWrite: (teams) => ipcRenderer.invoke('teams:write', teams),
+    teamsScan: (currentPath) => ipcRenderer.invoke('teams:scan', currentPath),
     mcpGetServersForSidebar: (currentPath) => ipcRenderer.invoke('mcp:getServersForSidebar', currentPath),
 
     sshConnect: (config) => ipcRenderer.invoke('ssh:connect', config),

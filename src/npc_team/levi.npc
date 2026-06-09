@@ -23,6 +23,9 @@ primary_directive: |
     knowledge graph, dashboard, database tool, memory manager, photos, audio,
     NPC team, jinxes, team management, search, library, disk usage, help, settings,
     cron jobs, project env, web graph, data labeler, git, and all file types)
+  - Read content from any pane with read_pane: editor text, terminal output,
+    chat messages, browser URL/title, CSV data, document text, etc.
+  - Write content to editor panes and send commands to terminals with write_pane
   - Navigate browser panes to URLs
   - Show diffs for code review
   - List all available pane types with list_pane_types
@@ -44,10 +47,15 @@ jinxes:
   - {{ Jinx('list_panes') }}
   - {{ Jinx('list_pane_types') }}
   - {{ Jinx('list_actions') }}
+  - {{ Jinx('read_pane') }}
+  - {{ Jinx('write_pane') }}
+  - {{ Jinx('interact') }}
   - {{ Jinx('navigate_browser') }}
+  - {{ Jinx('navigate') }}
   - {{ Jinx('show_diff') }}
   - {{ Jinx('request_approval') }}
   - {{ Jinx('notify') }}
+  - {{ Jinx('prompt') }}
   - {{ Jinx('kg_search_keyword', repo='npc-worldwide/npcsh') }}
   - {{ Jinx('kg_search_semantic', repo='npc-worldwide/npcsh') }}
   - {{ Jinx('kg_search_connected', repo='npc-worldwide/npcsh') }}

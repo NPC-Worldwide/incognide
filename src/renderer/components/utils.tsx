@@ -313,9 +313,9 @@ export const loadAvailableNPCs = async (
         const teamKeys: string[] = ['project'];
 
         try {
-            const teamsData = await window.api.registeredTeamsRead();
+            const teamsData = await window.api.teamsRead();
             if (teamsData?.teams) {
-                for (const [key, team] of Object.entries(teamsData.teams)) {
+                for (const [key, teamPath] of Object.entries(teamsData.teams)) {
                     teamKeys.push(key);
                     teamFetches.push(window.api.getNPCTeamGlobal(key));
                 }
@@ -870,13 +870,127 @@ export const usePaneAwareStreamListeners = (
             };
 
             try {
-                let content = '', reasoningContent = '', toolCalls = null, isDecision = false;
-                let usage: { input_tokens: number; output_tokens: number } | null = null;
+                const msgIndex = paneData.chatMessages.allMessages.findIndex((m: any) => m.id === incomingStreamId);
+                if (msgIndex === -1) return;
+
+                const message = paneData.chatMessages.allMessages[msgIndex];
+                if (!message.contentParts) {
+                    message.contentParts = [];
+                }
+
+                const appendText = (text: string) => {
+                    if (!text) return;
+                    message.content = (message.content || '') + text;
+                    const lastPart = message.contentParts[message.contentParts.length - 1];
+                    if (lastPart && lastPart.type === 'text') {
+                        lastPart.content += text;
+                    } else {
+                        message.contentParts.push({ type: 'text', content: text });
+                    }
+                };
+
+                const appendReasoning = (text: string) => {
+                    if (!text) return;
+                    message.reasoningContent = (message.reasoningContent || '') + text;
+                    const lastPart = message.contentParts[message.contentParts.length - 1];
+                    if (lastPart && lastPart.type === 'reasoning') {
+                        lastPart.content += text;
+                    } else {
+                        message.contentParts.push({ type: 'reasoning', content: text });
+                    }
+                };
+
+                const appendToolCalls = (calls: any[]) => {
+                    if (!calls || calls.length === 0) return;
+                    const normalizedCalls = calls.map((tc: any) => ({
+                        id: tc.id || '',
+                        type: tc.type || 'function',
+                        function: {
+                            name: tc.function?.name || (tc.name || ''),
+                            arguments: (() => {
+                                if (tc.args) {
+                                    return typeof tc.args === 'object' ? JSON.stringify(tc.args, null, 2) : String(tc.args);
+                                }
+                                const argVal = tc.function?.arguments;
+                                if (typeof argVal === 'object') return JSON.stringify(argVal, null, 2);
+                                return argVal || '';
+                            })()
+                        },
+                        status: tc.status,
+                        result_preview: tc.result_preview || ''
+                    }));
+
+                    if (studioContext) {
+                        for (const tc of normalizedCalls) {
+                            const funcName = tc.function?.name || '';
+                            if (funcName.startsWith('studio.')) {
+                                const actionName = funcName.slice(7);
+                                let args = {};
+                                try {
+                                    args = JSON.parse(tc.function?.arguments || '{}');
+                                } catch (e) {
+                                    console.warn('[STUDIO] Failed to parse arguments:', tc.function?.arguments);
+                                }
+
+                                (async () => {
+                                    try {
+                                        const result = await executeStudioAction(actionName, args, studioContext);
+                                        tc.status = result.success ? 'complete' : 'error';
+                                        tc.result_preview = JSON.stringify(result, null, 2);
+                                        notifyPaneUpdate(targetPaneId);
+                                    } catch (err) {
+                                        console.error(`[STUDIO] Action ${actionName} failed:`, err);
+                                        tc.status = 'error';
+                                        tc.result_preview = `Error: ${err}`;
+                                        notifyPaneUpdate(targetPaneId);
+                                    }
+                                })();
+                            }
+                        }
+                    }
+
+                    const existing = message.toolCalls || [];
+                    const merged = [...existing];
+                    // Match on tc.id ONLY — function name is not unique across multiple
+                    // sequential calls to the same tool (e.g. `sh` invoked 3 times in a row).
+                    normalizedCalls.forEach((tc: any) => {
+                        const idx = tc.id ? merged.findIndex((mtc: any) => mtc.id && mtc.id === tc.id) : -1;
+                        if (idx >= 0) {
+                            const existingTc = merged[idx];
+                            const newArgs = tc.function?.arguments;
+                            const shouldReplaceArgs = newArgs && String(newArgs).trim().length > 0;
+                            merged[idx] = {
+                                ...existingTc,
+                                ...tc,
+                                function: {
+                                    name: tc.function?.name || existingTc.function?.name || '',
+                                    arguments: shouldReplaceArgs ? newArgs : (existingTc.function?.arguments || '')
+                                }
+                            };
+
+                            const partIdx = message.contentParts.findIndex((p: any) =>
+                                p.type === 'tool_call' && p.call.id && p.call.id === tc.id
+                            );
+                            if (partIdx >= 0) {
+                                message.contentParts[partIdx].call = merged[idx];
+                            }
+                        } else {
+                            merged.push(tc);
+                            message.contentParts.push({ type: 'tool_call', call: tc });
+                        }
+                    });
+                    message.toolCalls = merged;
+                };
+
+                const applyUsage = (u: any) => {
+                    if (!u) return;
+                    message.input_tokens = u.input_tokens;
+                    message.output_tokens = u.output_tokens;
+                    message.cost = u.cost;
+                };
 
                 if (typeof chunk === 'string') {
-
                     const events = chunk.split(/\n\n/).filter((e: string) => e.trim());
-
                     for (const event of events) {
                         const trimmedEvent = event.trim();
                         if (!trimmedEvent) continue;
@@ -887,34 +1001,37 @@ export const usePaneAwareStreamListeners = (
                             if (dataContent) {
                                 try {
                                     const parsed = JSON.parse(dataContent);
-                                    const result = processEvent(parsed, isDecision);
-                                    content += result.content;
-                                    reasoningContent += result.reasoningContent;
-                                    if (result.toolCalls) toolCalls = result.toolCalls;
-                                    isDecision = result.isDecision;
-                                    if (result.usage) usage = result.usage;
+                                    const result = processEvent(parsed, message.role === 'decision');
+                                    if (result.content) appendText(result.content);
+                                    if (result.reasoningContent) appendReasoning(result.reasoningContent);
+                                    if (result.toolCalls) appendToolCalls(result.toolCalls);
+                                    if (result.isDecision) message.role = 'decision';
+                                    if (result.usage) applyUsage(result.usage);
                                 } catch (parseErr) {
                                     console.warn('[STREAM] Failed to parse data event:', dataContent, parseErr);
                                 }
                             }
                         } else {
-
-                            content += trimmedEvent;
+                            appendText(trimmedEvent);
                         }
                     }
                 } else if (chunk?.choices) {
-                    isDecision = chunk.choices[0]?.delta?.role === 'decision';
-                    content = chunk.choices[0]?.delta?.content || '';
-                    reasoningContent = chunk.choices[0]?.delta?.reasoning_content || '';
-                    toolCalls = chunk.tool_calls || null;
+                    const isDecision = chunk.choices[0]?.delta?.role === 'decision';
+                    if (isDecision) message.role = 'decision';
+                    const content = chunk.choices[0]?.delta?.content || '';
+                    const reasoningContent = chunk.choices[0]?.delta?.reasoning_content || '';
+                    const toolCalls = chunk.tool_calls || null;
+                    if (content) appendText(content);
+                    if (reasoningContent) appendReasoning(reasoningContent);
+                    if (toolCalls) appendToolCalls(Array.isArray(toolCalls) ? toolCalls : []);
                 } else if (chunk?.type) {
                     const type = chunk.type;
                     if (type === 'usage') {
-                        usage = { input_tokens: chunk.input_tokens || 0, output_tokens: chunk.output_tokens || 0, cost: chunk.cost || 0 };
+                        applyUsage({ input_tokens: chunk.input_tokens || 0, output_tokens: chunk.output_tokens || 0, cost: chunk.cost || 0 });
                     } else if (type === 'tool_execution_start' && Array.isArray(chunk.tool_calls)) {
-                        toolCalls = chunk.tool_calls;
+                        appendToolCalls(chunk.tool_calls);
                     } else if ((type === 'tool_start' || type === 'tool_complete' || type === 'tool_result' || type === 'tool_error') && chunk.name) {
-                        toolCalls = [{
+                        appendToolCalls([{
                             id: chunk.id || '',
                             type: 'function',
                             function: {
@@ -923,134 +1040,12 @@ export const usePaneAwareStreamListeners = (
                             },
                             status: type === 'tool_error' ? 'error' : ((type === 'tool_complete' || type === 'tool_result') ? 'complete' : 'running'),
                             result_preview: chunk.result_preview || chunk.result || chunk.error || ''
-                        }];
+                        }]);
                     }
                 }
 
-                const msgIndex = paneData.chatMessages.allMessages.findIndex((m: any) => m.id === incomingStreamId);
-                if (msgIndex !== -1) {
-                    const message = paneData.chatMessages.allMessages[msgIndex];
-                    message.role = isDecision ? 'decision' : 'assistant';
-                    message.content = (message.content || '') + content;
-                    message.reasoningContent = (message.reasoningContent || '') + reasoningContent;
-
-                    if (usage) {
-                        message.input_tokens = usage.input_tokens;
-                        message.output_tokens = usage.output_tokens;
-                        message.cost = usage.cost;
-                    }
-
-                    if (!message.contentParts) {
-                        message.contentParts = [];
-                    }
-
-                    if (content) {
-                        const lastPart = message.contentParts[message.contentParts.length - 1];
-                        if (lastPart && lastPart.type === 'text') {
-                            lastPart.content += content;
-                        } else {
-                            message.contentParts.push({ type: 'text', content });
-                        }
-                    }
-
-                    if (toolCalls) {
-                        const normalizedCalls = (Array.isArray(toolCalls) ? toolCalls : []).map((tc: any) => ({
-                            id: tc.id || '',
-                            type: tc.type || 'function',
-                            function: {
-                                name: tc.function?.name || (tc.name || ''),
-                                arguments: (() => {
-                                    if (tc.args) {
-                                        return typeof tc.args === 'object' ? JSON.stringify(tc.args, null, 2) : String(tc.args);
-                                    }
-                                    const argVal = tc.function?.arguments;
-                                    if (typeof argVal === 'object') return JSON.stringify(argVal, null, 2);
-                                    return argVal || '';
-                                })()
-                            },
-                            status: tc.status,
-                            result_preview: tc.result_preview || ''
-                        }));
-
-                        if (studioContext) {
-                            for (const tc of normalizedCalls) {
-                                const funcName = tc.function?.name || '';
-                                if (funcName.startsWith('studio.')) {
-                                    const actionName = funcName.slice(7);
-                                    let args = {};
-                                    try {
-                                        args = JSON.parse(tc.function?.arguments || '{}');
-                                    } catch (e) {
-                                        console.warn('[STUDIO] Failed to parse arguments:', tc.function?.arguments);
-                                    }
-
-                                    (async () => {
-                                        try {
-                                            const result = await executeStudioAction(actionName, args, studioContext);
-
-                                            tc.status = result.success ? 'complete' : 'error';
-                                            tc.result_preview = JSON.stringify(result, null, 2);
-
-                                            if (incomingStreamId) {
-                                                try {
-                                                    await window.api.studioActionResult({
-                                                        streamId: incomingStreamId,
-                                                        toolId: tc.id,
-                                                        result: result
-                                                    });
-                                                } catch (fetchErr) {
-                                                    console.warn('[STUDIO] Failed to send result to backend:', fetchErr);
-                                                }
-                                            }
-
-                                            notifyPaneUpdate(targetPaneId);
-                                        } catch (err) {
-                                            console.error(`[STUDIO] Action ${actionName} failed:`, err);
-                                            tc.status = 'error';
-                                            tc.result_preview = `Error: ${err}`;
-                                            notifyPaneUpdate(targetPaneId);
-                                        }
-                                    })();
-                                }
-                            }
-                        }
-
-                        const existing = message.toolCalls || [];
-                        const merged = [...existing];
-                        // Match on tc.id ONLY — function name is not unique across multiple
-                        // sequential calls to the same tool (e.g. `sh` invoked 3 times in a row).
-                        normalizedCalls.forEach((tc: any) => {
-                            const idx = tc.id ? merged.findIndex((mtc: any) => mtc.id && mtc.id === tc.id) : -1;
-                            if (idx >= 0) {
-                                const existingTc = merged[idx];
-                                const newArgs = tc.function?.arguments;
-                                const shouldReplaceArgs = newArgs && String(newArgs).trim().length > 0;
-                                merged[idx] = {
-                                    ...existingTc,
-                                    ...tc,
-                                    function: {
-                                        name: tc.function?.name || existingTc.function?.name || '',
-                                        arguments: shouldReplaceArgs ? newArgs : (existingTc.function?.arguments || '')
-                                    }
-                                };
-
-                                const partIdx = message.contentParts.findIndex((p: any) =>
-                                    p.type === 'tool_call' && p.call.id && p.call.id === tc.id
-                                );
-                                if (partIdx >= 0) {
-                                    message.contentParts[partIdx].call = merged[idx];
-                                }
-                            } else {
-                                merged.push(tc);
-                                message.contentParts.push({ type: 'tool_call', call: tc });
-                            }
-                        });
-                        message.toolCalls = merged;
-                    }
-
-                    paneData.chatMessages.messages = paneData.chatMessages.allMessages.slice(-(paneData.chatMessages.displayedMessageCount || 20));
-                    notifyPaneUpdate(targetPaneId);
-                }
+                paneData.chatMessages.messages = paneData.chatMessages.allMessages.slice(-(paneData.chatMessages.displayedMessageCount || 20));
+                notifyPaneUpdate(targetPaneId);
             } catch (err) {
                 console.error('[REACT] Error processing stream chunk:', err, 'Raw chunk:', chunk);
             }

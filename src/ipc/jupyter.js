@@ -327,7 +327,7 @@ try:
     outputs = []
     while True:
         try:
-            msg = client.get_iopub_msg(timeout=30)
+            msg = client.get_iopub_msg(timeout=None)
             t, c = msg['msg_type'], msg['content']
             if t == 'stream': outputs.append({'output_type': 'stream', 'name': c.get('name','stdout'), 'text': [c.get('text','')]})
             elif t == 'execute_result': outputs.append({'output_type': 'execute_result', 'data': c.get('data',{}), 'metadata': c.get('metadata',{}), 'execution_count': c.get('execution_count')})
@@ -344,8 +344,7 @@ except Exception as e:
           return new Promise((resolve) => {
               const proc = spawn(pythonPath, ['-c', pythonScript, kernel.connectionFile, code], {
                   env: { ...process.env },
-                  cwd: kernel.workspacePath || process.cwd(),
-                  timeout: 60000
+                  cwd: kernel.workspacePath || process.cwd()
               });
 
               let stdout = '';

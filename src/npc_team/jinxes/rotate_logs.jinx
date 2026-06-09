@@ -10,7 +10,7 @@ steps:
     code: |
       import os, time, gzip, shutil
 
-      _dir = os.path.expanduser(context.get('dir', '') or os.path.join(os.path.expanduser('~'), '.npcsh', 'incognide', 'logs'))
+      _dir = os.path.expanduser(context.get('dir', '') or os.path.join(os.path.expanduser('~'), '.incognide', 'logs'))
       _compress_days = int(context.get('compress_days', 7) or 7)
       _delete_days = int(context.get('delete_days', 90) or 90)
 

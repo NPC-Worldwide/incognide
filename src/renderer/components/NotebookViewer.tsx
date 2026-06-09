@@ -368,7 +368,7 @@ const NotebookViewer = ({
 
     useEffect(() => {
         const unsubscribe = (window as any).api.onJupyterKernelStopped?.((data: any) => {
-            if (data.kernelId === kernelId) {
+            if (data.kernelId === kernelIdRef.current) {
                 setKernelId(null);
                 kernelIdRef.current = null;
                 setKernelStatus('disconnected');
@@ -376,7 +376,7 @@ const NotebookViewer = ({
             }
         });
         return () => unsubscribe?.();
-    }, [kernelId]);
+    }, []);
 
     useEffect(() => {
         const load = async () => {
@@ -574,10 +574,7 @@ const NotebookViewer = ({
             });
         } finally {
             setIsExecuting(null);
-
-            if (kernelStatus !== 'disconnected') {
-                setKernelStatus('connected');
-            }
+            setKernelStatus(kernelIdRef.current ? 'connected' : 'disconnected');
         }
     };
 
@@ -587,18 +584,8 @@ const NotebookViewer = ({
 
         setError(null);
         await startKernel();
-        const startTime = Date.now();
-        while (Date.now() - startTime < 60000) {
-            await new Promise(r => setTimeout(r, 500));
-            const running = await (window as any).api.jupyterGetRunningKernels?.();
-            if (running?.kernels?.length > 0) {
-                kid = running.kernels[running.kernels.length - 1].kernelId;
-                kernelIdRef.current = kid;
-                setKernelId(kid);
-                setKernelStatus('connected');
-                return kid;
-            }
-        }
+        kid = kernelIdRef.current;
+        if (kid) return kid;
         setError('Kernel failed to start.');
         return null;
     };

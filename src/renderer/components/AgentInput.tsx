@@ -313,10 +313,11 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         if (!npcName) return;
         setNpcToolsLoading(true);
         try {
-            // Try local npc_team first, fall back to incognide team path
+            const teamsData = await (window as any).api.teamsRead?.() || {};
+            const registeredTeams = Object.values(teamsData.teams || {});
             const localTeam = currentPath ? `${currentPath}/npc_team` : '';
-            const teamPath = localTeam || '';
-            const url = `${BACKEND_URL}/api/npc_tools?npc=${encodeURIComponent(npcName)}&team_path=${encodeURIComponent(teamPath)}&currentPath=${encodeURIComponent(currentPath || '')}`;
+            const teamPaths = localTeam ? [localTeam, ...registeredTeams] : registeredTeams;
+            const url = `${BACKEND_URL}/api/npc_tools?npc=${encodeURIComponent(npcName)}&registered_teams=${encodeURIComponent(teamPaths.join(','))}&currentPath=${encodeURIComponent(currentPath || '')}`;
             const res = await fetch(url);
             const data = await res.json();
             if (data.error) {

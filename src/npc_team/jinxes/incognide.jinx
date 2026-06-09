@@ -1,45 +1,64 @@
 jinx_name: incognide
 description: Engine jinx for Incognide studio actions. Use as engine in other jinxes to call UI actions.
-inputs:
-  - { action: "" }
-  - { args: "" }
 steps:
   - name: studio_action
     engine: python
     code: |
-      import requests, json as _json
-      _action = context.get('action', '').strip()
-      _args_raw = context.get('args', {})
-      if isinstance(_args_raw, str):
-          try:
-              _args = _json.loads(_args_raw)
-          except Exception:
-              _args = {}
-      else:
-          _args = dict(_args_raw) if _args_raw else {}
+      import requests, json as _json, os
+      _action = "{{ action }}".strip()
+      _port = int("{{ frontend_port }}".strip() or "7337")
       if not _action:
           output = 'Error: action is required'
       else:
-          _port = int(os.environ.get('INCOGNIDE_PORT', 0))
-          if not _port:
-              _port = 5437
-              try:
-                  import socket as _sock
-                  for _p in [5437, 5337]:
-                      try:
-                          _s = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
-                          _s.settimeout(0.3)
-                          _s.connect(('127.0.0.1', _p))
-                          _s.close()
-                          _port = _p
-                          break
-                      except Exception:
-                          pass
-              except Exception:
-                  pass
+          _args = {}
+          if _action == 'open_pane':
+              _args = {
+                  'type': context.get('pane_type', ''),
+                  'path': context.get('content_id', ''),
+                  'position': context.get('position', 'right'),
+                  'shellType': context.get('shell_type', ''),
+              }
+          elif _action == 'close_pane':
+              _args = {'paneId': context.get('pane_id', 'active')}
+          elif _action == 'focus_pane':
+              _args = {'paneId': context.get('pane_id') or context.get('paneId', '')}
+          elif _action in ('list_panes', 'list_pane_types', 'list_actions'):
+              _args = {}
+          elif _action == 'confirm':
+              _args = {'message': context.get('message', '')}
+          elif _action == 'notify':
+              _args = {
+                  'message': context.get('message', ''),
+                  'type': context.get('type', 'info'),
+                  'duration': context.get('duration', 3000),
+              }
+          elif _action == 'prompt_user':
+              _args = {
+                  'message': context.get('message', ''),
+                  'prompt_type': context.get('prompt_type', 'choices'),
+                  'options': context.get('options', '[]'),
+              }
+          elif _action == 'interact':
+              _args = {
+                  'code': context.get('code', ''),
+                  'paneId': context.get('pane_id', 'active'),
+              }
+          elif _action == 'read_pane':
+              _args = {'paneId': context.get('pane_id', 'active')}
+          elif _action == 'write_pane':
+              _args = {
+                  'content': context.get('content', ''),
+                  'paneId': context.get('pane_id', 'active'),
+                  'position': context.get('position', 'replace'),
+              }
+          elif _action == 'navigate_pane':
+              _args = {
+                  'target': context.get('target') or context.get('url', ''),
+                  'paneId': context.get('pane_id') or context.get('paneId', 'active'),
+              }
           try:
-              _r = requests.post(f'http://127.0.0.1:{_port}/api/studio/action',
-                  json={'action': _action, 'args': _args}, timeout=15)
+              _url = f'http://localhost:{_port}/api/studio/action'
+              _r = requests.post(_url, json={'action': _action, 'args': _args}, timeout=15)
               _res = _r.json()
               output = _json.dumps(_res, indent=2)
               context['action_result'] = _res
