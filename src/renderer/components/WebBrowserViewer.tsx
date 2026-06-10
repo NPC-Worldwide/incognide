@@ -358,6 +358,38 @@ const WebBrowserViewer = memo(({
                     return { success: false, error: err.message };
                 }
             };
+
+            contentDataRef.current[nodeId].navigateTo = async (url: string) => {
+                const webview = webviewRef.current;
+                if (!webview) return { success: false, error: 'Webview not available' };
+
+                let finalUrl = url;
+                if (!url.startsWith('http') && url !== 'about:blank') {
+                    const isLocalhost = url.startsWith('localhost') || url.startsWith('127.0.0.1');
+                    finalUrl = isLocalhost ? `http://${url}` : `https://${url}`;
+                }
+
+                webview.src = finalUrl;
+                setCurrentUrl(finalUrl);
+                setUrlInput(finalUrl === 'about:blank' ? '' : finalUrl);
+                contentDataRef.current[nodeId].browserUrl = finalUrl;
+                contentDataRef.current[nodeId].contentId = finalUrl;
+                return { success: true, url: finalUrl };
+            };
+
+            contentDataRef.current[nodeId].browserBack = async () => {
+                const webview = webviewRef.current;
+                if (!webview) return { success: false, error: 'Webview not available' };
+                webview.goBack();
+                return { success: true, action: 'back' };
+            };
+
+            contentDataRef.current[nodeId].browserForward = async () => {
+                const webview = webviewRef.current;
+                if (!webview) return { success: false, error: 'Webview not available' };
+                webview.goForward();
+                return { success: true, action: 'forward' };
+            };
         }
     }, [nodeId, currentUrl, title]);
 
