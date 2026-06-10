@@ -29,11 +29,11 @@ Built for seamless workflows, Incognide eliminates distractions and context swit
 
 - Write and run code, use terminals, build reusable workflows and tools that chain together natural language and templateable code through jinja execution templates.
 - Browse the web, read and annotate PDFs, view 3D STL models, analyze data and create dashboards, compile LaTeX.
-- Edit DOCX, XLSX, PPTX, MAPX.
+- Edit DOCX, XLSX, PPTX.
 - Arrange chats, editors, PDFs, browsers, terminals, 3D viewers as your work evolves — each tab maintains independent state.
 - Manage agents, have them run on scheduled jobs, edit team context, integrate with MCP Servers, approve or reject suggested memories, prune and evolve knowledge graphs.
 - Schedule automated memory extraction, knowledge graph evolution, and context compression.
-- Fine-tune your own image and text models using curated data from your conversations and memories.
+- Fine-tune text models using curated data from your conversations and memories.
 - Built-in Pomodoro timer with programmable schedules and break enforcement.
 ---
 
@@ -48,7 +48,7 @@ Download the installer for your platform from [enpisi.com/incognide](https://enp
 On first launch the wizard walks you through five steps:
 
 1. **Welcome** — intro screen.
-2. **Preferences** — theme (dark/light) and the data directory for teams, models, and configs (default `~/.npcsh/incognide`).
+2. **Preferences** — theme (dark/light) and the data directory for teams, models, and configs (default `~/.incognide`).
 3. **Defaults** — default web search engine, default terminal shell (auto-detected per platform: `system`/`zsh`/`bash` on mac/linux, `powershell` on Windows), and activity tracking opt-in (local only, used for next-action predictions).
 4. **Usage path** — pick one of:
    - **No AI** — workspace only (files, code, browsers, terminals, docs, maps). No model calls.
@@ -82,7 +82,7 @@ GGUF / GGML model files can be loaded directly without a server, but only if **l
 
 #### Cloud providers
 
-Add API keys on the **Cloud keys** step of the wizard, or later in **Settings → Global Settings** or **Team Management → API keys**. Keys are stored in `~/.npcshrc` as `export <PROVIDER>_API_KEY=...` and are read by `npcsh` and by the in-app provider clients.
+Add API keys on the **Cloud keys** step of the wizard, or later in **Settings → Global Settings** or **Team Management → API keys**. Keys are stored in `~/.incogniderc` as `export <PROVIDER>_API_KEY=...`.
 
 ### 4. Local setup for fine-tuning
 
@@ -123,7 +123,6 @@ Incognide stores teams, NPCs, jinxes, memories, knowledge graphs, and model conf
 - [Research & Knowledge Management](#research--knowledge-management)
 - [Model Training & Fine-tuning](#model-training--fine-tuning)
 - [AI Chat & Agents](#ai-chat--agents)
-- [Image Tools (Vixynt)](#image-tools-vixynt)
 - [Focus & Productivity](#focus--productivity)
 - [Settings & Customization](#settings--customization)
 - [Keyboard Shortcuts](#keyboard-shortcuts)
@@ -278,21 +277,6 @@ Explore connections between concepts and entities.
 
 Train custom AI models using your own data—no coding required. Incognide provides first-class UI for curating training data from your conversations and memories, then fine-tuning models locally.
 
-### Image Model Training
-
-Fine-tune image generation models with your own images using LoRA training.
-
-**Training Interface** - Select reference images, configure training parameters, and monitor progress:
-
-<!-- ![Image Training](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/image_training.png) -->
-
-*Features:*
-- Drag-and-drop image selection for training datasets
-- Automatic captioning with AI assistance
-- LoRA training with configurable rank, learning rate, and epochs
-- Real-time training progress and loss visualization
-- Export trained adapters for use in generation
-
 ### Text Model Training
 
 Fine-tune language models using curated subsets of your AI interactions and memories.
@@ -435,28 +419,6 @@ Schedule memory extraction, knowledge graph evolution (sleep/dream), and context
 
 ---
 
-## Image Tools (Vixynt)
-
-### Photo Browser
-
-Browse and organize your image collection:
-
-![Photo Editor](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/vixynt.png)
-
-### AI Image Generation
-
-Generate images using AI with reference images for style and composition:
-
-![Vixynt Editing](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/vixynt_image_edit.png)
-
-### DarkRoom
-
-Simple photo editing with cropping, filters, and adjustments:
-
-![DarkRoom](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/darkroom.png)
-
----
-
 ## Focus & Productivity
 
 ### Pomodoro Timer
@@ -484,11 +446,9 @@ The Settings panel provides comprehensive configuration across multiple tabs: Gl
 
 ### Cloud Sync & Account
 
-**Sign In** - Create an account to sync your conversations, settings, and workspace state across devices.
+**Sign In** - Create an account to sync your conversations and settings.
 
 **End-to-End Encryption** - All synced data is encrypted with your passphrase before leaving your device. Your passphrase never leaves your machine.
-
-**Multi-Device** - Work on your desktop, pick up on your laptop. Your conversations, memories, and workspace layout stay in sync.
 
 ### macOS Permissions
 
@@ -562,7 +522,7 @@ cd incognide
 npm install
 ```
 
-**Option 2: Via npcsh** (installs to `~/.npcsh/incognide`)
+**Option 2: Via npcsh** (installs to `~/.incognide`)
 ```bash
 npcsh> /incognidev
 ```
