@@ -26,6 +26,13 @@ async function navigate(
     return { success: false, error: `Pane is not a browser: ${data.contentType}` };
   }
 
+  // Prefer direct webview navigation if available
+  if (data.navigateTo) {
+    const result = await data.navigateTo(url);
+    return { ...result, paneId };
+  }
+
+  // Fallback: update state and rely on WebBrowserViewer effect to pick up the URL change
   ctx.contentDataRef.current[paneId] = {
     ...data,
     browserUrl: url,
@@ -59,6 +66,11 @@ async function browser_back(
     return { success: false, error: `Pane is not a browser: ${data.contentType}` };
   }
 
+  if (data.browserBack) {
+    const result = await data.browserBack();
+    return { ...result, paneId };
+  }
+
   return {
     success: true,
     paneId,
@@ -82,6 +94,11 @@ async function browser_forward(
 
   if (data.contentType !== 'browser') {
     return { success: false, error: `Pane is not a browser: ${data.contentType}` };
+  }
+
+  if (data.browserForward) {
+    const result = await data.browserForward();
+    return { ...result, paneId };
   }
 
   return {

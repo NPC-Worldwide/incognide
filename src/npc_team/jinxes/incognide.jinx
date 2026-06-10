@@ -4,10 +4,28 @@ steps:
   - name: studio_action
     engine: python
     code: |
-      import requests, json as _json, os
+      import requests, json as _json, socket
       _action = "{{ action }}".strip()
-      _port = int("{{ frontend_port }}".strip() or "7337")
-      if not _action:
+      def _try_ports():
+          for p in [7337, 6337]:
+              try:
+                  for res in socket.getaddrinfo('localhost', p, socket.AF_UNSPEC, socket.SOCK_STREAM):
+                      af, socktype, proto, canonname, sa = res
+                      s = socket.socket(af, socktype, proto)
+                      s.settimeout(2)
+                      try:
+                          s.connect(sa)
+                          s.close()
+                          return p
+                      except Exception:
+                          s.close()
+              except Exception:
+                  pass
+          return None
+      _port = _try_ports()
+      if not _port:
+          output = 'Error: no Incognide frontend server found on localhost:7337 or localhost:6337'
+      elif not _action:
           output = 'Error: action is required'
       else:
           _args = {}
@@ -62,5 +80,6 @@ steps:
               _res = _r.json()
               output = _json.dumps(_res, indent=2)
               context['action_result'] = _res
+              context['frontend_port'] = _port
           except Exception as _e:
               output = f"Error calling Incognide action '{_action}': {_e}"
