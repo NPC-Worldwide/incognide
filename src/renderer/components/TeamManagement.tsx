@@ -1128,7 +1128,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                         </div>
                     )}
                     {activeTab === 'memory' && (
-                        <MemoryManagement isModal={false} />
+                        <MemoryManagement isModal={false} currentPath={currentPath} />
                     )}
                     {activeTab === 'cron' && (
                         <CronDaemonPanel

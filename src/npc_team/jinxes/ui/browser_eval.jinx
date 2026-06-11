@@ -1,18 +1,18 @@
-jinx_name: navigate_browser
-description: Navigate a browser pane to a URL
+jinx_name: browser_eval
+description: Execute arbitrary JavaScript in a browser pane
 inputs:
   - paneId:
       type: string
       description: The ID of the browser pane (omit for active)
       required: false
-  - url:
+  - code:
       type: string
-      description: The URL to navigate to
+      description: JavaScript code to execute in the browser
       required: true
 steps:
-  - name: navigate_browser
+  - name: browser_eval
     engine: incognide
-    action: navigate_pane
+    action: browser_eval
     args:
       paneId: "{{ paneId | default('active') }}"
-      target: "{{ url }}"
+      code: "{{ code }}"

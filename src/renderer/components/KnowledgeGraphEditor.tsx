@@ -144,37 +144,41 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         return () => observer.disconnect();
     }, [activeTab]);
 
-    const fetchKgData = useCallback(async (generation?: number) => {
-        setKgLoading(true);
+    const [localKnowledge, setLocalKnowledge] = useState<any>(null);
+    const [knowledgeLoading, setKnowledgeLoading] = useState(true);
+
+    const fetchLocalKnowledge = useCallback(async () => {
+        setKnowledgeLoading(true);
         setKgError(null);
-        const genToFetch = generation !== undefined ? generation : (currentKgGeneration !== null ? currentKgGeneration : null);
         try {
-            const [generationsRes, graphDataRes, statsRes, cooccurRes, centralityRes] = await Promise.all([
-                (window as any).api?.kg_listGenerations?.() || { generations: [] },
-                (window as any).api?.kg_getGraphData?.({ generation: genToFetch }) || { graph: { nodes: [], links: [] } },
-                (window as any).api?.kg_getNetworkStats?.({ generation: genToFetch }) || {},
-                (window as any).api?.kg_getCooccurrenceNetwork?.({ generation: genToFetch }) || {},
-                (window as any).api?.kg_getCentralityData?.({ generation: genToFetch }) || {},
-            ]);
-            if (generationsRes.error) throw new Error(`Generations Error: ${generationsRes.error}`);
-            setKgGenerations(generationsRes.generations || []);
-            const gens = generationsRes.generations || [];
-            if (currentKgGeneration === null && gens.length > 0) {
-                setCurrentKgGeneration(Math.max(...gens));
-            }
-            if (graphDataRes.error) throw new Error(`Graph Data Error: ${graphDataRes.error}`);
-            setKgData(graphDataRes.graph || { nodes: [], links: [] });
-            if (!statsRes.error) setNetworkStats(statsRes.stats);
-            if (!cooccurRes.error) setCooccurrenceData(cooccurRes.network);
-            if (!centralityRes.error) setCentralityData(centralityRes.centrality);
+            const data = await (window as any).api?.knowledge_load?.({ currentPath: (window as any).api?.getProjectCtx?.() }) || {};
+            if (data.error) throw new Error(data.error);
+            setLocalKnowledge(data);
+            // Convert memories to nodes and knowledge links to edges
+            const nodes = (data.memories || []).map((m: any) => ({
+                id: m.id,
+                label: m.initial_memory || m.final_memory || m.id,
+                type: 'memory',
+                status: m.status,
+                agent: m.agent,
+                timestamp: m.timestamp,
+            }));
+            const links = (data.knowledge || []).map((l: any) => ({
+                source: l.from,
+                target: l.to,
+                relation: l.relation,
+                agent: l.agent,
+                timestamp: l.created_at,
+            }));
+            setKgData({ nodes, links });
         } catch (err: any) {
             setKgError(err.message);
         } finally {
-            setKgLoading(false);
+            setKnowledgeLoading(false);
         }
-    }, [currentKgGeneration]);
+    }, []);
 
-    useEffect(() => { fetchKgData(); }, [fetchKgData]);
+    useEffect(() => { fetchLocalKnowledge(); }, [fetchLocalKnowledge]);
 
     useEffect(() => {
         if (!isModal) return;

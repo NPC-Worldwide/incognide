@@ -720,6 +720,10 @@ function killBackendProcess() {
   }
 }
 
+function setBackendProcess(proc) {
+  backendProcess = proc;
+}
+
 let daemonProcess = null;
 const DAEMON_SCRIPT_PATH = app.isPackaged
   ? path.join(process.resourcesPath, 'daemon', 'incognide-daemon.js')
@@ -835,13 +839,13 @@ function spawnBackendProcess(bPath, bArgs, label, env) {
   return proc;
 }
 
-async function waitForServer(maxAttempts = 120, delay = 1000) {
+async function waitForServer(maxAttempts = 120, delay = 1000, proc = null) {
   log('Waiting for backend server to start...');
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-
-    if (backendProcess && backendProcess.exitCode !== null) {
-      log(`Backend process already exited with code ${backendProcess.exitCode}, stopping wait`);
+    const checkProc = proc || backendProcess;
+    if (checkProc && checkProc.exitCode !== null) {
+      log(`Backend process already exited with code ${checkProc.exitCode}, stopping wait`);
       return false;
     }
     try {
@@ -1624,6 +1628,7 @@ body { margin:0; background:#0f0f23; display:flex; align-items:center; justify-c
         exitCode,
         timestamp: new Date().toISOString(),
       };
+      killBackendProcess();
       // Continue — renderer will show a recovery UI via BackendErrorBanner
     } else {
       _backendStartupError = null;
@@ -2794,6 +2799,7 @@ registerAll({
   registerGlobalShortcut,
   backendProcess,
   killBackendProcess,
+  setBackendProcess,
   spawnDaemon,
   killDaemon,
   getDaemonStatus,

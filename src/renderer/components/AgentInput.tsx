@@ -413,14 +413,8 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         top_k: 40,
         max_tokens: 4096
     });
-    const [showTempDropdown, setShowTempDropdown] = useState(false);
-    const tempDropdownRef = useRef<HTMLDivElement>(null);
-    const [showTopPDropdown, setShowTopPDropdown] = useState(false);
-    const topPDropdownRef = useRef<HTMLDivElement>(null);
-    const [showTopKDropdown, setShowTopKDropdown] = useState(false);
-    const topKDropdownRef = useRef<HTMLDivElement>(null);
-    const [showMaxTokensDropdown, setShowMaxTokensDropdown] = useState(false);
-    const maxTokensDropdownRef = useRef<HTMLDivElement>(null);
+    const [showParamsDropdown, setShowParamsDropdown] = useState(false);
+    const paramsDropdownRef = useRef<HTMLDivElement>(null);
     const [showJinxConfigDropdown, setShowJinxConfigDropdown] = useState(false);
     const jinxConfigDropdownRef = useRef<HTMLDivElement>(null);
     const npcsDropdownRef = useRef<HTMLDivElement>(null);
@@ -483,17 +477,14 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
     }, [showMcpServersDropdown, setShowMcpServersDropdown]);
 
     useEffect(() => {
-        if (!showModelsDropdown && !showNpcsDropdown && !showJinxConfigDropdown && !showTempDropdown && !showTopPDropdown && !showTopKDropdown && !showMaxTokensDropdown) return;
+        if (!showModelsDropdown && !showNpcsDropdown && !showJinxConfigDropdown && !showParamsDropdown) return;
 
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
                 setShowModelsDropdown(false);
                 setShowNpcsDropdown(false);
                 setShowJinxConfigDropdown(false);
-                setShowTempDropdown(false);
-                setShowTopPDropdown(false);
-                setShowTopKDropdown(false);
-                setShowMaxTokensDropdown(false);
+                setShowParamsDropdown(false);
             }
         };
 
@@ -507,17 +498,8 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
             if (showJinxConfigDropdown && jinxConfigDropdownRef.current && !jinxConfigDropdownRef.current.contains(e.target as Node)) {
                 setShowJinxConfigDropdown(false);
             }
-            if (showTempDropdown && tempDropdownRef.current && !tempDropdownRef.current.contains(e.target as Node)) {
-                setShowTempDropdown(false);
-            }
-            if (showTopPDropdown && topPDropdownRef.current && !topPDropdownRef.current.contains(e.target as Node)) {
-                setShowTopPDropdown(false);
-            }
-            if (showTopKDropdown && topKDropdownRef.current && !topKDropdownRef.current.contains(e.target as Node)) {
-                setShowTopKDropdown(false);
-            }
-            if (showMaxTokensDropdown && maxTokensDropdownRef.current && !maxTokensDropdownRef.current.contains(e.target as Node)) {
-                setShowMaxTokensDropdown(false);
+            if (showParamsDropdown && paramsDropdownRef.current && !paramsDropdownRef.current.contains(e.target as Node)) {
+                setShowParamsDropdown(false);
             }
         };
 
@@ -527,7 +509,7 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
             document.removeEventListener('keydown', handleKeyDown);
             document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, [showModelsDropdown, showNpcsDropdown, showJinxConfigDropdown, showTempDropdown, showTopPDropdown, showTopKDropdown, showMaxTokensDropdown]);
+    }, [showModelsDropdown, showNpcsDropdown, showJinxConfigDropdown, showParamsDropdown]);
 
     const isJinxMode = false;
     const hasJinxContent = false;
@@ -1512,76 +1494,45 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                         )}
                     </div>
 
-                    <div className="relative flex-1 min-w-0" ref={tempDropdownRef}>
+                    <div className="relative flex-1 min-w-0" ref={paramsDropdownRef}>
                         <button
                             className="w-full h-8 flex items-center justify-center gap-1 rounded-lg text-xs font-medium transition-all duration-200 theme-bg-tertiary theme-text-secondary border theme-border hover:opacity-80 px-2"
-                            onClick={() => { setShowTempDropdown(!showTempDropdown); setShowModelsDropdown(false); setShowTopPDropdown(false); setShowTopKDropdown(false); setShowMaxTokensDropdown(false); }}
+                            onClick={() => { setShowParamsDropdown(!showParamsDropdown); setShowModelsDropdown(false); }}
                         >
-                            <span style={{ color: getParamColor(genParams.temperature, 0, 2) }}>T{genParams.temperature}</span>
-                            <ChevronDown size={8} className="theme-text-muted" />
+                            <span className="theme-text-secondary">Params</span>
+                            <ChevronDown size={8} className={`theme-text-muted transition-transform ${showParamsDropdown ? 'rotate-180' : ''}`} />
                         </button>
-                        {showTempDropdown && (
-                            <div className="absolute z-[100] right-0 bottom-full mb-1 theme-bg-secondary backdrop-blur-xl border theme-border rounded-lg shadow-2xl overflow-hidden w-48 p-2">
-                                <div className="flex items-center justify-between mb-1">
-                                    <label className="text-[10px] theme-text-muted">Temperature</label>
-                                    <input type="number" value={genParams.temperature} onChange={(e) => setGenParams(p => ({ ...p, temperature: Math.max(0, Math.min(2, parseFloat(e.target.value) || 0)) }))} className="w-14 text-xs theme-bg-tertiary border theme-border rounded px-1.5 py-0.5 text-right theme-text-primary" step="0.1" min="0" max="2" />
+                        {showParamsDropdown && (
+                            <div className="absolute z-[100] right-0 bottom-full mb-1 theme-bg-secondary backdrop-blur-xl border theme-border rounded-lg shadow-2xl overflow-hidden w-56 p-2 space-y-2">
+                                <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="text-[10px] theme-text-muted">Temperature</label>
+                                        <input type="number" value={genParams.temperature} onChange={(e) => setGenParams(p => ({ ...p, temperature: Math.max(0, Math.min(2, parseFloat(e.target.value) || 0)) }))} className="w-14 text-xs theme-bg-tertiary border theme-border rounded px-1.5 py-0.5 text-right theme-text-primary" step="0.1" min="0" max="2" />
+                                    </div>
+                                    <input type="range" value={genParams.temperature} onChange={(e) => setGenParams(p => ({ ...p, temperature: parseFloat(e.target.value) }))} className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-orange-500" min="0" max="2" step="0.1" />
+                                    <div className="flex justify-between text-[9px] theme-text-muted mt-0.5"><span>Precise</span><span>Creative</span></div>
                                 </div>
-                                <input type="range" value={genParams.temperature} onChange={(e) => setGenParams(p => ({ ...p, temperature: parseFloat(e.target.value) }))} className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-orange-500" min="0" max="2" step="0.1" />
-                                <div className="flex justify-between text-[9px] theme-text-muted mt-0.5"><span>Precise</span><span>Creative</span></div>
-                            </div>
-                        )}
-                    </div>
-                    <div className="relative flex-1 min-w-0" ref={topPDropdownRef}>
-                        <button
-                            className="w-full h-8 flex items-center justify-center gap-1 rounded-lg text-xs font-medium transition-all duration-200 theme-bg-tertiary theme-text-secondary border theme-border hover:opacity-80 px-2"
-                            onClick={() => { setShowTopPDropdown(!showTopPDropdown); setShowModelsDropdown(false); setShowTempDropdown(false); setShowTopKDropdown(false); setShowMaxTokensDropdown(false); }}
-                        >
-                            <span style={{ color: getParamColor(genParams.top_p, 0, 1) }}>P{genParams.top_p}</span>
-                            <ChevronDown size={8} className="theme-text-muted" />
-                        </button>
-                        {showTopPDropdown && (
-                            <div className="absolute z-[100] right-0 bottom-full mb-1 theme-bg-secondary backdrop-blur-xl border theme-border rounded-lg shadow-2xl overflow-hidden w-48 p-2">
-                                <div className="flex items-center justify-between mb-1">
-                                    <label className="text-[10px] theme-text-muted">Top P</label>
-                                    <input type="number" value={genParams.top_p} onChange={(e) => setGenParams(p => ({ ...p, top_p: Math.max(0, Math.min(1, parseFloat(e.target.value) || 0)) }))} className="w-14 text-xs theme-bg-tertiary border theme-border rounded px-1.5 py-0.5 text-right theme-text-primary" step="0.05" min="0" max="1" />
+                                <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="text-[10px] theme-text-muted">Top P</label>
+                                        <input type="number" value={genParams.top_p} onChange={(e) => setGenParams(p => ({ ...p, top_p: Math.max(0, Math.min(1, parseFloat(e.target.value) || 0)) }))} className="w-14 text-xs theme-bg-tertiary border theme-border rounded px-1.5 py-0.5 text-right theme-text-primary" step="0.05" min="0" max="1" />
+                                    </div>
+                                    <input type="range" value={genParams.top_p} onChange={(e) => setGenParams(p => ({ ...p, top_p: parseFloat(e.target.value) }))} className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-blue-500" min="0" max="1" step="0.05" />
                                 </div>
-                                <input type="range" value={genParams.top_p} onChange={(e) => setGenParams(p => ({ ...p, top_p: parseFloat(e.target.value) }))} className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-blue-500" min="0" max="1" step="0.05" />
-                            </div>
-                        )}
-                    </div>
-                    <div className="relative flex-1 min-w-0" ref={topKDropdownRef}>
-                        <button
-                            className="w-full h-8 flex items-center justify-center gap-1 rounded-lg text-xs font-medium transition-all duration-200 theme-bg-tertiary theme-text-secondary border theme-border hover:opacity-80 px-2"
-                            onClick={() => { setShowTopKDropdown(!showTopKDropdown); setShowModelsDropdown(false); setShowTempDropdown(false); setShowTopPDropdown(false); setShowMaxTokensDropdown(false); }}
-                        >
-                            <span style={{ color: getParamColor(genParams.top_k, 1, 100) }}>K{genParams.top_k}</span>
-                            <ChevronDown size={8} className="theme-text-muted" />
-                        </button>
-                        {showTopKDropdown && (
-                            <div className="absolute z-[100] right-0 bottom-full mb-1 theme-bg-secondary backdrop-blur-xl border theme-border rounded-lg shadow-2xl overflow-hidden w-48 p-2">
-                                <div className="flex items-center justify-between mb-1">
-                                    <label className="text-[10px] theme-text-muted">Top K</label>
-                                    <input type="number" value={genParams.top_k} onChange={(e) => setGenParams(p => ({ ...p, top_k: Math.max(1, Math.min(100, parseInt(e.target.value) || 1)) }))} className="w-14 text-xs theme-bg-tertiary border theme-border rounded px-1.5 py-0.5 text-right theme-text-primary" step="1" min="1" max="100" />
+                                <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="text-[10px] theme-text-muted">Top K</label>
+                                        <input type="number" value={genParams.top_k} onChange={(e) => setGenParams(p => ({ ...p, top_k: Math.max(1, Math.min(100, parseInt(e.target.value) || 1)) }))} className="w-14 text-xs theme-bg-tertiary border theme-border rounded px-1.5 py-0.5 text-right theme-text-primary" step="1" min="1" max="100" />
+                                    </div>
+                                    <input type="range" value={genParams.top_k} onChange={(e) => setGenParams(p => ({ ...p, top_k: parseInt(e.target.value) }))} className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-green-500" min="1" max="100" step="1" />
                                 </div>
-                                <input type="range" value={genParams.top_k} onChange={(e) => setGenParams(p => ({ ...p, top_k: parseInt(e.target.value) }))} className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-green-500" min="1" max="100" step="1" />
-                            </div>
-                        )}
-                    </div>
-                    <div className="relative flex-1 min-w-0" ref={maxTokensDropdownRef}>
-                        <button
-                            className="w-full h-8 flex items-center justify-center gap-1 rounded-lg text-xs font-medium transition-all duration-200 theme-bg-tertiary theme-text-secondary border theme-border hover:opacity-80 px-2"
-                            onClick={() => { setShowMaxTokensDropdown(!showMaxTokensDropdown); setShowModelsDropdown(false); setShowTempDropdown(false); setShowTopPDropdown(false); setShowTopKDropdown(false); }}
-                        >
-                            <span style={{ color: getParamColor(genParams.max_tokens, 256, 32000) }}>M{genParams.max_tokens}</span>
-                            <ChevronDown size={8} className="theme-text-muted" />
-                        </button>
-                        {showMaxTokensDropdown && (
-                            <div className="absolute z-[100] right-0 bottom-full mb-1 theme-bg-secondary backdrop-blur-xl border theme-border rounded-lg shadow-2xl overflow-hidden w-48 p-2">
-                                <div className="flex items-center justify-between mb-1">
-                                    <label className="text-[10px] theme-text-muted">Max Tokens</label>
-                                    <input type="number" value={genParams.max_tokens} onChange={(e) => setGenParams(p => ({ ...p, max_tokens: Math.max(1, Math.min(32000, parseInt(e.target.value) || 1)) }))} className="w-16 text-xs theme-bg-tertiary border theme-border rounded px-1.5 py-0.5 text-right theme-text-primary" step="256" min="1" max="32000" />
+                                <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="text-[10px] theme-text-muted">Max Tokens</label>
+                                        <input type="number" value={genParams.max_tokens} onChange={(e) => setGenParams(p => ({ ...p, max_tokens: Math.max(1, Math.min(32000, parseInt(e.target.value) || 1)) }))} className="w-16 text-xs theme-bg-tertiary border theme-border rounded px-1.5 py-0.5 text-right theme-text-primary" step="256" min="1" max="32000" />
+                                    </div>
+                                    <input type="range" value={genParams.max_tokens} onChange={(e) => setGenParams(p => ({ ...p, max_tokens: parseInt(e.target.value) }))} className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-purple-500" min="256" max="32000" step="256" />
                                 </div>
-                                <input type="range" value={genParams.max_tokens} onChange={(e) => setGenParams(p => ({ ...p, max_tokens: parseInt(e.target.value) }))} className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-purple-500" min="256" max="32000" step="256" />
                             </div>
                         )}
                     </div>

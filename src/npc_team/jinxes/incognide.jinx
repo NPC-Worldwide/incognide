@@ -75,6 +75,46 @@ steps:
                   'target': context.get('target') or context.get('url', ''),
                   'paneId': context.get('pane_id') or context.get('paneId', 'active'),
               }
+          elif _action == 'browser_click':
+              _args = {
+                  'paneId': context.get('pane_id') or context.get('paneId', 'active'),
+                  'selector': context.get('selector', ''),
+                  'text': context.get('text', ''),
+                  'index': context.get('index', 0),
+              }
+          elif _action == 'browser_type':
+              _args = {
+                  'paneId': context.get('pane_id') or context.get('paneId', 'active'),
+                  'selector': context.get('selector', ''),
+                  'text': context.get('text', ''),
+                  'clear': context.get('clear', True),
+                  'submit': context.get('submit', False),
+              }
+          elif _action == 'get_browser_content':
+              _args = {
+                  'paneId': context.get('pane_id') or context.get('paneId', 'active'),
+              }
+          elif _action == 'browser_screenshot':
+              _args = {
+                  'paneId': context.get('pane_id') or context.get('paneId', 'active'),
+              }
+          elif _action == 'browser_eval':
+              _args = {
+                  'paneId': context.get('pane_id') or context.get('paneId', 'active'),
+                  'code': context.get('code', ''),
+              }
+          elif _action == 'browser_back':
+              _args = {
+                  'paneId': context.get('pane_id') or context.get('paneId', 'active'),
+              }
+          elif _action == 'browser_forward':
+              _args = {
+                  'paneId': context.get('pane_id') or context.get('paneId', 'active'),
+              }
+          elif _action == 'get_browser_info':
+              _args = {
+                  'paneId': context.get('pane_id') or context.get('paneId', 'active'),
+              }
           try:
               _url = f'http://localhost:{_port}/api/studio/action'
               _r = requests.post(_url, json={'action': _action, 'args': _args}, timeout=60)

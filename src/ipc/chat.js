@@ -242,7 +242,10 @@ function register(ctx) {
       let stderr = '';
       proc.stdout.on('data', d => { stdout += d.toString(); });
       proc.stderr.on('data', d => { stderr += d.toString(); });
-      proc.on('error', (err) => resolve({ success: false, error: `Failed to spawn ${pythonPath}: ${err.message}` }));
+      proc.on('error', (err) => {
+        try { proc.kill(); } catch {}
+        resolve({ success: false, error: `Failed to spawn ${pythonPath}: ${err.message}` });
+      });
       proc.on('close', (code) => {
         if (code !== 0 && !stdout) {
           resolve({ success: false, error: stderr || `${scriptName} exited with code ${code}` });
@@ -259,6 +262,7 @@ function register(ctx) {
         proc.stdin.write(JSON.stringify(payload));
         proc.stdin.end();
       } catch (err) {
+        try { proc.kill(); } catch {}
         resolve({ success: false, error: `Failed to write to helper stdin: ${err.message}` });
       }
     });
@@ -767,6 +771,7 @@ function register(ctx) {
 
         disableThinking: data.disableThinking || false,
         customProviders,
+        extractMemories: data.extractMemories !== false,
       };
 
       if (apiUrlOverride) {

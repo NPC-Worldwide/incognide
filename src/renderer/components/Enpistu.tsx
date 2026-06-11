@@ -2312,7 +2312,7 @@ useEffect(() => {
 
 // Handle resend message - opens resend modal
 const handleResendMessage = useCallback((messageToResend: any) => {
-    if (isStreaming) {
+    if (isPaneStreaming(activeContentPaneId)) {
         console.warn('Cannot resend while streaming');
         return;
     }
@@ -2355,7 +2355,7 @@ const handleResendMessage = useCallback((messageToResend: any) => {
         selectedModel: messageToResend.model || currentModel,
         selectedNPC: messageToResend.npc || currentNPC
     });
-}, [isStreaming, currentModel, currentNPC, activeContentPaneId]);
+}, [isPaneStreaming, currentModel, currentNPC, activeContentPaneId]);
 
 // Handle broadcast - send same message to multiple model/NPC combinations
 const handleBroadcast = useCallback(async (messageToResend: any, models: string[], npcs: string[]) => {
@@ -2364,7 +2364,7 @@ const handleBroadcast = useCallback(async (messageToResend: any, models: string[
         setError("Cannot broadcast: The active pane is not a valid chat window.");
         return;
     }
-    if (isStreaming) {
+    if (isPaneStreaming(activeContentPaneId)) {
         console.warn('Cannot broadcast while another operation is in progress.');
         return;
     }
@@ -2505,7 +2505,7 @@ const handleBroadcast = useCallback(async (messageToResend: any, models: string[
     });
 
     await Promise.all(executePromises);
-}, [isStreaming, activeContentPaneId, currentProvider, currentPath, availableModels, availableNPCs]);
+}, [isPaneStreaming, activeContentPaneId, currentProvider, currentPath, availableModels, availableNPCs]);
 
 // Handle switching active run for a cell - also updates expandedBranchPath
 const handleSwitchRun = useCallback((cellId: string, runIndex: number) => {
@@ -3768,9 +3768,9 @@ const renderDiskUsagePane = useCallback(({ nodeId }: { nodeId: string }) => {
 // Render MemoryManager pane (for pane-based viewing)
 const renderMemoryManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return (
-        <MemoryManagement isModal={false} />
+        <MemoryManagement isModal={false} currentPath={currentPathRef.current} />
     );
-}, [currentNPC]);
+}, [currentNPC, currentPathRef.current]);
 
 // Render WindowManager pane
 const renderWindowManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
@@ -5096,25 +5096,30 @@ ${contextPrompt}`;
         }
     };
 
-    const handleInterruptStream = async () => {
-        const activePaneData = contentDataRef.current[activeContentPaneId];
-        if (!activePaneData || !activePaneData.chatMessages) {
-            console.warn("Interrupt clicked but no active chat pane found.");
+    const isPaneStreaming = useCallback((paneId: string) => {
+        const paneData = contentDataRef.current[paneId];
+        if (!paneData?.chatMessages?.allMessages) return false;
+        return paneData.chatMessages.allMessages.some((m: any) => m.isStreaming);
+    }, []);
+
+    const handleInterruptStream = async (paneId?: string) => {
+        const targetPaneId = paneId || activeContentPaneId;
+        const targetPaneData = contentDataRef.current[targetPaneId];
+        if (!targetPaneData || !targetPaneData.chatMessages) {
+            console.warn("Interrupt clicked but no target chat pane found.");
             return;
         }
 
-        const streamingMessage = activePaneData.chatMessages.allMessages.find((m: any) => m.isStreaming);
+        const streamingMessage = targetPaneData.chatMessages.allMessages.find((m: any) => m.isStreaming);
         if (!streamingMessage || !streamingMessage.streamId) {
-            console.warn("Interrupt clicked, but no streaming message found in the active pane.");
+            console.warn("Interrupt clicked, but no streaming message found in target pane.");
 
-            if (isStreaming) {
-                const anyStreamId = Object.keys(streamToPaneRef.current)[0];
-                if (anyStreamId) {
-                    await window.api.interruptStream(anyStreamId);
-                    console.log(`Fallback interrupt sent for stream: ${anyStreamId}`);
-                }
-                setIsStreaming(false);
+            const anyStreamId = Object.keys(streamToPaneRef.current)[0];
+            if (anyStreamId) {
+                await window.api.interruptStream(anyStreamId);
+                console.log(`Fallback interrupt sent for stream: ${anyStreamId}`);
             }
+            setIsStreaming(false);
             return;
         }
 
@@ -5130,7 +5135,7 @@ ${contextPrompt}`;
             setIsStreaming(false);
         }
 
-        if (activeContentPaneId) paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: activeContentPaneId } }));
+        paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: targetPaneId } }));
 
         try {
             await window.api.interruptStream(streamIdToInterrupt);
@@ -5138,7 +5143,7 @@ ${contextPrompt}`;
         } catch (error) {
             console.error(`[REACT] handleInterruptStream: API call to interrupt stream ${streamIdToInterrupt} failed:`, error);
             streamingMessage.content += " [Interruption API call failed]";
-            if (activeContentPaneId) paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: activeContentPaneId } }));
+            paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: targetPaneId } }));
         }
     };
 
@@ -5260,7 +5265,7 @@ ${contextPrompt}`;
             setError("Cannot resend: The active pane is not a valid chat window.");
             return;
         }
-        if (isStreaming) {
+        if (isPaneStreaming(activeContentPaneId)) {
             console.warn('Cannot resend while another operation is in progress.');
             return;
         }
@@ -7684,7 +7689,9 @@ const getChatInputProps = useCallback((paneId: string) => {
     input, setInput, inputHeight, setInputHeight,
     isInputMinimized, setIsInputMinimized, isInputExpanded, setIsInputExpanded,
     isResizingInput, setIsResizingInput,
-    isStreaming, handleInputSubmit, handleInterruptStream,
+    isStreaming: isPaneStreaming(paneId),
+    handleInputSubmit,
+    handleInterruptStream: () => handleInterruptStream(paneId),
     uploadedFiles, setUploadedFiles, contextFiles, setContextFiles,
     contextFilesCollapsed, setContextFilesCollapsed, currentPath,
     // Pane context auto-include
@@ -7745,7 +7752,7 @@ const getChatInputProps = useCallback((paneId: string) => {
             setError("Cannot broadcast: The active pane is not a valid chat window.");
             return;
         }
-        if (isStreaming || !input.trim()) return;
+        if (isPaneStreaming(paneId) || !input.trim()) return;
 
         // Deduplicate models and npcs
         const uniqueModels = [...new Set(models)];
@@ -7900,7 +7907,7 @@ const getChatInputProps = useCallback((paneId: string) => {
     },
 }; }, [
     input, inputHeight, isInputMinimized, isInputExpanded, isResizingInput,
-    isStreaming, handleInputSubmit, handleInterruptStream,
+    isPaneStreaming, handleInputSubmit, handleInterruptStream,
     uploadedFiles, contextFiles, contextFilesCollapsed, currentPath,
     autoIncludeContext, contextPaneOverrides, contentDataRef, paneVersion,
     getPaneExecutionMode, setPaneExecutionMode, getPaneSelectedJinx, setPaneSelectedJinx,

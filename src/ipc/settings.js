@@ -373,7 +373,7 @@ function register(ctx) {
           deviceConfig, updateDeviceConfig, getOrCreateDeviceId,
           needsFirstRunSetup, saveBackendPythonPath, markSetupComplete, getBackendPythonPath,
           getUserProfile, saveUserProfile,
-          registerGlobalShortcut, app, backendProcess, killBackendProcess,
+          registerGlobalShortcut, app, backendProcess, killBackendProcess, setBackendProcess,
           ensureUserDataDirectory, waitForServer, logBackend,
           logsDir, electronLogPath, backendLogPath,
           dbQuery,
@@ -2130,6 +2130,8 @@ function register(ctx) {
         },
       });
 
+      setBackendProcess(newBackendProcess);
+
       newBackendProcess.stdout.on('data', (data) => {
         logBackend(`stdout: ${data.toString().trim()}`);
       });
@@ -2138,8 +2140,12 @@ function register(ctx) {
         logBackend(`stderr: ${data.toString().trim()}`);
       });
 
-      const serverReady = await waitForServer();
+      const serverReady = await waitForServer(120, 1000, newBackendProcess);
       if (!serverReady) {
+        if (newBackendProcess && !newBackendProcess.killed) {
+          try { newBackendProcess.kill('SIGKILL'); } catch (e) {}
+        }
+        killBackendProcess();
         return { success: false, error: 'Backend failed to start' };
       }
 

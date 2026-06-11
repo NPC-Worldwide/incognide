@@ -1,0 +1,13 @@
+jinx_name: get_browser_content
+description: Extract the visible text content from a browser pane
+inputs:
+  - paneId:
+      type: string
+      description: The ID of the browser pane (omit for active)
+      required: false
+steps:
+  - name: get_browser_content
+    engine: incognide
+    action: get_browser_content
+    args:
+      paneId: "{{ paneId | default('active') }}"

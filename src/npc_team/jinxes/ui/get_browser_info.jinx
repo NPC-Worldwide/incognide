@@ -1,0 +1,13 @@
+jinx_name: get_browser_info
+description: Get the current URL and title of a browser pane
+inputs:
+  - paneId:
+      type: string
+      description: The ID of the browser pane (omit for active)
+      required: false
+steps:
+  - name: get_browser_info
+    engine: incognide
+    action: get_browser_info
+    args:
+      paneId: "{{ paneId | default('active') }}"

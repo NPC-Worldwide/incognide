@@ -1313,6 +1313,84 @@ function register(ctx) {
     return await callBackendApi(`${BACKEND_URL}/api/autocomplete/training?${params.toString()}`);
   });
 
+  // ── Local .knowledge.yaml IPC ────────────────────────────────────────
+  ipcMain.handle('knowledge:load', async (event, { currentPath }) => {
+    const params = new URLSearchParams();
+    if (currentPath) params.append('currentPath', currentPath);
+    return await callBackendApi(`${BACKEND_URL}/api/knowledge/load?${params.toString()}`);
+  });
+
+  ipcMain.handle('knowledge:search', async (event, { q, currentPath, limit }) => {
+    const params = new URLSearchParams();
+    if (q) params.append('q', q);
+    if (currentPath) params.append('currentPath', currentPath);
+    if (limit) params.append('limit', limit);
+    return await callBackendApi(`${BACKEND_URL}/api/knowledge/search?${params.toString()}`);
+  });
+
+  ipcMain.handle('knowledge:memories', async (event, { currentPath, status, limit }) => {
+    const params = new URLSearchParams();
+    if (currentPath) params.append('currentPath', currentPath);
+    if (status) params.append('status', status);
+    if (limit) params.append('limit', limit);
+    return await callBackendApi(`${BACKEND_URL}/api/knowledge/memories?${params.toString()}`);
+  });
+
+  ipcMain.handle('knowledge:links', async (event, { currentPath, mem_id }) => {
+    const params = new URLSearchParams();
+    if (currentPath) params.append('currentPath', currentPath);
+    if (mem_id) params.append('mem_id', mem_id);
+    return await callBackendApi(`${BACKEND_URL}/api/knowledge/links?${params.toString()}`);
+  });
+
+  ipcMain.handle('knowledge:link', async (event, { currentPath, from, to, relation, agent }) => {
+    const response = await fetch(`${BACKEND_URL}/api/knowledge/link`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPath, from, to, relation, agent }),
+    });
+    return await response.json();
+  });
+
+  ipcMain.handle('knowledge:context', async (event, { currentPath, max_memories }) => {
+    const params = new URLSearchParams();
+    if (currentPath) params.append('currentPath', currentPath);
+    if (max_memories) params.append('max_memories', max_memories);
+    return await callBackendApi(`${BACKEND_URL}/api/knowledge/context?${params.toString()}`);
+  });
+
+  ipcMain.handle('knowledge:all_memories', async (event, { limit }) => {
+    const params = new URLSearchParams();
+    if (limit) params.append('limit', limit);
+    return await callBackendApi(`${BACKEND_URL}/api/knowledge/all_memories?${params.toString()}`);
+  });
+
+  ipcMain.handle('knowledge:all_search', async (event, { q, limit }) => {
+    const params = new URLSearchParams();
+    if (q) params.append('q', q);
+    if (limit) params.append('limit', limit);
+    return await callBackendApi(`${BACKEND_URL}/api/knowledge/all_search?${params.toString()}`);
+  });
+
+  ipcMain.handle('knowledge:memory_update', async (event, { currentPath, id, status, final_memory }) => {
+    const response = await fetch(`${BACKEND_URL}/api/knowledge/memory/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPath, id, status, final_memory }),
+    });
+    return await response.json();
+  });
+
+  ipcMain.handle('knowledge:memory_delete', async (event, { currentPath, id }) => {
+    const response = await fetch(`${BACKEND_URL}/api/knowledge/memory/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPath, id }),
+    });
+    return await response.json();
+  });
+
+  // ── Legacy DB memory IPC ─────────────────────────────────────────────
   ipcMain.handle('memory:approve', async (event, { approvals }) => {
     try {
       const response = await fetch(`${BACKEND_URL}/api/memory/approve`, {
