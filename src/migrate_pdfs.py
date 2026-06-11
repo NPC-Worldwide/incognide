@@ -2,7 +2,7 @@ import sqlite3
 import os
 import sys
 
-DB_PATH = os.path.expanduser('~/npcsh_history.db')
+DB_PATH = os.path.expanduser('~/.incognide/history.db')
 
 def add_annotation_column():
     conn = sqlite3.connect(DB_PATH)

@@ -90,7 +90,7 @@ const SqlModelsContent = ({ currentPath, npcList = [], jinxList = [], isGlobal }
 
     const fetchAvailableDatabases = async () => {
         const databases: { name: string; path: string }[] = [
-            { name: 'Global History (npcsh_history.db)', path: '~/.incognide/history.db' }
+            { name: 'Global History (history.db)', path: '~/.incognide/history.db' }
         ];
 
         try {

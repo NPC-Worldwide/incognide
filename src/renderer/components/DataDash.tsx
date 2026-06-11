@@ -2455,7 +2455,7 @@ const handleAcceptGeneratedSql = () => {
 
     const loadAvailableDatabases = useCallback(async () => {
         const databases: { name: string; path: string; type: 'global' | 'project' }[] = [
-            { name: 'npcsh_history.db', path: '~/.incognide/history.db', type: 'global' }
+            { name: 'history.db', path: '~/.incognide/history.db', type: 'global' }
         ];
 
         if (currentPath) {
