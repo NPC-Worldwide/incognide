@@ -1,0 +1,27 @@
+jinx_name: knowledge_search
+description: Search memories in a directory's `.knowledge.yaml` by keyword query.
+inputs:
+  - { directory: "" }
+  - { query: "" }
+  - { limit: "20" }
+steps:
+  - name: search
+    engine: python
+    code: |
+      import json as _json
+      import sys
+      sys.path.insert(0, '/home/caug/npcww/npc-core/npcpy')
+      from npcpy.memory.knowledge_store import KnowledgeStore
+
+      _dir = context.get('directory', '')
+      _query = context.get('query', '')
+      _limit = int(context.get('limit', 20) or 20)
+
+      if not _dir:
+          output = "Error: directory is required"
+      elif not _query:
+          output = "Error: query is required"
+      else:
+          store = KnowledgeStore(_dir)
+          results = store.search_memories(_query, limit=_limit)
+          output = _json.dumps(results, indent=2, default=str)

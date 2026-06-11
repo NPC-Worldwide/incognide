@@ -1,0 +1,13 @@
+jinx_name: browser_screenshot
+description: Take a screenshot of a browser pane and return it as a data URL
+inputs:
+  - paneId:
+      type: string
+      description: The ID of the browser pane (omit for active)
+      required: false
+steps:
+  - name: browser_screenshot
+    engine: incognide
+    action: browser_screenshot
+    args:
+      paneId: "{{ paneId | default('active') }}"

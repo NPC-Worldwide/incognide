@@ -74,7 +74,7 @@ export async function getHomeDir() {
 
 export async function getNpcshHome() {
     if (_activeConnectionId) {
-        return { path: '/home/.npcsh' };
+        return { path: '/home/.incognide' };
     }
     return (window as any).api.getNpcshHome?.();
 }

@@ -9,7 +9,7 @@ const crypto = require('crypto');
 const sqlite3 = require('sqlite3');
 const yaml = require('js-yaml');
 
-const dbPath = path.join(os.homedir(), 'npcsh_history.db');
+const dbPath = process.env.INCOGNIDE_DB_PATH || path.join(os.homedir(), '.incognide', 'history.db');
 
 /**
  * Categorize backend errors into user-friendly messages
@@ -242,7 +242,10 @@ function register(ctx) {
       let stderr = '';
       proc.stdout.on('data', d => { stdout += d.toString(); });
       proc.stderr.on('data', d => { stderr += d.toString(); });
-      proc.on('error', (err) => resolve({ success: false, error: `Failed to spawn ${pythonPath}: ${err.message}` }));
+      proc.on('error', (err) => {
+        try { proc.kill(); } catch {}
+        resolve({ success: false, error: `Failed to spawn ${pythonPath}: ${err.message}` });
+      });
       proc.on('close', (code) => {
         if (code !== 0 && !stdout) {
           resolve({ success: false, error: stderr || `${scriptName} exited with code ${code}` });
@@ -259,6 +262,7 @@ function register(ctx) {
         proc.stdin.write(JSON.stringify(payload));
         proc.stdin.end();
       } catch (err) {
+        try { proc.kill(); } catch {}
         resolve({ success: false, error: `Failed to write to helper stdin: ${err.message}` });
       }
     });
@@ -767,6 +771,7 @@ function register(ctx) {
 
         disableThinking: data.disableThinking || false,
         customProviders,
+        extractMemories: data.extractMemories !== false,
       };
 
       if (apiUrlOverride) {
@@ -1240,7 +1245,7 @@ function register(ctx) {
 
     if (!result.model) {
       try {
-        const globalCtx = path.join(os.homedir(), '.npcsh', 'npc_team', 'npcsh.ctx');
+        const globalCtx = path.join(os.homedir(), '.incognide', 'npc_team', 'incognide.ctx');
         if (fs.existsSync(globalCtx)) {
           const ctxData = yaml.load(fs.readFileSync(globalCtx, 'utf-8')) || {};
           if (ctxData.model) result.model = ctxData.model;

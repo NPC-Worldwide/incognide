@@ -373,7 +373,7 @@ function register(ctx) {
           deviceConfig, updateDeviceConfig, getOrCreateDeviceId,
           needsFirstRunSetup, saveBackendPythonPath, markSetupComplete, getBackendPythonPath,
           getUserProfile, saveUserProfile,
-          registerGlobalShortcut, app, backendProcess, killBackendProcess,
+          registerGlobalShortcut, app, backendProcess, killBackendProcess, setBackendProcess,
           ensureUserDataDirectory, waitForServer, logBackend,
           logsDir, electronLogPath, backendLogPath,
           dbQuery,
@@ -614,7 +614,7 @@ function register(ctx) {
       if (!safeName) return { error: 'invalid job name' };
       const candidates = [
         path.join(INCOGNIDE_HOME, 'npc_team', 'jobs', `${safeName}.sh`),
-        path.join(os.homedir(), '.npcsh', 'npc_team', 'jobs', `${safeName}.sh`),
+        path.join(os.homedir(), '.incognide', 'npc_team', 'jobs', `${safeName}.sh`),
       ];
       for (const scriptPath of candidates) {
         try {
@@ -635,7 +635,7 @@ function register(ctx) {
       if (!safeName) return { error: 'invalid job name' };
       const candidates = [
         path.join(INCOGNIDE_HOME, 'npc_team', 'jobs', `${safeName}.sh`),
-        path.join(os.homedir(), '.npcsh', 'npc_team', 'jobs', `${safeName}.sh`),
+        path.join(os.homedir(), '.incognide', 'npc_team', 'jobs', `${safeName}.sh`),
       ];
       for (const scriptPath of candidates) {
         try {
@@ -658,7 +658,7 @@ function register(ctx) {
       if (!safeName) return { error: 'invalid job name' };
       const candidates = [
         path.join(INCOGNIDE_HOME, 'npc_team', 'jobs', `${safeName}.sh`),
-        path.join(os.homedir(), '.npcsh', 'npc_team', 'jobs', `${safeName}.sh`),
+        path.join(os.homedir(), '.incognide', 'npc_team', 'jobs', `${safeName}.sh`),
       ];
       let scriptPath = null;
       for (const c of candidates) {
@@ -708,7 +708,7 @@ function register(ctx) {
       if (!safeName) return { error: 'invalid job name' };
       const candidates = [
         path.join(INCOGNIDE_HOME, 'npc_team', 'logs', `${safeName}.log`),
-        path.join(os.homedir(), '.npcsh', 'npc_team', 'logs', `${safeName}.log`),
+        path.join(os.homedir(), '.incognide', 'npc_team', 'logs', `${safeName}.log`),
       ];
       for (const logPath of candidates) {
         try {
@@ -789,7 +789,7 @@ function register(ctx) {
     }
     // npcsh triggers (cross-platform)
     try {
-      const triggersDir = path.join(os.homedir(), '.npcsh', 'triggers');
+      const triggersDir = path.join(os.homedir(), '.incognide', 'triggers');
       if (fs.existsSync(triggersDir)) {
         result.npcsh_services = fs.readdirSync(triggersDir).filter(f => !f.startsWith('.'));
       }
@@ -2130,6 +2130,8 @@ function register(ctx) {
         },
       });
 
+      setBackendProcess(newBackendProcess);
+
       newBackendProcess.stdout.on('data', (data) => {
         logBackend(`stdout: ${data.toString().trim()}`);
       });
@@ -2138,8 +2140,12 @@ function register(ctx) {
         logBackend(`stderr: ${data.toString().trim()}`);
       });
 
-      const serverReady = await waitForServer();
+      const serverReady = await waitForServer(120, 1000, newBackendProcess);
       if (!serverReady) {
+        if (newBackendProcess && !newBackendProcess.killed) {
+          try { newBackendProcess.kill('SIGKILL'); } catch (e) {}
+        }
+        killBackendProcess();
         return { success: false, error: 'Backend failed to start' };
       }
 
@@ -3116,13 +3122,20 @@ function register(ctx) {
 
   ipcMain.handle('track-activity', async (event, activity) => {
     try {
-        const response = await fetch(`${BACKEND_URL}/api/activity/track`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(activity)
-        });
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        return await response.json();
+        await dbQuery(
+            `INSERT INTO activity_log (activity_type, activity_data, directory_path, npc, device_id, session_id, timestamp)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [
+                activity.type || 'unknown',
+                JSON.stringify(activity.data || {}),
+                activity.directoryPath || null,
+                activity.npc || null,
+                activity.deviceId || null,
+                activity.sessionId || null,
+                new Date().toISOString()
+            ]
+        );
+        return { success: true };
     } catch (err) {
         console.error('Error tracking activity:', err);
         return { error: err.message };

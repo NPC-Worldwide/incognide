@@ -1,61 +1,61 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Loader, CheckCircle, XCircle, Edit, Trash2, RefreshCw, Search, Clock, X } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Loader, CheckCircle, XCircle, Edit, Trash2, RefreshCw, Search, Globe, Folder } from 'lucide-react';
 import MemoryIcon from './icons/MemoryIcon';
 
 interface Memory {
-    id: number;
+    id: string;
     initial_memory: string;
     final_memory: string;
     status: string;
     npc: string;
     timestamp: string;
+    _directory?: string;
 }
 
 interface MemoryManagementProps {
     isModal?: boolean;
     onClose?: () => void;
+    currentPath?: string;
 }
 
-const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, onClose }) => {
+const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, onClose, currentPath = '' }) => {
     const [memories, setMemories] = useState<Memory[]>([]);
     const [memoryLoading, setMemoryLoading] = useState(false);
     const [memoryFilter, setMemoryFilter] = useState('all');
     const [memorySearchTerm, setMemorySearchTerm] = useState('');
     const [loadError, setLoadError] = useState<string | null>(null);
-    const [editingId, setEditingId] = useState<number | null>(null);
+    const [editingId, setEditingId] = useState<string | null>(null);
     const [editText, setEditText] = useState('');
+    const [scope, setScope] = useState<'local' | 'all'>('local');
+
+    const api = (window as any).api;
 
     const loadMemories = async () => {
         setMemoryLoading(true);
         setLoadError(null);
         try {
-            console.log('[MemoryManagement] Loading memories...');
-            const apiResult = await (window as any).api?.executeSQL?.({
-                query: `SELECT id, initial_memory, final_memory, status, npc, timestamp FROM memory_lifecycle ORDER BY timestamp DESC LIMIT 500`
-            });
-            console.log('[MemoryManagement] Raw SQL result:', apiResult);
+            console.log(`[MemoryManagement] Loading memories (${scope})...`);
+            let result;
+            if (scope === 'local') {
+                result = await api?.knowledge_memories?.({
+                    currentPath: currentPath || undefined,
+                    limit: 500
+                });
+            } else {
+                result = await api?.knowledge_all_memories?.({ limit: 500 });
+            }
+            console.log('[MemoryManagement] Result:', result);
 
-            if (apiResult?.error) {
-                console.error('[MemoryManagement] SQL error:', apiResult.error);
-                setLoadError(apiResult.error);
+            if (result?.error) {
+                console.error('[MemoryManagement] Error:', result.error);
+                setLoadError(result.error);
                 setMemories([]);
                 return;
             }
 
-            let memoriesArray: Memory[] = [];
-            if (Array.isArray(apiResult?.result)) {
-                memoriesArray = apiResult.result;
-            } else if (Array.isArray(apiResult)) {
-                memoriesArray = apiResult;
-            } else if (apiResult?.rows) {
-                memoriesArray = apiResult.rows;
-            } else if (apiResult?.data) {
-                memoriesArray = apiResult.data;
-            } else if (apiResult && typeof apiResult === 'object') {
-                console.log('[MemoryManagement] Result keys:', Object.keys(apiResult));
-            }
-            console.log('[MemoryManagement] Parsed memories:', memoriesArray.length);
-            setMemories(Array.isArray(memoriesArray) ? memoriesArray : []);
+            const mems = result?.memories || [];
+            console.log('[MemoryManagement] Parsed memories:', mems.length);
+            setMemories(mems);
         } catch (err: any) {
             console.error('[MemoryManagement] Error loading memories:', err);
             setLoadError(err.message || 'Unknown error');
@@ -67,7 +67,7 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
 
     useEffect(() => {
         loadMemories();
-    }, []);
+    }, [currentPath, scope]);
 
     useEffect(() => {
         if (!isModal) return;
@@ -80,18 +80,23 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
 
     const filteredMemories = useMemo(() => {
         return memories.filter(memory => {
-            const matchesSearch = !memorySearchTerm ||
-                (memory.final_memory || memory.initial_memory || '').toLowerCase().includes(memorySearchTerm.toLowerCase());
+            const text = memory.final_memory || memory.initial_memory || '';
+            const matchesSearch = !memorySearchTerm || text.toLowerCase().includes(memorySearchTerm.toLowerCase());
             const matchesFilter = memoryFilter === 'all' || memory.status === memoryFilter;
             return matchesSearch && matchesFilter;
         });
     }, [memories, memorySearchTerm, memoryFilter]);
 
-    const handleApproveMemory = async (memoryId: number) => {
+    const resolvePath = (memory: Memory) => {
+        return memory._directory || currentPath || '';
+    };
+
+    const handleApproveMemory = async (memoryId: string, memory: Memory) => {
         try {
-            await (window as any).api?.executeSQL?.({
-                query: `UPDATE memory_lifecycle SET status = 'human-approved' WHERE id = ?`,
-                params: [memoryId]
+            await api?.knowledge_memory_update?.({
+                currentPath: resolvePath(memory) || undefined,
+                id: memoryId,
+                status: 'human-approved'
             });
             loadMemories();
         } catch (err) {
@@ -99,11 +104,12 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
         }
     };
 
-    const handleRejectMemory = async (memoryId: number) => {
+    const handleRejectMemory = async (memoryId: string, memory: Memory) => {
         try {
-            await (window as any).api?.executeSQL?.({
-                query: `UPDATE memory_lifecycle SET status = 'human-rejected' WHERE id = ?`,
-                params: [memoryId]
+            await api?.knowledge_memory_update?.({
+                currentPath: resolvePath(memory) || undefined,
+                id: memoryId,
+                status: 'human-rejected'
             });
             loadMemories();
         } catch (err) {
@@ -116,21 +122,23 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
         setEditText(memory.final_memory || memory.initial_memory);
     };
 
-    const handleSaveEdit = async (memoryId: number) => {
-        await (window as any).api?.executeSQL?.({
-            query: `UPDATE memory_lifecycle SET final_memory = ?, status = 'human-edited' WHERE id = ?`,
-            params: [editText, memoryId]
+    const handleSaveEdit = async (memoryId: string, memory: Memory) => {
+        await api?.knowledge_memory_update?.({
+            currentPath: resolvePath(memory) || undefined,
+            id: memoryId,
+            status: 'human-edited',
+            final_memory: editText
         });
         setEditingId(null);
         setEditText('');
         loadMemories();
     };
 
-    const handleDeleteMemory = async (memoryId: number) => {
+    const handleDeleteMemory = async (memoryId: string, memory: Memory) => {
         if (confirm('Delete this memory?')) {
-            await (window as any).api?.executeSQL?.({
-                query: `DELETE FROM memory_lifecycle WHERE id = ?`,
-                params: [memoryId]
+            await api?.knowledge_memory_delete?.({
+                currentPath: resolvePath(memory) || undefined,
+                id: memoryId
             });
             loadMemories();
         }
@@ -139,7 +147,7 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
     const content = (
         <div className="flex flex-col h-full">
             <div className="flex-1 overflow-auto p-4">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-4">
                 <div>
                     <label className="text-sm font-medium mb-2 block">Search Memories</label>
                     <div className="relative">
@@ -167,6 +175,31 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
                         <option value="human-rejected">Rejected</option>
                     </select>
                 </div>
+                <div>
+                    <label className="text-sm font-medium mb-2 block">Scope</label>
+                    <div className="flex items-center gap-1 p-1 rounded-lg border theme-border theme-bg-tertiary">
+                        <button
+                            onClick={() => setScope('local')}
+                            className={`flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded text-xs transition-all ${
+                                scope === 'local'
+                                    ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                                    : 'text-gray-500 hover:text-gray-300'
+                            }`}
+                        >
+                            <Folder size={12} /> Local
+                        </button>
+                        <button
+                            onClick={() => setScope('all')}
+                            className={`flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded text-xs transition-all ${
+                                scope === 'all'
+                                    ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                                    : 'text-gray-500 hover:text-gray-300'
+                            }`}
+                        >
+                            <Globe size={12} /> All
+                        </button>
+                    </div>
+                </div>
                 <div className="flex items-end">
                     <button
                         onClick={loadMemories}
@@ -183,11 +216,6 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
                 <div className="mb-4 p-3 bg-red-900/30 border border-red-700 rounded-lg text-red-300 text-sm">
                     <div className="font-semibold mb-1">Error loading memories:</div>
                     <div className="text-xs text-red-400">{loadError}</div>
-                    {loadError.includes('no such table') && (
-                        <div className="mt-2 text-xs text-gray-400">
-                            The memory_lifecycle table doesn't exist yet. This table is created when you use NPC memory features via npcsh/npcpy.
-                        </div>
-                    )}
                 </div>
             )}
 
@@ -203,6 +231,7 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
                                 <th className="p-2 text-left font-semibold">Memory Content</th>
                                 <th className="p-2 text-left font-semibold">Status</th>
                                 <th className="p-2 text-left font-semibold">NPC</th>
+                                {scope === 'all' && <th className="p-2 text-left font-semibold">Directory</th>}
                                 <th className="p-2 text-left font-semibold">Date</th>
                                 <th className="p-2 text-left font-semibold">Actions</th>
                             </tr>
@@ -222,7 +251,7 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
                                                         autoFocus
                                                     />
                                                     <div className="flex gap-1">
-                                                        <button onClick={() => handleSaveEdit(memory.id)} className="px-2 py-0.5 text-xs bg-blue-600 text-white rounded">Save</button>
+                                                        <button onClick={() => handleSaveEdit(memory.id, memory)} className="px-2 py-0.5 text-xs bg-blue-600 text-white rounded">Save</button>
                                                         <button onClick={() => setEditingId(null)} className="px-2 py-0.5 text-xs theme-bg-tertiary rounded">Cancel</button>
                                                     </div>
                                                 </div>
@@ -251,13 +280,18 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
                                         </span>
                                     </td>
                                     <td className="p-2 text-xs">{memory.npc || 'N/A'}</td>
+                                    {scope === 'all' && (
+                                        <td className="p-2 text-xs max-w-[200px] truncate" title={memory._directory}>
+                                            {memory._directory || '—'}
+                                        </td>
+                                    )}
                                     <td className="p-2 text-xs">
                                         {memory.timestamp ? new Date(memory.timestamp.replace(' ', 'T')).toLocaleString() : 'N/A'}
                                     </td>
                                     <td className="p-2">
                                         <div className="flex gap-1">
                                             <button
-                                                onClick={() => handleApproveMemory(memory.id)}
+                                                onClick={() => handleApproveMemory(memory.id, memory)}
                                                 className={`p-1.5 rounded transition-colors ${
                                                     memory.status === 'human-approved'
                                                         ? 'bg-green-600 text-white'
@@ -269,7 +303,7 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
                                                 <CheckCircle size={14} />
                                             </button>
                                             <button
-                                                onClick={() => handleRejectMemory(memory.id)}
+                                                onClick={() => handleRejectMemory(memory.id, memory)}
                                                 className={`p-1.5 rounded transition-colors ${
                                                     memory.status === 'human-rejected'
                                                         ? 'bg-red-600 text-white'
@@ -288,7 +322,7 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
                                                 <Edit size={14} />
                                             </button>
                                             <button
-                                                onClick={() => handleDeleteMemory(memory.id)}
+                                                onClick={() => handleDeleteMemory(memory.id, memory)}
                                                 className="p-1.5 hover:bg-gray-700 rounded text-red-400 hover:text-red-300 transition-colors"
                                                 title="Delete"
                                             >
@@ -305,7 +339,9 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
                             <div className="mb-2">No memories found matching the current filters.</div>
                             <div className="text-xs text-gray-500">
                                 {memories.length === 0
-                                    ? 'The memory_lifecycle table may be empty or not created yet. Memories are generated when using NPCs with memory features enabled.'
+                                    ? scope === 'local'
+                                        ? 'No memories in local .knowledge.yaml yet. Memories are generated when using NPCs with memory features enabled.'
+                                        : 'No indexed memories found. Run NPCs with memory enabled to build the knowledge index.'
                                     : `${memories.length} total memories exist, but none match current filter.`
                                 }
                             </div>
@@ -327,7 +363,7 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
                     <div className="flex items-center justify-between p-4 border-b theme-border">
                         <h3 className="text-lg font-semibold flex items-center gap-2">
                             <MemoryIcon className="text-orange-400" size={20} />
-                            Memory Management ({memories.length} memories)
+                            Memory Management ({memories.length} memories{scope === 'all' ? ' — All' : ' — Local'})
                         </h3>
                         <button onClick={onClose} className="p-1 hover:bg-gray-700 rounded">
                             <span className="text-xl">&times;</span>

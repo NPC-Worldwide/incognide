@@ -1,0 +1,21 @@
+jinx_name: knowledge_context
+description: Build a context string from human-approved memories in a directory's `.knowledge.yaml`.
+inputs:
+  - { directory: "" }
+  - { max_memories: "10" }
+steps:
+  - name: context
+    engine: python
+    code: |
+      import sys
+      sys.path.insert(0, '/home/caug/npcww/npc-core/npcpy')
+      from npcpy.memory.knowledge_store import KnowledgeStore
+
+      _dir = context.get('directory', '')
+      _max = int(context.get('max_memories', 10) or 10)
+
+      if not _dir:
+          output = "Error: directory is required"
+      else:
+          store = KnowledgeStore(_dir)
+          output = store.build_context(max_memories=_max)

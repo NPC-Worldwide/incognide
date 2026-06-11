@@ -707,7 +707,8 @@ export const loadConversations = async (
             title: conv.preview?.split('\n')[0]?.substring(0, 30) || 'New Conversation',
             preview: conv.preview || 'No content',
             timestamp: conv.timestamp || Date.now(),
-            last_message_timestamp: conv.last_message_timestamp || conv.timestamp || Date.now()
+            last_message_timestamp: conv.last_message_timestamp || conv.timestamp || Date.now(),
+            execution_mode: conv.execution_mode || 'chat',
         })) || [];
 
         formattedConversations.sort((a: any, b: any) =>

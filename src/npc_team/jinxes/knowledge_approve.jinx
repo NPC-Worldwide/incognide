@@ -1,0 +1,28 @@
+jinx_name: knowledge_approve
+description: Update a memory's status (and optionally final_memory) in a directory's `.knowledge.yaml`.
+inputs:
+  - { directory: "" }
+  - { mem_id: "" }
+  - { status: "human-approved" }
+  - { final_memory: "" }
+steps:
+  - name: approve
+    engine: python
+    code: |
+      import sys
+      sys.path.insert(0, '/home/caug/npcww/npc-core/npcpy')
+      from npcpy.memory.knowledge_store import KnowledgeStore
+
+      _dir = context.get('directory', '')
+      _mem_id = context.get('mem_id', '')
+      _status = context.get('status', 'human-approved')
+      _final = context.get('final_memory', '') or None
+
+      if not _dir:
+          output = "Error: directory is required"
+      elif not _mem_id:
+          output = "Error: mem_id is required"
+      else:
+          store = KnowledgeStore(_dir)
+          ok = store.update_memory(_mem_id, _status, final_memory=_final)
+          output = "updated" if ok else "not_found"

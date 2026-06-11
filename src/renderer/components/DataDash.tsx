@@ -1285,7 +1285,7 @@ const DataDash = ({ initialAnalysisContext, currentPath, currentModel, currentPr
     const [newEdgeTarget, setNewEdgeTarget] = useState('');
 
     const [availableDatabases, setAvailableDatabases] = useState<{ name: string; path: string; type: 'global' | 'project' }[]>([]);
-    const [selectedDatabase, setSelectedDatabase] = useState<string>('~/npcsh_history.db');
+    const [selectedDatabase, setSelectedDatabase] = useState<string>('~/.incognide/history.db');
 
     const [dbConnectionStatus, setDbConnectionStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
     const [dbConnectionInfo, setDbConnectionInfo] = useState<{
@@ -2455,7 +2455,7 @@ const handleAcceptGeneratedSql = () => {
 
     const loadAvailableDatabases = useCallback(async () => {
         const databases: { name: string; path: string; type: 'global' | 'project' }[] = [
-            { name: 'npcsh_history.db', path: '~/npcsh_history.db', type: 'global' }
+            { name: 'history.db', path: '~/.incognide/history.db', type: 'global' }
         ];
 
         if (currentPath) {

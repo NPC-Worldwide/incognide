@@ -1,0 +1,41 @@
+jinx_name: knowledge_upsert
+description: Append a new memory to a directory's `.knowledge.yaml`.
+inputs:
+  - { directory: "" }
+  - { initial_memory: "" }
+  - { status: "pending_approval" }
+  - { message_id: "" }
+  - { conversation_id: "" }
+  - { npc: "" }
+  - { team: "" }
+  - { model: "" }
+  - { provider: "" }
+steps:
+  - name: upsert
+    engine: python
+    code: |
+      import sys
+      sys.path.insert(0, '/home/caug/npcww/npc-core/npcpy')
+      from npcpy.memory.knowledge_store import KnowledgeStore
+
+      _dir = context.get('directory', '')
+      _initial = context.get('initial_memory', '')
+
+      if not _dir:
+          output = "Error: directory is required"
+      elif not _initial:
+          output = "Error: initial_memory is required"
+      else:
+          store = KnowledgeStore(_dir)
+          mem_id = store.append_memory(
+              message_id=context.get('message_id', ''),
+              conversation_id=context.get('conversation_id', ''),
+              npc=context.get('npc', ''),
+              team=context.get('team', ''),
+              directory_path=_dir,
+              initial_memory=_initial,
+              status=context.get('status', 'pending_approval'),
+              model=context.get('model', ''),
+              provider=context.get('provider', ''),
+          )
+          output = mem_id

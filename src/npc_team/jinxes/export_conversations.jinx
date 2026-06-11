@@ -11,8 +11,8 @@ steps:
       import os, json, sqlite3, datetime
 
       _home = os.path.expanduser('~')
-      _db = os.path.expanduser(context.get('db_path', '') or os.path.join(_home, 'npcsh_history.db'))
-      _out = os.path.expanduser(context.get('out_dir', '') or os.path.join(_home, '.npcsh', 'exports'))
+      _db = os.path.expanduser(context.get('db_path', '') or os.path.join(_home, '.incognide', 'history.db'))
+      _out = os.path.expanduser(context.get('out_dir', '') or os.path.join(_home, '.incognide', 'exports'))
       _days = int(context.get('days', 7) or 7)
 
       if not os.path.exists(_db):

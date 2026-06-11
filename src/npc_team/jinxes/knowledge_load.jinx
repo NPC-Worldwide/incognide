@@ -1,0 +1,26 @@
+jinx_name: knowledge_load
+description: Load memories from a directory's `.knowledge.yaml`, optionally filtered by status.
+inputs:
+  - { directory: "" }
+  - { status: "human-approved" }
+  - { limit: "" }
+steps:
+  - name: load
+    engine: python
+    code: |
+      import json as _json
+      import sys
+      sys.path.insert(0, '/home/caug/npcww/npc-core/npcpy')
+      from npcpy.memory.knowledge_store import KnowledgeStore
+
+      _dir = context.get('directory', '')
+      _status = context.get('status', '') or None
+      _limit_str = context.get('limit', '')
+      _limit = int(_limit_str) if _limit_str else None
+
+      if not _dir:
+          output = "Error: directory is required"
+      else:
+          store = KnowledgeStore(_dir)
+          results = store.get_memories(status=_status, limit=_limit)
+          output = _json.dumps(results, indent=2, default=str)

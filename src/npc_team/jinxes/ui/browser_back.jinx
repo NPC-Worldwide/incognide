@@ -1,0 +1,13 @@
+jinx_name: browser_back
+description: Navigate back in a browser pane history
+inputs:
+  - paneId:
+      type: string
+      description: The ID of the browser pane (omit for active)
+      required: false
+steps:
+  - name: browser_back
+    engine: incognide
+    action: browser_back
+    args:
+      paneId: "{{ paneId | default('active') }}"

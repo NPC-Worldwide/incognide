@@ -1,0 +1,28 @@
+jinx_name: browser_click
+description: Click an element in a browser pane by CSS selector or text content
+inputs:
+  - paneId:
+      type: string
+      description: The ID of the browser pane (omit for active)
+      required: false
+  - selector:
+      type: string
+      description: CSS selector for the element to click
+      required: false
+  - text:
+      type: string
+      description: Text content to match on clickable elements
+      required: false
+  - index:
+      type: integer
+      description: Which matching element to click if multiple found
+      required: false
+steps:
+  - name: browser_click
+    engine: incognide
+    action: browser_click
+    args:
+      paneId: "{{ paneId | default('active') }}"
+      selector: "{{ selector | default('') }}"
+      text: "{{ text | default('') }}"
+      index: "{{ index | default(0) }}"

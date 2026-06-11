@@ -168,7 +168,7 @@ const McpManager: React.FC<McpManagerProps> = ({ currentPath, embedded = true })
                     path: s.path || s.url || '',
                     label: s.label || s.path || '',
                     command: s.path || '',
-                    scope: s.path?.includes('.incognide') || s.path?.includes('.npcsh') ? 'global' : 'project',
+                    scope: s.path?.includes('.incognide') ? 'global' : 'project',
                 })));
             }
         } catch {}

@@ -23,7 +23,7 @@ const cronJobs = new Map();
 const daemons = new Map();
 
 const sqlite3 = require('sqlite3');
-const dbPath = path.join(os.homedir(), 'npcsh_history.db');
+const dbPath = process.env.INCOGNIDE_DB_PATH || path.join(os.homedir(), '.incognide', 'history.db');
 const fetch = require('node-fetch');
 const crypto = require('crypto');
 const http = require('http');
@@ -33,7 +33,7 @@ const FRONTEND_PORT = IS_DEV_MODE ? 7337 : 6337;
 const BACKEND_PORT = IS_DEV_MODE ? 5437 : 5337;
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
 
-const NPCSH_BASE = path.join(os.homedir(), '.npcsh');
+const INCOGNIDE_BASE = process.env.INCOGNIDE_BASE || path.join(os.homedir(), '.incognide');
 
 let splashWindow = null;
 
@@ -448,6 +448,47 @@ const ensureTablesExist = async () => {
       );
   `;
 
+  const createActivityLogTable = `
+      CREATE TABLE IF NOT EXISTS activity_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          activity_type TEXT,
+          activity_data TEXT,
+          directory_path TEXT,
+          npc TEXT,
+          device_id TEXT,
+          session_id TEXT,
+          timestamp TEXT
+      );
+  `;
+
+  const createAutocompleteSuggestionsTable = `
+      CREATE TABLE IF NOT EXISTS autocomplete_suggestions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          timestamp TEXT,
+          suggestion_type TEXT,
+          input_context TEXT,
+          suggestion TEXT,
+          accepted INTEGER DEFAULT 0,
+          npc TEXT,
+          model TEXT,
+          provider TEXT,
+          directory_path TEXT
+      );
+  `;
+
+  const createAutocompleteTrainingTable = `
+      CREATE TABLE IF NOT EXISTS autocomplete_training (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          suggestion_type TEXT,
+          input_text TEXT,
+          output_text TEXT,
+          accepted INTEGER DEFAULT 0,
+          npc TEXT,
+          model TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+  `;
+
   const createIndexes = `
       CREATE INDEX IF NOT EXISTS idx_file_path ON pdf_highlights(file_path);
       CREATE INDEX IF NOT EXISTS idx_pdf_drawings_file ON pdf_drawings(file_path);
@@ -463,6 +504,10 @@ const ensureTablesExist = async () => {
       CREATE INDEX IF NOT EXISTS idx_jinx_log_job_id ON jinx_execution_log(job_id);
       CREATE INDEX IF NOT EXISTS idx_sched_jobs_enabled ON scheduled_jobs(enabled);
       CREATE INDEX IF NOT EXISTS idx_sched_jobs_next ON scheduled_jobs(next_run_at);
+      CREATE INDEX IF NOT EXISTS idx_activity_timestamp ON activity_log(timestamp);
+      CREATE INDEX IF NOT EXISTS idx_activity_type ON activity_log(activity_type);
+      CREATE INDEX IF NOT EXISTS idx_autocomplete_type ON autocomplete_suggestions(suggestion_type);
+      CREATE INDEX IF NOT EXISTS idx_autocomplete_training_type ON autocomplete_training(suggestion_type);
   `;
 
   try {
@@ -475,6 +520,9 @@ const ensureTablesExist = async () => {
       await dbQuery(createJinxExecutionLogTable);
       await dbQuery(createScheduledJobsTable);
       await dbQuery(createDaemonStateTable);
+      await dbQuery(createActivityLogTable);
+      await dbQuery(createAutocompleteSuggestionsTable);
+      await dbQuery(createAutocompleteTrainingTable);
       await dbQuery(createIndexes);
 
       const addColumnIfMissing = async (table, column, definition) => {
@@ -491,6 +539,8 @@ const ensureTablesExist = async () => {
       await addColumnIfMissing('jinx_execution_log', 'job_id', 'TEXT');
       await addColumnIfMissing('jinx_execution_log', 'job_type', 'TEXT');
       await addColumnIfMissing('jinx_execution_log', 'log_file_path', 'TEXT');
+      await addColumnIfMissing('activity_log', 'directory_path', 'TEXT');
+      await addColumnIfMissing('activity_log', 'device_id', 'TEXT');
 
       console.log('[DB] All tables are ready.');
   } catch (error) {
@@ -720,6 +770,10 @@ function killBackendProcess() {
   }
 }
 
+function setBackendProcess(proc) {
+  backendProcess = proc;
+}
+
 let daemonProcess = null;
 const DAEMON_SCRIPT_PATH = app.isPackaged
   ? path.join(process.resourcesPath, 'daemon', 'incognide-daemon.js')
@@ -835,13 +889,13 @@ function spawnBackendProcess(bPath, bArgs, label, env) {
   return proc;
 }
 
-async function waitForServer(maxAttempts = 120, delay = 1000) {
+async function waitForServer(maxAttempts = 120, delay = 1000, proc = null) {
   log('Waiting for backend server to start...');
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-
-    if (backendProcess && backendProcess.exitCode !== null) {
-      log(`Backend process already exited with code ${backendProcess.exitCode}, stopping wait`);
+    const checkProc = proc || backendProcess;
+    if (checkProc && checkProc.exitCode !== null) {
+      log(`Backend process already exited with code ${checkProc.exitCode}, stopping wait`);
       return false;
     }
     try {
@@ -876,7 +930,7 @@ function scheduleCronJob(job) {
 
     // Search for the jinx file in npc_team dirs
     const searchDirs = [
-      path.join(os.homedir(), '.npcsh', 'npc_team', 'jinxes'),
+      path.join(os.homedir(), '.incognide', 'npc_team', 'jinxes'),
       path.join(INCOGNIDE_HOME, 'npc_team', 'jinxes'),
     ];
     let jinxFile = null;
@@ -1520,8 +1574,8 @@ body { margin:0; background:#0f0f23; display:flex; align-items:center; justify-c
 
     try {
       fs.mkdirSync(dataPath, { recursive: true });
-      fs.mkdirSync(path.join(os.homedir(), '.npcsh', 'npc_team'), { recursive: true });
-      fs.mkdirSync(path.join(os.homedir(), '.npcsh', 'npc_team', 'jinxes'), { recursive: true });
+      fs.mkdirSync(path.join(os.homedir(), '.incognide', 'npc_team'), { recursive: true });
+      fs.mkdirSync(path.join(os.homedir(), '.incognide', 'npc_team', 'jinxes'), { recursive: true });
       log('Created necessary directories for backend');
     } catch (dirErr) {
       log(`Warning: Could not create directories: ${dirErr.message}`);
@@ -1603,7 +1657,7 @@ body { margin:0; background:#0f0f23; display:flex; align-items:center; justify-c
         PYTHONUNBUFFERED: '1',
         PYTHONIOENCODING: 'utf-8',
         HOME: os.homedir(),
-        NPCSH_BASE: path.join(os.homedir(), '.npcsh'),
+        INCOGNIDE_BASE: path.join(os.homedir(), '.incognide'),
         INCOGNIDE_HOME: INCOGNIDE_HOME,
         INCOGNIDE_DATA_DIR: path.join(INCOGNIDE_HOME, 'data'),
       };
@@ -1624,6 +1678,7 @@ body { margin:0; background:#0f0f23; display:flex; align-items:center; justify-c
         exitCode,
         timestamp: new Date().toISOString(),
       };
+      killBackendProcess();
       // Continue — renderer will show a recovery UI via BackendErrorBanner
     } else {
       _backendStartupError = null;
@@ -2794,6 +2849,7 @@ registerAll({
   registerGlobalShortcut,
   backendProcess,
   killBackendProcess,
+  setBackendProcess,
   spawnDaemon,
   killDaemon,
   getDaemonStatus,
@@ -2804,7 +2860,7 @@ registerAll({
   backendLogPath,
   ensureTablesExist,
   appDir: __dirname,
-  NPCSH_BASE,
+  INCOGNIDE_BASE,
   INCOGNIDE_HOME,
 });
 
@@ -3177,9 +3233,9 @@ ipcMain.handle('backend:installAndStart', async (event, { pythonPath, npcpyExtra
       PYTHONUNBUFFERED: '1',
       PYTHONIOENCODING: 'utf-8',
       HOME: os.homedir(),
-      NPCSH_BASE: path.join(os.homedir(), '.npcsh'),
+      INCOGNIDE_BASE: path.join(os.homedir(), '.incognide'),
       INCOGNIDE_HOME: INCOGNIDE_HOME,
-      NPCSH_DATA_DIR: path.join(INCOGNIDE_HOME, 'data'),
+      INCOGNIDE_DATA_DIR: path.join(INCOGNIDE_HOME, 'data'),
     };
 
     _backendPath = venvPython;
