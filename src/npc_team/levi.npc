@@ -74,7 +74,7 @@ jinxes:
   - {{ Jinx('request_approval') }}
   - {{ Jinx('notify') }}
   - {{ Jinx('prompt') }}
-  - {{ Jinx('kg_search_keyword', repo='npc-worldwide/npcsh') }}
-  - {{ Jinx('kg_search_semantic', repo='npc-worldwide/npcsh') }}
-  - {{ Jinx('kg_search_connected', repo='npc-worldwide/npcsh') }}
-  - {{ Jinx('kg_search_sememolution', repo='npc-worldwide/npcsh') }}
+  - {{ Jinx('knowledge_search') }}
+  - {{ Jinx('knowledge_load') }}
+  - {{ Jinx('knowledge_context') }}
+  - {{ Jinx('knowledge_upsert') }}
