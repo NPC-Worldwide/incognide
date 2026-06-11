@@ -33,7 +33,7 @@ const FRONTEND_PORT = IS_DEV_MODE ? 7337 : 6337;
 const BACKEND_PORT = IS_DEV_MODE ? 5437 : 5337;
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
 
-const NPCSH_BASE = process.env.NPCSH_BASE || path.join(os.homedir(), '.incognide');
+const INCOGNIDE_BASE = process.env.INCOGNIDE_BASE || path.join(os.homedir(), '.incognide');
 
 let splashWindow = null;
 
@@ -880,7 +880,7 @@ function scheduleCronJob(job) {
 
     // Search for the jinx file in npc_team dirs
     const searchDirs = [
-      path.join(os.homedir(), '.npcsh', 'npc_team', 'jinxes'),
+      path.join(os.homedir(), '.incognide', 'npc_team', 'jinxes'),
       path.join(INCOGNIDE_HOME, 'npc_team', 'jinxes'),
     ];
     let jinxFile = null;
@@ -1524,8 +1524,8 @@ body { margin:0; background:#0f0f23; display:flex; align-items:center; justify-c
 
     try {
       fs.mkdirSync(dataPath, { recursive: true });
-      fs.mkdirSync(path.join(os.homedir(), '.npcsh', 'npc_team'), { recursive: true });
-      fs.mkdirSync(path.join(os.homedir(), '.npcsh', 'npc_team', 'jinxes'), { recursive: true });
+      fs.mkdirSync(path.join(os.homedir(), '.incognide', 'npc_team'), { recursive: true });
+      fs.mkdirSync(path.join(os.homedir(), '.incognide', 'npc_team', 'jinxes'), { recursive: true });
       log('Created necessary directories for backend');
     } catch (dirErr) {
       log(`Warning: Could not create directories: ${dirErr.message}`);
@@ -1607,7 +1607,7 @@ body { margin:0; background:#0f0f23; display:flex; align-items:center; justify-c
         PYTHONUNBUFFERED: '1',
         PYTHONIOENCODING: 'utf-8',
         HOME: os.homedir(),
-        NPCSH_BASE: path.join(os.homedir(), '.npcsh'),
+        INCOGNIDE_BASE: path.join(os.homedir(), '.incognide'),
         INCOGNIDE_HOME: INCOGNIDE_HOME,
         INCOGNIDE_DATA_DIR: path.join(INCOGNIDE_HOME, 'data'),
       };
@@ -2810,7 +2810,7 @@ registerAll({
   backendLogPath,
   ensureTablesExist,
   appDir: __dirname,
-  NPCSH_BASE,
+  INCOGNIDE_BASE,
   INCOGNIDE_HOME,
 });
 
@@ -3183,9 +3183,9 @@ ipcMain.handle('backend:installAndStart', async (event, { pythonPath, npcpyExtra
       PYTHONUNBUFFERED: '1',
       PYTHONIOENCODING: 'utf-8',
       HOME: os.homedir(),
-      NPCSH_BASE: path.join(os.homedir(), '.npcsh'),
+      INCOGNIDE_BASE: path.join(os.homedir(), '.incognide'),
       INCOGNIDE_HOME: INCOGNIDE_HOME,
-      NPCSH_DATA_DIR: path.join(INCOGNIDE_HOME, 'data'),
+      INCOGNIDE_DATA_DIR: path.join(INCOGNIDE_HOME, 'data'),
     };
 
     _backendPath = venvPython;

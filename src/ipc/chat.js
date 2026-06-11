@@ -1245,7 +1245,7 @@ function register(ctx) {
 
     if (!result.model) {
       try {
-        const globalCtx = path.join(os.homedir(), '.npcsh', 'npc_team', 'npcsh.ctx');
+        const globalCtx = path.join(os.homedir(), '.incognide', 'npc_team', 'incognide.ctx');
         if (fs.existsSync(globalCtx)) {
           const ctxData = yaml.load(fs.readFileSync(globalCtx, 'utf-8')) || {};
           if (ctxData.model) result.model = ctxData.model;

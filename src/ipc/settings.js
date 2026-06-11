@@ -614,7 +614,7 @@ function register(ctx) {
       if (!safeName) return { error: 'invalid job name' };
       const candidates = [
         path.join(INCOGNIDE_HOME, 'npc_team', 'jobs', `${safeName}.sh`),
-        path.join(os.homedir(), '.npcsh', 'npc_team', 'jobs', `${safeName}.sh`),
+        path.join(os.homedir(), '.incognide', 'npc_team', 'jobs', `${safeName}.sh`),
       ];
       for (const scriptPath of candidates) {
         try {
@@ -635,7 +635,7 @@ function register(ctx) {
       if (!safeName) return { error: 'invalid job name' };
       const candidates = [
         path.join(INCOGNIDE_HOME, 'npc_team', 'jobs', `${safeName}.sh`),
-        path.join(os.homedir(), '.npcsh', 'npc_team', 'jobs', `${safeName}.sh`),
+        path.join(os.homedir(), '.incognide', 'npc_team', 'jobs', `${safeName}.sh`),
       ];
       for (const scriptPath of candidates) {
         try {
@@ -658,7 +658,7 @@ function register(ctx) {
       if (!safeName) return { error: 'invalid job name' };
       const candidates = [
         path.join(INCOGNIDE_HOME, 'npc_team', 'jobs', `${safeName}.sh`),
-        path.join(os.homedir(), '.npcsh', 'npc_team', 'jobs', `${safeName}.sh`),
+        path.join(os.homedir(), '.incognide', 'npc_team', 'jobs', `${safeName}.sh`),
       ];
       let scriptPath = null;
       for (const c of candidates) {
@@ -708,7 +708,7 @@ function register(ctx) {
       if (!safeName) return { error: 'invalid job name' };
       const candidates = [
         path.join(INCOGNIDE_HOME, 'npc_team', 'logs', `${safeName}.log`),
-        path.join(os.homedir(), '.npcsh', 'npc_team', 'logs', `${safeName}.log`),
+        path.join(os.homedir(), '.incognide', 'npc_team', 'logs', `${safeName}.log`),
       ];
       for (const logPath of candidates) {
         try {
@@ -789,7 +789,7 @@ function register(ctx) {
     }
     // npcsh triggers (cross-platform)
     try {
-      const triggersDir = path.join(os.homedir(), '.npcsh', 'triggers');
+      const triggersDir = path.join(os.homedir(), '.incognide', 'triggers');
       if (fs.existsSync(triggersDir)) {
         result.npcsh_services = fs.readdirSync(triggersDir).filter(f => !f.startsWith('.'));
       }

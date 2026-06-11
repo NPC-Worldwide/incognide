@@ -101,7 +101,7 @@ function register(ctx) {
       } catch (e) {  }
 
       if (!useNpcsh) {
-        const globalCtx = path.join(os.homedir(), '.npcsh', 'npc_team', 'npcsh.ctx');
+        const globalCtx = path.join(os.homedir(), '.incognide', 'npc_team', 'incognide.ctx');
         try {
           if (fs.existsSync(globalCtx)) {
             const ctxData = yaml.load(fs.readFileSync(globalCtx, 'utf-8')) || {};

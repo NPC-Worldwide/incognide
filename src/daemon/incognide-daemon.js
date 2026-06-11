@@ -248,7 +248,7 @@ async function runJinxJob(row, logFilePath) {
   }
 
   const searchDirs = [
-    path.join(os.homedir(), '.npcsh', 'npc_team', 'jinxes'),
+    path.join(os.homedir(), '.incognide', 'npc_team', 'jinxes'),
     path.join(INCOGNIDE_HOME, 'npc_team', 'jinxes'),
   ];
   let jinxFile = null;

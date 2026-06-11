@@ -1095,7 +1095,7 @@ const CronDaemonPanel = ({
                         <Section title="NPC Triggers" count={systemDaemons.npcsh_services.length} icon={Zap}>
                             {systemDaemons.npcsh_services.map((s: string, i: number) => (
                                 <ExpandRow key={i} header={<span className="text-xs font-mono text-blue-300">{s}</span>}>
-                                    <Field label="Location"><span className="text-[10px] text-gray-400 font-mono">~/.npcsh/triggers/{s}</span></Field>
+                                    <Field label="Location"><span className="text-[10px] text-gray-400 font-mono">~/.incognide/triggers/{s}</span></Field>
                                 </ExpandRow>
                             ))}
                         </Section>

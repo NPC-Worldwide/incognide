@@ -209,7 +209,7 @@ const executeOnDatabase = async (connConfig, query, params = []) => {
 
 const getModelsDir = (basePath, isGlobal) => {
     if (isGlobal) {
-        return path.join(os.homedir(), '.npcsh', 'npc_team', 'models');
+        return path.join(os.homedir(), '.incognide', 'npc_team', 'models');
     }
     return path.join(basePath, 'npc_team', 'models');
 };
@@ -806,7 +806,7 @@ function register(ctx) {
           }
 
           const npcDirectory = isGlobal
-              ? path.join(os.homedir(), '.npcsh', 'npc_team')
+              ? path.join(os.homedir(), '.incognide', 'npc_team')
               : path.join(projectPath, 'npc_team');
 
           let targetDb = userTargetDb || DEFAULT_DB_PATH;
@@ -863,7 +863,7 @@ function register(ctx) {
           for (const file of sqlFiles) {
               const modelId = file.replace(/\.sql$/, '');
               const npcDirectory = global
-                  ? path.join(os.homedir(), '.npcsh', 'npc_team')
+                  ? path.join(os.homedir(), '.incognide', 'npc_team')
                   : path.join(projectPath || os.homedir(), 'npc_team');
               send({ modelId, status: 'running', isGlobal: global });
               try {

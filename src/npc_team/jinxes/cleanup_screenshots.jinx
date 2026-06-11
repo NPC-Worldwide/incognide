@@ -1,5 +1,5 @@
 jinx_name: cleanup_screenshots
-description: Delete screenshots in ~/.npcsh/screenshots older than `keep_days` (default 14).
+description: Delete screenshots in ~/.incognide/screenshots older than `keep_days` (default 14).
 inputs:
   - { dir: "" }
   - { keep_days: "14" }
@@ -9,7 +9,7 @@ steps:
     code: |
       import os, time
 
-      _dir = os.path.expanduser(context.get('dir', '') or os.path.join(os.path.expanduser('~'), '.npcsh', 'screenshots'))
+      _dir = os.path.expanduser(context.get('dir', '') or os.path.join(os.path.expanduser('~'), '.incognide', 'screenshots'))
       _keep = int(context.get('keep_days', 14) or 14)
       if not os.path.isdir(_dir):
           output = f"Screenshots dir not found: {_dir}"
