@@ -1272,45 +1272,103 @@ function register(ctx) {
   ipcMain.handle('activity:log', async (event, data) => {
     try {
       await dbQuery(
-        `CREATE TABLE IF NOT EXISTS activity_log (id INTEGER PRIMARY KEY AUTOINCREMENT, activity_type TEXT, activity_data TEXT, timestamp TEXT, npc TEXT, session_id TEXT)`
-      );
-      await dbQuery(
-        `INSERT INTO activity_log (activity_type, activity_data, timestamp, npc, session_id) VALUES (?, ?, ?, ?, ?)`,
-        [data.type, JSON.stringify(data.data || {}), new Date().toISOString(), data.npc || null, data.sessionId || null]
+        `INSERT INTO activity_log (activity_type, activity_data, directory_path, npc, device_id, session_id, timestamp)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          data.type || 'unknown',
+          JSON.stringify(data.data || {}),
+          data.directoryPath || null,
+          data.npc || null,
+          data.deviceId || null,
+          data.sessionId || null,
+          new Date().toISOString()
+        ]
       );
       return { success: true };
     } catch (err) { return { error: err.message }; }
   });
 
   ipcMain.handle('activity:list', async (event, data = {}) => {
-    const params = new URLSearchParams();
-    if (data.type) params.append('type', data.type);
-    if (data.limit) params.append('limit', data.limit);
-    if (data.directoryPath) params.append('directoryPath', data.directoryPath);
-    if (data.sessionId) params.append('sessionId', data.sessionId);
-    return await callBackendApi(`${BACKEND_URL}/api/activity/list?${params.toString()}`);
+    try {
+      const limit = data.limit || 100;
+      const typeClause = data.type ? 'AND activity_type = ?' : '';
+      const dirClause = data.directoryPath ? 'AND directory_path = ?' : '';
+      const sessionClause = data.sessionId ? 'AND session_id = ?' : '';
+      const params = [limit];
+      if (data.type) params.unshift(data.type);
+      if (data.directoryPath) params.unshift(data.directoryPath);
+      if (data.sessionId) params.unshift(data.sessionId);
+      const rows = await dbQuery(
+        `SELECT * FROM activity_log WHERE 1=1 ${typeClause} ${dirClause} ${sessionClause} ORDER BY timestamp DESC LIMIT ?`,
+        params
+      );
+      return { activities: rows };
+    } catch (err) { return { error: err.message }; }
   });
 
   ipcMain.handle('autocomplete:log', async (event, data) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/autocomplete/log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-      return await res.json();
+      await dbQuery(
+        `INSERT INTO autocomplete_suggestions (timestamp, suggestion_type, input_context, suggestion, accepted, npc, model, provider, directory_path)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          new Date().toISOString(),
+          data.type || 'text',
+          data.inputContext || '',
+          data.suggestion || '',
+          data.accepted ? 1 : 0,
+          data.npc || null,
+          data.model || null,
+          data.provider || null,
+          data.directoryPath || null
+        ]
+      );
+      await dbQuery(
+        `INSERT INTO autocomplete_training (suggestion_type, input_text, output_text, accepted, npc, model)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          data.type || 'text',
+          data.inputContext || '',
+          data.suggestion || '',
+          data.accepted ? 1 : 0,
+          data.npc || null,
+          data.model || null
+        ]
+      );
+      return { success: true };
     } catch (err) { return { error: err.message }; }
   });
 
   ipcMain.handle('autocomplete:stats', async (event, data = {}) => {
-    const params = new URLSearchParams();
-    if (data.type) params.append('type', data.type);
-    if (data.npc) params.append('npc', data.npc);
-    return await callBackendApi(`${BACKEND_URL}/api/autocomplete/stats?${params.toString()}`);
+    try {
+      const typeClause = data.type ? 'WHERE suggestion_type = ?' : '';
+      const params = data.type ? [data.type] : [];
+      const rows = await dbQuery(
+        `SELECT suggestion_type,
+                COUNT(*) as total,
+                SUM(accepted) as accepted,
+                COUNT(*) - SUM(accepted) as rejected
+         FROM autocomplete_suggestions ${typeClause}
+         GROUP BY suggestion_type`,
+        params
+      );
+      return { stats: rows };
+    } catch (err) { return { error: err.message }; }
   });
 
   ipcMain.handle('autocomplete:training', async (event, data = {}) => {
-    const params = new URLSearchParams();
-    if (data.type) params.append('type', data.type);
-    if (data.acceptedOnly) params.append('acceptedOnly', 'true');
-    if (data.limit) params.append('limit', data.limit);
-    return await callBackendApi(`${BACKEND_URL}/api/autocomplete/training?${params.toString()}`);
+    try {
+      const typeClause = data.type ? 'WHERE suggestion_type = ?' : '';
+      const acceptedClause = data.acceptedOnly ? 'AND accepted = 1' : '';
+      const params = [];
+      if (data.type) params.push(data.type);
+      const limit = data.limit || 1000;
+      const rows = await dbQuery(
+        `SELECT * FROM autocomplete_training WHERE 1=1 ${typeClause} ${acceptedClause} ORDER BY created_at DESC LIMIT ?`,
+        [...params, limit]
+      );
+      return { data: rows, count: rows.length };
+    } catch (err) { return { error: err.message }; }
   });
 
   // ── Local .knowledge.yaml IPC ────────────────────────────────────────

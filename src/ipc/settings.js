@@ -3122,13 +3122,20 @@ function register(ctx) {
 
   ipcMain.handle('track-activity', async (event, activity) => {
     try {
-        const response = await fetch(`${BACKEND_URL}/api/activity/track`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(activity)
-        });
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        return await response.json();
+        await dbQuery(
+            `INSERT INTO activity_log (activity_type, activity_data, directory_path, npc, device_id, session_id, timestamp)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [
+                activity.type || 'unknown',
+                JSON.stringify(activity.data || {}),
+                activity.directoryPath || null,
+                activity.npc || null,
+                activity.deviceId || null,
+                activity.sessionId || null,
+                new Date().toISOString()
+            ]
+        );
+        return { success: true };
     } catch (err) {
         console.error('Error tracking activity:', err);
         return { error: err.message };

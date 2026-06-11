@@ -448,6 +448,47 @@ const ensureTablesExist = async () => {
       );
   `;
 
+  const createActivityLogTable = `
+      CREATE TABLE IF NOT EXISTS activity_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          activity_type TEXT,
+          activity_data TEXT,
+          directory_path TEXT,
+          npc TEXT,
+          device_id TEXT,
+          session_id TEXT,
+          timestamp TEXT
+      );
+  `;
+
+  const createAutocompleteSuggestionsTable = `
+      CREATE TABLE IF NOT EXISTS autocomplete_suggestions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          timestamp TEXT,
+          suggestion_type TEXT,
+          input_context TEXT,
+          suggestion TEXT,
+          accepted INTEGER DEFAULT 0,
+          npc TEXT,
+          model TEXT,
+          provider TEXT,
+          directory_path TEXT
+      );
+  `;
+
+  const createAutocompleteTrainingTable = `
+      CREATE TABLE IF NOT EXISTS autocomplete_training (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          suggestion_type TEXT,
+          input_text TEXT,
+          output_text TEXT,
+          accepted INTEGER DEFAULT 0,
+          npc TEXT,
+          model TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+  `;
+
   const createIndexes = `
       CREATE INDEX IF NOT EXISTS idx_file_path ON pdf_highlights(file_path);
       CREATE INDEX IF NOT EXISTS idx_pdf_drawings_file ON pdf_drawings(file_path);
@@ -463,6 +504,10 @@ const ensureTablesExist = async () => {
       CREATE INDEX IF NOT EXISTS idx_jinx_log_job_id ON jinx_execution_log(job_id);
       CREATE INDEX IF NOT EXISTS idx_sched_jobs_enabled ON scheduled_jobs(enabled);
       CREATE INDEX IF NOT EXISTS idx_sched_jobs_next ON scheduled_jobs(next_run_at);
+      CREATE INDEX IF NOT EXISTS idx_activity_timestamp ON activity_log(timestamp);
+      CREATE INDEX IF NOT EXISTS idx_activity_type ON activity_log(activity_type);
+      CREATE INDEX IF NOT EXISTS idx_autocomplete_type ON autocomplete_suggestions(suggestion_type);
+      CREATE INDEX IF NOT EXISTS idx_autocomplete_training_type ON autocomplete_training(suggestion_type);
   `;
 
   try {
@@ -475,6 +520,9 @@ const ensureTablesExist = async () => {
       await dbQuery(createJinxExecutionLogTable);
       await dbQuery(createScheduledJobsTable);
       await dbQuery(createDaemonStateTable);
+      await dbQuery(createActivityLogTable);
+      await dbQuery(createAutocompleteSuggestionsTable);
+      await dbQuery(createAutocompleteTrainingTable);
       await dbQuery(createIndexes);
 
       const addColumnIfMissing = async (table, column, definition) => {
@@ -491,6 +539,8 @@ const ensureTablesExist = async () => {
       await addColumnIfMissing('jinx_execution_log', 'job_id', 'TEXT');
       await addColumnIfMissing('jinx_execution_log', 'job_type', 'TEXT');
       await addColumnIfMissing('jinx_execution_log', 'log_file_path', 'TEXT');
+      await addColumnIfMissing('activity_log', 'directory_path', 'TEXT');
+      await addColumnIfMissing('activity_log', 'device_id', 'TEXT');
 
       console.log('[DB] All tables are ready.');
   } catch (error) {
