@@ -271,6 +271,7 @@
     "date-fns": "^4.1.0",
     "debounce": "^2.0.0",
     "electron-store": "^10.0.1",
+    "html-to-docx": "^1.8.0",
     "http-proxy-middleware": "^3.0.0",
     "install": "^0.13.0",
     "js-yaml": "^4.1.1",
