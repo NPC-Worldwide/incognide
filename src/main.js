@@ -2578,7 +2578,7 @@ applyAppMenu();
         }
 
         frontendServer = http.createServer(async (req, res) => {
-          const url = req.url || '/';
+          const url = (req.url || '/').split('?')[0];
 
           // --- Studio action routes ---
           if (url === '/api/studio/action' && req.method === 'POST') {

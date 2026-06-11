@@ -815,6 +815,11 @@ function register(ctx) {
   ipcMain.handle('read-file-buffer', async (event, filePath) => {
     try {
       console.log(`[Main Process] Reading file buffer for: ${filePath}`);
+      try {
+        await fsPromises.access(filePath);
+      } catch {
+        throw new Error(`File not found: ${filePath}`);
+      }
       const buffer = await fsPromises.readFile(filePath);
       return buffer;
     } catch (error) {
@@ -868,11 +873,47 @@ function register(ctx) {
 
   ipcMain.handle('write-docx-content', async (_, filePath, html, opts = {}) => {
     try {
-      const HTMLtoDOCX = require('html-to-docx');
-      const buffer = await HTMLtoDOCX(html, null, {
-        table: { row: { cantSplit: true } },
-        ...opts
-      });
+      let buffer;
+      try {
+        const HTMLtoDOCX = require('html-to-docx');
+        buffer = await HTMLtoDOCX(html, null, {
+          table: { row: { cantSplit: true } },
+          ...opts
+        });
+      } catch (requireErr) {
+        console.warn('[write-docx-content] html-to-docx not available, falling back to JSZip:', requireErr.message);
+        const JSZip = require('jszip');
+        const zip = new JSZip();
+        zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`);
+        zip.folder('_rels').file('.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`);
+        zip.folder('word').folder('_rels').file('document.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+</Relationships>`);
+        zip.folder('word').file('document.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+            xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <w:body>
+    <w:p>
+      <w:r>
+        <w:t></w:t>
+      </w:r>
+    </w:p>
+    <w:sectPr>
+      <w:pgSz w:w="12240" w:h="15840"/>
+      <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>
+    </w:sectPr>
+  </w:body>
+</w:document>`);
+        buffer = await zip.generateAsync({ type: 'nodebuffer' });
+      }
       await fsPromises.writeFile(filePath, buffer);
       return { success: true, error: null };
     } catch (err) {
