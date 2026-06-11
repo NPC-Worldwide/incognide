@@ -23,7 +23,7 @@ const cronJobs = new Map();
 const daemons = new Map();
 
 const sqlite3 = require('sqlite3');
-const dbPath = path.join(os.homedir(), 'npcsh_history.db');
+const dbPath = process.env.INCOGNIDE_DB_PATH || path.join(os.homedir(), '.incognide', 'history.db');
 const fetch = require('node-fetch');
 const crypto = require('crypto');
 const http = require('http');
@@ -33,7 +33,7 @@ const FRONTEND_PORT = IS_DEV_MODE ? 7337 : 6337;
 const BACKEND_PORT = IS_DEV_MODE ? 5437 : 5337;
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
 
-const NPCSH_BASE = path.join(os.homedir(), '.npcsh');
+const NPCSH_BASE = process.env.NPCSH_BASE || path.join(os.homedir(), '.incognide');
 
 let splashWindow = null;
 

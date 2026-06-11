@@ -9,7 +9,7 @@ const crypto = require('crypto');
 const sqlite3 = require('sqlite3');
 const yaml = require('js-yaml');
 
-const dbPath = path.join(os.homedir(), 'npcsh_history.db');
+const dbPath = process.env.INCOGNIDE_DB_PATH || path.join(os.homedir(), '.incognide', 'history.db');
 
 /**
  * Categorize backend errors into user-friendly messages

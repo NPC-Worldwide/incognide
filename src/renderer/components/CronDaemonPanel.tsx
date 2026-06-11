@@ -70,7 +70,7 @@ const humanSchedule = (s: string) => SCHEDULE_PRESETS.find(p => p.value === s)?.
 
 const EXAMPLE_JOBS: { name: string; schedule: string; command: string; desc: string; npc?: string }[] = [
     { name: 'nql_run_all', schedule: '0 2 * * *', command: 'run_nql_models', desc: 'Run all NQL models nightly in dependency order' },
-    { name: 'backup_db', schedule: '0 1 * * *', command: 'backup_db keep_days=30', desc: 'Snapshot npcsh_history.db daily; keep 30 days' },
+    { name: 'backup_db', schedule: '0 1 * * *', command: 'backup_db keep_days=30', desc: 'Snapshot .incognide/history.db daily; keep 30 days' },
     { name: 'cleanup_screenshots', schedule: '0 4 * * 0', command: 'cleanup_screenshots keep_days=14', desc: 'Weekly prune of ~/.incognide/screenshots older than 14 days' },
     { name: 'rotate_logs', schedule: '0 5 * * *', command: 'rotate_logs compress_days=7 delete_days=90', desc: 'Compress week-old logs, delete 90-day-old archives' },
     { name: 'export_conversations', schedule: '0 3 * * 0', command: 'export_conversations days=7', desc: 'Weekly JSONL export of the last 7 days of conversations' },

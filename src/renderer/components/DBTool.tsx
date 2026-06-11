@@ -52,7 +52,7 @@ const DBTool: React.FC<DBToolProps> = ({
     const [generatingSql, setGeneratingSql] = useState(false);
     const [nlToSqlStreamId, setNlToSqlStreamId] = useState<string | null>(null);
 
-    const [selectedDatabase, setSelectedDatabase] = useState<string>(initialDbPath || '~/npcsh_history.db');
+    const [selectedDatabase, setSelectedDatabase] = useState<string>(initialDbPath || '~/.incognide/history.db');
     const [dbConnectionStatus, setDbConnectionStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
     const [dbConnectionInfo, setDbConnectionInfo] = useState<{
         resolvedPath?: string;

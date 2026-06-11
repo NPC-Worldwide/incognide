@@ -4,11 +4,13 @@ const os = require('os');
 const { dialog, shell } = require('electron');
 const sqlite3 = require('sqlite3');
 
-const dbPath = path.join(os.homedir(), 'npcsh_history.db');
+const DEFAULT_DB_PATH = process.env.INCOGNIDE_DB_PATH || path.join(os.homedir(), '.incognide', 'history.db');
+
+const dbPath = DEFAULT_DB_PATH;
 
 const parseConnectionString = (connString) => {
   if (!connString) {
-    return { type: 'sqlite', path: path.join(os.homedir(), 'npcsh_history.db') };
+    return { type: 'sqlite', path: DEFAULT_DB_PATH };
   }
 
   const str = connString.trim();
@@ -807,7 +809,7 @@ function register(ctx) {
               ? path.join(os.homedir(), '.npcsh', 'npc_team')
               : path.join(projectPath, 'npc_team');
 
-          let targetDb = userTargetDb || '~/npcsh_history.db';
+          let targetDb = userTargetDb || DEFAULT_DB_PATH;
 
           if (targetDb.startsWith('~')) {
               targetDb = path.join(os.homedir(), targetDb.slice(1));
@@ -850,7 +852,7 @@ function register(ctx) {
   ipcMain.handle('runAllSqlModels', async (event, { path: projectPath, isGlobal, targetDb: userTargetDb }) => {
       const send = (data) => getMainWindow()?.webContents.send('sqlModels:runProgress', data);
 
-      let targetDb = userTargetDb || '~/npcsh_history.db';
+      let targetDb = userTargetDb || DEFAULT_DB_PATH;
       if (targetDb.startsWith('~')) targetDb = path.join(os.homedir(), targetDb.slice(1));
 
       const results = [];
