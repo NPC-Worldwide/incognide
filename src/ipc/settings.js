@@ -3172,7 +3172,16 @@ function register(ctx) {
         }
         const peakHours = Object.entries(hourCounts).sort((a, b) => b[1] - a[1]).map(([h]) => parseInt(h));
 
+        // SSM model prediction
+        let ssmPredictions = [];
+        try {
+            ssmPredictions = await _predictWithSSM();
+        } catch (ssmErr) {
+            console.error('SSM prediction failed:', ssmErr);
+        }
+
         const predictions = [
+            ...ssmPredictions,
             ...topDomains.map(([domain, count]) => ({
                 type: 'pattern',
                 title: `Frequent site: ${domain}`,
@@ -3197,8 +3206,95 @@ function register(ctx) {
     }
   });
 
+  async function _predictWithSSM() {
+      const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
+      const scriptPath = path.resolve(__dirname, '..', 'activity_model', 'activity_predictor.py');
+      const dbPath = path.join(os.homedir(), '.incognide', 'history.db');
+      const modelDir = path.join(os.homedir(), '.incognide', 'activity_model');
+
+      return new Promise((resolve, reject) => {
+          const proc = spawn(pythonPath, [
+              scriptPath,
+              '--db-path', dbPath,
+              '--model-dir', modelDir,
+              'predict'
+          ], { stdio: ['pipe', 'pipe', 'pipe'] });
+
+          let stdout = '';
+          let stderr = '';
+          proc.stdout.on('data', d => stdout += d.toString());
+          proc.stderr.on('data', d => stderr += d.toString());
+          proc.on('close', code => {
+              if (code !== 0) {
+                  console.error('SSM predict stderr:', stderr);
+                  return resolve([]);
+              }
+              try {
+                  const result = JSON.parse(stdout.trim().split('\n').pop() || '{}');
+                  if (result.error) {
+                      console.log('SSM predict returned error:', result.error);
+                      return resolve([]);
+                  }
+                  const out = [];
+                  if (result.predicted_action) {
+                      out.push({
+                          type: 'suggestion',
+                          title: `Next: ${result.predicted_action.replace(/_/g, ' ')}`,
+                          description: result.heuristic ? 'Based on recent activity patterns (heuristic)' : 'SSM-based prediction from activity sequence',
+                          confidence: result.confidence || 0.5,
+                          predictedAction: result.predicted_action,
+                          top3: result.top_3 || []
+                      });
+                  }
+                  resolve(out);
+              } catch {
+                  resolve([]);
+              }
+          });
+          proc.on('error', err => {
+              console.error('SSM predict spawn error:', err);
+              resolve([]);
+          });
+      });
+  }
+
   ipcMain.handle('train-activity-model', async (event) => {
-    return { success: true, message: 'Activity patterns computed from local history' };
+      const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
+      const scriptPath = path.resolve(__dirname, '..', 'activity_model', 'activity_predictor.py');
+      const dbPath = path.join(os.homedir(), '.incognide', 'history.db');
+      const modelDir = path.join(os.homedir(), '.incognide', 'activity_model');
+
+      return new Promise((resolve) => {
+          const proc = spawn(pythonPath, [
+              scriptPath,
+              '--db-path', dbPath,
+              '--model-dir', modelDir,
+              '--epochs', '50',
+              '--lr', '0.001',
+              'train'
+          ], { stdio: ['pipe', 'pipe', 'pipe'] });
+
+          let stdout = '';
+          let stderr = '';
+          proc.stdout.on('data', d => stdout += d.toString());
+          proc.stderr.on('data', d => stderr += d.toString());
+          proc.on('close', code => {
+              if (code !== 0) {
+                  console.error('SSM train stderr:', stderr);
+                  return resolve({ success: false, error: stderr || 'Training failed' });
+              }
+              try {
+                  const result = JSON.parse(stdout.trim().split('\n').pop() || '{}');
+                  resolve({ success: true, ...result });
+              } catch {
+                  resolve({ success: false, error: 'Failed to parse training output' });
+              }
+          });
+          proc.on('error', err => {
+              console.error('SSM train spawn error:', err);
+              resolve({ success: false, error: err.message });
+          });
+      });
   });
 
   const finetuneJobsDir = path.join(INCOGNIDE_HOME, 'finetune_jobs');

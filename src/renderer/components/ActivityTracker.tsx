@@ -253,9 +253,28 @@ const ActivityTrackerDashboard = ({
                                                     </span>
                                                 </div>
                                                 <p className="text-sm text-gray-300 mt-2">{pred.description}</p>
+                                                {pred.top3 && pred.top3.length > 0 && (
+                                                    <div className="mt-3 space-y-1">
+                                                        <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Top predictions</p>
+                                                        {pred.top3.map((t: any, tidx: number) => (
+                                                            <div key={tidx} className="flex items-center justify-between text-xs">
+                                                                <span className="text-gray-300">{t.action?.replace(/_/g, ' ') || '—'}</span>
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="w-24 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                                                                        <div
+                                                                            className="h-full bg-purple-500 rounded-full"
+                                                                            style={{ width: `${(t.probability * 100).toFixed(0)}%` }}
+                                                                        />
+                                                                    </div>
+                                                                    <span className="text-gray-400 w-10 text-right">{(t.probability * 100).toFixed(0)}%</span>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
                                                 {pred.actions && (
                                                     <div className="flex gap-2 mt-3">
-                                                        {pred.actions.map((action, aidx) => (
+                                                        {pred.actions.map((action: any, aidx: number) => (
                                                             <button
                                                                 key={aidx}
                                                                 onClick={action.action}
