@@ -2198,6 +2198,11 @@ useEffect(() => {
         // Wait for refs to be initialized
         if (!performSplitRef.current || !closeContentPaneRef.current || !updateContentPaneRef.current) {
             console.log('[MCP] Refs not ready yet, skipping action:', actionId);
+            await fetch('/api/studio/action_complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ actionId, result: { success: false, error: 'Frontend refs not initialized' } })
+            });
             return;
         }
 
