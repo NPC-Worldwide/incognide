@@ -62,7 +62,7 @@ interface AgentInputProps {
     setIsResizingInput: (val: boolean) => void;
 
     isStreaming: boolean;
-    handleInputSubmit: (e: any, options?: { voiceInput?: boolean; disableThinking?: boolean; genParams?: { temperature: number; top_p: number; top_k: number; max_tokens: number }; inputText?: string; uploadedFiles?: any[]; mcpServerPath?: string; selectedMcpTools?: string[]; contextFiles?: any[]; paneId?: string }) => void;
+    handleInputSubmit: (e: any, options?: { voiceInput?: boolean; useKgSearch?: boolean; useMemorySearch?: boolean; disableThinking?: boolean; genParams?: { temperature: number; top_p: number; top_k: number; max_tokens: number }; inputText?: string; uploadedFiles?: any[]; mcpServerPath?: string; selectedMcpTools?: string[]; contextFiles?: any[]; paneId?: string }) => void;
     handleInterruptStream: () => void;
     currentPath: string;
 

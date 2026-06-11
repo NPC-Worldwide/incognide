@@ -917,6 +917,12 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const activeContentPaneIdRef = useRef(activeContentPaneId);
     activeContentPaneIdRef.current = activeContentPaneId;
 
+    const isPaneStreaming = useCallback((paneId: string) => {
+        const paneData = contentDataRef.current[paneId];
+        if (!paneData?.chatMessages?.allMessages) return false;
+        return paneData.chatMessages.allMessages.some((m: any) => m.isStreaming);
+    }, []);
+
     const clampPaneZoom = useCallback((value: number) => {
         if (!Number.isFinite(value)) return 1;
         return Math.min(3, Math.max(0.5, Math.round(value * 100) / 100));
@@ -4794,7 +4800,7 @@ const handleBrowserDialogNavigate = (url) => {
     };
 
     // Main input submit handler
-    const handleInputSubmit = async (e: React.FormEvent, options?: { voiceInput?: boolean; disableThinking?: boolean; genParams?: { temperature: number; top_p: number; top_k: number; max_tokens: number }; inputText?: string; uploadedFiles?: any[]; mcpServerPath?: string; selectedMcpTools?: string[]; contextFiles?: any[]; paneId?: string }) => {
+    const handleInputSubmit = async (e: React.FormEvent, options?: { voiceInput?: boolean; useKgSearch?: boolean; useMemorySearch?: boolean; disableThinking?: boolean; genParams?: { temperature: number; top_p: number; top_k: number; max_tokens: number }; inputText?: string; uploadedFiles?: any[]; mcpServerPath?: string; selectedMcpTools?: string[]; contextFiles?: any[]; paneId?: string }) => {
         e.preventDefault();
         const wasVoiceInput = options?.voiceInput || false;
         const disableThinking = options?.disableThinking || false;
@@ -5095,12 +5101,6 @@ ${contextPrompt}`;
             // Normal single message case - streaming state managed normally
         }
     };
-
-    const isPaneStreaming = useCallback((paneId: string) => {
-        const paneData = contentDataRef.current[paneId];
-        if (!paneData?.chatMessages?.allMessages) return false;
-        return paneData.chatMessages.allMessages.some((m: any) => m.isStreaming);
-    }, []);
 
     const handleInterruptStream = async (paneId?: string) => {
         const targetPaneId = paneId || activeContentPaneId;
