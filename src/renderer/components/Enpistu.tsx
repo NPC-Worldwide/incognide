@@ -8081,6 +8081,9 @@ const handleConversationSelect = async (conversationId: string, skipMessageLoad 
 
     let paneIdToUpdate;
 
+    const convoMeta = directoryConversationsRef.current.find((c: any) => c.id === conversationId);
+    const targetExecutionMode = convoMeta?.execution_mode || 'chat';
+
     if (!rootLayoutNode) {
         const newPaneId = generateId();
         const newLayout = { id: newPaneId, type: 'content' };
@@ -8089,7 +8092,8 @@ const handleConversationSelect = async (conversationId: string, skipMessageLoad 
         contentDataRef.current[newPaneId] = {
             contentType: 'chat',
             contentId: conversationId,
-            chatMessages: { messages: [], allMessages: [], displayedMessageCount: 20 }
+            chatMessages: { messages: [], allMessages: [], displayedMessageCount: 20 },
+            executionMode: targetExecutionMode,
         };
         setRootLayoutNode(newLayout);
 
@@ -8107,6 +8111,7 @@ const handleConversationSelect = async (conversationId: string, skipMessageLoad 
         if (activeIsChat && activeContentPaneId) {
             // Reuse existing chat pane
             paneIdToUpdate = activeContentPaneId;
+            contentDataRef.current[paneIdToUpdate].executionMode = targetExecutionMode;
             await updateContentPane(paneIdToUpdate, 'chat', conversationId, skipMessageLoad);
             setActiveContentPaneId(paneIdToUpdate);
             setRootLayoutNode(prev => ({...prev}));
@@ -8114,6 +8119,7 @@ const handleConversationSelect = async (conversationId: string, skipMessageLoad 
             // Active pane is NOT a chat (editor, terminal, etc.) — create a new pane instead of replacing
             const newPaneId = createAndAddPaneNodeToLayout('chat', conversationId);
             if (newPaneId) {
+                contentDataRef.current[newPaneId].executionMode = targetExecutionMode;
                 await updateContentPane(newPaneId, 'chat', conversationId, skipMessageLoad);
                 setActiveContentPaneId(newPaneId);
                 paneIdToUpdate = newPaneId;
