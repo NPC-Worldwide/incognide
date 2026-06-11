@@ -1406,12 +1406,11 @@ async function deployIncognideTeamOnStartup() {
       log(`[Deploy] npc_team source not found at: ${npcTeamSrc}`);
       return { success: false, error: 'Source not found' };
     }
-    // Only deploy if directory is empty or missing manifest (first-run)
+    // Always deploy — overwrite any existing files so updates (like jinx fixes) propagate
     const entries = await fsPromises.readdir(destBase);
     const hasManifest = fs.existsSync(manifestPath);
     if (entries.length > 0 && hasManifest) {
-      log(`[Deploy] npc_team already present at ${destBase}, skipping auto-deploy`);
-      return { success: true, skipped: true };
+      log(`[Deploy] npc_team already present at ${destBase}, re-deploying to ensure latest files`);
     }
     const newManifest = {};
     const copyAndTrack = async (src, dest, relBase = '') => {

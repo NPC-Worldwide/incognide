@@ -8,19 +8,20 @@ steps:
       _action = "{{ action }}".strip()
       def _try_ports():
           for p in [7337, 6337]:
-              try:
-                  for res in socket.getaddrinfo('localhost', p, socket.AF_UNSPEC, socket.SOCK_STREAM):
-                      af, socktype, proto, canonname, sa = res
-                      s = socket.socket(af, socktype, proto)
-                      s.settimeout(2)
-                      try:
-                          s.connect(sa)
-                          s.close()
-                          return p
-                      except Exception:
-                          s.close()
-              except Exception:
-                  pass
+              for host in ['localhost', '127.0.0.1']:
+                  try:
+                      for res in socket.getaddrinfo(host, p, socket.AF_UNSPEC, socket.SOCK_STREAM):
+                          af, socktype, proto, canonname, sa = res
+                          s = socket.socket(af, socktype, proto)
+                          s.settimeout(2)
+                          try:
+                              s.connect(sa)
+                              s.close()
+                              return p
+                          except Exception:
+                              s.close()
+                  except Exception:
+                      pass
           return None
       _port = _try_ports()
       if not _port:
@@ -76,7 +77,7 @@ steps:
               }
           try:
               _url = f'http://localhost:{_port}/api/studio/action'
-              _r = requests.post(_url, json={'action': _action, 'args': _args}, timeout=15)
+              _r = requests.post(_url, json={'action': _action, 'args': _args}, timeout=60)
               _res = _r.json()
               output = _json.dumps(_res, indent=2)
               context['action_result'] = _res
