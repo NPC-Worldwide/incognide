@@ -741,6 +741,71 @@ function register(ctx) {
         }
       } catch {}
 
+      // Load conversation history from local DB to pass explicitly to backend
+      let conversationMessages = [];
+      if (data.conversationId) {
+        try {
+          const msgRows = await new Promise((resolve, reject) => {
+            const db = new sqlite3.Database(dbPath);
+            const query = `
+              SELECT role, content, timestamp, tool_calls, tool_results
+              FROM conversation_history
+              WHERE conversation_id = ?
+              ORDER BY timestamp ASC, id ASC
+            `;
+            db.all(query, [data.conversationId], (err, rows) => {
+              db.close();
+              if (err) reject(err);
+              else resolve(rows || []);
+            });
+          });
+
+          conversationMessages = msgRows.map(row => {
+            const msg = {
+              role: row.role,
+              content: row.content,
+              timestamp: row.timestamp,
+            };
+
+            if (row.role === 'tool' && row.content) {
+              try {
+                const parsed = JSON.parse(row.content);
+                if (parsed && typeof parsed === 'object') {
+                  if (parsed.tool_call_id !== undefined) msg.tool_call_id = parsed.tool_call_id;
+                  if (parsed.tool_name !== undefined) msg.name = parsed.tool_name;
+                  if (parsed.content !== undefined) msg.content = parsed.content;
+                }
+              } catch (e) {}
+            }
+
+            if (row.tool_calls) {
+              try {
+                const raw = JSON.parse(row.tool_calls);
+                if (Array.isArray(raw)) {
+                  msg.tool_calls = raw.map(tc => {
+                    if (tc && typeof tc === 'object' && tc.function && typeof tc.function === 'object') {
+                      return tc;
+                    }
+                    return {
+                      id: tc.id || '',
+                      type: 'function',
+                      function: {
+                        name: tc.function_name || '',
+                        arguments: tc.arguments || '{}',
+                      },
+                    };
+                  });
+                }
+              } catch (e) {}
+            }
+
+            return msg;
+          });
+        } catch (loadErr) {
+          console.error('[Main Process] Error loading conversation messages:', loadErr);
+        }
+      }
+
       const payload = {
         streamId: currentStreamId,
         commandstr: data.commandstr,
@@ -758,6 +823,7 @@ function register(ctx) {
         jinxes: data.jinxes || [],
         tools: data.tools || [],
         registered_teams: registeredTeams,
+        messages: conversationMessages,
 
         userMessageId: data.userMessageId,
         assistantMessageId: data.assistantMessageId,
@@ -1031,7 +1097,6 @@ function register(ctx) {
 
   ipcMain.handle('getConversations', async (_, path_) => {
     try {
-
       try {
         await fsPromises.access(path_);
       } catch (err) {
@@ -1039,28 +1104,47 @@ function register(ctx) {
         return { conversations: [], error: 'Directory not accessible' };
       }
 
-      const apiUrl = `${BACKEND_URL}/api/conversations?path=${encodeURIComponent(path_)}`;
+      const normalizedPath = path_.replace(/\\/g, '/').replace(/\/+$/, '');
 
-      const response = await fetch(apiUrl);
+      const rows = await new Promise((resolve, reject) => {
+        const db = new sqlite3.Database(dbPath);
+        const query = `
+          SELECT
+            conversation_id as id,
+            MIN(timestamp) as timestamp,
+            MAX(timestamp) as last_message_timestamp,
+            GROUP_CONCAT(content) as preview,
+            GROUP_CONCAT(DISTINCT CASE WHEN npc IS NOT NULL AND npc != '' THEN npc END) as npcs,
+            GROUP_CONCAT(DISTINCT CASE WHEN model IS NOT NULL AND model != '' THEN model END) as models,
+            GROUP_CONCAT(DISTINCT CASE WHEN provider IS NOT NULL AND provider != '' THEN provider END) as providers,
+            MAX(execution_mode) as execution_mode
+          FROM conversation_history
+          WHERE REPLACE(RTRIM(directory_path, '/\\'), '\\', '/') = ?
+          GROUP BY conversation_id
+          ORDER BY MAX(timestamp) DESC
+        `;
+        db.all(query, [normalizedPath], (err, rows) => {
+          db.close();
+          if (err) reject(err);
+          else resolve(rows || []);
+        });
+      });
 
-      if (!response.ok) {
-        console.error('API returned error status:', response.status);
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      const conversations = rows.map(row => ({
+        id: row.id,
+        timestamp: row.timestamp,
+        last_message_timestamp: row.last_message_timestamp,
+        preview: row.preview && row.preview.length > 100 ? row.preview.slice(0, 100) + '...' : row.preview,
+        npcs: (row.npcs || '').split(',').filter(Boolean),
+        models: (row.models || '').split(',').filter(Boolean),
+        providers: (row.providers || '').split(',').filter(Boolean),
+        execution_mode: row.execution_mode || 'chat',
+        npc: (row.npcs || '').split(',')[0] || '',
+        model: (row.models || '').split(',')[0] || '',
+        provider: (row.providers || '').split(',')[0] || '',
+      }));
 
-      const responseText = await response.text();
-
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (err) {
-        console.error('Error parsing JSON response:', err);
-        return { conversations: [], error: 'Invalid JSON response' };
-      }
-
-      return {
-        conversations: data.conversations || []
-      };
+      return { conversations, error: null };
     } catch (err) {
       console.error('Error getting conversations:', err);
       return {
@@ -1469,26 +1553,105 @@ function register(ctx) {
 
   ipcMain.handle('get-last-used-in-directory', async (event, path_) => {
     if (!path_) return { model: null, npc: null, error: 'Path is required' };
-    const url = `${BACKEND_URL}/api/last_used_in_directory?path=${encodeURIComponent(path_)}`;
-    return await callBackendApi(url);
+    const normalizedPath = path_.replace(/\\/g, '/').replace(/\/+$/, '');
+    return new Promise((resolve, reject) => {
+      const db = new sqlite3.Database(dbPath);
+      const sql = `
+        SELECT model, npc
+        FROM conversation_history
+        WHERE REPLACE(RTRIM(directory_path, '/\\'), '\\', '/') = ?
+          AND model IS NOT NULL AND npc IS NOT NULL
+          AND model != '' AND npc != ''
+        ORDER BY timestamp DESC, id DESC
+        LIMIT 1
+      `;
+      db.get(sql, [normalizedPath], (err, row) => {
+        db.close();
+        if (err) return resolve({ model: null, npc: null, error: err.message });
+        resolve(row ? { model: row.model, npc: row.npc } : { model: null, npc: null });
+      });
+    });
   });
 
   ipcMain.handle('get-last-used-in-conversation', async (event, conversationId) => {
     if (!conversationId) return { model: null, npc: null, error: 'Conversation ID is required' };
-    const url = `${BACKEND_URL}/api/last_used_in_conversation?conversationId=${encodeURIComponent(conversationId)}`;
-    return await callBackendApi(url);
+    return new Promise((resolve, reject) => {
+      const db = new sqlite3.Database(dbPath);
+      const sql = `
+        SELECT model, npc
+        FROM conversation_history
+        WHERE conversation_id = ?
+          AND model IS NOT NULL AND npc IS NOT NULL
+          AND model != '' AND npc != ''
+        ORDER BY timestamp DESC, id DESC
+        LIMIT 1
+      `;
+      db.get(sql, [conversationId], (err, row) => {
+        db.close();
+        if (err) return resolve({ model: null, npc: null, error: err.message });
+        resolve(row ? { model: row.model, npc: row.npc } : { model: null, npc: null });
+      });
+    });
   });
 
   ipcMain.handle('search-conversations', async (event, { query, limit = 20 }) => {
     if (!query) return { conversations: [] };
-    try {
-      const url = `${BACKEND_URL}/api/search_conversations?q=${encodeURIComponent(query)}&limit=${limit}`;
-      const result = await callBackendApi(url);
-      return result;
-    } catch (err) {
-      console.error('[SearchConversations] Error:', err);
-      return { conversations: [], error: err.message };
-    }
+    return new Promise((resolve, reject) => {
+      const db = new sqlite3.Database(dbPath);
+      const pattern = `%${query}%`;
+      const sql = `
+        SELECT DISTINCT conversation_id,
+               MIN(timestamp) as start_time,
+               MAX(timestamp) as last_message_timestamp,
+               GROUP_CONCAT(DISTINCT CASE WHEN npc IS NOT NULL AND npc != '' THEN npc END) as npcs
+        FROM conversation_history
+        WHERE content LIKE ?
+        GROUP BY conversation_id
+        ORDER BY MAX(timestamp) DESC
+        LIMIT ?
+      `;
+      db.all(sql, [pattern, limit], (err, rows) => {
+        if (err) {
+          db.close();
+          return resolve({ conversations: [], error: err.message });
+        }
+        const conversations = [];
+        let pending = rows.length;
+        if (pending === 0) {
+          db.close();
+          return resolve({ conversations: [] });
+        }
+        for (const row of rows) {
+          db.get(
+            `SELECT content FROM conversation_history WHERE conversation_id = ? AND content LIKE ? LIMIT 1`,
+            [row.conversation_id, pattern],
+            (err2, snippetRow) => {
+              let preview = '';
+              if (snippetRow && snippetRow.content) {
+                const content = snippetRow.content;
+                const idx = content.toLowerCase().indexOf(query.toLowerCase());
+                const start = Math.max(0, idx - 40);
+                const end = Math.min(content.length, idx + query.length + 40);
+                preview = (start > 0 ? '...' : '') + content.slice(start, end) + (end < content.length ? '...' : '');
+              }
+              conversations.push({
+                id: row.conversation_id,
+                timestamp: row.start_time,
+                last_message_timestamp: row.last_message_timestamp,
+                preview,
+                title: preview ? preview.slice(0, 50) : row.conversation_id.slice(0, 20),
+                npc: (row.npcs || '').split(',')[0] || '',
+              });
+              pending--;
+              if (pending === 0) {
+                db.close();
+                resolve({ conversations, error: null });
+              }
+            }
+          );
+        }
+      });
+    });
   });
 
   // ---- End sync handlers ----

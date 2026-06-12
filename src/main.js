@@ -552,6 +552,44 @@ const ensureTablesExist = async () => {
       );
   `;
 
+  const createConversationHistoryTable = `
+      CREATE TABLE IF NOT EXISTS conversation_history (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          message_id TEXT UNIQUE NOT NULL,
+          timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+          role TEXT NOT NULL,
+          content TEXT,
+          conversation_id TEXT NOT NULL,
+          directory_path TEXT,
+          model TEXT,
+          provider TEXT,
+          npc TEXT,
+          team TEXT,
+          reasoning_content TEXT,
+          tool_calls TEXT,
+          tool_results TEXT,
+          parent_message_id TEXT,
+          params TEXT,
+          input_tokens INTEGER,
+          output_tokens INTEGER,
+          cost TEXT,
+          execution_mode TEXT DEFAULT 'chat'
+      );
+  `;
+
+  const createMessageAttachmentsTable = `
+      CREATE TABLE IF NOT EXISTS message_attachments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          message_id TEXT NOT NULL,
+          attachment_name TEXT,
+          attachment_type TEXT,
+          attachment_data BLOB,
+          attachment_size INTEGER,
+          file_path TEXT,
+          upload_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+  `;
+
   const createIndexes = `
       CREATE INDEX IF NOT EXISTS idx_file_path ON pdf_highlights(file_path);
       CREATE INDEX IF NOT EXISTS idx_pdf_drawings_file ON pdf_drawings(file_path);
@@ -578,6 +616,11 @@ const ensureTablesExist = async () => {
       CREATE INDEX IF NOT EXISTS idx_kg_triple_relation ON kg_triples(relation_id);
       CREATE INDEX IF NOT EXISTS idx_kg_location_entity ON kg_locations(entity_id);
       CREATE INDEX IF NOT EXISTS idx_kg_location_type ON kg_locations(location_type);
+      CREATE INDEX IF NOT EXISTS idx_conv_history_conversation ON conversation_history(conversation_id);
+      CREATE INDEX IF NOT EXISTS idx_conv_history_message ON conversation_history(message_id);
+      CREATE INDEX IF NOT EXISTS idx_conv_history_timestamp ON conversation_history(timestamp);
+      CREATE INDEX IF NOT EXISTS idx_conv_history_directory ON conversation_history(directory_path);
+      CREATE INDEX IF NOT EXISTS idx_attachments_message ON message_attachments(message_id);
   `;
 
   try {
@@ -598,7 +641,23 @@ const ensureTablesExist = async () => {
       await dbQuery(createKnowledgeGraphTriplesTable);
       await dbQuery(createKnowledgeGraphLocationsTable);
       await dbQuery(createKnowledgeGraphEvolutionsTable);
+      await dbQuery(createConversationHistoryTable);
+      await dbQuery(createMessageAttachmentsTable);
       await dbQuery(createIndexes);
+
+      // FTS5 index for unified search across conversations
+      try {
+          await dbQuery(`CREATE VIRTUAL TABLE IF NOT EXISTS conversation_history_fts USING fts5(content, content='conversation_history', content_rowid=rowid)`);
+          // Trigger: insert into FTS
+          await dbQuery(`CREATE TRIGGER IF NOT EXISTS conversation_history_fts_insert AFTER INSERT ON conversation_history BEGIN INSERT INTO conversation_history_fts(rowid, content) VALUES (new.rowid, new.content); END`);
+          // Trigger: delete from FTS
+          await dbQuery(`CREATE TRIGGER IF NOT EXISTS conversation_history_fts_delete AFTER DELETE ON conversation_history BEGIN DELETE FROM conversation_history_fts WHERE rowid=old.rowid; END`);
+          // Trigger: update FTS
+          await dbQuery(`CREATE TRIGGER IF NOT EXISTS conversation_history_fts_update AFTER UPDATE OF content ON conversation_history BEGIN UPDATE conversation_history_fts SET content=new.content WHERE rowid=old.rowid; END`);
+          console.log('[DB] FTS5 index ready on conversation_history');
+      } catch (ftsErr) {
+          console.error('[DB] FTS5 setup error:', ftsErr.message);
+      }
 
       const addColumnIfMissing = async (table, column, definition) => {
           const cols = await dbQuery(`PRAGMA table_info(${table})`);
@@ -1745,6 +1804,7 @@ body { margin:0; background:#0f0f23; display:flex; align-items:center; justify-c
         ...process.env,
         INCOGNIDE_PORT: String(BACKEND_PORT),
         INCOGNIDE_FRONTEND_PORT: String(FRONTEND_PORT),
+        INCOGNIDE_DB_PATH: dbPath,
         FLASK_DEBUG: '1',
         PYTHONUNBUFFERED: '1',
         PYTHONIOENCODING: 'utf-8',

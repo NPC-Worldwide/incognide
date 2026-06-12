@@ -1144,15 +1144,6 @@ function register(ctx) {
     });
   });
 
-  ipcMain.handle('kg:search', async (event, { q, generation, type, limit }) => {
-    const params = new URLSearchParams();
-    if (q) params.append('q', q);
-    if (generation !== null && generation !== undefined) params.append('generation', generation);
-    if (type) params.append('type', type);
-    if (limit) params.append('limit', limit);
-    return await callBackendApi(`${BACKEND_URL}/api/kg/search?${params.toString()}`);
-  });
-
   ipcMain.handle('kg:getFacts', async (event, { generation, limit, offset }) => {
     const params = new URLSearchParams();
     if (generation !== null && generation !== undefined) params.append('generation', generation);
@@ -1189,14 +1180,6 @@ function register(ctx) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content, context, get_concepts, link_concepts_facts })
-    });
-  });
-
-  ipcMain.handle('kg:query', async (event, args) => {
-    return await callBackendApi(`${BACKEND_URL}/api/kg/query`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(args || {})
     });
   });
 
