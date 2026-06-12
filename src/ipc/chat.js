@@ -805,12 +805,26 @@ function register(ctx) {
           });
         });
 
-        stream.on('end', () => {
-          log(`[Main Process] Stream ${capturedStreamId} ended from backend.`);
+        let streamCompleteSent = false;
+        const sendStreamComplete = () => {
+          if (streamCompleteSent) return;
+          streamCompleteSent = true;
           if (!event.sender.isDestroyed()) {
             event.sender.send('stream-complete', { streamId: capturedStreamId });
           }
           activeStreams.delete(capturedStreamId);
+        };
+
+        stream.on('end', () => {
+          log(`[Main Process] Stream ${capturedStreamId} ended from backend.`);
+          sendStreamComplete();
+        });
+
+        stream.on('close', () => {
+          if (activeStreams.has(capturedStreamId)) {
+            log(`[Main Process] Stream ${capturedStreamId} closed without end.`);
+            sendStreamComplete();
+          }
         });
 
         stream.on('error', (err) => {
@@ -892,11 +906,24 @@ function register(ctx) {
             });
         });
 
+        let streamCompleteSent2 = false;
+        const sendStreamComplete2 = () => {
+          if (streamCompleteSent2) return;
+          streamCompleteSent2 = true;
+          if (!event.sender.isDestroyed()) {
+            event.sender.send('stream-complete', { streamId: currentStreamId });
+          }
+          activeStreams.delete(currentStreamId);
+        };
+
         stream.on('end', () => {
-            if (!event.sender.isDestroyed()) {
-                event.sender.send('stream-complete', { streamId: currentStreamId });
+            sendStreamComplete2();
+        });
+
+        stream.on('close', () => {
+            if (activeStreams.has(currentStreamId)) {
+                sendStreamComplete2();
             }
-            activeStreams.delete(currentStreamId);
         });
 
         stream.on('error', (err) => {
@@ -1344,6 +1371,16 @@ function register(ctx) {
       activeStreams.set(currentStreamId, { stream, eventSender: event.sender });
 
       (function(capturedStreamId) {
+        let streamCompleteSent3 = false;
+        const sendStreamComplete3 = () => {
+          if (streamCompleteSent3) return;
+          streamCompleteSent3 = true;
+          if (!event.sender.isDestroyed()) {
+            event.sender.send('stream-complete', { streamId: capturedStreamId });
+          }
+          activeStreams.delete(capturedStreamId);
+        };
+
         stream.on('data', (chunk) => {
           if (event.sender.isDestroyed()) {
             stream.destroy();
@@ -1358,10 +1395,14 @@ function register(ctx) {
 
         stream.on('end', () => {
           log(`[Main] Stream ${capturedStreamId} ended.`);
-          if (!event.sender.isDestroyed()) {
-            event.sender.send('stream-complete', { streamId: capturedStreamId });
+          sendStreamComplete3();
+        });
+
+        stream.on('close', () => {
+          if (activeStreams.has(capturedStreamId)) {
+            log(`[Main] Stream ${capturedStreamId} closed without end.`);
+            sendStreamComplete3();
           }
-          activeStreams.delete(capturedStreamId);
         });
 
         stream.on('error', err => {
