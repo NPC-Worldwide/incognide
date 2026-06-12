@@ -7,11 +7,7 @@ export function useModelSelection() {
         const saved = localStorage.getItem('incognideCurrentNPC');
         return saved ? JSON.parse(saved) : null;
     });
-    const [selectedModels, setSelectedModels] = useState<string[]>(() => {
-        const saved = localStorage.getItem('incognideCurrentModel');
-        const model = saved ? JSON.parse(saved) : null;
-        return model ? [model] : [];
-    });
+    const [selectedModels, setSelectedModels] = useState<string[]>([]);
     const [selectedNPCs, setSelectedNPCs] = useState<string[]>(() => {
         const saved = localStorage.getItem('incognideCurrentNPC');
         const npc = saved ? JSON.parse(saved) : null;
@@ -34,18 +30,6 @@ export function useModelSelection() {
         return saved ? new Set(JSON.parse(saved)) : new Set();
     });
     const [showAllModels, setShowAllModels] = useState(true);
-
-    useEffect(() => {
-        if (currentModel !== null) {
-            localStorage.setItem('incognideCurrentModel', JSON.stringify(currentModel));
-        }
-    }, [currentModel]);
-
-    useEffect(() => {
-        if (currentProvider !== null) {
-            localStorage.setItem('incognideCurrentProvider', JSON.stringify(currentProvider));
-        }
-    }, [currentProvider]);
 
     useEffect(() => {
         if (currentNPC !== null) {
