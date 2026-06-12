@@ -191,6 +191,10 @@ async function executeJob(row) {
       const result = await runInferenceJob(row, logFilePath);
       status = result.status;
       outputSummary = result.outputSummary;
+    } else if (row.job_type === 'activity_intelligence') {
+      const result = await runActivityIntelligenceJob(row, logFilePath);
+      status = result.status;
+      outputSummary = result.outputSummary;
     } else {
       status = 'unknown_type';
       outputSummary = `Unknown job type: ${row.job_type}`;
@@ -371,6 +375,58 @@ async function runInferenceJob(row, logFilePath) {
   });
 }
 
+async function runActivityIntelligenceJob(row, logFilePath) {
+  const payload = JSON.parse(row.payload || '{}');
+  const modelDir = path.join(INCOGNIDE_HOME, 'activity_model');
+  const scriptPath = path.resolve(__dirname, '..', 'activity_model', 'activity_predictor.py');
+
+  if (!fs.existsSync(scriptPath)) {
+    return { status: 'error', outputSummary: 'activity_predictor.py not found' };
+  }
+
+  const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
+  const mode = payload.mode || 'incremental';
+  const dbPath = payload.dbPath || DB_PATH;
+  const baseRepoId = payload.baseRepoId || null;
+
+  const args = [
+    scriptPath,
+    '--db-path', dbPath,
+    '--model-dir', modelDir,
+  ];
+  if (baseRepoId) {
+    args.push('--base-repo-id', baseRepoId);
+  }
+  if (mode === 'incremental') {
+    args.push('incremental');
+  } else {
+    args.push('--epochs', String(payload.epochs || 50), '--lr', String(payload.lr || 0.001), 'train');
+  }
+
+  return new Promise((resolve) => {
+    const proc = spawn(pythonPath, args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', d => { stdout += d; });
+    proc.stderr.on('data', d => { stderr += d; });
+    proc.on('close', (code) => {
+      const out = stdout + (stderr ? '\n[STDERR]\n' + stderr : '');
+      try { fs.writeFileSync(logFilePath, out); } catch {}
+      resolve({
+        status: code === 0 ? 'success' : 'failed',
+        outputSummary: out.slice(0, 2000),
+      });
+    });
+    proc.on('error', (err) => {
+      const msg = String(err.message || err);
+      try { fs.writeFileSync(logFilePath, msg); } catch {}
+      resolve({ status: 'error', outputSummary: msg });
+    });
+  });
+}
+
 function startHttpServer() {
   server = http.createServer(async (req, res) => {
     const setJson = () => {
@@ -447,6 +503,61 @@ function startHttpServer() {
           await loadJobs();
           res.writeHead(200);
           res.end(JSON.stringify({ status: 'updated', jobId, enabled: paused ? 0 : 1 }));
+        } catch (err) {
+          res.writeHead(500);
+          res.end(JSON.stringify({ status: 'error', message: err.message }));
+        }
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/activity_intelligence/predict') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', async () => {
+        setJson();
+        try {
+          const { dbPath, modelDir } = JSON.parse(body || '{}');
+          const _modelDir = modelDir || path.join(INCOGNIDE_HOME, 'activity_model');
+          const _dbPath = dbPath || DB_PATH;
+          const scriptPath = path.resolve(__dirname, '..', 'activity_model', 'activity_predictor.py');
+          if (!fs.existsSync(scriptPath)) {
+            res.writeHead(500);
+            res.end(JSON.stringify({ status: 'error', message: 'activity_predictor.py not found' }));
+            return;
+          }
+          const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
+          const proc = spawn(pythonPath, [
+            scriptPath,
+            '--db-path', _dbPath,
+            '--model-dir', _modelDir,
+            'predict',
+          ], { stdio: ['pipe', 'pipe', 'pipe'] });
+          let stdout = '';
+          let stderr = '';
+          proc.stdout.on('data', d => { stdout += d; });
+          proc.stderr.on('data', d => { stderr += d; });
+          proc.on('close', (code) => {
+            if (code !== 0) {
+              res.writeHead(500);
+              res.end(JSON.stringify({ status: 'error', message: stderr || 'Prediction failed' }));
+              return;
+            }
+            try {
+              const lines = stdout.trim().split('\n');
+              const lastLine = lines.pop() || '{}';
+              const result = JSON.parse(lastLine);
+              res.writeHead(200);
+              res.end(JSON.stringify({ status: 'ok', ...result }));
+            } catch {
+              res.writeHead(500);
+              res.end(JSON.stringify({ status: 'error', message: 'Failed to parse prediction output' }));
+            }
+          });
+          proc.on('error', (err) => {
+            res.writeHead(500);
+            res.end(JSON.stringify({ status: 'error', message: err.message }));
+          });
         } catch (err) {
           res.writeHead(500);
           res.end(JSON.stringify({ status: 'error', message: err.message }));

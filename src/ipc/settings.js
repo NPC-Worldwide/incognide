@@ -2459,6 +2459,8 @@ function register(ctx) {
 
         // Read existing file to merge with new values
         let existing = {};
+        let oldActivityEnabled = false;
+        let oldBaseRepo = '';
         try {
             const content = await fsPromises.readFile(rcPath, 'utf8');
             for (const line of content.split('\n')) {
@@ -2473,6 +2475,12 @@ function register(ctx) {
                     val = val.slice(1, -1);
                 }
                 existing[key] = val;
+                if (key === 'INCOGNIDE_ACTIVITY_INTELLIGENCE_ENABLED') {
+                    oldActivityEnabled = val === 'true' || val === '1';
+                }
+                if (key === 'INCOGNIDE_ACTIVITY_BASE_REPO') {
+                    oldBaseRepo = val;
+                }
             }
         } catch {}
 
@@ -2497,6 +2505,48 @@ function register(ctx) {
 
         const lines = Object.entries(existing).map(([k, v]) => `export ${k}=${v}`);
         await fsPromises.writeFile(rcPath, lines.join('\n') + '\n');
+
+        // Sync activity intelligence scheduled job
+        const newActivityEnabled = global_settings?.is_activity_intelligence_enabled === true;
+        const newBaseRepo = global_settings?.activity_base_repo_id || '';
+        if (newActivityEnabled !== oldActivityEnabled || (newActivityEnabled && newBaseRepo !== oldBaseRepo)) {
+            try {
+                const rows = await dbQuery(`SELECT id, payload FROM scheduled_jobs WHERE job_type = 'activity_intelligence' LIMIT 1`);
+                if (newActivityEnabled) {
+                    const payload = JSON.stringify({
+                        mode: 'incremental',
+                        baseRepoId: newBaseRepo || null,
+                    });
+                    if (!rows.length) {
+                        const id = generateId?.() || `ai_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                        await dbQuery(
+                          `INSERT INTO scheduled_jobs (id, name, job_type, schedule, payload, enabled, created_at, updated_at)
+                           VALUES (?, ?, 'activity_intelligence', '0 */6 * * *', ?, 1, datetime('now'), datetime('now'))`,
+                          [id, 'Activity Intelligence', payload]
+                        );
+                        // Notify daemon
+                        const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+                        if (state?.[0]?.port) {
+                            await fetch(`http://127.0.0.1:${state[0].port}/reload`, { method: 'POST', signal: AbortSignal.timeout(2000) });
+                        }
+                    } else if (newBaseRepo !== oldBaseRepo) {
+                        await dbQuery(
+                          `UPDATE scheduled_jobs SET payload = ?, updated_at = datetime('now') WHERE id = ?`,
+                          [payload, rows[0].id]
+                        );
+                    }
+                } else if (rows.length) {
+                    await dbQuery(`DELETE FROM scheduled_jobs WHERE job_type = 'activity_intelligence'`);
+                    const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+                    if (state?.[0]?.port) {
+                        await fetch(`http://127.0.0.1:${state[0].port}/reload`, { method: 'POST', signal: AbortSignal.timeout(2000) });
+                    }
+                }
+            } catch (syncErr) {
+                console.error('[activity] Failed to sync scheduled job:', syncErr.message);
+            }
+        }
+
         return { success: true };
     } catch (err) {
         console.error('[SETTINGS] Error saving global settings:', err);
@@ -2527,7 +2577,7 @@ function register(ctx) {
                 }
                 if (envKey in SETTINGS_KEY_MAP) {
                     const settingKey = SETTINGS_KEY_MAP[envKey];
-                    if (settingKey === 'is_predictive_text_enabled') {
+                    if (settingKey === 'is_predictive_text_enabled' || settingKey === 'is_activity_intelligence_enabled') {
                         global_settings[settingKey] = value === 'true' || value === '1';
                     } else {
                         global_settings[settingKey] = value;
@@ -3241,104 +3291,90 @@ function register(ctx) {
       const { enabled } = await _readActivitySettings();
       if (!enabled) return [];
 
-      const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
-      const scriptPath = path.resolve(__dirname, '..', 'activity_model', 'activity_predictor.py');
-      const dbPath = path.join(os.homedir(), '.incognide', 'history.db');
-      const modelDir = path.join(os.homedir(), '.incognide', 'activity_model');
-
-      return new Promise((resolve) => {
-          const proc = spawn(pythonPath, [
-              scriptPath,
-              '--db-path', dbPath,
-              '--model-dir', modelDir,
-              'predict'
-          ], { stdio: ['pipe', 'pipe', 'pipe'] });
-
-          let stdout = '';
-          let stderr = '';
-          proc.stdout.on('data', d => stdout += d.toString());
-          proc.stderr.on('data', d => stderr += d.toString());
-          proc.on('close', code => {
-              if (code !== 0) {
-                  console.error('SSM predict stderr:', stderr);
-                  return resolve([]);
-              }
-              try {
-                  const result = JSON.parse(stdout.trim().split('\n').pop() || '{}');
-                  if (result.error) {
-                      console.log('SSM predict returned error:', result.error);
-                      return resolve([]);
-                  }
-                  const out = [];
-                  if (result.predicted_action) {
-                      out.push({
-                          type: 'suggestion',
-                          title: `Next: ${result.predicted_action.replace(/_/g, ' ')}`,
-                          description: 'SSM-based prediction from activity sequence',
-                          confidence: result.confidence || 0.5,
-                          predictedAction: result.predicted_action,
-                          top3: result.top_3 || []
-                      });
-                  }
-                  resolve(out);
-              } catch {
-                  resolve([]);
-              }
+      try {
+          const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+          const daemonPort = state?.[0]?.port;
+          if (!daemonPort) {
+              console.error('[activity] Daemon not running, cannot predict');
+              return [];
+          }
+          const res = await fetch(`http://127.0.0.1:${daemonPort}/activity_intelligence/predict`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({}),
+              signal: AbortSignal.timeout(15000),
           });
-          proc.on('error', err => {
-              console.error('SSM predict spawn error:', err);
-              resolve([]);
-          });
-      });
+          if (!res.ok) {
+              console.error('[activity] Daemon predict HTTP error:', res.status);
+              return [];
+          }
+          const result = await res.json();
+          if (result.status !== 'ok' || result.error) {
+              console.log('[activity] SSM predict returned error:', result.error || result.message);
+              return [];
+          }
+          const out = [];
+          if (result.predicted_action) {
+              out.push({
+                  type: 'suggestion',
+                  title: `Next: ${result.predicted_action.replace(/_/g, ' ')}`,
+                  description: 'SSM-based prediction from activity sequence',
+                  confidence: result.confidence || 0.5,
+                  predictedAction: result.predicted_action,
+                  top3: result.top_3 || []
+              });
+          }
+          return out;
+      } catch (err) {
+          console.error('[activity] SSM predict daemon error:', err.message);
+          return [];
+      }
   }
 
   ipcMain.handle('train-activity-model', async (event, { mode = 'full' } = {}) => {
-      const { enabled, base_repo_id } = await _readActivitySettings();
+      const { enabled } = await _readActivitySettings();
       if (!enabled) return { success: false, error: 'Activity intelligence is disabled in settings' };
 
-      const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
-      const scriptPath = path.resolve(__dirname, '..', 'activity_model', 'activity_predictor.py');
-      const dbPath = path.join(os.homedir(), '.incognide', 'history.db');
-      const modelDir = path.join(os.homedir(), '.incognide', 'activity_model');
+      try {
+          const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+          const daemonPort = state?.[0]?.port;
+          if (!daemonPort) {
+              return { success: false, error: 'Daemon not running' };
+          }
 
-      const args = [
-          scriptPath,
-          '--db-path', dbPath,
-          '--model-dir', modelDir,
-      ];
-      if (base_repo_id) {
-          args.push('--base-repo-id', base_repo_id);
-      }
-      if (mode === 'incremental') {
-          args.push('incremental');
-      } else {
-          args.push('--epochs', '50', '--lr', '0.001', 'train');
-      }
+          // Find the activity intelligence scheduled job
+          const rows = await dbQuery(
+            `SELECT id FROM scheduled_jobs WHERE job_type = 'activity_intelligence' LIMIT 1`
+          );
+          let jobId;
+          if (!rows.length) {
+              // No scheduled job yet — create an ad-hoc one and run it immediately
+              jobId = `ai_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+              const { base_repo_id } = await _readActivitySettings();
+              await dbQuery(
+                `INSERT INTO scheduled_jobs (id, name, job_type, schedule, payload, enabled, created_at, updated_at)
+                 VALUES (?, ?, 'activity_intelligence', '0 0 1 1 *', ?, 0, datetime('now'), datetime('now'))`,
+                [
+                  jobId,
+                  'Activity Intelligence (ad-hoc)',
+                  JSON.stringify({ mode, baseRepoId: base_repo_id || null }),
+                ]
+              );
+          } else {
+              jobId = rows[0].id;
+          }
 
-      return new Promise((resolve) => {
-          const proc = spawn(pythonPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
-
-          let stdout = '';
-          let stderr = '';
-          proc.stdout.on('data', d => stdout += d.toString());
-          proc.stderr.on('data', d => stderr += d.toString());
-          proc.on('close', code => {
-              if (code !== 0) {
-                  console.error('SSM train stderr:', stderr);
-                  return resolve({ success: false, error: stderr || 'Training failed' });
-              }
-              try {
-                  const result = JSON.parse(stdout.trim().split('\n').pop() || '{}');
-                  resolve({ success: true, ...result });
-              } catch {
-                  resolve({ success: false, error: 'Failed to parse training output' });
-              }
+          const res = await fetch(`http://127.0.0.1:${daemonPort}/run_now`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ jobId }),
+              signal: AbortSignal.timeout(5000),
           });
-          proc.on('error', err => {
-              console.error('SSM train spawn error:', err);
-              resolve({ success: false, error: err.message });
-          });
-      });
+          return await res.json();
+      } catch (err) {
+          console.error('[activity] train-activity-model error:', err);
+          return { success: false, error: err.message };
+      }
   });
 
   const finetuneJobsDir = path.join(INCOGNIDE_HOME, 'finetune_jobs');

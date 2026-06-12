@@ -14,3 +14,5 @@ docstring_parser
 litellm
 pyarrow<=16.1.0
 protobuf>=3.20.0,<4.0.0
+qstkl
+huggingface_hub
