@@ -1,14 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 
 export function useModelSelection() {
-    const [currentModel, setCurrentModel] = useState(() => {
-        const saved = localStorage.getItem('incognideCurrentModel');
-        return saved ? JSON.parse(saved) : null;
-    });
-    const [currentProvider, setCurrentProvider] = useState(() => {
-        const saved = localStorage.getItem('incognideCurrentProvider');
-        return saved ? JSON.parse(saved) : null;
-    });
+    const [currentModel, setCurrentModel] = useState(null);
+    const [currentProvider, setCurrentProvider] = useState(null);
     const [currentNPC, setCurrentNPC] = useState(() => {
         const saved = localStorage.getItem('incognideCurrentNPC');
         return saved ? JSON.parse(saved) : null;
