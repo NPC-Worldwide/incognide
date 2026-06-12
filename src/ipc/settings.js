@@ -2432,6 +2432,8 @@ function register(ctx) {
     INCOGNIDE_PREDICTIVE_TEXT_PROVIDER: 'predictive_text_provider',
     INCOGNIDE_ACTIVITY_INTELLIGENCE_ENABLED: 'is_activity_intelligence_enabled',
     INCOGNIDE_ACTIVITY_BASE_REPO: 'activity_base_repo_id',
+    INCOGNIDE_KG_ENABLED: 'is_knowledge_graph_enabled',
+    INCOGNIDE_KG_BASE_REPO: 'knowledge_graph_base_repo_id',
     BACKEND_PYTHON_PATH: 'backend_python_path',
   };
   const SETTINGS_KEY_MAP_REVERSE = Object.fromEntries(
@@ -2450,6 +2452,8 @@ function register(ctx) {
     predictive_text_provider: '',
     is_activity_intelligence_enabled: false,
     activity_base_repo_id: '',
+    is_knowledge_graph_enabled: false,
+    knowledge_graph_base_repo_id: '',
     backend_python_path: '',
   };
 
@@ -2462,6 +2466,7 @@ function register(ctx) {
         let oldActivityEnabled = false;
         let oldBaseRepo = '';
         let oldPredictiveEnabled = false;
+        let oldKGEnabled = false;
         try {
             const content = await fsPromises.readFile(rcPath, 'utf8');
             for (const line of content.split('\n')) {
@@ -2484,6 +2489,9 @@ function register(ctx) {
                 }
                 if (key === 'INCOGNIDE_PREDICTIVE_TEXT_ENABLED') {
                     oldPredictiveEnabled = val === 'true' || val === '1';
+                }
+                if (key === 'INCOGNIDE_KG_ENABLED') {
+                    oldKGEnabled = val === 'true' || val === '1';
                 }
             }
         } catch {}
@@ -2581,6 +2589,36 @@ function register(ctx) {
             }
         }
 
+        // Sync knowledge graph scheduled job
+        const newKGEnabled = global_settings?.is_knowledge_graph_enabled === true;
+        if (newKGEnabled !== oldKGEnabled) {
+            try {
+                const rows = await dbQuery(`SELECT id FROM scheduled_jobs WHERE job_type = 'knowledge_graph' LIMIT 1`);
+                if (newKGEnabled) {
+                    if (!rows.length) {
+                        const id = generateId?.() || `kg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                        await dbQuery(
+                          `INSERT INTO scheduled_jobs (id, name, job_type, schedule, payload, enabled, created_at, updated_at)
+                           VALUES (?, ?, 'knowledge_graph', '0 */12 * * *', ?, 1, datetime('now'), datetime('now'))`,
+                          [id, 'Knowledge Graph Evolver', JSON.stringify({ mode: 'incremental' })]
+                        );
+                        const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+                        if (state?.[0]?.port) {
+                            await fetch(`http://127.0.0.1:${state[0].port}/reload`, { method: 'POST', signal: AbortSignal.timeout(2000) });
+                        }
+                    }
+                } else if (rows.length) {
+                    await dbQuery(`DELETE FROM scheduled_jobs WHERE job_type = 'knowledge_graph'`);
+                    const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+                    if (state?.[0]?.port) {
+                        await fetch(`http://127.0.0.1:${state[0].port}/reload`, { method: 'POST', signal: AbortSignal.timeout(2000) });
+                    }
+                }
+            } catch (syncErr) {
+                console.error('[kg] Failed to sync scheduled job:', syncErr.message);
+            }
+        }
+
         return { success: true };
     } catch (err) {
         console.error('[SETTINGS] Error saving global settings:', err);
@@ -2611,7 +2649,7 @@ function register(ctx) {
                 }
                 if (envKey in SETTINGS_KEY_MAP) {
                     const settingKey = SETTINGS_KEY_MAP[envKey];
-                    if (settingKey === 'is_predictive_text_enabled' || settingKey === 'is_activity_intelligence_enabled') {
+                    if (settingKey === 'is_predictive_text_enabled' || settingKey === 'is_activity_intelligence_enabled' || settingKey === 'is_knowledge_graph_enabled') {
                         global_settings[settingKey] = value === 'true' || value === '1';
                     } else {
                         global_settings[settingKey] = value;
@@ -3516,6 +3554,129 @@ function register(ctx) {
           return await res.json();
       } catch (err) {
           console.error('[autocomplete] train-autocomplete-model error:', err);
+          return { success: false, error: err.message };
+      }
+  });
+
+  // --- Knowledge Graph ---
+
+  async function _readKGSettings() {
+      try {
+          const rcPath = path.join(os.homedir(), '.incogniderc');
+          const content = await fsPromises.readFile(rcPath, 'utf8');
+          const settings = {};
+          for (const line of content.split('\n')) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed.startsWith('#')) continue;
+              const stripped = trimmed.replace(/^export\s+/, '');
+              const eqIdx = stripped.indexOf('=');
+              if (eqIdx === -1) continue;
+              const key = stripped.slice(0, eqIdx).trim();
+              let val = stripped.slice(eqIdx + 1).trim();
+              if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+                  val = val.slice(1, -1);
+              }
+              settings[key] = val;
+          }
+          return {
+              enabled: settings.INCOGNIDE_KG_ENABLED === 'true' || settings.INCOGNIDE_KG_ENABLED === '1',
+          };
+      } catch {
+          return { enabled: false };
+      }
+  }
+
+  ipcMain.handle('kg:query', async (event, { name, type } = {}) => {
+      const { enabled } = await _readKGSettings();
+      if (!enabled) return { results: [] };
+      try {
+          const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+          const daemonPort = state?.[0]?.port;
+          if (!daemonPort) return { error: 'Daemon not running' };
+          const res = await fetch(`http://127.0.0.1:${daemonPort}/knowledge_graph/query`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name, type }),
+              signal: AbortSignal.timeout(10000),
+          });
+          if (!res.ok) return { error: `HTTP ${res.status}` };
+          return await res.json();
+      } catch (err) {
+          console.error('[kg] query error:', err);
+          return { error: err.message };
+      }
+  });
+
+  ipcMain.handle('kg:search', async (event, { keyword, head, relation, tail, limit } = {}) => {
+      const { enabled } = await _readKGSettings();
+      if (!enabled) return { results: [] };
+      try {
+          const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+          const daemonPort = state?.[0]?.port;
+          if (!daemonPort) return { error: 'Daemon not running' };
+          const res = await fetch(`http://127.0.0.1:${daemonPort}/knowledge_graph/search`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ keyword, head, relation, tail, limit }),
+              signal: AbortSignal.timeout(10000),
+          });
+          if (!res.ok) return { error: `HTTP ${res.status}` };
+          return await res.json();
+      } catch (err) {
+          console.error('[kg] search error:', err);
+          return { error: err.message };
+      }
+  });
+
+  ipcMain.handle('kg:graph', async (event, { name, maxDepth, limit } = {}) => {
+      const { enabled } = await _readKGSettings();
+      if (!enabled) return { nodes: [], edges: [] };
+      try {
+          const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+          const daemonPort = state?.[0]?.port;
+          if (!daemonPort) return { error: 'Daemon not running' };
+          const res = await fetch(`http://127.0.0.1:${daemonPort}/knowledge_graph/graph`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name, maxDepth, limit }),
+              signal: AbortSignal.timeout(15000),
+          });
+          if (!res.ok) return { error: `HTTP ${res.status}` };
+          return await res.json();
+      } catch (err) {
+          console.error('[kg] graph error:', err);
+          return { error: err.message };
+      }
+  });
+
+  ipcMain.handle('kg:evolve', async (event, { full = false } = {}) => {
+      const { enabled } = await _readKGSettings();
+      if (!enabled) return { success: false, error: 'Knowledge graph is disabled in settings' };
+      try {
+          const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+          const daemonPort = state?.[0]?.port;
+          if (!daemonPort) return { success: false, error: 'Daemon not running' };
+          const rows = await dbQuery(`SELECT id FROM scheduled_jobs WHERE job_type = 'knowledge_graph' LIMIT 1`);
+          let jobId;
+          if (!rows.length) {
+              jobId = `kg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+              await dbQuery(
+                `INSERT INTO scheduled_jobs (id, name, job_type, schedule, payload, enabled, created_at, updated_at)
+                 VALUES (?, ?, 'knowledge_graph', '0 0 1 1 *', ?, 0, datetime('now'), datetime('now'))`,
+                [jobId, 'KG Evolve (ad-hoc)', JSON.stringify({ full })]
+              );
+          } else {
+              jobId = rows[0].id;
+          }
+          const res = await fetch(`http://127.0.0.1:${daemonPort}/run_now`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ jobId }),
+              signal: AbortSignal.timeout(5000),
+          });
+          return await res.json();
+      } catch (err) {
+          console.error('[kg] evolve error:', err);
           return { success: false, error: err.message };
       }
   });

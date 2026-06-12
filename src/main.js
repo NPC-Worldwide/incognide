@@ -421,7 +421,7 @@ const ensureTablesExist = async () => {
       CREATE TABLE IF NOT EXISTS scheduled_jobs (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL UNIQUE,
-          job_type TEXT NOT NULL CHECK(job_type IN ('jinx','finetune_instruction','finetune_diffusers','inference','activity_intelligence','autocomplete')),
+          job_type TEXT NOT NULL CHECK(job_type IN ('jinx','finetune_instruction','finetune_diffusers','inference','activity_intelligence','autocomplete','knowledge_graph')),
           schedule TEXT NOT NULL,
           command TEXT,
           npc_name TEXT,
@@ -489,6 +489,69 @@ const ensureTablesExist = async () => {
       );
   `;
 
+  const createKnowledgeGraphEntitiesTable = `
+      CREATE TABLE IF NOT EXISTS kg_entities (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          entity_type TEXT DEFAULT 'concept',
+          source TEXT,
+          embedding BLOB,
+          metadata TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+  `;
+
+  const createKnowledgeGraphRelationsTable = `
+      CREATE TABLE IF NOT EXISTS kg_relations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL UNIQUE,
+          relation_type TEXT DEFAULT 'semantic',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+  `;
+
+  const createKnowledgeGraphTriplesTable = `
+      CREATE TABLE IF NOT EXISTS kg_triples (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          head_entity_id INTEGER NOT NULL,
+          relation_id INTEGER NOT NULL,
+          tail_entity_id INTEGER NOT NULL,
+          weight REAL DEFAULT 1.0,
+          source TEXT,
+          metadata TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (head_entity_id) REFERENCES kg_entities(id),
+          FOREIGN KEY (relation_id) REFERENCES kg_relations(id),
+          FOREIGN KEY (tail_entity_id) REFERENCES kg_entities(id)
+      );
+  `;
+
+  const createKnowledgeGraphLocationsTable = `
+      CREATE TABLE IF NOT EXISTS kg_locations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          entity_id INTEGER NOT NULL,
+          location_type TEXT NOT NULL,
+          location_value TEXT NOT NULL,
+          context_snippet TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (entity_id) REFERENCES kg_entities(id)
+      );
+  `;
+
+  const createKnowledgeGraphEvolutionsTable = `
+      CREATE TABLE IF NOT EXISTS kg_evolutions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          run_type TEXT DEFAULT 'incremental',
+          entities_found INTEGER DEFAULT 0,
+          triples_created INTEGER DEFAULT 0,
+          cross_links INTEGER DEFAULT 0,
+          duration_ms INTEGER,
+          log_summary TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+  `;
+
   const createIndexes = `
       CREATE INDEX IF NOT EXISTS idx_file_path ON pdf_highlights(file_path);
       CREATE INDEX IF NOT EXISTS idx_pdf_drawings_file ON pdf_drawings(file_path);
@@ -508,6 +571,13 @@ const ensureTablesExist = async () => {
       CREATE INDEX IF NOT EXISTS idx_activity_type ON activity_log(activity_type);
       CREATE INDEX IF NOT EXISTS idx_autocomplete_type ON autocomplete_suggestions(suggestion_type);
       CREATE INDEX IF NOT EXISTS idx_autocomplete_training_type ON autocomplete_training(suggestion_type);
+      CREATE INDEX IF NOT EXISTS idx_kg_entity_name ON kg_entities(name);
+      CREATE INDEX IF NOT EXISTS idx_kg_entity_type ON kg_entities(entity_type);
+      CREATE INDEX IF NOT EXISTS idx_kg_triple_head ON kg_triples(head_entity_id);
+      CREATE INDEX IF NOT EXISTS idx_kg_triple_tail ON kg_triples(tail_entity_id);
+      CREATE INDEX IF NOT EXISTS idx_kg_triple_relation ON kg_triples(relation_id);
+      CREATE INDEX IF NOT EXISTS idx_kg_location_entity ON kg_locations(entity_id);
+      CREATE INDEX IF NOT EXISTS idx_kg_location_type ON kg_locations(location_type);
   `;
 
   try {
@@ -523,6 +593,11 @@ const ensureTablesExist = async () => {
       await dbQuery(createActivityLogTable);
       await dbQuery(createAutocompleteSuggestionsTable);
       await dbQuery(createAutocompleteTrainingTable);
+      await dbQuery(createKnowledgeGraphEntitiesTable);
+      await dbQuery(createKnowledgeGraphRelationsTable);
+      await dbQuery(createKnowledgeGraphTriplesTable);
+      await dbQuery(createKnowledgeGraphLocationsTable);
+      await dbQuery(createKnowledgeGraphEvolutionsTable);
       await dbQuery(createIndexes);
 
       const addColumnIfMissing = async (table, column, definition) => {
@@ -546,13 +621,13 @@ const ensureTablesExist = async () => {
       try {
           const master = await dbQuery(`SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'`);
           if (master.length && master[0].sql) {
-              const needsMigrate = !master[0].sql.includes("'activity_intelligence'") || !master[0].sql.includes("'autocomplete'");
+              const needsMigrate = !master[0].sql.includes("'activity_intelligence'") || !master[0].sql.includes("'autocomplete'") || !master[0].sql.includes("'knowledge_graph'");
               if (needsMigrate) {
                   await dbQuery(`ALTER TABLE scheduled_jobs RENAME TO scheduled_jobs_old`);
                   await dbQuery(createScheduledJobsTable);
                   await dbQuery(`INSERT INTO scheduled_jobs SELECT * FROM scheduled_jobs_old`);
                   await dbQuery(`DROP TABLE scheduled_jobs_old`);
-                  console.log('[DB] Migrated scheduled_jobs CHECK constraint to include activity_intelligence and autocomplete');
+                  console.log('[DB] Migrated scheduled_jobs CHECK constraint');
               }
           }
       } catch (migrateErr) {
