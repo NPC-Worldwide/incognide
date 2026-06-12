@@ -786,48 +786,10 @@ function parseIncogniderc() {
   return result;
 }
 
-function getDefaultModelConfig() {
-  const yaml = require('js-yaml');
-  let model = '';
-  let provider = '';
-  let npc = 'ledbi';
-
-  const rcEnv = parseIncogniderc();
-
-  const chatModel = process.env.INCOGNIDE_CHAT_MODEL || rcEnv.INCOGNIDE_CHAT_MODEL;
-  const chatProvider = process.env.INCOGNIDE_CHAT_PROVIDER || rcEnv.INCOGNIDE_CHAT_PROVIDER;
-  const defaultNpc = process.env.INCOGNIDE_DEFAULT_NPC || rcEnv.INCOGNIDE_DEFAULT_NPC;
-
-  if (chatModel) model = chatModel;
-  if (chatProvider) provider = chatProvider;
-  if (defaultNpc) npc = defaultNpc;
-
-  if (!chatModel) {
-    try {
-      const globalCtx = path.join(INCOGNIDE_HOME, 'npc_team', 'incognide.ctx');
-      if (fs.existsSync(globalCtx)) {
-        const ctxData = yaml.load(fs.readFileSync(globalCtx, 'utf-8')) || {};
-        if (ctxData.model) model = ctxData.model;
-        if (ctxData.provider) provider = ctxData.provider;
-        if (ctxData.forenpc) npc = ctxData.forenpc;
-      }
-    } catch (e) {
-      console.log('Error reading incognide.ctx for default model:', e.message);
-    }
-  }
-
-  console.log('Default model config:', { model, provider, npc });
-  return { model, provider, npc };
-}
-
-const defaultModelConfig = getDefaultModelConfig();
-
 const DEFAULT_CONFIG = {
   baseDir: path.resolve(INCOGNIDE_HOME),
   stream: true,
-  model: defaultModelConfig.model,
-  provider: defaultModelConfig.provider,
-  npc: defaultModelConfig.npc,
+  npc: 'ledbi',
 };
 
 const DEVICE_CONFIG_PATH = path.join(INCOGNIDE_HOME, 'device.json');
