@@ -1,14 +1,16 @@
 """
 Activity Intelligence Model — qstk SSM-based next-action prediction.
 
-Wraps qstk.cnn.ActivityPredictorAutograd with:
+Functional. No classes. No pickle, no json.
+
+Wraps qstk.cnn functional API with:
   - SQLite data loading from incognide local DB
   - Gradient-based training with Adam (exact torch autograd)
-  - Periodic retraining support
+  - Continuous / periodic retraining
   - Base weight shifting for continual learning
+  - HuggingFace hub download for base models
 """
 
-import json
 import math
 import os
 import sqlite3
@@ -18,16 +20,35 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 # ---------------------------------------------------------------------------
-# Try qstk first, fall back to vendored copy if not installed
+# qstk imports (functional)
 # ---------------------------------------------------------------------------
 
 try:
-    from qstk.cnn import ActivityPredictorAutograd, ActivityPredictorConfig, ACTION_TO_IDX
+    from qstk.cnn import (
+        make_predictor,
+        forward,
+        predict as predict_fn,
+        save as save_model,
+        load as load_model,
+        shift_base_weights,
+        forward_backward,
+        ACTION_TO_IDX,
+        DEFAULT_CONFIG,
+    )
     HAS_QSTK = True
 except ImportError:
     HAS_QSTK = False
-    print("WARNING: qstk not installed. Install with: pip install qstkl")
     raise
+
+# ---------------------------------------------------------------------------
+# HuggingFace hub (optional — for downloading base weights)
+# ---------------------------------------------------------------------------
+
+try:
+    from huggingface_hub import hf_hub_download
+    HAS_HF = True
+except ImportError:
+    HAS_HF = False
 
 # ---------------------------------------------------------------------------
 # Feature extraction
@@ -35,7 +56,7 @@ except ImportError:
 
 HOURS_PER_DAY = 24
 DAYS_PER_WEEK = 7
-NUM_FEATURES = 25  # must match ActivityPredictorConfig.feature_dim
+NUM_FEATURES = 25
 
 
 def _time_features(timestamp: str) -> np.ndarray:
@@ -84,7 +105,7 @@ def encode_activity(
     has_query = 1.0 if data.get('query') else 0.0
     ctx = np.array([has_url, has_file, has_command, has_query], dtype=np.float32)
 
-    return np.concatenate([type_onehot, tfeat, delta, ctx])  # shape: (24,)
+    return np.concatenate([type_onehot, tfeat, delta, ctx])
 
 
 # ---------------------------------------------------------------------------
@@ -109,15 +130,17 @@ def load_activity_sequences(db_path: str, max_seq_len: int = 50, min_seq_len: in
         ('memory_lifecycle', 'memory_created', 'timestamp'),
     ]:
         try:
-            for row in cursor.execute(f"SELECT * FROM {table} WHERE {ts_col} IS NOT NULL ORDER BY {ts_col}").fetchall():
+            rows = cursor.execute(
+                f"SELECT * FROM {table} WHERE {ts_col} IS NOT NULL ORDER BY {ts_col}"
+            ).fetchall()
+            for row in rows:
                 data = {}
                 try:
                     raw = row.get('activity_data') or row.get('input') or row.get('output')
                     if isinstance(raw, str):
-                        data = json.loads(raw)
+                        data = __import__('json').loads(raw)
                 except Exception:
                     pass
-                # Add common fields
                 for k in ['url', 'title', 'command', 'jinx_name', 'filePath', 'fileName', 'query', 'initial_memory', 'npc']:
                     if k in row.keys() and row[k] is not None:
                         data[k] = row[k]
@@ -158,6 +181,33 @@ def load_activity_sequences(db_path: str, max_seq_len: int = 50, min_seq_len: in
 
 
 # ---------------------------------------------------------------------------
+# HF hub download
+# ---------------------------------------------------------------------------
+
+def download_base_weights(model_dir: str, repo_id: str, filename: str = "model.npz") -> Optional[str]:
+    """Download base model weights from HuggingFace hub.
+
+    Args:
+        model_dir: local directory to cache the file.
+        repo_id: HuggingFace repo id, e.g. "npcww/activity-intelligence-base".
+        filename: name of the npz file in the repo.
+
+    Returns:
+        path to the downloaded npz, or None if failed.
+    """
+    if not HAS_HF:
+        print("huggingface_hub not installed. Run: pip install huggingface_hub")
+        return None
+    os.makedirs(model_dir, exist_ok=True)
+    try:
+        local_path = hf_hub_download(repo_id=repo_id, filename=filename, local_dir=model_dir)
+        return local_path
+    except Exception as e:
+        print(f"HF download failed: {e}")
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Training
 # ---------------------------------------------------------------------------
 
@@ -168,31 +218,42 @@ def train_model(
     lr: float = 1e-3,
     batch_size: int = 32,
     shift_base: bool = False,
+    base_repo_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     sequences = load_activity_sequences(db_path)
     if len(sequences) < 10:
         return {'error': f'Need >= 10 sequences, got {len(sequences)}.'}
 
     os.makedirs(model_dir, exist_ok=True)
+    npz_path = os.path.join(model_dir, 'model.npz')
+
+    # Load or create model
+    if os.path.exists(npz_path):
+        model = load_model(npz_path)
+    elif base_repo_id and HAS_HF:
+        downloaded = download_base_weights(model_dir, base_repo_id)
+        if downloaded:
+            model = load_model(downloaded)
+        else:
+            model = make_predictor({'feature_dim': NUM_FEATURES})
+    else:
+        model = make_predictor({'feature_dim': NUM_FEATURES})
+
+    # Optionally shift base weights before fine-tuning
+    if shift_base and os.path.exists(npz_path):
+        print("Shifting base weights before fine-tuning...")
+        shift_base_weights(model, shift_scale=0.01)
+
+    # Manual Adam state
+    m = {k: np.zeros_like(v) for k, v in model['params'].items()}
+    v2 = {k: np.zeros_like(v) for k, v in model['params'].items()}
+    beta1, beta2, eps = 0.9, 0.999, 1e-8
+    t_step = 0
 
     np.random.shuffle(sequences)
     split = int(0.8 * len(sequences))
     train_data = sequences[:split]
     val_data = sequences[split:]
-
-    config = ActivityPredictorConfig(feature_dim=NUM_FEATURES)
-    model = ActivityPredictorAutograd(config)
-
-    # Optionally shift base weights before fine-tuning
-    if shift_base and os.path.exists(os.path.join(model_dir, 'model.pkl')):
-        print("Shifting base weights before fine-tuning...")
-        model.shift_base_weights(shift_scale=0.01)
-
-    # Manual Adam state
-    m = {k: np.zeros_like(v) for k, v in model.params.items()}
-    v2 = {k: np.zeros_like(v) for k, v in model.params.items()}
-    beta1, beta2, eps = 0.9, 0.999, 1e-8
-    t_step = 0
 
     best_val_acc = 0.0
     history = []
@@ -205,27 +266,22 @@ def train_model(
 
         for i in range(0, len(train_data), batch_size):
             batch = train_data[i:i + batch_size]
-            xs = np.stack([b[0] for b in batch])  # [B, L, F]
-            ys = np.array([b[1] for b in batch])  # [B]
+            xs = np.stack([b[0] for b in batch])
+            ys = np.array([b[1] for b in batch])
 
-            # Forward + backward via torch autograd (exact gradients)
-            loss, grads = model.forward_backward(xs, ys)
+            loss, grads = forward_backward(model, xs, ys)
             t_step += 1
 
-            # Adam update
-            for k in model.params:
+            for k in model['params']:
                 g = grads[k]
                 m[k] = beta1 * m[k] + (1 - beta1) * g
-                # Second moment uses squared magnitude (works for real & complex)
                 v2[k] = beta2 * v2[k] + (1 - beta2) * (np.abs(g) ** 2)
                 m_hat = m[k] / (1 - beta1 ** t_step)
                 v_hat = v2[k] / (1 - beta2 ** t_step)
-                model.params[k] -= lr * m_hat / (np.sqrt(v_hat) + eps)
+                model['params'][k] -= lr * m_hat / (np.sqrt(v_hat) + eps)
 
-            # Metrics via numpy forward (fast, no grad overhead)
-            out = model.forward(xs)
-            logits = out['action_logits']
-            preds = np.argmax(logits, axis=1)
+            out = forward(model, xs)
+            preds = np.argmax(out['action_logits'], axis=1)
             correct += int(np.sum(preds == ys))
             total += len(batch)
             total_loss += loss * len(batch)
@@ -240,7 +296,7 @@ def train_model(
             batch = val_data[i:i + batch_size]
             xs = np.stack([b[0] for b in batch])
             ys = np.array([b[1] for b in batch])
-            out = model.forward(xs)
+            out = forward(model, xs)
             preds = np.argmax(out['action_logits'], axis=1)
             val_correct += int(np.sum(preds == ys))
             val_total += len(batch)
@@ -252,11 +308,7 @@ def train_model(
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
-            model.save(os.path.join(model_dir, 'model.pkl'))
-
-    # Save config
-    with open(os.path.join(model_dir, 'config.json'), 'w') as f:
-        json.dump({'config': {'feature_dim': NUM_FEATURES, 'num_classes': len(ACTION_TO_IDX)}, 'best_val_acc': best_val_acc}, f, indent=2)
+            save_model(model, npz_path)
 
     return {
         'success': True,
@@ -267,22 +319,43 @@ def train_model(
 
 
 # ---------------------------------------------------------------------------
+# Continuous training (lightweight incremental update)
+# ---------------------------------------------------------------------------
+
+def incremental_train(
+    db_path: str,
+    model_dir: str,
+    epochs: int = 3,
+    lr: float = 5e-4,
+    batch_size: int = 32,
+) -> Dict[str, Any]:
+    """Lightweight fine-tune on newest data. Shifts base weights first."""
+    return train_model(
+        db_path=db_path,
+        model_dir=model_dir,
+        epochs=epochs,
+        lr=lr,
+        batch_size=batch_size,
+        shift_base=True,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Inference
 # ---------------------------------------------------------------------------
 
 def predict_next_action(db_path: str, model_dir: str) -> Optional[Dict[str, Any]]:
-    model_path = os.path.join(model_dir, 'model.pkl')
-    if not os.path.exists(model_path):
+    npz_path = os.path.join(model_dir, 'model.npz')
+    if not os.path.exists(npz_path):
         return None
 
-    model = ActivityPredictorAutograd.load(model_path)
-
+    model = load_model(npz_path)
     sequences = load_activity_sequences(db_path, max_seq_len=50, min_seq_len=1)
     if not sequences:
         return None
 
     recent_seq, _ = sequences[-1]
-    return model.predict(recent_seq)
+    return predict_fn(model, recent_seq)
 
 
 # ---------------------------------------------------------------------------
@@ -291,18 +364,30 @@ def predict_next_action(db_path: str, model_dir: str) -> Optional[Dict[str, Any]
 
 if __name__ == '__main__':
     import argparse
+    import json as json_mod
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--db-path', required=True)
     parser.add_argument('--model-dir', default=os.path.expanduser('~/.incognide/activity_model'))
-    parser.add_argument('command', choices=['train', 'predict'])
+    parser.add_argument('command', choices=['train', 'predict', 'incremental'])
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--lr', type=float, default=1e-3)
-    parser.add_argument('--shift-base', action='store_true', help='Shift base weights before fine-tuning')
+    parser.add_argument('--shift-base', action='store_true')
+    parser.add_argument('--base-repo-id', default=None, help='HuggingFace repo for base weights')
     args = parser.parse_args()
 
     if args.command == 'train':
-        result = train_model(args.db_path, args.model_dir, epochs=args.epochs, lr=args.lr, shift_base=args.shift_base)
-        print(json.dumps(result, indent=2))
+        result = train_model(
+            args.db_path, args.model_dir,
+            epochs=args.epochs, lr=args.lr,
+            shift_base=args.shift_base,
+            base_repo_id=args.base_repo_id,
+        )
+    elif args.command == 'incremental':
+        result = incremental_train(args.db_path, args.model_dir, epochs=args.epochs, lr=args.lr)
     elif args.command == 'predict':
         result = predict_next_action(args.db_path, args.model_dir)
-        print(json.dumps(result, indent=2) if result else json.dumps({'error': 'No model or data available.'}))
+        if result is None:
+            result = {'error': 'No model or data available.'}
+
+    print(json_mod.dumps(result, indent=2))

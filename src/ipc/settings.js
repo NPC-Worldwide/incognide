@@ -2430,6 +2430,8 @@ function register(ctx) {
     INCOGNIDE_PREDICTIVE_TEXT_ENABLED: 'is_predictive_text_enabled',
     INCOGNIDE_PREDICTIVE_TEXT_MODEL: 'predictive_text_model',
     INCOGNIDE_PREDICTIVE_TEXT_PROVIDER: 'predictive_text_provider',
+    INCOGNIDE_ACTIVITY_INTELLIGENCE_ENABLED: 'is_activity_intelligence_enabled',
+    INCOGNIDE_ACTIVITY_BASE_REPO: 'activity_base_repo_id',
     BACKEND_PYTHON_PATH: 'backend_python_path',
   };
   const SETTINGS_KEY_MAP_REVERSE = Object.fromEntries(
@@ -2446,6 +2448,8 @@ function register(ctx) {
     is_predictive_text_enabled: false,
     predictive_text_model: '',
     predictive_text_provider: '',
+    is_activity_intelligence_enabled: false,
+    activity_base_repo_id: '',
     backend_python_path: '',
   };
 
@@ -3206,13 +3210,43 @@ function register(ctx) {
     }
   });
 
+  async function _readActivitySettings() {
+      try {
+          const rcPath = path.join(os.homedir(), '.incogniderc');
+          const content = await fsPromises.readFile(rcPath, 'utf8');
+          const settings = {};
+          for (const line of content.split('\n')) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed.startsWith('#')) continue;
+              const stripped = trimmed.replace(/^export\s+/, '');
+              const eqIdx = stripped.indexOf('=');
+              if (eqIdx === -1) continue;
+              const key = stripped.slice(0, eqIdx).trim();
+              let val = stripped.slice(eqIdx + 1).trim();
+              if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+                  val = val.slice(1, -1);
+              }
+              settings[key] = val;
+          }
+          return {
+              enabled: settings.INCOGNIDE_ACTIVITY_INTELLIGENCE_ENABLED === 'true' || settings.INCOGNIDE_ACTIVITY_INTELLIGENCE_ENABLED === '1',
+              base_repo_id: settings.INCOGNIDE_ACTIVITY_BASE_REPO || '',
+          };
+      } catch {
+          return { enabled: false, base_repo_id: '' };
+      }
+  }
+
   async function _predictWithSSM() {
+      const { enabled } = await _readActivitySettings();
+      if (!enabled) return [];
+
       const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
       const scriptPath = path.resolve(__dirname, '..', 'activity_model', 'activity_predictor.py');
       const dbPath = path.join(os.homedir(), '.incognide', 'history.db');
       const modelDir = path.join(os.homedir(), '.incognide', 'activity_model');
 
-      return new Promise((resolve, reject) => {
+      return new Promise((resolve) => {
           const proc = spawn(pythonPath, [
               scriptPath,
               '--db-path', dbPath,
@@ -3240,7 +3274,7 @@ function register(ctx) {
                       out.push({
                           type: 'suggestion',
                           title: `Next: ${result.predicted_action.replace(/_/g, ' ')}`,
-                          description: result.heuristic ? 'Based on recent activity patterns (heuristic)' : 'SSM-based prediction from activity sequence',
+                          description: 'SSM-based prediction from activity sequence',
                           confidence: result.confidence || 0.5,
                           predictedAction: result.predicted_action,
                           top3: result.top_3 || []
@@ -3258,21 +3292,31 @@ function register(ctx) {
       });
   }
 
-  ipcMain.handle('train-activity-model', async (event) => {
+  ipcMain.handle('train-activity-model', async (event, { mode = 'full' } = {}) => {
+      const { enabled, base_repo_id } = await _readActivitySettings();
+      if (!enabled) return { success: false, error: 'Activity intelligence is disabled in settings' };
+
       const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
       const scriptPath = path.resolve(__dirname, '..', 'activity_model', 'activity_predictor.py');
       const dbPath = path.join(os.homedir(), '.incognide', 'history.db');
       const modelDir = path.join(os.homedir(), '.incognide', 'activity_model');
 
+      const args = [
+          scriptPath,
+          '--db-path', dbPath,
+          '--model-dir', modelDir,
+      ];
+      if (base_repo_id) {
+          args.push('--base-repo-id', base_repo_id);
+      }
+      if (mode === 'incremental') {
+          args.push('incremental');
+      } else {
+          args.push('--epochs', '50', '--lr', '0.001', 'train');
+      }
+
       return new Promise((resolve) => {
-          const proc = spawn(pythonPath, [
-              scriptPath,
-              '--db-path', dbPath,
-              '--model-dir', modelDir,
-              '--epochs', '50',
-              '--lr', '0.001',
-              'train'
-          ], { stdio: ['pipe', 'pipe', 'pipe'] });
+          const proc = spawn(pythonPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
 
           let stdout = '';
           let stderr = '';
