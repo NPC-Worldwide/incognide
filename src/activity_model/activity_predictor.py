@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 # ---------------------------------------------------------------------------
-# qstk imports (functional)
+# qstk imports — core (pure numpy, always works)
 # ---------------------------------------------------------------------------
 
 try:
@@ -31,14 +31,21 @@ try:
         save as save_model,
         load as load_model,
         shift_base_weights,
-        forward_backward,
         ACTION_TO_IDX,
         DEFAULT_CONFIG,
     )
-    HAS_QSTK = True
 except ImportError:
-    HAS_QSTK = False
     raise
+
+# ---------------------------------------------------------------------------
+# qstk imports — training (requires torch)
+# ---------------------------------------------------------------------------
+
+try:
+    from qstk.cnn import forward_backward
+    HAS_TORCH = True
+except ImportError:
+    HAS_TORCH = False
 
 # ---------------------------------------------------------------------------
 # HuggingFace hub (optional — for downloading base weights)
@@ -208,6 +215,61 @@ def download_base_weights(model_dir: str, repo_id: str, filename: str = "model.n
 
 
 # ---------------------------------------------------------------------------
+# Loss helpers
+# ---------------------------------------------------------------------------
+
+def _cross_entropy_loss(logits: np.ndarray, ys: np.ndarray) -> float:
+    """Stable cross-entropy loss. logits: [B, num_classes], ys: [B]."""
+    max_logits = np.max(logits, axis=1, keepdims=True)
+    exp_logits = np.exp(logits - max_logits)
+    probs = exp_logits / np.sum(exp_logits, axis=1, keepdims=True)
+    return float(-np.mean(np.log(probs[np.arange(len(ys)), ys] + 1e-8)))
+
+
+# ---------------------------------------------------------------------------
+# SPSA gradient estimator (numpy-only, O(1) in parameter count)
+# ---------------------------------------------------------------------------
+
+def _spsa_grad(model: Dict[str, Any], xs: np.ndarray, ys: np.ndarray, epsilon: float = 1e-3) -> Tuple[float, Dict[str, np.ndarray]]:
+    """Simultaneous Perturbation Stochastic Approximation gradient.
+
+    Uses only 2 forward passes regardless of parameter count.
+    Returns (loss_at_theta, grads).
+    """
+    params = model['params']
+    orig = {k: v.copy() for k, v in params.items()}
+
+    # Rademacher perturbations
+    delta: Dict[str, np.ndarray] = {}
+    for k, v in orig.items():
+        if v.dtype.kind in 'c':
+            delta[k] = (np.sign(np.random.randn(*v.shape)) + 1j * np.sign(np.random.randn(*v.shape))).astype(v.dtype)
+        else:
+            delta[k] = np.sign(np.random.randn(*v.shape)).astype(v.dtype)
+
+    # Forward at theta + epsilon * delta
+    for k in params:
+        params[k] = orig[k] + epsilon * delta[k]
+    out_plus = forward(model, xs)
+    loss_plus = _cross_entropy_loss(out_plus['action_logits'], ys)
+
+    # Forward at theta - epsilon * delta
+    for k in params:
+        params[k] = orig[k] - epsilon * delta[k]
+    out_minus = forward(model, xs)
+    loss_minus = _cross_entropy_loss(out_minus['action_logits'], ys)
+
+    # Restore
+    for k in params:
+        params[k] = orig[k]
+
+    loss = _cross_entropy_loss(out_plus['action_logits'], ys)
+    ratio = (loss_plus - loss_minus) / (2.0 * epsilon)
+    grads = {k: ratio * delta[k] for k in delta}
+    return loss, grads
+
+
+# ---------------------------------------------------------------------------
 # Training
 # ---------------------------------------------------------------------------
 
@@ -244,6 +306,11 @@ def train_model(
         print("Shifting base weights before fine-tuning...")
         shift_base_weights(model, shift_scale=0.01)
 
+    # Choose gradient backend
+    grad_fn = forward_backward if HAS_TORCH else _spsa_grad
+    backend_name = 'torch' if HAS_TORCH else 'spsa'
+    print(f"Using {backend_name} gradient backend.")
+
     # Manual Adam state
     m = {k: np.zeros_like(v) for k, v in model['params'].items()}
     v2 = {k: np.zeros_like(v) for k, v in model['params'].items()}
@@ -269,7 +336,7 @@ def train_model(
             xs = np.stack([b[0] for b in batch])
             ys = np.array([b[1] for b in batch])
 
-            loss, grads = forward_backward(model, xs, ys)
+            loss, grads = grad_fn(model, xs, ys)
             t_step += 1
 
             for k in model['params']:
