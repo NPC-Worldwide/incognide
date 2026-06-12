@@ -421,7 +421,7 @@ const ensureTablesExist = async () => {
       CREATE TABLE IF NOT EXISTS scheduled_jobs (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL UNIQUE,
-          job_type TEXT NOT NULL CHECK(job_type IN ('jinx','finetune_instruction','finetune_diffusers','inference','activity_intelligence')),
+          job_type TEXT NOT NULL CHECK(job_type IN ('jinx','finetune_instruction','finetune_diffusers','inference','activity_intelligence','autocomplete')),
           schedule TEXT NOT NULL,
           command TEXT,
           npc_name TEXT,
@@ -542,15 +542,18 @@ const ensureTablesExist = async () => {
       await addColumnIfMissing('activity_log', 'directory_path', 'TEXT');
       await addColumnIfMissing('activity_log', 'device_id', 'TEXT');
 
-      // Migrate scheduled_jobs CHECK constraint to include activity_intelligence
+      // Migrate scheduled_jobs CHECK constraint to include new job types
       try {
           const master = await dbQuery(`SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'`);
-          if (master.length && master[0].sql && !master[0].sql.includes("'activity_intelligence'")) {
-              await dbQuery(`ALTER TABLE scheduled_jobs RENAME TO scheduled_jobs_old`);
-              await dbQuery(createScheduledJobsTable);
-              await dbQuery(`INSERT INTO scheduled_jobs SELECT * FROM scheduled_jobs_old`);
-              await dbQuery(`DROP TABLE scheduled_jobs_old`);
-              console.log('[DB] Migrated scheduled_jobs CHECK constraint to include activity_intelligence');
+          if (master.length && master[0].sql) {
+              const needsMigrate = !master[0].sql.includes("'activity_intelligence'") || !master[0].sql.includes("'autocomplete'");
+              if (needsMigrate) {
+                  await dbQuery(`ALTER TABLE scheduled_jobs RENAME TO scheduled_jobs_old`);
+                  await dbQuery(createScheduledJobsTable);
+                  await dbQuery(`INSERT INTO scheduled_jobs SELECT * FROM scheduled_jobs_old`);
+                  await dbQuery(`DROP TABLE scheduled_jobs_old`);
+                  console.log('[DB] Migrated scheduled_jobs CHECK constraint to include activity_intelligence and autocomplete');
+              }
           }
       } catch (migrateErr) {
           console.error('[DB] scheduled_jobs migration error:', migrateErr.message);

@@ -2461,6 +2461,7 @@ function register(ctx) {
         let existing = {};
         let oldActivityEnabled = false;
         let oldBaseRepo = '';
+        let oldPredictiveEnabled = false;
         try {
             const content = await fsPromises.readFile(rcPath, 'utf8');
             for (const line of content.split('\n')) {
@@ -2480,6 +2481,9 @@ function register(ctx) {
                 }
                 if (key === 'INCOGNIDE_ACTIVITY_BASE_REPO') {
                     oldBaseRepo = val;
+                }
+                if (key === 'INCOGNIDE_PREDICTIVE_TEXT_ENABLED') {
+                    oldPredictiveEnabled = val === 'true' || val === '1';
                 }
             }
         } catch {}
@@ -2544,6 +2548,36 @@ function register(ctx) {
                 }
             } catch (syncErr) {
                 console.error('[activity] Failed to sync scheduled job:', syncErr.message);
+            }
+        }
+
+        // Sync autocomplete scheduled job
+        const newPredictiveEnabled = global_settings?.is_predictive_text_enabled === true;
+        if (newPredictiveEnabled !== oldPredictiveEnabled) {
+            try {
+                const rows = await dbQuery(`SELECT id FROM scheduled_jobs WHERE job_type = 'autocomplete' LIMIT 1`);
+                if (newPredictiveEnabled) {
+                    if (!rows.length) {
+                        const id = generateId?.() || `ac_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                        await dbQuery(
+                          `INSERT INTO scheduled_jobs (id, name, job_type, schedule, payload, enabled, created_at, updated_at)
+                           VALUES (?, ?, 'autocomplete', '0 */6 * * *', ?, 1, datetime('now'), datetime('now'))`,
+                          [id, 'Autocomplete Model', JSON.stringify({ mode: 'incremental' })]
+                        );
+                        const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+                        if (state?.[0]?.port) {
+                            await fetch(`http://127.0.0.1:${state[0].port}/reload`, { method: 'POST', signal: AbortSignal.timeout(2000) });
+                        }
+                    }
+                } else if (rows.length) {
+                    await dbQuery(`DELETE FROM scheduled_jobs WHERE job_type = 'autocomplete'`);
+                    const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+                    if (state?.[0]?.port) {
+                        await fetch(`http://127.0.0.1:${state[0].port}/reload`, { method: 'POST', signal: AbortSignal.timeout(2000) });
+                    }
+                }
+            } catch (syncErr) {
+                console.error('[autocomplete] Failed to sync scheduled job:', syncErr.message);
             }
         }
 
@@ -3373,6 +3407,115 @@ function register(ctx) {
           return await res.json();
       } catch (err) {
           console.error('[activity] train-activity-model error:', err);
+          return { success: false, error: err.message };
+      }
+  });
+
+  // --- Autocomplete intelligence ---
+
+  async function _readPredictiveSettings() {
+      try {
+          const rcPath = path.join(os.homedir(), '.incogniderc');
+          const content = await fsPromises.readFile(rcPath, 'utf8');
+          const settings = {};
+          for (const line of content.split('\n')) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed.startsWith('#')) continue;
+              const stripped = trimmed.replace(/^export\s+/, '');
+              const eqIdx = stripped.indexOf('=');
+              if (eqIdx === -1) continue;
+              const key = stripped.slice(0, eqIdx).trim();
+              let val = stripped.slice(eqIdx + 1).trim();
+              if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+                  val = val.slice(1, -1);
+              }
+              settings[key] = val;
+          }
+          return {
+              enabled: settings.INCOGNIDE_PREDICTIVE_TEXT_ENABLED === 'true' || settings.INCOGNIDE_PREDICTIVE_TEXT_ENABLED === '1',
+          };
+      } catch {
+          return { enabled: false };
+      }
+  }
+
+  ipcMain.handle('get-autocomplete-suggestions', async (event, { context = '', maxLength = 20 } = {}) => {
+      const { enabled } = await _readPredictiveSettings();
+      if (!enabled) return { suggestions: [] };
+
+      try {
+          const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+          const daemonPort = state?.[0]?.port;
+          if (!daemonPort) {
+              console.error('[autocomplete] Daemon not running, cannot predict');
+              return { suggestions: [] };
+          }
+          const res = await fetch(`http://127.0.0.1:${daemonPort}/autocomplete/predict`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ context, maxLength }),
+              signal: AbortSignal.timeout(15000),
+          });
+          if (!res.ok) {
+              console.error('[autocomplete] Daemon predict HTTP error:', res.status);
+              return { suggestions: [] };
+          }
+          const result = await res.json();
+          if (result.status !== 'ok' || result.error) {
+              console.log('[autocomplete] predict returned error:', result.error || result.message);
+              return { suggestions: [] };
+          }
+          return {
+              suggestions: [{
+                  text: result.completion || '',
+                  confidence: result.confidence || 0.5,
+              }],
+          };
+      } catch (err) {
+          console.error('[autocomplete] predict daemon error:', err.message);
+          return { suggestions: [] };
+      }
+  });
+
+  ipcMain.handle('train-autocomplete-model', async (event, { mode = 'full' } = {}) => {
+      const { enabled } = await _readPredictiveSettings();
+      if (!enabled) return { success: false, error: 'Predictive text is disabled in settings' };
+
+      try {
+          const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+          const daemonPort = state?.[0]?.port;
+          if (!daemonPort) {
+              return { success: false, error: 'Daemon not running' };
+          }
+
+          const rows = await dbQuery(
+            `SELECT id FROM scheduled_jobs WHERE job_type = 'autocomplete' LIMIT 1`
+          );
+          let jobId;
+          if (!rows.length) {
+              jobId = `ac_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+              await dbQuery(
+                `INSERT INTO scheduled_jobs (id, name, job_type, schedule, payload, enabled, created_at, updated_at)
+                 VALUES (?, ?, 'autocomplete', '0 0 1 1 *', ?, 0, datetime('now'), datetime('now'))`,
+                [
+                  jobId,
+                  'Autocomplete (ad-hoc)',
+                  JSON.stringify({ mode }),
+                ]
+              );
+          } else {
+              jobId = rows[0].id;
+          }
+
+          const res = await fetch(`http://127.0.0.1:${daemonPort}/run_now`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ jobId }),
+              signal: AbortSignal.timeout(5000),
+          });
+          return await res.json();
+      } catch (err) {
+          console.error('[autocomplete] train-autocomplete-model error:', err);
           return { success: false, error: err.message };
       }
   });
