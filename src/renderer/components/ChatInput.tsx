@@ -87,10 +87,10 @@ interface ChatInputProps {
     availableModels: any[];
     modelsLoading: boolean;
     modelsError: any;
-    currentModel: string;
-    setCurrentModel: (val: string) => void;
-    currentProvider: string;
-    setCurrentProvider: (val: string) => void;
+    currentModel: string | null;
+    setCurrentModel: (val: string | null) => void;
+    currentProvider: string | null;
+    setCurrentProvider: (val: string | null) => void;
     favoriteModels: Set<string>;
     toggleFavoriteModel: (val: string) => void;
     showAllModels: boolean;
@@ -98,6 +98,7 @@ interface ChatInputProps {
     modelsToDisplay: any[];
     ollamaToolModels: Set<string>;
     setError: (val: string) => void;
+    modelWarning?: string | null;
 
     availableNPCs: any[];
     npcsLoading: boolean;
@@ -139,6 +140,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         availableModels, modelsLoading, modelsError, currentModel, setCurrentModel,
         currentProvider, setCurrentProvider, favoriteModels, toggleFavoriteModel,
         showAllModels, setShowAllModels, modelsToDisplay, ollamaToolModels, setError,
+        modelWarning,
         availableNPCs, npcsLoading, npcsError, currentNPC, setCurrentNPC,
         selectedModels, setSelectedModels, selectedNPCs, setSelectedNPCs,
         broadcastMode, setBroadcastMode,
@@ -1329,6 +1331,11 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                             </span>
                             <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${showModelsDropdown ? 'rotate-180' : ''}`} />
                         </button>
+                        {modelWarning && (
+                            <div className="absolute z-[60] left-0 right-0 bottom-full mb-10 px-2 py-1 text-[10px] text-orange-300 bg-orange-900/40 border border-orange-500/30 rounded backdrop-blur-sm">
+                                {modelWarning}
+                            </div>
+                        )}
                         {showModelsDropdown && !modelsLoading && !modelsError && (
                             <div className="absolute z-[100] left-0 right-0 bottom-full mb-1 theme-bg-primary backdrop-blur-xl theme-border border rounded-lg shadow-2xl overflow-hidden w-72">
                                 <div className="px-2 py-1.5 border-b theme-border">

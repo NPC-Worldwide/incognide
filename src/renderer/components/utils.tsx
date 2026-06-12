@@ -328,9 +328,14 @@ export const loadAvailableNPCs = async (
         const results = await Promise.allSettled(teamFetches);
 
         const combinedNPCs: any[] = [];
+        const teamConfigs: Record<string, any> = {};
         results.forEach((result, idx) => {
             const teamKey = teamKeys[idx];
-            const npcs = result.status === 'fulfilled' ? (result.value.npcs || []) : [];
+            const value = result.status === 'fulfilled' ? result.value : {};
+            const npcs = value.npcs || [];
+            if (value.teamConfig) {
+                teamConfigs[teamKey] = value.teamConfig;
+            }
             npcs.forEach((npc: any) => {
                 combinedNPCs.push({
                     ...npc,
@@ -338,17 +343,18 @@ export const loadAvailableNPCs = async (
                     display_name: `${npc.name} | ${teamKey === 'project' ? 'Project' : (npc.team_name || teamKey)}`,
                     source: teamKey === 'project' ? 'project' : 'global',
                     team: teamKey,
+                    _teamConfig: value.teamConfig,
                 });
             });
         });
 
         setAvailableNPCs(combinedNPCs);
-        return combinedNPCs;
+        return { npcs: combinedNPCs, teamConfigs };
     } catch (err: any) {
         console.error('Error fetching NPCs:', err);
         setNpcsError(err.message);
         setAvailableNPCs([]);
-        return [];
+        return { npcs: [], teamConfigs: {} };
     } finally {
         setNpcsLoading(false);
     }

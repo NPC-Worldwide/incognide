@@ -413,6 +413,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         npcsError, setNpcsError, executionMode, setExecutionMode,
         favoriteModels, setFavoriteModels, showAllModels, setShowAllModels,
         toggleFavoriteModel, modelsToDisplay,
+        teamConfigs, setTeamConfigs, modelWarning, setModelWarning,
     } = useModelSelection();
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(true);
@@ -6204,112 +6205,48 @@ ${contextPrompt}`;
                 await loadConversationsWithoutAutoSelect(currentPath);
             }
 
-            const fetchedModels = await fetchModels(currentPath, setModelsLoading, setModelsError, setAvailableModels);
-            const fetchedNPCs = await loadAvailableNPCs(currentPath, setNpcsLoading, setNpcsError, setAvailableNPCs);
-
-            // Get project-level ctx settings (model/provider/npc from .ctx files or env)
-            const projectCtx = await window.api.getProjectCtx(currentPath);
-
-            // Priority order for model selection:
-            // 1. Project ctx (from npc_team/*.ctx or env vars)
-            // 2. Previously saved model in localStorage
-            // 3. Global config default
-            let modelToSet = projectCtx.model || config.model || 'qwen3.5:0.8b';
-            let providerToSet = projectCtx.provider || config.provider || 'ollama';
-            let npcToSet = projectCtx.npc || config.npc || 'sibiji';
-
-            // Validate that the model exists in available models
-            const projectModelExists = fetchedModels.find(m => m.value === modelToSet);
-            if (projectModelExists) {
-                providerToSet = projectModelExists.provider;
-            } else {
-                // Project model not found - try saved localStorage model
-                const savedModel = localStorage.getItem('incognideCurrentModel');
-                const savedProvider = localStorage.getItem('incognideCurrentProvider');
-                if (savedModel) {
-                    const parsedSavedModel = JSON.parse(savedModel);
-                    const savedModelExists = fetchedModels.find(m => m.value === parsedSavedModel);
-                    if (savedModelExists) {
-                        modelToSet = parsedSavedModel;
-                        providerToSet = savedProvider ? JSON.parse(savedProvider) : savedModelExists.provider;
-                    }
-                }
-
-                // If still no valid model, pick first available
-                if (!fetchedModels.find(m => m.value === modelToSet) && fetchedModels.length > 0) {
-                    modelToSet = fetchedModels[0].value;
-                    providerToSet = fetchedModels[0].provider;
-                }
+            await fetchModels(currentPath, setModelsLoading, setModelsError, setAvailableModels);
+            const { npcs: fetchedNPCs, teamConfigs: fetchedTeamConfigs } = await loadAvailableNPCs(currentPath, setNpcsLoading, setNpcsError, setAvailableNPCs);
+            if (fetchedTeamConfigs) {
+                setTeamConfigs(fetchedTeamConfigs);
             }
+
+            // Get project-level ctx settings for NPC name only
+            const projectCtx = await window.api.getProjectCtx(currentPath);
+            let npcToSet = projectCtx.npc || null;
 
             const storedConvoId = localStorage.getItem(LAST_ACTIVE_CONVO_ID_KEY);
             let targetConvoId = null;
-
             const currentConversations = directoryConversationsRef.current;
-            
+
             if (storedConvoId) {
                 const convoInCurrentDir = currentConversations.find(conv => conv.id === storedConvoId);
                 if (convoInCurrentDir) {
                     targetConvoId = storedConvoId;
-                    // Only use conversation's last model if projectCtx didn't specify one
-                    if (!projectCtx.model) {
-                        const lastUsedInConvo = await window.api.getLastUsedInConversation(targetConvoId);
-                        if (lastUsedInConvo?.model) {
-                            const validModel = fetchedModels.find(m => m.value === lastUsedInConvo.model);
-                            if (validModel) {
-                                modelToSet = validModel.value;
-                                providerToSet = validModel.provider;
-                            }
-                        }
-                        if (lastUsedInConvo?.npc) {
-                            const validNpc = fetchedNPCs.find(n => n.value === lastUsedInConvo.npc);
-                            if (validNpc) {
-                                npcToSet = validNpc.value;
-                            }
-                        }
+                    const lastUsedInConvo = await window.api.getLastUsedInConversation(targetConvoId);
+                    if (lastUsedInConvo?.npc) {
+                        const validNpc = fetchedNPCs.find((n: any) => n.value === lastUsedInConvo.npc);
+                        if (validNpc) npcToSet = validNpc.value;
                     }
                 } else {
                     localStorage.removeItem(LAST_ACTIVE_CONVO_ID_KEY);
                 }
             }
 
-            // Only use directory's last model if projectCtx didn't specify one
-            if (!targetConvoId && !projectCtx.model) {
+            if (!targetConvoId) {
                 const lastUsedInDir = await window.api.getLastUsedInDirectory(currentPath);
-                if (lastUsedInDir?.model) {
-                    const validModel = fetchedModels.find(m => m.value === lastUsedInDir.model);
-                    if (validModel) {
-                        modelToSet = validModel.value;
-                        providerToSet = validModel.provider;
-                    }
-                }
                 if (lastUsedInDir?.npc) {
-                    const validNpc = fetchedNPCs.find(n => n.value === lastUsedInDir.npc);
-                    if (validNpc) {
-                        npcToSet = validNpc.value;
-                    }
+                    const validNpc = fetchedNPCs.find((n: any) => n.value === lastUsedInDir.npc);
+                    if (validNpc) npcToSet = validNpc.value;
                 }
             }
-            
-            if (!fetchedModels.some(m => m.value === modelToSet) && fetchedModels.length > 0) {
-                modelToSet = fetchedModels[0].value;
-                providerToSet = fetchedModels[0].provider;
-            } else if (fetchedModels.length === 0) {
-                modelToSet = 'No models found';
-                providerToSet = 'No providers found';
-            }
 
-            if (!fetchedNPCs.some(n => n.value === npcToSet) && fetchedNPCs.length > 0) {
+            if (!npcToSet && fetchedNPCs.length > 0) {
                 npcToSet = fetchedNPCs[0].value;
-            } else if (fetchedNPCs.length === 0) {
-                npcToSet = 'sibiji';
             }
 
-            setCurrentModel(modelToSet);
-            setCurrentProvider(providerToSet);
             setCurrentNPC(npcToSet);
-            // Sync selectedModels/selectedNPCs with currentModel/currentNPC
-            setSelectedModels(modelToSet ? [modelToSet] : []);
+            // Model/provider are auto-resolved by useModelSelection useEffect from NPC -> team cascade
             setSelectedNPCs(npcToSet ? [npcToSet] : []);
 
             if (!workspaceRestored) {
@@ -7716,6 +7653,7 @@ const getChatInputProps = useCallback((paneId: string) => {
     currentProvider, setCurrentProvider: (v: any) => { setCurrentProvider(v); notifyUpdate(); },
     favoriteModels, toggleFavoriteModel,
     showAllModels, setShowAllModels, modelsToDisplay, ollamaToolModels, setError,
+    modelWarning,
     availableNPCs, npcsLoading, npcsError,
     currentNPC, setCurrentNPC: (v: any) => { setCurrentNPC(v); notifyUpdate(); },
     // Multi-select for broadcast - persisted at Enpistu level
@@ -7915,6 +7853,7 @@ const getChatInputProps = useCallback((paneId: string) => {
     jinxInputValues, jinxesToDisplay,
     availableModels, modelsLoading, modelsError, currentModel, currentProvider,
     favoriteModels, showAllModels, modelsToDisplay, ollamaToolModels,
+    modelWarning,
     availableNPCs, npcsLoading, npcsError, currentNPC,
     selectedModels, setSelectedModels, selectedNPCs, setSelectedNPCs,
     broadcastMode, setBroadcastMode,

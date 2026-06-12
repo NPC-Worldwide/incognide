@@ -495,8 +495,21 @@ function register(ctx) {
     }
   };
 
+  async function readTeamConfig(teamDir) {
+    try {
+      const files = await fsPromises.readdir(teamDir);
+      const ctxFile = files.find(f => f.endsWith('.ctx'));
+      if (!ctxFile) return null;
+      const content = await fsPromises.readFile(path.join(teamDir, ctxFile), 'utf8');
+      return yaml.load(content) || null;
+    } catch {
+      return null;
+    }
+  }
+
   ipcMain.handle('getNPCTeamGlobal', async (event, globalPath) => {
     try {
+      let teamDir = INCOGNIDE_TEAM_PATH;
       // Resolve team key to path from teams.yaml
       if (globalPath) {
         try {
@@ -505,16 +518,13 @@ function register(ctx) {
           const parsed = yaml.load(content);
           const teams = parsed?.teams || {};
           if (teams[globalPath]) {
-            const resolved = String(teams[globalPath]).replace(/^~(?=\/|$)/, os.homedir());
-            const npcs = await readNPCTeamFromDir(resolved, globalPath);
-            return { npcs };
+            teamDir = String(teams[globalPath]).replace(/^~(?=\/|$)/, os.homedir());
           }
         } catch {}
       }
-      // Fallback: no YAML or key not found
-      const teamDir = INCOGNIDE_TEAM_PATH;
       const npcs = await readNPCTeamFromDir(teamDir, globalPath || 'incognide');
-      return { npcs };
+      const teamConfig = await readTeamConfig(teamDir);
+      return { npcs, teamConfig };
     } catch (error) {
       console.error('Error reading NPC team:', error);
       throw error;
@@ -528,10 +538,11 @@ function register(ctx) {
       }
       const projectTeamDir = path.join(currentPath, 'npc_team');
       const npcs = await readNPCTeamFromDir(projectTeamDir, 'project');
-      return { npcs };
+      const teamConfig = await readTeamConfig(projectTeamDir);
+      return { npcs, teamConfig };
     } catch (error) {
       console.error('Error reading NPC team:', error);
-      return { npcs: [], error: error.message };
+      return { npcs: [], teamConfig: null, error: error.message };
     }
   });
 
