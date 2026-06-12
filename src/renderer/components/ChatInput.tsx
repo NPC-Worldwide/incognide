@@ -62,7 +62,7 @@ interface ChatInputProps {
     setIsResizingInput: (val: boolean) => void;
 
     isStreaming: boolean;
-    handleInputSubmit: (e: any, options?: { voiceInput?: boolean; useKgSearch?: boolean; useMemorySearch?: boolean; disableThinking?: boolean; genParams?: { temperature: number; top_p: number; top_k: number; max_tokens: number }; inputText?: string; uploadedFiles?: any[]; mcpServerPath?: string; selectedMcpTools?: string[]; contextFiles?: any[]; paneId?: string }) => void;
+    handleInputSubmit: (e: any, options?: { voiceInput?: boolean; useKgSearch?: boolean; useMemorySearch?: boolean; disableThinking?: boolean; genParams?: { temperature: number; top_p: number; top_k: number; max_tokens: number }; inputText?: string; uploadedFiles?: any[]; mcpServerPaths?: string[]; selectedMcpTools?: string[]; contextFiles?: any[]; paneId?: string }) => void;
     handleInterruptStream: () => void;
     currentPath: string;
 
@@ -201,7 +201,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     }, [uploadedFiles, paneId]);
     const [contextFiles, setContextFiles] = useState<any[]>([]);
     const [contextFilesCollapsed, setContextFilesCollapsed] = useState(true);
-    const [mcpServerPath, setMcpServerPath] = useState('');
     const [selectedMcpTools, setSelectedMcpTools] = useState<string[]>([]);
     const [availableMcpTools, setAvailableMcpTools] = useState<any[]>([]);
     const [mcpToolsLoading, setMcpToolsLoading] = useState(false);
@@ -328,15 +327,20 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                 const npcTools = data.npc_tools || [];
                 setNpcResolvedTools(npcTools);
                 setTeamServers(data.team_servers || []);
-                const npcToolDefs = npcTools.map((t: any) => ({
-                    function: { name: t.name, description: t.description || '' },
-                    _source: t.source,
-                    _serverPath: '__npc__',
-                }));
-                // Replace all tools with just the NPC's tools — don't merge
-                setAvailableMcpTools(npcToolDefs);
-                const npcToolNames = npcTools.filter((t: any) => t.enabled).map((t: any) => t.name);
-                setSelectedMcpTools(npcToolNames);
+                // Merge NPC-resolved tools into existing tools (NPC-specific are IN ADDITION to team ones)
+                setAvailableMcpTools(prev => {
+                    const existingNames = new Set(prev.map((t: any) => t.function?.name));
+                    const npcToolDefs = npcTools.map((t: any) => ({
+                        function: { name: t.name, description: t.description || '' },
+                        _source: t.source,
+                        _serverPath: '__npc__',
+                    })).filter((t: any) => !existingNames.has(t.function?.name));
+                    return [...prev, ...npcToolDefs];
+                });
+                setSelectedMcpTools(prev => {
+                    const npcToolNames = npcTools.filter((t: any) => t.enabled).map((t: any) => t.name);
+                    return [...new Set([...prev, ...npcToolNames])];
+                });
             }
         } catch (err) {
             console.error('[NPC Tools] Failed to load:', err);
@@ -345,9 +349,38 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         }
     };
 
+    // Auto-enable ALL listed MCP servers by default and load their tools
     useEffect(() => {
         if (availableMcpServers.length > 0) {
             setLocalMcpServers(availableMcpServers);
+            const allPaths = availableMcpServers.map((s: any) => s.serverPath).filter(Boolean);
+            setEnabledServers(new Set(allPaths));
+            // Load tools for all servers
+            (async () => {
+                setMcpToolsLoading(true);
+                const allTools: any[] = [];
+                for (const serverPath of allPaths) {
+                    try {
+                        const res = await ensureServerAndListTools(serverPath);
+                        if (!res.error) {
+                            const serverLabel = getFileName(serverPath)?.replace(/\.py$/, '') || serverPath;
+                            const newTools = (res.tools || []).map((t: any) => ({
+                                ...t,
+                                _source: t._source || `mcp:${serverLabel}`,
+                                _serverPath: serverPath,
+                            }));
+                            const existingNames = new Set(allTools.map((t: any) => t.function?.name));
+                            const unique = newTools.filter((t: any) => !existingNames.has(t.function?.name));
+                            allTools.push(...unique);
+                        }
+                    } catch (err: any) {
+                        console.error('[MCP] Failed to load tools from server:', err);
+                    }
+                }
+                setAvailableMcpTools(allTools);
+                setSelectedMcpTools(allTools.map((t: any) => t.function?.name).filter(Boolean));
+                setMcpToolsLoading(false);
+            })();
         }
     }, [availableMcpServers]);
 
@@ -1030,7 +1063,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                     if (shouldBroadcast) {
                                         onBroadcast(selectedModels, selectedNPCs, localInput, uploadedFiles); setLocalInput(''); setUploadedFiles([]);
                                     } else {
-                                        handleInputSubmit(e, { voiceInput: usedVoiceInput, useKgSearch, useMemorySearch, disableThinking, genParams, inputText: localInput, uploadedFiles, mcpServerPath, selectedMcpTools, contextFiles, paneId });
+                                        handleInputSubmit(e, { voiceInput: usedVoiceInput, useKgSearch, useMemorySearch, disableThinking, genParams, inputText: localInput, uploadedFiles, mcpServerPaths: Array.from(enabledServers), selectedMcpTools, contextFiles, paneId });
                                         setLocalInput('');
                                         setUploadedFiles([]);
                                         setUsedVoiceInput(false);
@@ -1056,7 +1089,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                 if (shouldBroadcast) {
                                     onBroadcast(selectedModels, selectedNPCs, localInput, uploadedFiles); setLocalInput(''); setUploadedFiles([]);
                                 } else {
-                                    handleInputSubmit(e, { voiceInput: usedVoiceInput, useKgSearch, useMemorySearch, disableThinking, genParams, inputText: localInput, uploadedFiles, mcpServerPath, selectedMcpTools, contextFiles, paneId });
+                                    handleInputSubmit(e, { voiceInput: usedVoiceInput, useKgSearch, useMemorySearch, disableThinking, genParams, inputText: localInput, uploadedFiles, mcpServerPaths: Array.from(enabledServers), selectedMcpTools, contextFiles, paneId });
                                     setLocalInput('');
                                     setUploadedFiles([]);
                                     setUsedVoiceInput(false);
@@ -1279,7 +1312,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                     if (shouldBroadcast && canSend) {
                                         onBroadcast(selectedModels, selectedNPCs, localInput, uploadedFiles); setLocalInput(''); setUploadedFiles([]);
                                     } else {
-                                        handleInputSubmit(e, { voiceInput: usedVoiceInput, useKgSearch, useMemorySearch, disableThinking, genParams, inputText: localInput, uploadedFiles, mcpServerPath, selectedMcpTools, contextFiles, paneId });
+                                        handleInputSubmit(e, { voiceInput: usedVoiceInput, useKgSearch, useMemorySearch, disableThinking, genParams, inputText: localInput, uploadedFiles, mcpServerPaths: Array.from(enabledServers), selectedMcpTools, contextFiles, paneId });
                                         setLocalInput('');
                                         setUploadedFiles([]);
                                         setUsedVoiceInput(false);

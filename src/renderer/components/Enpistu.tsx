@@ -775,7 +775,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         selectedModel: '',
         selectedNPC: ''
     });
-    const [mcpServerPath, setMcpServerPath] = useState('');
+    const [enabledMcpServers, setEnabledMcpServers] = useState<string[]>([]);
     const [selectedMcpTools, setSelectedMcpTools] = useState([]);
     const [availableMcpTools, setAvailableMcpTools] = useState([]);
     const [mcpToolsLoading, setMcpToolsLoading] = useState(false);
@@ -1822,26 +1822,37 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
         fetchJinxes();
     }, [currentPath]);
 
-    // Load MCP tools when in Tool Agent mode or when server path changes
+    // Load MCP tools from ALL enabled servers when in tool_agent mode
     useEffect(() => {
         const loadMcpTools = async () => {
-            if (executionMode !== 'tool_agent') return;
+            if (executionMode !== 'tool_agent' || enabledMcpServers.length === 0) return;
             setMcpToolsLoading(true);
             setMcpToolsError(null);
-            const res = await window.api.listMcpTools({ serverPath: mcpServerPath, currentPath: currentPath || '~' });
-            setMcpToolsLoading(false);
-            if (res.error) {
-                setMcpToolsError(res.error);
-                setAvailableMcpTools([]);
-                return;
+            const allTools: any[] = [];
+            for (const serverPath of enabledMcpServers) {
+                try {
+                    const res = await window.api.listMcpTools({ serverPath, currentPath: currentPath || '~' });
+                    if (!res.error) {
+                        const serverLabel = serverPath.split('/').pop()?.replace(/\.py$/, '') || serverPath;
+                        const newTools = (res.tools || []).map((t: any) => ({
+                            ...t,
+                            _source: t._source || `mcp:${serverLabel}`,
+                            _serverPath: serverPath,
+                        }));
+                        const existingNames = new Set(allTools.map((t: any) => t.function?.name));
+                        const unique = newTools.filter((t: any) => !existingNames.has(t.function?.name));
+                        allTools.push(...unique);
+                    }
+                } catch (err: any) {
+                    console.error('[MCP] Failed to load tools from server:', err);
+                }
             }
-            const tools = res.tools || [];
-            setAvailableMcpTools(tools);
-            const names = tools.map(t => t.function?.name).filter(Boolean);
-            setSelectedMcpTools(prev => prev.filter(n => names.includes(n)));
+            setMcpToolsLoading(false);
+            setAvailableMcpTools(allTools);
+            setSelectedMcpTools(allTools.map((t: any) => t.function?.name).filter(Boolean));
         };
         loadMcpTools();
-    }, [executionMode, mcpServerPath, currentPath]);
+    }, [executionMode, enabledMcpServers, currentPath]);
 
         
 
@@ -4801,7 +4812,7 @@ const handleBrowserDialogNavigate = (url) => {
     };
 
     // Main input submit handler
-    const handleInputSubmit = async (e: React.FormEvent, options?: { voiceInput?: boolean; useKgSearch?: boolean; useMemorySearch?: boolean; disableThinking?: boolean; genParams?: { temperature: number; top_p: number; top_k: number; max_tokens: number }; inputText?: string; uploadedFiles?: any[]; mcpServerPath?: string; selectedMcpTools?: string[]; contextFiles?: any[]; paneId?: string }) => {
+    const handleInputSubmit = async (e: React.FormEvent, options?: { voiceInput?: boolean; useKgSearch?: boolean; useMemorySearch?: boolean; disableThinking?: boolean; genParams?: { temperature: number; top_p: number; top_k: number; max_tokens: number }; inputText?: string; uploadedFiles?: any[]; mcpServerPaths?: string[]; selectedMcpTools?: string[]; contextFiles?: any[]; paneId?: string }) => {
         e.preventDefault();
         const wasVoiceInput = options?.voiceInput || false;
         const disableThinking = options?.disableThinking || false;
@@ -5070,7 +5081,7 @@ ${contextPrompt}`;
                         }),
                         streamId: branchStreamId,
                         executionMode: paneExecMode,
-                        mcpServerPath: paneExecMode === 'tool_agent' ? mcpServerPath : undefined,
+                        mcpServerPaths: paneExecMode === 'tool_agent' ? enabledMcpServers : undefined,
                         selectedMcpTools: paneExecMode === 'tool_agent' ? selectedMcpTools : undefined,
                         userParentMessageId: userMessage.parentMessageId, // For sub-branching
                         // Pass frontend-generated message IDs so backend uses the same IDs
@@ -6144,18 +6155,12 @@ ${contextPrompt}`;
                 // Still fetch models, NPCs, and MCP tools even without a workspace folder
                 await fetchModels(null, setModelsLoading, setModelsError, setAvailableModels);
                 await loadAvailableNPCs(null, setNpcsLoading, setNpcsError, setAvailableNPCs);
-                // Auto-start MCP server and load tools for agent mode
+                // Load ALL MCP servers by default (no hardcoded single default)
                 try {
                     const mcpRes = await window.api.getMcpServers('~');
                     if (mcpRes?.servers?.length > 0) {
                         setAvailableMcpServers(mcpRes.servers);
-                        const incognideServer = mcpRes.servers.find((s: any) => s.serverPath?.includes('incognide'));
-                        if (incognideServer) setMcpServerPath(incognideServer.serverPath);
-                    }
-                    const toolsRes = await window.api.listMcpTools({ serverPath: mcpServerPath, currentPath: '~' });
-                    if (toolsRes?.tools) {
-                        setAvailableMcpTools(toolsRes.tools);
-                        setSelectedMcpTools(toolsRes.tools.map((t: any) => t.function?.name).filter(Boolean));
+                        setEnabledMcpServers(mcpRes.servers.map((s: any) => s.serverPath));
                     }
                 } catch {}
                 setLoading(false);
@@ -7575,20 +7580,18 @@ const setPaneExecutionMode = useCallback(async (paneId: string, mode: string) =>
         contentDataRef.current[paneId].executionMode = mode;
     }
 
-    // Load MCP servers when switching to tool_agent mode
+    // Load MCP servers when switching to tool_agent mode — enable ALL listed servers by default
     if (mode === 'tool_agent') {
         const res = await window.api.getMcpServers(currentPath || '~');
         if (res && Array.isArray(res.servers)) {
             setAvailableMcpServers(res.servers);
-            if (!res.servers.find(s => s.serverPath === mcpServerPath) && res.servers.length > 0) {
-                setMcpServerPath(res.servers[0].serverPath);
-            }
+            setEnabledMcpServers(res.servers.map((s: any) => s.serverPath));
         }
     }
 
     // Trigger re-render
     notifyAllPanes();
-}, [currentPath, mcpServerPath]);
+}, [currentPath, enabledMcpServers]);
 
 const getPaneSelectedJinx = useCallback((paneId: string) => {
     return contentDataRef.current[paneId]?.selectedJinx || null;
@@ -7662,7 +7665,7 @@ const getChatInputProps = useCallback((paneId: string) => {
     selectedNPCs,
     setSelectedNPCs: ((v: any) => { setSelectedNPCs(v); notifyUpdate(); }) as React.Dispatch<React.SetStateAction<string[]>>,
     broadcastMode, setBroadcastMode: (v: any) => { setBroadcastMode(v); notifyUpdate(); },
-    availableMcpServers, mcpServerPath, setMcpServerPath,
+    availableMcpServers, enabledMcpServers, setEnabledMcpServers,
     selectedMcpTools, setSelectedMcpTools, availableMcpTools, setAvailableMcpTools,
     mcpToolsLoading, setMcpToolsLoading, mcpToolsError, setMcpToolsError,
     showMcpServersDropdown, setShowMcpServersDropdown,
@@ -7857,7 +7860,7 @@ const getChatInputProps = useCallback((paneId: string) => {
     availableNPCs, npcsLoading, npcsError, currentNPC,
     selectedModels, setSelectedModels, selectedNPCs, setSelectedNPCs,
     broadcastMode, setBroadcastMode,
-    availableMcpServers, mcpServerPath, selectedMcpTools, availableMcpTools,
+    availableMcpServers, enabledMcpServers, selectedMcpTools, availableMcpTools,
     mcpToolsLoading, mcpToolsError, showMcpServersDropdown, activeConversationId, findNodePath, performSplit,
     paneUpdateEmitter,
 ]);
@@ -9647,7 +9650,7 @@ const renderMainContent = () => {
         currentModel={currentModel}
         currentProvider={currentProvider}
         executionMode={executionMode}
-        mcpServerPath={mcpServerPath}
+        enabledMcpServers={enabledMcpServers}
         selectedMcpTools={selectedMcpTools}
         updateContentPane={updateContentPane}
         loadDirectoryStructure={loadDirectoryStructure}

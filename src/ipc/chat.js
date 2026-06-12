@@ -300,62 +300,6 @@ function register(ctx) {
         backendError = err.message;
     }
 
-    const ggufModels = [];
-    try {
-        const homeDir = os.homedir();
-
-        const ggufDirs = [
-            path.join(homeDir, '.cache', 'huggingface', 'hub'),
-            path.join(homeDir, '.cache', 'lm-studio', 'models'),
-            path.join(homeDir, '.lmstudio', 'models'),
-            path.join(homeDir, 'llama.cpp', 'models'),
-            path.join(homeDir, '.incognide', 'models', 'gguf'),
-            path.join(homeDir, '.incognide', 'models'),
-            path.join(homeDir, 'models'),
-        ];
-
-        const seenPaths = new Set();
-
-        const scanDir = async (dir, depth = 0) => {
-            if (depth > 5) return;
-            try {
-                const entries = await fsPromises.readdir(dir, { withFileTypes: true });
-                for (const entry of entries) {
-                    const fullPath = path.join(dir, entry.name);
-
-                    try {
-                        const stats = await fsPromises.stat(fullPath);
-                        if (stats.isDirectory() && !entry.name.startsWith('.git') && entry.name !== 'node_modules') {
-                            await scanDir(fullPath, depth + 1);
-                        } else if (stats.isFile()) {
-                            const ext = path.extname(entry.name).toLowerCase();
-                            if (ext === '.gguf' && !seenPaths.has(fullPath) && !entry.name.toLowerCase().startsWith('mmproj')) {
-                                seenPaths.add(fullPath);
-                                if (stats.size > 50 * 1024 * 1024) {
-                                    ggufModels.push({
-                                        value: fullPath,
-                                        display_name: `[GGUF] ${entry.name}`,
-                                        provider: 'llamacpp',
-                                        size: stats.size,
-                                        path: fullPath
-                                    });
-                                }
-                            }
-                        }
-                    } catch (statErr) {  }
-                }
-            } catch (e) {  }
-        };
-
-        for (const dir of ggufDirs) {
-            await scanDir(dir);
-        }
-
-        log('Found GGUF models:', ggufModels.length);
-    } catch (ggufErr) {
-        log('Error scanning GGUF models:', ggufErr);
-    }
-
     const customProviderModels = [];
     try {
       const customProviders = await getCustomProviders();
@@ -400,7 +344,7 @@ function register(ctx) {
       log('[getAvailableModels] Error loading custom providers:', cpErr.message);
     }
 
-    const allModels = [...backendModels, ...ggufModels, ...customProviderModels];
+    const allModels = [...backendModels, ...customProviderModels];
 
     if (allModels.length === 0 && backendError) {
         return { models: [], error: backendError };
@@ -408,19 +352,6 @@ function register(ctx) {
 
     return { models: allModels };
   });
-
-  // Providers that don't have a /models endpoint — return known model lists
-  const KNOWN_PROVIDER_MODELS = {
-    anthropic: [
-      'claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5',
-    ],
-    huggingFace: [
-      'Inference API — use custom base URL for specific models',
-    ],
-    perplexity: [
-      'sonar-pro', 'sonar', 'sonar-reasoning-pro', 'sonar-reasoning', 'sonar-deep-research',
-    ],
-  };
 
   function findApiKeyInShellConfigs(apiKeyVar) {
     const sourceFiles = [
@@ -455,11 +386,7 @@ function register(ctx) {
       const filtered = (data.models || []).filter((m) => m.provider === provider || m.provider === provider.toLowerCase());
       return { models: filtered.map((m) => ({ id: m.value || m.id || m.name, name: m.display_name || m.value || m.id || m.name, provider: m.provider })) };
     } catch {
-      // Fallback: return static list if backend fails
-      if (KNOWN_PROVIDER_MODELS[provider]) {
-        return { models: KNOWN_PROVIDER_MODELS[provider].map((id) => ({ id, name: id, provider })) };
-      }
-      return { models: [], error: 'Backend unavailable and no static model list' };
+      return { models: [], error: 'Backend unavailable' };
     }
   });
 
@@ -817,7 +744,7 @@ function register(ctx) {
         npcSource: data.npcSource || 'global',
         attachments: data.attachments || [],
         executionMode: data.executionMode || 'chat',
-        mcpServerPath: data.executionMode === 'tool_agent' ? data.mcpServerPath : undefined,
+        mcpServerPaths: data.executionMode === 'tool_agent' ? (data.mcpServerPaths || (data.mcpServerPath ? [data.mcpServerPath] : undefined)) : undefined,
         parentMessageId: data.parentMessageId,
         isResend: data.isRerun || false,
         jinxes: data.jinxes || [],

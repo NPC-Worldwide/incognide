@@ -75,7 +75,7 @@ const Sidebar = (props: any) => {
         createDataDashPane, createDBToolPane, createNPCTeamPane, createJinxPane, createTeamManagementPane, createMcpManagerPane, createSkillsManagerPane, createSettingsPane, createProjectEnvPane, createDiskUsagePane, createHelpPane, createTileJinxPane, createGitPane, createBrowserSettingsPane,
 
         createNewConversation, generateId, streamToPaneRef, availableNPCs, currentNPC, currentModel,
-        currentProvider, executionMode, mcpServerPath, selectedMcpTools, updateContentPane,
+        currentProvider, executionMode, enabledMcpServers, selectedMcpTools, updateContentPane,
         loadDirectoryStructure, loadWebsiteHistory, createNewBrowser,
         handleGlobalDragStart, handleGlobalDragEnd, normalizePath, getFileIcon,
         serializeWorkspace, saveWorkspaceToStorage, handleConversationSelect, handleFileClick,
@@ -1094,7 +1094,7 @@ const handleApplyPromptToFiles = async (operationType, customPrompt = '') => {
             attachments: [],
             streamId: newStreamId,
             executionMode,
-            mcpServerPath: executionMode === 'tool_agent' ? mcpServerPath : undefined,
+            mcpServerPaths: executionMode === 'tool_agent' ? enabledMcpServers : undefined,
             selectedMcpTools: executionMode === 'tool_agent' ? selectedMcpTools : undefined,
         });
 
@@ -1256,7 +1256,7 @@ const handleSummarizeAndStart = async () => {
             attachments: [],
             streamId: newStreamId,
             executionMode,
-            mcpServerPath: executionMode === 'tool_agent' ? mcpServerPath : undefined,
+            mcpServerPaths: executionMode === 'tool_agent' ? enabledMcpServers : undefined,
             selectedMcpTools: executionMode === 'tool_agent' ? selectedMcpTools : undefined,
         });
     } catch (err) {
