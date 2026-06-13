@@ -280,9 +280,23 @@ function register(ctx) {
     let backendModels = [];
     let backendError = null;
 
+    let registeredTeamPaths = [];
     try {
-        const url = `${BACKEND_URL}/api/models?currentPath=${encodeURIComponent(currentPath)}`;
-        log('Fetching models from:', url);
+      const teamsContent = await fsPromises.readFile(path.join(INCOGNIDE_HOME, 'teams.yaml'), 'utf8');
+      const teamsParsed = yaml.load(teamsContent);
+      for (const teamPath of Object.values(teamsParsed?.teams || {})) {
+        const tp = String(teamPath || '').replace(/^~(?=\/|$)/, os.homedir());
+        if (tp) registeredTeamPaths.push(tp);
+      }
+    } catch {}
+
+    try {
+        const url = new URL(`${BACKEND_URL}/api/models`);
+        url.searchParams.append('currentPath', currentPath);
+        if (registeredTeamPaths.length) {
+          url.searchParams.append('registered_teams', registeredTeamPaths.join(','));
+        }
+        log('Fetching models from:', url.toString());
 
         const response = await fetch(url);
 

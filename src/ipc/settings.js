@@ -4102,17 +4102,13 @@ function register(ctx) {
     try {
       const filePath = path.join(INCOGNIDE_HOME, 'teams.yaml');
       await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
-      let teams;
+      let teams = {};
       try {
         const content = await fsPromises.readFile(filePath, 'utf8');
         const parsed = yaml.load(content);
         teams = parsed?.teams || {};
       } catch {
-        teams = {
-          incognide: path.join(INCOGNIDE_HOME, 'npc_team'),
-        };
       }
-      // Resolve ~ in paths for frontend consumption
       for (const [key, teamPath] of Object.entries(teams)) {
         if (typeof teamPath === 'string') {
           teams[key] = teamPath.replace(/^~(?=\/|$)/, os.homedir());

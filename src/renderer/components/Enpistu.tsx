@@ -2,6 +2,7 @@
 import { BACKEND_URL } from '../config';
 import { createPortal } from 'react-dom';
 import { readFileContent, writeFileContent, createDirectory, renameFile } from '../api/fileSystem';
+import yaml from 'js-yaml';
 import {
     Folder, File as FileIcon,  Globe, ChevronRight, ChevronLeft, Settings, Edit,
     Terminal, Image, Music, Trash, Users, Plus, ArrowUp, Camera, MessageSquare,
@@ -9239,13 +9240,9 @@ const renderMainContent = () => {
                                 provider: changes.provider !== undefined ? changes.provider : (npc.provider || ''),
                                 jinxes: changes.jinxes !== undefined ? changes.jinxes : (npc.jinxes || []),
                             };
-                            const res = await fetch(`${BACKEND_URL}/api/save_npc`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ npc: merged, isGlobal: npc.source === 'global', team: npc.team, currentPath }),
-                            });
-                            const body = await res.json();
-                            if (body?.error) { setError(body.error); return; }
+                            const { source, source_path, source_ext, team, ...cleanNpc } = merged;
+                            const yamlContent = yaml.dump(cleanNpc, { lineWidth: -1 });
+                            await writeFileContent(npc.source_path, yamlContent);
                             await loadAvailableNPCs(currentPath, setNpcsLoading, setNpcsError, setAvailableNPCs);
                         } catch (err: any) {
                             setError(err?.message || 'Failed to save NPC');
@@ -9405,13 +9402,9 @@ const renderMainContent = () => {
                                 provider: changes.provider !== undefined ? changes.provider : (npc.provider || ''),
                                 jinxes: changes.jinxes !== undefined ? changes.jinxes : (npc.jinxes || []),
                             };
-                            const res = await fetch(`${BACKEND_URL}/api/save_npc`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ npc: merged, isGlobal: npc.source === 'global', team: npc.team, currentPath }),
-                            });
-                            const body = await res.json();
-                            if (body?.error) { setError(body.error); return; }
+                            const { source, source_path, source_ext, team, ...cleanNpc } = merged;
+                            const yamlContent = yaml.dump(cleanNpc, { lineWidth: -1 });
+                            await writeFileContent(npc.source_path, yamlContent);
                             await loadAvailableNPCs(currentPath, setNpcsLoading, setNpcsError, setAvailableNPCs);
                         } catch (err: any) {
                             setError(err?.message || 'Failed to save NPC');

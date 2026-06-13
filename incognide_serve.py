@@ -1,13 +1,8 @@
-# npc_serve.py
-
 import os
 import sys
 
 
 def _install_log_tee():
-    """Tee stdout/stderr to ~/.npcsh/incognide/logs/backend.log so Electron's
-    Backend Logs panel can surface them regardless of whether Electron spawned
-    this process or it was started externally (dev workflow)."""
     log_dir = os.environ.get(
         'INCOGNIDE_LOG_DIR',
         os.path.join(os.path.expanduser('~'), '.npcsh', 'incognide', 'logs'),
@@ -53,7 +48,6 @@ _install_log_tee()
 from npcpy.serve import start_flask_server
 
 if __name__ == "__main__":
-    # --test-import: smoke test that all critical imports resolve (for CI)
     if sys.argv[1:] == ['--test-import']:
         print("[TEST] Importing npcpy.serve...")
         from npcpy.serve import app
@@ -64,15 +58,12 @@ if __name__ == "__main__":
         print("[TEST] All imports OK")
         sys.exit(0)
 
-    # Detect if running as compiled executable (prod) or Python script (dev)
     is_frozen = getattr(sys, 'frozen', False)
     is_dev = not is_frozen
 
-    # Dev: 5437, Prod: 5337
     default_port = '5437' if is_dev else '5337'
     port = os.environ.get('INCOGNIDE_PORT', default_port)
 
-    # Frontend port follows the pattern: dev=7337, prod=6337, docker=3000
     frontend_port = os.environ.get('FRONTEND_PORT', '7337' if port == '5437' else '6337')
 
     mode_str = 'dev' if is_dev else 'prod'
@@ -84,5 +75,4 @@ if __name__ == "__main__":
         port=port,
         cors_origins=f"localhost:{frontend_port}",
         db_path=db_path,
-        user_npc_directory=os.path.join(incognide_home, 'npc_team'),
         debug=False)
