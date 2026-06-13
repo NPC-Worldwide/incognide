@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BACKEND_URL } from '../config';
+import { writeFileContent } from '../api/fileSystem';
+import yaml from 'js-yaml';
 import {
     Bot, Loader, ChevronRight, X, Save, MessageSquare,
     Plus, Trash2, History, CheckCircle, XCircle, Tag,
@@ -403,17 +405,9 @@ const NPCTeamMenu = ({
                 : editedNpc.jinxes
         };
 
-        const response = await window.api.saveNPC({
-            npc: npcToSave,
-            isGlobal,
-            currentPath,
-            globalPath,
-        });
-
-        if (response.error) {
-            setError(response.error);
-            return;
-        }
+        const { source, source_path, source_ext, team, ...cleanNpc } = npcToSave;
+        const yamlContent = yaml.dump(cleanNpc, { lineWidth: -1 });
+        await writeFileContent(editedNpc.source_path, yamlContent);
 
         const updatedNpcs = await (isGlobal
             ? window.api.getNPCTeamGlobal(globalPath)

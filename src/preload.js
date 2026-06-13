@@ -785,9 +785,6 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
     loadProjectSettings: (path) => ipcRenderer.invoke('loadProjectSettings', path),
     saveProjectSettings: (args) => ipcRenderer.invoke('saveProjectSettings', args),
 
-    npcshCheck: () => ipcRenderer.invoke('npcsh-check'),
-    npcshPackageContents: () => ipcRenderer.invoke('npcsh-package-contents'),
-    npcshInit: () => ipcRenderer.invoke('npcsh-init'),
     deployIncognideTeam: () => ipcRenderer.invoke('deploy-incognide-team'),
 
     npcTeamSyncStatus: (globalPath) => ipcRenderer.invoke('npc-team:sync-status', globalPath),

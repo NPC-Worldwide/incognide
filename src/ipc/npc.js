@@ -429,19 +429,23 @@ function register(ctx) {
 
   ipcMain.handle('save-npc', async (event, data) => {
     try {
-
-        if (data.globalPath !== 'npcsh' && !data.currentPath) {
-            data.currentPath = data.globalPath || INCOGNIDE_TEAM_PATH;
+        const npc = data.npc;
+        if (!npc || !npc.name) {
+            return { error: 'Invalid NPC data' };
         }
-        delete data.globalPath;
-        const response = await fetch(`${BACKEND_URL}/api/save_npc`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(data),
-        });
-        return response.json();
+        const sourcePath = npc.source_path;
+        if (!sourcePath) {
+            return { error: 'source_path required' };
+        }
+        const npcDir = path.dirname(sourcePath);
+        const cleanNpc = { ...npc };
+        delete cleanNpc.source;
+        delete cleanNpc.source_path;
+        delete cleanNpc.source_ext;
+        delete cleanNpc.team;
+        const yamlContent = yaml.dump(cleanNpc, { lineWidth: -1 });
+        await fsPromises.writeFile(sourcePath, yamlContent, 'utf8');
+        return { message: 'NPC saved successfully', error: null };
     } catch (error) {
         return { error: error.message };
     }
@@ -1533,21 +1537,6 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('npcsh-check', async () => {
-    return await callBackendApi(`${BACKEND_URL}/api/npcsh/check`);
-  });
-
-  ipcMain.handle('npcsh-package-contents', async () => {
-    return await callBackendApi(`${BACKEND_URL}/api/npcsh/package-contents`);
-  });
-
-  ipcMain.handle('npcsh-init', async () => {
-    return await callBackendApi(`${BACKEND_URL}/api/npcsh/init`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-  });
 
   ipcMain.handle('get-project-context', async (event, path) => {
     if (!path) return { error: 'Path is required' };
