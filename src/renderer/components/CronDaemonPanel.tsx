@@ -20,7 +20,6 @@ interface SqlModel {
     jinx?: string;
     lastRunAt?: string;
     filePath?: string;
-    isGlobal?: boolean;
 }
 
 const NQL_FUNCTIONS = [
@@ -288,10 +287,10 @@ const inputCls = "w-full px-2 py-1.5 text-xs theme-bg-primary border theme-borde
 
 const CronDaemonPanel = ({
     isOpen = true, onClose, currentPath, npcList = [], jinxList = [],
-    isPane = false, isGlobal = false,
+    isPane = false,
 }: {
     isOpen?: boolean; onClose?: () => void; currentPath?: string;
-    npcList?: any[]; jinxList?: any[]; isPane?: boolean; isGlobal?: boolean;
+    npcList?: any[]; jinxList?: any[]; isPane?: boolean;
 }) => {
     const api = (window as any).api;
     const [activeTab, setActiveTab] = useState<'jobs' | 'daemons' | 'nql'>('jobs');
@@ -466,14 +465,8 @@ const CronDaemonPanel = ({
 
     const fetchModels = useCallback(async () => {
         try {
-            const [g, p] = await Promise.all([
-                api?.getSqlModelsGlobal?.(),
-                currentPath ? api?.getSqlModelsProject?.(currentPath) : null,
-            ]);
-            const all: SqlModel[] = [];
-            if (g?.models) all.push(...g.models.map((m: any) => ({ ...m, isGlobal: true })));
-            if (p?.models) all.push(...p.models.map((m: any) => ({ ...m, isGlobal: false })));
-            setSqlModels(all);
+            const p = currentPath ? await api?.getSqlModelsProject?.(currentPath) : null;
+            setSqlModels(p?.models || []);
         } catch {}
     }, [currentPath]);
 
@@ -579,9 +572,7 @@ const CronDaemonPanel = ({
         setLoading(true);
         try {
             const data = { id: name, name, sql, description, materialization, npc };
-            const r = isGlobal || !currentPath
-                ? await api?.saveSqlModelGlobal?.(data)
-                : await api?.saveSqlModelProject?.({ path: currentPath, model: data });
+            const r = await api?.saveSqlModelProject?.({ path: currentPath, model: data });
             if (r?.success) { setShowNewModel(false); setEditModel(null); setModelForm({ name: '', sql: '', description: '', materialization: 'table', npc: '' }); await fetchModels(); }
             else setError(r?.error || 'Failed to save');
         } catch (e: any) { setError(e.message); }
@@ -591,7 +582,7 @@ const CronDaemonPanel = ({
     const runModel = async (model: SqlModel) => {
         setModelRunResult(prev => ({ ...prev, [model.id]: 'Running...' }));
         try {
-            const r = await api?.runSqlModel?.({ path: currentPath, modelId: model.name, isGlobal: model.isGlobal ?? true });
+            const r = await api?.runSqlModel?.({ path: currentPath, modelId: model.name });
             setModelRunResult(prev => ({ ...prev, [model.id]: r?.success ? (r.message || `Done. ${r.rows} rows.`) : `Error: ${r?.error}` }));
         } catch (e: any) { setModelRunResult(prev => ({ ...prev, [model.id]: `Error: ${e.message}` })); }
     };
@@ -617,7 +608,7 @@ const CronDaemonPanel = ({
             }
         });
         try {
-            await (window as any).api?.runAllSqlModels?.({ path: currentPath, isGlobal: isGlobal });
+            await (window as any).api?.runAllSqlModels?.({ path: currentPath });
         } catch (e: any) {
             setRunAllActive(false);
         }
@@ -627,9 +618,7 @@ const CronDaemonPanel = ({
     const deleteModel = async (model: SqlModel) => {
         if (!window.confirm(`Delete model "${model.name}"?`)) return;
         try {
-            const r = model.isGlobal
-                ? await api?.deleteSqlModelGlobal?.(model.id || model.name)
-                : await api?.deleteSqlModelProject?.({ path: currentPath, modelId: model.id || model.name });
+            const r = await api?.deleteSqlModelProject?.({ path: currentPath, modelId: model.id || model.name });
             if (r?.success) await fetchModels();
             else setError(r?.error || 'Failed');
         } catch (e: any) { setError(e.message); }
@@ -1437,7 +1426,6 @@ const CronDaemonPanel = ({
                                         model.materialization === 'view' ? 'bg-green-900/30 text-green-400' :
                                         'bg-orange-900/30 text-orange-400'
                                     }`}>{model.materialization}</span>
-                                    {model.isGlobal && <span className="text-[10px] text-gray-600">global</span>}
                                     <div className="ml-auto flex items-center gap-1" onClick={e => e.stopPropagation()}>
                                         <button onClick={() => runModel(model)} className="p-1 text-emerald-400 hover:text-emerald-300 rounded" title="Run"><Play size={12} /></button>
                                         <button onClick={() => { setEditModel(model); setShowNewModel(false); setModelForm({ name: model.name, sql: model.sql, description: model.description || '', materialization: model.materialization, npc: model.npc || '' }); }}

@@ -145,6 +145,9 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
                     chatStats: newPaneData.chatStats,
                     npc: newPaneData.npc,
                     model: newPaneData.model,
+                    initialTab: newPaneData.initialTab,
+                    initialNpc: newPaneData.initialNpc,
+                    initialJinxName: newPaneData.initialJinxName,
                 });
                 activePaneData.activeTabIndex = activePaneData.tabs.length - 1;
 
@@ -158,6 +161,12 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
                 activePaneData.executionMode = newPaneData.executionMode;
                 activePaneData.selectedJinx = newPaneData.selectedJinx;
                 activePaneData.chatStats = newPaneData.chatStats;
+                activePaneData.initialTab = newPaneData.initialTab;
+                activePaneData.initialNpc = newPaneData.initialNpc;
+                activePaneData.initialJinxName = newPaneData.initialJinxName;
+                if (newPaneData.initialTab) {
+                    activePaneData.activeTab = newPaneData.initialTab;
+                }
                 delete contentDataRef.current[newPaneId];
                 paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: activeContentPaneIdRef.current } }));
                 return activeContentPaneIdRef.current;

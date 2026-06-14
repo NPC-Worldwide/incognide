@@ -32,11 +32,13 @@ interface TeamManagementProps {
     initialTab?: TabId;
     forceTab?: TabId;
     onTabChange?: (tab: TabId) => void;
+    initialJinxName?: string;
+    onOpenJinxPane?: (name: string) => void;
 }
 
 type TabId = 'context' | 'npcs' | 'jinxes' | 'memory' | 'knowledge' | 'cron' | 'mcp' | 'models' | 'databases' | 'ai-settings' | 'llm-models' | 'voice';
 
-const SqlModelsContent = ({ currentPath, npcList = [], jinxList = [], isGlobal }: { currentPath: string; npcList?: any[]; jinxList?: any[]; isGlobal: boolean }) => {
+const SqlModelsContent = ({ currentPath, teamKey, npcList = [], jinxList = [] }: { currentPath: string; teamKey?: string; npcList?: any[]; jinxList?: any[] }) => {
     const [models, setModels] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -60,13 +62,10 @@ const SqlModelsContent = ({ currentPath, npcList = [], jinxList = [], isGlobal }
         setLoading(true);
         setError(null);
         try {
-            const response = isGlobal
-                ? await (window as any).api.getSqlModelsGlobal?.()
-                : await (window as any).api.getSqlModelsProject?.(currentPath);
+            const response = await (window as any).api.getSqlModelsProject?.(currentPath);
             if (response?.error) throw new Error(response.error);
             setModels(response?.models || []);
         } catch (err: any) {
-
             setModels([]);
         } finally {
             setLoading(false);
@@ -75,13 +74,13 @@ const SqlModelsContent = ({ currentPath, npcList = [], jinxList = [], isGlobal }
 
     const fetchNpcsAndJinxes = async () => {
         try {
-            const npcResponse = isGlobal
-                ? await (window as any).api.getNPCTeamFromPath?.(selectedTeam)
+            const npcResponse = teamKey
+                ? await (window as any).api.getNPCTeamFromPath?.(teamKey)
                 : await (window as any).api.getNPCTeamProject?.(currentPath);
             if (npcResponse?.npcs) setNpcs(npcResponse.npcs);
 
-            const jinxResponse = isGlobal
-                ? await (window as any).api.getJinxesTeam?.(selectedTeam)
+            const jinxResponse = teamKey
+                ? await (window as any).api.getJinxesTeam?.(teamKey)
                 : await (window as any).api.getJinxesProject?.(currentPath);
             if (jinxResponse?.jinxes) setJinxes(jinxResponse.jinxes);
         } catch (err) {
@@ -91,25 +90,16 @@ const SqlModelsContent = ({ currentPath, npcList = [], jinxList = [], isGlobal }
 
     const fetchAvailableDatabases = async () => {
         const databases: { name: string; path: string }[] = [
-            { name: 'Global History (history.db)', path: '~/.incognide/history.db' }
+            { name: 'History (history.db)', path: '~/.incognide/history.db' }
         ];
 
         try {
-            const globalCtx = await (window as any).api.getContextGlobal?.();
-            if (globalCtx?.databases) {
-                for (const db of globalCtx.databases) {
-                    if (!databases.find(d => d.path === db.path)) {
-                        databases.push({ name: db.name || db.path, path: db.path });
-                    }
-                }
-            }
-
             if (currentPath) {
-                const projectCtx = await (window as any).api.getContextProject?.(currentPath);
-                if (projectCtx?.databases) {
-                    for (const db of projectCtx.databases) {
+                const ctx = await (window as any).api.getContextProject?.(currentPath);
+                if (ctx?.databases) {
+                    for (const db of ctx.databases) {
                         if (!databases.find(d => d.path === db.path)) {
-                            databases.push({ name: `Project: ${db.name || db.path}`, path: db.path });
+                            databases.push({ name: db.name || db.path, path: db.path });
                         }
                     }
                 }
@@ -125,7 +115,7 @@ const SqlModelsContent = ({ currentPath, npcList = [], jinxList = [], isGlobal }
         fetchModels();
         fetchNpcsAndJinxes();
         fetchAvailableDatabases();
-    }, [currentPath, isGlobal]);
+    }, [currentPath, teamKey]);
 
     const handleCreateModel = () => {
         setSelectedModel(null);
@@ -180,9 +170,7 @@ LIMIT 10
                 id: selectedModel?.id,
             };
 
-            const res = isGlobal
-                ? await (window as any).api.saveSqlModelGlobal?.(modelData)
-                : await (window as any).api.saveSqlModelProject?.({ path: currentPath, model: modelData });
+            const res = await (window as any).api.saveSqlModelProject?.({ path: currentPath, model: modelData });
 
             if (res?.error) throw new Error(res.error);
             await fetchModels();
@@ -199,9 +187,7 @@ LIMIT 10
         if (!window.confirm('Delete this SQL model?')) return;
         setLoading(true);
         try {
-            const res = isGlobal
-                ? await (window as any).api.deleteSqlModelGlobal?.(modelId)
-                : await (window as any).api.deleteSqlModelProject?.({ path: currentPath, modelId });
+            const res = await (window as any).api.deleteSqlModelProject?.({ path: currentPath, modelId });
             if (res?.error) throw new Error(res.error);
             await fetchModels();
         } catch (err: any) {
@@ -218,7 +204,6 @@ LIMIT 10
             const res = await (window as any).api.runSqlModel?.({
                 path: currentPath,
                 modelId: model.id,
-                isGlobal,
                 targetDb: selectedDatabase
             });
             if (res?.error) throw new Error(res.error);
@@ -242,11 +227,11 @@ LIMIT 10
         setModelSql(prev => prev + '\n' + ref);
     };
 
-    if (!currentPath && !isGlobal) {
+    if (!currentPath) {
         return (
             <div className="text-center py-12">
                 <Database size={48} className="mx-auto mb-4 text-gray-500" />
-                <p className="theme-text-muted">Select a project folder or switch to Global to manage SQL models.</p>
+                <p className="theme-text-muted">Select a team to manage SQL models.</p>
             </div>
         );
     }
@@ -520,7 +505,7 @@ LIMIT 10
     );
 };
 
-const DatabasesContent = ({ currentPath, isGlobal }: { currentPath: string; isGlobal: boolean }) => {
+const DatabasesContent = ({ currentPath }: { currentPath: string }) => {
     const [databases, setDatabases] = useState<{ value: string }[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -530,13 +515,14 @@ const DatabasesContent = ({ currentPath, isGlobal }: { currentPath: string; isGl
         setLoading(true);
         setError(null);
         try {
-            const ctxPath = effectivePath ? `${effectivePath}/team.ctx` : null;
+            const ctxPath = currentPath ? `${currentPath}/team.ctx` : null;
             if (!ctxPath) {
                 setDatabases([]);
                 return;
             }
-            const content = await (window as any).api.readFileContent(ctxPath);
-            const parsed = yaml.load(content) || {};
+            const result = await (window as any).api.readFileContent(ctxPath);
+            const text = typeof result === 'string' ? result : result?.content;
+            const parsed = text ? yaml.load(text) || {} : {};
             setDatabases(parsed.databases || []);
         } catch {
             setDatabases([]);
@@ -547,21 +533,23 @@ const DatabasesContent = ({ currentPath, isGlobal }: { currentPath: string; isGl
 
     useEffect(() => {
         loadDatabases();
-    }, [currentPath, isGlobal]);
+    }, [currentPath]);
 
     const handleSave = async () => {
         setLoading(true);
         setError(null);
         try {
-            const ctxPath = effectivePath ? `${effectivePath}/team.ctx` : null;
+            const ctxPath = currentPath ? `${currentPath}/team.ctx` : null;
             if (!ctxPath) return;
             let parsed = {};
             try {
-                const content = await (window as any).api.readFileContent(ctxPath);
-                parsed = yaml.load(content) || {};
+                const result = await (window as any).api.readFileContent(ctxPath);
+                const text = typeof result === 'string' ? result : result?.content;
+                parsed = text ? yaml.load(text) || {} : {};
             } catch { }
             parsed.databases = databases;
-            await (window as any).api.writeFileContent(ctxPath, yaml.dump(parsed));
+            const res = await (window as any).api.writeFileContent(ctxPath, yaml.dump(parsed));
+            if (res?.error) throw new Error(res.error);
         } catch (err: any) {
             setError(err.message);
         } finally {
@@ -583,8 +571,8 @@ const DatabasesContent = ({ currentPath, isGlobal }: { currentPath: string; isGl
         setDatabases(prev => prev.map((db, i) => i === index ? { value } : db));
     };
 
-    if (!isGlobal && !currentPath) {
-        return <div className="text-center py-12 theme-text-muted">Select a project folder or switch to Global.</div>;
+    if (!currentPath) {
+        return <div className="text-center py-12 theme-text-muted">Select a team.</div>;
     }
 
     return (
@@ -876,7 +864,9 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
     currentNpc = '',
     initialTab,
     forceTab,
-    onTabChange
+    onTabChange,
+    initialJinxName,
+    onOpenJinxPane
 }) => {
     const [activeTab, setActiveTab] = useState<TabId>(initialTab || 'context');
     useEffect(() => { if (forceTab) setActiveTab(forceTab); }, [forceTab]);
@@ -884,10 +874,8 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
 
     const [registeredTeams, setRegisteredTeams] = useState<Record<string, string>>({});
     const [selectedTeam, setSelectedTeam] = useState<string>('');
-    const [projectTeamExists, setProjectTeamExists] = useState(false);
     const [discoveredTeams, setDiscoveredTeams] = useState<any[]>([]);
     const [scanning, setScanning] = useState(false);
-    const [jinxMenuInitialJinxName, setJinxMenuInitialJinxName] = useState<string | undefined>(undefined);
 
     const loadRegisteredTeams = async () => {
         try {
@@ -898,29 +886,16 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
 
     useEffect(() => { loadRegisteredTeams(); }, []);
 
-    // Detect project team and set default selected team
+    // Default team selection
     useEffect(() => {
         if (!isOpen) return;
-        (async () => {
-            let hasProject = false;
-            if (currentPath) {
-                try {
-                    const res = await (window as any).api.getProjectContext(currentPath);
-                    hasProject = !!res?.path;
-                } catch { /* ignore */ }
+        if (!selectedTeam) {
+            const keys = Object.keys(registeredTeams);
+            if (keys.length > 0) {
+                setSelectedTeam(keys[0]);
             }
-            setProjectTeamExists(hasProject);
-            // Default team selection: first registered team, or project if none registered
-            if (!selectedTeam) {
-                const keys = Object.keys(registeredTeams);
-                if (keys.length > 0) {
-                    setSelectedTeam(keys[0]);
-                } else if (hasProject) {
-                    setSelectedTeam('project');
-                }
-            }
-        })();
-    }, [isOpen, currentPath, registeredTeams]);
+        }
+    }, [isOpen, registeredTeams]);
 
     const handleScanTeams = async () => {
         setScanning(true);
@@ -944,9 +919,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
         } catch {}
     };
 
-    const isGlobal = selectedTeam !== 'project';
-    const globalPath = isGlobal ? (registeredTeams[selectedTeam] || undefined) : undefined;
-    const effectivePath = isGlobal ? (globalPath || '') : (currentPath || '');
+    const effectivePath = registeredTeams[selectedTeam] || '';
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -1029,9 +1002,6 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                 {Object.entries(registeredTeams).map(([key, path]) => (
                                     <option key={key} value={key}>{key}</option>
                                 ))}
-                                {projectTeamExists && (
-                                    <option value="project">Current Project</option>
-                                )}
                             </select>
                             <button
                                 onClick={handleScanTeams}
@@ -1085,10 +1055,8 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                 <CtxEditor
                                     isOpen={true}
                                     onClose={() => {}}
-                                    currentPath={effectivePath}
+                                    teamPath={effectivePath}
                                     embedded={true}
-                                    isGlobal={isGlobal}
-                                    globalPath={globalPath}
                                 />
                             )}
                             {activeTab === 'npcs' && (
@@ -1099,12 +1067,8 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                         currentPath={effectivePath}
                                         startNewConversation={startNewConversation}
                                         embedded={true}
-                                        isGlobal={isGlobal}
                                         teamKey={selectedTeam}
-                                        onOpenJinxTab={(name) => {
-                                            setJinxMenuInitialJinxName(name);
-                                            changeTab('jinxes');
-                                        }}
+                                        onOpenJinxTab={onOpenJinxPane}
                                     />
                                 </div>
                             )}
@@ -1114,9 +1078,8 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                     onClose={() => {}}
                                     currentPath={effectivePath}
                                     embedded={true}
-                                    isGlobal={isGlobal}
                                     teamKey={selectedTeam}
-                                    initialJinxName={jinxMenuInitialJinxName}
+                                    initialJinxName={initialJinxName}
                                 />
                             )}
                             {activeTab === 'mcp' && (
@@ -1125,13 +1088,12 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                             {activeTab === 'models' && (
                                 <SqlModelsContent
                                     currentPath={effectivePath}
-                                    isGlobal={isGlobal}
+                                    teamKey={selectedTeam}
                                 />
                             )}
                             {activeTab === 'databases' && (
                                 <DatabasesContent
                                     currentPath={effectivePath}
-                                    isGlobal={isGlobal}
                                 />
                             )}
                             {activeTab === 'ai-settings' && (
@@ -1150,7 +1112,6 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                             npcList={npcList}
                             jinxList={jinxList}
                             isPane={true}
-                            isGlobal={isGlobal}
                         />
                     )}
                     {activeTab === 'llm-models' && (

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import AutosizeTextarea from './AutosizeTextarea';
 
-const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = true, teamKey = undefined, initialJinxName = undefined }) => {
+const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, teamKey = undefined, initialJinxName = undefined }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [jinxes, setJinxes] = useState([]);
@@ -30,18 +30,10 @@ const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = t
     useEffect(() => {
         const loadJinxes = async () => {
             if (!isOpen) return;
-            
-            // Validate paths before making API calls
-            if (!isGlobal && (!currentPath || typeof currentPath !== 'string')) {
-                setError('No project folder selected');
-                setLoading(false);
-                return;
-            }
-            
             setLoading(true);
             setError(null);
 
-            const response = isGlobal
+            const response = teamKey
                 ? await window.api.getJinxesTeam(teamKey)
                 : await window.api.getJinxesProject(currentPath);
 
@@ -55,7 +47,7 @@ const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = t
             setLoading(false);
         };
         loadJinxes();
-    }, [isOpen, isGlobal, currentPath, teamKey]);
+    }, [isOpen, currentPath, teamKey]);
 
     useEffect(() => {
         if (!initialJinxName || jinxes.length === 0) return;
@@ -325,7 +317,6 @@ const labelExecution = async (messageId, label) => {
     const handleSave = async () => {
         const response = await window.api.saveJinx({
             jinx: editedJinx,
-            isGlobal,
             currentPath,
             globalPath: teamKey,
         });
@@ -335,7 +326,7 @@ const labelExecution = async (messageId, label) => {
             return;
         }
 
-        const refreshed = isGlobal
+        const refreshed = teamKey
             ? await window.api.getJinxesTeam(teamKey)
             : await window.api.getJinxesProject(currentPath);
         setJinxes(refreshed.jinxes || []);

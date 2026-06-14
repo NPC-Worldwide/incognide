@@ -20,7 +20,6 @@ const NPCTeamMenu = ({
     createDataDashPane = undefined,
     onOpenJinxTab,
     embedded = false,
-    isGlobal = true,
     teamKey = undefined,
 }) => {
     const [loading, setLoading] = useState(true);
@@ -83,22 +82,15 @@ const NPCTeamMenu = ({
     useEffect(() => {
         const loadData = async () => {
             if (!isOpen) return;
-            
-            // Validate paths before making API calls
-            if (!isGlobal && (!currentPath || typeof currentPath !== 'string')) {
-                setError('No project folder selected');
-                setLoading(false);
-                return;
-            }
             setLoading(true);
             setError(null);
 
-            const npcResponse = isGlobal
+            const npcResponse = teamKey
                 ? await window.api.getNPCTeamFromPath(teamKey)
                 : await window.api.getNPCTeamProject(currentPath);
             setNpcs(npcResponse.npcs || []);
 
-            const jinxResponse = isGlobal
+            const jinxResponse = teamKey
                 ? await window.api.getJinxesTeam(teamKey)
                 : await window.api.getJinxesProject(currentPath);
             setAvailableJinxes(jinxResponse.jinxes || []);
@@ -106,7 +98,7 @@ const NPCTeamMenu = ({
             setLoading(false);
         };
         loadData();
-    }, [isOpen, isGlobal, currentPath, teamKey]);
+    }, [isOpen, currentPath, teamKey]);
 
     useEffect(() => {
         let filtered = executionHistory;
@@ -400,7 +392,7 @@ const NPCTeamMenu = ({
         }
         await writeFileContent(editedNpc.source_path, yamlContent);
 
-        const updatedNpcs = await (isGlobal
+        const updatedNpcs = await (teamKey
             ? window.api.getNPCTeamFromPath(teamKey)
             : window.api.getNPCTeamProject(currentPath));
         setNpcs(updatedNpcs.npcs || []);

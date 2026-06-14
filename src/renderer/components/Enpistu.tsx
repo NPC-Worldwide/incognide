@@ -1764,7 +1764,7 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
     useEffect(() => {
         const fetchJinxes = async () => {
             try {
-                const globalResp = await window.api.getJinxesGlobal(); // { jinxes: [...] }
+                const globalResp = await window.api.getJinxesTeam(); // { jinxes: [...] }
                 let projectResp = { jinxes: [] };
                 if (currentPath) {
                     try {
@@ -5486,6 +5486,19 @@ ${contextPrompt}`;
         handleCreateNewFolderRef.current = handleCreateNewFolder;
     }, [createNewTerminal, createNewConversation, createNewBrowser, handleCreateNewFolder]);
 
+    // Create Team Management pane
+    const createTeamManagementPane = useCallback(async (opts?: { npcName?: string; tab?: string; initialJinxName?: string }) => {
+        const newPaneId = generateId();
+        contentDataRef.current[newPaneId] = {
+            contentType: 'teammanagement',
+            contentId: 'teammanagement',
+            initialTab: opts?.tab || 'npcs',
+            initialNpc: opts?.npcName,
+            initialJinxName: opts?.initialJinxName,
+        };
+        addPaneOrTab(newPaneId);
+    }, []);
+
     // Render NPC Team pane (embedded version for pane layout)
     const renderNPCTeamPane = useCallback(({ nodeId }: { nodeId: string }) => {
         return (
@@ -5498,9 +5511,10 @@ ${contextPrompt}`;
                     createNewConversation();
                 }}
                 embedded={true}
+                onOpenJinxTab={(name) => createTeamManagementPane({ tab: 'jinxes', initialJinxName: name })}
             />
         );
-    }, [currentPath, createNewConversation]);
+    }, [currentPath, createNewConversation, createTeamManagementPane]);
 
     // Create NPC Team pane
     const createNPCTeamPane = useCallback(async () => {
@@ -5551,21 +5565,11 @@ ${contextPrompt}`;
                 currentNpc={paneData.initialNpc || currentNPC}
                 initialTab={paneData.activeTab || paneData.initialTab}
                 onTabChange={(tab) => { contentDataRef.current[nodeId] = { ...contentDataRef.current[nodeId], activeTab: tab }; }}
+                initialJinxName={paneData.initialJinxName}
+                onOpenJinxPane={(name) => createTeamManagementPane({ tab: 'jinxes', initialJinxName: name })}
             />
         );
-    }, [currentPath, createNewConversation, availableNPCs, availableJinxes, currentNPC]);
-
-    // Create Team Management pane
-    const createTeamManagementPane = useCallback(async (opts?: { npcName?: string; tab?: string }) => {
-        const newPaneId = generateId();
-        contentDataRef.current[newPaneId] = {
-            contentType: 'teammanagement',
-            contentId: 'teammanagement',
-            initialTab: opts?.tab || 'npcs',
-            initialNpc: opts?.npcName,
-        };
-        addPaneOrTab(newPaneId);
-    }, []);
+    }, [currentPath, createNewConversation, availableNPCs, availableJinxes, currentNPC, createTeamManagementPane]);
 
     // Render Settings pane (embedded version for pane layout)
     const renderSettingsPane = useCallback(({ nodeId }: { nodeId: string }) => {
@@ -6493,7 +6497,7 @@ ${contextPrompt}`;
         
     return     (
         <>
-            <NPCTeamMenu isOpen={npcTeamMenuOpen} onClose={handleCloseNpcTeamMenu} currentPath={currentPath} startNewConversation={startNewConversationWithNpc} createDataDashPane={createDataDashPane}/>
+            <NPCTeamMenu isOpen={npcTeamMenuOpen} onClose={handleCloseNpcTeamMenu} currentPath={currentPath} startNewConversation={startNewConversationWithNpc} createDataDashPane={createDataDashPane} onOpenJinxTab={(name) => createTeamManagementPane({ tab: 'jinxes', initialJinxName: name })}/>
             <JinxMenu isOpen={jinxMenuOpen} onClose={() => setJinxMenuOpen(false)} currentPath={currentPath}/>
 
 <SettingsMenu
@@ -7132,9 +7136,7 @@ ${contextPrompt}`;
             <CtxEditor
                 isOpen={ctxEditorOpen}
                 onClose={() => setCtxEditorOpen(false)}
-                currentPath={currentPath}
-                npcList={availableNPCs.map(npc => ({ name: npc.name, display_name: npc.display_name }))}
-                jinxList={availableJinxes.map(jinx => ({ jinx_name: jinx.name, description: jinx.description }))}
+                teamPath={currentPath}
             />
 
             <TeamManagement
@@ -7149,6 +7151,7 @@ ${contextPrompt}`;
                 }}
                 npcList={availableNPCs.map(npc => ({ name: npc.name, display_name: npc.display_name }))}
                 jinxList={availableJinxes.map(jinx => ({ jinx_name: jinx.name, description: jinx.description }))}
+                onOpenJinxPane={(name) => createTeamManagementPane({ tab: 'jinxes', initialJinxName: name })}
             />
 
             {/* Git Modal */}

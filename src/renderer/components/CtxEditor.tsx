@@ -3,18 +3,17 @@ import { FileJson, X, Save, Plus, Trash2 } from 'lucide-react';
 import yaml from 'js-yaml';
 import AutosizeTextarea from './AutosizeTextarea';
 
-const CtxEditor = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = false, globalPath = undefined }) => {
+const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false }) => {
 
-    const [globalCtx, setGlobalCtx] = useState({});
-    const [projectCtx, setProjectCtx] = useState({});
+    const [ctx, setCtx] = useState<Record<string, any>>({});
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
 
     useEffect(() => {
-        if (isOpen) {
-            loadContexts();
+        if (isOpen && teamPath) {
+            loadContext();
         }
-    }, [isOpen, currentPath, globalPath]);
+    }, [isOpen, teamPath]);
 
     useEffect(() => {
         const handleKeyDown = (event) => {
@@ -26,53 +25,47 @@ const CtxEditor = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = 
         return () => document.removeEventListener('keydown', handleKeyDown);
     }, [isOpen, onClose]);
 
-    const loadContexts = async () => {
+    const loadContext = async () => {
+        if (!teamPath) {
+            setCtx({});
+            return;
+        }
         setIsLoading(true);
         setError(null);
         try {
-            if (globalPath) {
-                try {
-                    const content = await (window as any).api.readFileContent(globalPath + '/team.ctx');
-                    setGlobalCtx(yaml.load(content) || {});
-                } catch {
-                    setGlobalCtx({});
-                }
+            const result = await (window as any).api.readFileContent(teamPath + '/team.ctx');
+            const text = typeof result === 'string' ? result : result?.content;
+            if (text == null) {
+                setCtx({});
+                setError(result?.error || 'Failed to read team.ctx');
             } else {
-                setGlobalCtx({});
+                setCtx(yaml.load(text) || {});
             }
-
-            if (currentPath) {
-                const projectRes = await window.api.getProjectContext(currentPath);
-                if (projectRes.error) throw new Error(`Project: ${projectRes.error}`);
-                setProjectCtx(projectRes.context || {});
-            } else {
-                setProjectCtx({});
-            }
-        } catch (err) {
-            setError(err.message);
+        } catch (err: any) {
+            setCtx({});
+            setError(err?.message || 'Failed to load context');
         } finally {
             setIsLoading(false);
         }
     };
 
     const handleSave = async () => {
+        if (!teamPath) return;
         setIsLoading(true);
         setError(null);
         try {
-            if (isGlobal && globalPath) {
-                await (window as any).api.writeFileContent(globalPath + '/team.ctx', yaml.dump(globalCtx));
-            } else if (currentPath) {
-                await window.api.saveProjectContext({ path: currentPath, contextData: projectCtx });
+            const result = await (window as any).api.writeFileContent(teamPath + '/team.ctx', yaml.dump(ctx));
+            if (result?.error) {
+                setError(result.error);
             }
-        } catch (err) {
-            setError(err.message);
+        } catch (err: any) {
+            setError(err?.message || 'Failed to save context');
         } finally {
             setIsLoading(false);
         }
     };
 
-    const handleFieldChange = (type, field, value) => {
-        const setCtx = type === 'global' ? setGlobalCtx : setProjectCtx;
+    const handleFieldChange = (field, value) => {
         setCtx(prev => ({ ...prev, [field]: value }));
     };
 
@@ -81,16 +74,14 @@ const CtxEditor = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = 
         return Object.entries(ctx || {}).filter(([key]) => !reserved.includes(key));
     };
 
-    const handleAddKvPair = (type) => {
-        const setCtx = type === 'global' ? setGlobalCtx : setProjectCtx;
+    const handleAddKvPair = () => {
         const key = prompt('Enter key name:');
         if (!key || key.trim() === '') return;
         setCtx(prev => ({ ...prev, [key.trim()]: '' }));
     };
 
-    const handleKvKeyChange = (type, oldKey, newKey) => {
+    const handleKvKeyChange = (oldKey, newKey) => {
         if (!newKey || newKey.trim() === '' || oldKey === newKey) return;
-        const setCtx = type === 'global' ? setGlobalCtx : setProjectCtx;
         setCtx(prev => {
             const value = prev[oldKey];
             const { [oldKey]: _, ...rest } = prev;
@@ -98,23 +89,20 @@ const CtxEditor = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = 
         });
     };
 
-    const handleKvValueChange = (type, key, value) => {
-        const setCtx = type === 'global' ? setGlobalCtx : setProjectCtx;
+    const handleKvValueChange = (key, value) => {
         setCtx(prev => ({ ...prev, [key]: value }));
     };
 
-    const handleRemoveKvPair = (type, key) => {
-        const setCtx = type === 'global' ? setGlobalCtx : setProjectCtx;
+    const handleRemoveKvPair = (key) => {
         setCtx(prev => {
             const { [key]: _, ...rest } = prev;
             return rest;
         });
     };
 
-    const renderForm = (type) => {
-        const ctx = type === 'global' ? globalCtx : projectCtx;
-        if (type === 'project' && !currentPath) {
-            return <div className="p-4 theme-text-muted">No project folder selected.</div>;
+    const renderForm = () => {
+        if (!teamPath) {
+            return <div className="p-4 theme-text-muted">No team path selected.</div>;
         }
 
         const customKvPairs = getCustomKvPairs(ctx);
@@ -127,7 +115,7 @@ const CtxEditor = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = 
                         <input
                             type="text"
                             value={ctx.forenpc || ''}
-                            onChange={(e) => handleFieldChange(type, 'forenpc', e.target.value)}
+                            onChange={(e) => handleFieldChange('forenpc', e.target.value)}
                             className="w-full theme-input"
                             placeholder="e.g., sibiji"
                         />
@@ -136,7 +124,7 @@ const CtxEditor = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = 
                         <label className="block text-sm theme-text-secondary mb-1">General Context</label>
                         <AutosizeTextarea
                             value={ctx.context || ''}
-                            onChange={(e) => handleFieldChange(type, 'context', e.target.value)}
+                            onChange={(e) => handleFieldChange('context', e.target.value)}
                             className="w-full theme-input min-h-[96px] resize-y"
                             placeholder="A brief description of this project or team's purpose."
                         />
@@ -151,24 +139,24 @@ const CtxEditor = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = 
                                 <input
                                     type="text"
                                     value={key}
-                                    onChange={(e) => handleKvKeyChange(type, key, e.target.value)}
+                                    onChange={(e) => handleKvKeyChange(key, e.target.value)}
                                     className="w-32 theme-input bg-transparent text-sm font-mono"
                                     placeholder="key"
                                 />
                                 <AutosizeTextarea
                                     value={typeof value === 'string' ? value : JSON.stringify(value)}
-                                    onChange={(e) => handleKvValueChange(type, key, e.target.value)}
+                                    onChange={(e) => handleKvValueChange(key, e.target.value)}
                                     className="flex-1 theme-input bg-transparent border-none focus:ring-0 p-1 text-sm resize-none"
                                     placeholder="value"
                                     rows={1}
                                 />
-                                <button onClick={() => handleRemoveKvPair(type, key)} className="p-2 rounded-md hover:bg-red-900/50 text-red-400 hover:text-red-300 transition-colors flex-shrink-0">
+                                <button onClick={() => handleRemoveKvPair(key)} className="p-2 rounded-md hover:bg-red-900/50 text-red-400 hover:text-red-300 transition-colors flex-shrink-0">
                                     <Trash2 size={16} />
                                 </button>
                             </div>
                         ))}
                     </div>
-                    <button onClick={() => handleAddKvPair(type)} className="mt-2 text-sm theme-button theme-hover px-3 py-1 rounded flex items-center gap-1">
+                    <button onClick={handleAddKvPair} className="mt-2 text-sm theme-button theme-hover px-3 py-1 rounded flex items-center gap-1">
                         <Plus size={14} /> Add Field
                     </button>
                 </div>
@@ -182,7 +170,7 @@ const CtxEditor = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = 
         <>
             <div className="flex-1 overflow-y-auto">
                 {isLoading ? <p className="text-center theme-text-muted">Loading...</p> : error ? <p className="text-red-500">{error}</p> : (
-                    renderForm(isGlobal ? 'global' : 'project')
+                    renderForm()
                 )}
             </div>
 
