@@ -336,7 +336,7 @@ const Sidebar = (props: any) => {
     const [skillIngestLoading, setSkillIngestLoading] = useState(false);
     const [skillIngestError, setSkillIngestError] = useState<string | null>(null);
     const [showSkillIngest, setShowSkillIngest] = useState(false);
-    const [sidebarSkillsExpanded, setSidebarSkillsExpanded] = useState<Set<string>>(new Set(['project', 'incognide', 'npcsh']));
+    const [sidebarSkillsExpanded, setSidebarSkillsExpanded] = useState<Set<string>>(new Set(['project', 'incognide']));
 
     const [codeFileDropdownOpen, setCodeFileDropdownOpen] = useState(false);
 
@@ -1841,15 +1841,23 @@ const renderMcpSidebarPanel = () => {
 const loadSidebarJinxes = async () => {
     setSidebarJinxesLoading(true);
     try {
-        const [npcshRes, incognideRes, projectRes] = await Promise.all([
-            (window as any).api.getJinxesGlobal('npcsh'),
-            (window as any).api.getJinxesGlobal(),
-            currentPath ? (window as any).api.getJinxesProject(currentPath) : Promise.resolve({ jinxes: [] }),
-        ]);
-        const npcsh = (npcshRes?.jinxes || []).map((j: any) => ({ ...j, team: 'npcsh', scope: 'global' }));
-        const incognide = (incognideRes?.jinxes || []).map((j: any) => ({ ...j, team: 'incognide', scope: 'global' }));
-        const project = (projectRes?.jinxes || []).map((j: any) => ({ ...j, team: 'project', scope: 'project' }));
-        setSidebarJinxes([...project, ...incognide, ...npcsh]);
+        const teamsData = await (window as any).api.teamsRead();
+        const registered = teamsData?.teams || {};
+        const teamKeys = Object.keys(registered);
+        const fetches = teamKeys.map((key) => (window as any).api.getJinxesTeam(key));
+        const results = await Promise.allSettled(fetches);
+        const allJinxes: any[] = [];
+        if (currentPath) {
+            const projectRes = await (window as any).api.getJinxesProject(currentPath);
+            const project = (projectRes?.jinxes || []).map((j: any) => ({ ...j, team: 'project', scope: 'project' }));
+            allJinxes.push(...project);
+        }
+        results.forEach((res, idx) => {
+            const key = teamKeys[idx];
+            const jinxes = res.status === 'fulfilled' ? (res.value?.jinxes || []) : [];
+            allJinxes.push(...jinxes.map((j: any) => ({ ...j, team: key, scope: 'global' })));
+        });
+        setSidebarJinxes(allJinxes);
     } catch {  }
     finally { setSidebarJinxesLoading(false); }
 };
@@ -1962,19 +1970,20 @@ const renderSidebarSkillNodes = (nodes: any[], teamKey: string, depth: number): 
 };
 
 const renderSkillsSidebarPanel = () => {
-
-    const teamGroups: Record<string, any[]> = { project: [], incognide: [], npcsh: [] };
+    const teamGroups: Record<string, any[]> = {};
     sidebarJinxes.forEach((j: any) => {
-        const team = j.team || (j.scope === 'project' ? 'project' : 'npcsh');
+        const team = j.team || (j.scope === 'project' ? 'project' : 'global');
         if (!teamGroups[team]) teamGroups[team] = [];
         teamGroups[team].push(j);
     });
 
-    const teamConfigs = [
-        { key: 'project', label: 'Project', color: 'text-purple-400', badge: 'bg-purple-500/20 text-purple-400', hover: 'hover:bg-purple-500/10' },
-        { key: 'incognide', label: 'Incognide', color: 'text-green-400', badge: 'bg-green-500/20 text-green-400', hover: 'hover:bg-green-500/10' },
-        { key: 'npcsh', label: 'npcsh', color: 'text-blue-400', badge: 'bg-blue-500/20 text-blue-400', hover: 'hover:bg-blue-500/10' },
-    ];
+    const teamConfigMap: Record<string, any> = {
+        project: { label: 'Project', color: 'text-purple-400', badge: 'bg-purple-500/20 text-purple-400', hover: 'hover:bg-purple-500/10' },
+    };
+    const teamConfigs = Object.keys(teamGroups).map((key) => ({
+        key,
+        ...(teamConfigMap[key] || { label: key, color: 'text-green-400', badge: 'bg-green-500/20 text-green-400', hover: 'hover:bg-green-500/10' }),
+    }));
 
     return (
         <div className="border-b theme-border bg-purple-900/10">

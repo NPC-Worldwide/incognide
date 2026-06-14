@@ -3,6 +3,7 @@ import {
     X, FileJson, Search, Users, Wrench, Clock, Database, Plus, Trash2, Play, Pause, Server, Mail, Save,
     Brain, GitBranch, Cpu, Box, Code, Mic, Globe, Eye, EyeOff, Check, Zap
 } from 'lucide-react';
+import yaml from 'js-yaml';
 import SmokestackIcon from './icons/SmokestackIcon';
 import MemoryIcon from './icons/MemoryIcon';
 import KgIcon from './icons/KgIcon';
@@ -529,13 +530,16 @@ const DatabasesContent = ({ currentPath, isGlobal }: { currentPath: string; isGl
         setLoading(true);
         setError(null);
         try {
-            const res = isGlobal
-                ? await (window as any).api.getGlobalContext()
-                : await (window as any).api.getProjectContext(currentPath);
-            if (res?.error) throw new Error(res.error);
-            setDatabases(res?.context?.databases || []);
-        } catch (err: any) {
-            setError(err.message);
+            const ctxPath = effectivePath ? `${effectivePath}/team.ctx` : null;
+            if (!ctxPath) {
+                setDatabases([]);
+                return;
+            }
+            const content = await (window as any).api.readFileContent(ctxPath);
+            const parsed = yaml.load(content) || {};
+            setDatabases(parsed.databases || []);
+        } catch {
+            setDatabases([]);
         } finally {
             setLoading(false);
         }
@@ -549,13 +553,15 @@ const DatabasesContent = ({ currentPath, isGlobal }: { currentPath: string; isGl
         setLoading(true);
         setError(null);
         try {
-            if (isGlobal) {
-                const current = await (window as any).api.getGlobalContext();
-                await (window as any).api.saveGlobalContext({ ...current.context, databases });
-            } else {
-                const current = await (window as any).api.getProjectContext(currentPath);
-                await (window as any).api.saveProjectContext({ path: currentPath, contextData: { ...current.context, databases } });
-            }
+            const ctxPath = effectivePath ? `${effectivePath}/team.ctx` : null;
+            if (!ctxPath) return;
+            let parsed = {};
+            try {
+                const content = await (window as any).api.readFileContent(ctxPath);
+                parsed = yaml.load(content) || {};
+            } catch { }
+            parsed.databases = databases;
+            await (window as any).api.writeFileContent(ctxPath, yaml.dump(parsed));
         } catch (err: any) {
             setError(err.message);
         } finally {

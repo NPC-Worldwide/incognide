@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FileJson, X, Save, Plus, Trash2 } from 'lucide-react';
+import yaml from 'js-yaml';
 import AutosizeTextarea from './AutosizeTextarea';
 
 const CtxEditor = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = false, globalPath = undefined }) => {
@@ -29,9 +30,16 @@ const CtxEditor = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = 
         setIsLoading(true);
         setError(null);
         try {
-            const globalRes = await window.api.getGlobalContext(globalPath);
-            if (globalRes.error) throw new Error(`Global: ${globalRes.error}`);
-            setGlobalCtx(globalRes.context || {});
+            if (globalPath) {
+                try {
+                    const content = await (window as any).api.readFileContent(globalPath + '/team.ctx');
+                    setGlobalCtx(yaml.load(content) || {});
+                } catch {
+                    setGlobalCtx({});
+                }
+            } else {
+                setGlobalCtx({});
+            }
 
             if (currentPath) {
                 const projectRes = await window.api.getProjectContext(currentPath);
@@ -51,8 +59,8 @@ const CtxEditor = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = 
         setIsLoading(true);
         setError(null);
         try {
-            if (isGlobal) {
-                await window.api.saveGlobalContext(globalCtx, globalPath);
+            if (isGlobal && globalPath) {
+                await (window as any).api.writeFileContent(globalPath + '/team.ctx', yaml.dump(globalCtx));
             } else if (currentPath) {
                 await window.api.saveProjectContext({ path: currentPath, contextData: projectCtx });
             }

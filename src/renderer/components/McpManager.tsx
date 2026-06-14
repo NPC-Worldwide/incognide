@@ -37,7 +37,7 @@ interface McpManagerProps {
 }
 
 type ViewMode = 'servers' | 'tools' | 'config';
-type ScopeTab = 'all' | 'global' | 'project';
+type ScopeTab = 'all' | 'project';
 
 const STATUS_COLORS: Record<string, string> = {
     running: 'text-green-400',
@@ -123,7 +123,6 @@ const McpManager: React.FC<McpManagerProps> = ({ currentPath, embedded = true })
 
     const [showAddServer, setShowAddServer] = useState(false);
     const [newServerPath, setNewServerPath] = useState('');
-    const [addScope, setAddScope] = useState<'global' | 'project'>('project');
     const [addMode, setAddMode] = useState<'local' | 'remote' | 'team' | 'marketplace'>('local');
     const [remoteUrl, setRemoteUrl] = useState('');
     const [marketplaceSearch, setMarketplaceSearch] = useState('');
@@ -168,7 +167,7 @@ const McpManager: React.FC<McpManagerProps> = ({ currentPath, embedded = true })
                     path: s.path || s.url || '',
                     label: s.label || s.path || '',
                     command: s.path || '',
-                    scope: s.path?.includes('.incognide') ? 'global' : 'project',
+                    scope: 'project',
                 })));
             }
         } catch {}
@@ -278,37 +277,21 @@ const McpManager: React.FC<McpManagerProps> = ({ currentPath, embedded = true })
                 ? { value: serverValue, id: itemId, name: itemName, env: envVars }
                 : serverValue;
 
-            if (addScope === 'global') {
-                const current = await (window as any).api.getGlobalContext('incognide');
-                const ctx = current?.context || {};
-                const servers = ctx.mcp_servers || [];
-
-                const existing = servers.findIndex((s: any) =>
-                    (typeof s === 'string' ? s : s.value) === serverValue
-                );
-                if (existing >= 0) {
-                    servers[existing] = entry;
-                } else {
-                    servers.push(entry);
-                }
-                await (window as any).api.saveGlobalContext({ ...ctx, mcp_servers: servers }, 'incognide');
+            const current = await (window as any).api.getProjectContext(currentPath);
+            const ctx = current?.context || {};
+            const servers = ctx.mcp_servers || [];
+            const existing = servers.findIndex((s: any) =>
+                (typeof s === 'string' ? s : s.value) === serverValue
+            );
+            if (existing >= 0) {
+                servers[existing] = entry;
             } else {
-                const current = await (window as any).api.getProjectContext(currentPath);
-                const ctx = current?.context || {};
-                const servers = ctx.mcp_servers || [];
-                const existing = servers.findIndex((s: any) =>
-                    (typeof s === 'string' ? s : s.value) === serverValue
-                );
-                if (existing >= 0) {
-                    servers[existing] = entry;
-                } else {
-                    servers.push(entry);
-                }
-                await (window as any).api.saveProjectContext({
-                    path: currentPath,
-                    contextData: { ...ctx, mcp_servers: servers },
-                });
+                servers.push(entry);
             }
+            await (window as any).api.saveProjectContext({
+                path: currentPath,
+                contextData: { ...ctx, mcp_servers: servers },
+            });
             setNewServerPath('');
             setRemoteUrl('');
             setShowAddServer(false);
@@ -318,7 +301,7 @@ const McpManager: React.FC<McpManagerProps> = ({ currentPath, embedded = true })
         } catch (err: any) {
             setError(err.message);
         }
-    }, [newServerPath, addScope, currentPath, loadServers]);
+    }, [newServerPath, currentPath, loadServers]);
 
     const handleMarketplaceAdd = useCallback((item: MarketplaceItem) => {
         if (item.envVars && item.envVars.length > 0) {
@@ -384,22 +367,12 @@ const McpManager: React.FC<McpManagerProps> = ({ currentPath, embedded = true })
                 await (window as any).api.stopMcpServer({ serverPath: server.serverPath });
             }
 
-            const isGlobal = server.origin?.includes('global') || server.origin?.startsWith('auto:');
-            if (isGlobal) {
-                const current = await (window as any).api.getGlobalContext('incognide');
-                const ctx = current?.context || {};
-                ctx.mcp_servers = (ctx.mcp_servers || []).filter(
-                    (s: any) => (typeof s === 'string' ? s : s.value) !== server.serverPath
-                );
-                await (window as any).api.saveGlobalContext(ctx, 'incognide');
-            } else {
-                const current = await (window as any).api.getProjectContext(currentPath);
-                const ctx = current?.context || {};
-                ctx.mcp_servers = (ctx.mcp_servers || []).filter(
-                    (s: any) => (typeof s === 'string' ? s : s.value) !== server.serverPath
-                );
-                await (window as any).api.saveProjectContext({ path: currentPath, contextData: ctx });
-            }
+            const current = await (window as any).api.getProjectContext(currentPath);
+            const ctx = current?.context || {};
+            ctx.mcp_servers = (ctx.mcp_servers || []).filter(
+                (s: any) => (typeof s === 'string' ? s : s.value) !== server.serverPath
+            );
+            await (window as any).api.saveProjectContext({ path: currentPath, contextData: ctx });
 
             if (selectedServer?.serverPath === server.serverPath) {
                 setSelectedServer(null);
@@ -412,7 +385,6 @@ const McpManager: React.FC<McpManagerProps> = ({ currentPath, embedded = true })
     }, [currentPath, loadServers, selectedServer]);
 
     const filteredServers = servers.filter(s => {
-        if (scopeTab === 'global' && !s.origin?.includes('global') && !s.origin?.startsWith('auto:')) return false;
         if (scopeTab === 'project' && (s.origin?.includes('global') || s.origin?.startsWith('auto:'))) return false;
         if (searchQuery) {
             const q = searchQuery.toLowerCase();
@@ -555,21 +527,6 @@ const McpManager: React.FC<McpManagerProps> = ({ currentPath, embedded = true })
                     </div>
 
                     <div className="px-4 py-3">
-                        <div className="flex items-center gap-2 mb-2">
-                            <span className="text-xs theme-text-secondary">Add to:</span>
-                            <button
-                                onClick={() => setAddScope('project')}
-                                className={`text-xs px-2 py-0.5 rounded ${addScope === 'project' ? 'bg-purple-500/30 text-purple-300' : 'theme-text-muted hover:theme-text-secondary'}`}
-                            >
-                                Project
-                            </button>
-                            <button
-                                onClick={() => setAddScope('global')}
-                                className={`text-xs px-2 py-0.5 rounded ${addScope === 'global' ? 'bg-blue-500/30 text-blue-300' : 'theme-text-muted hover:theme-text-secondary'}`}
-                            >
-                                Global
-                            </button>
-                        </div>
 
                         {addMode === 'local' && (
                             <div className="space-y-2">
@@ -904,7 +861,7 @@ const McpManager: React.FC<McpManagerProps> = ({ currentPath, embedded = true })
                 </div>
                 {!selectedServer && (
                     <div className="flex gap-0.5 rounded theme-bg-secondary p-0.5">
-                        {(['all', 'global', 'project'] as ScopeTab[]).map(tab => (
+                        {(['all', 'project'] as ScopeTab[]).map(tab => (
                             <button
                                 key={tab}
                                 onClick={() => setScopeTab(tab)}

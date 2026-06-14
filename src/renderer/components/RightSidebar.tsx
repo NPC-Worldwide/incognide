@@ -271,7 +271,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         }
         const buckets: Record<string, any[]> = {};
         (filteredNpcs || []).forEach((n: any) => {
-            const team = n.team || (n.source === 'project' ? 'project' : 'incognide');
+            const team = n.team || (n.source === 'project' ? 'project' : n.source || 'unknown');
             (buckets[team] = buckets[team] || []).push(n);
         });
         const ordered: Array<[string, any[]]> = [];

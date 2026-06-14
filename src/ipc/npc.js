@@ -1611,31 +1611,6 @@ function register(ctx) {
     return null;
   }
 
-  ipcMain.handle('get-global-context', async (event, globalPath) => {
-    const teamDir = globalPath || INCOGNIDE_TEAM_PATH;
-    const ctxFilePath = await findCtxFile(teamDir);
-    if (!ctxFilePath) return { context: {}, error: null };
-    try {
-      const content = await fsPromises.readFile(ctxFilePath, 'utf-8');
-      const context = yaml.load(content) || {};
-      return { context, path: ctxFilePath, error: null };
-    } catch (err) {
-      return { context: {}, error: err.message };
-    }
-  });
-
-  ipcMain.handle('save-global-context', async (event, contextData, globalPath) => {
-    const teamDir = globalPath || INCOGNIDE_TEAM_PATH;
-    let ctxFilePath = await findCtxFile(teamDir);
-    if (!ctxFilePath) ctxFilePath = path.join(teamDir, 'incognide.ctx');
-    try {
-      const content = yaml.dump(contextData);
-      await fsPromises.writeFile(ctxFilePath, content, 'utf-8');
-      return { success: true, error: null };
-    } catch (err) {
-      return { error: err.message };
-    }
-  });
 
 
   ipcMain.handle('get-project-context', async (event, path) => {

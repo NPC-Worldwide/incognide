@@ -448,8 +448,6 @@ readDocxContent: (filePath) =>
     tileJinxRecompile: () => ipcRenderer.invoke('tile-jinx-recompile'),
     transformTsx: (code) => ipcRenderer.invoke('transformTsx', code),
 
-    getGlobalContext: (globalPath) => ipcRenderer.invoke('get-global-context', globalPath),
-    saveGlobalContext: (contextData, globalPath) => ipcRenderer.invoke('save-global-context', contextData, globalPath),
     getProjectContext: (path) => ipcRenderer.invoke('get-project-context', path),
     saveProjectContext: (data) => ipcRenderer.invoke('save-project-context', data),
     initProjectTeam: (path) => ipcRenderer.invoke('init-project-team', path),
