@@ -336,7 +336,7 @@ const Sidebar = (props: any) => {
     const [skillIngestLoading, setSkillIngestLoading] = useState(false);
     const [skillIngestError, setSkillIngestError] = useState<string | null>(null);
     const [showSkillIngest, setShowSkillIngest] = useState(false);
-    const [sidebarSkillsExpanded, setSidebarSkillsExpanded] = useState<Set<string>>(new Set(['project', 'incognide']));
+    const [sidebarSkillsExpanded, setSidebarSkillsExpanded] = useState<Set<string>>(new Set(['project']));
 
     const [codeFileDropdownOpen, setCodeFileDropdownOpen] = useState(false);
 
@@ -645,7 +645,7 @@ const Sidebar = (props: any) => {
             { id: 'terminal', label: 'Terminal', icon: 'terminal', enabled: true, order: 4, subTypes: ['system', 'npcsh', 'guac'] },
             { id: 'code', label: 'Code', icon: 'code', enabled: true, order: 5 },
             { id: 'document', label: 'Doc', icon: 'file-text', enabled: true, order: 6, subTypes: ['docx', 'xlsx', 'pptx'] },
-            { id: 'workspace', label: 'Incognide', icon: 'incognide', enabled: true, order: 7 }
+            { id: 'workspace', label: 'Workspace', icon: 'workspace', enabled: true, order: 7 }
         ],
         customTiles: []
     });
