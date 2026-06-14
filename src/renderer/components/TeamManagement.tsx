@@ -1100,7 +1100,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                         startNewConversation={startNewConversation}
                                         embedded={true}
                                         isGlobal={isGlobal}
-                                        globalPath={globalPath}
+                                        teamKey={selectedTeam}
                                         onOpenJinxTab={(name) => {
                                             setJinxMenuInitialJinxName(name);
                                             changeTab('jinxes');
@@ -1115,7 +1115,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                     currentPath={effectivePath}
                                     embedded={true}
                                     isGlobal={isGlobal}
-                                    globalPath={globalPath}
+                                    teamKey={selectedTeam}
                                     initialJinxName={jinxMenuInitialJinxName}
                                 />
                             )}

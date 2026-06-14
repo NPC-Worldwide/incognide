@@ -94,19 +94,19 @@ const NPCTeamMenu = ({
             setError(null);
 
             const npcResponse = isGlobal
-                ? await window.api.getNPCTeamFromPath(globalPath)
+                ? await window.api.getNPCTeamFromPath(teamKey)
                 : await window.api.getNPCTeamProject(currentPath);
             setNpcs(npcResponse.npcs || []);
 
             const jinxResponse = isGlobal
-                ? await window.api.getJinxesTeam(globalPath)
+                ? await window.api.getJinxesTeam(teamKey)
                 : await window.api.getJinxesProject(currentPath);
             setAvailableJinxes(jinxResponse.jinxes || []);
 
             setLoading(false);
         };
         loadData();
-    }, [isOpen, isGlobal, currentPath, globalPath]);
+    }, [isOpen, isGlobal, currentPath, teamKey]);
 
     useEffect(() => {
         let filtered = executionHistory;
@@ -401,7 +401,7 @@ const NPCTeamMenu = ({
         await writeFileContent(editedNpc.source_path, yamlContent);
 
         const updatedNpcs = await (isGlobal
-            ? window.api.getNPCTeamFromPath(globalPath)
+            ? window.api.getNPCTeamFromPath(teamKey)
             : window.api.getNPCTeamProject(currentPath));
         setNpcs(updatedNpcs.npcs || []);
         setSelectedNpc(npcToSave);

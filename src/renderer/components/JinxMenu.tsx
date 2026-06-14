@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import AutosizeTextarea from './AutosizeTextarea';
 
-const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = true, globalPath = undefined, initialJinxName = undefined }) => {
+const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = true, teamKey = undefined, initialJinxName = undefined }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [jinxes, setJinxes] = useState([]);
@@ -42,7 +42,7 @@ const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = t
             setError(null);
 
             const response = isGlobal
-                ? await window.api.getJinxesTeam(globalPath)
+                ? await window.api.getJinxesTeam(teamKey)
                 : await window.api.getJinxesProject(currentPath);
 
             if (response.error) {
@@ -55,7 +55,7 @@ const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = t
             setLoading(false);
         };
         loadJinxes();
-    }, [isOpen, isGlobal, currentPath, globalPath]);
+    }, [isOpen, isGlobal, currentPath, teamKey]);
 
     useEffect(() => {
         if (!initialJinxName || jinxes.length === 0) return;
@@ -327,7 +327,7 @@ const labelExecution = async (messageId, label) => {
             jinx: editedJinx,
             isGlobal,
             currentPath,
-            globalPath,
+            globalPath: teamKey,
         });
 
         if (response.error) {
@@ -336,7 +336,7 @@ const labelExecution = async (messageId, label) => {
         }
 
         const refreshed = isGlobal
-            ? await window.api.getJinxesTeam(globalPath)
+            ? await window.api.getJinxesTeam(teamKey)
             : await window.api.getJinxesProject(currentPath);
         setJinxes(refreshed.jinxes || []);
         setSelectedJinx(editedJinx);
