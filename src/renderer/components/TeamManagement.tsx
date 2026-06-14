@@ -505,6 +505,15 @@ LIMIT 10
     );
 };
 
+const findCtxFile = async (dirPath: string) => {
+    try {
+        const items = await (window as any).api.readDirectory(dirPath);
+        const ctxFiles = (items || []).filter(item => item.name && item.name.endsWith('.ctx'));
+        if (ctxFiles.length > 0) return ctxFiles[0].name;
+    } catch { }
+    return null;
+};
+
 const DatabasesContent = ({ currentPath }: { currentPath: string }) => {
     const [databases, setDatabases] = useState<{ value: string }[]>([]);
     const [loading, setLoading] = useState(false);
@@ -515,12 +524,10 @@ const DatabasesContent = ({ currentPath }: { currentPath: string }) => {
         setLoading(true);
         setError(null);
         try {
-            const ctxPath = currentPath ? `${currentPath}/team.ctx` : null;
-            if (!ctxPath) {
-                setDatabases([]);
-                return;
-            }
-            const result = await (window as any).api.readFileContent(ctxPath);
+            if (!currentPath) { setDatabases([]); return; }
+            const ctxFile = await findCtxFile(currentPath);
+            if (!ctxFile) { setDatabases([]); return; }
+            const result = await (window as any).api.readFileContent(`${currentPath}/${ctxFile}`);
             const text = typeof result === 'string' ? result : result?.content;
             const parsed = text ? yaml.load(text) || {} : {};
             setDatabases(parsed.databases || []);
@@ -539,16 +546,17 @@ const DatabasesContent = ({ currentPath }: { currentPath: string }) => {
         setLoading(true);
         setError(null);
         try {
-            const ctxPath = currentPath ? `${currentPath}/team.ctx` : null;
-            if (!ctxPath) return;
-            let parsed = {};
+            if (!currentPath) return;
+            let ctxFile = await findCtxFile(currentPath);
+            if (!ctxFile) ctxFile = 'team.ctx';
+            let parsed: Record<string, any> = {};
             try {
-                const result = await (window as any).api.readFileContent(ctxPath);
+                const result = await (window as any).api.readFileContent(`${currentPath}/${ctxFile}`);
                 const text = typeof result === 'string' ? result : result?.content;
                 parsed = text ? yaml.load(text) || {} : {};
             } catch { }
             parsed.databases = databases;
-            const res = await (window as any).api.writeFileContent(ctxPath, yaml.dump(parsed));
+            const res = await (window as any).api.writeFileContent(`${currentPath}/${ctxFile}`, yaml.dump(parsed));
             if (res?.error) throw new Error(res.error);
         } catch (err: any) {
             setError(err.message);
@@ -874,6 +882,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
 
     const [registeredTeams, setRegisteredTeams] = useState<Record<string, string>>({});
     const [selectedTeam, setSelectedTeam] = useState<string>('');
+    const [projectTeamPath, setProjectTeamPath] = useState<string | null>(null);
     const [discoveredTeams, setDiscoveredTeams] = useState<any[]>([]);
     const [scanning, setScanning] = useState(false);
 
@@ -886,6 +895,23 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
 
     useEffect(() => { loadRegisteredTeams(); }, []);
 
+    // Detect project team at currentPath/npc_team
+    useEffect(() => {
+        if (!isOpen || !currentPath) {
+            setProjectTeamPath(null);
+            return;
+        }
+        (async () => {
+            try {
+                const items = await (window as any).api.readDirectory(currentPath);
+                const hasNpcTeam = (items || []).some(item => item.name === 'npc_team' && item.isDirectory);
+                setProjectTeamPath(hasNpcTeam ? `${currentPath}/npc_team` : null);
+            } catch {
+                setProjectTeamPath(null);
+            }
+        })();
+    }, [isOpen, currentPath]);
+
     // Default team selection
     useEffect(() => {
         if (!isOpen) return;
@@ -893,9 +919,11 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
             const keys = Object.keys(registeredTeams);
             if (keys.length > 0) {
                 setSelectedTeam(keys[0]);
+            } else if (projectTeamPath) {
+                setSelectedTeam('project');
             }
         }
-    }, [isOpen, registeredTeams]);
+    }, [isOpen, registeredTeams, projectTeamPath]);
 
     const handleScanTeams = async () => {
         setScanning(true);
@@ -919,7 +947,21 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
         } catch {}
     };
 
-    const effectivePath = registeredTeams[selectedTeam] || '';
+    const handleRegisterProjectTeam = async () => {
+        if (!projectTeamPath) return;
+        try {
+            const data = await (window as any).api.teamsRead();
+            const teams = data?.teams || {};
+            const name = projectTeamPath.split('/').pop() || 'project';
+            const key = name.toLowerCase().replace(/[^a-z0-9_]/g, '');
+            teams[key] = projectTeamPath;
+            await (window as any).api.teamsWrite(teams);
+            setRegisteredTeams(teams);
+            setSelectedTeam(key);
+        } catch {}
+    };
+
+    const effectivePath = selectedTeam === 'project' ? (projectTeamPath || '') : (registeredTeams[selectedTeam] || '');
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -1002,7 +1044,18 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                 {Object.entries(registeredTeams).map(([key, path]) => (
                                     <option key={key} value={key}>{key}</option>
                                 ))}
+                                {projectTeamPath && (
+                                    <option value="project">Current Project</option>
+                                )}
                             </select>
+                            {selectedTeam === 'project' && projectTeamPath && (
+                                <button
+                                    onClick={handleRegisterProjectTeam}
+                                    className="mt-1 w-full px-2 py-1 rounded text-[10px] bg-purple-600 hover:bg-purple-500 text-white transition flex items-center justify-center gap-1"
+                                >
+                                    <Plus size={10} /> Register Team
+                                </button>
+                            )}
                             <button
                                 onClick={handleScanTeams}
                                 disabled={scanning}

@@ -8,6 +8,20 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false }) => {
     const [ctx, setCtx] = useState<Record<string, any>>({});
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [ctxFileName, setCtxFileName] = useState<string | null>(null);
+
+    const findCtxFile = async (dirPath: string) => {
+        try {
+            const items = await (window as any).api.readDirectory(dirPath);
+            const ctxFiles = (items || []).filter(item => item.name && item.name.endsWith('.ctx'));
+            if (ctxFiles.length > 0) {
+                return ctxFiles[0].name;
+            }
+        } catch {
+            // ignore
+        }
+        return null;
+    };
 
     useEffect(() => {
         if (isOpen && teamPath) {
@@ -28,22 +42,29 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false }) => {
     const loadContext = async () => {
         if (!teamPath) {
             setCtx({});
+            setCtxFileName(null);
             return;
         }
         setIsLoading(true);
         setError(null);
         try {
-            const result = await (window as any).api.readFileContent(teamPath + '/team.ctx');
-            const text = typeof result === 'string' ? result : result?.content;
-            if (text == null) {
-                setCtx({});
-                setError(result?.error || 'Failed to read team.ctx');
+            const foundFile = await findCtxFile(teamPath);
+            if (foundFile) {
+                setCtxFileName(foundFile);
+                const result = await (window as any).api.readFileContent(teamPath + '/' + foundFile);
+                const text = typeof result === 'string' ? result : result?.content;
+                if (text != null) {
+                    setCtx(yaml.load(text) || {});
+                } else {
+                    setCtx({});
+                }
             } else {
-                setCtx(yaml.load(text) || {});
+                setCtxFileName(null);
+                setCtx({});
             }
-        } catch (err: any) {
+        } catch {
+            setCtxFileName(null);
             setCtx({});
-            setError(err?.message || 'Failed to load context');
         } finally {
             setIsLoading(false);
         }
@@ -54,7 +75,12 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false }) => {
         setIsLoading(true);
         setError(null);
         try {
-            const result = await (window as any).api.writeFileContent(teamPath + '/team.ctx', yaml.dump(ctx));
+            let targetFile = ctxFileName;
+            if (!targetFile) {
+                targetFile = 'team.ctx';
+                setCtxFileName(targetFile);
+            }
+            const result = await (window as any).api.writeFileContent(teamPath + '/' + targetFile, yaml.dump(ctx));
             if (result?.error) {
                 setError(result.error);
             }
