@@ -1589,8 +1589,12 @@ async function deployIncognideTeamOnStartup() {
           await copyAndTrack(path.join(src, item), path.join(dest, item), relBase ? `${relBase}/${item}` : item);
         }
       } else {
-        await fsPromises.copyFile(src, dest);
-        newManifest[relBase] = crypto.createHash('sha256').update(await fsPromises.readFile(dest)).digest('hex');
+        if (relBase.endsWith('.npc') && fs.existsSync(dest)) {
+          newManifest[relBase] = crypto.createHash('sha256').update(await fsPromises.readFile(dest)).digest('hex');
+        } else {
+          await fsPromises.copyFile(src, dest);
+          newManifest[relBase] = crypto.createHash('sha256').update(await fsPromises.readFile(dest)).digest('hex');
+        }
       }
     };
     await copyAndTrack(npcTeamSrc, destBase);
@@ -1640,11 +1644,12 @@ body { margin:0; background:#0f0f23; display:flex; align-items:center; justify-c
   const dataPath = ensureUserDataDirectory();
   await ensureTablesExist();
 
-  // Ensure bundled npc_team is deployed so daemon jinx paths resolve
-  try {
-    await deployIncognideTeamOnStartup();
-  } catch (e) {
-    log(`[Deploy] Startup deploy error: ${e.message}`);
+  if (app.isPackaged) {
+    try {
+      await deployIncognideTeamOnStartup();
+    } catch (e) {
+      log(`[Deploy] Startup deploy error: ${e.message}`);
+    }
   }
 
   // Auto-start daemon if it was running or if there are enabled scheduled jobs
@@ -3309,11 +3314,10 @@ ipcMain.handle('backend:installAndStart', async (event, { pythonPath, npcpyExtra
 
     const venvPython = path.join(venvDir, 'bin', 'python');
 
-    sendProgress(`Installing npcpy[${npcpyExtras}] and npcsh...`);
+    sendProgress(`Installing npcpy[${npcpyExtras}]...`);
 
-    // Stream pip install output
     await new Promise((resolve, reject) => {
-      const installProc = spawn(venvPython, ['-m', 'pip', 'install', '--upgrade', `npcpy[${npcpyExtras}]`, 'npcsh'], {
+      const installProc = spawn(venvPython, ['-m', 'pip', 'install', '--upgrade', `npcpy[${npcpyExtras}]`], {
         env: { ...process.env, HOME: os.homedir(), PYTHONUNBUFFERED: '1' },
       });
 

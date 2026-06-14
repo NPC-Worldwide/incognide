@@ -2,44 +2,26 @@ import React, { useState, useEffect, useRef } from 'react';
 import { BACKEND_URL } from '../config';
 import { writeFileContent } from '../api/fileSystem';
 import yaml from 'js-yaml';
+import { saveNPCFile } from 'npcts/core';
 import {
-    Bot, Loader, ChevronRight, X, Save, MessageSquare,
+    Bot, Loader, ChevronDown, X, Save, MessageSquare,
     Plus, Trash2, History, CheckCircle, XCircle, Tag,
     Brain, GitBranch, Edit, Search, Download, Filter,
-    Database, ChevronDown, Sparkles, Zap, LayoutDashboard
+    Database, Sparkles, Zap, LayoutDashboard
 } from 'lucide-react';
 import AutosizeTextarea from './AutosizeTextarea';
 import ForceGraph2D from 'react-force-graph-2d';
-    const startNewConversationWithNpc = async (npc) => {
-        try {
-            const newConversation = await createNewConversation();
-            if (newConversation) {
-
-                setCurrentNPC(npc.name);
-
-                setMessages([{
-                    role: 'assistant',
-                    content: `Hello, I'm ${npc.name}. ${npc.primary_directive}`,
-                    timestamp: new Date().toISOString(),
-                    npc: npc.name,
-                    model: npc.model || currentModel
-                }]);
-            }
-        } catch (error) {
-            console.error('Error starting conversation with NPC:', error);
-            setError(error.message);
-        }
-    };
 
 const NPCTeamMenu = ({
     isOpen,
     onClose,
     currentPath,
     startNewConversation,
-    createDataDashPane,
+    createDataDashPane = undefined,
+    onOpenJinxTab,
     embedded = false,
     isGlobal = true,
-    globalPath = undefined,
+    teamKey = undefined,
 }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -47,6 +29,8 @@ const NPCTeamMenu = ({
     const [selectedNpc, setSelectedNpc] = useState(null);
     const [editedNpc, setEditedNpc] = useState(null);
     const [availableJinxes, setAvailableJinxes] = useState([]);
+    const [jinxDropdownOpen, setJinxDropdownOpen] = useState(false);
+    const [jinxDropdownSearch, setJinxDropdownSearch] = useState('');
     const [activeTab, setActiveTab] = useState('config');
     const [expandedExecution, setExpandedExecution] = useState(null);
 
@@ -110,12 +94,12 @@ const NPCTeamMenu = ({
             setError(null);
 
             const npcResponse = isGlobal
-                ? await window.api.getNPCTeamGlobal(globalPath)
+                ? await window.api.getNPCTeamFromPath(globalPath)
                 : await window.api.getNPCTeamProject(currentPath);
             setNpcs(npcResponse.npcs || []);
 
             const jinxResponse = isGlobal
-                ? await window.api.getJinxesGlobal(globalPath)
+                ? await window.api.getJinxesTeam(globalPath)
                 : await window.api.getJinxesProject(currentPath);
             setAvailableJinxes(jinxResponse.jinxes || []);
 
@@ -374,21 +358,6 @@ const NPCTeamMenu = ({
         setEditedNpc(prev => ({ ...prev, [field]: value }));
     };
 
-    const handleJinxPatternChange = (index, value) => {
-        setEditedNpc(prev => {
-            const newPatterns = [...(prev.jinxes || [])];
-            newPatterns[index] = value;
-            return { ...prev, jinxes: newPatterns };
-        });
-    };
-
-    const addJinxPattern = () => {
-        setEditedNpc(prev => ({
-            ...prev,
-            jinxes: [...(prev.jinxes || []), '']
-        }));
-    };
-
     const removeJinxPattern = (index) => {
         setEditedNpc(prev => ({
             ...prev,
@@ -396,21 +365,43 @@ const NPCTeamMenu = ({
         }));
     };
 
+    const addJinxToNpc = (jinxName) => {
+        setEditedNpc(prev => {
+            const current = prev.jinxes || [];
+            if (current.includes(jinxName) || current.includes('*')) return prev;
+            return { ...prev, jinxes: [...current, jinxName] };
+        });
+    };
+
     const handleSave = async () => {
+        const jinxesToSave = editedNpc.jinxes.length === 1 &&
+               editedNpc.jinxes[0] === '*'
+            ? '*'
+            : editedNpc.jinxes;
         const npcToSave = {
             ...editedNpc,
-            jinxes: editedNpc.jinxes.length === 1 &&
-                   editedNpc.jinxes[0] === '*'
-                ? '*'
-                : editedNpc.jinxes
+            jinxes: jinxesToSave
         };
 
-        const { source, source_path, source_ext, team, ...cleanNpc } = npcToSave;
-        const yamlContent = yaml.dump(cleanNpc, { lineWidth: -1 });
+        const { source, source_path, source_ext, team, _original_content, ...cleanNpc } = npcToSave;
+        let yamlContent: string;
+        if (_original_content) {
+            yamlContent = saveNPCFile(_original_content, cleanNpc);
+        } else {
+            const jinxValues = Array.isArray(cleanNpc.jinxes)
+                ? cleanNpc.jinxes.map((j: any) => {
+                    if (typeof j === 'string' && /^[a-zA-Z0-9_]+$/.test(j)) {
+                      return `{{ Jinx('${j}') }}`;
+                    }
+                    return j;
+                  })
+                : cleanNpc.jinxes;
+            yamlContent = yaml.dump({ ...cleanNpc, jinxes: jinxValues }, { lineWidth: -1 });
+        }
         await writeFileContent(editedNpc.source_path, yamlContent);
 
         const updatedNpcs = await (isGlobal
-            ? window.api.getNPCTeamGlobal(globalPath)
+            ? window.api.getNPCTeamFromPath(globalPath)
             : window.api.getNPCTeamProject(currentPath));
         setNpcs(updatedNpcs.npcs || []);
         setSelectedNpc(npcToSave);
@@ -676,52 +667,308 @@ const NPCTeamMenu = ({
 
                                         <div>
                                             <div className="flex justify-between
-                                                items-center mb-2">
+                                                items-center mb-2"
+                                            >
                                                 <label className="text-sm
-                                                    font-semibold">
+                                                    font-semibold"
+                                                >
                                                     Jinx Patterns
                                                 </label>
-                                                <button
-                                                    onClick={addJinxPattern}
-                                                    className="text-xs
-                                                        theme-button-subtle
-                                                        flex items-center gap-1"
+                                                <span className="text-xs
+                                                    theme-text-secondary"
                                                 >
-                                                    <Plus size={12} /> Add
-                                                </button>
+                                                    {(editedNpc.jinxes || []).length}
+                                                </span>
                                             </div>
 
-                                            <div className="space-y-1">
-                                                {(editedNpc.jinxes || []).map((pattern, i) => (
-                                                    <div key={i} className="flex
-                                                        items-center gap-1">
+                                            {/* Searchable dropdown to add jinxes */}
+                                            <div className="relative mb-3"
+                                            >
+                                                <div className="flex items-center
+                                                    gap-1 w-full"
+                                                >
+                                                    <div className="relative flex-1"
+                                                    >
+                                                        <Search size={12}
+                                                            className="absolute
+                                                                left-2 top-1/2
+                                                                -translate-y-1/2
+                                                                text-gray-500" />
                                                         <input
-                                                            className="flex-1
-                                                                theme-input p-1.5
-                                                                rounded text-xs
-                                                                font-mono"
-                                                            value={pattern}
-                                                            onChange={(e) =>
-                                                                handleJinxPatternChange(
-                                                                    i,
+                                                            type="text"
+                                                            placeholder="Search jinxes..."
+                                                            className="w-full
+                                                                theme-input pl-7 pr-2
+                                                                py-1.5 rounded text-xs"
+                                                            value={jinxDropdownSearch}
+                                                            onChange={(e) => {
+                                                                setJinxDropdownSearch(
                                                                     e.target.value
-                                                                )
+                                                                );
+                                                                setJinxDropdownOpen(true);
+                                                            }}
+                                                            onFocus={() =>
+                                                                setJinxDropdownOpen(true)
                                                             }
-                                                            placeholder="code/* or *"
                                                         />
-                                                        <button 
-                                                            onClick={() => 
-                                                                removeJinxPattern(i)
-                                                            } 
-                                                            className="p-1.5 
-                                                                theme-button-danger-subtle 
-                                                                rounded"
-                                                        >
-                                                            <Trash2 size={14} />
-                                                        </button>
                                                     </div>
-                                                ))}
+                                                    <button
+                                                        onClick={() =>
+                                                            setJinxDropdownOpen(
+                                                                !jinxDropdownOpen
+                                                            )
+                                                        }
+                                                        className="p-1.5
+                                                            theme-button-subtle rounded"
+                                                    >
+                                                        <ChevronDown
+                                                            size={14}
+                                                            className={`text-gray-500
+                                                                transition-transform
+                                                                ${jinxDropdownOpen
+                                                                    ? 'rotate-180'
+                                                                    : ''}`}
+                                                        />
+                                                    </button>
+                                                </div>
+
+                                                {jinxDropdownOpen && (
+                                                    <div className="absolute z-10
+                                                        left-0 right-0 mt-0.5 border
+                                                        rounded theme-border
+                                                        theme-bg-secondary shadow-lg
+                                                        max-h-56 overflow-y-auto"
+                                                    >
+                                                        {(() => {
+                                                            const current = new Set(
+                                                                editedNpc.jinxes || []
+                                                            );
+                                                            const filtered =
+                                                                availableJinxes.filter(
+                                                                    j => {
+                                                                        const n = j.name ||
+                                                                            j.jinx_name;
+                                                                        if (current.has(n)
+                                                                        ) return false;
+                                                                        if (!jinxDropdownSearch
+                                                                        ) return true;
+                                                                        return n.toLowerCase()
+                                                                            .includes(
+                                                                                jinxDropdownSearch
+                                                                                    .toLowerCase()
+                                                                            );
+                                                                    }
+                                                                );
+                                                            if (filtered.length === 0) {
+                                                                return (
+                                                                    <p className="text-xs
+                                                                        theme-text-secondary
+                                                                        italic p-2"
+                                                                    >
+                                                                        No jinxes found
+                                                                    </p>
+                                                                );
+                                                            }
+                                                            const byFolder = {};
+                                                            for (const j of filtered.sort(
+                                                                (a, b) =>
+                                                                    (a.name || a.jinx_name)
+                                                                        .localeCompare(
+                                                                            b.name ||
+                                                                            b.jinx_name
+                                                                        )
+                                                            )) {
+                                                                const n = j.name ||
+                                                                    j.jinx_name;
+                                                                const parts = (j.path || n)
+                                                                    .split('/');
+                                                                const folder =
+                                                                    parts.length > 1
+                                                                        ? parts.slice(
+                                                                              0,
+                                                                              -1
+                                                                          )
+                                                                              .join('/')
+                                                                        : '';
+                                                                if (!byFolder[folder]) {
+                                                                    byFolder[folder] = [];
+                                                                }
+                                                                byFolder[folder].push(j);
+                                                            }
+                                                            const items = [];
+                                                            const folders = Object.keys(
+                                                                byFolder
+                                                            ).sort();
+                                                            for (const folder of folders) {
+                                                                if (folder) {
+                                                                    items.push(
+                                                                        <div
+                                                                            key={folder}
+                                                                            className="px-2
+                                                                                py-0.5
+                                                                                text-[10px]
+                                                                                font-semibold
+                                                                                uppercase
+                                                                                tracking-wider
+                                                                                text-gray-500
+                                                                                theme-border-b"
+                                                                        >
+                                                                            {folder}
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                                for (const j of byFolder[
+                                                                    folder
+                                                                ]) {
+                                                                    const n = j.name ||
+                                                                        j.jinx_name;
+                                                                    items.push(
+                                                                        <div
+                                                                            key={j.path || n}
+                                                                            className="flex
+                                                                                items-center
+                                                                                gap-1
+                                                                                w-full
+                                                                                px-2 py-1"
+                                                                        >
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    onOpenJinxTab?.(
+                                                                                        n
+                                                                                    );
+                                                                                    setJinxDropdownOpen(
+                                                                                        false
+                                                                                    );
+                                                                                }}
+                                                                                className="flex-1
+                                                                                    text-left
+                                                                                    text-xs
+                                                                                    theme-hover
+                                                                                    truncate
+                                                                                    flex
+                                                                                    items-center
+                                                                                    gap-1.5
+                                                                                    rounded
+                                                                                    px-1"
+                                                                                title={
+                                                                                    j.description ||
+                                                                                    n
+                                                                                }
+                                                                            >
+                                                                                <Zap
+                                                                                    size={10}
+                                                                                    className="text-blue-400"
+                                                                                />
+                                                                                {n}
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    addJinxToNpc(
+                                                                                        n
+                                                                                    );
+                                                                                    setJinxDropdownSearch(
+                                                                                        ''
+                                                                                    );
+                                                                                    setJinxDropdownOpen(
+                                                                                        false
+                                                                                    );
+                                                                                }}
+                                                                                className="p-1
+                                                                                    theme-button-subtle
+                                                                                    rounded"
+                                                                                title="Add to NPC"
+                                                                            >
+                                                                                <Plus size={12} />
+                                                                            </button>
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                            }
+                                                            return items;
+                                                        })()}
+                                                    </div>
+                                                )}
                                             </div>
+
+                                            {/* Current patterns — sorted, one per line */}
+                                            <div className="space-y-1"
+                                            >
+                                                {editedNpc.jinxes?.length > 0 ? (
+                                                    editedNpc.jinxes
+                                                        .slice()
+                                                        .sort((a, b) =>
+                                                            a.localeCompare(b)
+                                                        )
+                                                        .map((pattern) => (
+                                                            <div
+                                                                key={pattern}
+                                                                className="flex
+                                                                    items-center
+                                                                    justify-between
+                                                                    w-full px-2 py-1
+                                                                    rounded text-xs
+                                                                    theme-bg-secondary"
+                                                            >
+                                                                <button
+                                                                    onClick={() =>
+                                                                        onOpenJinxTab?.(
+                                                                            pattern
+                                                                        )
+                                                                    }
+                                                                    className="flex
+                                                                        items-center
+                                                                        gap-1.5
+                                                                        text-left
+                                                                        flex-1
+                                                                        truncate
+                                                                        theme-hover
+                                                                        rounded px-1"
+                                                                >
+                                                                    {pattern === '*' ? (
+                                                                        <Sparkles
+                                                                            size={12}
+                                                                            className="text-yellow-500" />
+                                                                    ) : (
+                                                                        <Zap
+                                                                            size={12}
+                                                                            className="text-blue-400" />
+                                                                    )}
+                                                                    <span
+                                                                        className="font-mono"
+                                                                    >{pattern}</span>
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        const idx = (
+                                                                            editedNpc.jinxes ||
+                                                                            []
+                                                                        ).indexOf(
+                                                                            pattern
+                                                                        );
+                                                                        if (idx >= 0) {
+                                                                            removeJinxPattern(
+                                                                                idx
+                                                                            );
+                                                                        }
+                                                                    }}
+                                                                    className="p-0.5
+                                                                        rounded
+                                                                        theme-hover
+                                                                        text-gray-500"
+                                                                >
+                                                                    <X size={12} />
+                                                                </button>
+                                                            </div>
+                                                        ))
+                                                ) : (
+                                                    <span className="text-xs
+                                                        theme-text-secondary italic"
+                                                    >
+                                                        No jinx patterns set
+                                                    </span>
+                                                )}
+                                            </div>
+
                                         </div>
                                     </div>
                                 )}

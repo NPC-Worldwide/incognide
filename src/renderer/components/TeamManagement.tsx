@@ -75,12 +75,12 @@ const SqlModelsContent = ({ currentPath, npcList = [], jinxList = [], isGlobal }
     const fetchNpcsAndJinxes = async () => {
         try {
             const npcResponse = isGlobal
-                ? await (window as any).api.getNPCTeamGlobal?.()
+                ? await (window as any).api.getNPCTeamFromPath?.(selectedTeam)
                 : await (window as any).api.getNPCTeamProject?.(currentPath);
             if (npcResponse?.npcs) setNpcs(npcResponse.npcs);
 
             const jinxResponse = isGlobal
-                ? await (window as any).api.getJinxesGlobal?.()
+                ? await (window as any).api.getJinxesTeam?.(selectedTeam)
                 : await (window as any).api.getJinxesProject?.(currentPath);
             if (jinxResponse?.jinxes) setJinxes(jinxResponse.jinxes);
         } catch (err) {
@@ -881,6 +881,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
     const [projectTeamExists, setProjectTeamExists] = useState(false);
     const [discoveredTeams, setDiscoveredTeams] = useState<any[]>([]);
     const [scanning, setScanning] = useState(false);
+    const [jinxMenuInitialJinxName, setJinxMenuInitialJinxName] = useState<string | undefined>(undefined);
 
     const loadRegisteredTeams = async () => {
         try {
@@ -1094,6 +1095,10 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                         embedded={true}
                                         isGlobal={isGlobal}
                                         globalPath={globalPath}
+                                        onOpenJinxTab={(name) => {
+                                            setJinxMenuInitialJinxName(name);
+                                            changeTab('jinxes');
+                                        }}
                                     />
                                 </div>
                             )}
@@ -1105,6 +1110,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                     embedded={true}
                                     isGlobal={isGlobal}
                                     globalPath={globalPath}
+                                    initialJinxName={jinxMenuInitialJinxName}
                                 />
                             )}
                             {activeTab === 'mcp' && (

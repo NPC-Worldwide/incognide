@@ -594,7 +594,7 @@ onTerminalClosed: (callback) => {
     getBrowserHistory: (folderPath) => ipcRenderer.invoke('get-browser-history', folderPath),
     browserAddToHistory: (data) => ipcRenderer.invoke('browser-add-to-history', data),
 
-    getJinxesGlobal: (globalPath) => ipcRenderer.invoke('get-jinxes-global', globalPath),
+    getJinxesTeam: (globalPath) => ipcRenderer.invoke('get-jinxes-team', globalPath),
     getJinxesProject: async (currentPath) => {
         try {
             const response = await fetch(`${BACKEND_URL}/api/jinxes/project?currentPath=${encodeURIComponent(currentPath)}`);
@@ -761,7 +761,7 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
         return await ipcRenderer.invoke('getNPCTeamProject', currentPath);
     },
 
-    getNPCTeamGlobal: (globalPath) => ipcRenderer.invoke('getNPCTeamGlobal', globalPath),
+    getNPCTeamFromPath: (teamKey) => ipcRenderer.invoke('get-npc-team-from-path', teamKey),
 
     onBrowserShowContextMenu: (callback) => {
         const handler = (_, data) => callback(data);

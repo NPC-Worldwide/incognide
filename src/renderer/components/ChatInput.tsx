@@ -141,7 +141,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         currentProvider, setCurrentProvider, favoriteModels, toggleFavoriteModel,
         showAllModels, setShowAllModels, modelsToDisplay, ollamaToolModels, setError,
         modelWarning,
-        availableNPCs, npcsLoading, npcsError, currentNPC, setCurrentNPC,
+        currentNPC, setCurrentNPC,
         selectedModels, setSelectedModels, selectedNPCs, setSelectedNPCs,
         broadcastMode, setBroadcastMode,
         availableMcpServers,
@@ -212,6 +212,46 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     const [npcResolvedTools, setNpcResolvedTools] = useState<any[]>([]);
     const [teamServers, setTeamServers] = useState<any[]>([]);
     const [npcToolsLoading, setNpcToolsLoading] = useState(false);
+    const [availableNPCs, setAvailableNPCs] = useState<any[]>([]);
+    const [npcsLoading, setNpcsLoading] = useState(false);
+    const [npcsError, setNpcsError] = useState<string | null>(null);
+    const loadAvailableNPCs = async () => {
+        setNpcsLoading(true);
+        setNpcsError(null);
+        try {
+            const teamsData = await window.api.teamsRead();
+            const registeredPaths = Object.entries(teamsData?.teams || {});
+            const teamFetches: Promise<any>[] = registeredPaths.map(([key, teamPath]) =>
+                window.api.getNPCTeamFromPath(teamPath)
+            );
+            const results = await Promise.allSettled(teamFetches);
+            const combinedNPCs: any[] = [];
+            results.forEach((result, idx) => {
+                const [teamKey] = registeredPaths[idx];
+                const value = result.status === 'fulfilled' ? result.value : {};
+                const npcs = value.npcs || [];
+                npcs.forEach((npc: any) => {
+                    combinedNPCs.push({
+                        ...npc,
+                        value: npc.name,
+                        display_name: `${npc.name} | ${npc.team_name || teamKey}`,
+                        source: 'registered',
+                        team: teamKey,
+                        _teamConfig: value.teamConfig,
+                    });
+                });
+            });
+            setAvailableNPCs(combinedNPCs);
+        } catch (err: any) {
+            setNpcsError(err.message);
+            setAvailableNPCs([]);
+        } finally {
+            setNpcsLoading(false);
+        }
+    };
+    useEffect(() => {
+        loadAvailableNPCs();
+    }, [paneId, currentPath]);
     // Track which MCP servers are enabled (multi-select)
     const [enabledServers, setEnabledServers] = useState<Set<string>>(new Set());
 
@@ -316,8 +356,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         try {
             const teamsData = await (window as any).api.teamsRead?.() || {};
             const registeredTeams = Object.values(teamsData.teams || {});
-            const localTeam = currentPath ? `${currentPath}/npc_team` : '';
-            const teamPaths = localTeam ? [localTeam, ...registeredTeams] : registeredTeams;
+            const teamPaths = registeredTeams;
             const url = `${BACKEND_URL}/api/npc_tools?npc=${encodeURIComponent(npcName)}&registered_teams=${encodeURIComponent(teamPaths.join(','))}&currentPath=${encodeURIComponent(currentPath || '')}`;
             const res = await fetch(url);
             const data = await res.json();
@@ -341,6 +380,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                     const npcToolNames = npcTools.filter((t: any) => t.enabled).map((t: any) => t.name);
                     return [...new Set([...prev, ...npcToolNames])];
                 });
+                setEnabledServers(prev => new Set(prev).add('__npc__'));
             }
         } catch (err) {
             console.error('[NPC Tools] Failed to load:', err);

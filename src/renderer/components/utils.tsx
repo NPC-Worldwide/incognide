@@ -317,12 +317,10 @@ export const loadAvailableNPCs = async (
             if (teamsData?.teams) {
                 for (const [key, teamPath] of Object.entries(teamsData.teams)) {
                     teamKeys.push(key);
-                    teamFetches.push(window.api.getNPCTeamGlobal(key));
+                    teamFetches.push(window.api.getNPCTeamFromPath(key));
                 }
             }
         } catch {
-            teamKeys.push('incognide');
-            teamFetches.push(window.api.getNPCTeamGlobal(undefined));
         }
 
         const results = await Promise.allSettled(teamFetches);
