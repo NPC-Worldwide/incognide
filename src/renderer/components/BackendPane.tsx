@@ -251,7 +251,6 @@ const BackendPane: React.FC<BackendPaneProps> = ({ onClose }) => {
                                 { method: 'GET', path: '/api/health', desc: 'Health check' },
                                 { method: 'GET', path: '/api/status', desc: 'Backend status' },
                                 { method: 'GET', path: '/api/models', desc: 'List models' },
-                                { method: 'GET', path: '/api/jinxes/global', desc: 'Global jinxes' },
                                 { method: 'GET', path: '/api/maps/global', desc: 'Global maps' },
                                 { method: 'GET', path: '/api/npc_team_global', desc: 'Global NPCs' },
                                 { method: 'POST', path: '/api/interrupt', desc: 'Interrupt request' },

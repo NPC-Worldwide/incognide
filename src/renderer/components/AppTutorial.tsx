@@ -37,7 +37,7 @@ const TUTORIAL_STEPS: TutorialStep[] = [
     {
         selector: '[data-tutorial="terminal-button"]',
         title: 'Terminal',
-        description: 'Open a system terminal, or use the dropdown for npcsh (AI-powered shell). Terminals run in panes alongside your other work.',
+        description: 'Open a system terminal. Terminals run in panes alongside your other work.',
         paths: ['no-ai', 'cloud-ai', 'local-ai'],
         position: 'bottom',
     },
@@ -100,7 +100,7 @@ const TUTORIAL_STEPS: TutorialStep[] = [
     {
         selector: '[data-tutorial="help-button"]',
         title: 'Help',
-        description: 'Built-in documentation and guides. Learn about keyboard shortcuts, features, jinx authoring, NPC configuration, and more.',
+        description: 'Built-in documentation and guides. Learn about keyboard shortcuts, features, jinx authoring, agent configuration, and more.',
         paths: ['no-ai', 'cloud-ai', 'local-ai'],
         position: 'right',
     },
@@ -121,14 +121,14 @@ const TUTORIAL_STEPS: TutorialStep[] = [
     {
         selector: '[data-tutorial="conversations"]',
         title: 'Conversations',
-        description: 'Your past chats and agent runs. Group by time, NPC, or model; search and filter to find what you need.',
+        description: 'Your past chats and agent runs. Group by time, agent, or model; search and filter to find what you need.',
         paths: ['cloud-ai', 'local-ai'],
         position: 'left',
     },
     {
         selector: '[data-tutorial="npcs-section"]',
         title: 'Personas',
-        description: 'Your NPCs grouped by team. Click to set the active persona, or use the buttons to start a chat or agent run with that NPC directly.',
+        description: 'Your agents grouped by team. Click to set the active persona, or use the buttons to start a chat or agent run with that agent directly.',
         paths: ['cloud-ai', 'local-ai'],
         position: 'left',
     },
@@ -142,7 +142,7 @@ const TUTORIAL_STEPS: TutorialStep[] = [
     {
         selector: '[data-tutorial="team-management-button"]',
         title: 'Team Management',
-        description: 'Open the full team editor — configure NPCs, jinxes, skills, MCP servers, databases, and shared team context.',
+        description: 'Open the full team editor — configure agents, jinxes, skills, MCP servers, databases, and shared team context.',
         paths: ['cloud-ai', 'local-ai'],
         position: 'left',
     },

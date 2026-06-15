@@ -909,7 +909,7 @@ function spawnDaemon() {
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
     detached: process.platform !== 'win32',
-    env: { ...process.env, INCOGNIDE_HOME },
+    env: { ...process.env, INCOGNIDE_HOME, NPCSH_BACKEND_URL: BACKEND_URL },
   });
   daemonProcess.stdout.on('data', (d) => {
     log('[daemon stdout]', d.toString().trim());
@@ -1871,11 +1871,15 @@ async function callBackendApi(url, options = {}) {
       const errorText = await response.text();
       throw new Error(`HTTP error ${response.status}: ${errorText}`);
     }
-    return await response.json();
+    const data = await response.json();
+    return JSON.parse(JSON.stringify(data, (_k, v) => {
+      if (typeof v === 'number' && !Number.isFinite(v)) return null;
+      if (v === undefined) return null;
+      return v;
+    }));
   } catch (err) {
     console.error(`API call failed to ${url}:`, err);
-
-    return { error: err.message, success: false };
+    return { error: String(err?.message || err), success: false };
   }
 }
 function ensureUserDataDirectory() {

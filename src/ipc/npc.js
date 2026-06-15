@@ -1483,10 +1483,18 @@ function register(ctx) {
     } catch (err) { return { error: err.message }; }
   });
 
+  ipcMain.handle('knowledge:loadDirs', async (event, { dirs }) => {
+    if (!dirs || !dirs.length) return { memories: [], knowledge: [], directory: null };
+    const params = new URLSearchParams({ dirs: dirs.join(',') });
+    const result = await callBackendApi(`${BACKEND_URL}/api/knowledge/load?${params.toString()}`);
+    return JSON.parse(JSON.stringify(result ?? {}));
+  });
+
   ipcMain.handle('knowledge:load', async (event, { currentPath }) => {
     const params = new URLSearchParams();
     if (currentPath) params.append('currentPath', currentPath);
-    return await callBackendApi(`${BACKEND_URL}/api/knowledge/load?${params.toString()}`);
+    const result = await callBackendApi(`${BACKEND_URL}/api/knowledge/load?${params.toString()}`);
+    return JSON.parse(JSON.stringify(result ?? {}));
   });
 
   ipcMain.handle('knowledge:search', async (event, { q, currentPath, limit }) => {
@@ -1517,6 +1525,40 @@ function register(ctx) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ currentPath, from, to, relation, agent }),
+    });
+    return await response.json();
+  });
+
+  ipcMain.handle('knowledge:extract', async (event, { conversationText, conversationId, currentPath, model, provider, npc, team }) => {
+    const response = await fetch(`${BACKEND_URL}/api/knowledge/extract`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        conversation_text: conversationText,
+        conversation_id: conversationId,
+        currentPath,
+        model,
+        provider,
+        npc,
+        team,
+      }),
+    });
+    return await response.json();
+  });
+
+  ipcMain.handle('knowledge:extractAndStore', async (event, { conversationText, conversationId, currentPath, model, provider, npc, team }) => {
+    const response = await fetch(`${BACKEND_URL}/api/knowledge/extract-and-store`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        conversation_text: conversationText,
+        conversation_id: conversationId,
+        currentPath,
+        model,
+        provider,
+        npc,
+        team,
+      }),
     });
     return await response.json();
   });

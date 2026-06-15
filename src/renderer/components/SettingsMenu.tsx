@@ -487,7 +487,6 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                             onChange={(e) => setGlobalSettings({...globalSettings, default_new_terminal_type: e.target.value})}
                             options={[
                                 { value: 'system', label: 'Bash' },
-                                { value: 'npcsh', label: 'npcsh' },
                                 { value: 'guac', label: 'guac' },
                             ]}
                         />

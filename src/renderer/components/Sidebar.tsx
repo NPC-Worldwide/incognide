@@ -31,7 +31,6 @@ import CtxEditor from './CtxEditor';
 import JinxMenu from './JinxMenu';
 import KnowledgeGraphEditor from './KnowledgeGraphEditor';
 import LabeledDataManager from './LabeledDataManager';
-import McpServerMenu from './McpServerMenu';
 import MemoryManagement from './MemoryManagement';
 import MemoryIcon from './icons/MemoryIcon';
 import MessageLabeling from './MessageLabeling';
@@ -72,7 +71,7 @@ const Sidebar = (props: any) => {
         setDashboardMenuOpen, setJinxMenuOpen,
         setCtxEditorOpen, setTeamManagementOpen, setNpcTeamMenuOpen, setSidebarCollapsed,
         createGraphViewerPane, createBrowserGraphPane, createDataLabelerPane,
-        createDataDashPane, createDBToolPane, createNPCTeamPane, createJinxPane, createTeamManagementPane, createMcpManagerPane, createSkillsManagerPane, createSettingsPane, createProjectEnvPane, createDiskUsagePane, createHelpPane, createTileJinxPane, createGitPane, createBrowserSettingsPane,
+        createDataDashPane, createDBToolPane, createNPCTeamPane, createJinxPane, createTeamManagementPane, createSkillsManagerPane, createSettingsPane, createProjectEnvPane, createDiskUsagePane, createHelpPane, createTileJinxPane, createGitPane, createBrowserSettingsPane,
 
         createNewConversation, generateId, streamToPaneRef, availableNPCs, currentNPC, currentModel,
         currentProvider, executionMode, enabledMcpServers, selectedMcpTools, updateContentPane,
@@ -937,7 +936,6 @@ const Sidebar = (props: any) => {
         JinxMenu,
         KnowledgeGraphEditor,
         LabeledDataManager,
-        McpServerMenu,
         MemoryManagement,
         MessageLabeling,
         NPCTeamMenu,

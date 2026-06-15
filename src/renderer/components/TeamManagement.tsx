@@ -11,8 +11,6 @@ import KgIcon from './icons/KgIcon';
 import CtxEditor from './CtxEditor';
 import NPCTeamMenu from './NPCTeamMenu';
 import JinxMenu from './JinxMenu';
-import McpServerMenu from './McpServerMenu';
-import McpManager from './McpManager';
 import CronDaemonPanel from './CronDaemonPanel';
 import MemoryManagement from './MemoryManagement';
 import ModelManager from './ModelManager';
@@ -36,7 +34,7 @@ interface TeamManagementProps {
     onOpenJinxPane?: (name: string) => void;
 }
 
-type TabId = 'context' | 'npcs' | 'jinxes' | 'memory' | 'knowledge' | 'cron' | 'mcp' | 'models' | 'databases' | 'ai-settings' | 'llm-models' | 'voice';
+type TabId = 'context' | 'npcs' | 'jinxes' | 'knowledge' | 'cron' | 'models' | 'databases' | 'ai-settings' | 'llm-models' | 'voice';
 
 const SqlModelsContent = ({ currentPath, teamKey, npcList = [], jinxList = [] }: { currentPath: string; teamKey?: string; npcList?: any[]; jinxList?: any[] }) => {
     const [models, setModels] = useState<any[]>([]);
@@ -880,9 +878,41 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
     useEffect(() => { if (forceTab) setActiveTab(forceTab); }, [forceTab]);
     const changeTab = (tab: TabId) => { setActiveTab(tab); onTabChange?.(tab); };
 
+    const [sharedMemories, setSharedMemories] = useState<any[]>([]);
+    const [sharedKnowledge, setSharedKnowledge] = useState<any[]>([]);
+    const [sharedLoading, setSharedLoading] = useState(false);
+
+    const loadSharedKnowledge = async () => {
+        setSharedLoading(true);
+        try {
+            const dbResult = await (window as any).api?.executeSQL?.({
+                query: "SELECT DISTINCT directory_path FROM conversation_history WHERE directory_path IS NOT NULL AND directory_path != ''"
+            });
+            const dbRows = Array.isArray(dbResult?.result) ? dbResult.result : Array.isArray(dbResult) ? dbResult : [];
+            const dirs = [...new Set<string>(dbRows.map((r: any) => r.directory_path || r[0]).filter(Boolean))];
+            if (currentPath && !dirs.includes(currentPath)) dirs.push(currentPath);
+            const data = dirs.length
+                ? await (window as any).api?.knowledge_loadDirs?.({ dirs }).catch(() => ({}))
+                : {};
+            setSharedMemories(data.memories || []);
+            setSharedKnowledge(data.knowledge || []);
+        } catch (err: any) {
+            console.error('[TeamManagement] loadSharedKnowledge error:', err);
+        } finally {
+            setSharedLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab === 'knowledge') {
+            loadSharedKnowledge();
+        }
+    }, [activeTab, currentPath]);
+
     const [registeredTeams, setRegisteredTeams] = useState<Record<string, string>>({});
     const [selectedTeam, setSelectedTeam] = useState<string>('');
     const [projectTeamPath, setProjectTeamPath] = useState<string | null>(null);
+    const [projectTeamCtxName, setProjectTeamCtxName] = useState<string | null>(null);
     const [discoveredTeams, setDiscoveredTeams] = useState<any[]>([]);
     const [scanning, setScanning] = useState(false);
 
@@ -895,24 +925,42 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
 
     useEffect(() => { loadRegisteredTeams(); }, []);
 
-    // Detect project team at currentPath/npc_team
     useEffect(() => {
         if (!isOpen || !currentPath) {
             setProjectTeamPath(null);
+            setProjectTeamCtxName(null);
             return;
         }
         (async () => {
             try {
                 const items = await (window as any).api.readDirectory(currentPath);
                 const hasNpcTeam = (items || []).some(item => item.name === 'npc_team' && item.isDirectory);
-                setProjectTeamPath(hasNpcTeam ? `${currentPath}/npc_team` : null);
+                if (!hasNpcTeam) {
+                    setProjectTeamPath(null);
+                    setProjectTeamCtxName(null);
+                    return;
+                }
+                const npcTeamPath = `${currentPath}/npc_team`;
+                setProjectTeamPath(npcTeamPath);
+                try {
+                    const npcTeamItems = await (window as any).api.readDirectory(npcTeamPath);
+                    const ctxFile = (npcTeamItems || []).find(item => item.name && item.name.endsWith('.ctx'));
+                    if (ctxFile) {
+                        const base = ctxFile.name.replace(/\.ctx$/, '');
+                        setProjectTeamCtxName(base);
+                    } else {
+                        setProjectTeamCtxName('project');
+                    }
+                } catch {
+                    setProjectTeamCtxName('project');
+                }
             } catch {
                 setProjectTeamPath(null);
+                setProjectTeamCtxName(null);
             }
         })();
     }, [isOpen, currentPath]);
 
-    // Default team selection
     useEffect(() => {
         if (!isOpen) return;
         if (!selectedTeam) {
@@ -948,12 +996,11 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
     };
 
     const handleRegisterProjectTeam = async () => {
-        if (!projectTeamPath) return;
+        if (!projectTeamPath || !projectTeamCtxName) return;
         try {
             const data = await (window as any).api.teamsRead();
             const teams = data?.teams || {};
-            const name = projectTeamPath.split('/').pop() || 'project';
-            const key = name.toLowerCase().replace(/[^a-z0-9_]/g, '');
+            const key = projectTeamCtxName.toLowerCase().replace(/[^a-z0-9_]/g, '');
             teams[key] = projectTeamPath;
             await (window as any).api.teamsWrite(teams);
             setRegisteredTeams(teams);
@@ -961,7 +1008,10 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
         } catch {}
     };
 
-    const effectivePath = selectedTeam === 'project' ? (projectTeamPath || '') : (registeredTeams[selectedTeam] || '');
+    const isProjectTeam = selectedTeam === 'project';
+    const effectiveTeamPath = isProjectTeam ? (projectTeamPath || '') : (registeredTeams[selectedTeam] || '');
+    const npcMenuPath = isProjectTeam ? currentPath : effectiveTeamPath;
+    const npcMenuKey = isProjectTeam ? '' : selectedTeam;
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -981,10 +1031,8 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
 
     const teamSections: { id: TabId; label: string; icon: React.ReactNode }[] = [
         { id: 'context', label: 'Context', icon: <FileJson size={16} /> },
-        { id: 'npcs', label: 'NPCs', icon: <Users size={16} /> },
+        { id: 'npcs', label: 'Agents', icon: <Users size={16} /> },
         { id: 'jinxes', label: 'Jinxes', icon: <Zap size={16} /> },
-        { id: 'mcp', label: 'MCP', icon: <Server size={16} /> },
-        { id: 'memory', label: 'Memory', icon: <MemoryIcon size={16} /> },
         { id: 'knowledge', label: 'Knowledge', icon: <KgIcon size={16} /> },
         { id: 'cron', label: 'Scheduler', icon: <SmokestackIcon size={16} /> },
         { id: 'databases', label: 'Databases', icon: <Database size={16} /> },
@@ -994,7 +1042,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
 
     const content = (
         <div className={embedded ? "flex flex-col h-full" : "relative w-[90vw] max-w-6xl h-[85vh] theme-bg-primary rounded-xl shadow-2xl border theme-border flex flex-col overflow-hidden"}>
-            {/* Header */}
+            
             <div className="flex items-center justify-between px-4 py-3 border-b theme-border flex-shrink-0">
                 <div className="flex items-center gap-3">
                     <Users className="text-purple-400" size={20} />
@@ -1009,11 +1057,11 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                 </div>
             </div>
 
-            {/* Sidebar + Content */}
+            
             <div className="flex flex-1 overflow-hidden">
-                {/* Left sidebar */}
+                
                 <div className="w-44 flex-shrink-0 border-r theme-border overflow-y-auto py-2 space-y-2">
-                    {/* General Settings */}
+                    
                     <div>
                         <div className="px-4 py-1 text-[10px] uppercase tracking-wider theme-text-muted font-semibold">General</div>
                         {generalSections.map((section) => (
@@ -1032,7 +1080,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                         ))}
                     </div>
 
-                    {/* Team Settings */}
+                    
                     <div>
                         <div className="px-4 py-1 text-[10px] uppercase tracking-wider theme-text-muted font-semibold">Team</div>
                         <div className="px-3 py-1.5">
@@ -1045,7 +1093,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                     <option key={key} value={key}>{key}</option>
                                 ))}
                                 {projectTeamPath && (
-                                    <option value="project">Current Project</option>
+                                    <option value="project">{projectTeamCtxName || 'Project'} (unregistered)</option>
                                 )}
                             </select>
                             {selectedTeam === 'project' && projectTeamPath && (
@@ -1100,15 +1148,15 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                     </div>
                 </div>
 
-                {/* Content */}
+                
                 <div className="flex-1 flex flex-col overflow-hidden">
-                    {(activeTab === 'memory' || activeTab === 'cron' || activeTab === 'llm-models' || activeTab === 'voice' || activeTab === 'knowledge') ? null : (
+                    {(activeTab === 'cron' || activeTab === 'llm-models' || activeTab === 'voice' || activeTab === 'knowledge') ? null : (
                         <div className="flex-1 overflow-auto p-6">
                             {activeTab === 'context' && (
                                 <CtxEditor
                                     isOpen={true}
                                     onClose={() => {}}
-                                    teamPath={effectivePath}
+                                    teamPath={effectiveTeamPath}
                                     embedded={true}
                                 />
                             )}
@@ -1117,10 +1165,10 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                     <NPCTeamMenu
                                         isOpen={true}
                                         onClose={() => {}}
-                                        currentPath={effectivePath}
+                                        currentPath={npcMenuPath}
                                         startNewConversation={startNewConversation}
                                         embedded={true}
-                                        teamKey={selectedTeam}
+                                        teamKey={npcMenuKey}
                                         onOpenJinxTab={onOpenJinxPane}
                                     />
                                 </div>
@@ -1129,24 +1177,21 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                 <JinxMenu
                                     isOpen={true}
                                     onClose={() => {}}
-                                    currentPath={effectivePath}
+                                    currentPath={npcMenuPath}
                                     embedded={true}
-                                    teamKey={selectedTeam}
+                                    teamKey={npcMenuKey}
                                     initialJinxName={initialJinxName}
                                 />
                             )}
-                            {activeTab === 'mcp' && (
-                                <McpManager currentPath={effectivePath} embedded={true} />
-                            )}
                             {activeTab === 'models' && (
                                 <SqlModelsContent
-                                    currentPath={effectivePath}
-                                    teamKey={selectedTeam}
+                                    currentPath={npcMenuPath}
+                                    teamKey={npcMenuKey}
                                 />
                             )}
                             {activeTab === 'databases' && (
                                 <DatabasesContent
-                                    currentPath={effectivePath}
+                                    currentPath={effectiveTeamPath}
                                 />
                             )}
                             {activeTab === 'ai-settings' && (
@@ -1154,14 +1199,11 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                             )}
                         </div>
                     )}
-                    {activeTab === 'memory' && (
-                        <MemoryManagement isModal={false} currentPath={currentPath} />
-                    )}
                     {activeTab === 'cron' && (
                         <CronDaemonPanel
                             isOpen={true}
                             onClose={() => {}}
-                            currentPath={effectivePath}
+                            currentPath={isProjectTeam ? currentPath : effectiveTeamPath}
                             npcList={npcList}
                             jinxList={jinxList}
                             isPane={true}
@@ -1178,10 +1220,15 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                         </div>
                     )}
                     {activeTab === 'knowledge' && (
-                        <div className="flex-1 flex flex-col overflow-hidden">
-                            <Suspense fallback={<div className="flex items-center justify-center py-12 theme-text-muted">Loading...</div>}>
-                                <KnowledgeGraphEditor isModal={false} />
-                            </Suspense>
+                        <div className="flex-1 flex overflow-hidden">
+                            <div className="w-[45%] flex-shrink-0 border-r theme-border overflow-hidden">
+                                <MemoryManagement isModal={false} currentPath={currentPath} allMemories={sharedMemories} />
+                            </div>
+                            <div className="flex-1 overflow-hidden">
+                                <Suspense fallback={<div className="flex items-center justify-center py-12 theme-text-muted">Loading...</div>}>
+                                    <KnowledgeGraphEditor isModal={false} currentPath={currentPath} memories={sharedMemories} knowledge={sharedKnowledge} />
+                                </Suspense>
+                            </div>
                         </div>
                     )}
                 </div>

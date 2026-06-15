@@ -85,16 +85,21 @@ const NPCTeamMenu = ({
             setLoading(true);
             setError(null);
 
-            const npcResponse = teamKey
-                ? await window.api.getNPCTeamFromPath(teamKey)
-                : await window.api.getNPCTeamProject(currentPath);
-            setNpcs(npcResponse.npcs || []);
+            try {
+                const npcResponse = teamKey
+                    ? await window.api.getNPCTeamFromPath(teamKey)
+                    : await window.api.getNPCTeamProject(currentPath);
+                setNpcs(npcResponse.npcs || []);
 
-            const jinxResponse = teamKey
-                ? await window.api.getJinxesTeam(teamKey)
-                : await window.api.getJinxesProject(currentPath);
-            setAvailableJinxes(jinxResponse.jinxes || []);
-
+                const jinxResponse = teamKey
+                    ? await window.api.getJinxesTeam(teamKey)
+                    : await window.api.getJinxesProject(currentPath);
+                setAvailableJinxes(jinxResponse.jinxes || []);
+            } catch (err: any) {
+                if (err?.message !== 'currentPath must be a string') {
+                    console.error('NPCTeamMenu load error:', err);
+                }
+            }
             setLoading(false);
         };
         loadData();
@@ -868,7 +873,7 @@ const NPCTeamMenu = ({
                                                                                 className="p-1
                                                                                     theme-button-subtle
                                                                                     rounded"
-                                                                                title="Add to NPC"
+                                                                                title="Add to Agent"
                                                                             >
                                                                                 <Plus size={12} />
                                                                             </button>
@@ -1205,7 +1210,7 @@ const NPCTeamMenu = ({
                                     <div className="space-y-4">
                                         <div className="flex items-center gap-2">
                                             <Brain size={16} className="text-orange-400" />
-                                            <h3 className="text-sm font-semibold">NPC Memories</h3>
+                                            <h3 className="text-sm font-semibold">Agent Memories</h3>
                                             <button
                                                 onClick={() => loadNpcMemories(selectedNpc.name)}
                                                 disabled={memoryLoading}
@@ -1387,7 +1392,7 @@ const NPCTeamMenu = ({
                     ) : (
                         <div className="flex-1 flex items-center justify-center
                             theme-text-secondary">
-                            Select an NPC
+                            Select an Agent
                         </div>
                     )}
             </div>

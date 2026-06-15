@@ -508,6 +508,7 @@ readDocxContent: (filePath) =>
     memory_approve: (args) => ipcRenderer.invoke('memory:approve', args),
 
     knowledge_load: (args) => ipcRenderer.invoke('knowledge:load', args),
+    knowledge_loadDirs: (args) => ipcRenderer.invoke('knowledge:loadDirs', args),
     knowledge_search: (args) => ipcRenderer.invoke('knowledge:search', args),
     knowledge_memories: (args) => ipcRenderer.invoke('knowledge:memories', args),
     knowledge_links: (args) => ipcRenderer.invoke('knowledge:links', args),
@@ -517,6 +518,8 @@ readDocxContent: (filePath) =>
     knowledge_all_search: (args) => ipcRenderer.invoke('knowledge:all_search', args),
     knowledge_memory_update: (args) => ipcRenderer.invoke('knowledge:memory_update', args),
     knowledge_memory_delete: (args) => ipcRenderer.invoke('knowledge:memory_delete', args),
+    knowledge_extract: (args) => ipcRenderer.invoke('knowledge:extract', args),
+    knowledge_extractAndStore: (args) => ipcRenderer.invoke('knowledge:extractAndStore', args),
 
     logActivity: (args) => ipcRenderer.invoke('activity:log', args),
     getActivities: (args) => ipcRenderer.invoke('activity:list', args),

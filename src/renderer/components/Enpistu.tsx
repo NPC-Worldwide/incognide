@@ -38,7 +38,6 @@ import JinxMenu from './JinxMenu';
 import '../../index.css';
 import CtxEditor from './CtxEditor';
 import TeamManagement from './TeamManagement';
-import McpManager from './McpManager';
 import SkillsManager from './SkillsManager';
 import MarkdownRenderer from './MarkdownRenderer';
 import DataDash from './DataDash';
@@ -76,7 +75,6 @@ import { LiveProvider, LivePreview, LiveError } from 'react-live';
 import GraphViewer from './GraphViewer';
 import BrowserHistoryWeb from './BrowserHistoryWeb';
 import KnowledgeGraphEditor from './KnowledgeGraphEditor';
-import McpServerMenu from './McpServerMenu';
 import MessageLabeling from './MessageLabeling';
 import LabeledDataManager from './LabeledDataManager';
 import ActivityIntelligence from './ActivityIntelligence';
@@ -1823,37 +1821,6 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
         fetchJinxes();
     }, [currentPath]);
 
-    // Load MCP tools from ALL enabled servers when in tool_agent mode
-    useEffect(() => {
-        const loadMcpTools = async () => {
-            if (executionMode !== 'tool_agent' || enabledMcpServers.length === 0) return;
-            setMcpToolsLoading(true);
-            setMcpToolsError(null);
-            const allTools: any[] = [];
-            for (const serverPath of enabledMcpServers) {
-                try {
-                    const res = await window.api.listMcpTools({ serverPath, currentPath: currentPath || '~' });
-                    if (!res.error) {
-                        const serverLabel = serverPath.split('/').pop()?.replace(/\.py$/, '') || serverPath;
-                        const newTools = (res.tools || []).map((t: any) => ({
-                            ...t,
-                            _source: t._source || `mcp:${serverLabel}`,
-                            _serverPath: serverPath,
-                        }));
-                        const existingNames = new Set(allTools.map((t: any) => t.function?.name));
-                        const unique = newTools.filter((t: any) => !existingNames.has(t.function?.name));
-                        allTools.push(...unique);
-                    }
-                } catch (err: any) {
-                    console.error('[MCP] Failed to load tools from server:', err);
-                }
-            }
-            setMcpToolsLoading(false);
-            setAvailableMcpTools(allTools);
-            setSelectedMcpTools(allTools.map((t: any) => t.function?.name).filter(Boolean));
-        };
-        loadMcpTools();
-    }, [executionMode, enabledMcpServers, currentPath]);
 
         
 
@@ -3986,7 +3953,6 @@ const tileJinxScope = useMemo(() => ({
     PythonEnvSettings,
     NPCTeamMenu,
     JinxMenu,
-    McpServerMenu,
     // All lucide icons
     ...LucideIcons,
     // Real window, console, and JS built-ins (in case icons shadow them)
@@ -4813,7 +4779,7 @@ const handleBrowserDialogNavigate = (url) => {
     };
 
     // Main input submit handler
-    const handleInputSubmit = async (e: React.FormEvent, options?: { voiceInput?: boolean; useKgSearch?: boolean; useMemorySearch?: boolean; disableThinking?: boolean; genParams?: { temperature: number; top_p: number; top_k: number; max_tokens: number }; inputText?: string; uploadedFiles?: any[]; mcpServerPaths?: string[]; selectedMcpTools?: string[]; contextFiles?: any[]; paneId?: string }) => {
+    const handleInputSubmit = async (e: React.FormEvent, options?: { voiceInput?: boolean; useKgSearch?: boolean; useMemorySearch?: boolean; disableThinking?: boolean; genParams?: { temperature: number; top_p: number; top_k: number; max_tokens: number }; inputText?: string; uploadedFiles?: any[]; contextFiles?: any[]; paneId?: string }) => {
         e.preventDefault();
         const wasVoiceInput = options?.voiceInput || false;
         const disableThinking = options?.disableThinking || false;
@@ -5082,8 +5048,6 @@ ${contextPrompt}`;
                         }),
                         streamId: branchStreamId,
                         executionMode: paneExecMode,
-                        mcpServerPaths: paneExecMode === 'tool_agent' ? enabledMcpServers : undefined,
-                        selectedMcpTools: paneExecMode === 'tool_agent' ? selectedMcpTools : undefined,
                         userParentMessageId: userMessage.parentMessageId, // For sub-branching
                         // Pass frontend-generated message IDs so backend uses the same IDs
                         userMessageId: userMessage.id,
@@ -5596,20 +5560,6 @@ ${contextPrompt}`;
         addPaneOrTab(newPaneId);
     }, []);
 
-    const renderMcpManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
-        return (
-            <McpManager
-                currentPath={currentPath}
-                embedded={true}
-            />
-        );
-    }, [currentPath]);
-
-    const createMcpManagerPane = useCallback(async () => {
-        const newPaneId = generateId();
-        contentDataRef.current[newPaneId] = { contentType: 'mcp-manager', contentId: 'mcp-manager' };
-        addPaneOrTab(newPaneId);
-    }, []);
 
     const createBrowserSettingsPane = useCallback(async () => {
         const newPaneId = generateId();
@@ -6129,17 +6079,9 @@ ${contextPrompt}`;
                         localStorage.removeItem(LAST_ACTIVE_PATH_KEY);
                     }
                 }
-                // Still fetch models, NPCs, and MCP tools even without a workspace folder
+                // Still fetch models and NPCs even without a workspace folder
                 await fetchModels(null, setModelsLoading, setModelsError, setAvailableModels);
                 await loadAvailableNPCs(null, setNpcsLoading, setNpcsError, setAvailableNPCs);
-                // Load ALL MCP servers by default (no hardcoded single default)
-                try {
-                    const mcpRes = await window.api.getMcpServers('~');
-                    if (mcpRes?.servers?.length > 0) {
-                        setAvailableMcpServers(mcpRes.servers);
-                        setEnabledMcpServers(mcpRes.servers.map((s: any) => s.serverPath));
-                    }
-                } catch {}
                 setLoading(false);
                 return;
             }
@@ -7418,18 +7360,9 @@ const setPaneExecutionMode = useCallback(async (paneId: string, mode: string) =>
         contentDataRef.current[paneId].executionMode = mode;
     }
 
-    // Load MCP servers when switching to tool_agent mode — enable ALL listed servers by default
-    if (mode === 'tool_agent') {
-        const res = await window.api.getMcpServers(currentPath || '~');
-        if (res && Array.isArray(res.servers)) {
-            setAvailableMcpServers(res.servers);
-            setEnabledMcpServers(res.servers.map((s: any) => s.serverPath));
-        }
-    }
-
     // Trigger re-render
     notifyAllPanes();
-}, [currentPath, enabledMcpServers]);
+}, [currentPath]);
 
 const getPaneSelectedJinx = useCallback((paneId: string) => {
     return contentDataRef.current[paneId]?.selectedJinx || null;
@@ -7730,7 +7663,6 @@ const paneRenderers = useMemo(() => ({
     jinx: renderJinxPane,
     teammanagement: renderTeamManagementPane,
     settings: renderSettingsPane,
-    'mcp-manager': renderMcpManagerPane,
     'skills-manager': renderSkillsManagerPane,
     help: renderHelpPane,
     git: renderGitPane,
@@ -7757,7 +7689,7 @@ const paneRenderers = useMemo(() => ({
     renderLatexViewer, renderNotebookViewer, renderExpViewer, renderPicViewer, renderStlViewer,
     renderRadioPane, renderZipViewer, renderDataLabelerPane, renderGraphViewerPane,
     renderBrowserGraphPane, renderDataDashPane, renderDBToolPane, renderNPCTeamPane,
-    renderJinxPane, renderTeamManagementPane, renderMcpManagerPane, renderSkillsManagerPane, renderSettingsPane, renderHelpPane, renderGitPane,
+    renderJinxPane, renderTeamManagementPane, renderSkillsManagerPane, renderSettingsPane, renderHelpPane, renderGitPane,
     renderFolderViewerPane, renderProjectEnvPane, renderDiskUsagePane, renderMemoryManagerPane,
     renderCronDaemonPane, renderSearchPane, renderMarkdownPreviewPane, renderHtmlPreviewPane,
     renderTileJinxPane, renderBranchComparisonPane, renderWindowManagerPane,
@@ -9462,7 +9394,6 @@ const renderMainContent = () => {
         createNPCTeamPane={createNPCTeamPane}
         createJinxPane={createJinxPane}
         createTeamManagementPane={createTeamManagementPane}
-        createMcpManagerPane={createMcpManagerPane}
         createBrowserSettingsPane={createBrowserSettingsPane}
         createSkillsManagerPane={createSkillsManagerPane}
         createSettingsPane={createSettingsPane}
@@ -9480,8 +9411,6 @@ const renderMainContent = () => {
         currentModel={currentModel}
         currentProvider={currentProvider}
         executionMode={executionMode}
-        enabledMcpServers={enabledMcpServers}
-        selectedMcpTools={selectedMcpTools}
         updateContentPane={updateContentPane}
         loadDirectoryStructure={loadDirectoryStructure}
         loadWebsiteHistory={loadWebsiteHistory}

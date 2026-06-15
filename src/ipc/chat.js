@@ -1310,14 +1310,14 @@ function register(ctx) {
     }
 
     if (!result.model) {
-      result.model = process.env.INCOGNIDE_CHAT_MODEL || rcEnv.INCOGNIDE_CHAT_MODEL;
+      result.model = process.env.INCOGNIDE_CHAT_MODEL || rcEnv.INCOGNIDE_CHAT_MODEL || null;
     }
     if (!result.provider) {
-      result.provider = process.env.INCOGNIDE_CHAT_PROVIDER || rcEnv.INCOGNIDE_CHAT_PROVIDER;
+      result.provider = process.env.INCOGNIDE_CHAT_PROVIDER || rcEnv.INCOGNIDE_CHAT_PROVIDER || null;
     }
 
     console.log('getProjectCtx result:', result);
-    return result;
+    return JSON.parse(JSON.stringify(result));
   });
 
   ipcMain.handle('getWorkingDirectory', () => {

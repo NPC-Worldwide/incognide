@@ -112,7 +112,7 @@ export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
                             <FeatureItem
                                 icon={<Terminal size={16} />}
                                 title="Terminal"
-                                description="Integrated shell with system bash, npcsh (AI-enhanced), Python REPL, and Guacamole remote access."
+                                description="Integrated shell with system bash, Python REPL, and Guacamole remote access."
                             />
                             <FeatureItem
                                 icon={<Globe size={16} />}

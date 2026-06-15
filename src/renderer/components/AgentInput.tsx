@@ -971,7 +971,7 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         const panes: Array<{ id: string; type: string; label: string }> = [];
         const PANE_LABELS: Record<string, string> = {
             'graph-viewer': 'Knowledge Graph', 'datadash': 'Dashboard', 'dbtool': 'Database',
-            'memory-manager': 'Memory', 'photoviewer': 'Photos', 'npcteam': 'NPCs',
+            'memory-manager': 'Memory', 'photoviewer': 'Photos', 'npcteam': 'Agents',
             'jinx': 'Jinxes', 'teammanagement': 'Team', 'diff': 'Diff',
             'browsergraph': 'Web Graph', 'library': 'Library',
             'diskusage': 'Disk Usage', 'help': 'Help', 'cron-daemon': 'Cron',
@@ -1242,7 +1242,7 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                                     )}
                                     <span className="truncate">
                                         {npcsLoading ? '...' : npcsError ? 'Error' :
-                                            selectedNPCs.length === 1 ? ((availableNPCs.find((n: any) => n.value === selectedNPCs[0])?.display_name || selectedNPCs[0]).split(' | ')[0]) : selectedNPCs.length === 0 ? 'NPC' : 'NPCs'
+                                            selectedNPCs.length === 1 ? ((availableNPCs.find((n: any) => n.value === selectedNPCs[0])?.display_name || selectedNPCs[0]).split(' | ')[0]) : selectedNPCs.length === 0 ? 'Agent' : 'Agents'
                                         }
                                     </span>
                                     <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${showNpcsDropdown ? 'rotate-180' : ''}`} />
@@ -1255,7 +1255,7 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                                                 type="text"
                                                 value={npcSearch}
                                                 onChange={(e) => setNpcSearch(e.target.value)}
-                                                placeholder="Search NPCs..."
+                                                placeholder="Search Agents..."
                                                 className="w-full theme-input border theme-border rounded px-2 py-1 text-xs theme-text-primary placeholder-gray-500 focus:outline-none focus:border-green-500/50"
                                                 onKeyDown={(e) => e.stopPropagation()}
                                             />
