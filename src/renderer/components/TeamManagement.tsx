@@ -1128,7 +1128,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                         <CronDaemonPanel
                             isOpen={true}
                             onClose={() => {}}
-                            currentPath={isProjectTeam ? currentPath : effectiveTeamPath}
+                            currentPath={currentPath || effectiveTeamPath}
                             npcList={npcList}
                             jinxList={jinxList}
                             isPane={true}
