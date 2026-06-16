@@ -34,7 +34,7 @@ interface TeamManagementProps {
     onOpenJinxPane?: (name: string) => void;
 }
 
-type TabId = 'context' | 'npcs' | 'jinxes' | 'knowledge' | 'cron' | 'models' | 'databases' | 'ai-settings' | 'llm-models' | 'voice';
+type TabId = 'context' | 'npcs' | 'jinxes' | 'knowledge' | 'cron' | 'models' | 'ai-settings' | 'llm-models' | 'voice';
 
 const SqlModelsContent = ({ currentPath, teamKey, npcList = [], jinxList = [] }: { currentPath: string; teamKey?: string; npcList?: any[]; jinxList?: any[] }) => {
     const [models, setModels] = useState<any[]>([]);
@@ -512,118 +512,49 @@ const findCtxFile = async (dirPath: string) => {
     return null;
 };
 
-const DatabasesContent = ({ currentPath }: { currentPath: string }) => {
-    const [databases, setDatabases] = useState<{ value: string }[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [newDbPath, setNewDbPath] = useState('');
 
-    const loadDatabases = async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            if (!currentPath) { setDatabases([]); return; }
-            const ctxFile = await findCtxFile(currentPath);
-            if (!ctxFile) { setDatabases([]); return; }
-            const result = await (window as any).api.readFileContent(`${currentPath}/${ctxFile}`);
-            const text = typeof result === 'string' ? result : result?.content;
-            const parsed = text ? yaml.load(text) || {} : {};
-            setDatabases(parsed.databases || []);
-        } catch {
-            setDatabases([]);
-        } finally {
-            setLoading(false);
-        }
-    };
+const ResizableSplitPane: React.FC<{
+    top: React.ReactNode;
+    bottom: React.ReactNode;
+    initialRatio?: number;
+    minTopPct?: number;
+    minBottomPct?: number;
+}> = ({ top, bottom, initialRatio = 50, minTopPct = 20, minBottomPct = 20 }) => {
+    const containerRef = React.useRef<HTMLDivElement>(null);
+    const [ratio, setRatio] = React.useState(initialRatio);
+    const draggingRef = React.useRef(false);
 
-    useEffect(() => {
-        loadDatabases();
-    }, [currentPath]);
-
-    const handleSave = async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            if (!currentPath) return;
-            let ctxFile = await findCtxFile(currentPath);
-            if (!ctxFile) ctxFile = 'team.ctx';
-            let parsed: Record<string, any> = {};
-            try {
-                const result = await (window as any).api.readFileContent(`${currentPath}/${ctxFile}`);
-                const text = typeof result === 'string' ? result : result?.content;
-                parsed = text ? yaml.load(text) || {} : {};
-            } catch { }
-            parsed.databases = databases;
-            const res = await (window as any).api.writeFileContent(`${currentPath}/${ctxFile}`, yaml.dump(parsed));
-            if (res?.error) throw new Error(res.error);
-        } catch (err: any) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleAdd = () => {
-        if (!newDbPath.trim()) return;
-        setDatabases(prev => [...prev, { value: newDbPath.trim() }]);
-        setNewDbPath('');
-    };
-
-    const handleRemove = (index: number) => {
-        setDatabases(prev => prev.filter((_, i) => i !== index));
-    };
-
-    const handleChange = (index: number, value: string) => {
-        setDatabases(prev => prev.map((db, i) => i === index ? { value } : db));
-    };
-
-    if (!currentPath) {
-        return <div className="text-center py-12 theme-text-muted">Select a team.</div>;
-    }
+    React.useEffect(() => {
+        const handleMove = (e: MouseEvent) => {
+            if (!draggingRef.current || !containerRef.current) return;
+            const rect = containerRef.current.getBoundingClientRect();
+            const pct = ((e.clientY - rect.top) / rect.height) * 100;
+            const clamped = Math.max(minTopPct, Math.min(100 - minBottomPct, pct));
+            setRatio(clamped);
+        };
+        const handleUp = () => { draggingRef.current = false; };
+        window.addEventListener('mousemove', handleMove);
+        window.addEventListener('mouseup', handleUp);
+        return () => {
+            window.removeEventListener('mousemove', handleMove);
+            window.removeEventListener('mouseup', handleUp);
+        };
+    }, [minTopPct, minBottomPct]);
 
     return (
-        <div className="space-y-6">
-            {error && <div className="text-red-400 bg-red-900/20 p-3 rounded-lg">{error}</div>}
-
-            <div className="space-y-3">
-                {databases.map((db, idx) => (
-                    <div key={idx} className="flex gap-2 items-center theme-bg-tertiary p-3 rounded-lg">
-                        <Database size={18} className="text-blue-400 flex-shrink-0" />
-                        <input
-                            type="text"
-                            value={db.value || ''}
-                            onChange={(e) => handleChange(idx, e.target.value)}
-                            className="flex-1 theme-input text-sm font-mono"
-                            placeholder="~/path/to/database.db"
-                        />
-                        <button onClick={() => handleRemove(idx)} className="p-2 text-red-400 hover:bg-red-900/30 rounded">
-                            <Trash2 size={16} />
-                        </button>
-                    </div>
-                ))}
-                {databases.length === 0 && (
-                    <div className="text-center py-8 theme-text-muted">No databases configured.</div>
-                )}
+        <div ref={containerRef} className="flex-1 flex flex-col overflow-hidden">
+            <div style={{ height: `${ratio}%`, minHeight: `${minTopPct}%` }} className="overflow-hidden">
+                {top}
             </div>
-
-            <div className="flex gap-2">
-                <input
-                    type="text"
-                    value={newDbPath}
-                    onChange={(e) => setNewDbPath(e.target.value)}
-                    placeholder="~/.incognide/history.db"
-                    className="flex-1 theme-input text-sm font-mono"
-                    onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-                />
-                <button onClick={handleAdd} className="theme-button px-4 py-2 rounded text-sm flex items-center gap-2">
-                    <Plus size={16} /> Add
-                </button>
+            <div
+                className="h-2 bg-gray-700/30 hover:bg-gray-600/50 cursor-row-resize flex-shrink-0 flex items-center justify-center"
+                onMouseDown={() => { draggingRef.current = true; }}
+                title="Drag to resize"
+            >
+                <div className="w-8 h-1 rounded-full bg-gray-500/50" />
             </div>
-
-            <div className="border-t theme-border pt-4 flex justify-end">
-                <button onClick={handleSave} disabled={loading} className="theme-button-primary px-4 py-2 rounded text-sm flex items-center gap-2">
-                    <Save size={16} /> {loading ? 'Saving...' : 'Save'}
-                </button>
+            <div style={{ height: `${100 - ratio}%`, minHeight: `${minBottomPct}%` }} className="overflow-hidden">
+                {bottom}
             </div>
         </div>
     );
@@ -1035,7 +966,6 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
         { id: 'jinxes', label: 'Jinxes', icon: <Zap size={16} /> },
         { id: 'knowledge', label: 'Knowledge', icon: <KgIcon size={16} /> },
         { id: 'cron', label: 'Scheduler', icon: <SmokestackIcon size={16} /> },
-        { id: 'databases', label: 'Databases', icon: <Database size={16} /> },
     ];
 
     if (!isOpen && !embedded) return null;
@@ -1189,11 +1119,6 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                     teamKey={npcMenuKey}
                                 />
                             )}
-                            {activeTab === 'databases' && (
-                                <DatabasesContent
-                                    currentPath={effectiveTeamPath}
-                                />
-                            )}
                             {activeTab === 'ai-settings' && (
                                 <AiSettingsContent />
                             )}
@@ -1220,16 +1145,14 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                         </div>
                     )}
                     {activeTab === 'knowledge' && (
-                        <div className="flex-1 flex overflow-hidden">
-                            <div className="w-[45%] flex-shrink-0 border-r theme-border overflow-hidden">
-                                <MemoryManagement isModal={false} currentPath={currentPath} allMemories={sharedMemories} />
-                            </div>
-                            <div className="flex-1 overflow-hidden">
+                        <ResizableSplitPane
+                            top={<MemoryManagement isModal={false} currentPath={currentPath} allMemories={sharedMemories} />}
+                            bottom={
                                 <Suspense fallback={<div className="flex items-center justify-center py-12 theme-text-muted">Loading...</div>}>
                                     <KnowledgeGraphEditor isModal={false} currentPath={currentPath} memories={sharedMemories} knowledge={sharedKnowledge} />
                                 </Suspense>
-                            </div>
-                        </div>
+                            }
+                        />
                     )}
                 </div>
             </div>

@@ -909,7 +909,7 @@ function spawnDaemon() {
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
     detached: process.platform !== 'win32',
-    env: { ...process.env, INCOGNIDE_HOME, NPCSH_BACKEND_URL: BACKEND_URL },
+    env: { ...process.env, INCOGNIDE_HOME },
   });
   daemonProcess.stdout.on('data', (d) => {
     log('[daemon stdout]', d.toString().trim());

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileJson, X, Save, Plus, Trash2, Search, ChevronDown, Server } from 'lucide-react';
+import { FileJson, X, Save, Plus, Trash2, Search, ChevronDown, Server, Database } from 'lucide-react';
 import yaml from 'js-yaml';
 import AutosizeTextarea from './AutosizeTextarea';
 
@@ -294,6 +294,54 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false }) => {
         }
     };
 
+    interface DatabaseEntry {
+        name?: string;
+        path: string;
+    }
+
+    const getDatabases = (): DatabaseEntry[] => {
+        const val = ctx.databases;
+        if (!val) return [];
+        if (Array.isArray(val)) {
+            return val.map((d: any) => {
+                if (typeof d === 'string') return { path: d };
+                return { name: d.name, path: d.path || d.value || '' };
+            });
+        }
+        return [];
+    };
+
+    const addDatabase = (template: 'sqlite' | 'postgres' | 'snowflake' | 'mysql') => {
+        const templates: Record<string, DatabaseEntry> = {
+            sqlite: { name: 'SQLite', path: '~/history.db' },
+            postgres: { name: 'PostgreSQL', path: 'postgresql://user:pass@localhost:5432/db' },
+            snowflake: { name: 'Snowflake', path: 'snowflake://account/warehouse/database/schema' },
+            mysql: { name: 'MySQL', path: 'mysql://user:pass@localhost:3306/db' },
+        };
+        const current = getDatabases();
+        const entry = templates[template] || { path: '' };
+        setCtx(prev => ({ ...prev, databases: [...current, entry] }));
+    };
+
+    const removeDatabase = (index: number) => {
+        const current = getDatabases();
+        const next = current.filter((_, i) => i !== index);
+        if (next.length === 0) {
+            setCtx(prev => {
+                const { databases: _, ...rest } = prev;
+                return rest;
+            });
+        } else {
+            setCtx(prev => ({ ...prev, databases: next }));
+        }
+    };
+
+    const updateDatabase = (index: number, field: keyof DatabaseEntry, value: string) => {
+        const current = getDatabases();
+        const next = [...current];
+        next[index] = { ...next[index], [field]: value };
+        setCtx(prev => ({ ...prev, databases: next }));
+    };
 
     const renderJinxDropdown = () => {
         const currentJinxes = new Set(getJinxes());
@@ -539,6 +587,68 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false }) => {
         );
     };
 
+    const renderDatabasesSection = () => {
+        const dbs = getDatabases();
+        const templates = [
+            { key: 'sqlite', label: 'SQLite', icon: '📁' },
+            { key: 'postgres', label: 'PostgreSQL', icon: '🔐' },
+            { key: 'snowflake', label: 'Snowflake', icon: '❄️' },
+            { key: 'mysql', label: 'MySQL', icon: '🐍' },
+        ] as { key: 'sqlite' | 'postgres' | 'snowflake' | 'mysql'; label: string; icon: string }[];
+
+        return (
+            <div className="space-y-3 border-t theme-border pt-4">
+                <div className="flex items-center justify-between">
+                    <h4 className="text-sm theme-text-primary font-semibold flex items-center gap-2">
+                        <Database size={14} className="text-blue-400" /> Databases
+                    </h4>
+                    <div className="flex gap-1">
+                        {templates.map(t => (
+                            <button
+                                key={t.key}
+                                onClick={() => addDatabase(t.key)}
+                                className="text-[10px] theme-button-subtle px-2 py-1 rounded flex items-center gap-1"
+                                title={`Add ${t.label} template`}
+                            >
+                                <span>{t.icon}</span> {t.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="space-y-2">
+                    {dbs.map((db, idx) => (
+                        <div key={idx} className="flex gap-2 items-center theme-bg-tertiary p-2 rounded-lg">
+                            <input
+                                type="text"
+                                value={db.name || ''}
+                                onChange={(e) => updateDatabase(idx, 'name', e.target.value)}
+                                placeholder="DB name"
+                                className="w-32 theme-input text-xs"
+                            />
+                            <input
+                                type="text"
+                                value={db.path || ''}
+                                onChange={(e) => updateDatabase(idx, 'path', e.target.value)}
+                                placeholder="~/path/to/db or connection string"
+                                className="flex-1 theme-input text-xs font-mono"
+                            />
+                            <button
+                                onClick={() => removeDatabase(idx)}
+                                className="p-1.5 text-red-400 hover:bg-red-900/30 rounded"
+                            >
+                                <Trash2 size={12} />
+                            </button>
+                        </div>
+                    ))}
+                    {dbs.length === 0 && (
+                        <p className="text-xs theme-text-muted italic">No databases configured. Use the template buttons above to add one.</p>
+                    )}
+                </div>
+            </div>
+        );
+    };
+
     const renderForm = () => {
         if (!teamPath) {
             return <div className="p-4 theme-text-muted">No team path selected.</div>;
@@ -564,21 +674,38 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false }) => {
                         <label className="block text-sm theme-text-secondary mb-1">Default Model</label>
                         <input
                             type="text"
+                            list="model-suggestions"
                             value={ctx.model || ''}
                             onChange={(e) => handleFieldChange('model', e.target.value)}
                             className="w-full theme-input text-sm"
                             placeholder=""
                         />
+                        <datalist id="model-suggestions">
+                            {Array.from(new Set([
+                                ...getProviders().flatMap(p => [...(p.models || []), p.model]),
+                                'llama3', 'llama3.1', 'llama3.2', 'gpt-4o', 'gpt-4o-mini',
+                                'claude-3-5-sonnet', 'claude-sonnet-4', 'gemini-2.5-pro',
+                                'gemini-2.5-flash', 'nomic-text-embed'
+                            ].filter(Boolean))).map(m => <option key={m} value={m} />)}
+                        </datalist>
                     </div>
                     <div>
                         <label className="block text-sm theme-text-secondary mb-1">Default Provider</label>
                         <input
                             type="text"
+                            list="provider-suggestions"
                             value={ctx.provider || ''}
                             onChange={(e) => handleFieldChange('provider', e.target.value)}
                             className="w-full theme-input text-sm"
                             placeholder=""
                         />
+                        <datalist id="provider-suggestions">
+                            {Array.from(new Set([
+                                ...getProviders().map(p => p.provider_type),
+                                'ollama', 'openai', 'anthropic', 'gemini', 'lmstudio',
+                                'llamacpp', 'transformers', 'lora', 'airllm', 'enpisi', 'deepseek'
+                            ].filter(Boolean))).map(p => <option key={p} value={p} />)}
+                        </datalist>
                     </div>
                     <div>
                         <label className="block text-sm theme-text-secondary mb-1">API URL</label>
@@ -704,6 +831,8 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false }) => {
 
 
                 {renderMcpDropdown()}
+
+                {renderDatabasesSection()}
             </div>
         );
     };
