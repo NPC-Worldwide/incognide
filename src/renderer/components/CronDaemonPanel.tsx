@@ -161,23 +161,31 @@ const KGEvolutionForm: React.FC<JobFormProps & { currentPath?: string; discovere
   return (
     <div className="space-y-2">
       {discoveredStores && discoveredStores.length > 0 && (
-        <div className="border theme-border rounded p-2 space-y-1.5 max-h-40 overflow-y-auto">
+        <div className="border theme-border rounded p-2 space-y-1.5 max-h-52 overflow-y-auto">
           <div className="text-[10px] theme-text-secondary font-semibold flex items-center gap-1">
             <Activity size={10} className="text-green-400" />
             Discovered Knowledge Stores
           </div>
           {discoveredStores.map((store: any) => (
-            <label key={store.path} className="flex items-center gap-2 cursor-pointer hover:bg-white/5 rounded px-1 py-0.5">
-              <input
-                type="checkbox"
-                checked={selections.includes(store.path)}
-                onChange={() => toggleStore(store.path)}
-                className="w-3 h-3"
-              />
-              <span className="text-[10px] theme-text-primary truncate flex-1" title={store.path}>{store.directory}</span>
-              <span className="text-[10px] theme-text-muted tabular-nums">
-                {store.memoryCount}m / {store.knowledgeCount}k / {store.conceptCount}c
-              </span>
+            <label key={store.path} className="flex flex-col cursor-pointer hover:bg-white/5 rounded px-1 py-0.5">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={selections.includes(store.path)}
+                  onChange={() => toggleStore(store.path)}
+                  className="w-3 h-3"
+                />
+                <span className="text-[10px] theme-text-primary truncate flex-1" title={store.path}>{store.directory}</span>
+                <span className="text-[10px] theme-text-muted tabular-nums">
+                  {store.memoryCount}m / {store.knowledgeCount}k / {store.conceptCount}c
+                </span>
+              </div>
+              {(store.lastExtractedAt || store.lastEvolvedAt) && (
+                <div className="text-[9px] theme-text-muted pl-5 tabular-nums">
+                  {store.lastExtractedAt && <span>extracted: {new Date(store.lastExtractedAt).toLocaleString()} · </span>}
+                  {store.lastEvolvedAt && <span>evolved: {new Date(store.lastEvolvedAt).toLocaleString()}</span>}
+                </div>
+              )}
             </label>
           ))}
         </div>
@@ -185,7 +193,16 @@ const KGEvolutionForm: React.FC<JobFormProps & { currentPath?: string; discovere
       {!discoveredStores?.length && currentPath && (
         <div className="text-[10px] theme-text-muted italic">No .knowledge.yaml files found under {currentPath}</div>
       )}
-      <div className="flex gap-4">
+      <div className="flex gap-4 flex-wrap">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={!!p.extract_first}
+            onChange={e => onChange({ payload: { ...p, extract_first: e.target.checked } })}
+            className="w-3 h-3"
+          />
+          <span className="text-xs theme-text-secondary">Extract memories first</span>
+        </label>
         <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
@@ -402,7 +419,7 @@ const CronDaemonPanel: React.FC<CronDaemonPanelProps> = ({
   const defaultPayload = (type: string) => {
     switch (type) {
       case 'finetune_instruction': return { source: 'memories', npc_name: '', base_model: '', output_name: '', instruction_count: 100 };
-      case 'knowledge_graph': return { store_selections: [], include_memories: true, include_knowledge: true, full_rebuild: false };
+      case 'knowledge_graph': return { store_selections: [], extract_first: false, include_memories: true, include_knowledge: true, full_rebuild: false };
       default: return { command: '', npcName: '', jinxName: '' };
     }
   };

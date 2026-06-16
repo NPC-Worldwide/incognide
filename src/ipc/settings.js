@@ -590,6 +590,8 @@ function register(ctx) {
                 knowledgeCount: (data.knowledge || []).length,
                 conceptCount: (data.concepts || []).length,
                 linkCount: (data.links || []).length,
+                lastExtractedAt: data.last_extracted_at || null,
+                lastEvolvedAt: data.last_evolved_at || null,
               });
             } catch {
               results.push({ path: full, directory: dir, memoryCount: 0, knowledgeCount: 0, conceptCount: 0, linkCount: 0 });

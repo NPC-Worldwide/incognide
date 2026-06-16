@@ -511,6 +511,8 @@ async function runKnowledgeGraphJob(row, logFilePath) {
     if (payload.include_memories !== false) args.push('--include-memories');
     if (payload.include_knowledge !== false) args.push('--include-knowledge');
     if (payload.full_rebuild) args.push('--full-rebuild');
+    if (payload.extract_first) args.push('--extract-first');
+    if (payload.no_incremental_extract) args.push('--no-incremental-extract');
     if (payload.model) args.push('--model', payload.model);
     if (payload.provider) args.push('--provider', payload.provider);
   } else {

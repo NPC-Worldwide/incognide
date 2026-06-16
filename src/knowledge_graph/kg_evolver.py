@@ -458,6 +458,8 @@ def evolve_yaml(stores: List[str] = None,
                 include_memories: bool = True,
                 include_knowledge: bool = True,
                 full_rebuild: bool = False,
+                extract_first: bool = False,
+                incremental_extract: bool = True,
                 model: str = None,
                 provider: str = None) -> Dict[str, Any]:
     """Evolve knowledge graph across plaintext .knowledge.yaml stores."""
@@ -516,6 +518,8 @@ def evolve_yaml(stores: List[str] = None,
             full_rebuild=full_rebuild,
             all_facts=all_facts,
             all_concepts=all_concepts,
+            extract_first=extract_first,
+            incremental_extract=incremental_extract,
         )
         stats["stores_updated"] += 1
         stats["stores"].append({"path": spath, **result})
@@ -808,6 +812,8 @@ if __name__ == '__main__':
     parser.add_argument('--include-memories', action='store_true', default=True)
     parser.add_argument('--include-knowledge', action='store_true', default=True)
     parser.add_argument('--full-rebuild', action='store_true', help='Wipe existing concepts/links and regenerate')
+    parser.add_argument('--extract-first', action='store_true', help='Scan directory for documents/code and create memories before evolving')
+    parser.add_argument('--no-incremental-extract', action='store_true', help='Re-extract all files regardless of last_extracted_at')
     parser.add_argument('--model', default=None)
     parser.add_argument('--provider', default=None)
     args = parser.parse_args()
@@ -826,6 +832,8 @@ if __name__ == '__main__':
                 include_memories=args.include_memories,
                 include_knowledge=args.include_knowledge,
                 full_rebuild=args.full_rebuild,
+                extract_first=args.extract_first,
+                incremental_extract=not args.no_incremental_extract,
                 model=args.model,
                 provider=args.provider,
             )
