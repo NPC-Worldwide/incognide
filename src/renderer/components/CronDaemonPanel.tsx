@@ -76,42 +76,72 @@ interface JobFormProps {
   onChange: (patch: Partial<JobConfig>) => void;
 }
 
-const FinetuneForm: React.FC<JobFormProps> = ({ job, onChange }) => {
+const FinetuneForm: React.FC<JobFormProps & { npcList?: any[] }> = ({ job, onChange, npcList }) => {
   const p = job.payload || {};
   return (
     <div className="space-y-2">
-      <div>
-        <label className="text-[10px] theme-text-secondary block">Dataset Path</label>
-        <input
-          type="text"
-          value={p.dataset_path || ''}
-          onChange={e => onChange({ payload: { ...p, dataset_path: e.target.value } })}
-          className="w-full text-xs px-2 py-1 rounded theme-border theme-bg-secondary font-mono"
-          placeholder="/path/to/dataset.jsonl"
-        />
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-[10px] theme-text-secondary block">Source</label>
+          <select
+            value={p.source || 'memories'}
+            onChange={e => onChange({ payload: { ...p, source: e.target.value } })}
+            className="w-full text-xs px-1 py-1 rounded theme-border theme-bg-secondary"
+          >
+            <option value="memories">Memories</option>
+            <option value="knowledge">Knowledge</option>
+            <option value="both">Both</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-[10px] theme-text-secondary block">NPC</label>
+          <input
+            type="text"
+            list="npc-suggestions"
+            value={p.npc_name || ''}
+            onChange={e => onChange({ payload: { ...p, npc_name: e.target.value } })}
+            className="w-full text-xs px-2 py-1 rounded theme-border theme-bg-secondary"
+            placeholder="all"
+          />
+          <datalist id="npc-suggestions">
+            {(npcList || []).map((n: any) => (
+              <option key={n.name} value={n.name} />
+            ))}
+          </datalist>
+        </div>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="text-[10px] theme-text-secondary block">Model</label>
+          <label className="text-[10px] theme-text-secondary block">Base Model</label>
           <input
             type="text"
-            value={p.model || ''}
-            onChange={e => onChange({ payload: { ...p, model: e.target.value } })}
+            value={p.base_model || ''}
+            onChange={e => onChange({ payload: { ...p, base_model: e.target.value } })}
             className="w-full text-xs px-2 py-1 rounded theme-border theme-bg-secondary"
             placeholder="llama3"
           />
         </div>
         <div>
-          <label className="text-[10px] theme-text-secondary block">Epochs</label>
+          <label className="text-[10px] theme-text-secondary block">Output Name</label>
           <input
-            type="number"
-            min={1}
-            max={100}
-            value={p.epochs ?? 3}
-            onChange={e => onChange({ payload: { ...p, epochs: parseInt(e.target.value) || 0 } })}
+            type="text"
+            value={p.output_name || ''}
+            onChange={e => onChange({ payload: { ...p, output_name: e.target.value } })}
             className="w-full text-xs px-2 py-1 rounded theme-border theme-bg-secondary"
+            placeholder="my-finetuned-model"
           />
         </div>
+      </div>
+      <div>
+        <label className="text-[10px] theme-text-secondary block">Instructions to Generate</label>
+        <input
+          type="number"
+          min={1}
+          max={10000}
+          value={p.instruction_count ?? 100}
+          onChange={e => onChange({ payload: { ...p, instruction_count: parseInt(e.target.value) || 0 } })}
+          className="w-full text-xs px-2 py-1 rounded theme-border theme-bg-secondary"
+        />
       </div>
     </div>
   );
@@ -122,24 +152,43 @@ const KGEvolutionForm: React.FC<JobFormProps> = ({ job, onChange }) => {
   return (
     <div className="space-y-2">
       <div>
-        <label className="text-[10px] theme-text-secondary block">DB Path</label>
-        <input
-          type="text"
-          value={p.dbPath || ''}
-          onChange={e => onChange({ payload: { ...p, dbPath: e.target.value } })}
-          className="w-full text-xs px-2 py-1 rounded theme-border theme-bg-secondary font-mono"
-          placeholder="~/.incognide/history.db"
+        <label className="text-[10px] theme-text-secondary block">Knowledge Store Paths</label>
+        <textarea
+          value={(p.scan_paths || []).join('\n')}
+          onChange={e => onChange({ payload: { ...p, scan_paths: e.target.value.split('\n').map(s => s.trim()).filter(Boolean) } })}
+          className="w-full text-xs px-2 py-1 rounded theme-border theme-bg-secondary font-mono min-h-[60px] resize-y"
+          placeholder={'/path/to/team/.knowledge.yaml\n/path/to/another/knowledge.yaml'}
         />
       </div>
-      <label className="flex items-center gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={!!p.full}
-          onChange={e => onChange({ payload: { ...p, full: e.target.checked } })}
-          className="w-3 h-3"
-        />
-        <span className="text-xs theme-text-secondary">Full rebuild</span>
-      </label>
+      <div className="flex gap-4">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={!!p.include_memories}
+            onChange={e => onChange({ payload: { ...p, include_memories: e.target.checked } })}
+            className="w-3 h-3"
+          />
+          <span className="text-xs theme-text-secondary">Include Memories</span>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={!!p.include_knowledge}
+            onChange={e => onChange({ payload: { ...p, include_knowledge: e.target.checked } })}
+            className="w-3 h-3"
+          />
+          <span className="text-xs theme-text-secondary">Include Knowledge</span>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={!!p.full_rebuild}
+            onChange={e => onChange({ payload: { ...p, full_rebuild: e.target.checked } })}
+            className="w-3 h-3"
+          />
+          <span className="text-xs theme-text-secondary">Full Rebuild</span>
+        </label>
+      </div>
     </div>
   );
 };
@@ -316,8 +365,8 @@ const CronDaemonPanel: React.FC<CronDaemonPanelProps> = ({
 
   const defaultPayload = (type: string) => {
     switch (type) {
-      case 'finetune_instruction': return { dataset_path: '', model: '', epochs: 3 };
-      case 'knowledge_graph': return { dbPath: '~/.incognide/history.db', full: false };
+      case 'finetune_instruction': return { source: 'memories', npc_name: '', base_model: '', output_name: '', instruction_count: 100 };
+      case 'knowledge_graph': return { scan_paths: [], include_memories: true, include_knowledge: true, full_rebuild: false };
       default: return { command: '', npcName: '', jinxName: '' };
     }
   };
@@ -505,7 +554,7 @@ const CronDaemonPanel: React.FC<CronDaemonPanelProps> = ({
   const renderJobForm = (job: JobConfig, idx: number) => {
     switch (job.job_type) {
       case 'finetune_instruction':
-        return <FinetuneForm job={job} onChange={patch => updateJob(idx, patch)} />;
+        return <FinetuneForm job={job} onChange={patch => updateJob(idx, patch)} npcList={npcList} />;
       case 'knowledge_graph':
         return <KGEvolutionForm job={job} onChange={patch => updateJob(idx, patch)} />;
       default:
