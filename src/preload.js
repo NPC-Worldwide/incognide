@@ -68,6 +68,7 @@ readDocxContent: (filePath) =>
     scheduledJobToggle: (jobId, enabled) => ipcRenderer.invoke('scheduledJob:toggle', { jobId, enabled }),
     scheduledJobRunNow: (jobId) => ipcRenderer.invoke('scheduledJob:runNow', jobId),
     scheduledJobHistory: (jobId) => ipcRenderer.invoke('scheduledJob:history', jobId),
+    scanKnowledgeStores: (workspacePath) => ipcRenderer.invoke('scanKnowledgeStores', workspacePath),
 
     generateImages: (prompt, n, model, provider, attachments, baseFilename, currentPath, opts = {}) => ipcRenderer.invoke('generate_images', { prompt, n, model, provider, attachments, baseFilename, currentPath, workspacePath: opts.workspacePath, width: opts.width, height: opts.height, customModelPath: opts.customModelPath }),
 

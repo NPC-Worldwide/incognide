@@ -23,11 +23,28 @@ import json
 import os
 import re
 import sqlite3
+import sys
 import time
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+
+# Ensure npcpy is importable from typical monorepo layouts
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+for _rel in (
+    os.path.join(_SCRIPT_DIR, '..', '..', 'npcpy'),
+    os.path.join(_SCRIPT_DIR, '..', '..', '..', 'npcpy'),
+):
+    _cand = os.path.abspath(_rel)
+    if os.path.isdir(_cand) and _cand not in sys.path:
+        sys.path.insert(0, _cand)
+
+try:
+    from npcpy.memory.knowledge_store import KnowledgeStore
+except ImportError:
+    KnowledgeStore = None
 
 # ---------------------------------------------------------------------------
 # Config
@@ -433,6 +450,82 @@ def _build_cross_links(conn: sqlite3.Connection) -> int:
 
 
 # ---------------------------------------------------------------------------
+# YAML-based evolve (plaintext knowledge stores)
+# ---------------------------------------------------------------------------
+
+def evolve_yaml(stores: List[str] = None,
+                workspace: str = None,
+                include_memories: bool = True,
+                include_knowledge: bool = True,
+                full_rebuild: bool = False,
+                model: str = None,
+                provider: str = None) -> Dict[str, Any]:
+    """Evolve knowledge graph across plaintext .knowledge.yaml stores."""
+    if KnowledgeStore is None:
+        return {"status": "error", "reason": "npcpy.memory.knowledge_store not available"}
+
+    if not stores and workspace:
+        stores = [s.directory for s in KnowledgeStore.find_all(workspace)]
+
+    if not stores:
+        return {"status": "skipped", "reason": "no_stores_found"}
+
+    # Aggregate corpus from all selected stores
+    all_facts = []
+    all_concepts = []
+    for spath in stores:
+        store = KnowledgeStore(spath)
+        data = store.load()
+        if include_memories:
+            for mem in data.get("memories", []):
+                stmt = mem.get("final_memory") or mem.get("initial_memory", "")
+                if stmt:
+                    all_facts.append({
+                        "statement": stmt,
+                        "source_text": stmt,
+                        "type": "memory",
+                        "generation": 0,
+                        "memory_id": mem.get("id"),
+                    })
+        if include_knowledge:
+            for entry in data.get("knowledge", []):
+                txt = entry.get("relation") or entry.get("to") or ""
+                if txt:
+                    all_facts.append({
+                        "statement": txt,
+                        "source_text": txt,
+                        "type": "knowledge",
+                        "generation": 0,
+                        "memory_id": entry.get("id"),
+                    })
+        for c in data.get("concepts", []):
+            all_concepts.append({
+                "name": c["name"],
+                "description": c.get("description", ""),
+                "generation": c.get("generation", 0),
+            })
+
+    stats = {"stores_updated": 0, "total_concepts": 0, "total_links": 0, "stores": []}
+    for spath in stores:
+        store = KnowledgeStore(spath)
+        result = store.evolve(
+            model=model,
+            provider=provider,
+            include_memories=include_memories,
+            include_knowledge=include_knowledge,
+            full_rebuild=full_rebuild,
+            all_facts=all_facts,
+            all_concepts=all_concepts,
+        )
+        stats["stores_updated"] += 1
+        stats["stores"].append({"path": spath, **result})
+        stats["total_concepts"] += result.get("concepts_added", 0)
+        stats["total_links"] += result.get("links_added", 0)
+
+    return {"status": "success", **stats}
+
+
+# ---------------------------------------------------------------------------
 # Evolve
 # ---------------------------------------------------------------------------
 
@@ -710,10 +803,34 @@ if __name__ == '__main__':
     parser.add_argument('--limit', type=int, default=20)
     parser.add_argument('--max-depth', type=int, default=2)
     parser.add_argument('--full', action='store_true', help='Full re-evolution (ignore last run time)')
+    parser.add_argument('--stores', default=None, help='JSON array of .knowledge.yaml parent directory paths')
+    parser.add_argument('--workspace', default=None, help='Directory to auto-scan for .knowledge.yaml files')
+    parser.add_argument('--include-memories', action='store_true', default=True)
+    parser.add_argument('--include-knowledge', action='store_true', default=True)
+    parser.add_argument('--full-rebuild', action='store_true', help='Wipe existing concepts/links and regenerate')
+    parser.add_argument('--model', default=None)
+    parser.add_argument('--provider', default=None)
     args = parser.parse_args()
 
     if args.command == 'evolve':
-        result = evolve(args.db_path, full=args.full)
+        if args.stores or args.workspace:
+            stores = None
+            if args.stores:
+                try:
+                    stores = json.loads(args.stores)
+                except Exception:
+                    stores = [args.stores]
+            result = evolve_yaml(
+                stores=stores,
+                workspace=args.workspace,
+                include_memories=args.include_memories,
+                include_knowledge=args.include_knowledge,
+                full_rebuild=args.full_rebuild,
+                model=args.model,
+                provider=args.provider,
+            )
+        else:
+            result = evolve(args.db_path, full=args.full)
     elif args.command == 'query':
         result = query_entity(args.db_path, args.name, args.type)
     elif args.command == 'search':

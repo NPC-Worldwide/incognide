@@ -147,19 +147,44 @@ const FinetuneForm: React.FC<JobFormProps & { npcList?: any[] }> = ({ job, onCha
   );
 };
 
-const KGEvolutionForm: React.FC<JobFormProps> = ({ job, onChange }) => {
+const KGEvolutionForm: React.FC<JobFormProps & { currentPath?: string; discoveredStores?: any[] }> = ({ job, onChange, currentPath, discoveredStores }) => {
   const p = job.payload || {};
+  const selections = p.store_selections || [];
+
+  const toggleStore = (storePath: string) => {
+    const next = selections.includes(storePath)
+      ? selections.filter((s: string) => s !== storePath)
+      : [...selections, storePath];
+    onChange({ payload: { ...p, store_selections: next } });
+  };
+
   return (
     <div className="space-y-2">
-      <div>
-        <label className="text-[10px] theme-text-secondary block">Knowledge Store Paths</label>
-        <textarea
-          value={(p.scan_paths || []).join('\n')}
-          onChange={e => onChange({ payload: { ...p, scan_paths: e.target.value.split('\n').map(s => s.trim()).filter(Boolean) } })}
-          className="w-full text-xs px-2 py-1 rounded theme-border theme-bg-secondary font-mono min-h-[60px] resize-y"
-          placeholder={'/path/to/team/.knowledge.yaml\n/path/to/another/knowledge.yaml'}
-        />
-      </div>
+      {discoveredStores && discoveredStores.length > 0 && (
+        <div className="border theme-border rounded p-2 space-y-1.5 max-h-40 overflow-y-auto">
+          <div className="text-[10px] theme-text-secondary font-semibold flex items-center gap-1">
+            <Activity size={10} className="text-green-400" />
+            Discovered Knowledge Stores
+          </div>
+          {discoveredStores.map((store: any) => (
+            <label key={store.path} className="flex items-center gap-2 cursor-pointer hover:bg-white/5 rounded px-1 py-0.5">
+              <input
+                type="checkbox"
+                checked={selections.includes(store.path)}
+                onChange={() => toggleStore(store.path)}
+                className="w-3 h-3"
+              />
+              <span className="text-[10px] theme-text-primary truncate flex-1" title={store.path}>{store.directory}</span>
+              <span className="text-[10px] theme-text-muted tabular-nums">
+                {store.memoryCount}m / {store.knowledgeCount}k / {store.conceptCount}c
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
+      {!discoveredStores?.length && currentPath && (
+        <div className="text-[10px] theme-text-muted italic">No .knowledge.yaml files found under {currentPath}</div>
+      )}
       <div className="flex gap-4">
         <label className="flex items-center gap-2 cursor-pointer">
           <input
@@ -362,11 +387,22 @@ const CronDaemonPanel: React.FC<CronDaemonPanelProps> = ({
   const [logsMap, setLogsMap] = useState<Record<string, any[]>>({});
   const [showAdd, setShowAdd] = useState(false);
   const [newJobName, setNewJobName] = useState('');
+  const [discoveredStores, setDiscoveredStores] = useState<any[]>([]);
+
+  const scanStores = useCallback(async () => {
+    if (!currentPath || !api?.scanKnowledgeStores) return;
+    try {
+      const res = await api.scanKnowledgeStores(currentPath);
+      setDiscoveredStores(res?.stores || []);
+    } catch {}
+  }, [currentPath, api]);
+
+  useEffect(() => { scanStores(); }, [scanStores]);
 
   const defaultPayload = (type: string) => {
     switch (type) {
       case 'finetune_instruction': return { source: 'memories', npc_name: '', base_model: '', output_name: '', instruction_count: 100 };
-      case 'knowledge_graph': return { scan_paths: [], include_memories: true, include_knowledge: true, full_rebuild: false };
+      case 'knowledge_graph': return { store_selections: [], include_memories: true, include_knowledge: true, full_rebuild: false };
       default: return { command: '', npcName: '', jinxName: '' };
     }
   };
@@ -389,7 +425,7 @@ const CronDaemonPanel: React.FC<CronDaemonPanelProps> = ({
             name: existing.name || name,
             enabled: existing.enabled === 1 || existing.enabled === true,
             schedule: existing.schedule || schedule,
-            payload: payload || defaultPayload(type),
+            payload: { ...defaultPayload(type), ...(payload || {}) },
             job_type: existing.job_type || type,
             last_run_at: existing.last_run_at,
           };
@@ -416,7 +452,7 @@ const CronDaemonPanel: React.FC<CronDaemonPanelProps> = ({
               name: j.name || j.job_type,
               enabled: j.enabled === 1 || j.enabled === true,
               schedule: j.schedule || '0 3 * * *',
-              payload: payload || {},
+              payload: { ...defaultPayload(j.job_type || 'custom'), ...(payload || {}) },
               job_type: j.job_type || 'custom',
               last_run_at: j.last_run_at,
             };
@@ -556,7 +592,7 @@ const CronDaemonPanel: React.FC<CronDaemonPanelProps> = ({
       case 'finetune_instruction':
         return <FinetuneForm job={job} onChange={patch => updateJob(idx, patch)} npcList={npcList} />;
       case 'knowledge_graph':
-        return <KGEvolutionForm job={job} onChange={patch => updateJob(idx, patch)} />;
+        return <KGEvolutionForm job={job} onChange={patch => updateJob(idx, patch)} currentPath={currentPath} discoveredStores={discoveredStores} />;
       default:
         return <GenericJobForm job={job} onChange={patch => updateJob(idx, patch)} npcList={npcList} jinxList={jinxList} />;
     }

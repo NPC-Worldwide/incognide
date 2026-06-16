@@ -569,6 +569,41 @@ function register(ctx) {
     }
   });
 
+  ipcMain.handle('scanKnowledgeStores', async (event, workspacePath) => {
+    try {
+      const root = workspacePath || INCOGNIDE_HOME;
+      const results = [];
+      const walk = async (dir) => {
+        const entries = await fsPromises.readdir(dir, { withFileTypes: true });
+        for (const ent of entries) {
+          const full = path.join(dir, ent.name);
+          if (ent.isDirectory() && !ent.name.startsWith('.') && ent.name !== 'node_modules') {
+            await walk(full);
+          } else if (ent.name === '.knowledge.yaml') {
+            try {
+              const raw = await fsPromises.readFile(full, 'utf8');
+              const data = yaml.load(raw) || {};
+              results.push({
+                path: full,
+                directory: dir,
+                memoryCount: (data.memories || []).length,
+                knowledgeCount: (data.knowledge || []).length,
+                conceptCount: (data.concepts || []).length,
+                linkCount: (data.links || []).length,
+              });
+            } catch {
+              results.push({ path: full, directory: dir, memoryCount: 0, knowledgeCount: 0, conceptCount: 0, linkCount: 0 });
+            }
+          }
+        }
+      };
+      await walk(root);
+      return { stores: results };
+    } catch (err) {
+      return { stores: [], error: err.message };
+    }
+  });
+
   // Legacy cron job handlers (now backed by local scheduled_jobs table)
   ipcMain.handle('getCronJobs', async () => {
     const rows = await dbQuery(`SELECT * FROM scheduled_jobs WHERE job_type = 'jinx' ORDER BY created_at DESC`);

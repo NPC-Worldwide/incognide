@@ -496,15 +496,28 @@ async function runKnowledgeGraphJob(row, logFilePath) {
   }
 
   const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
-  const dbPath = payload.dbPath || DB_PATH;
-  const full = payload.full || false;
+  const args = [scriptPath];
 
-  const args = [
-    scriptPath,
-    '--db-path', dbPath,
-  ];
-  if (full) {
-    args.push('--full');
+  const hasStores = Array.isArray(payload.store_selections) && payload.store_selections.length > 0;
+  const hasWorkspace = row.workspace_path || payload.workspace;
+
+  if (hasStores || hasWorkspace) {
+    if (hasStores) {
+      args.push('--stores', JSON.stringify(payload.store_selections));
+    }
+    if (hasWorkspace) {
+      args.push('--workspace', row.workspace_path || payload.workspace);
+    }
+    if (payload.include_memories !== false) args.push('--include-memories');
+    if (payload.include_knowledge !== false) args.push('--include-knowledge');
+    if (payload.full_rebuild) args.push('--full-rebuild');
+    if (payload.model) args.push('--model', payload.model);
+    if (payload.provider) args.push('--provider', payload.provider);
+  } else {
+    // Legacy SQLite fallback
+    const dbPath = payload.dbPath || DB_PATH;
+    args.push('--db-path', dbPath);
+    if (payload.full) args.push('--full');
   }
   args.push('evolve');
 
