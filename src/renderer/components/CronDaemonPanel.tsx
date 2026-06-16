@@ -197,15 +197,6 @@ const KGEvolutionForm: React.FC<JobFormProps & { currentPath?: string; discovere
         <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
-            checked={!!p.extract_first}
-            onChange={e => onChange({ payload: { ...p, extract_first: e.target.checked } })}
-            className="w-3 h-3"
-          />
-          <span className="text-xs theme-text-secondary">Extract memories first</span>
-        </label>
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
             checked={!!p.include_memories}
             onChange={e => onChange({ payload: { ...p, include_memories: e.target.checked } })}
             className="w-3 h-3"
@@ -419,7 +410,7 @@ const CronDaemonPanel: React.FC<CronDaemonPanelProps> = ({
   const defaultPayload = (type: string) => {
     switch (type) {
       case 'finetune_instruction': return { source: 'memories', npc_name: '', base_model: '', output_name: '', instruction_count: 100 };
-      case 'knowledge_graph': return { store_selections: [], extract_first: false, include_memories: true, include_knowledge: true, full_rebuild: false };
+      case 'knowledge_graph': return { store_selections: [], include_memories: true, include_knowledge: true, full_rebuild: false };
       default: return { command: '', npcName: '', jinxName: '' };
     }
   };
