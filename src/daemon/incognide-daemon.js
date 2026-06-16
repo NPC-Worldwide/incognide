@@ -11,6 +11,8 @@ const os = require('os');
 const { spawn } = require('child_process');
 const cron = require('node-cron');
 const sqlite3 = require('sqlite3');
+let yaml;
+try { yaml = require('js-yaml'); } catch {}
 
 const INCOGNIDE_HOME = (() => {
   const env = process.env.INCOGNIDE_HOME;
@@ -32,6 +34,23 @@ const INCOGNIDE_HOME = (() => {
 })();
 
 const DB_PATH = process.env.INCOGNIDE_DB_PATH || path.join(os.homedir(), '.incognide', 'history.db');
+
+function readTeamDefaults(workspacePath) {
+  if (!workspacePath || !yaml) return {};
+  try {
+    const ctxPath = path.join(workspacePath, '.ctx');
+    if (!fs.existsSync(ctxPath)) return {};
+    const raw = fs.readFileSync(ctxPath, 'utf8');
+    const data = yaml.load(raw) || {};
+    return {
+      model: data.default_model || null,
+      provider: data.default_provider || null,
+    };
+  } catch {
+    return {};
+  }
+}
+
 const JOBS_LOG_DIR = path.join(INCOGNIDE_HOME, 'jobs');
 const FINETUNE_JOBS_DIR = path.join(INCOGNIDE_HOME, 'finetune_jobs');
 const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -511,8 +530,11 @@ async function runKnowledgeGraphJob(row, logFilePath) {
     if (payload.include_memories !== false) args.push('--include-memories');
     if (payload.include_knowledge !== false) args.push('--include-knowledge');
     if (payload.full_rebuild) args.push('--full-rebuild');
-    if (payload.model) args.push('--model', payload.model);
-    if (payload.provider) args.push('--provider', payload.provider);
+    const teamDefaults = readTeamDefaults(row.workspace_path || payload.workspace);
+    const model = payload.model || teamDefaults.model;
+    const provider = payload.provider || teamDefaults.provider;
+    if (model) args.push('--model', model);
+    if (provider) args.push('--provider', provider);
   } else {
     // Legacy SQLite fallback
     const dbPath = payload.dbPath || DB_PATH;

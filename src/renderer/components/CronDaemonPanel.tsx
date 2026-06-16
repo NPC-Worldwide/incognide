@@ -222,6 +222,28 @@ const KGEvolutionForm: React.FC<JobFormProps & { currentPath?: string; discovere
           <span className="text-xs theme-text-secondary">Full Rebuild</span>
         </label>
       </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-[10px] theme-text-secondary block">Model (optional)</label>
+          <input
+            type="text"
+            value={p.model || ''}
+            onChange={e => onChange({ payload: { ...p, model: e.target.value } })}
+            className="w-full text-xs px-2 py-1 rounded theme-border theme-bg-secondary"
+            placeholder="team default"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] theme-text-secondary block">Provider (optional)</label>
+          <input
+            type="text"
+            value={p.provider || ''}
+            onChange={e => onChange({ payload: { ...p, provider: e.target.value } })}
+            className="w-full text-xs px-2 py-1 rounded theme-border theme-bg-secondary"
+            placeholder="team default"
+          />
+        </div>
+      </div>
     </div>
   );
 };
@@ -410,7 +432,7 @@ const CronDaemonPanel: React.FC<CronDaemonPanelProps> = ({
   const defaultPayload = (type: string) => {
     switch (type) {
       case 'finetune_instruction': return { source: 'memories', npc_name: '', base_model: '', output_name: '', instruction_count: 100 };
-      case 'knowledge_graph': return { store_selections: [], include_memories: true, include_knowledge: true, full_rebuild: false };
+      case 'knowledge_graph': return { store_selections: [], include_memories: true, include_knowledge: true, full_rebuild: false, model: '', provider: '' };
       default: return { command: '', npcName: '', jinxName: '' };
     }
   };
