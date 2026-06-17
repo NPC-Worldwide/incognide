@@ -27,7 +27,7 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
     const [loadError, setLoadError] = useState<string | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editText, setEditText] = useState('');
-    const [scope, setScope] = useState<'local' | 'all'>('local');
+    const [scope, setScope] = useState<'local' | 'all'>('all');
 
     const api = (window as any).api;
 
@@ -35,7 +35,7 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
         setMemoryLoading(true);
         setLoadError(null);
         try {
-            if (scope === 'all' && allMemories && allMemories.length > 0) {
+            if (scope === 'all' && allMemories != null) {
                 setMemories(allMemories);
                 return;
             }

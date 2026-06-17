@@ -148,16 +148,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 }) => {
     const [expandedNpcs, setExpandedNpcs] = useState<Set<string>>(new Set());
     const [copilotSettingsOpen, setCopilotSettingsOpen] = useState(false);
-    const [expandedJinxGroups, setExpandedJinxGroups] = useState<Set<string>>(new Set());
     const toggleNpcExpanded = (key: string) => {
         setExpandedNpcs(prev => {
-            const next = new Set(prev);
-            if (next.has(key)) next.delete(key); else next.add(key);
-            return next;
-        });
-    };
-    const toggleJinxGroup = (key: string) => {
-        setExpandedJinxGroups(prev => {
             const next = new Set(prev);
             if (next.has(key)) next.delete(key); else next.add(key);
             return next;
@@ -166,47 +158,54 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     const [convosCollapsed, setConvosCollapsed] = useState(() => {
         try { return localStorage.getItem('incognide_rs_convosCollapsed') === 'true'; } catch { return false; }
     });
+    const [agentRunsCollapsed, setAgentRunsCollapsed] = useState(() => {
+        try { return localStorage.getItem('incognide_rs_agentRunsCollapsed') === 'true'; } catch { return true; }
+    });
     const [npcsCollapsed, setNpcsCollapsed] = useState(() => {
         try { return localStorage.getItem('incognide_rs_npcsCollapsed') === 'true'; } catch { return false; }
     });
-    const [jinxesCollapsed, setJinxesCollapsed] = useState(() => {
-        try { return localStorage.getItem('incognide_rs_jinxesCollapsed') === 'true'; } catch { return true; }
-    });
-    const [mcpCollapsed, setMcpCollapsed] = useState(() => {
-        try { return localStorage.getItem('incognide_rs_mcpCollapsed') === 'true'; } catch { return true; }
-    });
     React.useEffect(() => { try { localStorage.setItem('incognide_rs_convosCollapsed', String(convosCollapsed)); } catch {} }, [convosCollapsed]);
+    React.useEffect(() => { try { localStorage.setItem('incognide_rs_agentRunsCollapsed', String(agentRunsCollapsed)); } catch {} }, [agentRunsCollapsed]);
     React.useEffect(() => { try { localStorage.setItem('incognide_rs_npcsCollapsed', String(npcsCollapsed)); } catch {} }, [npcsCollapsed]);
-    React.useEffect(() => { try { localStorage.setItem('incognide_rs_jinxesCollapsed', String(jinxesCollapsed)); } catch {} }, [jinxesCollapsed]);
-    React.useEffect(() => { try { localStorage.setItem('incognide_rs_mcpCollapsed', String(mcpCollapsed)); } catch {} }, [mcpCollapsed]);
 
     const [convoSearch, setConvoSearch] = useState('');
+    const [agentSearch, setAgentSearch] = useState('');
     const [npcSearch, setNpcSearch] = useState('');
-    const [jinxSearch, setJinxSearch] = useState('');
-    const [mcpServers, setMcpServers] = useState<any[]>([]);
     const [groupBy, setGroupBy] = useState<'time' | 'npc' | 'model' | 'none'>('time');
 
-    const filteredConvos = useMemo(() => {
-        if (!convoSearch.trim()) return directoryConversations || [];
+    const chatConvos = useMemo(() => {
+        const base = (directoryConversations || []).filter((c: any) => !c.execution_mode || c.execution_mode === 'chat');
+        if (!convoSearch.trim()) return base;
         const q = convoSearch.toLowerCase();
-        return (directoryConversations || []).filter((c: any) =>
+        return base.filter((c: any) =>
             c.title?.toLowerCase().includes(q) ||
             c.preview?.toLowerCase().includes(q) ||
             c.id?.toLowerCase().includes(q)
         );
     }, [directoryConversations, convoSearch]);
 
-    const groupedConvos = useMemo(() => {
-        if (groupBy === 'none') return { All: filteredConvos };
+    const agentConvos = useMemo(() => {
+        const base = (directoryConversations || []).filter((c: any) => c.execution_mode && c.execution_mode !== 'chat');
+        if (!agentSearch.trim()) return base;
+        const q = agentSearch.toLowerCase();
+        return base.filter((c: any) =>
+            c.title?.toLowerCase().includes(q) ||
+            c.preview?.toLowerCase().includes(q) ||
+            c.id?.toLowerCase().includes(q)
+        );
+    }, [directoryConversations, agentSearch]);
+
+    const groupConvos = (list: any[]) => {
+        if (groupBy === 'none') return { All: list };
         if (groupBy === 'npc') {
-            return filteredConvos.reduce((acc: any, c: any) => {
+            return list.reduce((acc: any, c: any) => {
                 const k = c.npc || 'Unknown';
                 (acc[k] = acc[k] || []).push(c);
                 return acc;
             }, {});
         }
         if (groupBy === 'model') {
-            return filteredConvos.reduce((acc: any, c: any) => {
+            return list.reduce((acc: any, c: any) => {
                 const k = c.model || 'Unknown';
                 (acc[k] = acc[k] || []).push(c);
                 return acc;
@@ -216,7 +215,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const weekAgo = new Date(today); weekAgo.setDate(weekAgo.getDate() - 7);
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        return filteredConvos.reduce((acc: any, c: any) => {
+        return list.reduce((acc: any, c: any) => {
             const t = c.timestamp ? new Date(c.timestamp) : null;
             let k = 'Older';
             if (t) {
@@ -228,7 +227,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             (acc[k] = acc[k] || []).push(c);
             return acc;
         }, {});
-    }, [filteredConvos, groupBy]);
+    };
+
+    const groupedConvos = useMemo(() => groupConvos(chatConvos), [chatConvos, groupBy]);
+    const groupedAgentRuns = useMemo(() => groupConvos(agentConvos), [agentConvos, groupBy]);
 
     const filteredNpcs = useMemo(() => {
         if (!npcSearch.trim()) return availableNPCs || [];
@@ -289,34 +291,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         });
     };
 
-    useEffect(() => {
-        (async () => {
-            try {
-                const result = await (window as any).api?.mcpGetServersForSidebar?.(currentPath);
-                if (result?.servers) setMcpServers(result.servers);
-            } catch {}
-        })();
-    }, [currentPath]);
-
-    const filteredJinxes = useMemo(() => {
-        if (!jinxSearch.trim()) return jinxesToDisplay || [];
-        const q = jinxSearch.toLowerCase();
-        return (jinxesToDisplay || []).filter((j: any) =>
-            j.name?.toLowerCase().includes(q) ||
-            j.group?.toLowerCase().includes(q) ||
-            j.description?.toLowerCase().includes(q)
-        );
-    }, [jinxesToDisplay, jinxSearch]);
-
-    const groupedJinxes = useMemo(() => {
-        return (filteredJinxes || []).reduce((acc: any, j: any) => {
-            const origin = j.origin || 'unknown';
-            const group = j.group || 'root';
-            const key = `${origin === 'project' ? '📁' : origin === 'global' ? '🌐' : ''} ${group}`.trim();
-            (acc[key] = acc[key] || []).push(j);
-            return acc;
-        }, {});
-    }, [filteredJinxes]);
 
     if (collapsed) {
         return (
@@ -447,7 +421,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             <SectionHeader
                 label="Conversations"
                 color="green"
-                count={filteredConvos.length}
+                count={chatConvos.length}
                 collapsed={convosCollapsed}
                 onToggle={() => setConvosCollapsed(!convosCollapsed)}
             />
@@ -509,9 +483,85 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                                 })}
                             </div>
                         ))}
-                        {filteredConvos.length === 0 && (
+                        {chatConvos.length === 0 && (
                             <div className="px-2 py-4 text-[11px] theme-text-muted text-center italic">
                                 {convoSearch ? `No matches for "${convoSearch}"` : 'No conversations yet'}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+            </div>
+
+            <div data-tutorial="agent-runs" className="flex flex-col min-h-0" style={{ flex: agentRunsCollapsed ? '0 0 auto' : 2, overflow: 'hidden' }}>
+            <SectionHeader
+                label="Agent Runs"
+                color="amber"
+                count={agentConvos.length}
+                collapsed={agentRunsCollapsed}
+                onToggle={() => setAgentRunsCollapsed(!agentRunsCollapsed)}
+            />
+            {!agentRunsCollapsed && (
+                <div className="flex flex-col min-h-0 border-b theme-border" style={{ flex: 1, overflow: 'hidden' }}>
+                    <div className="px-2 py-1.5 border-b theme-border flex-shrink-0">
+                        <div className="relative">
+                            <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 theme-text-muted" />
+                            <input
+                                type="text"
+                                value={agentSearch}
+                                onChange={(e) => setAgentSearch(e.target.value)}
+                                placeholder="Search agent runs..."
+                                className="w-full theme-bg-tertiary theme-border border rounded pl-7 pr-6 py-1 text-[11px] theme-text-primary placeholder:opacity-50 focus:outline-none focus:border-amber-500/50"
+                            />
+                            {agentSearch && (
+                                <button onClick={() => setAgentSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 theme-text-muted hover:theme-text-primary">
+                                    <X size={10} />
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-1 px-2 py-1 border-b theme-border text-[9px] flex-shrink-0">
+                        <span className="theme-text-muted">Group:</span>
+                        {(['time', 'npc', 'model', 'none'] as const).map(g => (
+                            <button
+                                key={g}
+                                onClick={() => setGroupBy(g)}
+                                className={`px-1.5 py-0.5 rounded ${groupBy === g ? 'bg-amber-500/20 text-amber-400' : 'theme-text-muted hover:theme-text-primary'}`}
+                            >
+                                {g === 'time' ? 'Time' : g === 'npc' ? 'NPC' : g === 'model' ? 'Model' : 'None'}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="flex-1 overflow-y-auto min-h-0">
+                        {Object.entries(groupedAgentRuns).map(([group, convs]: [string, any]) => (
+                            <div key={group}>
+                                <div className="px-2 py-1 text-[10px] uppercase theme-text-muted bg-black/20 sticky top-0 flex items-center justify-between">
+                                    <span>{group}</span>
+                                    <span>{convs.length}</span>
+                                </div>
+                                {convs.map((c: any) => {
+                                    const isActive = c.id === activeConversationId;
+                                    return (
+                                        <button
+                                            key={c.id}
+                                            onClick={() => onConversationSelect?.(c.id)}
+                                            className={`w-full text-left px-2 py-1.5 flex items-start gap-2 border-b theme-border transition-colors ${isActive ? 'bg-amber-500/10 border-l-2 border-l-amber-500' : 'hover:bg-white/5'}`}
+                                        >
+                                            <Bot size={12} className={`mt-0.5 flex-shrink-0 ${isActive ? 'text-amber-400' : 'theme-text-muted'}`} />
+                                            <div className="flex-1 min-w-0">
+                                                <div className="text-[11px] truncate theme-text-primary">{c.title || 'Untitled'}</div>
+                                                {c.preview && c.preview !== 'No content' && (
+                                                    <div className="text-[9px] truncate theme-text-muted">{c.preview}</div>
+                                                )}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        ))}
+                        {agentConvos.length === 0 && (
+                            <div className="px-2 py-4 text-[11px] theme-text-muted text-center italic">
+                                {agentSearch ? `No matches for "${agentSearch}"` : 'No agent runs yet'}
                             </div>
                         )}
                     </div>
@@ -709,104 +759,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     </div>
                 </div>
             )}
-            </div>
-
-            <div data-tutorial="jinxes-section" className="flex flex-col min-h-0" style={{ flex: jinxesCollapsed ? '0 0 auto' : 1, overflow: 'hidden' }}>
-            <SectionHeader
-                label="Jinxes & Skills"
-                color="amber"
-                count={filteredJinxes.length}
-                collapsed={jinxesCollapsed}
-                onToggle={() => setJinxesCollapsed(!jinxesCollapsed)}
-            />
-            {!jinxesCollapsed && (
-                <div className="flex flex-col min-h-0 border-b theme-border" style={{ flex: 1, overflow: 'hidden' }}>
-                    <div className="px-2 py-1.5 border-b theme-border flex-shrink-0">
-                        <div className="relative">
-                            <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 theme-text-muted" />
-                            <input
-                                type="text"
-                                value={jinxSearch}
-                                onChange={(e) => setJinxSearch(e.target.value)}
-                                placeholder="Search jinxes..."
-                                className="w-full theme-bg-tertiary theme-border border rounded pl-7 pr-6 py-1 text-[11px] theme-text-primary placeholder:opacity-50 focus:outline-none focus:border-amber-500/50"
-                            />
-                            {jinxSearch && (
-                                <button onClick={() => setJinxSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 theme-text-muted hover:theme-text-primary">
-                                    <X size={10} />
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                    <div className="flex-1 overflow-y-auto min-h-0">
-                        {Object.entries(groupedJinxes).map(([group, jinxes]: [string, any]) => {
-                            const gExpanded = expandedJinxGroups.has(group) || !!jinxSearch.trim();
-                            return (
-                                <div key={group}>
-                                    <div
-                                        className="px-2 py-1 text-[10px] theme-text-muted bg-black/20 flex items-center gap-1 cursor-pointer hover:bg-white/5"
-                                        onClick={() => toggleJinxGroup(group)}
-                                    >
-                                        <ChevronRight size={10} className={`transform transition-transform flex-shrink-0 ${gExpanded ? 'rotate-90' : ''}`} />
-                                        <span className="truncate flex-1 uppercase">{group}</span>
-                                        <span className="flex-shrink-0">{jinxes.length}</span>
-                                    </div>
-                                    {gExpanded && jinxes.map((j: any) => (
-                                        <details key={`${j.origin || ''}-${j.name}`} className="border-b theme-border last:border-b-0">
-                                            <summary className="px-2 py-1 flex items-center gap-2 cursor-pointer hover:bg-white/5 pl-5" title={j.description || ''}>
-                                                <Zap size={11} className="text-amber-400 flex-shrink-0" />
-                                                <span className="text-[11px] truncate theme-text-primary flex-1">{j.name}</span>
-                                            </summary>
-                                            {j.description && (
-                                                <div className="px-3 pl-8 pb-1.5 text-[10px] theme-text-muted whitespace-pre-wrap max-h-20 overflow-y-auto">
-                                                    {j.description}
-                                                </div>
-                                            )}
-                                        </details>
-                                    ))}
-                                </div>
-                            );
-                        })}
-                        {filteredJinxes.length === 0 && (
-                            <div className="px-2 py-4 text-[11px] theme-text-muted text-center italic">
-                                {jinxSearch ? `No matches for "${jinxSearch}"` : 'No jinxes'}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            <div data-tutorial="mcp-section" className="flex flex-col min-h-0" style={{ flex: mcpCollapsed ? '0 0 auto' : 1, overflow: 'hidden' }}>
-            <SectionHeader
-                label="MCP Servers"
-                color="teal"
-                count={mcpServers.length}
-                collapsed={mcpCollapsed}
-                onToggle={() => setMcpCollapsed(!mcpCollapsed)}
-            />
-            {!mcpCollapsed && (
-                <div className="flex flex-col min-h-0 border-b theme-border" style={{ flex: 1, overflow: 'hidden' }}>
-                    <div className="flex-1 overflow-y-auto min-h-0">
-                        {mcpServers.map((srv: any) => (
-                            <div key={srv.id || srv.command} className="px-2 py-1.5 border-b theme-border last:border-b-0 hover:bg-white/5">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex-1 min-w-0">
-                                        <div className="text-[11px] font-medium theme-text-primary truncate">{srv.name}</div>
-                                        <div className="text-[10px] theme-text-muted truncate">{srv.command}</div>
-                                    </div>
-                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-cyan-900/30 text-cyan-300 ml-1 whitespace-nowrap">{srv.origin}</span>
-                                </div>
-                            </div>
-                        ))}
-                        {mcpServers.length === 0 && (
-                            <div className="px-2 py-4 text-[11px] theme-text-muted text-center italic">
-                                No MCP servers configured
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-            </div>
             </div>
 
         </div>

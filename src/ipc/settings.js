@@ -569,10 +569,55 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('scanKnowledgeStores', async (event, workspacePath) => {
+  const KG_REGISTRY_PATH = path.join(INCOGNIDE_HOME, 'kg_registry.yaml');
+
+  async function readKgRegistry() {
     try {
-      const root = workspacePath || INCOGNIDE_HOME;
-      const results = [];
+      const raw = await fsPromises.readFile(KG_REGISTRY_PATH, 'utf8');
+      const data = yaml.load(raw) || {};
+      return { stores: data.stores || [] };
+    } catch {
+      return { stores: [] };
+    }
+  }
+
+  async function writeKgRegistry(registry) {
+    await fsPromises.mkdir(path.dirname(KG_REGISTRY_PATH), { recursive: true });
+    const tmp = KG_REGISTRY_PATH + '.tmp';
+    await fsPromises.writeFile(tmp, yaml.dump(registry, { lineWidth: -1 }));
+    await fsPromises.rename(tmp, KG_REGISTRY_PATH);
+  }
+
+  ipcMain.handle('kg:registerStore', async (event, dirPath) => {
+    try {
+      const registry = await readKgRegistry();
+      const abs = path.resolve(dirPath);
+      if (!registry.stores.includes(abs)) {
+        registry.stores.push(abs);
+        await writeKgRegistry(registry);
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('kg:unregisterStore', async (event, dirPath) => {
+    try {
+      const registry = await readKgRegistry();
+      const abs = path.resolve(dirPath);
+      registry.stores = registry.stores.filter((d) => d !== abs);
+      await writeKgRegistry(registry);
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('kg:scanAndRegister', async (event, rootPath) => {
+    try {
+      const registry = await readKgRegistry();
+      const found = new Set(registry.stores);
       const walk = async (dir) => {
         const entries = await fsPromises.readdir(dir, { withFileTypes: true });
         for (const ent of entries) {
@@ -580,30 +625,158 @@ function register(ctx) {
           if (ent.isDirectory() && !ent.name.startsWith('.') && ent.name !== 'node_modules') {
             await walk(full);
           } else if (ent.name === '.knowledge.yaml') {
-            try {
-              const raw = await fsPromises.readFile(full, 'utf8');
-              const data = yaml.load(raw) || {};
-              results.push({
-                path: full,
-                directory: dir,
-                memoryCount: (data.memories || []).length,
-                knowledgeCount: (data.knowledge || []).length,
-                conceptCount: (data.concepts || []).length,
-                linkCount: (data.links || []).length,
-                lastExtractedAt: data.last_extracted_at || null,
-                lastEvolvedAt: data.last_evolved_at || null,
-              });
-            } catch {
-              results.push({ path: full, directory: dir, memoryCount: 0, knowledgeCount: 0, conceptCount: 0, linkCount: 0 });
-            }
+            found.add(path.resolve(dir));
           }
         }
       };
-      await walk(root);
+      await walk(path.resolve(rootPath || os.homedir()));
+      registry.stores = Array.from(found).sort();
+      await writeKgRegistry(registry);
+      return { stores: registry.stores };
+    } catch (err) {
+      return { stores: [], error: err.message };
+    }
+  });
+
+  ipcMain.handle('scanKnowledgeStores', async (event, workspacePath) => {
+    try {
+      const registry = await readKgRegistry();
+      const results = [];
+      for (const dir of registry.stores) {
+        const file = path.join(dir, '.knowledge.yaml');
+        if (!fs.existsSync(file)) continue;
+        try {
+          const raw = await fsPromises.readFile(file, 'utf8');
+          const data = yaml.load(raw) || {};
+          results.push({
+            path: file,
+            directory: dir,
+            memoryCount: (data.memories || []).length,
+            knowledgeCount: (data.knowledge || []).length,
+            conceptCount: (data.concepts || []).length,
+            linkCount: (data.links || []).length,
+            lastExtractedAt: data.last_extracted_at || null,
+            lastEvolvedAt: data.last_evolved_at || null,
+          });
+        } catch {
+          results.push({ path: file, directory: dir, memoryCount: 0, knowledgeCount: 0, conceptCount: 0, linkCount: 0 });
+        }
+      }
       return { stores: results };
     } catch (err) {
       return { stores: [], error: err.message };
     }
+  });
+
+  ipcMain.handle('kg:loadStoreData', async (event, { storePaths } = {}) => {
+    try {
+      let paths = Array.isArray(storePaths) ? storePaths : [];
+      if (paths.length === 0) {
+        const reg = await readKgRegistry();
+        paths = reg.stores.filter((s) => typeof s === 'string' && s);
+      }
+      const allMemories = [];
+      const allKnowledge = [];
+      for (const dir of paths) {
+        const file = path.join(dir, '.knowledge.yaml');
+        if (!fs.existsSync(file)) continue;
+        try {
+          const raw = await fsPromises.readFile(file, 'utf8');
+          const data = yaml.load(raw) || {};
+          for (const m of data.memories || []) {
+            allMemories.push({ ...m, _directory: dir });
+          }
+          for (const k of data.knowledge || []) {
+            allKnowledge.push({ ...k, directory: dir });
+          }
+        } catch {}
+      }
+      return { memories: allMemories, knowledge: allKnowledge };
+    } catch (err) {
+      return { memories: [], knowledge: [], error: err.message };
+    }
+  });
+
+  // --- KG Pipeline (4-step lifecycle on .knowledge.yaml stores) ---
+  const kgPipelineProcs = new Map();
+
+  ipcMain.handle('kgPipeline:run', async (event, params) => {
+    const jobId = params.jobId || generateId?.() || `kg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const { step, storePaths, model, provider, context = '', contentText, operations, numSeeds, workspacePath } = params;
+    if (!step || !Array.isArray(storePaths) || storePaths.length === 0) {
+      return { error: 'Missing step or storePaths' };
+    }
+
+    const controller = new AbortController();
+    kgPipelineProcs.set(jobId, controller);
+
+    const push = (kind, message, data) => {
+      const entry = { jobId, kind, message, data, timestamp: Date.now() };
+      try { event.sender.send('kg-pipeline-log', entry); } catch {}
+    };
+
+    (async () => {
+      try {
+        const resp = await (globalThis.fetch || fetch)(`${BACKEND_URL}/api/kg/pipeline/run`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...params, jobId }),
+          signal: controller.signal,
+        });
+        if (!resp.ok) {
+          const text = await resp.text();
+          push('error', `HTTP ${resp.status}: ${text}`);
+          return;
+        }
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop();
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const parsed = JSON.parse(line);
+              push(parsed.kind || 'stdout', parsed.message || '', parsed.data || parsed);
+            } catch {
+              push('stdout', line);
+            }
+          }
+        }
+        if (buffer.trim()) {
+          try {
+            const parsed = JSON.parse(buffer);
+            push(parsed.kind || 'stdout', parsed.message || '', parsed.data || parsed);
+          } catch {
+            push('stdout', buffer);
+          }
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          push('error', 'Aborted');
+        } else {
+          push('error', err.message);
+        }
+      } finally {
+        kgPipelineProcs.delete(jobId);
+        push('done', 'All stores processed');
+      }
+    })();
+
+    return { success: true, jobId };
+  });
+
+  ipcMain.handle('kgPipeline:abort', async (event, jobId) => {
+    const controller = kgPipelineProcs.get(jobId);
+    if (controller && typeof controller.abort === 'function') {
+      try { controller.abort(); } catch {}
+      kgPipelineProcs.delete(jobId);
+    }
+    return { aborted: !!controller };
   });
 
   // Legacy cron job handlers (now backed by local scheduled_jobs table)
@@ -3622,69 +3795,6 @@ function register(ctx) {
           return { enabled: false };
       }
   }
-
-  ipcMain.handle('kg:query', async (event, { name, type } = {}) => {
-      const { enabled } = await _readKGSettings();
-      if (!enabled) return { results: [] };
-      try {
-          const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
-          const daemonPort = state?.[0]?.port;
-          if (!daemonPort) return { error: 'Daemon not running' };
-          const res = await fetch(`http://127.0.0.1:${daemonPort}/knowledge_graph/query`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ name, type }),
-              signal: AbortSignal.timeout(10000),
-          });
-          if (!res.ok) return { error: `HTTP ${res.status}` };
-          return await res.json();
-      } catch (err) {
-          console.error('[kg] query error:', err);
-          return { error: err.message };
-      }
-  });
-
-  ipcMain.handle('kg:search', async (event, { keyword, head, relation, tail, limit } = {}) => {
-      const { enabled } = await _readKGSettings();
-      if (!enabled) return { results: [] };
-      try {
-          const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
-          const daemonPort = state?.[0]?.port;
-          if (!daemonPort) return { error: 'Daemon not running' };
-          const res = await fetch(`http://127.0.0.1:${daemonPort}/knowledge_graph/search`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ keyword, head, relation, tail, limit }),
-              signal: AbortSignal.timeout(10000),
-          });
-          if (!res.ok) return { error: `HTTP ${res.status}` };
-          return await res.json();
-      } catch (err) {
-          console.error('[kg] search error:', err);
-          return { error: err.message };
-      }
-  });
-
-  ipcMain.handle('kg:graph', async (event, { name, maxDepth, limit } = {}) => {
-      const { enabled } = await _readKGSettings();
-      if (!enabled) return { nodes: [], edges: [] };
-      try {
-          const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
-          const daemonPort = state?.[0]?.port;
-          if (!daemonPort) return { error: 'Daemon not running' };
-          const res = await fetch(`http://127.0.0.1:${daemonPort}/knowledge_graph/graph`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ name, maxDepth, limit }),
-              signal: AbortSignal.timeout(15000),
-          });
-          if (!res.ok) return { error: `HTTP ${res.status}` };
-          return await res.json();
-      } catch (err) {
-          console.error('[kg] graph error:', err);
-          return { error: err.message };
-      }
-  });
 
   ipcMain.handle('kg:evolve', async (event, { full = false } = {}) => {
       const { enabled } = await _readKGSettings();

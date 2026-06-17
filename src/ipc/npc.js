@@ -1194,121 +1194,150 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('kg:getGraphData', async (event, { generation }) => {
-    const params = generation !== null ? `?generation=${generation}` : '';
-    return await callBackendApi(`${BACKEND_URL}/api/kg/graph${params}`);
+  function buildStoreParams(storePaths) {
+    const params = new URLSearchParams();
+    if (storePaths && storePaths.length) {
+      for (const sp of storePaths) params.append('storePaths', sp);
+    }
+    return params;
+  }
+
+  ipcMain.handle('kg:getGraphData', async (event, { storePaths }) => {
+    const params = buildStoreParams(storePaths);
+    return await callBackendApi(`${BACKEND_URL}/api/kg/graph?${params.toString()}`);
   });
 
   ipcMain.handle('kg:listGenerations', async () => {
     return await callBackendApi(`${BACKEND_URL}/api/kg/generations`);
   });
 
-  ipcMain.handle('kg:getNetworkStats', async (event, { generation }) => {
-    const params = generation !== null ? `?generation=${generation}` : '';
-
-    return await callBackendApi(`${BACKEND_URL}/api/kg/network-stats${params}`);
+  ipcMain.handle('kg:getNetworkStats', async (event, { storePaths }) => {
+    const params = buildStoreParams(storePaths);
+    return await callBackendApi(`${BACKEND_URL}/api/kg/network-stats?${params.toString()}`);
   });
 
-  ipcMain.handle('kg:getCooccurrenceNetwork', async (event, { generation, minCooccurrence = 2 }) => {
-    const params = new URLSearchParams();
-    if (generation !== null) params.append('generation', generation);
+  ipcMain.handle('kg:getCooccurrenceNetwork', async (event, { storePaths, minCooccurrence = 2 }) => {
+    const params = buildStoreParams(storePaths);
     params.append('min_cooccurrence', minCooccurrence);
     return await callBackendApi(`${BACKEND_URL}/api/kg/cooccurrence?${params.toString()}`);
   });
 
-  ipcMain.handle('kg:getCentralityData', async (event, { generation }) => {
-    const params = generation !== null ? `?generation=${generation}` : '';
-    return await callBackendApi(`${BACKEND_URL}/api/kg/centrality${params}`);
+  ipcMain.handle('kg:getCentralityData', async (event, { storePaths }) => {
+    const params = buildStoreParams(storePaths);
+    return await callBackendApi(`${BACKEND_URL}/api/kg/centrality?${params.toString()}`);
   });
 
-  ipcMain.handle('kg:triggerProcess', async (event, { type }) => {
+  ipcMain.handle('kg:triggerProcess', async (event, { type, storePaths }) => {
     return await callBackendApi(`${BACKEND_URL}/api/kg/trigger`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ process_type: type }),
+      body: JSON.stringify({ process_type: type, storePaths }),
     });
   });
 
-  ipcMain.handle('kg:rollback', async (event, { generation }) => {
+  ipcMain.handle('kg:rollback', async (event, { storePaths }) => {
     return await callBackendApi(`${BACKEND_URL}/api/kg/rollback`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ generation }),
+      body: JSON.stringify({ storePaths }),
     });
   });
 
-  ipcMain.handle('kg:addNode', async (event, { nodeId, nodeType = 'concept', properties = {} }) => {
+  ipcMain.handle('kg:addNode', async (event, { nodeId, nodeType = 'concept', properties = {}, storePaths }) => {
     return await callBackendApi(`${BACKEND_URL}/api/kg/node`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: nodeId, type: nodeType, properties }),
+      body: JSON.stringify({ id: nodeId, type: nodeType, properties, storePaths }),
     });
   });
 
-  ipcMain.handle('kg:updateNode', async (event, { nodeId, properties }) => {
+  ipcMain.handle('kg:updateNode', async (event, { nodeId, properties, storePaths }) => {
     return await callBackendApi(`${BACKEND_URL}/api/kg/node/${encodeURIComponent(nodeId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ properties }),
+      body: JSON.stringify({ properties, storePaths }),
     });
   });
 
-  ipcMain.handle('kg:deleteNode', async (event, { nodeId }) => {
+  ipcMain.handle('kg:deleteNode', async (event, { nodeId, storePaths }) => {
     return await callBackendApi(`${BACKEND_URL}/api/kg/node/${encodeURIComponent(nodeId)}`, {
       method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ storePaths }),
     });
   });
 
-  ipcMain.handle('kg:addEdge', async (event, { sourceId, targetId, edgeType = 'related_to', weight = 1 }) => {
+  ipcMain.handle('kg:addEdge', async (event, { sourceId, targetId, edgeType = 'related_to', weight = 1, storePaths }) => {
     return await callBackendApi(`${BACKEND_URL}/api/kg/edge`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source: sourceId, target: targetId, type: edgeType, weight }),
+      body: JSON.stringify({ source: sourceId, target: targetId, type: edgeType, weight, storePaths }),
     });
   });
 
-  ipcMain.handle('kg:deleteEdge', async (event, { sourceId, targetId }) => {
+  ipcMain.handle('kg:deleteEdge', async (event, { sourceId, targetId, storePaths }) => {
     return await callBackendApi(`${BACKEND_URL}/api/kg/edge/${encodeURIComponent(sourceId)}/${encodeURIComponent(targetId)}`, {
       method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ storePaths }),
     });
   });
 
-  ipcMain.handle('kg:getFacts', async (event, { generation, limit, offset }) => {
-    const params = new URLSearchParams();
-    if (generation !== null && generation !== undefined) params.append('generation', generation);
+  ipcMain.handle('kg:getFacts', async (event, { storePaths, limit, offset }) => {
+    const params = buildStoreParams(storePaths);
     if (limit) params.append('limit', limit);
     if (offset) params.append('offset', offset);
     return await callBackendApi(`${BACKEND_URL}/api/kg/facts?${params.toString()}`);
   });
 
-  ipcMain.handle('kg:getConcepts', async (event, { generation, limit }) => {
-    const params = new URLSearchParams();
-    if (generation !== null && generation !== undefined) params.append('generation', generation);
+  ipcMain.handle('kg:getConcepts', async (event, { storePaths, limit }) => {
+    const params = buildStoreParams(storePaths);
     if (limit) params.append('limit', limit);
     return await callBackendApi(`${BACKEND_URL}/api/kg/concepts?${params.toString()}`);
   });
 
-  ipcMain.handle('kg:search:semantic', async (event, { q, generation, limit }) => {
+  ipcMain.handle('kg:search:semantic', async (event, { q, storePaths, limit }) => {
     const params = new URLSearchParams();
     if (q) params.append('q', q);
-    if (generation !== null && generation !== undefined) params.append('generation', generation);
     if (limit) params.append('limit', limit);
+    if (storePaths && storePaths.length) {
+      for (const sp of storePaths) params.append('storePaths', sp);
+    }
     return await callBackendApi(`${BACKEND_URL}/api/kg/search/semantic?${params.toString()}`);
   });
 
-  ipcMain.handle('kg:embed', async (event, { generation, batch_size }) => {
+  ipcMain.handle('kg:embed', async (event, { storePaths, batch_size }) => {
     return await callBackendApi(`${BACKEND_URL}/api/kg/embed`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ generation, batch_size })
+      body: JSON.stringify({ storePaths, batch_size })
     });
   });
 
-  ipcMain.handle('kg:ingest', async (event, { content, context, get_concepts, link_concepts_facts }) => {
+  ipcMain.handle('kg:ingest', async (event, { content, context, get_concepts, link_concepts_facts, storePaths }) => {
     return await callBackendApi(`${BACKEND_URL}/api/kg/ingest`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, context, get_concepts, link_concepts_facts })
+      body: JSON.stringify({ content, context, get_concepts, link_concepts_facts, storePaths })
+    });
+  });
+
+  ipcMain.handle('kg:search', async (event, { q, storePaths, type, limit }) => {
+    const params = new URLSearchParams();
+    if (q) params.append('q', q);
+    if (type) params.append('type', type);
+    if (limit) params.append('limit', limit);
+    if (storePaths && storePaths.length) {
+      for (const sp of storePaths) params.append('storePaths', sp);
+    }
+    return await callBackendApi(`${BACKEND_URL}/api/kg/search?${params.toString()}`);
+  });
+
+  ipcMain.handle('kg:query', async (event, args) => {
+    return await callBackendApi(`${BACKEND_URL}/api/kg/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(args || {})
     });
   });
 

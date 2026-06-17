@@ -9,6 +9,7 @@ import ForceGraph2D from 'react-force-graph-2d';
 import { useAiEnabled } from './AiFeatureContext';
 import KgIcon from './icons/KgIcon';
 const SememolutionPanel = lazy(() => import('./SememolutionPanel'));
+const KgPipelinePanel = lazy(() => import('./KgPipelinePanel'));
 
 type ViewTab = 'graph' | 'table' | 'tree' | 'groups' | 'sememolution';
 
@@ -37,6 +38,9 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
     const [sourceMemoryId, setSourceMemoryId] = useState<number | null>(null);
     const [sourceMemory, setSourceMemory] = useState<any>(null);
     const [sourceMemoryLoading, setSourceMemoryLoading] = useState(false);
+
+    const [stores, setStores] = useState<any[]>([]);
+    const [selectedStorePaths, setSelectedStorePaths] = useState<string[]>([]);
 
     useEffect(() => {
         if (sourceMemoryId == null) { setSourceMemory(null); return; }
@@ -84,6 +88,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
     const [importMsg, setImportMsg] = useState<string | null>(null);
 
     const [showQueryPanel, setShowQueryPanel] = useState(false);
+    const [showPipelinePanel, setShowPipelinePanel] = useState(false);
     const [queryInput, setQueryInput] = useState('');
     const [queryHistory, setQueryHistory] = useState<{ q: string; a: string; sources: string[]; candidates?: any[] }[]>([]);
     const [queryLoading, setQueryLoading] = useState(false);
@@ -193,17 +198,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         setKnowledgeLoading(true);
         setKgError(null);
         try {
-            const dbResult = await (window as any).api?.executeSQL?.({
-                query: "SELECT DISTINCT directory_path FROM conversation_history WHERE directory_path IS NOT NULL AND directory_path != ''"
-            });
-            const dbRows = Array.isArray(dbResult?.result) ? dbResult.result : Array.isArray(dbResult) ? dbResult : [];
-            const dirs = [...new Set<string>(dbRows.map((r: any) => r.directory_path || r[0]).filter(Boolean))];
-            if (currentPath && !dirs.includes(currentPath)) {
-                dirs.push(currentPath);
-            }
-            const data = dirs.length
-                ? await (window as any).api?.knowledge_loadDirs?.({ dirs }).catch(() => ({}))
-                : {};
+            const data = await (window as any).api?.kgLoadStoreData?.({ storePaths: selectedStorePaths }).catch(() => ({}));
             buildGraphFromData(data.memories || [], data.knowledge || []);
         } catch (err: any) {
             setKgError(err?.message || String(err));
@@ -211,11 +206,11 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
             setKnowledgeLoading(false);
             setKgLoading(false);
         }
-    }, [currentPath, memoriesProp, knowledgeProp, buildGraphFromData]);
+    }, [selectedStorePaths, memoriesProp, knowledgeProp, buildGraphFromData]);
 
-    const fetchKgData = useCallback(async (generation?: number) => {
+    const fetchKgData = useCallback(async () => {
         try {
-            const graphResult = await (window as any).api?.kg_getGraphData?.({ generation: generation ?? null });
+            const graphResult = await (window as any).api?.kg_getGraphData?.({ storePaths: selectedStorePaths });
             if (graphResult && !graphResult.error && graphResult.graph) {
                 setKgData(graphResult.graph);
             }
@@ -226,9 +221,26 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         } catch (err: any) {
             console.error('KG fetch error:', err);
         }
+    }, [selectedStorePaths]);
+
+    const handleRefreshStores = useCallback(async () => {
+        try {
+            const r = await (window as any).api?.scanKnowledgeStores?.();
+            const list = (r?.stores || []) as any[];
+            setStores(list);
+            setSelectedStorePaths(list.map((s) => s.directory));
+        } catch {}
     }, []);
 
+
     useEffect(() => { fetchLocalKnowledge(); }, [fetchLocalKnowledge]);
+
+    useEffect(() => { handleRefreshStores(); }, [handleRefreshStores]);
+
+    useEffect(() => {
+        if (selectedStorePaths.length === 0) return;
+        fetchKgData();
+    }, [selectedStorePaths, fetchKgData]);
 
     useEffect(() => {
         if (!isModal) return;
@@ -249,7 +261,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         setIsSearching(true);
         try {
             const result = await (window as any).api?.kg_search?.({
-                q: searchQuery, generation: currentKgGeneration, type: 'both', limit: 50
+                q: searchQuery, storePaths: selectedStorePaths, type: 'both', limit: 50
             });
             if (result && !result.error) {
                 setSearchResults({ facts: result.facts || [], concepts: result.concepts || [] });
@@ -264,7 +276,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         } finally {
             setIsSearching(false);
         }
-    }, [searchQuery, currentKgGeneration]);
+    }, [searchQuery, currentKgGeneration, selectedStorePaths]);
 
     const clearSearch = useCallback(() => {
         setSearchQuery('');
@@ -295,7 +307,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         return { nodes: sourceNodes, links: sourceLinks };
     }, [kgData, kgViewMode, kgNodeFilter, networkStats, cooccurrenceData]);
 
-    const allNodeNames = useMemo(() => processedGraphData.nodes.map((n: any) => n.id), [processedGraphData]);
+    const allNodeNames = useMemo(() => [...new Set(processedGraphData.nodes.map((n: any) => n.id))], [processedGraphData]);
 
     const nodeDegreeMap = useMemo(() => {
         const map: Record<string, number> = {};
@@ -446,7 +458,8 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                 content: importText,
                 context: importGuidance || undefined,
                 get_concepts: true,
-                link_concepts_facts: true
+                link_concepts_facts: true,
+                storePaths: selectedStorePaths
             });
             if (result?.error) {
                 setImportMsg(`Error: ${result.error}`);
@@ -494,7 +507,8 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                 content: allText,
                 context: importGuidance || undefined,
                 get_concepts: true,
-                link_concepts_facts: true
+                link_concepts_facts: true,
+                storePaths: selectedStorePaths
             });
             if (result?.error) {
                 setImportMsg(`Error: ${result.error}`);
@@ -523,6 +537,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                 lambda_depth: queryLambdaDepth,
                 lambda_breadth: queryLambdaBreadth,
                 similarity_threshold: querySimilarityThreshold,
+                storePaths: selectedStorePaths,
             };
             if (queryMode === 'sememolution' && queryPopulationId) {
                 payload.population_id = queryPopulationId;
@@ -553,7 +568,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         setKgLoading(true);
         setKgError(null);
         try {
-            await (window as any).api?.kg_triggerProcess?.({ type });
+            await (window as any).api?.kg_triggerProcess?.({ type, storePaths: selectedStorePaths });
             setCurrentKgGeneration(null);
             fetchKgData();
         } catch (err: any) {
@@ -565,11 +580,10 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
 
     const handleKgRollback = async () => {
         if (currentKgGeneration && currentKgGeneration > 0) {
-            const targetGen = currentKgGeneration - 1;
             setKgLoading(true);
             try {
-                await (window as any).api?.kg_rollback?.({ generation: targetGen });
-                setCurrentKgGeneration(targetGen);
+                await (window as any).api?.kg_rollback?.({ storePaths: selectedStorePaths });
+                setCurrentKgGeneration(0);
             } catch (err: any) {
                 setKgError(err.message);
                 setKgLoading(false);
@@ -581,9 +595,9 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         if (!newNodeName.trim()) return;
         setKgLoading(true);
         try {
-            await (window as any).api?.kg_addNode?.({ nodeId: newNodeName.trim(), nodeType: newNodeType });
+            await (window as any).api?.kg_addNode?.({ nodeId: newNodeName.trim(), nodeType: newNodeType, storePaths: selectedStorePaths });
             setNewNodeName('');
-            fetchKgData(currentKgGeneration ?? undefined);
+            fetchKgData();
         } catch (err: any) {
             setKgError(err.message);
         } finally {
@@ -594,12 +608,12 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
     const handleDeleteKgNode = async (nodeId: string) => {
         setKgLoading(true);
         try {
-            await (window as any).api?.kg_deleteNode?.({ nodeId });
+            await (window as any).api?.kg_deleteNode?.({ nodeId, storePaths: selectedStorePaths });
             setSelectedKgNode(null);
             selectedNodeIds.delete(nodeId);
             setSelectedNodeIds(new Set(selectedNodeIds));
             setPendingDelete(null);
-            fetchKgData(currentKgGeneration ?? undefined);
+            fetchKgData();
         } catch (err: any) {
             setKgError(err.message);
         } finally {
@@ -612,12 +626,12 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         setKgLoading(true);
         try {
             for (const nodeId of selectedNodeIds) {
-                await (window as any).api?.kg_deleteNode?.({ nodeId });
+                await (window as any).api?.kg_deleteNode?.({ nodeId, storePaths: selectedStorePaths });
             }
             setSelectedNodeIds(new Set());
             setSelectedKgNode(null);
             setPendingDelete(null);
-            fetchKgData(currentKgGeneration ?? undefined);
+            fetchKgData();
         } catch (err: any) {
             setKgError(err.message);
         } finally {
@@ -630,7 +644,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         const tgt = newEdgeTarget.trim();
         if (!src || !tgt) return;
         try {
-            const r = await (window as any).api?.kg_addEdge?.({ sourceId: src, targetId: tgt });
+            const r = await (window as any).api?.kg_addEdge?.({ sourceId: src, targetId: tgt, storePaths: selectedStorePaths });
             if (r?.error) { setKgError(r.error); return; }
             setNewEdgeSource('');
             setNewEdgeTarget('');
@@ -645,7 +659,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
 
     const handleDeleteKgEdge = async (sourceId: string, targetId: string) => {
         try {
-            const r = await (window as any).api?.kg_deleteEdge?.({ sourceId, targetId });
+            const r = await (window as any).api?.kg_deleteEdge?.({ sourceId, targetId, storePaths: selectedStorePaths });
             if (r?.error) { setKgError(r.error); return; }
             setKgData(prev => ({
                 ...prev,
@@ -664,10 +678,10 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         if (!newNodePopupName.trim()) return;
         setKgLoading(true);
         try {
-            await (window as any).api?.kg_addNode?.({ nodeId: newNodePopupName.trim(), nodeType: newNodePopupType });
+            await (window as any).api?.kg_addNode?.({ nodeId: newNodePopupName.trim(), nodeType: newNodePopupType, storePaths: selectedStorePaths });
             setNewNodePopup(null);
             setNewNodePopupName('');
-            fetchKgData(currentKgGeneration ?? undefined);
+            fetchKgData();
         } catch (err: any) {
             setKgError(err.message);
         } finally {
@@ -725,7 +739,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                 const tgt = node.id;
                 (async () => {
                     try {
-                        const r = await (window as any).api?.kg_addEdge?.({ sourceId: src, targetId: tgt });
+                        const r = await (window as any).api?.kg_addEdge?.({ sourceId: src, targetId: tgt, storePaths: selectedStorePaths });
                         setConnectSource(null);
                         if (r?.error) { setKgError(r.error); return; }
                         setKgData(prev => {
@@ -751,7 +765,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
             setSelectedNodeIds(new Set());
             setShowDetail(true);
         }
-    }, [connectMode, connectSource, fetchKgData, currentKgGeneration]);
+    }, [connectMode, connectSource, fetchKgData, currentKgGeneration, selectedStorePaths]);
 
     const handleNodeRightClick = useCallback((node: any, event: MouseEvent) => {
         event.preventDefault();
@@ -1102,8 +1116,12 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                 <div className="flex items-center gap-1.5">
                     {aiEnabled && (
                         <>
-                            <button onClick={() => handleKgProcessTrigger('sleep')} disabled={kgLoading} className="px-2 py-1 text-[11px] theme-bg-secondary hover:opacity-80 theme-text-secondary rounded flex items-center gap-1 disabled:opacity-50 border theme-border"><Zap size={11} /> Sleep</button>
-                            <button onClick={() => handleKgProcessTrigger('dream')} disabled={kgLoading} className="px-2 py-1 text-[11px] theme-bg-secondary hover:opacity-80 theme-text-secondary rounded flex items-center gap-1 disabled:opacity-50 border theme-border"><Brain size={11} /> Dream</button>
+                            <button
+                                onClick={() => { setShowPipelinePanel(!showPipelinePanel); setShowImportPanel(false); setShowQueryPanel(false); }}
+                                className={`px-2 py-1 text-[11px] rounded flex items-center gap-1 border theme-border ${showPipelinePanel ? 'bg-green-600/30 text-green-300' : 'theme-bg-secondary theme-text-secondary hover:opacity-80'}`}
+                            >
+                                <Zap size={11} /> Steps
+                            </button>
                             <button
                                 onClick={() => { setShowImportPanel(!showImportPanel); setShowQueryPanel(false); }}
                                 className={`px-2 py-1 text-[11px] rounded flex items-center gap-1 border theme-border ${showImportPanel ? 'bg-blue-600/30 text-blue-300' : 'theme-bg-secondary theme-text-secondary hover:opacity-80'}`}
@@ -1262,6 +1280,12 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                         </button>
                     </div>
                 </div>
+            )}
+
+            {showPipelinePanel && (
+                <Suspense fallback={<div className="flex items-center justify-center py-4 theme-text-muted text-xs">Loading Steps…</div>}>
+                    <KgPipelinePanel currentPath={currentPath} />
+                </Suspense>
             )}
 
             <div className="flex items-center gap-2 px-3 py-1.5 border-b theme-border flex-shrink-0">

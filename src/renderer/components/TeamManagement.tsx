@@ -1,7 +1,7 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import {
     X, FileJson, Search, Users, Wrench, Clock, Database, Plus, Trash2, Play, Pause, Server, Mail, Save,
-    Brain, GitBranch, Cpu, Box, Code, Mic, Globe, Eye, EyeOff, Check, Zap
+    Brain, GitBranch, Cpu, Box, Code, Mic, Globe, Eye, EyeOff, Check, ChevronRight, Zap
 } from 'lucide-react';
 import yaml from 'js-yaml';
 import SmokestackIcon from './icons/SmokestackIcon';
@@ -15,6 +15,7 @@ import CronDaemonPanel from './CronDaemonPanel';
 import MemoryManagement from './MemoryManagement';
 import ModelManager from './ModelManager';
 import VoiceManager from './VoiceManager';
+import StoreRegistryPanel from './StoreRegistryPanel';
 const KnowledgeGraphEditor = lazy(() => import('./KnowledgeGraphEditor'));
 
 interface TeamManagementProps {
@@ -813,18 +814,14 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
     const [sharedKnowledge, setSharedKnowledge] = useState<any[]>([]);
     const [sharedLoading, setSharedLoading] = useState(false);
 
+    const [registryCollapsed, setRegistryCollapsed] = useState(false);
+    const [memoryCollapsed, setMemoryCollapsed] = useState(false);
+    const [kgCollapsed, setKgCollapsed] = useState(false);
+
     const loadSharedKnowledge = async () => {
         setSharedLoading(true);
         try {
-            const dbResult = await (window as any).api?.executeSQL?.({
-                query: "SELECT DISTINCT directory_path FROM conversation_history WHERE directory_path IS NOT NULL AND directory_path != ''"
-            });
-            const dbRows = Array.isArray(dbResult?.result) ? dbResult.result : Array.isArray(dbResult) ? dbResult : [];
-            const dirs = [...new Set<string>(dbRows.map((r: any) => r.directory_path || r[0]).filter(Boolean))];
-            if (currentPath && !dirs.includes(currentPath)) dirs.push(currentPath);
-            const data = dirs.length
-                ? await (window as any).api?.knowledge_loadDirs?.({ dirs }).catch(() => ({}))
-                : {};
+            const data = await (window as any).api?.kgLoadStoreData?.({}).catch(() => ({}));
             setSharedMemories(data.memories || []);
             setSharedKnowledge(data.knowledge || []);
         } catch (err: any) {
@@ -1145,14 +1142,46 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                         </div>
                     )}
                     {activeTab === 'knowledge' && (
-                        <ResizableSplitPane
-                            top={<MemoryManagement isModal={false} currentPath={currentPath} allMemories={sharedMemories} />}
-                            bottom={
-                                <Suspense fallback={<div className="flex items-center justify-center py-12 theme-text-muted">Loading...</div>}>
-                                    <KnowledgeGraphEditor isModal={false} currentPath={currentPath} memories={sharedMemories} knowledge={sharedKnowledge} />
-                                </Suspense>
-                            }
-                        />
+                        <div className="flex-1 flex flex-col overflow-hidden">
+                            <div className="flex flex-col min-h-0 border-b theme-border" style={{ flex: registryCollapsed ? '0 0 auto' : 1, overflow: 'hidden' }}>
+                                <div
+                                    onClick={() => setRegistryCollapsed(!registryCollapsed)}
+                                    className="flex items-center gap-1.5 px-3 py-2 cursor-pointer theme-bg-tertiary border-b theme-border hover:bg-white/5"
+                                >
+                                    <ChevronRight size={12} className={`transform transition-transform theme-text-muted ${registryCollapsed ? '' : 'rotate-90'}`} />
+                                    <span className="text-[11px] font-semibold theme-text-primary">Knowledge Stores</span>
+                                </div>
+                                {!registryCollapsed && <StoreRegistryPanel onSaved={loadSharedKnowledge} />}
+                            </div>
+
+                            <div className="flex flex-col min-h-0 border-b theme-border" style={{ flex: memoryCollapsed ? '0 0 auto' : 2, overflow: 'hidden' }}>
+                                <div
+                                    onClick={() => setMemoryCollapsed(!memoryCollapsed)}
+                                    className="flex items-center gap-1.5 px-3 py-2 cursor-pointer theme-bg-tertiary border-b theme-border hover:bg-white/5"
+                                >
+                                    <ChevronRight size={12} className={`transform transition-transform theme-text-muted ${memoryCollapsed ? '' : 'rotate-90'}`} />
+                                    <span className="text-[11px] font-semibold theme-text-primary">Memory</span>
+                                    <span className="text-[9px] theme-text-muted">{sharedMemories.length}</span>
+                                </div>
+                                {!memoryCollapsed && <MemoryManagement isModal={false} currentPath={currentPath} allMemories={sharedMemories} />}
+                            </div>
+
+                            <div className="flex flex-col min-h-0" style={{ flex: kgCollapsed ? '0 0 auto' : 2, overflow: 'hidden' }}>
+                                <div
+                                    onClick={() => setKgCollapsed(!kgCollapsed)}
+                                    className="flex items-center gap-1.5 px-3 py-2 cursor-pointer theme-bg-tertiary border-b theme-border hover:bg-white/5"
+                                >
+                                    <ChevronRight size={12} className={`transform transition-transform theme-text-muted ${kgCollapsed ? '' : 'rotate-90'}`} />
+                                    <span className="text-[11px] font-semibold theme-text-primary">Knowledge Graph</span>
+                                    <span className="text-[9px] theme-text-muted">{sharedKnowledge.length}</span>
+                                </div>
+                                {!kgCollapsed && (
+                                    <Suspense fallback={<div className="flex items-center justify-center py-12 theme-text-muted">Loading...</div>}>
+                                        <KnowledgeGraphEditor isModal={false} currentPath={currentPath} memories={sharedMemories} knowledge={sharedKnowledge} />
+                                    </Suspense>
+                                )}
+                            </div>
+                        </div>
                     )}
                 </div>
             </div>

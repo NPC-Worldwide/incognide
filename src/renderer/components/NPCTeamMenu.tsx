@@ -136,18 +136,17 @@ const NPCTeamMenu = ({
 
     const loadNpcMemories = async (npcName) => {
         setMemoryLoading(true);
-        const response = await window.api.executeSQL({
-            query: `
-                SELECT id, message_id, conversation_id,
-                       initial_memory, final_memory, status,
-                       timestamp, model, provider
-                FROM memory_lifecycle
-                WHERE npc = '${npcName.replace(/'/g, "''")}'
-                ORDER BY timestamp DESC
-            `
-        });
-        if (!response.error) {
-            setMemories(response.result || []);
+        try {
+            const data = await (window as any).api?.kgLoadStoreData?.({}) || {};
+            const allMemories = data.memories || [];
+            const filtered = allMemories.filter((m) =>
+                m.npc === npcName ||
+                (m.initial_memory || '').includes(npcName) ||
+                (m.final_memory || '').includes(npcName)
+            );
+            setMemories(filtered);
+        } catch {
+            setMemories([]);
         }
         setMemoryLoading(false);
     };
@@ -267,55 +266,34 @@ const NPCTeamMenu = ({
 
     const loadNpcKnowledgeGraph = async (npcName) => {
         setKgLoading(true);
-        const response = await window.api.executeSQL({
-            query: `
-                SELECT DISTINCT
-                    ch.content,
-                    ch.timestamp
-                FROM conversation_history ch
-                WHERE ch.npc = '${npcName.replace(/'/g, "''")}'
-                AND ch.role = 'assistant'
-                ORDER BY ch.timestamp DESC
-                LIMIT 50
-            `
-        });
-
-        if (!response.error && response.result) {
+        try {
+            const data = await (window as any).api?.kgLoadStoreData?.({}) || {};
+            const allKnowledge = data.knowledge || [];
+            const nodeMap = new Map();
             const nodes = [];
             const links = [];
-            const nodeMap = new Map();
 
-            nodeMap.set(npcName, {
-                id: npcName,
-                type: 'npc',
-                size: 12
-            });
+            nodeMap.set(npcName, { id: npcName, type: 'npc', size: 12 });
             nodes.push(nodeMap.get(npcName));
 
-            response.result.forEach((msg) => {
-                const words = msg.content
-                    .toLowerCase()
-                    .split(/\s+/)
-                    .filter(w => w.length > 5)
-                    .slice(0, 10);
-
-                words.forEach(word => {
-                    if (!nodeMap.has(word)) {
-                        nodeMap.set(word, {
-                            id: word,
-                            type: 'concept',
-                            size: 4
-                        });
-                        nodes.push(nodeMap.get(word));
-                    }
-                    links.push({
-                        source: npcName,
-                        target: word
-                    });
-                });
-            });
+            for (const k of allKnowledge) {
+                const src = k.source || '';
+                const tgt = k.target || '';
+                if (!src && !tgt) continue;
+                if (!nodeMap.has(src)) {
+                    nodeMap.set(src, { id: src, type: 'concept', size: 6 });
+                    nodes.push(nodeMap.get(src));
+                }
+                if (!nodeMap.has(tgt)) {
+                    nodeMap.set(tgt, { id: tgt, type: 'concept', size: 6 });
+                    nodes.push(nodeMap.get(tgt));
+                }
+                links.push({ source: src, target: tgt, relation: k.relation || '' });
+            }
 
             setKgData({ nodes, links });
+        } catch {
+            setKgData({ nodes: [], links: [] });
         }
         setKgLoading(false);
     };

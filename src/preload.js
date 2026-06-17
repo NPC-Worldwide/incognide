@@ -69,6 +69,17 @@ readDocxContent: (filePath) =>
     scheduledJobRunNow: (jobId) => ipcRenderer.invoke('scheduledJob:runNow', jobId),
     scheduledJobHistory: (jobId) => ipcRenderer.invoke('scheduledJob:history', jobId),
     scanKnowledgeStores: (workspacePath) => ipcRenderer.invoke('scanKnowledgeStores', workspacePath),
+    kgRegisterStore: (dirPath) => ipcRenderer.invoke('kg:registerStore', dirPath),
+    kgUnregisterStore: (dirPath) => ipcRenderer.invoke('kg:unregisterStore', dirPath),
+    kgScanAndRegister: (rootPath) => ipcRenderer.invoke('kg:scanAndRegister', rootPath),
+    kgLoadStoreData: (params) => ipcRenderer.invoke('kg:loadStoreData', params),
+    kgPipelineRun: (params) => ipcRenderer.invoke('kgPipeline:run', params),
+    kgPipelineAbort: (jobId) => ipcRenderer.invoke('kgPipeline:abort', jobId),
+    onKgPipelineLog: (callback) => {
+        const handler = (_, data) => callback(data);
+        ipcRenderer.on('kg-pipeline-log', handler);
+        return () => ipcRenderer.removeListener('kg-pipeline-log', handler);
+    },
 
     generateImages: (prompt, n, model, provider, attachments, baseFilename, currentPath, opts = {}) => ipcRenderer.invoke('generate_images', { prompt, n, model, provider, attachments, baseFilename, currentPath, workspacePath: opts.workspacePath, width: opts.width, height: opts.height, customModelPath: opts.customModelPath }),
 
