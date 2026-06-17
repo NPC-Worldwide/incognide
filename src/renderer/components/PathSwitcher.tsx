@@ -87,7 +87,7 @@ export const PathSwitcher: React.FC<PathSwitcherProps> = ({
     const rawRootName = baseDirSegments[baseDirSegments.length - 1] || '';
 
     const getRootDisplayName = (name: string) => {
-        if (name === '.incognide' || name === '.npcsh' || name === 'npcsh') return 'Global';
+        if (name === '.incognide') return 'Global';
         if (name.startsWith('.')) return name.slice(1);
         return name || 'Workspace';
     };

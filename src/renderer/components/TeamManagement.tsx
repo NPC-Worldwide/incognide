@@ -1,8 +1,9 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import {
     X, FileJson, Search, Users, Wrench, Clock, Database, Plus, Trash2, Play, Pause, Server, Mail, Save,
-    Brain, GitBranch, Cpu, Box, Code, Mic, Globe, Eye, EyeOff, Check, Zap
+    Brain, GitBranch, Cpu, Box, Code, Mic, Globe, Eye, EyeOff, Check, ChevronRight, Zap
 } from 'lucide-react';
+import yaml from 'js-yaml';
 import SmokestackIcon from './icons/SmokestackIcon';
 import MemoryIcon from './icons/MemoryIcon';
 import KgIcon from './icons/KgIcon';
@@ -10,12 +11,11 @@ import KgIcon from './icons/KgIcon';
 import CtxEditor from './CtxEditor';
 import NPCTeamMenu from './NPCTeamMenu';
 import JinxMenu from './JinxMenu';
-import McpServerMenu from './McpServerMenu';
-import McpManager from './McpManager';
 import CronDaemonPanel from './CronDaemonPanel';
 import MemoryManagement from './MemoryManagement';
 import ModelManager from './ModelManager';
 import VoiceManager from './VoiceManager';
+import StoreRegistryPanel from './StoreRegistryPanel';
 const KnowledgeGraphEditor = lazy(() => import('./KnowledgeGraphEditor'));
 
 interface TeamManagementProps {
@@ -31,11 +31,13 @@ interface TeamManagementProps {
     initialTab?: TabId;
     forceTab?: TabId;
     onTabChange?: (tab: TabId) => void;
+    initialJinxName?: string;
+    onOpenJinxPane?: (name: string) => void;
 }
 
-type TabId = 'context' | 'npcs' | 'jinxes' | 'memory' | 'knowledge' | 'cron' | 'mcp' | 'models' | 'databases' | 'ai-settings' | 'llm-models' | 'voice';
+type TabId = 'context' | 'npcs' | 'jinxes' | 'knowledge' | 'cron' | 'models' | 'ai-settings' | 'llm-models' | 'voice';
 
-const SqlModelsContent = ({ currentPath, npcList = [], jinxList = [], isGlobal }: { currentPath: string; npcList?: any[]; jinxList?: any[]; isGlobal: boolean }) => {
+const SqlModelsContent = ({ currentPath, teamKey, npcList = [], jinxList = [] }: { currentPath: string; teamKey?: string; npcList?: any[]; jinxList?: any[] }) => {
     const [models, setModels] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -59,13 +61,10 @@ const SqlModelsContent = ({ currentPath, npcList = [], jinxList = [], isGlobal }
         setLoading(true);
         setError(null);
         try {
-            const response = isGlobal
-                ? await (window as any).api.getSqlModelsGlobal?.()
-                : await (window as any).api.getSqlModelsProject?.(currentPath);
+            const response = await (window as any).api.getSqlModelsProject?.(currentPath);
             if (response?.error) throw new Error(response.error);
             setModels(response?.models || []);
         } catch (err: any) {
-
             setModels([]);
         } finally {
             setLoading(false);
@@ -74,13 +73,13 @@ const SqlModelsContent = ({ currentPath, npcList = [], jinxList = [], isGlobal }
 
     const fetchNpcsAndJinxes = async () => {
         try {
-            const npcResponse = isGlobal
-                ? await (window as any).api.getNPCTeamGlobal?.()
+            const npcResponse = teamKey
+                ? await (window as any).api.getNPCTeamFromPath?.(teamKey)
                 : await (window as any).api.getNPCTeamProject?.(currentPath);
             if (npcResponse?.npcs) setNpcs(npcResponse.npcs);
 
-            const jinxResponse = isGlobal
-                ? await (window as any).api.getJinxesGlobal?.()
+            const jinxResponse = teamKey
+                ? await (window as any).api.getJinxesTeam?.(teamKey)
                 : await (window as any).api.getJinxesProject?.(currentPath);
             if (jinxResponse?.jinxes) setJinxes(jinxResponse.jinxes);
         } catch (err) {
@@ -90,25 +89,16 @@ const SqlModelsContent = ({ currentPath, npcList = [], jinxList = [], isGlobal }
 
     const fetchAvailableDatabases = async () => {
         const databases: { name: string; path: string }[] = [
-            { name: 'Global History (history.db)', path: '~/.incognide/history.db' }
+            { name: 'History (history.db)', path: '~/.incognide/history.db' }
         ];
 
         try {
-            const globalCtx = await (window as any).api.getContextGlobal?.();
-            if (globalCtx?.databases) {
-                for (const db of globalCtx.databases) {
-                    if (!databases.find(d => d.path === db.path)) {
-                        databases.push({ name: db.name || db.path, path: db.path });
-                    }
-                }
-            }
-
             if (currentPath) {
-                const projectCtx = await (window as any).api.getContextProject?.(currentPath);
-                if (projectCtx?.databases) {
-                    for (const db of projectCtx.databases) {
+                const ctx = await (window as any).api.getContextProject?.(currentPath);
+                if (ctx?.databases) {
+                    for (const db of ctx.databases) {
                         if (!databases.find(d => d.path === db.path)) {
-                            databases.push({ name: `Project: ${db.name || db.path}`, path: db.path });
+                            databases.push({ name: db.name || db.path, path: db.path });
                         }
                     }
                 }
@@ -124,7 +114,7 @@ const SqlModelsContent = ({ currentPath, npcList = [], jinxList = [], isGlobal }
         fetchModels();
         fetchNpcsAndJinxes();
         fetchAvailableDatabases();
-    }, [currentPath, isGlobal]);
+    }, [currentPath, teamKey]);
 
     const handleCreateModel = () => {
         setSelectedModel(null);
@@ -179,9 +169,7 @@ LIMIT 10
                 id: selectedModel?.id,
             };
 
-            const res = isGlobal
-                ? await (window as any).api.saveSqlModelGlobal?.(modelData)
-                : await (window as any).api.saveSqlModelProject?.({ path: currentPath, model: modelData });
+            const res = await (window as any).api.saveSqlModelProject?.({ path: currentPath, model: modelData });
 
             if (res?.error) throw new Error(res.error);
             await fetchModels();
@@ -198,9 +186,7 @@ LIMIT 10
         if (!window.confirm('Delete this SQL model?')) return;
         setLoading(true);
         try {
-            const res = isGlobal
-                ? await (window as any).api.deleteSqlModelGlobal?.(modelId)
-                : await (window as any).api.deleteSqlModelProject?.({ path: currentPath, modelId });
+            const res = await (window as any).api.deleteSqlModelProject?.({ path: currentPath, modelId });
             if (res?.error) throw new Error(res.error);
             await fetchModels();
         } catch (err: any) {
@@ -217,7 +203,6 @@ LIMIT 10
             const res = await (window as any).api.runSqlModel?.({
                 path: currentPath,
                 modelId: model.id,
-                isGlobal,
                 targetDb: selectedDatabase
             });
             if (res?.error) throw new Error(res.error);
@@ -241,11 +226,11 @@ LIMIT 10
         setModelSql(prev => prev + '\n' + ref);
     };
 
-    if (!currentPath && !isGlobal) {
+    if (!currentPath) {
         return (
             <div className="text-center py-12">
                 <Database size={48} className="mx-auto mb-4 text-gray-500" />
-                <p className="theme-text-muted">Select a project folder or switch to Global to manage SQL models.</p>
+                <p className="theme-text-muted">Select a team to manage SQL models.</p>
             </div>
         );
     }
@@ -519,111 +504,58 @@ LIMIT 10
     );
 };
 
-const DatabasesContent = ({ currentPath, isGlobal }: { currentPath: string; isGlobal: boolean }) => {
-    const [databases, setDatabases] = useState<{ value: string }[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [newDbPath, setNewDbPath] = useState('');
+const findCtxFile = async (dirPath: string) => {
+    try {
+        const items = await (window as any).api.readDirectory(dirPath);
+        const ctxFiles = (items || []).filter(item => item.name && item.name.endsWith('.ctx'));
+        if (ctxFiles.length > 0) return ctxFiles[0].name;
+    } catch { }
+    return null;
+};
 
-    const loadDatabases = async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const res = isGlobal
-                ? await (window as any).api.getGlobalContext()
-                : await (window as any).api.getProjectContext(currentPath);
-            if (res?.error) throw new Error(res.error);
-            setDatabases(res?.context?.databases || []);
-        } catch (err: any) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
-    };
 
-    useEffect(() => {
-        loadDatabases();
-    }, [currentPath, isGlobal]);
+const ResizableSplitPane: React.FC<{
+    top: React.ReactNode;
+    bottom: React.ReactNode;
+    initialRatio?: number;
+    minTopPct?: number;
+    minBottomPct?: number;
+}> = ({ top, bottom, initialRatio = 50, minTopPct = 20, minBottomPct = 20 }) => {
+    const containerRef = React.useRef<HTMLDivElement>(null);
+    const [ratio, setRatio] = React.useState(initialRatio);
+    const draggingRef = React.useRef(false);
 
-    const handleSave = async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            if (isGlobal) {
-                const current = await (window as any).api.getGlobalContext();
-                await (window as any).api.saveGlobalContext({ ...current.context, databases });
-            } else {
-                const current = await (window as any).api.getProjectContext(currentPath);
-                await (window as any).api.saveProjectContext({ path: currentPath, contextData: { ...current.context, databases } });
-            }
-        } catch (err: any) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleAdd = () => {
-        if (!newDbPath.trim()) return;
-        setDatabases(prev => [...prev, { value: newDbPath.trim() }]);
-        setNewDbPath('');
-    };
-
-    const handleRemove = (index: number) => {
-        setDatabases(prev => prev.filter((_, i) => i !== index));
-    };
-
-    const handleChange = (index: number, value: string) => {
-        setDatabases(prev => prev.map((db, i) => i === index ? { value } : db));
-    };
-
-    if (!isGlobal && !currentPath) {
-        return <div className="text-center py-12 theme-text-muted">Select a project folder or switch to Global.</div>;
-    }
+    React.useEffect(() => {
+        const handleMove = (e: MouseEvent) => {
+            if (!draggingRef.current || !containerRef.current) return;
+            const rect = containerRef.current.getBoundingClientRect();
+            const pct = ((e.clientY - rect.top) / rect.height) * 100;
+            const clamped = Math.max(minTopPct, Math.min(100 - minBottomPct, pct));
+            setRatio(clamped);
+        };
+        const handleUp = () => { draggingRef.current = false; };
+        window.addEventListener('mousemove', handleMove);
+        window.addEventListener('mouseup', handleUp);
+        return () => {
+            window.removeEventListener('mousemove', handleMove);
+            window.removeEventListener('mouseup', handleUp);
+        };
+    }, [minTopPct, minBottomPct]);
 
     return (
-        <div className="space-y-6">
-            {error && <div className="text-red-400 bg-red-900/20 p-3 rounded-lg">{error}</div>}
-
-            <div className="space-y-3">
-                {databases.map((db, idx) => (
-                    <div key={idx} className="flex gap-2 items-center theme-bg-tertiary p-3 rounded-lg">
-                        <Database size={18} className="text-blue-400 flex-shrink-0" />
-                        <input
-                            type="text"
-                            value={db.value || ''}
-                            onChange={(e) => handleChange(idx, e.target.value)}
-                            className="flex-1 theme-input text-sm font-mono"
-                            placeholder="~/path/to/database.db"
-                        />
-                        <button onClick={() => handleRemove(idx)} className="p-2 text-red-400 hover:bg-red-900/30 rounded">
-                            <Trash2 size={16} />
-                        </button>
-                    </div>
-                ))}
-                {databases.length === 0 && (
-                    <div className="text-center py-8 theme-text-muted">No databases configured.</div>
-                )}
+        <div ref={containerRef} className="flex-1 flex flex-col overflow-hidden">
+            <div style={{ height: `${ratio}%`, minHeight: `${minTopPct}%` }} className="overflow-hidden">
+                {top}
             </div>
-
-            <div className="flex gap-2">
-                <input
-                    type="text"
-                    value={newDbPath}
-                    onChange={(e) => setNewDbPath(e.target.value)}
-                    placeholder="~/.incognide/history.db"
-                    className="flex-1 theme-input text-sm font-mono"
-                    onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-                />
-                <button onClick={handleAdd} className="theme-button px-4 py-2 rounded text-sm flex items-center gap-2">
-                    <Plus size={16} /> Add
-                </button>
+            <div
+                className="h-2 bg-gray-700/30 hover:bg-gray-600/50 cursor-row-resize flex-shrink-0 flex items-center justify-center"
+                onMouseDown={() => { draggingRef.current = true; }}
+                title="Drag to resize"
+            >
+                <div className="w-8 h-1 rounded-full bg-gray-500/50" />
             </div>
-
-            <div className="border-t theme-border pt-4 flex justify-end">
-                <button onClick={handleSave} disabled={loading} className="theme-button-primary px-4 py-2 rounded text-sm flex items-center gap-2">
-                    <Save size={16} /> {loading ? 'Saving...' : 'Save'}
-                </button>
+            <div style={{ height: `${100 - ratio}%`, minHeight: `${minBottomPct}%` }} className="overflow-hidden">
+                {bottom}
             </div>
         </div>
     );
@@ -870,15 +802,45 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
     currentNpc = '',
     initialTab,
     forceTab,
-    onTabChange
+    onTabChange,
+    initialJinxName,
+    onOpenJinxPane
 }) => {
     const [activeTab, setActiveTab] = useState<TabId>(initialTab || 'context');
     useEffect(() => { if (forceTab) setActiveTab(forceTab); }, [forceTab]);
     const changeTab = (tab: TabId) => { setActiveTab(tab); onTabChange?.(tab); };
 
+    const [sharedMemories, setSharedMemories] = useState<any[]>([]);
+    const [sharedKnowledge, setSharedKnowledge] = useState<any[]>([]);
+    const [sharedLoading, setSharedLoading] = useState(false);
+
+    const [registryCollapsed, setRegistryCollapsed] = useState(false);
+    const [memoryCollapsed, setMemoryCollapsed] = useState(false);
+    const [kgCollapsed, setKgCollapsed] = useState(false);
+
+    const loadSharedKnowledge = async () => {
+        setSharedLoading(true);
+        try {
+            const data = await (window as any).api?.kgLoadStoreData?.({}).catch(() => ({}));
+            setSharedMemories(data.memories || []);
+            setSharedKnowledge(data.knowledge || []);
+        } catch (err: any) {
+            console.error('[TeamManagement] loadSharedKnowledge error:', err);
+        } finally {
+            setSharedLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab === 'knowledge') {
+            loadSharedKnowledge();
+        }
+    }, [activeTab, currentPath]);
+
     const [registeredTeams, setRegisteredTeams] = useState<Record<string, string>>({});
     const [selectedTeam, setSelectedTeam] = useState<string>('');
-    const [projectTeamExists, setProjectTeamExists] = useState(false);
+    const [projectTeamPath, setProjectTeamPath] = useState<string | null>(null);
+    const [projectTeamCtxName, setProjectTeamCtxName] = useState<string | null>(null);
     const [discoveredTeams, setDiscoveredTeams] = useState<any[]>([]);
     const [scanning, setScanning] = useState(false);
 
@@ -891,29 +853,53 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
 
     useEffect(() => { loadRegisteredTeams(); }, []);
 
-    // Detect project team and set default selected team
     useEffect(() => {
-        if (!isOpen) return;
+        if (!isOpen || !currentPath) {
+            setProjectTeamPath(null);
+            setProjectTeamCtxName(null);
+            return;
+        }
         (async () => {
-            let hasProject = false;
-            if (currentPath) {
-                try {
-                    const res = await (window as any).api.getProjectContext(currentPath);
-                    hasProject = !!res?.path;
-                } catch { /* ignore */ }
-            }
-            setProjectTeamExists(hasProject);
-            // Default team selection: first registered team, or project if none registered
-            if (!selectedTeam) {
-                const keys = Object.keys(registeredTeams);
-                if (keys.length > 0) {
-                    setSelectedTeam(keys[0]);
-                } else if (hasProject) {
-                    setSelectedTeam('project');
+            try {
+                const items = await (window as any).api.readDirectory(currentPath);
+                const hasNpcTeam = (items || []).some(item => item.name === 'npc_team' && item.isDirectory);
+                if (!hasNpcTeam) {
+                    setProjectTeamPath(null);
+                    setProjectTeamCtxName(null);
+                    return;
                 }
+                const npcTeamPath = `${currentPath}/npc_team`;
+                setProjectTeamPath(npcTeamPath);
+                try {
+                    const npcTeamItems = await (window as any).api.readDirectory(npcTeamPath);
+                    const ctxFile = (npcTeamItems || []).find(item => item.name && item.name.endsWith('.ctx'));
+                    if (ctxFile) {
+                        const base = ctxFile.name.replace(/\.ctx$/, '');
+                        setProjectTeamCtxName(base);
+                    } else {
+                        setProjectTeamCtxName('project');
+                    }
+                } catch {
+                    setProjectTeamCtxName('project');
+                }
+            } catch {
+                setProjectTeamPath(null);
+                setProjectTeamCtxName(null);
             }
         })();
-    }, [isOpen, currentPath, registeredTeams]);
+    }, [isOpen, currentPath]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        if (!selectedTeam) {
+            const keys = Object.keys(registeredTeams);
+            if (keys.length > 0) {
+                setSelectedTeam(keys[0]);
+            } else if (projectTeamPath) {
+                setSelectedTeam('project');
+            }
+        }
+    }, [isOpen, registeredTeams, projectTeamPath]);
 
     const handleScanTeams = async () => {
         setScanning(true);
@@ -937,9 +923,23 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
         } catch {}
     };
 
-    const isGlobal = selectedTeam !== 'project';
-    const globalPath = isGlobal ? (registeredTeams[selectedTeam] || undefined) : undefined;
-    const effectivePath = isGlobal ? (globalPath || '') : (currentPath || '');
+    const handleRegisterProjectTeam = async () => {
+        if (!projectTeamPath || !projectTeamCtxName) return;
+        try {
+            const data = await (window as any).api.teamsRead();
+            const teams = data?.teams || {};
+            const key = projectTeamCtxName.toLowerCase().replace(/[^a-z0-9_]/g, '');
+            teams[key] = projectTeamPath;
+            await (window as any).api.teamsWrite(teams);
+            setRegisteredTeams(teams);
+            setSelectedTeam(key);
+        } catch {}
+    };
+
+    const isProjectTeam = selectedTeam === 'project';
+    const effectiveTeamPath = isProjectTeam ? (projectTeamPath || '') : (registeredTeams[selectedTeam] || '');
+    const npcMenuPath = isProjectTeam ? currentPath : effectiveTeamPath;
+    const npcMenuKey = isProjectTeam ? '' : selectedTeam;
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -959,20 +959,17 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
 
     const teamSections: { id: TabId; label: string; icon: React.ReactNode }[] = [
         { id: 'context', label: 'Context', icon: <FileJson size={16} /> },
-        { id: 'npcs', label: 'NPCs', icon: <Users size={16} /> },
+        { id: 'npcs', label: 'Agents', icon: <Users size={16} /> },
         { id: 'jinxes', label: 'Jinxes', icon: <Zap size={16} /> },
-        { id: 'mcp', label: 'MCP', icon: <Server size={16} /> },
-        { id: 'memory', label: 'Memory', icon: <MemoryIcon size={16} /> },
         { id: 'knowledge', label: 'Knowledge', icon: <KgIcon size={16} /> },
         { id: 'cron', label: 'Scheduler', icon: <SmokestackIcon size={16} /> },
-        { id: 'databases', label: 'Databases', icon: <Database size={16} /> },
     ];
 
     if (!isOpen && !embedded) return null;
 
     const content = (
         <div className={embedded ? "flex flex-col h-full" : "relative w-[90vw] max-w-6xl h-[85vh] theme-bg-primary rounded-xl shadow-2xl border theme-border flex flex-col overflow-hidden"}>
-            {/* Header */}
+            
             <div className="flex items-center justify-between px-4 py-3 border-b theme-border flex-shrink-0">
                 <div className="flex items-center gap-3">
                     <Users className="text-purple-400" size={20} />
@@ -987,11 +984,11 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                 </div>
             </div>
 
-            {/* Sidebar + Content */}
+            
             <div className="flex flex-1 overflow-hidden">
-                {/* Left sidebar */}
+                
                 <div className="w-44 flex-shrink-0 border-r theme-border overflow-y-auto py-2 space-y-2">
-                    {/* General Settings */}
+                    
                     <div>
                         <div className="px-4 py-1 text-[10px] uppercase tracking-wider theme-text-muted font-semibold">General</div>
                         {generalSections.map((section) => (
@@ -1010,7 +1007,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                         ))}
                     </div>
 
-                    {/* Team Settings */}
+                    
                     <div>
                         <div className="px-4 py-1 text-[10px] uppercase tracking-wider theme-text-muted font-semibold">Team</div>
                         <div className="px-3 py-1.5">
@@ -1022,10 +1019,18 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                 {Object.entries(registeredTeams).map(([key, path]) => (
                                     <option key={key} value={key}>{key}</option>
                                 ))}
-                                {projectTeamExists && (
-                                    <option value="project">Current Project</option>
+                                {projectTeamPath && (
+                                    <option value="project">{projectTeamCtxName || 'Project'} (unregistered)</option>
                                 )}
                             </select>
+                            {selectedTeam === 'project' && projectTeamPath && (
+                                <button
+                                    onClick={handleRegisterProjectTeam}
+                                    className="mt-1 w-full px-2 py-1 rounded text-[10px] bg-purple-600 hover:bg-purple-500 text-white transition flex items-center justify-center gap-1"
+                                >
+                                    <Plus size={10} /> Register Team
+                                </button>
+                            )}
                             <button
                                 onClick={handleScanTeams}
                                 disabled={scanning}
@@ -1070,18 +1075,16 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                     </div>
                 </div>
 
-                {/* Content */}
+                
                 <div className="flex-1 flex flex-col overflow-hidden">
-                    {(activeTab === 'memory' || activeTab === 'cron' || activeTab === 'llm-models' || activeTab === 'voice' || activeTab === 'knowledge') ? null : (
+                    {(activeTab === 'cron' || activeTab === 'llm-models' || activeTab === 'voice' || activeTab === 'knowledge') ? null : (
                         <div className="flex-1 overflow-auto p-6">
                             {activeTab === 'context' && (
                                 <CtxEditor
                                     isOpen={true}
                                     onClose={() => {}}
-                                    currentPath={effectivePath}
+                                    teamPath={effectiveTeamPath}
                                     embedded={true}
-                                    isGlobal={isGlobal}
-                                    globalPath={globalPath}
                                 />
                             )}
                             {activeTab === 'npcs' && (
@@ -1089,11 +1092,11 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                     <NPCTeamMenu
                                         isOpen={true}
                                         onClose={() => {}}
-                                        currentPath={effectivePath}
+                                        currentPath={npcMenuPath}
                                         startNewConversation={startNewConversation}
                                         embedded={true}
-                                        isGlobal={isGlobal}
-                                        globalPath={globalPath}
+                                        teamKey={npcMenuKey}
+                                        onOpenJinxTab={onOpenJinxPane}
                                     />
                                 </div>
                             )}
@@ -1101,25 +1104,16 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                 <JinxMenu
                                     isOpen={true}
                                     onClose={() => {}}
-                                    currentPath={effectivePath}
+                                    currentPath={npcMenuPath}
                                     embedded={true}
-                                    isGlobal={isGlobal}
-                                    globalPath={globalPath}
+                                    teamKey={npcMenuKey}
+                                    initialJinxName={initialJinxName}
                                 />
-                            )}
-                            {activeTab === 'mcp' && (
-                                <McpManager currentPath={effectivePath} embedded={true} />
                             )}
                             {activeTab === 'models' && (
                                 <SqlModelsContent
-                                    currentPath={effectivePath}
-                                    isGlobal={isGlobal}
-                                />
-                            )}
-                            {activeTab === 'databases' && (
-                                <DatabasesContent
-                                    currentPath={effectivePath}
-                                    isGlobal={isGlobal}
+                                    currentPath={npcMenuPath}
+                                    teamKey={npcMenuKey}
                                 />
                             )}
                             {activeTab === 'ai-settings' && (
@@ -1127,18 +1121,14 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                             )}
                         </div>
                     )}
-                    {activeTab === 'memory' && (
-                        <MemoryManagement isModal={false} currentPath={currentPath} />
-                    )}
                     {activeTab === 'cron' && (
                         <CronDaemonPanel
                             isOpen={true}
                             onClose={() => {}}
-                            currentPath={effectivePath}
+                            currentPath={currentPath || effectiveTeamPath}
                             npcList={npcList}
                             jinxList={jinxList}
                             isPane={true}
-                            isGlobal={isGlobal}
                         />
                     )}
                     {activeTab === 'llm-models' && (
@@ -1153,9 +1143,44 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                     )}
                     {activeTab === 'knowledge' && (
                         <div className="flex-1 flex flex-col overflow-hidden">
-                            <Suspense fallback={<div className="flex items-center justify-center py-12 theme-text-muted">Loading...</div>}>
-                                <KnowledgeGraphEditor isModal={false} />
-                            </Suspense>
+                            <div className="flex flex-col min-h-0 border-b theme-border" style={{ flex: registryCollapsed ? '0 0 auto' : 1, overflow: 'hidden' }}>
+                                <div
+                                    onClick={() => setRegistryCollapsed(!registryCollapsed)}
+                                    className="flex items-center gap-1.5 px-3 py-2 cursor-pointer theme-bg-tertiary border-b theme-border hover:bg-white/5"
+                                >
+                                    <ChevronRight size={12} className={`transform transition-transform theme-text-muted ${registryCollapsed ? '' : 'rotate-90'}`} />
+                                    <span className="text-[11px] font-semibold theme-text-primary">Knowledge Stores</span>
+                                </div>
+                                {!registryCollapsed && <StoreRegistryPanel onSaved={loadSharedKnowledge} />}
+                            </div>
+
+                            <div className="flex flex-col min-h-0 border-b theme-border" style={{ flex: memoryCollapsed ? '0 0 auto' : 2, overflow: 'hidden' }}>
+                                <div
+                                    onClick={() => setMemoryCollapsed(!memoryCollapsed)}
+                                    className="flex items-center gap-1.5 px-3 py-2 cursor-pointer theme-bg-tertiary border-b theme-border hover:bg-white/5"
+                                >
+                                    <ChevronRight size={12} className={`transform transition-transform theme-text-muted ${memoryCollapsed ? '' : 'rotate-90'}`} />
+                                    <span className="text-[11px] font-semibold theme-text-primary">Memory</span>
+                                    <span className="text-[9px] theme-text-muted">{sharedMemories.length}</span>
+                                </div>
+                                {!memoryCollapsed && <MemoryManagement isModal={false} currentPath={currentPath} allMemories={sharedMemories} />}
+                            </div>
+
+                            <div className="flex flex-col min-h-0" style={{ flex: kgCollapsed ? '0 0 auto' : 2, overflow: 'hidden' }}>
+                                <div
+                                    onClick={() => setKgCollapsed(!kgCollapsed)}
+                                    className="flex items-center gap-1.5 px-3 py-2 cursor-pointer theme-bg-tertiary border-b theme-border hover:bg-white/5"
+                                >
+                                    <ChevronRight size={12} className={`transform transition-transform theme-text-muted ${kgCollapsed ? '' : 'rotate-90'}`} />
+                                    <span className="text-[11px] font-semibold theme-text-primary">Knowledge Graph</span>
+                                    <span className="text-[9px] theme-text-muted">{sharedKnowledge.length}</span>
+                                </div>
+                                {!kgCollapsed && (
+                                    <Suspense fallback={<div className="flex items-center justify-center py-12 theme-text-muted">Loading...</div>}>
+                                        <KnowledgeGraphEditor isModal={false} currentPath={currentPath} memories={sharedMemories} knowledge={sharedKnowledge} />
+                                    </Suspense>
+                                )}
+                            </div>
                         </div>
                     )}
                 </div>

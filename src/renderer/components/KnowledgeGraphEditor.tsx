@@ -9,15 +9,19 @@ import ForceGraph2D from 'react-force-graph-2d';
 import { useAiEnabled } from './AiFeatureContext';
 import KgIcon from './icons/KgIcon';
 const SememolutionPanel = lazy(() => import('./SememolutionPanel'));
+const KgPipelinePanel = lazy(() => import('./KgPipelinePanel'));
 
 type ViewTab = 'graph' | 'table' | 'tree' | 'groups' | 'sememolution';
 
 interface KnowledgeGraphEditorProps {
     isModal?: boolean;
     onClose?: () => void;
+    currentPath?: string;
+    memories?: any[];
+    knowledge?: any[];
 }
 
-const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = false, onClose }) => {
+const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = false, onClose, currentPath, memories: memoriesProp, knowledge: knowledgeProp }) => {
     const aiEnabled = useAiEnabled();
 
     const [kgData, setKgData] = useState<{ nodes: any[], links: any[] }>({ nodes: [], links: [] });
@@ -34,6 +38,9 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
     const [sourceMemoryId, setSourceMemoryId] = useState<number | null>(null);
     const [sourceMemory, setSourceMemory] = useState<any>(null);
     const [sourceMemoryLoading, setSourceMemoryLoading] = useState(false);
+
+    const [stores, setStores] = useState<any[]>([]);
+    const [selectedStorePaths, setSelectedStorePaths] = useState<string[]>([]);
 
     useEffect(() => {
         if (sourceMemoryId == null) { setSourceMemory(null); return; }
@@ -81,6 +88,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
     const [importMsg, setImportMsg] = useState<string | null>(null);
 
     const [showQueryPanel, setShowQueryPanel] = useState(false);
+    const [showPipelinePanel, setShowPipelinePanel] = useState(false);
     const [queryInput, setQueryInput] = useState('');
     const [queryHistory, setQueryHistory] = useState<{ q: string; a: string; sources: string[]; candidates?: any[] }[]>([]);
     const [queryLoading, setQueryLoading] = useState(false);
@@ -147,38 +155,92 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
     const [localKnowledge, setLocalKnowledge] = useState<any>(null);
     const [knowledgeLoading, setKnowledgeLoading] = useState(true);
 
+    const buildGraphFromData = useCallback((memories: any[], knowledge: any[]) => {
+        const seen = new Set<string>();
+        const mems = [];
+        const linkSeen = new Set<string>();
+        const links = [];
+        for (const m of memories || []) {
+            const key = String(m.id);
+            if (seen.has(key)) continue;
+            seen.add(key);
+            mems.push(m);
+        }
+        for (const l of knowledge || []) {
+            const key = `${String(l.from)}|${String(l.to)}|${l.relation}`;
+            if (linkSeen.has(key)) continue;
+            linkSeen.add(key);
+            links.push(l);
+        }
+        setLocalKnowledge({ memories: mems, knowledge: links, directory: currentPath });
+        const nodes = mems.map((m: any) => ({
+            ...m,
+            id: String(m.id),
+            label: m.initial_memory || m.final_memory || String(m.id),
+            type: 'memory',
+        }));
+        const graphLinks = links.map((l: any) => ({
+            source: String(l.from),
+            target: String(l.to),
+            relation: l.relation,
+            agent: l.agent,
+            timestamp: l.created_at,
+        }));
+        setKgData({ nodes, links: graphLinks });
+    }, [currentPath]);
+
     const fetchLocalKnowledge = useCallback(async () => {
+        if (memoriesProp && knowledgeProp) {
+            buildGraphFromData(memoriesProp, knowledgeProp);
+            setKgLoading(false);
+            return;
+        }
         setKnowledgeLoading(true);
         setKgError(null);
         try {
-            const data = await (window as any).api?.knowledge_load?.({ currentPath: (window as any).api?.getProjectCtx?.() }) || {};
-            if (data.error) throw new Error(data.error);
-            setLocalKnowledge(data);
-            // Convert memories to nodes and knowledge links to edges
-            const nodes = (data.memories || []).map((m: any) => ({
-                id: m.id,
-                label: m.initial_memory || m.final_memory || m.id,
-                type: 'memory',
-                status: m.status,
-                agent: m.agent,
-                timestamp: m.timestamp,
-            }));
-            const links = (data.knowledge || []).map((l: any) => ({
-                source: l.from,
-                target: l.to,
-                relation: l.relation,
-                agent: l.agent,
-                timestamp: l.created_at,
-            }));
-            setKgData({ nodes, links });
+            const data = await (window as any).api?.kgLoadStoreData?.({ storePaths: selectedStorePaths }).catch(() => ({}));
+            buildGraphFromData(data.memories || [], data.knowledge || []);
         } catch (err: any) {
-            setKgError(err.message);
+            setKgError(err?.message || String(err));
         } finally {
             setKnowledgeLoading(false);
+            setKgLoading(false);
         }
+    }, [selectedStorePaths, memoriesProp, knowledgeProp, buildGraphFromData]);
+
+    const fetchKgData = useCallback(async () => {
+        try {
+            const graphResult = await (window as any).api?.kg_getGraphData?.({ storePaths: selectedStorePaths });
+            if (graphResult && !graphResult.error && graphResult.graph) {
+                setKgData(graphResult.graph);
+            }
+            const genResult = await (window as any).api?.kg_listGenerations?.();
+            if (genResult && Array.isArray(genResult.generations)) {
+                setKgGenerations(genResult.generations);
+            }
+        } catch (err: any) {
+            console.error('KG fetch error:', err);
+        }
+    }, [selectedStorePaths]);
+
+    const handleRefreshStores = useCallback(async () => {
+        try {
+            const r = await (window as any).api?.scanKnowledgeStores?.();
+            const list = (r?.stores || []) as any[];
+            setStores(list);
+            setSelectedStorePaths(list.map((s) => s.directory));
+        } catch {}
     }, []);
 
+
     useEffect(() => { fetchLocalKnowledge(); }, [fetchLocalKnowledge]);
+
+    useEffect(() => { handleRefreshStores(); }, [handleRefreshStores]);
+
+    useEffect(() => {
+        if (selectedStorePaths.length === 0) return;
+        fetchKgData();
+    }, [selectedStorePaths, fetchKgData]);
 
     useEffect(() => {
         if (!isModal) return;
@@ -199,7 +261,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         setIsSearching(true);
         try {
             const result = await (window as any).api?.kg_search?.({
-                q: searchQuery, generation: currentKgGeneration, type: 'both', limit: 50
+                q: searchQuery, storePaths: selectedStorePaths, type: 'both', limit: 50
             });
             if (result && !result.error) {
                 setSearchResults({ facts: result.facts || [], concepts: result.concepts || [] });
@@ -214,7 +276,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         } finally {
             setIsSearching(false);
         }
-    }, [searchQuery, currentKgGeneration]);
+    }, [searchQuery, currentKgGeneration, selectedStorePaths]);
 
     const clearSearch = useCallback(() => {
         setSearchQuery('');
@@ -231,7 +293,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
             sourceLinks = cooccurrenceData.links || [];
         } else if (kgData && kgData.nodes) {
             sourceNodes = kgData.nodes;
-            sourceLinks = kgData.links;
+            sourceLinks = kgData.links || [];
         }
         if (kgNodeFilter === 'high-degree' && networkStats?.node_degrees) {
             const avgDegree = networkStats.avg_degree || 0;
@@ -245,7 +307,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         return { nodes: sourceNodes, links: sourceLinks };
     }, [kgData, kgViewMode, kgNodeFilter, networkStats, cooccurrenceData]);
 
-    const allNodeNames = useMemo(() => processedGraphData.nodes.map((n: any) => n.id), [processedGraphData]);
+    const allNodeNames = useMemo(() => [...new Set(processedGraphData.nodes.map((n: any) => n.id))], [processedGraphData]);
 
     const nodeDegreeMap = useMemo(() => {
         const map: Record<string, number> = {};
@@ -396,7 +458,8 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                 content: importText,
                 context: importGuidance || undefined,
                 get_concepts: true,
-                link_concepts_facts: true
+                link_concepts_facts: true,
+                storePaths: selectedStorePaths
             });
             if (result?.error) {
                 setImportMsg(`Error: ${result.error}`);
@@ -444,7 +507,8 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                 content: allText,
                 context: importGuidance || undefined,
                 get_concepts: true,
-                link_concepts_facts: true
+                link_concepts_facts: true,
+                storePaths: selectedStorePaths
             });
             if (result?.error) {
                 setImportMsg(`Error: ${result.error}`);
@@ -473,6 +537,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                 lambda_depth: queryLambdaDepth,
                 lambda_breadth: queryLambdaBreadth,
                 similarity_threshold: querySimilarityThreshold,
+                storePaths: selectedStorePaths,
             };
             if (queryMode === 'sememolution' && queryPopulationId) {
                 payload.population_id = queryPopulationId;
@@ -481,7 +546,6 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
             if (result?.error) {
                 setQueryHistory(prev => [...prev, { q, a: `Error: ${result.error}`, sources: [] }]);
             } else if (result?.candidates) {
-                // Sememolution ranked response — show the top candidate's text, expose the full ranking
                 const top = result.candidates[0];
                 const a = top?.response || 'No ranked candidates.';
                 const sources = top?.context_facts || [];
@@ -504,7 +568,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         setKgLoading(true);
         setKgError(null);
         try {
-            await (window as any).api?.kg_triggerProcess?.({ type });
+            await (window as any).api?.kg_triggerProcess?.({ type, storePaths: selectedStorePaths });
             setCurrentKgGeneration(null);
             fetchKgData();
         } catch (err: any) {
@@ -516,11 +580,10 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
 
     const handleKgRollback = async () => {
         if (currentKgGeneration && currentKgGeneration > 0) {
-            const targetGen = currentKgGeneration - 1;
             setKgLoading(true);
             try {
-                await (window as any).api?.kg_rollback?.({ generation: targetGen });
-                setCurrentKgGeneration(targetGen);
+                await (window as any).api?.kg_rollback?.({ storePaths: selectedStorePaths });
+                setCurrentKgGeneration(0);
             } catch (err: any) {
                 setKgError(err.message);
                 setKgLoading(false);
@@ -532,9 +595,9 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         if (!newNodeName.trim()) return;
         setKgLoading(true);
         try {
-            await (window as any).api?.kg_addNode?.({ nodeId: newNodeName.trim(), nodeType: newNodeType });
+            await (window as any).api?.kg_addNode?.({ nodeId: newNodeName.trim(), nodeType: newNodeType, storePaths: selectedStorePaths });
             setNewNodeName('');
-            fetchKgData(currentKgGeneration ?? undefined);
+            fetchKgData();
         } catch (err: any) {
             setKgError(err.message);
         } finally {
@@ -545,12 +608,12 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
     const handleDeleteKgNode = async (nodeId: string) => {
         setKgLoading(true);
         try {
-            await (window as any).api?.kg_deleteNode?.({ nodeId });
+            await (window as any).api?.kg_deleteNode?.({ nodeId, storePaths: selectedStorePaths });
             setSelectedKgNode(null);
             selectedNodeIds.delete(nodeId);
             setSelectedNodeIds(new Set(selectedNodeIds));
             setPendingDelete(null);
-            fetchKgData(currentKgGeneration ?? undefined);
+            fetchKgData();
         } catch (err: any) {
             setKgError(err.message);
         } finally {
@@ -563,12 +626,12 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         setKgLoading(true);
         try {
             for (const nodeId of selectedNodeIds) {
-                await (window as any).api?.kg_deleteNode?.({ nodeId });
+                await (window as any).api?.kg_deleteNode?.({ nodeId, storePaths: selectedStorePaths });
             }
             setSelectedNodeIds(new Set());
             setSelectedKgNode(null);
             setPendingDelete(null);
-            fetchKgData(currentKgGeneration ?? undefined);
+            fetchKgData();
         } catch (err: any) {
             setKgError(err.message);
         } finally {
@@ -581,11 +644,10 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         const tgt = newEdgeTarget.trim();
         if (!src || !tgt) return;
         try {
-            const r = await (window as any).api?.kg_addEdge?.({ sourceId: src, targetId: tgt });
+            const r = await (window as any).api?.kg_addEdge?.({ sourceId: src, targetId: tgt, storePaths: selectedStorePaths });
             if (r?.error) { setKgError(r.error); return; }
             setNewEdgeSource('');
             setNewEdgeTarget('');
-            // Optimistic local insert — avoids full KG re-fetch that caused layout flash
             setKgData(prev => {
                 if (prev.links.some((l: any) => (l.source === src || l.source?.id === src) && (l.target === tgt || l.target?.id === tgt))) return prev;
                 return { ...prev, links: [...prev.links, { source: src, target: tgt, type: 'related_to', weight: 1 }] };
@@ -597,7 +659,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
 
     const handleDeleteKgEdge = async (sourceId: string, targetId: string) => {
         try {
-            const r = await (window as any).api?.kg_deleteEdge?.({ sourceId, targetId });
+            const r = await (window as any).api?.kg_deleteEdge?.({ sourceId, targetId, storePaths: selectedStorePaths });
             if (r?.error) { setKgError(r.error); return; }
             setKgData(prev => ({
                 ...prev,
@@ -616,10 +678,10 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
         if (!newNodePopupName.trim()) return;
         setKgLoading(true);
         try {
-            await (window as any).api?.kg_addNode?.({ nodeId: newNodePopupName.trim(), nodeType: newNodePopupType });
+            await (window as any).api?.kg_addNode?.({ nodeId: newNodePopupName.trim(), nodeType: newNodePopupType, storePaths: selectedStorePaths });
             setNewNodePopup(null);
             setNewNodePopupName('');
-            fetchKgData(currentKgGeneration ?? undefined);
+            fetchKgData();
         } catch (err: any) {
             setKgError(err.message);
         } finally {
@@ -677,7 +739,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                 const tgt = node.id;
                 (async () => {
                     try {
-                        const r = await (window as any).api?.kg_addEdge?.({ sourceId: src, targetId: tgt });
+                        const r = await (window as any).api?.kg_addEdge?.({ sourceId: src, targetId: tgt, storePaths: selectedStorePaths });
                         setConnectSource(null);
                         if (r?.error) { setKgError(r.error); return; }
                         setKgData(prev => {
@@ -703,7 +765,7 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
             setSelectedNodeIds(new Set());
             setShowDetail(true);
         }
-    }, [connectMode, connectSource, fetchKgData, currentKgGeneration]);
+    }, [connectMode, connectSource, fetchKgData, currentKgGeneration, selectedStorePaths]);
 
     const handleNodeRightClick = useCallback((node: any, event: MouseEvent) => {
         event.preventDefault();
@@ -875,13 +937,13 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                     }`}>
                         {selectedKgNode.type || 'concept'}
                     </span>
-                    {selectedKgNode.memory_id != null && (
+                    {selectedKgNode.type === 'memory' && (
                         <button
-                            onClick={() => setSourceMemoryId(selectedKgNode.memory_id)}
+                            onClick={() => setSourceMemoryId(selectedKgNode.id)}
                             className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30"
-                            title="View the source memory this fact was promoted from"
+                            title="View the source memory"
                         >
-                            <MessageSquare size={10} /> memory #{selectedKgNode.memory_id}
+                            <MessageSquare size={10} /> memory #{selectedKgNode.id}
                         </button>
                     )}
                     <button
@@ -903,6 +965,43 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                         <FolderTree size={10} /> Tree
                     </button>
                 </div>
+
+                {selectedKgNode.type === 'memory' && (
+                    <div className="mb-3 p-2 rounded bg-amber-500/5 border border-amber-500/20">
+                        <p className="text-xs theme-text-secondary whitespace-pre-wrap">{selectedKgNode.initial_memory || selectedKgNode.final_memory || selectedKgNode.label || '—'}</p>
+                        {selectedKgNode.final_memory && selectedKgNode.final_memory !== selectedKgNode.initial_memory && (
+                            <p className="text-[10px] theme-text-muted mt-1 border-t border-amber-500/10 pt-1">Edited: {selectedKgNode.final_memory}</p>
+                        )}
+                        {(selectedKgNode.source_type || selectedKgNode.source_id) && (
+                            <div className="mt-1.5 flex items-center gap-1.5 text-[10px]">
+                                {selectedKgNode.source_type && (
+                                    <span className={`px-1 py-0.5 rounded text-[9px] font-medium ${
+                                        selectedKgNode.source_type === 'conversation' ? 'bg-blue-500/20 text-blue-400' :
+                                        selectedKgNode.source_type === 'file' ? 'bg-green-500/20 text-green-400' :
+                                        selectedKgNode.source_type === 'url' ? 'bg-purple-500/20 text-purple-400' :
+                                        'bg-gray-500/20 text-gray-400'
+                                    }`}>
+                                        {selectedKgNode.source_type}
+                                    </span>
+                                )}
+                                {selectedKgNode.source_id && (
+                                    <span className="theme-text-muted truncate flex-1">{selectedKgNode.source_id}</span>
+                                )}
+                            </div>
+                        )}
+                        <div className="mt-1.5 space-y-0.5 text-[10px] theme-text-muted">
+                            {Object.entries(selectedKgNode)
+                                .filter(([k, v]) => v != null && v !== '' &&
+                                    !['id','label','type','x','y','vx','vy','fx','fy','index','__indexColor','__colorValue','initial_memory','final_memory','source_type','source_id'].includes(k)
+                                )
+                                .map(([k, v]) => (
+                                    <div key={k} className={k === 'directory_path' ? 'truncate' : ''} title={k === 'directory_path' ? String(v) : undefined}>
+                                        {k}: {String(v)}
+                                    </div>
+                                ))}
+                        </div>
+                    </div>
+                )}
 
                 {pendingDelete === selectedKgNode.id ? (
                     <div className="flex items-center gap-2 mb-3">
@@ -1017,8 +1116,12 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                 <div className="flex items-center gap-1.5">
                     {aiEnabled && (
                         <>
-                            <button onClick={() => handleKgProcessTrigger('sleep')} disabled={kgLoading} className="px-2 py-1 text-[11px] theme-bg-secondary hover:opacity-80 theme-text-secondary rounded flex items-center gap-1 disabled:opacity-50 border theme-border"><Zap size={11} /> Sleep</button>
-                            <button onClick={() => handleKgProcessTrigger('dream')} disabled={kgLoading} className="px-2 py-1 text-[11px] theme-bg-secondary hover:opacity-80 theme-text-secondary rounded flex items-center gap-1 disabled:opacity-50 border theme-border"><Brain size={11} /> Dream</button>
+                            <button
+                                onClick={() => { setShowPipelinePanel(!showPipelinePanel); setShowImportPanel(false); setShowQueryPanel(false); }}
+                                className={`px-2 py-1 text-[11px] rounded flex items-center gap-1 border theme-border ${showPipelinePanel ? 'bg-green-600/30 text-green-300' : 'theme-bg-secondary theme-text-secondary hover:opacity-80'}`}
+                            >
+                                <Zap size={11} /> Steps
+                            </button>
                             <button
                                 onClick={() => { setShowImportPanel(!showImportPanel); setShowQueryPanel(false); }}
                                 className={`px-2 py-1 text-[11px] rounded flex items-center gap-1 border theme-border ${showImportPanel ? 'bg-blue-600/30 text-blue-300' : 'theme-bg-secondary theme-text-secondary hover:opacity-80'}`}
@@ -1179,6 +1282,12 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                 </div>
             )}
 
+            {showPipelinePanel && (
+                <Suspense fallback={<div className="flex items-center justify-center py-4 theme-text-muted text-xs">Loading Steps…</div>}>
+                    <KgPipelinePanel currentPath={currentPath} />
+                </Suspense>
+            )}
+
             <div className="flex items-center gap-2 px-3 py-1.5 border-b theme-border flex-shrink-0">
                 <div className="flex items-center gap-1">
                     <input
@@ -1321,9 +1430,9 @@ const KnowledgeGraphEditor: React.FC<KnowledgeGraphEditorProps> = ({ isModal = f
                 renderEmptyState()
             ) : (
                 <div className="flex-1 flex overflow-hidden">
-                    <div className="flex-1 overflow-auto">
+                    <div className="flex-1 flex flex-col overflow-auto">
                         {activeTab === 'graph' && (
-                            <div ref={graphContainerRef} className="w-full h-full relative">
+                            <div ref={graphContainerRef} className="flex-1 relative">
                                 <ForceGraph2D
                                     ref={graphRef}
                                     graphData={processedGraphData}

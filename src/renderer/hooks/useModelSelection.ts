@@ -1,23 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
 
 export function useModelSelection() {
-    const [currentModel, setCurrentModel] = useState(() => {
-        const saved = localStorage.getItem('incognideCurrentModel');
-        return saved ? JSON.parse(saved) : null;
-    });
-    const [currentProvider, setCurrentProvider] = useState(() => {
-        const saved = localStorage.getItem('incognideCurrentProvider');
-        return saved ? JSON.parse(saved) : null;
-    });
+    const [currentModel, setCurrentModel] = useState(null);
+    const [currentProvider, setCurrentProvider] = useState(null);
     const [currentNPC, setCurrentNPC] = useState(() => {
         const saved = localStorage.getItem('incognideCurrentNPC');
         return saved ? JSON.parse(saved) : null;
     });
-    const [selectedModels, setSelectedModels] = useState<string[]>(() => {
-        const saved = localStorage.getItem('incognideCurrentModel');
-        const model = saved ? JSON.parse(saved) : null;
-        return model ? [model] : [];
-    });
+    const [selectedModels, setSelectedModels] = useState<string[]>([]);
     const [selectedNPCs, setSelectedNPCs] = useState<string[]>(() => {
         const saved = localStorage.getItem('incognideCurrentNPC');
         const npc = saved ? JSON.parse(saved) : null;
@@ -40,18 +30,44 @@ export function useModelSelection() {
         return saved ? new Set(JSON.parse(saved)) : new Set();
     });
     const [showAllModels, setShowAllModels] = useState(true);
+    const [teamConfigs, setTeamConfigs] = useState<Record<string, any>>({});
+    const [modelWarning, setModelWarning] = useState<string | null>(null);
 
+    // Resolve model/provider from NPC -> team -> null whenever currentNPC or availableNPCs changes
     useEffect(() => {
-        if (currentModel !== null) {
-            localStorage.setItem('incognideCurrentModel', JSON.stringify(currentModel));
+        if (!currentNPC || availableNPCs.length === 0) {
+            setCurrentModel(null);
+            setCurrentProvider(null);
+            setModelWarning(null);
+            return;
         }
-    }, [currentModel]);
-
-    useEffect(() => {
-        if (currentProvider !== null) {
-            localStorage.setItem('incognideCurrentProvider', JSON.stringify(currentProvider));
+        const npc = availableNPCs.find((n: any) => n.name === currentNPC || n.value === currentNPC);
+        if (!npc) {
+            setModelWarning(`NPC "${currentNPC}" not found in loaded teams.`);
+            return;
         }
-    }, [currentProvider]);
+        // Cascade: NPC config -> team config -> null
+        let m = npc.model || null;
+        let p = npc.provider || null;
+        if (!m || !p) {
+            const tConf = npc._teamConfig || teamConfigs[npc.team];
+            if (tConf) {
+                if (!m) m = tConf.model || null;
+                if (!p) p = tConf.provider || null;
+            }
+        }
+        if (m && p) {
+            setCurrentModel(m);
+            setCurrentProvider(p);
+            setModelWarning(null);
+        } else {
+            setCurrentModel(null);
+            setCurrentProvider(null);
+            setModelWarning(
+                `NPC "${npc.name}" has no model configured. Set a model on the NPC or a team-wide default in the .ctx file.`
+            );
+        }
+    }, [currentNPC, availableNPCs, teamConfigs]);
 
     useEffect(() => {
         if (currentNPC !== null) {
@@ -142,5 +158,9 @@ export function useModelSelection() {
         setShowAllModels,
         toggleFavoriteModel,
         modelsToDisplay,
+        teamConfigs,
+        setTeamConfigs,
+        modelWarning,
+        setModelWarning,
     };
 }

@@ -22,8 +22,8 @@ interface JinxItem {
     description: string;
     inputs: any[];
     steps: any[];
-    team: 'npcsh' | 'incognide' | 'project';
-    scope: 'global' | 'project';
+    team: string;
+    scope: string;
 }
 
 interface TreeNode {
@@ -36,16 +36,13 @@ interface TreeNode {
 }
 
 type ViewMode = 'browse' | 'create' | 'import';
-type ScopeTab = 'all' | 'npcsh' | 'incognide' | 'project';
+type ScopeTab = 'all' | string;
 
 const TEAM_COLORS: Record<string, { badge: string; bg: string; text: string }> = {
-    npcsh: { badge: 'bg-blue-500/20 text-blue-400', bg: 'bg-blue-500/5', text: 'text-blue-400' },
-    incognide: { badge: 'bg-green-500/20 text-green-400', bg: 'bg-green-500/5', text: 'text-green-400' },
     project: { badge: 'bg-purple-500/20 text-purple-400', bg: 'bg-purple-500/5', text: 'text-purple-400' },
 };
 
 const TEAM_LABELS: Record<string, string> = {
-    npcsh: 'Global (npcsh)',
     incognide: 'Global (incognide)',
     project: 'Project',
 };
@@ -116,14 +113,12 @@ function filterJinxes(jinxes: JinxItem[], query: string): JinxItem[] {
 
 const SkillsManager: React.FC<SkillsManagerProps> = ({ currentPath, embedded = true, onOpenJinxEditor, initialJinxName }) => {
 
-    const [jinxesByTeam, setJinxesByTeam] = useState<{ npcsh: JinxItem[]; incognide: JinxItem[]; project: JinxItem[] }>({
-        npcsh: [], incognide: [], project: [],
-    });
+    const [jinxesByTeam, setJinxesByTeam] = useState<Record<string, JinxItem[]>>({});
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     const [selectedJinx, setSelectedJinx] = useState<JinxItem | null>(null);
-    const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(['project', 'incognide', 'npcsh']));
+    const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(['project']));
 
     const [searchQuery, setSearchQuery] = useState('');
     const [scopeTab, setScopeTab] = useState<ScopeTab>('all');
@@ -153,11 +148,13 @@ const SkillsManager: React.FC<SkillsManagerProps> = ({ currentPath, embedded = t
         try {
             const result = await (window as any).api.getJinxesAllTeams(currentPath);
             if (result?.error) setError(result.error);
-            setJinxesByTeam({
-                npcsh: result?.npcsh || [],
-                incognide: result?.incognide || [],
-                project: result?.project || [],
-            });
+            const byTeam: Record<string, JinxItem[]> = {};
+            for (const [key, value] of Object.entries(result || {})) {
+                if (key === 'error') continue;
+                if (Array.isArray(value)) byTeam[key] = value;
+            }
+            setJinxesByTeam(byTeam);
+            setExpandedNodes(new Set(['project', ...Object.keys(byTeam).filter(k => k !== 'project')]));
         } catch (err: any) {
             setError(err.message);
         } finally {
@@ -170,32 +167,26 @@ const SkillsManager: React.FC<SkillsManagerProps> = ({ currentPath, embedded = t
     // Auto-select jinx by name when opened from sidebar
     useEffect(() => {
         if (!initialJinxName || loading) return;
-        const all = [...jinxesByTeam.project, ...jinxesByTeam.incognide, ...jinxesByTeam.npcsh];
+        const all = [...jinxesByTeam.project, ...jinxesByTeam.incognide];
         const match = all.find(j => j.jinx_name === initialJinxName);
         if (match) setSelectedJinx(match);
     }, [initialJinxName, loading, jinxesByTeam]);
 
     const trees = useMemo(() => {
         const filtered = {
-            npcsh: filterJinxes(jinxesByTeam.npcsh, searchQuery),
             incognide: filterJinxes(jinxesByTeam.incognide, searchQuery),
             project: filterJinxes(jinxesByTeam.project, searchQuery),
         };
 
         const result: TreeNode[] = [];
-        if (scopeTab === 'all' || scopeTab === 'project') {
-            if (filtered.project.length > 0) result.push(buildTeamTree(filtered.project, 'project'));
-        }
-        if (scopeTab === 'all' || scopeTab === 'incognide') {
-            if (filtered.incognide.length > 0) result.push(buildTeamTree(filtered.incognide, 'incognide'));
-        }
-        if (scopeTab === 'all' || scopeTab === 'npcsh') {
-            if (filtered.npcsh.length > 0) result.push(buildTeamTree(filtered.npcsh, 'npcsh'));
+        for (const [team, list] of Object.entries(filtered)) {
+            if (scopeTab !== 'all' && scopeTab !== team) continue;
+            if (list.length > 0) result.push(buildTeamTree(list, team));
         }
         return result;
     }, [jinxesByTeam, searchQuery, scopeTab]);
 
-    const totalCount = jinxesByTeam.npcsh.length + jinxesByTeam.incognide.length + jinxesByTeam.project.length;
+    const totalCount = Object.values(jinxesByTeam).reduce((sum, list) => sum + list.length, 0);
 
     const toggleNode = (path: string) => {
         setExpandedNodes(prev => {
@@ -886,7 +877,7 @@ const SkillsManager: React.FC<SkillsManagerProps> = ({ currentPath, embedded = t
                         />
                     </div>
                     <div className="flex gap-0.5 rounded theme-bg-secondary p-0.5">
-                        {(['all', 'project', 'incognide', 'npcsh'] as ScopeTab[]).map(tab => (
+                        {(['all', ...Object.keys(jinxesByTeam)] as ScopeTab[]).map(tab => (
                             <button
                                 key={tab}
                                 onClick={() => setScopeTab(tab)}
@@ -896,7 +887,7 @@ const SkillsManager: React.FC<SkillsManagerProps> = ({ currentPath, embedded = t
                                         : 'theme-text-muted hover:theme-text-secondary'
                                 }`}
                             >
-                                {tab === 'all' ? 'All' : tab === 'npcsh' ? 'npcsh' : tab === 'incognide' ? 'incognide' : 'Project'}
+                                {tab === 'all' ? 'All' : tab}
                             </button>
                         ))}
                     </div>

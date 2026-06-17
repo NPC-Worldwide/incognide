@@ -63,13 +63,11 @@ function shellOptions(): { id: string; name: string }[] {
         return [
             { id: 'system', name: 'zsh (system default)' },
             { id: 'bash', name: 'bash' },
-            { id: 'npcsh', name: 'npcsh' },
         ];
     }
     return [
         { id: 'system', name: 'bash / $SHELL (system default)' },
         { id: 'zsh', name: 'zsh' },
-        { id: 'npcsh', name: 'npcsh' },
     ];
 }
 

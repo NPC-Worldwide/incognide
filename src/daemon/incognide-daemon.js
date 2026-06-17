@@ -11,6 +11,8 @@ const os = require('os');
 const { spawn } = require('child_process');
 const cron = require('node-cron');
 const sqlite3 = require('sqlite3');
+let yaml;
+try { yaml = require('js-yaml'); } catch {}
 
 const INCOGNIDE_HOME = (() => {
   const env = process.env.INCOGNIDE_HOME;
@@ -32,6 +34,23 @@ const INCOGNIDE_HOME = (() => {
 })();
 
 const DB_PATH = process.env.INCOGNIDE_DB_PATH || path.join(os.homedir(), '.incognide', 'history.db');
+
+function readTeamDefaults(workspacePath) {
+  if (!workspacePath || !yaml) return {};
+  try {
+    const ctxPath = path.join(workspacePath, '.ctx');
+    if (!fs.existsSync(ctxPath)) return {};
+    const raw = fs.readFileSync(ctxPath, 'utf8');
+    const data = yaml.load(raw) || {};
+    return {
+      model: data.default_model || null,
+      provider: data.default_provider || null,
+    };
+  } catch {
+    return {};
+  }
+}
+
 const JOBS_LOG_DIR = path.join(INCOGNIDE_HOME, 'jobs');
 const FINETUNE_JOBS_DIR = path.join(INCOGNIDE_HOME, 'finetune_jobs');
 const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -189,6 +208,18 @@ async function executeJob(row) {
       outputSummary = result.outputSummary;
     } else if (row.job_type === 'inference') {
       const result = await runInferenceJob(row, logFilePath);
+      status = result.status;
+      outputSummary = result.outputSummary;
+    } else if (row.job_type === 'activity_intelligence') {
+      const result = await runActivityIntelligenceJob(row, logFilePath);
+      status = result.status;
+      outputSummary = result.outputSummary;
+    } else if (row.job_type === 'autocomplete') {
+      const result = await runAutocompleteJob(row, logFilePath);
+      status = result.status;
+      outputSummary = result.outputSummary;
+    } else if (row.job_type === 'knowledge_graph') {
+      const result = await runKnowledgeGraphJob(row, logFilePath);
       status = result.status;
       outputSummary = result.outputSummary;
     } else {
@@ -371,6 +402,171 @@ async function runInferenceJob(row, logFilePath) {
   });
 }
 
+async function runActivityIntelligenceJob(row, logFilePath) {
+  const payload = JSON.parse(row.payload || '{}');
+  const modelDir = path.join(INCOGNIDE_HOME, 'activity_model');
+  const scriptPath = path.resolve(__dirname, '..', 'activity_model', 'activity_predictor.py');
+
+  if (!fs.existsSync(scriptPath)) {
+    return { status: 'error', outputSummary: 'activity_predictor.py not found' };
+  }
+
+  const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
+  const mode = payload.mode || 'incremental';
+  const dbPath = payload.dbPath || DB_PATH;
+  const baseRepoId = payload.baseRepoId || null;
+
+  const args = [
+    scriptPath,
+    '--db-path', dbPath,
+    '--model-dir', modelDir,
+  ];
+  if (baseRepoId) {
+    args.push('--base-repo-id', baseRepoId);
+  }
+  if (mode === 'incremental') {
+    args.push('incremental');
+  } else {
+    args.push('--epochs', String(payload.epochs || 50), '--lr', String(payload.lr || 0.001), 'train');
+  }
+
+  return new Promise((resolve) => {
+    const proc = spawn(pythonPath, args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', d => { stdout += d; });
+    proc.stderr.on('data', d => { stderr += d; });
+    proc.on('close', (code) => {
+      const out = stdout + (stderr ? '\n[STDERR]\n' + stderr : '');
+      try { fs.writeFileSync(logFilePath, out); } catch {}
+      resolve({
+        status: code === 0 ? 'success' : 'failed',
+        outputSummary: out.slice(0, 2000),
+      });
+    });
+    proc.on('error', (err) => {
+      const msg = String(err.message || err);
+      try { fs.writeFileSync(logFilePath, msg); } catch {}
+      resolve({ status: 'error', outputSummary: msg });
+    });
+  });
+}
+
+async function runAutocompleteJob(row, logFilePath) {
+  const payload = JSON.parse(row.payload || '{}');
+  const modelDir = path.join(INCOGNIDE_HOME, 'autocomplete_model');
+  const scriptPath = path.resolve(__dirname, '..', 'autocomplete_model', 'autocomplete_predictor.py');
+
+  if (!fs.existsSync(scriptPath)) {
+    return { status: 'error', outputSummary: 'autocomplete_predictor.py not found' };
+  }
+
+  const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
+  const mode = payload.mode || 'incremental';
+  const dbPath = payload.dbPath || DB_PATH;
+  const baseRepoId = payload.baseRepoId || null;
+
+  const args = [
+    scriptPath,
+    '--db-path', dbPath,
+    '--model-dir', modelDir,
+  ];
+  if (baseRepoId) {
+    args.push('--base-repo-id', baseRepoId);
+  }
+  if (mode === 'incremental') {
+    args.push('incremental');
+  } else {
+    args.push('--epochs', String(payload.epochs || 50), '--lr', String(payload.lr || 0.001), 'train');
+  }
+
+  return new Promise((resolve) => {
+    const proc = spawn(pythonPath, args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', d => { stdout += d; });
+    proc.stderr.on('data', d => { stderr += d; });
+    proc.on('close', (code) => {
+      const out = stdout + (stderr ? '\n[STDERR]\n' + stderr : '');
+      try { fs.writeFileSync(logFilePath, out); } catch {}
+      resolve({
+        status: code === 0 ? 'success' : 'failed',
+        outputSummary: out.slice(0, 2000),
+      });
+    });
+    proc.on('error', (err) => {
+      const msg = String(err.message || err);
+      try { fs.writeFileSync(logFilePath, msg); } catch {}
+      resolve({ status: 'error', outputSummary: msg });
+    });
+  });
+}
+
+async function runKnowledgeGraphJob(row, logFilePath) {
+  const payload = JSON.parse(row.payload || '{}');
+  const scriptPath = path.resolve(__dirname, '..', 'knowledge_graph', 'kg_evolver.py');
+
+  if (!fs.existsSync(scriptPath)) {
+    return { status: 'error', outputSummary: 'kg_evolver.py not found' };
+  }
+
+  const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
+  const args = [scriptPath];
+
+  const hasStores = Array.isArray(payload.store_selections) && payload.store_selections.length > 0;
+  const hasWorkspace = row.workspace_path || payload.workspace;
+
+  if (hasStores || hasWorkspace) {
+    if (hasStores) {
+      args.push('--stores', JSON.stringify(payload.store_selections));
+    }
+    if (hasWorkspace) {
+      args.push('--workspace', row.workspace_path || payload.workspace);
+    }
+    if (payload.include_memories !== false) args.push('--include-memories');
+    if (payload.include_knowledge !== false) args.push('--include-knowledge');
+    if (payload.full_rebuild) args.push('--full-rebuild');
+    const teamDefaults = readTeamDefaults(row.workspace_path || payload.workspace);
+    const model = payload.model || teamDefaults.model;
+    const provider = payload.provider || teamDefaults.provider;
+    if (model) args.push('--model', model);
+    if (provider) args.push('--provider', provider);
+  } else {
+    // Legacy SQLite fallback
+    const dbPath = payload.dbPath || DB_PATH;
+    args.push('--db-path', dbPath);
+    if (payload.full) args.push('--full');
+  }
+  args.push('evolve');
+
+  return new Promise((resolve) => {
+    const proc = spawn(pythonPath, args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', d => { stdout += d; });
+    proc.stderr.on('data', d => { stderr += d; });
+    proc.on('close', (code) => {
+      const out = stdout + (stderr ? '\n[STDERR]\n' + stderr : '');
+      try { fs.writeFileSync(logFilePath, out); } catch {}
+      resolve({
+        status: code === 0 ? 'success' : 'failed',
+        outputSummary: out.slice(0, 2000),
+      });
+    });
+    proc.on('error', (err) => {
+      const msg = String(err.message || err);
+      try { fs.writeFileSync(logFilePath, msg); } catch {}
+      resolve({ status: 'error', outputSummary: msg });
+    });
+  });
+}
+
 function startHttpServer() {
   server = http.createServer(async (req, res) => {
     const setJson = () => {
@@ -447,6 +643,324 @@ function startHttpServer() {
           await loadJobs();
           res.writeHead(200);
           res.end(JSON.stringify({ status: 'updated', jobId, enabled: paused ? 0 : 1 }));
+        } catch (err) {
+          res.writeHead(500);
+          res.end(JSON.stringify({ status: 'error', message: err.message }));
+        }
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/activity_intelligence/predict') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', async () => {
+        setJson();
+        try {
+          const { dbPath, modelDir } = JSON.parse(body || '{}');
+          const _modelDir = modelDir || path.join(INCOGNIDE_HOME, 'activity_model');
+          const _dbPath = dbPath || DB_PATH;
+          const scriptPath = path.resolve(__dirname, '..', 'activity_model', 'activity_predictor.py');
+          if (!fs.existsSync(scriptPath)) {
+            res.writeHead(500);
+            res.end(JSON.stringify({ status: 'error', message: 'activity_predictor.py not found' }));
+            return;
+          }
+          const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
+          const proc = spawn(pythonPath, [
+            scriptPath,
+            '--db-path', _dbPath,
+            '--model-dir', _modelDir,
+            'predict',
+          ], { stdio: ['pipe', 'pipe', 'pipe'] });
+          let stdout = '';
+          let stderr = '';
+          proc.stdout.on('data', d => { stdout += d; });
+          proc.stderr.on('data', d => { stderr += d; });
+          proc.on('close', (code) => {
+            if (code !== 0) {
+              res.writeHead(500);
+              res.end(JSON.stringify({ status: 'error', message: stderr || 'Prediction failed' }));
+              return;
+            }
+            try {
+              const lines = stdout.trim().split('\n');
+              const lastLine = lines.pop() || '{}';
+              const result = JSON.parse(lastLine);
+              res.writeHead(200);
+              res.end(JSON.stringify({ status: 'ok', ...result }));
+            } catch {
+              res.writeHead(500);
+              res.end(JSON.stringify({ status: 'error', message: 'Failed to parse prediction output' }));
+            }
+          });
+          proc.on('error', (err) => {
+            res.writeHead(500);
+            res.end(JSON.stringify({ status: 'error', message: err.message }));
+          });
+        } catch (err) {
+          res.writeHead(500);
+          res.end(JSON.stringify({ status: 'error', message: err.message }));
+        }
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/autocomplete/predict') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', async () => {
+        setJson();
+        try {
+          const { context, maxLength } = JSON.parse(body || '{}');
+          const _context = String(context || '');
+          const _maxLength = Math.min(parseInt(maxLength || 20, 10), 100);
+          const modelDir = path.join(INCOGNIDE_HOME, 'autocomplete_model');
+          const scriptPath = path.resolve(__dirname, '..', 'autocomplete_model', 'autocomplete_predictor.py');
+          if (!fs.existsSync(scriptPath)) {
+            res.writeHead(500);
+            res.end(JSON.stringify({ status: 'error', message: 'autocomplete_predictor.py not found' }));
+            return;
+          }
+          const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
+          const proc = spawn(pythonPath, [
+            scriptPath,
+            '--model-dir', modelDir,
+            '--context', _context,
+            '--max-length', String(_maxLength),
+            '--top-k', '1',
+            'predict',
+          ], { stdio: ['pipe', 'pipe', 'pipe'] });
+          let stdout = '';
+          let stderr = '';
+          proc.stdout.on('data', d => { stdout += d; });
+          proc.stderr.on('data', d => { stderr += d; });
+          proc.on('close', (code) => {
+            if (code !== 0) {
+              res.writeHead(500);
+              res.end(JSON.stringify({ status: 'error', message: stderr || 'Prediction failed' }));
+              return;
+            }
+            try {
+              const lines = stdout.trim().split('\n');
+              const lastLine = lines.pop() || '{}';
+              const result = JSON.parse(lastLine);
+              res.writeHead(200);
+              res.end(JSON.stringify({ status: 'ok', ...result }));
+            } catch {
+              res.writeHead(500);
+              res.end(JSON.stringify({ status: 'error', message: 'Failed to parse prediction output' }));
+            }
+          });
+          proc.on('error', (err) => {
+            res.writeHead(500);
+            res.end(JSON.stringify({ status: 'error', message: err.message }));
+          });
+        } catch (err) {
+          res.writeHead(500);
+          res.end(JSON.stringify({ status: 'error', message: err.message }));
+        }
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/knowledge_graph/query') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', async () => {
+        setJson();
+        try {
+          const { name, type, limit } = JSON.parse(body || '{}');
+          const scriptPath = path.resolve(__dirname, '..', 'knowledge_graph', 'kg_evolver.py');
+          if (!fs.existsSync(scriptPath)) {
+            res.writeHead(500);
+            res.end(JSON.stringify({ status: 'error', message: 'kg_evolver.py not found' }));
+            return;
+          }
+          const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
+          const args = [scriptPath, '--db-path', DB_PATH, 'query', '--name', String(name || '')];
+          if (type) args.push('--type', String(type));
+          const proc = spawn(pythonPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+          let stdout = '';
+          let stderr = '';
+          proc.stdout.on('data', d => { stdout += d; });
+          proc.stderr.on('data', d => { stderr += d; });
+          proc.on('close', (code) => {
+            if (code !== 0) {
+              res.writeHead(500);
+              res.end(JSON.stringify({ status: 'error', message: stderr || 'Query failed' }));
+              return;
+            }
+            try {
+              const lines = stdout.trim().split('\n');
+              const lastLine = lines.pop() || '{}';
+              const result = JSON.parse(lastLine);
+              res.writeHead(200);
+              res.end(JSON.stringify({ status: 'ok', result }));
+            } catch {
+              res.writeHead(500);
+              res.end(JSON.stringify({ status: 'error', message: 'Failed to parse query output' }));
+            }
+          });
+          proc.on('error', (err) => {
+            res.writeHead(500);
+            res.end(JSON.stringify({ status: 'error', message: err.message }));
+          });
+        } catch (err) {
+          res.writeHead(500);
+          res.end(JSON.stringify({ status: 'error', message: err.message }));
+        }
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/knowledge_graph/search') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', async () => {
+        setJson();
+        try {
+          const { keyword, head, relation, tail, limit } = JSON.parse(body || '{}');
+          const scriptPath = path.resolve(__dirname, '..', 'knowledge_graph', 'kg_evolver.py');
+          if (!fs.existsSync(scriptPath)) {
+            res.writeHead(500);
+            res.end(JSON.stringify({ status: 'error', message: 'kg_evolver.py not found' }));
+            return;
+          }
+          const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
+          const args = [scriptPath, '--db-path', DB_PATH, 'search'];
+          if (keyword) args.push('--keyword', String(keyword));
+          if (head) args.push('--head', String(head));
+          if (relation) args.push('--relation', String(relation));
+          if (tail) args.push('--tail', String(tail));
+          if (limit) args.push('--limit', String(limit));
+          const proc = spawn(pythonPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+          let stdout = '';
+          let stderr = '';
+          proc.stdout.on('data', d => { stdout += d; });
+          proc.stderr.on('data', d => { stderr += d; });
+          proc.on('close', (code) => {
+            if (code !== 0) {
+              res.writeHead(500);
+              res.end(JSON.stringify({ status: 'error', message: stderr || 'Search failed' }));
+              return;
+            }
+            try {
+              const lines = stdout.trim().split('\n');
+              const lastLine = lines.pop() || '{}';
+              const result = JSON.parse(lastLine);
+              res.writeHead(200);
+              res.end(JSON.stringify({ status: 'ok', result }));
+            } catch {
+              res.writeHead(500);
+              res.end(JSON.stringify({ status: 'error', message: 'Failed to parse search output' }));
+            }
+          });
+          proc.on('error', (err) => {
+            res.writeHead(500);
+            res.end(JSON.stringify({ status: 'error', message: err.message }));
+          });
+        } catch (err) {
+          res.writeHead(500);
+          res.end(JSON.stringify({ status: 'error', message: err.message }));
+        }
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/knowledge_graph/graph') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', async () => {
+        setJson();
+        try {
+          const { name, maxDepth, limit } = JSON.parse(body || '{}');
+          const scriptPath = path.resolve(__dirname, '..', 'knowledge_graph', 'kg_evolver.py');
+          if (!fs.existsSync(scriptPath)) {
+            res.writeHead(500);
+            res.end(JSON.stringify({ status: 'error', message: 'kg_evolver.py not found' }));
+            return;
+          }
+          const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
+          const args = [scriptPath, '--db-path', DB_PATH, 'graph', '--name', String(name || '')];
+          if (maxDepth) args.push('--max-depth', String(maxDepth));
+          if (limit) args.push('--limit', String(limit));
+          const proc = spawn(pythonPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+          let stdout = '';
+          let stderr = '';
+          proc.stdout.on('data', d => { stdout += d; });
+          proc.stderr.on('data', d => { stderr += d; });
+          proc.on('close', (code) => {
+            if (code !== 0) {
+              res.writeHead(500);
+              res.end(JSON.stringify({ status: 'error', message: stderr || 'Graph query failed' }));
+              return;
+            }
+            try {
+              const lines = stdout.trim().split('\n');
+              const lastLine = lines.pop() || '{}';
+              const result = JSON.parse(lastLine);
+              res.writeHead(200);
+              res.end(JSON.stringify({ status: 'ok', result }));
+            } catch {
+              res.writeHead(500);
+              res.end(JSON.stringify({ status: 'error', message: 'Failed to parse graph output' }));
+            }
+          });
+          proc.on('error', (err) => {
+            res.writeHead(500);
+            res.end(JSON.stringify({ status: 'error', message: err.message }));
+          });
+        } catch (err) {
+          res.writeHead(500);
+          res.end(JSON.stringify({ status: 'error', message: err.message }));
+        }
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/knowledge_graph/hybrid') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', async () => {
+        setJson();
+        try {
+          const { keyword, limit } = JSON.parse(body || '{}');
+          const scriptPath = path.resolve(__dirname, '..', 'knowledge_graph', 'kg_evolver.py');
+          if (!fs.existsSync(scriptPath)) {
+            res.writeHead(500);
+            res.end(JSON.stringify({ status: 'error', message: 'kg_evolver.py not found' }));
+            return;
+          }
+          const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
+          const args = [scriptPath, '--db-path', DB_PATH, 'hybrid', '--keyword', String(keyword || '')];
+          if (limit) args.push('--limit', String(limit));
+          const proc = spawn(pythonPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+          let stdout = '';
+          let stderr = '';
+          proc.stdout.on('data', d => { stdout += d; });
+          proc.stderr.on('data', d => { stderr += d; });
+          proc.on('close', (code) => {
+            if (code !== 0) {
+              res.writeHead(500);
+              res.end(JSON.stringify({ status: 'error', message: stderr || 'Hybrid search failed' }));
+              return;
+            }
+            try {
+              const lines = stdout.trim().split('\n');
+              const lastLine = lines.pop() || '{}';
+              const result = JSON.parse(lastLine);
+              res.writeHead(200);
+              res.end(JSON.stringify({ status: 'ok', result }));
+            } catch {
+              res.writeHead(500);
+              res.end(JSON.stringify({ status: 'error', message: 'Failed to parse hybrid output' }));
+            }
+          });
+          proc.on('error', (err) => {
+            res.writeHead(500);
+            res.end(JSON.stringify({ status: 'error', message: err.message }));
+          });
         } catch (err) {
           res.writeHead(500);
           res.end(JSON.stringify({ status: 'error', message: err.message }));

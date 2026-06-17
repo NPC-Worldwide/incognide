@@ -5,6 +5,7 @@ const os = require('os');
 const crypto = require('crypto');
 const fetch = require('node-fetch');
 const yaml = require('js-yaml');
+const nunjucks = require('nunjucks');
 
 function hashFile(filePath) {
   try {
@@ -54,26 +55,22 @@ function register(ctx) {
             const localHash = hashFile(dest);
             const lastDeployedHash = manifest[relPath];
 
-            if (localHash === srcHash) {
-
+            if (relPath.endsWith('.npc')) {
+              skippedFiles.push(relPath);
+              newManifest[relPath] = localHash;
+            } else if (localHash === srcHash) {
               newManifest[relPath] = srcHash;
             } else if (lastDeployedHash && localHash !== lastDeployedHash) {
-
               skippedFiles.push(relPath);
               newManifest[relPath] = lastDeployedHash;
+            } else if (!lastDeployedHash && localHash !== srcHash) {
+              skippedFiles.push(relPath);
             } else {
-
-              if (!lastDeployedHash && localHash !== srcHash) {
-
-                skippedFiles.push(relPath);
-              } else {
-                await fsPromises.copyFile(src, dest);
-                await fsPromises.chmod(dest, 0o644);
-                newManifest[relPath] = srcHash;
-              }
+              await fsPromises.copyFile(src, dest);
+              await fsPromises.chmod(dest, 0o644);
+              newManifest[relPath] = srcHash;
             }
           } else {
-
             await fsPromises.copyFile(src, dest);
             await fsPromises.chmod(dest, 0o644);
             newManifest[relPath] = srcHash;
@@ -85,7 +82,6 @@ function register(ctx) {
       if (fs.existsSync(npcTeamSrc)) {
         await smartCopyRecursive(npcTeamSrc, destBase);
 
-        // Remove deployed files that no longer exist in bundled source
         const collectSourceFiles = async (dir, relBase = '') => {
           const result = new Set();
           if (!fs.existsSync(dir)) return result;
@@ -114,11 +110,9 @@ function register(ctx) {
             const stat = await fsPromises.stat(full);
             if (stat.isDirectory()) {
               await cleanRemovedFiles(full, rel);
-              // Remove empty dirs
               const remaining = await fsPromises.readdir(full);
               if (remaining.length === 0) await fsPromises.rmdir(full);
             } else if (!sourceFiles.has(rel)) {
-              // File exists in dest but not in source — only remove if it was deployed by us
               const lastDeployedHash = manifest[rel];
               const localHash = hashFile(full);
               if (lastDeployedHash && localHash === lastDeployedHash) {
@@ -133,9 +127,6 @@ function register(ctx) {
 
         log(`[NPC] Smart-deployed incognide npc_team to ${destBase}`);
       }
-
-      // MCP servers are now handled via `python -m npcpy.mcp_server --team <path>`
-      // No need to deploy *_mcp_server.py scripts anymore
 
       await fsPromises.writeFile(manifestPath, JSON.stringify(newManifest, null, 2));
 
@@ -260,97 +251,154 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('get-jinxes-global', async (event, globalPath) => {
-    try {
-        if (globalPath === 'npcsh') {
-            const response = await fetch(`${BACKEND_URL}/api/jinxes/global`);
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            const data = await response.json();
-            return { jinxes: (data.jinxes || []).map(j => ({ ...j, source: 'npcsh' })) };
+  async function readJinxesFromDir(dirPath, source) {
+    const jinxes = [];
+    async function scan(dir, prefix) {
+      try {
+        const entries = await fsPromises.readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
+          const relPath = prefix ? `${prefix}/${entry.name}` : entry.name;
+          if (entry.isDirectory()) {
+            await scan(fullPath, relPath);
+          } else if (entry.name.endsWith('.jinx')) {
+            try {
+              const content = await fsPromises.readFile(fullPath, 'utf8');
+              const parsed = yaml.load(content);
+              if (parsed && parsed.jinx_name) {
+                jinxes.push({
+                  name: parsed.jinx_name,
+                  description: parsed.description || '',
+                  path: relPath.replace(/\.jinx$/, '').replace(/\\/g, '/'),
+                  source_path: fullPath,
+                  source,
+                });
+              }
+            } catch {}
+          }
         }
+      } catch {}
+    }
+    try {
+      const jinxDir = path.join(dirPath, 'jinxes');
+      await scan(jinxDir, '');
+    } catch {}
+    return jinxes;
+  }
 
-        const teamPath = globalPath || INCOGNIDE_TEAM_PATH;
-        const response = await fetch(`${BACKEND_URL}/api/jinxes/project?currentPath=${encodeURIComponent(teamPath)}`);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const data = await response.json();
-        return { jinxes: (data.jinxes || []).map(j => ({ ...j, source: globalPath ? 'custom' : 'incognide' })) };
+  ipcMain.handle('get-jinxes-team', async (event, teamKey) => {
+    try {
+      if (!teamKey || typeof teamKey !== 'string') {
+        return { jinxes: [], error: 'No team key provided' };
+      }
+      const teamsPath = path.join(INCOGNIDE_HOME, 'teams.yaml');
+      const content = await fsPromises.readFile(teamsPath, 'utf8');
+      const parsed = yaml.load(content);
+      const teams = parsed?.teams || {};
+      const teamPath = teams[teamKey];
+      if (!teamPath) {
+        return { jinxes: [], error: `Team ${teamKey} not registered` };
+      }
+      const resolvedPath = String(teamPath).replace(/^~(?=\/|$)/, os.homedir());
+      const jinxes = await readJinxesFromDir(resolvedPath, teamKey);
+      return { jinxes, error: null };
     } catch (err) {
-        console.error('Error loading global jinxes:', err);
-        return { jinxes: [], error: err.message };
+      console.error('Error loading team jinxes:', err);
+      return { jinxes: [], error: err.message };
     }
   });
 
   ipcMain.handle('get-jinxes-project', async (event, currentPath) => {
     try {
-        const url = `${BACKEND_URL}/api/jinxes/project?currentPath=${encodeURIComponent(currentPath)}`;
-        console.log('Fetching project jinxes from URL:', url);
-
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const data = await response.json();
-        console.log('Project jinxes data:', data);
-        return data;
+      const jinxes = await readJinxesFromDir(currentPath, 'project');
+      return { jinxes, error: null };
     } catch (err) {
-        console.error('Error loading project jinxes:', err);
-        return { jinxes: [], error: err.message };
+      console.error('Error loading project jinxes:', err);
+      return { jinxes: [], error: err.message };
     }
   });
 
   ipcMain.handle('save-jinx', async (event, data) => {
     try {
-        if (data.globalPath !== 'npcsh' && !data.currentPath) {
-            data.currentPath = data.globalPath || INCOGNIDE_TEAM_PATH;
-        }
-        delete data.globalPath;
-        const response = await fetch(`${BACKEND_URL}/api/jinxes/save`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(data)
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        return await response.json();
+      const jinx = data.jinx || {};
+      let baseDir = data.currentPath || INCOGNIDE_TEAM_PATH;
+      if (data.globalPath) {
+        try {
+          const teamsPath = path.join(INCOGNIDE_HOME, 'teams.yaml');
+          const content = await fsPromises.readFile(teamsPath, 'utf8');
+          const parsed = yaml.load(content);
+          const teams = parsed?.teams || {};
+          if (teams[data.globalPath]) {
+            baseDir = String(teams[data.globalPath]).replace(/^~(?=\/|$)/, os.homedir());
+          }
+        } catch {}
+      }
+      const jinxDir = path.join(baseDir, 'jinxes');
+      await fsPromises.mkdir(jinxDir, { recursive: true });
+      const jinxPath = jinx.path || jinx.name || 'untitled';
+      const fileName = jinxPath.endsWith('.jinx') ? jinxPath : `${jinxPath}.jinx`;
+      const filePath = path.join(jinxDir, fileName);
+      if (fileName.includes('..') || fileName.includes('/')) {
+        const subDir = path.dirname(filePath);
+        await fsPromises.mkdir(subDir, { recursive: true });
+      }
+      const cleanJinx = {
+        jinx_name: jinx.jinx_name || jinx.name || path.basename(jinxPath, '.jinx'),
+        description: jinx.description || '',
+        inputs: jinx.inputs || [],
+        steps: jinx.steps || [],
+      };
+      const yamlContent = yaml.dump(cleanJinx, { lineWidth: -1 });
+      await fsPromises.writeFile(filePath, yamlContent, 'utf8');
+      return { success: true, path: filePath };
     } catch (err) {
-        console.error('Error saving jinx:', err);
-        return { error: err.message };
+      console.error('Error saving jinx:', err);
+      return { error: err.message };
     }
   });
 
   ipcMain.handle('ingest-jinx', async (event, data) => {
     try {
-        const response = await fetch(`${BACKEND_URL}/api/jinxes/ingest`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        });
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return await response.json();
+      const url = data.url;
+      if (!url) return { error: 'URL is required' };
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      let baseDir = data.currentPath || INCOGNIDE_TEAM_PATH;
+      if (data.scope === 'team' && data.globalPath) {
+        try {
+          const teamsPath = path.join(INCOGNIDE_HOME, 'teams.yaml');
+          const content = await fsPromises.readFile(teamsPath, 'utf8');
+          const parsed = yaml.load(content);
+          const teams = parsed?.teams || {};
+          if (teams[data.globalPath]) {
+            baseDir = String(teams[data.globalPath]).replace(/^~(?=\/|$)/, os.homedir());
+          }
+        } catch {}
+      }
+      const jinxDir = path.join(baseDir, 'jinxes');
+      await fsPromises.mkdir(jinxDir, { recursive: true });
+      let fileName = 'imported.jinx';
+      try {
+        const parsedUrl = new URL(url);
+        const base = path.basename(parsedUrl.pathname) || 'imported';
+        fileName = base.endsWith('.jinx') ? base : `${base}.jinx`;
+      } catch {}
+      const filePath = path.join(jinxDir, fileName);
+      await fsPromises.writeFile(filePath, text, 'utf8');
+      return { success: true, path: filePath };
     } catch (err) {
-        console.error('Error ingesting jinx:', err);
-        return { error: err.message };
+      console.error('Error ingesting jinx:', err);
+      return { error: err.message };
     }
   });
 
   ipcMain.handle('delete-jinx', async (event, data) => {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/jinxes/delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
-      const json = await response.json();
-      if (!response.ok) throw new Error(json.error || `HTTP ${response.status}`);
-      return json;
+      const filePath = data.sourcePath;
+      if (!filePath) return { error: 'sourcePath is required' };
+      await fsPromises.unlink(filePath);
+      return { success: true };
     } catch (err) {
       console.error('Error deleting jinx:', err);
       return { error: err.message };
@@ -375,49 +423,26 @@ function register(ctx) {
 
   ipcMain.handle('get-jinxes-all-teams', async (event, currentPath) => {
     try {
-      // Read teams.yaml to fetch jinxes from all of them
       let registeredTeams = {};
       try {
-        const teamsYaml = require('js-yaml');
         const teamsPath = path.join(INCOGNIDE_HOME, 'teams.yaml');
         const content = await fsPromises.readFile(teamsPath, 'utf8');
-        const parsed = teamsYaml.load(content);
+        const parsed = yaml.load(content);
         registeredTeams = parsed?.teams || {};
       } catch {}
 
-      const fetchPromises = [];
+      const response = {};
 
-      // Always include project jinxes
       if (currentPath) {
-        fetchPromises.push(
-          fetch(`${BACKEND_URL}/api/jinxes/project?currentPath=${encodeURIComponent(currentPath)}`)
-            .then(r => r.ok ? r.json() : { jinxes: [] })
-            .then(data => ({ key: 'project', data }))
-            .catch(() => ({ key: 'project', data: { jinxes: [] } }))
-        );
+        const projectJinxes = await readJinxesFromDir(currentPath, 'project');
+        response.project = projectJinxes.map(j => ({ ...j, team: 'project', scope: 'project' }));
       }
 
-      // Fetch jinxes from each registered team
       for (const [teamKey, teamPathRaw] of Object.entries(registeredTeams)) {
         const teamPath = String(teamPathRaw || '').replace(/^~(?=\/|$)/, os.homedir());
         if (!teamPath) continue;
-        fetchPromises.push(
-          fetch(`${BACKEND_URL}/api/jinxes/project?currentPath=${encodeURIComponent(teamPath)}`)
-            .then(r => r.ok ? r.json() : { jinxes: [] })
-            .then(data => ({ key: teamKey, data }))
-            .catch(() => ({ key: teamKey, data: { jinxes: [] } }))
-        );
-      }
-
-      const results = await Promise.all(fetchPromises);
-      const response = {};
-      for (const result of results) {
-        const jinxes = (result.data?.jinxes || []).map(j => ({
-          ...j,
-          team: result.key,
-          scope: result.key === 'project' ? 'project' : 'global',
-        }));
-        response[result.key] = jinxes;
+        const teamJinxes = await readJinxesFromDir(teamPath, teamKey);
+        response[teamKey] = teamJinxes.map(j => ({ ...j, team: teamKey, scope: 'team' }));
       }
 
       return { ...response, error: null };
@@ -427,21 +452,118 @@ function register(ctx) {
     }
   });
 
+  function renderJinjaContent(content) {
+    const env = new nunjucks.Environment();
+    env.addGlobal('Jinx', (name) => name);
+    try {
+      return env.renderString(content, {});
+    } catch (e) {
+      return content;
+    }
+  }
+
+  function updateFieldInYaml(content, field, newValue) {
+    const lines = content.split('\n');
+    const result = [];
+    let inTargetBlock = false;
+    let targetIndent = null;
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      const match = line.match(/^(\s*)(\w+):\s*(.*)$/);
+      if (match && match[2] === field) {
+        inTargetBlock = true;
+        targetIndent = match[1].length;
+        result.push(`${match[1]}${field}:`);
+        if (Array.isArray(newValue)) {
+          for (const item of newValue) {
+            result.push(`${match[1]}  - ${item}`);
+          }
+        } else if (typeof newValue === 'string' && newValue.includes('\n')) {
+          result.push(`${match[1]}  |2`);
+          for (const sub of newValue.split('\n')) {
+            result.push(`${match[1]}  ${sub}`);
+          }
+        } else {
+          result[result.length - 1] = `${match[1]}${field}: ${newValue}`;
+        }
+        i++;
+        while (i < lines.length) {
+          const next = lines[i];
+          if (next.trim() === '') { i++; continue; }
+          const indent = next.length - next.trimStart().length;
+          if (indent <= targetIndent) break;
+          i++;
+        }
+        inTargetBlock = false;
+        continue;
+      }
+      result.push(line);
+      i++;
+    }
+    return result.join('\n');
+  }
+
   ipcMain.handle('save-npc', async (event, data) => {
     try {
-
-        if (data.globalPath !== 'npcsh' && !data.currentPath) {
-            data.currentPath = data.globalPath || INCOGNIDE_TEAM_PATH;
+        const npc = data.npc;
+        if (!npc || !npc.name) {
+            return { error: 'Invalid NPC data' };
         }
-        delete data.globalPath;
-        const response = await fetch(`${BACKEND_URL}/api/save_npc`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(data),
-        });
-        return response.json();
+        const sourcePath = npc.source_path;
+        if (!sourcePath) {
+            return { error: 'source_path required' };
+        }
+
+        let originalContent = '';
+        try {
+          originalContent = await fsPromises.readFile(sourcePath, 'utf8');
+        } catch {
+          // File doesn't exist, fall through to full write
+        }
+
+        if (!originalContent) {
+          const cleanNpc = { ...npc };
+          delete cleanNpc.source;
+          delete cleanNpc.source_path;
+          delete cleanNpc.source_ext;
+          delete cleanNpc.team;
+          if (Array.isArray(cleanNpc.jinxes)) {
+            cleanNpc.jinxes = cleanNpc.jinxes.map(j => {
+              if (typeof j === 'string' && /^[a-zA-Z0-9_]+$/.test(j)) {
+                return `{{ Jinx('${j}') }}`;
+              }
+              return j;
+            });
+          }
+          const yamlContent = yaml.dump(cleanNpc, { lineWidth: -1 });
+          await fsPromises.writeFile(sourcePath, yamlContent, 'utf8');
+          return { message: 'NPC saved successfully', error: null };
+        }
+
+        let content = originalContent;
+        const rendered = renderJinjaContent(originalContent);
+        const current = yaml.load(rendered) || {};
+
+        const fieldsToUpdate = ['name', 'model', 'provider', 'api_url', 'api_key', 'primary_directive'];
+        for (const field of fieldsToUpdate) {
+          if (field in npc && npc[field] !== current[field]) {
+            content = updateFieldInYaml(content, field, npc[field]);
+          }
+        }
+
+        if ('jinxes' in npc && Array.isArray(npc.jinxes)) {
+          const jinxValues = npc.jinxes.map(j => {
+            if (typeof j === 'string' && /^[a-zA-Z0-9_]+$/.test(j)) {
+              return `{{ Jinx('${j}') }}`;
+            }
+            return String(j);
+          });
+          content = updateFieldInYaml(content, 'jinxes', jinxValues);
+        }
+
+        await fsPromises.writeFile(sourcePath, content, 'utf8');
+        return { message: 'NPC saved successfully', error: null };
     } catch (error) {
         return { error: error.message };
     }
@@ -452,13 +574,11 @@ function register(ctx) {
     return jinxes.map(j => {
       if (typeof j === 'string') return j;
       if (typeof j === 'object' && j !== null) {
-        // Handle template objects like { "Jinx('open_pane')": null }
         const keys = Object.keys(j);
         for (const k of keys) {
           const match = k.match(/Jinx\(['"]([^'"]+)['"]\)/);
           if (match) return match[1];
         }
-        // Fallback: use the key itself if it looks like a name
         if (keys.length === 1 && typeof keys[0] === 'string' && keys[0].length < 100) return keys[0];
         if (j.name) return j.name;
       }
@@ -474,7 +594,8 @@ function register(ctx) {
         if (!entry.endsWith('.npc')) continue;
         try {
           const content = await fsPromises.readFile(path.join(teamDir, entry), 'utf8');
-          const parsed = yaml.load(content);
+          const rendered = renderJinjaContent(content);
+          const parsed = yaml.load(rendered);
           if (parsed && parsed.name) {
             npcs.push({
               ...parsed,
@@ -483,10 +604,10 @@ function register(ctx) {
               source_path: path.join(teamDir, entry),
               source_ext: '.npc',
               team: source,
+              _original_content: content,
             });
           }
         } catch (e) {
-          // skip unreadable .npc files
         }
       }
       return npcs;
@@ -495,29 +616,41 @@ function register(ctx) {
     }
   };
 
-  ipcMain.handle('getNPCTeamGlobal', async (event, globalPath) => {
+  async function readTeamConfig(teamDir) {
     try {
-      // Resolve team key to path from teams.yaml
-      if (globalPath) {
-        try {
-          const teamsPath = path.join(INCOGNIDE_HOME, 'teams.yaml');
-          const content = await fsPromises.readFile(teamsPath, 'utf8');
-          const parsed = yaml.load(content);
-          const teams = parsed?.teams || {};
-          if (teams[globalPath]) {
-            const resolved = String(teams[globalPath]).replace(/^~(?=\/|$)/, os.homedir());
-            const npcs = await readNPCTeamFromDir(resolved, globalPath);
-            return { npcs };
-          }
-        } catch {}
+      const files = await fsPromises.readdir(teamDir);
+      const ctxFile = files.find(f => f.endsWith('.ctx'));
+      if (!ctxFile) return null;
+      const content = await fsPromises.readFile(path.join(teamDir, ctxFile), 'utf8');
+      return yaml.load(content) || null;
+    } catch {
+      return null;
+    }
+  }
+
+  ipcMain.handle('get-npc-team-from-path', async (event, teamKey) => {
+    try {
+      if (!teamKey || typeof teamKey !== 'string') {
+        return { npcs: [], teamConfig: null };
       }
-      // Fallback: no YAML or key not found
-      const teamDir = INCOGNIDE_TEAM_PATH;
-      const npcs = await readNPCTeamFromDir(teamDir, globalPath || 'incognide');
-      return { npcs };
+      const teamsPath = path.join(INCOGNIDE_HOME, 'teams.yaml');
+      const content = await fsPromises.readFile(teamsPath, 'utf8');
+      const parsed = yaml.load(content);
+      const teams = parsed?.teams || {};
+      const teamPathRaw = teams[teamKey];
+      if (!teamPathRaw) {
+        return { npcs: [], teamConfig: null };
+      }
+      const resolvedPath = String(teamPathRaw).replace(/^~(?=\/|$)/, os.homedir());
+      if (!resolvedPath || !fs.existsSync(resolvedPath)) {
+        return { npcs: [], teamConfig: null };
+      }
+      const npcs = await readNPCTeamFromDir(resolvedPath, teamKey);
+      const teamConfig = await readTeamConfig(resolvedPath);
+      return { npcs, teamConfig };
     } catch (error) {
-      console.error('Error reading NPC team:', error);
-      throw error;
+      console.error('Error reading NPC team from path:', error);
+      return { npcs: [], teamConfig: null, error: error.message };
     }
   });
 
@@ -528,10 +661,11 @@ function register(ctx) {
       }
       const projectTeamDir = path.join(currentPath, 'npc_team');
       const npcs = await readNPCTeamFromDir(projectTeamDir, 'project');
-      return { npcs };
+      const teamConfig = await readTeamConfig(projectTeamDir);
+      return { npcs, teamConfig };
     } catch (error) {
       console.error('Error reading NPC team:', error);
-      return { npcs: [], error: error.message };
+      return { npcs: [], teamConfig: null, error: error.message };
     }
   });
 
@@ -552,8 +686,12 @@ function register(ctx) {
               await copyAndTrack(path.join(src, entry), path.join(dest, entry), relBase ? `${relBase}/${entry}` : entry);
             }
           } else {
-            await fsPromises.copyFile(src, dest);
-            newManifest[relBase] = hashFile(dest);
+            if (relBase.endsWith('.npc') && fs.existsSync(dest)) {
+              newManifest[relBase] = hashFile(dest);
+            } else {
+              await fsPromises.copyFile(src, dest);
+              newManifest[relBase] = hashFile(dest);
+            }
           }
         };
         await copyAndTrack(npcTeamSrc, destBase);
@@ -592,8 +730,6 @@ function register(ctx) {
         }
       };
       await collectBundled(npcTeamSrc);
-      // MCP servers are now handled via npcpy.mcp_server module — no deployed scripts to diff
-
       const localFiles = {};
       const collectLocal = async (dir, relBase = '') => {
         if (!fs.existsSync(dir)) return;
@@ -692,7 +828,7 @@ function register(ctx) {
 
   ipcMain.handle('npc-team:sync-status', async (event, globalPath) => {
     try {
-      const teamPath = globalPath === 'npcsh' ? 'npcsh' : 'incognide';
+      const teamPath = globalPath || 'incognide';
       const response = await fetch(`${BACKEND_URL}/api/npc-team/status?team_path=${teamPath}`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return await response.json();
@@ -703,7 +839,7 @@ function register(ctx) {
 
   ipcMain.handle('npc-team:sync-init', async (event, globalPath) => {
     try {
-      const teamPath = globalPath === 'npcsh' ? 'npcsh' : 'incognide';
+      const teamPath = globalPath || 'incognide';
       const response = await fetch(`${BACKEND_URL}/api/npc-team/init`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -718,7 +854,7 @@ function register(ctx) {
 
   ipcMain.handle('npc-team:sync-pull', async (event, globalPath) => {
     try {
-      const teamPath = globalPath === 'npcsh' ? 'npcsh' : 'incognide';
+      const teamPath = globalPath || 'incognide';
       const response = await fetch(`${BACKEND_URL}/api/npc-team/sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -733,7 +869,7 @@ function register(ctx) {
 
   ipcMain.handle('npc-team:sync-resolve', async (event, { filePath, resolution, content, globalPath }) => {
     try {
-      const teamPath = globalPath === 'npcsh' ? 'npcsh' : 'incognide';
+      const teamPath = globalPath || 'incognide';
       const response = await fetch(`${BACKEND_URL}/api/npc-team/resolve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -748,7 +884,7 @@ function register(ctx) {
 
   ipcMain.handle('npc-team:sync-commit', async (event, { message, globalPath }) => {
     try {
-      const teamPath = globalPath === 'npcsh' ? 'npcsh' : 'incognide';
+      const teamPath = globalPath || 'incognide';
       const response = await fetch(`${BACKEND_URL}/api/npc-team/commit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -763,7 +899,7 @@ function register(ctx) {
 
   ipcMain.handle('npc-team:sync-diff', async (event, { filePath, globalPath }) => {
     try {
-      const teamPath = globalPath === 'npcsh' ? 'npcsh' : 'incognide';
+      const teamPath = globalPath || 'incognide';
       const params = `?team_path=${teamPath}${filePath ? `&file=${encodeURIComponent(filePath)}` : ''}`;
       const response = await fetch(`${BACKEND_URL}/api/npc-team/diff${params}`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -790,7 +926,6 @@ function register(ctx) {
       }
     };
 
-    // Load teams from frontend config
     let registeredTeamPaths = [];
     try {
       const teamsContent = await fsPromises.readFile(path.join(INCOGNIDE_HOME, 'teams.yaml'), 'utf8');
@@ -801,7 +936,6 @@ function register(ctx) {
       }
     } catch {}
 
-    // Load servers from backend context endpoints
     try {
       const globalRes = await fetch(`${BACKEND_URL}/api/context/global`);
       const globalJson = await globalRes.json();
@@ -820,7 +954,6 @@ function register(ctx) {
       }
     }
 
-    // Load team servers from backend npc_tools endpoint using registered teams
     try {
       const params = new URLSearchParams();
       if (currentPath) params.append('currentPath', currentPath);
@@ -874,10 +1007,7 @@ function register(ctx) {
   ipcMain.handle('mcp:getServersForSidebar', async (event, currentPath) => {
     try {
       const ctxServers = await fetchCtxMcpServers(currentPath);
-      // Filter out servers pointing to old ~/.npcsh/incognide/ path (migrated to ~/.incognide/)
-      const oldIncognidePath = path.join(os.homedir(), '.npcsh', 'incognide');
       const servers = ctxServers
-        .filter(s => !s.serverPath.includes(oldIncognidePath))
         .map(s => ({
         id: s.id || s.serverPath,
         name: s.name || s.serverPath,
@@ -886,7 +1016,6 @@ function register(ctx) {
         status: 'unknown',
       }));
 
-      // Also read .mcp*.json from team directories
       let registeredTeams = {};
       try {
         const teamsContent = await fsPromises.readFile(path.join(INCOGNIDE_HOME, 'teams.yaml'), 'utf8');
@@ -1065,131 +1194,143 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('kg:getGraphData', async (event, { generation }) => {
-    const params = generation !== null ? `?generation=${generation}` : '';
-    return await callBackendApi(`${BACKEND_URL}/api/kg/graph${params}`);
+  function buildStoreParams(storePaths) {
+    const params = new URLSearchParams();
+    if (storePaths && storePaths.length) {
+      for (const sp of storePaths) params.append('storePaths', sp);
+    }
+    return params;
+  }
+
+  ipcMain.handle('kg:getGraphData', async (event, { storePaths }) => {
+    const params = buildStoreParams(storePaths);
+    return await callBackendApi(`${BACKEND_URL}/api/kg/graph?${params.toString()}`);
   });
 
   ipcMain.handle('kg:listGenerations', async () => {
     return await callBackendApi(`${BACKEND_URL}/api/kg/generations`);
   });
 
-  ipcMain.handle('kg:getNetworkStats', async (event, { generation }) => {
-    const params = generation !== null ? `?generation=${generation}` : '';
-
-    return await callBackendApi(`${BACKEND_URL}/api/kg/network-stats${params}`);
+  ipcMain.handle('kg:getNetworkStats', async (event, { storePaths }) => {
+    const params = buildStoreParams(storePaths);
+    return await callBackendApi(`${BACKEND_URL}/api/kg/network-stats?${params.toString()}`);
   });
 
-  ipcMain.handle('kg:getCooccurrenceNetwork', async (event, { generation, minCooccurrence = 2 }) => {
-    const params = new URLSearchParams();
-    if (generation !== null) params.append('generation', generation);
+  ipcMain.handle('kg:getCooccurrenceNetwork', async (event, { storePaths, minCooccurrence = 2 }) => {
+    const params = buildStoreParams(storePaths);
     params.append('min_cooccurrence', minCooccurrence);
     return await callBackendApi(`${BACKEND_URL}/api/kg/cooccurrence?${params.toString()}`);
   });
 
-  ipcMain.handle('kg:getCentralityData', async (event, { generation }) => {
-    const params = generation !== null ? `?generation=${generation}` : '';
-    return await callBackendApi(`${BACKEND_URL}/api/kg/centrality${params}`);
+  ipcMain.handle('kg:getCentralityData', async (event, { storePaths }) => {
+    const params = buildStoreParams(storePaths);
+    return await callBackendApi(`${BACKEND_URL}/api/kg/centrality?${params.toString()}`);
   });
 
-  ipcMain.handle('kg:triggerProcess', async (event, { type }) => {
+  ipcMain.handle('kg:triggerProcess', async (event, { type, storePaths }) => {
     return await callBackendApi(`${BACKEND_URL}/api/kg/trigger`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ process_type: type }),
+      body: JSON.stringify({ process_type: type, storePaths }),
     });
   });
 
-  ipcMain.handle('kg:rollback', async (event, { generation }) => {
+  ipcMain.handle('kg:rollback', async (event, { storePaths }) => {
     return await callBackendApi(`${BACKEND_URL}/api/kg/rollback`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ generation }),
+      body: JSON.stringify({ storePaths }),
     });
   });
 
-  ipcMain.handle('kg:addNode', async (event, { nodeId, nodeType = 'concept', properties = {} }) => {
+  ipcMain.handle('kg:addNode', async (event, { nodeId, nodeType = 'concept', properties = {}, storePaths }) => {
     return await callBackendApi(`${BACKEND_URL}/api/kg/node`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: nodeId, type: nodeType, properties }),
+      body: JSON.stringify({ id: nodeId, type: nodeType, properties, storePaths }),
     });
   });
 
-  ipcMain.handle('kg:updateNode', async (event, { nodeId, properties }) => {
+  ipcMain.handle('kg:updateNode', async (event, { nodeId, properties, storePaths }) => {
     return await callBackendApi(`${BACKEND_URL}/api/kg/node/${encodeURIComponent(nodeId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ properties }),
+      body: JSON.stringify({ properties, storePaths }),
     });
   });
 
-  ipcMain.handle('kg:deleteNode', async (event, { nodeId }) => {
+  ipcMain.handle('kg:deleteNode', async (event, { nodeId, storePaths }) => {
     return await callBackendApi(`${BACKEND_URL}/api/kg/node/${encodeURIComponent(nodeId)}`, {
       method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ storePaths }),
     });
   });
 
-  ipcMain.handle('kg:addEdge', async (event, { sourceId, targetId, edgeType = 'related_to', weight = 1 }) => {
+  ipcMain.handle('kg:addEdge', async (event, { sourceId, targetId, edgeType = 'related_to', weight = 1, storePaths }) => {
     return await callBackendApi(`${BACKEND_URL}/api/kg/edge`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source: sourceId, target: targetId, type: edgeType, weight }),
+      body: JSON.stringify({ source: sourceId, target: targetId, type: edgeType, weight, storePaths }),
     });
   });
 
-  ipcMain.handle('kg:deleteEdge', async (event, { sourceId, targetId }) => {
+  ipcMain.handle('kg:deleteEdge', async (event, { sourceId, targetId, storePaths }) => {
     return await callBackendApi(`${BACKEND_URL}/api/kg/edge/${encodeURIComponent(sourceId)}/${encodeURIComponent(targetId)}`, {
       method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ storePaths }),
     });
   });
 
-  ipcMain.handle('kg:search', async (event, { q, generation, type, limit }) => {
-    const params = new URLSearchParams();
-    if (q) params.append('q', q);
-    if (generation !== null && generation !== undefined) params.append('generation', generation);
-    if (type) params.append('type', type);
-    if (limit) params.append('limit', limit);
-    return await callBackendApi(`${BACKEND_URL}/api/kg/search?${params.toString()}`);
-  });
-
-  ipcMain.handle('kg:getFacts', async (event, { generation, limit, offset }) => {
-    const params = new URLSearchParams();
-    if (generation !== null && generation !== undefined) params.append('generation', generation);
+  ipcMain.handle('kg:getFacts', async (event, { storePaths, limit, offset }) => {
+    const params = buildStoreParams(storePaths);
     if (limit) params.append('limit', limit);
     if (offset) params.append('offset', offset);
     return await callBackendApi(`${BACKEND_URL}/api/kg/facts?${params.toString()}`);
   });
 
-  ipcMain.handle('kg:getConcepts', async (event, { generation, limit }) => {
-    const params = new URLSearchParams();
-    if (generation !== null && generation !== undefined) params.append('generation', generation);
+  ipcMain.handle('kg:getConcepts', async (event, { storePaths, limit }) => {
+    const params = buildStoreParams(storePaths);
     if (limit) params.append('limit', limit);
     return await callBackendApi(`${BACKEND_URL}/api/kg/concepts?${params.toString()}`);
   });
 
-  ipcMain.handle('kg:search:semantic', async (event, { q, generation, limit }) => {
+  ipcMain.handle('kg:search:semantic', async (event, { q, storePaths, limit }) => {
     const params = new URLSearchParams();
     if (q) params.append('q', q);
-    if (generation !== null && generation !== undefined) params.append('generation', generation);
     if (limit) params.append('limit', limit);
+    if (storePaths && storePaths.length) {
+      for (const sp of storePaths) params.append('storePaths', sp);
+    }
     return await callBackendApi(`${BACKEND_URL}/api/kg/search/semantic?${params.toString()}`);
   });
 
-  ipcMain.handle('kg:embed', async (event, { generation, batch_size }) => {
+  ipcMain.handle('kg:embed', async (event, { storePaths, batch_size }) => {
     return await callBackendApi(`${BACKEND_URL}/api/kg/embed`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ generation, batch_size })
+      body: JSON.stringify({ storePaths, batch_size })
     });
   });
 
-  ipcMain.handle('kg:ingest', async (event, { content, context, get_concepts, link_concepts_facts }) => {
+  ipcMain.handle('kg:ingest', async (event, { content, context, get_concepts, link_concepts_facts, storePaths }) => {
     return await callBackendApi(`${BACKEND_URL}/api/kg/ingest`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, context, get_concepts, link_concepts_facts })
+      body: JSON.stringify({ content, context, get_concepts, link_concepts_facts, storePaths })
     });
+  });
+
+  ipcMain.handle('kg:search', async (event, { q, storePaths, type, limit }) => {
+    const params = new URLSearchParams();
+    if (q) params.append('q', q);
+    if (type) params.append('type', type);
+    if (limit) params.append('limit', limit);
+    if (storePaths && storePaths.length) {
+      for (const sp of storePaths) params.append('storePaths', sp);
+    }
+    return await callBackendApi(`${BACKEND_URL}/api/kg/search?${params.toString()}`);
   });
 
   ipcMain.handle('kg:query', async (event, args) => {
@@ -1371,11 +1512,18 @@ function register(ctx) {
     } catch (err) { return { error: err.message }; }
   });
 
-  // ── Local .knowledge.yaml IPC ────────────────────────────────────────
+  ipcMain.handle('knowledge:loadDirs', async (event, { dirs }) => {
+    if (!dirs || !dirs.length) return { memories: [], knowledge: [], directory: null };
+    const params = new URLSearchParams({ dirs: dirs.join(',') });
+    const result = await callBackendApi(`${BACKEND_URL}/api/knowledge/load?${params.toString()}`);
+    return JSON.parse(JSON.stringify(result ?? {}));
+  });
+
   ipcMain.handle('knowledge:load', async (event, { currentPath }) => {
     const params = new URLSearchParams();
     if (currentPath) params.append('currentPath', currentPath);
-    return await callBackendApi(`${BACKEND_URL}/api/knowledge/load?${params.toString()}`);
+    const result = await callBackendApi(`${BACKEND_URL}/api/knowledge/load?${params.toString()}`);
+    return JSON.parse(JSON.stringify(result ?? {}));
   });
 
   ipcMain.handle('knowledge:search', async (event, { q, currentPath, limit }) => {
@@ -1406,6 +1554,40 @@ function register(ctx) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ currentPath, from, to, relation, agent }),
+    });
+    return await response.json();
+  });
+
+  ipcMain.handle('knowledge:extract', async (event, { conversationText, conversationId, currentPath, model, provider, npc, team }) => {
+    const response = await fetch(`${BACKEND_URL}/api/knowledge/extract`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        conversation_text: conversationText,
+        conversation_id: conversationId,
+        currentPath,
+        model,
+        provider,
+        npc,
+        team,
+      }),
+    });
+    return await response.json();
+  });
+
+  ipcMain.handle('knowledge:extractAndStore', async (event, { conversationText, conversationId, currentPath, model, provider, npc, team }) => {
+    const response = await fetch(`${BACKEND_URL}/api/knowledge/extract-and-store`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        conversation_text: conversationText,
+        conversation_id: conversationId,
+        currentPath,
+        model,
+        provider,
+        npc,
+        team,
+      }),
     });
     return await response.json();
   });
@@ -1448,7 +1630,6 @@ function register(ctx) {
     return await response.json();
   });
 
-  // ── Legacy DB memory IPC ─────────────────────────────────────────────
   ipcMain.handle('memory:approve', async (event, { approvals }) => {
     try {
       const response = await fetch(`${BACKEND_URL}/api/memory/approve`, {
@@ -1501,59 +1682,7 @@ function register(ctx) {
     return null;
   }
 
-  ipcMain.handle('get-global-context', async (event, globalPath) => {
-    if (globalPath === 'npcsh') {
-      return await callBackendApi(`${BACKEND_URL}/api/context/global`);
-    }
 
-    const teamDir = globalPath || INCOGNIDE_TEAM_PATH;
-    const ctxFilePath = await findCtxFile(teamDir);
-    if (!ctxFilePath) return { context: {}, error: null };
-    try {
-      const content = await fsPromises.readFile(ctxFilePath, 'utf-8');
-      const context = yaml.load(content) || {};
-      return { context, path: ctxFilePath, error: null };
-    } catch (err) {
-      return { context: {}, error: err.message };
-    }
-  });
-
-  ipcMain.handle('save-global-context', async (event, contextData, globalPath) => {
-    if (globalPath === 'npcsh') {
-      return await callBackendApi(`${BACKEND_URL}/api/context/global`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ context: contextData }),
-      });
-    }
-
-    const teamDir = globalPath || INCOGNIDE_TEAM_PATH;
-    let ctxFilePath = await findCtxFile(teamDir);
-    if (!ctxFilePath) ctxFilePath = path.join(teamDir, 'incognide.ctx');
-    try {
-      const content = yaml.dump(contextData);
-      await fsPromises.writeFile(ctxFilePath, content, 'utf-8');
-      return { success: true, error: null };
-    } catch (err) {
-      return { error: err.message };
-    }
-  });
-
-  ipcMain.handle('npcsh-check', async () => {
-    return await callBackendApi(`${BACKEND_URL}/api/npcsh/check`);
-  });
-
-  ipcMain.handle('npcsh-package-contents', async () => {
-    return await callBackendApi(`${BACKEND_URL}/api/npcsh/package-contents`);
-  });
-
-  ipcMain.handle('npcsh-init', async () => {
-    return await callBackendApi(`${BACKEND_URL}/api/npcsh/init`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-  });
 
   ipcMain.handle('get-project-context', async (event, path) => {
     if (!path) return { error: 'Path is required' };

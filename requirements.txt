@@ -4,7 +4,7 @@ flask_sse
 redis
 pyyaml
 pillow
-npcpy>=1.4.31
+npcpy>=1.4.33
 npcsh>=1.2.10
 anthropic
 google-genai
@@ -14,3 +14,5 @@ docstring_parser
 litellm
 pyarrow<=16.1.0
 protobuf>=3.20.0,<4.0.0
+qstkl
+huggingface_hub

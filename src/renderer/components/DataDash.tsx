@@ -2030,8 +2030,17 @@ const [availableNpcs, setAvailableNpcs] = useState([]);
 
 useEffect(() => {
     const loadNpcs = async () => {
-        const npcResponse = await window.api.getNPCTeamGlobal();
-        setAvailableNpcs(npcResponse.npcs || []);
+        try {
+            const teamsData = await window.api.teamsRead();
+            const keys = Object.keys(teamsData?.teams || {});
+            const firstKey = keys[0];
+            const npcResponse = firstKey
+                ? await window.api.getNPCTeamFromPath(firstKey)
+                : await window.api.getNPCTeamProject('');
+            setAvailableNpcs(npcResponse.npcs || []);
+        } catch {
+            setAvailableNpcs([]);
+        }
     };
     loadNpcs();
 

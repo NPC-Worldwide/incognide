@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Brain, RefreshCw, Globe, Terminal, Zap, BookOpen, Activity } from 'lucide-react';
+import { Brain, RefreshCw, Globe, Terminal, Zap, BookOpen, Activity, Lightbulb } from 'lucide-react';
 
 interface ActivityIntelligenceProps {
     isModal?: boolean;
@@ -65,6 +65,7 @@ const activitySub = (activity: any): string => {
 
 const ActivityIntelligence: React.FC<ActivityIntelligenceProps> = ({ isModal = false, onClose }) => {
     const [activityData, setActivityData] = useState<any[]>([]);
+    const [predictions, setPredictions] = useState<any[]>([]);
     const [stats, setStats] = useState<any>(null);
     const [loading, setLoading] = useState(false);
     const [expanded, setExpanded] = useState<number | null>(null);
@@ -75,6 +76,7 @@ const ActivityIntelligence: React.FC<ActivityIntelligenceProps> = ({ isModal = f
             const res = await (window as any).api?.getActivityPredictions?.();
             if (res && !res.error) {
                 setActivityData(res.recentActivities || []);
+                setPredictions(res.predictions || []);
                 setStats(res.stats || null);
             }
         } catch (err) {
@@ -123,6 +125,28 @@ const ActivityIntelligence: React.FC<ActivityIntelligenceProps> = ({ isModal = f
                 </div>
             ) : (
                 <>
+                    {predictions.length > 0 && predictions[0]?.type === 'suggestion' && (
+                        <div className="mx-4 mt-2 p-3 rounded-lg border border-green-600/50 bg-green-900/20 flex-shrink-0">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <Lightbulb size={14} className="text-green-400" />
+                                    <span className="text-sm font-medium text-green-200">{predictions[0].title}</span>
+                                </div>
+                                <span className="text-xs text-green-300/70">
+                                    {((predictions[0].confidence || 0) * 100).toFixed(0)}% conf
+                                </span>
+                            </div>                            {predictions[0].top3 && predictions[0].top3.length > 1 && (
+                                <div className="mt-2 space-y-1">
+                                    {predictions[0].top3.slice(1).map((t: any, i: number) => (
+                                        <div key={i} className="flex items-center justify-between text-xs">
+                                            <span className="text-gray-400">{t.action?.replace(/_/g, ' ') || '—'}</span>
+                                            <span className="text-gray-500">{(t.probability * 100).toFixed(0)}%</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
                     <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-0.5">
                         {filtered.length > 0 ? filtered.map((activity, idx) => {
                             const cfg = getConfig(activity.type);

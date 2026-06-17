@@ -569,6 +569,216 @@ function register(ctx) {
     }
   });
 
+  const KG_REGISTRY_PATH = path.join(INCOGNIDE_HOME, 'kg_registry.yaml');
+
+  async function readKgRegistry() {
+    try {
+      const raw = await fsPromises.readFile(KG_REGISTRY_PATH, 'utf8');
+      const data = yaml.load(raw) || {};
+      return { stores: data.stores || [] };
+    } catch {
+      return { stores: [] };
+    }
+  }
+
+  async function writeKgRegistry(registry) {
+    await fsPromises.mkdir(path.dirname(KG_REGISTRY_PATH), { recursive: true });
+    const tmp = KG_REGISTRY_PATH + '.tmp';
+    await fsPromises.writeFile(tmp, yaml.dump(registry, { lineWidth: -1 }));
+    await fsPromises.rename(tmp, KG_REGISTRY_PATH);
+  }
+
+  ipcMain.handle('kg:registerStore', async (event, dirPath) => {
+    try {
+      const registry = await readKgRegistry();
+      const abs = path.resolve(dirPath);
+      if (!registry.stores.includes(abs)) {
+        registry.stores.push(abs);
+        await writeKgRegistry(registry);
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('kg:unregisterStore', async (event, dirPath) => {
+    try {
+      const registry = await readKgRegistry();
+      const abs = path.resolve(dirPath);
+      registry.stores = registry.stores.filter((d) => d !== abs);
+      await writeKgRegistry(registry);
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('kg:scanAndRegister', async (event, rootPath) => {
+    try {
+      const registry = await readKgRegistry();
+      const found = new Set(registry.stores);
+      const walk = async (dir) => {
+        const entries = await fsPromises.readdir(dir, { withFileTypes: true });
+        for (const ent of entries) {
+          const full = path.join(dir, ent.name);
+          if (ent.isDirectory() && !ent.name.startsWith('.') && ent.name !== 'node_modules') {
+            await walk(full);
+          } else if (ent.name === '.knowledge.yaml') {
+            found.add(path.resolve(dir));
+          }
+        }
+      };
+      await walk(path.resolve(rootPath || os.homedir()));
+      registry.stores = Array.from(found).sort();
+      await writeKgRegistry(registry);
+      return { stores: registry.stores };
+    } catch (err) {
+      return { stores: [], error: err.message };
+    }
+  });
+
+  ipcMain.handle('scanKnowledgeStores', async (event, workspacePath) => {
+    try {
+      const registry = await readKgRegistry();
+      const results = [];
+      for (const dir of registry.stores) {
+        const file = path.join(dir, '.knowledge.yaml');
+        if (!fs.existsSync(file)) continue;
+        try {
+          const raw = await fsPromises.readFile(file, 'utf8');
+          const data = yaml.load(raw) || {};
+          results.push({
+            path: file,
+            directory: dir,
+            memoryCount: (data.memories || []).length,
+            knowledgeCount: (data.knowledge || []).length,
+            conceptCount: (data.concepts || []).length,
+            linkCount: (data.links || []).length,
+            lastExtractedAt: data.last_extracted_at || null,
+            lastEvolvedAt: data.last_evolved_at || null,
+          });
+        } catch {
+          results.push({ path: file, directory: dir, memoryCount: 0, knowledgeCount: 0, conceptCount: 0, linkCount: 0 });
+        }
+      }
+      return { stores: results };
+    } catch (err) {
+      return { stores: [], error: err.message };
+    }
+  });
+
+  ipcMain.handle('kg:loadStoreData', async (event, { storePaths } = {}) => {
+    try {
+      let paths = Array.isArray(storePaths) ? storePaths : [];
+      if (paths.length === 0) {
+        const reg = await readKgRegistry();
+        paths = reg.stores.filter((s) => typeof s === 'string' && s);
+      }
+      const allMemories = [];
+      const allKnowledge = [];
+      for (const dir of paths) {
+        const file = path.join(dir, '.knowledge.yaml');
+        if (!fs.existsSync(file)) continue;
+        try {
+          const raw = await fsPromises.readFile(file, 'utf8');
+          const data = yaml.load(raw) || {};
+          for (const m of data.memories || []) {
+            allMemories.push({ ...m, _directory: dir });
+          }
+          for (const k of data.knowledge || []) {
+            allKnowledge.push({ ...k, directory: dir });
+          }
+        } catch {}
+      }
+      return { memories: allMemories, knowledge: allKnowledge };
+    } catch (err) {
+      return { memories: [], knowledge: [], error: err.message };
+    }
+  });
+
+  // --- KG Pipeline (4-step lifecycle on .knowledge.yaml stores) ---
+  const kgPipelineProcs = new Map();
+
+  ipcMain.handle('kgPipeline:run', async (event, params) => {
+    const jobId = params.jobId || generateId?.() || `kg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const { step, storePaths, model, provider, context = '', contentText, operations, numSeeds, workspacePath } = params;
+    if (!step || !Array.isArray(storePaths) || storePaths.length === 0) {
+      return { error: 'Missing step or storePaths' };
+    }
+
+    const controller = new AbortController();
+    kgPipelineProcs.set(jobId, controller);
+
+    const push = (kind, message, data) => {
+      const entry = { jobId, kind, message, data, timestamp: Date.now() };
+      try { event.sender.send('kg-pipeline-log', entry); } catch {}
+    };
+
+    (async () => {
+      try {
+        const resp = await (globalThis.fetch || fetch)(`${BACKEND_URL}/api/kg/pipeline/run`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...params, jobId }),
+          signal: controller.signal,
+        });
+        if (!resp.ok) {
+          const text = await resp.text();
+          push('error', `HTTP ${resp.status}: ${text}`);
+          return;
+        }
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop();
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const parsed = JSON.parse(line);
+              push(parsed.kind || 'stdout', parsed.message || '', parsed.data || parsed);
+            } catch {
+              push('stdout', line);
+            }
+          }
+        }
+        if (buffer.trim()) {
+          try {
+            const parsed = JSON.parse(buffer);
+            push(parsed.kind || 'stdout', parsed.message || '', parsed.data || parsed);
+          } catch {
+            push('stdout', buffer);
+          }
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          push('error', 'Aborted');
+        } else {
+          push('error', err.message);
+        }
+      } finally {
+        kgPipelineProcs.delete(jobId);
+        push('done', 'All stores processed');
+      }
+    })();
+
+    return { success: true, jobId };
+  });
+
+  ipcMain.handle('kgPipeline:abort', async (event, jobId) => {
+    const controller = kgPipelineProcs.get(jobId);
+    if (controller && typeof controller.abort === 'function') {
+      try { controller.abort(); } catch {}
+      kgPipelineProcs.delete(jobId);
+    }
+    return { aborted: !!controller };
+  });
+
   // Legacy cron job handlers (now backed by local scheduled_jobs table)
   ipcMain.handle('getCronJobs', async () => {
     const rows = await dbQuery(`SELECT * FROM scheduled_jobs WHERE job_type = 'jinx' ORDER BY created_at DESC`);
@@ -2430,6 +2640,10 @@ function register(ctx) {
     INCOGNIDE_PREDICTIVE_TEXT_ENABLED: 'is_predictive_text_enabled',
     INCOGNIDE_PREDICTIVE_TEXT_MODEL: 'predictive_text_model',
     INCOGNIDE_PREDICTIVE_TEXT_PROVIDER: 'predictive_text_provider',
+    INCOGNIDE_ACTIVITY_INTELLIGENCE_ENABLED: 'is_activity_intelligence_enabled',
+    INCOGNIDE_ACTIVITY_BASE_REPO: 'activity_base_repo_id',
+    INCOGNIDE_KG_ENABLED: 'is_knowledge_graph_enabled',
+    INCOGNIDE_KG_BASE_REPO: 'knowledge_graph_base_repo_id',
     BACKEND_PYTHON_PATH: 'backend_python_path',
   };
   const SETTINGS_KEY_MAP_REVERSE = Object.fromEntries(
@@ -2446,6 +2660,10 @@ function register(ctx) {
     is_predictive_text_enabled: false,
     predictive_text_model: '',
     predictive_text_provider: '',
+    is_activity_intelligence_enabled: false,
+    activity_base_repo_id: '',
+    is_knowledge_graph_enabled: false,
+    knowledge_graph_base_repo_id: '',
     backend_python_path: '',
   };
 
@@ -2455,6 +2673,10 @@ function register(ctx) {
 
         // Read existing file to merge with new values
         let existing = {};
+        let oldActivityEnabled = false;
+        let oldBaseRepo = '';
+        let oldPredictiveEnabled = false;
+        let oldKGEnabled = false;
         try {
             const content = await fsPromises.readFile(rcPath, 'utf8');
             for (const line of content.split('\n')) {
@@ -2469,6 +2691,18 @@ function register(ctx) {
                     val = val.slice(1, -1);
                 }
                 existing[key] = val;
+                if (key === 'INCOGNIDE_ACTIVITY_INTELLIGENCE_ENABLED') {
+                    oldActivityEnabled = val === 'true' || val === '1';
+                }
+                if (key === 'INCOGNIDE_ACTIVITY_BASE_REPO') {
+                    oldBaseRepo = val;
+                }
+                if (key === 'INCOGNIDE_PREDICTIVE_TEXT_ENABLED') {
+                    oldPredictiveEnabled = val === 'true' || val === '1';
+                }
+                if (key === 'INCOGNIDE_KG_ENABLED') {
+                    oldKGEnabled = val === 'true' || val === '1';
+                }
             }
         } catch {}
 
@@ -2493,6 +2727,108 @@ function register(ctx) {
 
         const lines = Object.entries(existing).map(([k, v]) => `export ${k}=${v}`);
         await fsPromises.writeFile(rcPath, lines.join('\n') + '\n');
+
+        // Sync activity intelligence scheduled job
+        const newActivityEnabled = global_settings?.is_activity_intelligence_enabled === true;
+        const newBaseRepo = global_settings?.activity_base_repo_id || '';
+        if (newActivityEnabled !== oldActivityEnabled || (newActivityEnabled && newBaseRepo !== oldBaseRepo)) {
+            try {
+                const rows = await dbQuery(`SELECT id, payload FROM scheduled_jobs WHERE job_type = 'activity_intelligence' LIMIT 1`);
+                if (newActivityEnabled) {
+                    const payload = JSON.stringify({
+                        mode: 'incremental',
+                        baseRepoId: newBaseRepo || null,
+                    });
+                    if (!rows.length) {
+                        const id = generateId?.() || `ai_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                        await dbQuery(
+                          `INSERT INTO scheduled_jobs (id, name, job_type, schedule, payload, enabled, created_at, updated_at)
+                           VALUES (?, ?, 'activity_intelligence', '0 */6 * * *', ?, 1, datetime('now'), datetime('now'))`,
+                          [id, 'Activity Intelligence', payload]
+                        );
+                        // Notify daemon
+                        const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+                        if (state?.[0]?.port) {
+                            await fetch(`http://127.0.0.1:${state[0].port}/reload`, { method: 'POST', signal: AbortSignal.timeout(2000) });
+                        }
+                    } else if (newBaseRepo !== oldBaseRepo) {
+                        await dbQuery(
+                          `UPDATE scheduled_jobs SET payload = ?, updated_at = datetime('now') WHERE id = ?`,
+                          [payload, rows[0].id]
+                        );
+                    }
+                } else if (rows.length) {
+                    await dbQuery(`DELETE FROM scheduled_jobs WHERE job_type = 'activity_intelligence'`);
+                    const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+                    if (state?.[0]?.port) {
+                        await fetch(`http://127.0.0.1:${state[0].port}/reload`, { method: 'POST', signal: AbortSignal.timeout(2000) });
+                    }
+                }
+            } catch (syncErr) {
+                console.error('[activity] Failed to sync scheduled job:', syncErr.message);
+            }
+        }
+
+        // Sync autocomplete scheduled job
+        const newPredictiveEnabled = global_settings?.is_predictive_text_enabled === true;
+        if (newPredictiveEnabled !== oldPredictiveEnabled) {
+            try {
+                const rows = await dbQuery(`SELECT id FROM scheduled_jobs WHERE job_type = 'autocomplete' LIMIT 1`);
+                if (newPredictiveEnabled) {
+                    if (!rows.length) {
+                        const id = generateId?.() || `ac_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                        await dbQuery(
+                          `INSERT INTO scheduled_jobs (id, name, job_type, schedule, payload, enabled, created_at, updated_at)
+                           VALUES (?, ?, 'autocomplete', '0 */6 * * *', ?, 1, datetime('now'), datetime('now'))`,
+                          [id, 'Autocomplete Model', JSON.stringify({ mode: 'incremental' })]
+                        );
+                        const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+                        if (state?.[0]?.port) {
+                            await fetch(`http://127.0.0.1:${state[0].port}/reload`, { method: 'POST', signal: AbortSignal.timeout(2000) });
+                        }
+                    }
+                } else if (rows.length) {
+                    await dbQuery(`DELETE FROM scheduled_jobs WHERE job_type = 'autocomplete'`);
+                    const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+                    if (state?.[0]?.port) {
+                        await fetch(`http://127.0.0.1:${state[0].port}/reload`, { method: 'POST', signal: AbortSignal.timeout(2000) });
+                    }
+                }
+            } catch (syncErr) {
+                console.error('[autocomplete] Failed to sync scheduled job:', syncErr.message);
+            }
+        }
+
+        // Sync knowledge graph scheduled job
+        const newKGEnabled = global_settings?.is_knowledge_graph_enabled === true;
+        if (newKGEnabled !== oldKGEnabled) {
+            try {
+                const rows = await dbQuery(`SELECT id FROM scheduled_jobs WHERE job_type = 'knowledge_graph' LIMIT 1`);
+                if (newKGEnabled) {
+                    if (!rows.length) {
+                        const id = generateId?.() || `kg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                        await dbQuery(
+                          `INSERT INTO scheduled_jobs (id, name, job_type, schedule, payload, enabled, created_at, updated_at)
+                           VALUES (?, ?, 'knowledge_graph', '0 */12 * * *', ?, 1, datetime('now'), datetime('now'))`,
+                          [id, 'Knowledge Graph Evolver', JSON.stringify({ mode: 'incremental' })]
+                        );
+                        const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+                        if (state?.[0]?.port) {
+                            await fetch(`http://127.0.0.1:${state[0].port}/reload`, { method: 'POST', signal: AbortSignal.timeout(2000) });
+                        }
+                    }
+                } else if (rows.length) {
+                    await dbQuery(`DELETE FROM scheduled_jobs WHERE job_type = 'knowledge_graph'`);
+                    const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+                    if (state?.[0]?.port) {
+                        await fetch(`http://127.0.0.1:${state[0].port}/reload`, { method: 'POST', signal: AbortSignal.timeout(2000) });
+                    }
+                }
+            } catch (syncErr) {
+                console.error('[kg] Failed to sync scheduled job:', syncErr.message);
+            }
+        }
+
         return { success: true };
     } catch (err) {
         console.error('[SETTINGS] Error saving global settings:', err);
@@ -2523,7 +2859,7 @@ function register(ctx) {
                 }
                 if (envKey in SETTINGS_KEY_MAP) {
                     const settingKey = SETTINGS_KEY_MAP[envKey];
-                    if (settingKey === 'is_predictive_text_enabled') {
+                    if (settingKey === 'is_predictive_text_enabled' || settingKey === 'is_activity_intelligence_enabled' || settingKey === 'is_knowledge_graph_enabled') {
                         global_settings[settingKey] = value === 'true' || value === '1';
                     } else {
                         global_settings[settingKey] = value;
@@ -3172,7 +3508,16 @@ function register(ctx) {
         }
         const peakHours = Object.entries(hourCounts).sort((a, b) => b[1] - a[1]).map(([h]) => parseInt(h));
 
+        // SSM model prediction
+        let ssmPredictions = [];
+        try {
+            ssmPredictions = await _predictWithSSM();
+        } catch (ssmErr) {
+            console.error('SSM prediction failed:', ssmErr);
+        }
+
         const predictions = [
+            ...ssmPredictions,
             ...topDomains.map(([domain, count]) => ({
                 type: 'pattern',
                 title: `Frequent site: ${domain}`,
@@ -3197,8 +3542,290 @@ function register(ctx) {
     }
   });
 
-  ipcMain.handle('train-activity-model', async (event) => {
-    return { success: true, message: 'Activity patterns computed from local history' };
+  async function _readActivitySettings() {
+      try {
+          const rcPath = path.join(os.homedir(), '.incogniderc');
+          const content = await fsPromises.readFile(rcPath, 'utf8');
+          const settings = {};
+          for (const line of content.split('\n')) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed.startsWith('#')) continue;
+              const stripped = trimmed.replace(/^export\s+/, '');
+              const eqIdx = stripped.indexOf('=');
+              if (eqIdx === -1) continue;
+              const key = stripped.slice(0, eqIdx).trim();
+              let val = stripped.slice(eqIdx + 1).trim();
+              if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+                  val = val.slice(1, -1);
+              }
+              settings[key] = val;
+          }
+          return {
+              enabled: settings.INCOGNIDE_ACTIVITY_INTELLIGENCE_ENABLED === 'true' || settings.INCOGNIDE_ACTIVITY_INTELLIGENCE_ENABLED === '1',
+              base_repo_id: settings.INCOGNIDE_ACTIVITY_BASE_REPO || '',
+          };
+      } catch {
+          return { enabled: false, base_repo_id: '' };
+      }
+  }
+
+  async function _predictWithSSM() {
+      const { enabled } = await _readActivitySettings();
+      if (!enabled) return [];
+
+      try {
+          const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+          const daemonPort = state?.[0]?.port;
+          if (!daemonPort) {
+              console.error('[activity] Daemon not running, cannot predict');
+              return [];
+          }
+          const res = await fetch(`http://127.0.0.1:${daemonPort}/activity_intelligence/predict`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({}),
+              signal: AbortSignal.timeout(15000),
+          });
+          if (!res.ok) {
+              console.error('[activity] Daemon predict HTTP error:', res.status);
+              return [];
+          }
+          const result = await res.json();
+          if (result.status !== 'ok' || result.error) {
+              console.log('[activity] SSM predict returned error:', result.error || result.message);
+              return [];
+          }
+          const out = [];
+          if (result.predicted_action) {
+              out.push({
+                  type: 'suggestion',
+                  title: `Next: ${result.predicted_action.replace(/_/g, ' ')}`,
+                  description: 'SSM-based prediction from activity sequence',
+                  confidence: result.confidence || 0.5,
+                  predictedAction: result.predicted_action,
+                  top3: result.top_3 || []
+              });
+          }
+          return out;
+      } catch (err) {
+          console.error('[activity] SSM predict daemon error:', err.message);
+          return [];
+      }
+  }
+
+  ipcMain.handle('train-activity-model', async (event, { mode = 'full' } = {}) => {
+      const { enabled } = await _readActivitySettings();
+      if (!enabled) return { success: false, error: 'Activity intelligence is disabled in settings' };
+
+      try {
+          const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+          const daemonPort = state?.[0]?.port;
+          if (!daemonPort) {
+              return { success: false, error: 'Daemon not running' };
+          }
+
+          // Find the activity intelligence scheduled job
+          const rows = await dbQuery(
+            `SELECT id FROM scheduled_jobs WHERE job_type = 'activity_intelligence' LIMIT 1`
+          );
+          let jobId;
+          if (!rows.length) {
+              // No scheduled job yet — create an ad-hoc one and run it immediately
+              jobId = `ai_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+              const { base_repo_id } = await _readActivitySettings();
+              await dbQuery(
+                `INSERT INTO scheduled_jobs (id, name, job_type, schedule, payload, enabled, created_at, updated_at)
+                 VALUES (?, ?, 'activity_intelligence', '0 0 1 1 *', ?, 0, datetime('now'), datetime('now'))`,
+                [
+                  jobId,
+                  'Activity Intelligence (ad-hoc)',
+                  JSON.stringify({ mode, baseRepoId: base_repo_id || null }),
+                ]
+              );
+          } else {
+              jobId = rows[0].id;
+          }
+
+          const res = await fetch(`http://127.0.0.1:${daemonPort}/run_now`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ jobId }),
+              signal: AbortSignal.timeout(5000),
+          });
+          return await res.json();
+      } catch (err) {
+          console.error('[activity] train-activity-model error:', err);
+          return { success: false, error: err.message };
+      }
+  });
+
+  // --- Autocomplete intelligence ---
+
+  async function _readPredictiveSettings() {
+      try {
+          const rcPath = path.join(os.homedir(), '.incogniderc');
+          const content = await fsPromises.readFile(rcPath, 'utf8');
+          const settings = {};
+          for (const line of content.split('\n')) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed.startsWith('#')) continue;
+              const stripped = trimmed.replace(/^export\s+/, '');
+              const eqIdx = stripped.indexOf('=');
+              if (eqIdx === -1) continue;
+              const key = stripped.slice(0, eqIdx).trim();
+              let val = stripped.slice(eqIdx + 1).trim();
+              if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+                  val = val.slice(1, -1);
+              }
+              settings[key] = val;
+          }
+          return {
+              enabled: settings.INCOGNIDE_PREDICTIVE_TEXT_ENABLED === 'true' || settings.INCOGNIDE_PREDICTIVE_TEXT_ENABLED === '1',
+          };
+      } catch {
+          return { enabled: false };
+      }
+  }
+
+  ipcMain.handle('get-autocomplete-suggestions', async (event, { context = '', maxLength = 20 } = {}) => {
+      const { enabled } = await _readPredictiveSettings();
+      if (!enabled) return { suggestions: [] };
+
+      try {
+          const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+          const daemonPort = state?.[0]?.port;
+          if (!daemonPort) {
+              console.error('[autocomplete] Daemon not running, cannot predict');
+              return { suggestions: [] };
+          }
+          const res = await fetch(`http://127.0.0.1:${daemonPort}/autocomplete/predict`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ context, maxLength }),
+              signal: AbortSignal.timeout(15000),
+          });
+          if (!res.ok) {
+              console.error('[autocomplete] Daemon predict HTTP error:', res.status);
+              return { suggestions: [] };
+          }
+          const result = await res.json();
+          if (result.status !== 'ok' || result.error) {
+              console.log('[autocomplete] predict returned error:', result.error || result.message);
+              return { suggestions: [] };
+          }
+          return {
+              suggestions: [{
+                  text: result.completion || '',
+                  confidence: result.confidence || 0.5,
+              }],
+          };
+      } catch (err) {
+          console.error('[autocomplete] predict daemon error:', err.message);
+          return { suggestions: [] };
+      }
+  });
+
+  ipcMain.handle('train-autocomplete-model', async (event, { mode = 'full' } = {}) => {
+      const { enabled } = await _readPredictiveSettings();
+      if (!enabled) return { success: false, error: 'Predictive text is disabled in settings' };
+
+      try {
+          const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+          const daemonPort = state?.[0]?.port;
+          if (!daemonPort) {
+              return { success: false, error: 'Daemon not running' };
+          }
+
+          const rows = await dbQuery(
+            `SELECT id FROM scheduled_jobs WHERE job_type = 'autocomplete' LIMIT 1`
+          );
+          let jobId;
+          if (!rows.length) {
+              jobId = `ac_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+              await dbQuery(
+                `INSERT INTO scheduled_jobs (id, name, job_type, schedule, payload, enabled, created_at, updated_at)
+                 VALUES (?, ?, 'autocomplete', '0 0 1 1 *', ?, 0, datetime('now'), datetime('now'))`,
+                [
+                  jobId,
+                  'Autocomplete (ad-hoc)',
+                  JSON.stringify({ mode }),
+                ]
+              );
+          } else {
+              jobId = rows[0].id;
+          }
+
+          const res = await fetch(`http://127.0.0.1:${daemonPort}/run_now`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ jobId }),
+              signal: AbortSignal.timeout(5000),
+          });
+          return await res.json();
+      } catch (err) {
+          console.error('[autocomplete] train-autocomplete-model error:', err);
+          return { success: false, error: err.message };
+      }
+  });
+
+  // --- Knowledge Graph ---
+
+  async function _readKGSettings() {
+      try {
+          const rcPath = path.join(os.homedir(), '.incogniderc');
+          const content = await fsPromises.readFile(rcPath, 'utf8');
+          const settings = {};
+          for (const line of content.split('\n')) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed.startsWith('#')) continue;
+              const stripped = trimmed.replace(/^export\s+/, '');
+              const eqIdx = stripped.indexOf('=');
+              if (eqIdx === -1) continue;
+              const key = stripped.slice(0, eqIdx).trim();
+              let val = stripped.slice(eqIdx + 1).trim();
+              if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+                  val = val.slice(1, -1);
+              }
+              settings[key] = val;
+          }
+          return {
+              enabled: settings.INCOGNIDE_KG_ENABLED === 'true' || settings.INCOGNIDE_KG_ENABLED === '1',
+          };
+      } catch {
+          return { enabled: false };
+      }
+  }
+
+  ipcMain.handle('kg:evolve', async (event, { full = false } = {}) => {
+      const { enabled } = await _readKGSettings();
+      if (!enabled) return { success: false, error: 'Knowledge graph is disabled in settings' };
+      try {
+          const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
+          const daemonPort = state?.[0]?.port;
+          if (!daemonPort) return { success: false, error: 'Daemon not running' };
+          const rows = await dbQuery(`SELECT id FROM scheduled_jobs WHERE job_type = 'knowledge_graph' LIMIT 1`);
+          let jobId;
+          if (!rows.length) {
+              jobId = `kg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+              await dbQuery(
+                `INSERT INTO scheduled_jobs (id, name, job_type, schedule, payload, enabled, created_at, updated_at)
+                 VALUES (?, ?, 'knowledge_graph', '0 0 1 1 *', ?, 0, datetime('now'), datetime('now'))`,
+                [jobId, 'KG Evolve (ad-hoc)', JSON.stringify({ full })]
+              );
+          } else {
+              jobId = rows[0].id;
+          }
+          const res = await fetch(`http://127.0.0.1:${daemonPort}/run_now`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ jobId }),
+              signal: AbortSignal.timeout(5000),
+          });
+          return await res.json();
+      } catch (err) {
+          console.error('[kg] evolve error:', err);
+          return { success: false, error: err.message };
+      }
   });
 
   const finetuneJobsDir = path.join(INCOGNIDE_HOME, 'finetune_jobs');
@@ -3622,17 +4249,13 @@ function register(ctx) {
     try {
       const filePath = path.join(INCOGNIDE_HOME, 'teams.yaml');
       await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
-      let teams;
+      let teams = {};
       try {
         const content = await fsPromises.readFile(filePath, 'utf8');
         const parsed = yaml.load(content);
         teams = parsed?.teams || {};
       } catch {
-        teams = {
-          incognide: path.join(INCOGNIDE_HOME, 'npc_team'),
-        };
       }
-      // Resolve ~ in paths for frontend consumption
       for (const [key, teamPath] of Object.entries(teams)) {
         if (typeof teamPath === 'string') {
           teams[key] = teamPath.replace(/^~(?=\/|$)/, os.homedir());

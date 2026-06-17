@@ -31,7 +31,6 @@ import CtxEditor from './CtxEditor';
 import JinxMenu from './JinxMenu';
 import KnowledgeGraphEditor from './KnowledgeGraphEditor';
 import LabeledDataManager from './LabeledDataManager';
-import McpServerMenu from './McpServerMenu';
 import MemoryManagement from './MemoryManagement';
 import MemoryIcon from './icons/MemoryIcon';
 import MessageLabeling from './MessageLabeling';
@@ -72,10 +71,10 @@ const Sidebar = (props: any) => {
         setDashboardMenuOpen, setJinxMenuOpen,
         setCtxEditorOpen, setTeamManagementOpen, setNpcTeamMenuOpen, setSidebarCollapsed,
         createGraphViewerPane, createBrowserGraphPane, createDataLabelerPane,
-        createDataDashPane, createDBToolPane, createNPCTeamPane, createJinxPane, createTeamManagementPane, createMcpManagerPane, createSkillsManagerPane, createSettingsPane, createProjectEnvPane, createDiskUsagePane, createHelpPane, createTileJinxPane, createGitPane, createBrowserSettingsPane,
+        createDataDashPane, createDBToolPane, createNPCTeamPane, createJinxPane, createTeamManagementPane, createSkillsManagerPane, createSettingsPane, createProjectEnvPane, createDiskUsagePane, createHelpPane, createTileJinxPane, createGitPane, createBrowserSettingsPane,
 
         createNewConversation, generateId, streamToPaneRef, availableNPCs, currentNPC, currentModel,
-        currentProvider, executionMode, mcpServerPath, selectedMcpTools, updateContentPane,
+        currentProvider, executionMode, enabledMcpServers, selectedMcpTools, updateContentPane,
         loadDirectoryStructure, loadWebsiteHistory, createNewBrowser,
         handleGlobalDragStart, handleGlobalDragEnd, normalizePath, getFileIcon,
         serializeWorkspace, saveWorkspaceToStorage, handleConversationSelect, handleFileClick,
@@ -336,7 +335,7 @@ const Sidebar = (props: any) => {
     const [skillIngestLoading, setSkillIngestLoading] = useState(false);
     const [skillIngestError, setSkillIngestError] = useState<string | null>(null);
     const [showSkillIngest, setShowSkillIngest] = useState(false);
-    const [sidebarSkillsExpanded, setSidebarSkillsExpanded] = useState<Set<string>>(new Set(['project', 'incognide', 'npcsh']));
+    const [sidebarSkillsExpanded, setSidebarSkillsExpanded] = useState<Set<string>>(new Set(['project']));
 
     const [codeFileDropdownOpen, setCodeFileDropdownOpen] = useState(false);
 
@@ -645,7 +644,7 @@ const Sidebar = (props: any) => {
             { id: 'terminal', label: 'Terminal', icon: 'terminal', enabled: true, order: 4, subTypes: ['system', 'npcsh', 'guac'] },
             { id: 'code', label: 'Code', icon: 'code', enabled: true, order: 5 },
             { id: 'document', label: 'Doc', icon: 'file-text', enabled: true, order: 6, subTypes: ['docx', 'xlsx', 'pptx'] },
-            { id: 'workspace', label: 'Incognide', icon: 'incognide', enabled: true, order: 7 }
+            { id: 'workspace', label: 'Workspace', icon: 'workspace', enabled: true, order: 7 }
         ],
         customTiles: []
     });
@@ -937,7 +936,6 @@ const Sidebar = (props: any) => {
         JinxMenu,
         KnowledgeGraphEditor,
         LabeledDataManager,
-        McpServerMenu,
         MemoryManagement,
         MessageLabeling,
         NPCTeamMenu,
@@ -1094,7 +1092,7 @@ const handleApplyPromptToFiles = async (operationType, customPrompt = '') => {
             attachments: [],
             streamId: newStreamId,
             executionMode,
-            mcpServerPath: executionMode === 'tool_agent' ? mcpServerPath : undefined,
+            mcpServerPaths: executionMode === 'tool_agent' ? enabledMcpServers : undefined,
             selectedMcpTools: executionMode === 'tool_agent' ? selectedMcpTools : undefined,
         });
 
@@ -1256,7 +1254,7 @@ const handleSummarizeAndStart = async () => {
             attachments: [],
             streamId: newStreamId,
             executionMode,
-            mcpServerPath: executionMode === 'tool_agent' ? mcpServerPath : undefined,
+            mcpServerPaths: executionMode === 'tool_agent' ? enabledMcpServers : undefined,
             selectedMcpTools: executionMode === 'tool_agent' ? selectedMcpTools : undefined,
         });
     } catch (err) {
@@ -1841,15 +1839,23 @@ const renderMcpSidebarPanel = () => {
 const loadSidebarJinxes = async () => {
     setSidebarJinxesLoading(true);
     try {
-        const [npcshRes, incognideRes, projectRes] = await Promise.all([
-            (window as any).api.getJinxesGlobal('npcsh'),
-            (window as any).api.getJinxesGlobal(),
-            currentPath ? (window as any).api.getJinxesProject(currentPath) : Promise.resolve({ jinxes: [] }),
-        ]);
-        const npcsh = (npcshRes?.jinxes || []).map((j: any) => ({ ...j, team: 'npcsh', scope: 'global' }));
-        const incognide = (incognideRes?.jinxes || []).map((j: any) => ({ ...j, team: 'incognide', scope: 'global' }));
-        const project = (projectRes?.jinxes || []).map((j: any) => ({ ...j, team: 'project', scope: 'project' }));
-        setSidebarJinxes([...project, ...incognide, ...npcsh]);
+        const teamsData = await (window as any).api.teamsRead();
+        const registered = teamsData?.teams || {};
+        const teamKeys = Object.keys(registered);
+        const fetches = teamKeys.map((key) => (window as any).api.getJinxesTeam(key));
+        const results = await Promise.allSettled(fetches);
+        const allJinxes: any[] = [];
+        if (currentPath) {
+            const projectRes = await (window as any).api.getJinxesProject(currentPath);
+            const project = (projectRes?.jinxes || []).map((j: any) => ({ ...j, team: 'project', scope: 'project' }));
+            allJinxes.push(...project);
+        }
+        results.forEach((res, idx) => {
+            const key = teamKeys[idx];
+            const jinxes = res.status === 'fulfilled' ? (res.value?.jinxes || []) : [];
+            allJinxes.push(...jinxes.map((j: any) => ({ ...j, team: key, scope: 'global' })));
+        });
+        setSidebarJinxes(allJinxes);
     } catch {  }
     finally { setSidebarJinxesLoading(false); }
 };
@@ -1962,19 +1968,20 @@ const renderSidebarSkillNodes = (nodes: any[], teamKey: string, depth: number): 
 };
 
 const renderSkillsSidebarPanel = () => {
-
-    const teamGroups: Record<string, any[]> = { project: [], incognide: [], npcsh: [] };
+    const teamGroups: Record<string, any[]> = {};
     sidebarJinxes.forEach((j: any) => {
-        const team = j.team || (j.scope === 'project' ? 'project' : 'npcsh');
+        const team = j.team || (j.scope === 'project' ? 'project' : 'global');
         if (!teamGroups[team]) teamGroups[team] = [];
         teamGroups[team].push(j);
     });
 
-    const teamConfigs = [
-        { key: 'project', label: 'Project', color: 'text-purple-400', badge: 'bg-purple-500/20 text-purple-400', hover: 'hover:bg-purple-500/10' },
-        { key: 'incognide', label: 'Incognide', color: 'text-green-400', badge: 'bg-green-500/20 text-green-400', hover: 'hover:bg-green-500/10' },
-        { key: 'npcsh', label: 'npcsh', color: 'text-blue-400', badge: 'bg-blue-500/20 text-blue-400', hover: 'hover:bg-blue-500/10' },
-    ];
+    const teamConfigMap: Record<string, any> = {
+        project: { label: 'Project', color: 'text-purple-400', badge: 'bg-purple-500/20 text-purple-400', hover: 'hover:bg-purple-500/10' },
+    };
+    const teamConfigs = Object.keys(teamGroups).map((key) => ({
+        key,
+        ...(teamConfigMap[key] || { label: key, color: 'text-green-400', badge: 'bg-green-500/20 text-green-400', hover: 'hover:bg-green-500/10' }),
+    }));
 
     return (
         <div className="border-b theme-border bg-purple-900/10">

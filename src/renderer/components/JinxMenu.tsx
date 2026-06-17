@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import AutosizeTextarea from './AutosizeTextarea';
 
-const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = true, globalPath = undefined }) => {
+const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, teamKey = undefined, initialJinxName = undefined }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [jinxes, setJinxes] = useState([]);
@@ -30,19 +30,11 @@ const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = t
     useEffect(() => {
         const loadJinxes = async () => {
             if (!isOpen) return;
-            
-            // Validate paths before making API calls
-            if (!isGlobal && (!currentPath || typeof currentPath !== 'string')) {
-                setError('No project folder selected');
-                setLoading(false);
-                return;
-            }
-            
             setLoading(true);
             setError(null);
 
-            const response = isGlobal
-                ? await window.api.getJinxesGlobal(globalPath)
+            const response = teamKey
+                ? await window.api.getJinxesTeam(teamKey)
                 : await window.api.getJinxesProject(currentPath);
 
             if (response.error) {
@@ -55,7 +47,26 @@ const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = t
             setLoading(false);
         };
         loadJinxes();
-    }, [isOpen, isGlobal, currentPath, globalPath]);
+    }, [isOpen, currentPath, teamKey]);
+
+    useEffect(() => {
+        if (!initialJinxName || jinxes.length === 0) return;
+        const target = jinxes.find(j => j.name === initialJinxName || j.jinx_name === initialJinxName);
+        if (target) {
+            handleJinxSelect(target);
+            // Expand folders containing the target
+            const parts = (target.path || target.jinx_name || initialJinxName).split('/');
+            if (parts.length > 1) {
+                let path = '';
+                const toExpand = new Set();
+                for (let i = 0; i < parts.length - 1; i++) {
+                    path = path ? `${path}/${parts[i]}` : parts[i];
+                    toExpand.add(path);
+                }
+                setExpandedFolders(prev => new Set([...prev, ...toExpand]));
+            }
+        }
+    }, [initialJinxName, jinxes]);
 
     const buildFolderTree = (jinxesList) => {
         const tree = { folders: {}, files: [] };
@@ -121,22 +132,25 @@ const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, isGlobal = t
             );
         }
 
-        const sortedFiles = node.files.sort((a, b) =>
-            a.jinx_name.localeCompare(b.jinx_name)
-        );
+        const sortedFiles = (node.files || []).filter(Boolean).sort((a, b) => {
+            const nameA = (a && (a.jinx_name || a.name || '')) || '';
+            const nameB = (b && (b.jinx_name || b.name || '')) || '';
+            return nameA.localeCompare(nameB);
+        });
         for (const jinx of sortedFiles) {
             items.push(
                 <button
-                    key={jinx.path || jinx.jinx_name}
+                    key={jinx.path || jinx.jinx_name || jinx.name}
                     onClick={() => handleJinxSelect(jinx)}
                     className={`flex items-center gap-2 w-full p-2
                         rounded text-sm text-left
-                        ${selectedJinx?.jinx_name === jinx.jinx_name
+                        ${(selectedJinx?.jinx_name || selectedJinx?.name) ===
+                                (jinx.jinx_name || jinx.name)
                             ? 'bg-blue-600/50'
                             : 'theme-hover'}`}
                 >
                     <Wrench size={14} className="text-gray-400" />
-                    <span className="flex-1 truncate">{jinx.jinx_name}</span>
+                    <span className="flex-1 truncate">{jinx.jinx_name || jinx.name}</span>
                 </button>
             );
         }
@@ -303,9 +317,8 @@ const labelExecution = async (messageId, label) => {
     const handleSave = async () => {
         const response = await window.api.saveJinx({
             jinx: editedJinx,
-            isGlobal,
             currentPath,
-            globalPath,
+            globalPath: teamKey,
         });
 
         if (response.error) {
@@ -313,8 +326,8 @@ const labelExecution = async (messageId, label) => {
             return;
         }
 
-        const refreshed = isGlobal
-            ? await window.api.getJinxesGlobal(globalPath)
+        const refreshed = teamKey
+            ? await window.api.getJinxesTeam(teamKey)
             : await window.api.getJinxesProject(currentPath);
         setJinxes(refreshed.jinxes || []);
         setSelectedJinx(editedJinx);

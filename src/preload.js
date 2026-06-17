@@ -68,6 +68,18 @@ readDocxContent: (filePath) =>
     scheduledJobToggle: (jobId, enabled) => ipcRenderer.invoke('scheduledJob:toggle', { jobId, enabled }),
     scheduledJobRunNow: (jobId) => ipcRenderer.invoke('scheduledJob:runNow', jobId),
     scheduledJobHistory: (jobId) => ipcRenderer.invoke('scheduledJob:history', jobId),
+    scanKnowledgeStores: (workspacePath) => ipcRenderer.invoke('scanKnowledgeStores', workspacePath),
+    kgRegisterStore: (dirPath) => ipcRenderer.invoke('kg:registerStore', dirPath),
+    kgUnregisterStore: (dirPath) => ipcRenderer.invoke('kg:unregisterStore', dirPath),
+    kgScanAndRegister: (rootPath) => ipcRenderer.invoke('kg:scanAndRegister', rootPath),
+    kgLoadStoreData: (params) => ipcRenderer.invoke('kg:loadStoreData', params),
+    kgPipelineRun: (params) => ipcRenderer.invoke('kgPipeline:run', params),
+    kgPipelineAbort: (jobId) => ipcRenderer.invoke('kgPipeline:abort', jobId),
+    onKgPipelineLog: (callback) => {
+        const handler = (_, data) => callback(data);
+        ipcRenderer.on('kg-pipeline-log', handler);
+        return () => ipcRenderer.removeListener('kg-pipeline-log', handler);
+    },
 
     generateImages: (prompt, n, model, provider, attachments, baseFilename, currentPath, opts = {}) => ipcRenderer.invoke('generate_images', { prompt, n, model, provider, attachments, baseFilename, currentPath, workspacePath: opts.workspacePath, width: opts.width, height: opts.height, customModelPath: opts.customModelPath }),
 
@@ -448,8 +460,6 @@ readDocxContent: (filePath) =>
     tileJinxRecompile: () => ipcRenderer.invoke('tile-jinx-recompile'),
     transformTsx: (code) => ipcRenderer.invoke('transformTsx', code),
 
-    getGlobalContext: (globalPath) => ipcRenderer.invoke('get-global-context', globalPath),
-    saveGlobalContext: (contextData, globalPath) => ipcRenderer.invoke('save-global-context', contextData, globalPath),
     getProjectContext: (path) => ipcRenderer.invoke('get-project-context', path),
     saveProjectContext: (data) => ipcRenderer.invoke('save-project-context', data),
     initProjectTeam: (path) => ipcRenderer.invoke('init-project-team', path),
@@ -510,6 +520,7 @@ readDocxContent: (filePath) =>
     memory_approve: (args) => ipcRenderer.invoke('memory:approve', args),
 
     knowledge_load: (args) => ipcRenderer.invoke('knowledge:load', args),
+    knowledge_loadDirs: (args) => ipcRenderer.invoke('knowledge:loadDirs', args),
     knowledge_search: (args) => ipcRenderer.invoke('knowledge:search', args),
     knowledge_memories: (args) => ipcRenderer.invoke('knowledge:memories', args),
     knowledge_links: (args) => ipcRenderer.invoke('knowledge:links', args),
@@ -519,6 +530,8 @@ readDocxContent: (filePath) =>
     knowledge_all_search: (args) => ipcRenderer.invoke('knowledge:all_search', args),
     knowledge_memory_update: (args) => ipcRenderer.invoke('knowledge:memory_update', args),
     knowledge_memory_delete: (args) => ipcRenderer.invoke('knowledge:memory_delete', args),
+    knowledge_extract: (args) => ipcRenderer.invoke('knowledge:extract', args),
+    knowledge_extractAndStore: (args) => ipcRenderer.invoke('knowledge:extractAndStore', args),
 
     logActivity: (args) => ipcRenderer.invoke('activity:log', args),
     getActivities: (args) => ipcRenderer.invoke('activity:list', args),
@@ -594,7 +607,7 @@ onTerminalClosed: (callback) => {
     getBrowserHistory: (folderPath) => ipcRenderer.invoke('get-browser-history', folderPath),
     browserAddToHistory: (data) => ipcRenderer.invoke('browser-add-to-history', data),
 
-    getJinxesGlobal: (globalPath) => ipcRenderer.invoke('get-jinxes-global', globalPath),
+    getJinxesTeam: (globalPath) => ipcRenderer.invoke('get-jinxes-team', globalPath),
     getJinxesProject: async (currentPath) => {
         try {
             const response = await fetch(`${BACKEND_URL}/api/jinxes/project?currentPath=${encodeURIComponent(currentPath)}`);
@@ -761,7 +774,7 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
         return await ipcRenderer.invoke('getNPCTeamProject', currentPath);
     },
 
-    getNPCTeamGlobal: (globalPath) => ipcRenderer.invoke('getNPCTeamGlobal', globalPath),
+    getNPCTeamFromPath: (teamKey) => ipcRenderer.invoke('get-npc-team-from-path', teamKey),
 
     onBrowserShowContextMenu: (callback) => {
         const handler = (_, data) => callback(data);
@@ -785,9 +798,6 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
     loadProjectSettings: (path) => ipcRenderer.invoke('loadProjectSettings', path),
     saveProjectSettings: (args) => ipcRenderer.invoke('saveProjectSettings', args),
 
-    npcshCheck: () => ipcRenderer.invoke('npcsh-check'),
-    npcshPackageContents: () => ipcRenderer.invoke('npcsh-package-contents'),
-    npcshInit: () => ipcRenderer.invoke('npcsh-init'),
     deployIncognideTeam: () => ipcRenderer.invoke('deploy-incognide-team'),
 
     npcTeamSyncStatus: (globalPath) => ipcRenderer.invoke('npc-team:sync-status', globalPath),

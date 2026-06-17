@@ -421,7 +421,7 @@ const ensureTablesExist = async () => {
       CREATE TABLE IF NOT EXISTS scheduled_jobs (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL UNIQUE,
-          job_type TEXT NOT NULL CHECK(job_type IN ('jinx','finetune_instruction','finetune_diffusers','inference')),
+          job_type TEXT NOT NULL CHECK(job_type IN ('jinx','finetune_instruction','finetune_diffusers','inference','activity_intelligence','autocomplete','knowledge_graph')),
           schedule TEXT NOT NULL,
           command TEXT,
           npc_name TEXT,
@@ -489,6 +489,107 @@ const ensureTablesExist = async () => {
       );
   `;
 
+  const createKnowledgeGraphEntitiesTable = `
+      CREATE TABLE IF NOT EXISTS kg_entities (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          entity_type TEXT DEFAULT 'concept',
+          source TEXT,
+          embedding BLOB,
+          metadata TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+  `;
+
+  const createKnowledgeGraphRelationsTable = `
+      CREATE TABLE IF NOT EXISTS kg_relations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL UNIQUE,
+          relation_type TEXT DEFAULT 'semantic',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+  `;
+
+  const createKnowledgeGraphTriplesTable = `
+      CREATE TABLE IF NOT EXISTS kg_triples (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          head_entity_id INTEGER NOT NULL,
+          relation_id INTEGER NOT NULL,
+          tail_entity_id INTEGER NOT NULL,
+          weight REAL DEFAULT 1.0,
+          source TEXT,
+          metadata TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (head_entity_id) REFERENCES kg_entities(id),
+          FOREIGN KEY (relation_id) REFERENCES kg_relations(id),
+          FOREIGN KEY (tail_entity_id) REFERENCES kg_entities(id)
+      );
+  `;
+
+  const createKnowledgeGraphLocationsTable = `
+      CREATE TABLE IF NOT EXISTS kg_locations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          entity_id INTEGER NOT NULL,
+          location_type TEXT NOT NULL,
+          location_value TEXT NOT NULL,
+          context_snippet TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (entity_id) REFERENCES kg_entities(id)
+      );
+  `;
+
+  const createKnowledgeGraphEvolutionsTable = `
+      CREATE TABLE IF NOT EXISTS kg_evolutions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          run_type TEXT DEFAULT 'incremental',
+          entities_found INTEGER DEFAULT 0,
+          triples_created INTEGER DEFAULT 0,
+          cross_links INTEGER DEFAULT 0,
+          duration_ms INTEGER,
+          log_summary TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+  `;
+
+  const createConversationHistoryTable = `
+      CREATE TABLE IF NOT EXISTS conversation_history (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          message_id TEXT UNIQUE NOT NULL,
+          timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+          role TEXT NOT NULL,
+          content TEXT,
+          conversation_id TEXT NOT NULL,
+          directory_path TEXT,
+          model TEXT,
+          provider TEXT,
+          npc TEXT,
+          team TEXT,
+          reasoning_content TEXT,
+          tool_calls TEXT,
+          tool_results TEXT,
+          parent_message_id TEXT,
+          params TEXT,
+          input_tokens INTEGER,
+          output_tokens INTEGER,
+          cost TEXT,
+          execution_mode TEXT DEFAULT 'chat'
+      );
+  `;
+
+  const createMessageAttachmentsTable = `
+      CREATE TABLE IF NOT EXISTS message_attachments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          message_id TEXT NOT NULL,
+          attachment_name TEXT,
+          attachment_type TEXT,
+          attachment_data BLOB,
+          attachment_size INTEGER,
+          file_path TEXT,
+          upload_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+  `;
+
   const createIndexes = `
       CREATE INDEX IF NOT EXISTS idx_file_path ON pdf_highlights(file_path);
       CREATE INDEX IF NOT EXISTS idx_pdf_drawings_file ON pdf_drawings(file_path);
@@ -508,6 +609,18 @@ const ensureTablesExist = async () => {
       CREATE INDEX IF NOT EXISTS idx_activity_type ON activity_log(activity_type);
       CREATE INDEX IF NOT EXISTS idx_autocomplete_type ON autocomplete_suggestions(suggestion_type);
       CREATE INDEX IF NOT EXISTS idx_autocomplete_training_type ON autocomplete_training(suggestion_type);
+      CREATE INDEX IF NOT EXISTS idx_kg_entity_name ON kg_entities(name);
+      CREATE INDEX IF NOT EXISTS idx_kg_entity_type ON kg_entities(entity_type);
+      CREATE INDEX IF NOT EXISTS idx_kg_triple_head ON kg_triples(head_entity_id);
+      CREATE INDEX IF NOT EXISTS idx_kg_triple_tail ON kg_triples(tail_entity_id);
+      CREATE INDEX IF NOT EXISTS idx_kg_triple_relation ON kg_triples(relation_id);
+      CREATE INDEX IF NOT EXISTS idx_kg_location_entity ON kg_locations(entity_id);
+      CREATE INDEX IF NOT EXISTS idx_kg_location_type ON kg_locations(location_type);
+      CREATE INDEX IF NOT EXISTS idx_conv_history_conversation ON conversation_history(conversation_id);
+      CREATE INDEX IF NOT EXISTS idx_conv_history_message ON conversation_history(message_id);
+      CREATE INDEX IF NOT EXISTS idx_conv_history_timestamp ON conversation_history(timestamp);
+      CREATE INDEX IF NOT EXISTS idx_conv_history_directory ON conversation_history(directory_path);
+      CREATE INDEX IF NOT EXISTS idx_attachments_message ON message_attachments(message_id);
   `;
 
   try {
@@ -523,7 +636,28 @@ const ensureTablesExist = async () => {
       await dbQuery(createActivityLogTable);
       await dbQuery(createAutocompleteSuggestionsTable);
       await dbQuery(createAutocompleteTrainingTable);
+      await dbQuery(createKnowledgeGraphEntitiesTable);
+      await dbQuery(createKnowledgeGraphRelationsTable);
+      await dbQuery(createKnowledgeGraphTriplesTable);
+      await dbQuery(createKnowledgeGraphLocationsTable);
+      await dbQuery(createKnowledgeGraphEvolutionsTable);
+      await dbQuery(createConversationHistoryTable);
+      await dbQuery(createMessageAttachmentsTable);
       await dbQuery(createIndexes);
+
+      // FTS5 index for unified search across conversations
+      try {
+          await dbQuery(`CREATE VIRTUAL TABLE IF NOT EXISTS conversation_history_fts USING fts5(content, content='conversation_history', content_rowid=rowid)`);
+          // Trigger: insert into FTS
+          await dbQuery(`CREATE TRIGGER IF NOT EXISTS conversation_history_fts_insert AFTER INSERT ON conversation_history BEGIN INSERT INTO conversation_history_fts(rowid, content) VALUES (new.rowid, new.content); END`);
+          // Trigger: delete from FTS
+          await dbQuery(`CREATE TRIGGER IF NOT EXISTS conversation_history_fts_delete AFTER DELETE ON conversation_history BEGIN DELETE FROM conversation_history_fts WHERE rowid=old.rowid; END`);
+          // Trigger: update FTS
+          await dbQuery(`CREATE TRIGGER IF NOT EXISTS conversation_history_fts_update AFTER UPDATE OF content ON conversation_history BEGIN UPDATE conversation_history_fts SET content=new.content WHERE rowid=old.rowid; END`);
+          console.log('[DB] FTS5 index ready on conversation_history');
+      } catch (ftsErr) {
+          console.error('[DB] FTS5 setup error:', ftsErr.message);
+      }
 
       const addColumnIfMissing = async (table, column, definition) => {
           const cols = await dbQuery(`PRAGMA table_info(${table})`);
@@ -541,6 +675,23 @@ const ensureTablesExist = async () => {
       await addColumnIfMissing('jinx_execution_log', 'log_file_path', 'TEXT');
       await addColumnIfMissing('activity_log', 'directory_path', 'TEXT');
       await addColumnIfMissing('activity_log', 'device_id', 'TEXT');
+
+      // Migrate scheduled_jobs CHECK constraint to include new job types
+      try {
+          const master = await dbQuery(`SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'`);
+          if (master.length && master[0].sql) {
+              const needsMigrate = !master[0].sql.includes("'activity_intelligence'") || !master[0].sql.includes("'autocomplete'") || !master[0].sql.includes("'knowledge_graph'");
+              if (needsMigrate) {
+                  await dbQuery(`ALTER TABLE scheduled_jobs RENAME TO scheduled_jobs_old`);
+                  await dbQuery(createScheduledJobsTable);
+                  await dbQuery(`INSERT INTO scheduled_jobs SELECT * FROM scheduled_jobs_old`);
+                  await dbQuery(`DROP TABLE scheduled_jobs_old`);
+                  console.log('[DB] Migrated scheduled_jobs CHECK constraint');
+              }
+          }
+      } catch (migrateErr) {
+          console.error('[DB] scheduled_jobs migration error:', migrateErr.message);
+      }
 
       console.log('[DB] All tables are ready.');
   } catch (error) {
@@ -635,48 +786,10 @@ function parseIncogniderc() {
   return result;
 }
 
-function getDefaultModelConfig() {
-  const yaml = require('js-yaml');
-  let model = '';
-  let provider = '';
-  let npc = 'ledbi';
-
-  const rcEnv = parseIncogniderc();
-
-  const chatModel = process.env.INCOGNIDE_CHAT_MODEL || rcEnv.INCOGNIDE_CHAT_MODEL;
-  const chatProvider = process.env.INCOGNIDE_CHAT_PROVIDER || rcEnv.INCOGNIDE_CHAT_PROVIDER;
-  const defaultNpc = process.env.INCOGNIDE_DEFAULT_NPC || rcEnv.INCOGNIDE_DEFAULT_NPC;
-
-  if (chatModel) model = chatModel;
-  if (chatProvider) provider = chatProvider;
-  if (defaultNpc) npc = defaultNpc;
-
-  if (!chatModel) {
-    try {
-      const globalCtx = path.join(INCOGNIDE_HOME, 'npc_team', 'incognide.ctx');
-      if (fs.existsSync(globalCtx)) {
-        const ctxData = yaml.load(fs.readFileSync(globalCtx, 'utf-8')) || {};
-        if (ctxData.model) model = ctxData.model;
-        if (ctxData.provider) provider = ctxData.provider;
-        if (ctxData.forenpc) npc = ctxData.forenpc;
-      }
-    } catch (e) {
-      console.log('Error reading incognide.ctx for default model:', e.message);
-    }
-  }
-
-  console.log('Default model config:', { model, provider, npc });
-  return { model, provider, npc };
-}
-
-const defaultModelConfig = getDefaultModelConfig();
-
 const DEFAULT_CONFIG = {
   baseDir: path.resolve(INCOGNIDE_HOME),
   stream: true,
-  model: defaultModelConfig.model,
-  provider: defaultModelConfig.provider,
-  npc: defaultModelConfig.npc,
+  npc: 'ledbi',
 };
 
 const DEVICE_CONFIG_PATH = path.join(INCOGNIDE_HOME, 'device.json');
@@ -1476,8 +1589,12 @@ async function deployIncognideTeamOnStartup() {
           await copyAndTrack(path.join(src, item), path.join(dest, item), relBase ? `${relBase}/${item}` : item);
         }
       } else {
-        await fsPromises.copyFile(src, dest);
-        newManifest[relBase] = crypto.createHash('sha256').update(await fsPromises.readFile(dest)).digest('hex');
+        if (relBase.endsWith('.npc') && fs.existsSync(dest)) {
+          newManifest[relBase] = crypto.createHash('sha256').update(await fsPromises.readFile(dest)).digest('hex');
+        } else {
+          await fsPromises.copyFile(src, dest);
+          newManifest[relBase] = crypto.createHash('sha256').update(await fsPromises.readFile(dest)).digest('hex');
+        }
       }
     };
     await copyAndTrack(npcTeamSrc, destBase);
@@ -1527,11 +1644,12 @@ body { margin:0; background:#0f0f23; display:flex; align-items:center; justify-c
   const dataPath = ensureUserDataDirectory();
   await ensureTablesExist();
 
-  // Ensure bundled npc_team is deployed so daemon jinx paths resolve
-  try {
-    await deployIncognideTeamOnStartup();
-  } catch (e) {
-    log(`[Deploy] Startup deploy error: ${e.message}`);
+  if (app.isPackaged) {
+    try {
+      await deployIncognideTeamOnStartup();
+    } catch (e) {
+      log(`[Deploy] Startup deploy error: ${e.message}`);
+    }
   }
 
   // Auto-start daemon if it was running or if there are enabled scheduled jobs
@@ -1653,6 +1771,7 @@ body { margin:0; background:#0f0f23; display:flex; align-items:center; justify-c
         ...process.env,
         INCOGNIDE_PORT: String(BACKEND_PORT),
         INCOGNIDE_FRONTEND_PORT: String(FRONTEND_PORT),
+        INCOGNIDE_DB_PATH: dbPath,
         FLASK_DEBUG: '1',
         PYTHONUNBUFFERED: '1',
         PYTHONIOENCODING: 'utf-8',
@@ -1752,11 +1871,15 @@ async function callBackendApi(url, options = {}) {
       const errorText = await response.text();
       throw new Error(`HTTP error ${response.status}: ${errorText}`);
     }
-    return await response.json();
+    const data = await response.json();
+    return JSON.parse(JSON.stringify(data, (_k, v) => {
+      if (typeof v === 'number' && !Number.isFinite(v)) return null;
+      if (v === undefined) return null;
+      return v;
+    }));
   } catch (err) {
     console.error(`API call failed to ${url}:`, err);
-
-    return { error: err.message, success: false };
+    return { error: String(err?.message || err), success: false };
   }
 }
 function ensureUserDataDirectory() {
@@ -3195,11 +3318,10 @@ ipcMain.handle('backend:installAndStart', async (event, { pythonPath, npcpyExtra
 
     const venvPython = path.join(venvDir, 'bin', 'python');
 
-    sendProgress(`Installing npcpy[${npcpyExtras}] and npcsh...`);
+    sendProgress(`Installing npcpy[${npcpyExtras}]...`);
 
-    // Stream pip install output
     await new Promise((resolve, reject) => {
-      const installProc = spawn(venvPython, ['-m', 'pip', 'install', '--upgrade', `npcpy[${npcpyExtras}]`, 'npcsh'], {
+      const installProc = spawn(venvPython, ['-m', 'pip', 'install', '--upgrade', `npcpy[${npcpyExtras}]`], {
         env: { ...process.env, HOME: os.homedir(), PYTHONUNBUFFERED: '1' },
       });
 

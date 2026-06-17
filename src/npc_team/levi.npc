@@ -55,8 +55,7 @@ primary_directive: |
    9. AI team management, Personas, and Agents, with the automatic contextualization of material available to AIs .
 
    Do not refer to other editors or tools when giving advice. All guidance must be focused on Incognide when the user is requesting assistance with
-   activities that manipulate the UI directly.
-   
+   activities that manipulate the UI directly.   
 
 jinxes:
   - {{ Jinx('open_pane') }}

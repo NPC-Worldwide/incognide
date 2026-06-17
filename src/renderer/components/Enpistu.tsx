@@ -2,6 +2,7 @@
 import { BACKEND_URL } from '../config';
 import { createPortal } from 'react-dom';
 import { readFileContent, writeFileContent, createDirectory, renameFile } from '../api/fileSystem';
+import yaml from 'js-yaml';
 import {
     Folder, File as FileIcon,  Globe, ChevronRight, ChevronLeft, Settings, Edit,
     Terminal, Image, Music, Trash, Users, Plus, ArrowUp, Camera, MessageSquare,
@@ -37,7 +38,6 @@ import JinxMenu from './JinxMenu';
 import '../../index.css';
 import CtxEditor from './CtxEditor';
 import TeamManagement from './TeamManagement';
-import McpManager from './McpManager';
 import SkillsManager from './SkillsManager';
 import MarkdownRenderer from './MarkdownRenderer';
 import DataDash from './DataDash';
@@ -75,7 +75,6 @@ import { LiveProvider, LivePreview, LiveError } from 'react-live';
 import GraphViewer from './GraphViewer';
 import BrowserHistoryWeb from './BrowserHistoryWeb';
 import KnowledgeGraphEditor from './KnowledgeGraphEditor';
-import McpServerMenu from './McpServerMenu';
 import MessageLabeling from './MessageLabeling';
 import LabeledDataManager from './LabeledDataManager';
 import ActivityIntelligence from './ActivityIntelligence';
@@ -413,6 +412,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         npcsError, setNpcsError, executionMode, setExecutionMode,
         favoriteModels, setFavoriteModels, showAllModels, setShowAllModels,
         toggleFavoriteModel, modelsToDisplay,
+        teamConfigs, setTeamConfigs, modelWarning, setModelWarning,
     } = useModelSelection();
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(true);
@@ -774,7 +774,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         selectedModel: '',
         selectedNPC: ''
     });
-    const [mcpServerPath, setMcpServerPath] = useState('');
+    const [enabledMcpServers, setEnabledMcpServers] = useState<string[]>([]);
     const [selectedMcpTools, setSelectedMcpTools] = useState([]);
     const [availableMcpTools, setAvailableMcpTools] = useState([]);
     const [mcpToolsLoading, setMcpToolsLoading] = useState(false);
@@ -1762,7 +1762,7 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
     useEffect(() => {
         const fetchJinxes = async () => {
             try {
-                const globalResp = await window.api.getJinxesGlobal(); // { jinxes: [...] }
+                const globalResp = await window.api.getJinxesTeam(); // { jinxes: [...] }
                 let projectResp = { jinxes: [] };
                 if (currentPath) {
                     try {
@@ -1821,26 +1821,6 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
         fetchJinxes();
     }, [currentPath]);
 
-    // Load MCP tools when in Tool Agent mode or when server path changes
-    useEffect(() => {
-        const loadMcpTools = async () => {
-            if (executionMode !== 'tool_agent') return;
-            setMcpToolsLoading(true);
-            setMcpToolsError(null);
-            const res = await window.api.listMcpTools({ serverPath: mcpServerPath, currentPath: currentPath || '~' });
-            setMcpToolsLoading(false);
-            if (res.error) {
-                setMcpToolsError(res.error);
-                setAvailableMcpTools([]);
-                return;
-            }
-            const tools = res.tools || [];
-            setAvailableMcpTools(tools);
-            const names = tools.map(t => t.function?.name).filter(Boolean);
-            setSelectedMcpTools(prev => prev.filter(n => names.includes(n)));
-        };
-        loadMcpTools();
-    }, [executionMode, mcpServerPath, currentPath]);
 
         
 
@@ -3973,7 +3953,6 @@ const tileJinxScope = useMemo(() => ({
     PythonEnvSettings,
     NPCTeamMenu,
     JinxMenu,
-    McpServerMenu,
     // All lucide icons
     ...LucideIcons,
     // Real window, console, and JS built-ins (in case icons shadow them)
@@ -4800,7 +4779,7 @@ const handleBrowserDialogNavigate = (url) => {
     };
 
     // Main input submit handler
-    const handleInputSubmit = async (e: React.FormEvent, options?: { voiceInput?: boolean; useKgSearch?: boolean; useMemorySearch?: boolean; disableThinking?: boolean; genParams?: { temperature: number; top_p: number; top_k: number; max_tokens: number }; inputText?: string; uploadedFiles?: any[]; mcpServerPath?: string; selectedMcpTools?: string[]; contextFiles?: any[]; paneId?: string }) => {
+    const handleInputSubmit = async (e: React.FormEvent, options?: { voiceInput?: boolean; useKgSearch?: boolean; useMemorySearch?: boolean; disableThinking?: boolean; genParams?: { temperature: number; top_p: number; top_k: number; max_tokens: number }; inputText?: string; uploadedFiles?: any[]; contextFiles?: any[]; paneId?: string }) => {
         e.preventDefault();
         const wasVoiceInput = options?.voiceInput || false;
         const disableThinking = options?.disableThinking || false;
@@ -5069,8 +5048,6 @@ ${contextPrompt}`;
                         }),
                         streamId: branchStreamId,
                         executionMode: paneExecMode,
-                        mcpServerPath: paneExecMode === 'tool_agent' ? mcpServerPath : undefined,
-                        selectedMcpTools: paneExecMode === 'tool_agent' ? selectedMcpTools : undefined,
                         userParentMessageId: userMessage.parentMessageId, // For sub-branching
                         // Pass frontend-generated message IDs so backend uses the same IDs
                         userMessageId: userMessage.id,
@@ -5473,6 +5450,19 @@ ${contextPrompt}`;
         handleCreateNewFolderRef.current = handleCreateNewFolder;
     }, [createNewTerminal, createNewConversation, createNewBrowser, handleCreateNewFolder]);
 
+    // Create Team Management pane
+    const createTeamManagementPane = useCallback(async (opts?: { npcName?: string; tab?: string; initialJinxName?: string }) => {
+        const newPaneId = generateId();
+        contentDataRef.current[newPaneId] = {
+            contentType: 'teammanagement',
+            contentId: 'teammanagement',
+            initialTab: opts?.tab || 'npcs',
+            initialNpc: opts?.npcName,
+            initialJinxName: opts?.initialJinxName,
+        };
+        addPaneOrTab(newPaneId);
+    }, []);
+
     // Render NPC Team pane (embedded version for pane layout)
     const renderNPCTeamPane = useCallback(({ nodeId }: { nodeId: string }) => {
         return (
@@ -5485,9 +5475,10 @@ ${contextPrompt}`;
                     createNewConversation();
                 }}
                 embedded={true}
+                onOpenJinxTab={(name) => createTeamManagementPane({ tab: 'jinxes', initialJinxName: name })}
             />
         );
-    }, [currentPath, createNewConversation]);
+    }, [currentPath, createNewConversation, createTeamManagementPane]);
 
     // Create NPC Team pane
     const createNPCTeamPane = useCallback(async () => {
@@ -5538,21 +5529,11 @@ ${contextPrompt}`;
                 currentNpc={paneData.initialNpc || currentNPC}
                 initialTab={paneData.activeTab || paneData.initialTab}
                 onTabChange={(tab) => { contentDataRef.current[nodeId] = { ...contentDataRef.current[nodeId], activeTab: tab }; }}
+                initialJinxName={paneData.initialJinxName}
+                onOpenJinxPane={(name) => createTeamManagementPane({ tab: 'jinxes', initialJinxName: name })}
             />
         );
-    }, [currentPath, createNewConversation, availableNPCs, availableJinxes, currentNPC]);
-
-    // Create Team Management pane
-    const createTeamManagementPane = useCallback(async (opts?: { npcName?: string; tab?: string }) => {
-        const newPaneId = generateId();
-        contentDataRef.current[newPaneId] = {
-            contentType: 'teammanagement',
-            contentId: 'teammanagement',
-            initialTab: opts?.tab || 'npcs',
-            initialNpc: opts?.npcName,
-        };
-        addPaneOrTab(newPaneId);
-    }, []);
+    }, [currentPath, createNewConversation, availableNPCs, availableJinxes, currentNPC, createTeamManagementPane]);
 
     // Render Settings pane (embedded version for pane layout)
     const renderSettingsPane = useCallback(({ nodeId }: { nodeId: string }) => {
@@ -5579,20 +5560,6 @@ ${contextPrompt}`;
         addPaneOrTab(newPaneId);
     }, []);
 
-    const renderMcpManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
-        return (
-            <McpManager
-                currentPath={currentPath}
-                embedded={true}
-            />
-        );
-    }, [currentPath]);
-
-    const createMcpManagerPane = useCallback(async () => {
-        const newPaneId = generateId();
-        contentDataRef.current[newPaneId] = { contentType: 'mcp-manager', contentId: 'mcp-manager' };
-        addPaneOrTab(newPaneId);
-    }, []);
 
     const createBrowserSettingsPane = useCallback(async () => {
         const newPaneId = generateId();
@@ -5770,7 +5737,8 @@ ${contextPrompt}`;
                         title: conv.preview?.split('\n')[0]?.substring(0, 30) || 'New Conversation',
                         preview: conv.preview || 'No content',
                         timestamp: conv.timestamp || Date.now(),
-                        last_message_timestamp: conv.last_message_timestamp || conv.timestamp || Date.now()
+                        last_message_timestamp: conv.last_message_timestamp || conv.timestamp || Date.now(),
+                        execution_mode: conv.execution_mode || 'chat'
                     }));
 
                     formattedConversations.sort((a: any, b: any) =>
@@ -6091,34 +6059,6 @@ ${contextPrompt}`;
                 setPredictiveTextDelay(globalSettings.global_settings?.predictive_text_delay || 250);
             }
 
-            // Check if npcsh is initialized
-            try {
-                const npcshStatus = await window.api.npcshCheck();
-                if (npcshStatus && !npcshStatus.error && !npcshStatus.initialized) {
-                    // Open init modal and fetch package contents
-                    setInitModal({ isOpen: true, loading: true, npcs: [], jinxes: [], tab: 'npcs', initializing: false });
-                    try {
-                        const packageContents = await window.api.npcshPackageContents();
-                        if (packageContents && !packageContents.error) {
-                            setInitModal(prev => ({
-                                ...prev,
-                                loading: false,
-                                npcs: (packageContents.npcs || []).map((n: any) => ({ ...n, enabled: true })),
-                                jinxes: (packageContents.jinxes || []).map((j: any) => ({ ...j, enabled: true }))
-                            }));
-                        } else {
-                            console.error('Failed to get package contents:', packageContents?.error);
-                            setInitModal(prev => ({ ...prev, loading: false }));
-                        }
-                    } catch (e) {
-                        console.error('Error fetching package contents:', e);
-                        setInitModal(prev => ({ ...prev, loading: false }));
-                    }
-                }
-            } catch (err) {
-                console.warn('Could not check npcsh status:', err);
-            }
-
             // Only determine initial path on first load (when currentPath is empty)
             if (!currentPath) {
                 let storedPath = sessionStorage.getItem(LAST_ACTIVE_PATH_KEY);
@@ -6140,23 +6080,9 @@ ${contextPrompt}`;
                         localStorage.removeItem(LAST_ACTIVE_PATH_KEY);
                     }
                 }
-                // Still fetch models, NPCs, and MCP tools even without a workspace folder
+                // Still fetch models and NPCs even without a workspace folder
                 await fetchModels(null, setModelsLoading, setModelsError, setAvailableModels);
                 await loadAvailableNPCs(null, setNpcsLoading, setNpcsError, setAvailableNPCs);
-                // Auto-start MCP server and load tools for agent mode
-                try {
-                    const mcpRes = await window.api.getMcpServers('~');
-                    if (mcpRes?.servers?.length > 0) {
-                        setAvailableMcpServers(mcpRes.servers);
-                        const incognideServer = mcpRes.servers.find((s: any) => s.serverPath?.includes('incognide'));
-                        if (incognideServer) setMcpServerPath(incognideServer.serverPath);
-                    }
-                    const toolsRes = await window.api.listMcpTools({ serverPath: mcpServerPath, currentPath: '~' });
-                    if (toolsRes?.tools) {
-                        setAvailableMcpTools(toolsRes.tools);
-                        setSelectedMcpTools(toolsRes.tools.map((t: any) => t.function?.name).filter(Boolean));
-                    }
-                } catch {}
                 setLoading(false);
                 return;
             }
@@ -6204,112 +6130,48 @@ ${contextPrompt}`;
                 await loadConversationsWithoutAutoSelect(currentPath);
             }
 
-            const fetchedModels = await fetchModels(currentPath, setModelsLoading, setModelsError, setAvailableModels);
-            const fetchedNPCs = await loadAvailableNPCs(currentPath, setNpcsLoading, setNpcsError, setAvailableNPCs);
-
-            // Get project-level ctx settings (model/provider/npc from .ctx files or env)
-            const projectCtx = await window.api.getProjectCtx(currentPath);
-
-            // Priority order for model selection:
-            // 1. Project ctx (from npc_team/*.ctx or env vars)
-            // 2. Previously saved model in localStorage
-            // 3. Global config default
-            let modelToSet = projectCtx.model || config.model || 'qwen3.5:0.8b';
-            let providerToSet = projectCtx.provider || config.provider || 'ollama';
-            let npcToSet = projectCtx.npc || config.npc || 'sibiji';
-
-            // Validate that the model exists in available models
-            const projectModelExists = fetchedModels.find(m => m.value === modelToSet);
-            if (projectModelExists) {
-                providerToSet = projectModelExists.provider;
-            } else {
-                // Project model not found - try saved localStorage model
-                const savedModel = localStorage.getItem('incognideCurrentModel');
-                const savedProvider = localStorage.getItem('incognideCurrentProvider');
-                if (savedModel) {
-                    const parsedSavedModel = JSON.parse(savedModel);
-                    const savedModelExists = fetchedModels.find(m => m.value === parsedSavedModel);
-                    if (savedModelExists) {
-                        modelToSet = parsedSavedModel;
-                        providerToSet = savedProvider ? JSON.parse(savedProvider) : savedModelExists.provider;
-                    }
-                }
-
-                // If still no valid model, pick first available
-                if (!fetchedModels.find(m => m.value === modelToSet) && fetchedModels.length > 0) {
-                    modelToSet = fetchedModels[0].value;
-                    providerToSet = fetchedModels[0].provider;
-                }
+            await fetchModels(currentPath, setModelsLoading, setModelsError, setAvailableModels);
+            const { npcs: fetchedNPCs, teamConfigs: fetchedTeamConfigs } = await loadAvailableNPCs(currentPath, setNpcsLoading, setNpcsError, setAvailableNPCs);
+            if (fetchedTeamConfigs) {
+                setTeamConfigs(fetchedTeamConfigs);
             }
+
+            // Get project-level ctx settings for NPC name only
+            const projectCtx = await window.api.getProjectCtx(currentPath);
+            let npcToSet = projectCtx.npc || null;
 
             const storedConvoId = localStorage.getItem(LAST_ACTIVE_CONVO_ID_KEY);
             let targetConvoId = null;
-
             const currentConversations = directoryConversationsRef.current;
-            
+
             if (storedConvoId) {
                 const convoInCurrentDir = currentConversations.find(conv => conv.id === storedConvoId);
                 if (convoInCurrentDir) {
                     targetConvoId = storedConvoId;
-                    // Only use conversation's last model if projectCtx didn't specify one
-                    if (!projectCtx.model) {
-                        const lastUsedInConvo = await window.api.getLastUsedInConversation(targetConvoId);
-                        if (lastUsedInConvo?.model) {
-                            const validModel = fetchedModels.find(m => m.value === lastUsedInConvo.model);
-                            if (validModel) {
-                                modelToSet = validModel.value;
-                                providerToSet = validModel.provider;
-                            }
-                        }
-                        if (lastUsedInConvo?.npc) {
-                            const validNpc = fetchedNPCs.find(n => n.value === lastUsedInConvo.npc);
-                            if (validNpc) {
-                                npcToSet = validNpc.value;
-                            }
-                        }
+                    const lastUsedInConvo = await window.api.getLastUsedInConversation(targetConvoId);
+                    if (lastUsedInConvo?.npc) {
+                        const validNpc = fetchedNPCs.find((n: any) => n.value === lastUsedInConvo.npc);
+                        if (validNpc) npcToSet = validNpc.value;
                     }
                 } else {
                     localStorage.removeItem(LAST_ACTIVE_CONVO_ID_KEY);
                 }
             }
 
-            // Only use directory's last model if projectCtx didn't specify one
-            if (!targetConvoId && !projectCtx.model) {
+            if (!targetConvoId) {
                 const lastUsedInDir = await window.api.getLastUsedInDirectory(currentPath);
-                if (lastUsedInDir?.model) {
-                    const validModel = fetchedModels.find(m => m.value === lastUsedInDir.model);
-                    if (validModel) {
-                        modelToSet = validModel.value;
-                        providerToSet = validModel.provider;
-                    }
-                }
                 if (lastUsedInDir?.npc) {
-                    const validNpc = fetchedNPCs.find(n => n.value === lastUsedInDir.npc);
-                    if (validNpc) {
-                        npcToSet = validNpc.value;
-                    }
+                    const validNpc = fetchedNPCs.find((n: any) => n.value === lastUsedInDir.npc);
+                    if (validNpc) npcToSet = validNpc.value;
                 }
             }
-            
-            if (!fetchedModels.some(m => m.value === modelToSet) && fetchedModels.length > 0) {
-                modelToSet = fetchedModels[0].value;
-                providerToSet = fetchedModels[0].provider;
-            } else if (fetchedModels.length === 0) {
-                modelToSet = 'No models found';
-                providerToSet = 'No providers found';
-            }
 
-            if (!fetchedNPCs.some(n => n.value === npcToSet) && fetchedNPCs.length > 0) {
+            if (!npcToSet && fetchedNPCs.length > 0) {
                 npcToSet = fetchedNPCs[0].value;
-            } else if (fetchedNPCs.length === 0) {
-                npcToSet = 'sibiji';
             }
 
-            setCurrentModel(modelToSet);
-            setCurrentProvider(providerToSet);
             setCurrentNPC(npcToSet);
-            // Sync selectedModels/selectedNPCs with currentModel/currentNPC
-            setSelectedModels(modelToSet ? [modelToSet] : []);
+            // Model/provider are auto-resolved by useModelSelection useEffect from NPC -> team cascade
             setSelectedNPCs(npcToSet ? [npcToSet] : []);
 
             if (!workspaceRestored) {
@@ -6578,7 +6440,7 @@ ${contextPrompt}`;
         
     return     (
         <>
-            <NPCTeamMenu isOpen={npcTeamMenuOpen} onClose={handleCloseNpcTeamMenu} currentPath={currentPath} startNewConversation={startNewConversationWithNpc} createDataDashPane={createDataDashPane}/>
+            <NPCTeamMenu isOpen={npcTeamMenuOpen} onClose={handleCloseNpcTeamMenu} currentPath={currentPath} startNewConversation={startNewConversationWithNpc} createDataDashPane={createDataDashPane} onOpenJinxTab={(name) => createTeamManagementPane({ tab: 'jinxes', initialJinxName: name })}/>
             <JinxMenu isOpen={jinxMenuOpen} onClose={() => setJinxMenuOpen(false)} currentPath={currentPath}/>
 
 <SettingsMenu
@@ -6937,144 +6799,6 @@ ${contextPrompt}`;
         </div>
     </div>
 )}
-{initModal.isOpen && (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-        <div className="theme-bg-primary border theme-border rounded-xl shadow-2xl max-w-3xl w-full max-h-[85vh] flex flex-col overflow-hidden">
-            {/* Header */}
-            <div className="px-6 py-4 border-b theme-border flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center">
-                    <Sparkles size={20} className="text-purple-400" />
-                </div>
-                <div>
-                    <h2 className="text-lg font-semibold theme-text-primary">Welcome to Incognide</h2>
-                    <p className="text-xs theme-text-muted">Set up your global NPC team with agents and jinxes</p>
-                </div>
-                <button
-                    onClick={() => setInitModal({ isOpen: false, loading: false, npcs: [], jinxes: [], tab: 'npcs', initializing: false })}
-                    className="ml-auto p-2 theme-hover rounded-lg"
-                >
-                    <X size={18} />
-                </button>
-            </div>
-
-            {/* Tab Navigation */}
-            <div className="flex border-b theme-border px-4">
-                <button
-                    onClick={() => setInitModal(prev => ({ ...prev, tab: 'npcs' }))}
-                    className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
-                        initModal.tab === 'npcs' ? 'border-purple-500 text-purple-400' : 'border-transparent theme-text-muted hover:theme-text-primary'
-                    }`}
-                >
-                    <Users size={16} /> NPCs ({initModal.npcs.filter(n => n.enabled).length})
-                </button>
-                <button
-                    onClick={() => setInitModal(prev => ({ ...prev, tab: 'jinxes' }))}
-                    className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
-                        initModal.tab === 'jinxes' ? 'border-yellow-500 text-yellow-400' : 'border-transparent theme-text-muted hover:theme-text-primary'
-                    }`}
-                >
-                    <Wrench size={16} /> Jinxes ({initModal.jinxes.filter(j => j.enabled).length})
-                </button>
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-4">
-                {initModal.loading ? (
-                    <div className="flex items-center justify-center h-48">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500"></div>
-                        <span className="ml-3 theme-text-muted">Loading package contents...</span>
-                    </div>
-                ) : initModal.tab === 'npcs' ? (
-                    <div className="space-y-2">
-                        {initModal.npcs.length === 0 ? (
-                            <p className="text-center theme-text-muted py-8">No NPCs found in package</p>
-                        ) : initModal.npcs.map((npc, i) => (
-                            <div key={i} className={`p-3 rounded-lg border theme-border flex items-center gap-3 ${npc.enabled ? 'bg-purple-500/10' : 'opacity-50'}`}>
-                                <input
-                                    type="checkbox"
-                                    checked={npc.enabled}
-                                    onChange={() => setInitModal(prev => ({
-                                        ...prev,
-                                        npcs: prev.npcs.map((n, idx) => idx === i ? { ...n, enabled: !n.enabled } : n)
-                                    }))}
-                                    className="w-4 h-4 accent-purple-500"
-                                />
-                                <div className="flex-1 min-w-0">
-                                    <div className="font-medium theme-text-primary text-sm">{npc.name}</div>
-                                    <div className="text-xs theme-text-muted truncate">{npc.primary_directive}</div>
-                                </div>
-                                {npc.model && (
-                                    <span className="text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-300">{npc.model}</span>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                ) : (
-                    <div className="space-y-2">
-                        {initModal.jinxes.length === 0 ? (
-                            <p className="text-center theme-text-muted py-8">No jinxes found in package</p>
-                        ) : initModal.jinxes.map((jinx, i) => (
-                            <div key={i} className={`p-3 rounded-lg border theme-border flex items-center gap-3 ${jinx.enabled ? 'bg-yellow-500/10' : 'opacity-50'}`}>
-                                <input
-                                    type="checkbox"
-                                    checked={jinx.enabled}
-                                    onChange={() => setInitModal(prev => ({
-                                        ...prev,
-                                        jinxes: prev.jinxes.map((j, idx) => idx === i ? { ...j, enabled: !j.enabled } : j)
-                                    }))}
-                                    className="w-4 h-4 accent-yellow-500"
-                                />
-                                <div className="flex-1 min-w-0">
-                                    <div className="font-medium theme-text-primary text-sm">{jinx.name}</div>
-                                    <div className="text-xs theme-text-muted truncate">{jinx.description || jinx.path}</div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-
-            {/* Footer */}
-            <div className="px-6 py-4 border-t theme-border flex justify-between items-center">
-                <div className="text-xs theme-text-muted">
-                    {initModal.npcs.filter(n => n.enabled).length} NPCs, {initModal.jinxes.filter(j => j.enabled).length} jinxes selected
-                </div>
-                <div className="flex gap-3">
-                    <button
-                        className="px-4 py-2 theme-button theme-hover rounded text-sm"
-                        onClick={() => setInitModal({ isOpen: false, loading: false, npcs: [], jinxes: [], tab: 'npcs', initializing: false })}
-                    >
-                        Skip
-                    </button>
-                    <button
-                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm flex items-center gap-2"
-                        disabled={initModal.initializing || initModal.loading}
-                        onClick={async () => {
-                            setInitModal(prev => ({ ...prev, initializing: true }));
-                            const result = await window.api.npcshInit();
-                            if (result.error) {
-                                console.error('Init failed:', result.error);
-                            }
-                            setInitModal({ isOpen: false, loading: false, npcs: [], jinxes: [], tab: 'npcs', initializing: false });
-                        }}
-                    >
-                        {initModal.initializing ? (
-                            <>
-                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                                Initializing...
-                            </>
-                        ) : (
-                            <>
-                                <Sparkles size={16} />
-                                Initialize
-                            </>
-                        )}
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-)}
             {aiEditModal.isOpen && aiEditModal.type === 'agentic' && !aiEditModal.isLoading && (
                 <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
                     <div className="theme-bg-secondary p-6 theme-border border rounded-lg shadow-xl max-w-6xl w-full max-h-[85vh] overflow-hidden flex flex-col">
@@ -7355,9 +7079,7 @@ ${contextPrompt}`;
             <CtxEditor
                 isOpen={ctxEditorOpen}
                 onClose={() => setCtxEditorOpen(false)}
-                currentPath={currentPath}
-                npcList={availableNPCs.map(npc => ({ name: npc.name, display_name: npc.display_name }))}
-                jinxList={availableJinxes.map(jinx => ({ jinx_name: jinx.name, description: jinx.description }))}
+                teamPath={currentPath}
             />
 
             <TeamManagement
@@ -7372,6 +7094,7 @@ ${contextPrompt}`;
                 }}
                 npcList={availableNPCs.map(npc => ({ name: npc.name, display_name: npc.display_name }))}
                 jinxList={availableJinxes.map(jinx => ({ jinx_name: jinx.name, description: jinx.description }))}
+                onOpenJinxPane={(name) => createTeamManagementPane({ tab: 'jinxes', initialJinxName: name })}
             />
 
             {/* Git Modal */}
@@ -7638,20 +7361,9 @@ const setPaneExecutionMode = useCallback(async (paneId: string, mode: string) =>
         contentDataRef.current[paneId].executionMode = mode;
     }
 
-    // Load MCP servers when switching to tool_agent mode
-    if (mode === 'tool_agent') {
-        const res = await window.api.getMcpServers(currentPath || '~');
-        if (res && Array.isArray(res.servers)) {
-            setAvailableMcpServers(res.servers);
-            if (!res.servers.find(s => s.serverPath === mcpServerPath) && res.servers.length > 0) {
-                setMcpServerPath(res.servers[0].serverPath);
-            }
-        }
-    }
-
     // Trigger re-render
     notifyAllPanes();
-}, [currentPath, mcpServerPath]);
+}, [currentPath]);
 
 const getPaneSelectedJinx = useCallback((paneId: string) => {
     return contentDataRef.current[paneId]?.selectedJinx || null;
@@ -7716,6 +7428,7 @@ const getChatInputProps = useCallback((paneId: string) => {
     currentProvider, setCurrentProvider: (v: any) => { setCurrentProvider(v); notifyUpdate(); },
     favoriteModels, toggleFavoriteModel,
     showAllModels, setShowAllModels, modelsToDisplay, ollamaToolModels, setError,
+    modelWarning,
     availableNPCs, npcsLoading, npcsError,
     currentNPC, setCurrentNPC: (v: any) => { setCurrentNPC(v); notifyUpdate(); },
     // Multi-select for broadcast - persisted at Enpistu level
@@ -7724,7 +7437,7 @@ const getChatInputProps = useCallback((paneId: string) => {
     selectedNPCs,
     setSelectedNPCs: ((v: any) => { setSelectedNPCs(v); notifyUpdate(); }) as React.Dispatch<React.SetStateAction<string[]>>,
     broadcastMode, setBroadcastMode: (v: any) => { setBroadcastMode(v); notifyUpdate(); },
-    availableMcpServers, mcpServerPath, setMcpServerPath,
+    availableMcpServers, enabledMcpServers, setEnabledMcpServers,
     selectedMcpTools, setSelectedMcpTools, availableMcpTools, setAvailableMcpTools,
     mcpToolsLoading, setMcpToolsLoading, mcpToolsError, setMcpToolsError,
     showMcpServersDropdown, setShowMcpServersDropdown,
@@ -7915,10 +7628,11 @@ const getChatInputProps = useCallback((paneId: string) => {
     jinxInputValues, jinxesToDisplay,
     availableModels, modelsLoading, modelsError, currentModel, currentProvider,
     favoriteModels, showAllModels, modelsToDisplay, ollamaToolModels,
+    modelWarning,
     availableNPCs, npcsLoading, npcsError, currentNPC,
     selectedModels, setSelectedModels, selectedNPCs, setSelectedNPCs,
     broadcastMode, setBroadcastMode,
-    availableMcpServers, mcpServerPath, selectedMcpTools, availableMcpTools,
+    availableMcpServers, enabledMcpServers, selectedMcpTools, availableMcpTools,
     mcpToolsLoading, mcpToolsError, showMcpServersDropdown, activeConversationId, findNodePath, performSplit,
     paneUpdateEmitter,
 ]);
@@ -7950,7 +7664,6 @@ const paneRenderers = useMemo(() => ({
     jinx: renderJinxPane,
     teammanagement: renderTeamManagementPane,
     settings: renderSettingsPane,
-    'mcp-manager': renderMcpManagerPane,
     'skills-manager': renderSkillsManagerPane,
     help: renderHelpPane,
     git: renderGitPane,
@@ -7977,7 +7690,7 @@ const paneRenderers = useMemo(() => ({
     renderLatexViewer, renderNotebookViewer, renderExpViewer, renderPicViewer, renderStlViewer,
     renderRadioPane, renderZipViewer, renderDataLabelerPane, renderGraphViewerPane,
     renderBrowserGraphPane, renderDataDashPane, renderDBToolPane, renderNPCTeamPane,
-    renderJinxPane, renderTeamManagementPane, renderMcpManagerPane, renderSkillsManagerPane, renderSettingsPane, renderHelpPane, renderGitPane,
+    renderJinxPane, renderTeamManagementPane, renderSkillsManagerPane, renderSettingsPane, renderHelpPane, renderGitPane,
     renderFolderViewerPane, renderProjectEnvPane, renderDiskUsagePane, renderMemoryManagerPane,
     renderCronDaemonPane, renderSearchPane, renderMarkdownPreviewPane, renderHtmlPreviewPane,
     renderTileJinxPane, renderBranchComparisonPane, renderWindowManagerPane,
@@ -9297,13 +9010,9 @@ const renderMainContent = () => {
                                 provider: changes.provider !== undefined ? changes.provider : (npc.provider || ''),
                                 jinxes: changes.jinxes !== undefined ? changes.jinxes : (npc.jinxes || []),
                             };
-                            const res = await fetch(`${BACKEND_URL}/api/save_npc`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ npc: merged, isGlobal: npc.source === 'global', team: npc.team, currentPath }),
-                            });
-                            const body = await res.json();
-                            if (body?.error) { setError(body.error); return; }
+                            const { source, source_path, source_ext, team, ...cleanNpc } = merged;
+                            const yamlContent = yaml.dump(cleanNpc, { lineWidth: -1 });
+                            await writeFileContent(npc.source_path, yamlContent);
                             await loadAvailableNPCs(currentPath, setNpcsLoading, setNpcsError, setAvailableNPCs);
                         } catch (err: any) {
                             setError(err?.message || 'Failed to save NPC');
@@ -9463,13 +9172,9 @@ const renderMainContent = () => {
                                 provider: changes.provider !== undefined ? changes.provider : (npc.provider || ''),
                                 jinxes: changes.jinxes !== undefined ? changes.jinxes : (npc.jinxes || []),
                             };
-                            const res = await fetch(`${BACKEND_URL}/api/save_npc`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ npc: merged, isGlobal: npc.source === 'global', team: npc.team, currentPath }),
-                            });
-                            const body = await res.json();
-                            if (body?.error) { setError(body.error); return; }
+                            const { source, source_path, source_ext, team, ...cleanNpc } = merged;
+                            const yamlContent = yaml.dump(cleanNpc, { lineWidth: -1 });
+                            await writeFileContent(npc.source_path, yamlContent);
                             await loadAvailableNPCs(currentPath, setNpcsLoading, setNpcsError, setAvailableNPCs);
                         } catch (err: any) {
                             setError(err?.message || 'Failed to save NPC');
@@ -9690,7 +9395,6 @@ const renderMainContent = () => {
         createNPCTeamPane={createNPCTeamPane}
         createJinxPane={createJinxPane}
         createTeamManagementPane={createTeamManagementPane}
-        createMcpManagerPane={createMcpManagerPane}
         createBrowserSettingsPane={createBrowserSettingsPane}
         createSkillsManagerPane={createSkillsManagerPane}
         createSettingsPane={createSettingsPane}
@@ -9708,8 +9412,6 @@ const renderMainContent = () => {
         currentModel={currentModel}
         currentProvider={currentProvider}
         executionMode={executionMode}
-        mcpServerPath={mcpServerPath}
-        selectedMcpTools={selectedMcpTools}
         updateContentPane={updateContentPane}
         loadDirectoryStructure={loadDirectoryStructure}
         loadWebsiteHistory={loadWebsiteHistory}
