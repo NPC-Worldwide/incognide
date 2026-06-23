@@ -13,6 +13,7 @@ import {
 import PdfDrawingCanvas from './PdfDrawingCanvas';
 import SignatureModal from './SignatureModal';
 import { useAiEnabled } from './AiFeatureContext';
+import { useLayoutEffect } from 'react';
 
 import '@react-pdf-viewer/core/lib/styles/index.css';
 import '@react-pdf-viewer/default-layout/lib/styles/index.css';
@@ -104,7 +105,8 @@ const PdfContextMenu = ({
     selectedPdfText,
     selectedColor,
     setSelectedColor,
-    onAddComment
+    onAddComment,
+    wrapperRef
 }) => {
 
     const aiEnabled = useAiEnabled();
@@ -128,19 +130,40 @@ const PdfContextMenu = ({
         setPdfContextMenuPos(null);
     }, [handleApplyPromptToPdfText, selectedPdfText, setPdfContextMenuPos]);
 
-    if (!pdfContextMenuPos) return null;
+    const menuRef = React.useRef<HTMLDivElement>(null);
+    const [pos, setPos] = React.useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-    const menuWidth = 180;
-    const menuHeight = 220;
-    const clampedX = Math.min(pdfContextMenuPos.x, window.innerWidth - menuWidth);
-    const clampedY = Math.min(pdfContextMenuPos.y, window.innerHeight - menuHeight);
+    React.useLayoutEffect(() => {
+        if (!pdfContextMenuPos) return;
+        const menu = menuRef.current;
+        const wrapper = wrapperRef?.current;
+        let bounds = { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+        try {
+            if (wrapper) {
+                const r = wrapper.getBoundingClientRect();
+                bounds = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+            }
+        } catch {}
+        const width = menu?.offsetWidth || 160;
+        const height = menu?.offsetHeight || 100;
+        let x = pdfContextMenuPos.x;
+        let y = pdfContextMenuPos.y;
+        if (x + width > bounds.right) x = bounds.right - width;
+        if (y + height > bounds.bottom) y = bounds.bottom - height;
+        if (x < bounds.left) x = bounds.left;
+        if (y < bounds.top) y = bounds.top;
+        setPos({ x, y });
+    }, [pdfContextMenuPos, wrapperRef]);
+
+    if (!pdfContextMenuPos) return null;
 
     return (
         <>
             <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setPdfContextMenuPos(null)} />
             <div
+                ref={menuRef}
                 className="fixed theme-bg-secondary theme-border border rounded shadow-lg py-1 z-50 text-sm min-w-[160px]"
-                style={{ top: Math.max(0, clampedY), left: Math.max(0, clampedX) }}
+                style={{ top: pos.y, left: pos.x }}
                 onMouseDown={(e) => e.preventDefault()}
             >
                 {selectedPdfText?.text ? (
@@ -2027,6 +2050,7 @@ const PdfViewer = ({
                     await saveHighlight(text, position, color || selectedColor);
                     setShowAnnotationsPanel(true);
                 }}
+                wrapperRef={viewerWrapperRef}
             />
 
             {inlineComment && (

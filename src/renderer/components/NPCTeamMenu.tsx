@@ -362,6 +362,13 @@ const NPCTeamMenu = ({
         let yamlContent: string;
         if (_original_content) {
             yamlContent = saveNPCFile(_original_content, cleanNpc);
+            // saveNPCFile only updates existing scalar fields; add missing ones.
+            for (const field of ['model', 'provider', 'api_url', 'api_key']) {
+                const value = cleanNpc[field];
+                if (value !== undefined && value !== null && value !== '' && !new RegExp(`^\\s*${field}\\s*:`, 'm').test(yamlContent)) {
+                    yamlContent = `${field}: ${value}\n${yamlContent}`;
+                }
+            }
         } else {
             const jinxValues = Array.isArray(cleanNpc.jinxes)
                 ? cleanNpc.jinxes.map((j: any) => {
@@ -373,13 +380,24 @@ const NPCTeamMenu = ({
                 : cleanNpc.jinxes;
             yamlContent = yaml.dump({ ...cleanNpc, jinxes: jinxValues }, { lineWidth: -1 });
         }
-        await writeFileContent(editedNpc.source_path, yamlContent);
+        const result = await writeFileContent(editedNpc.source_path, yamlContent);
+        if (result?.error) {
+            console.error('[NPCTeamMenu] Failed to save NPC:', result.error);
+            setError(`Failed to save NPC: ${result.error}`);
+            return;
+        }
 
         const updatedNpcs = await (teamKey
             ? window.api.getNPCTeamFromPath(teamKey)
             : window.api.getNPCTeamProject(currentPath));
         setNpcs(updatedNpcs.npcs || []);
-        setSelectedNpc(npcToSave);
+        const refreshed = (updatedNpcs.npcs || []).find((n: any) => n.name === npcToSave.name);
+        if (refreshed) {
+            setSelectedNpc(refreshed);
+            setEditedNpc({ ...refreshed, jinxes: refreshed.jinxes === '*' ? ['*'] : Array.isArray(refreshed.jinxes) ? refreshed.jinxes : refreshed.jinxes ? [refreshed.jinxes] : ['*'] });
+        } else {
+            setSelectedNpc(npcToSave);
+        }
     };
 
     const labelExecution = async (messageId, label) => {

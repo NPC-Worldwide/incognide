@@ -712,13 +712,35 @@ const log = (...messages) => {
     const msg = formatLogMessage('[ELECTRON]', messages);
     console.log(msg);
     electronLogStream.write(`${msg}\n`);
+    splashLog(msg);
 };
 
 const logBackend = (...messages) => {
     const msg = formatLogMessage('[BACKEND]', messages);
     console.log(msg);
     backendLogStream.write(`${msg}\n`);
+    splashLog(msg);
 };
+
+const MAX_SPLASH_LOGS = 50;
+const pendingSplashLogs = [];
+
+function flushSplashLogs() {
+  if (!splashWindow || splashWindow.isDestroyed() || splashWindow.webContents.isLoading()) return;
+  while (pendingSplashLogs.length) {
+    const msg = pendingSplashLogs.shift();
+    splashWindow.webContents.executeJavaScript(`window.__addLog(${JSON.stringify(msg)})`).catch(() => {});
+  }
+}
+
+function splashLog(message) {
+  if (!splashWindow) return;
+  pendingSplashLogs.push(message);
+  if (pendingSplashLogs.length > MAX_SPLASH_LOGS) {
+    pendingSplashLogs.shift();
+  }
+  flushSplashLogs();
+}
 
 const DEFAULT_SHORTCUT = process.platform === 'darwin' ? 'Alt+Space' : 'CommandOrControl+Space';
 const ptySessions = new Map();
@@ -1018,8 +1040,9 @@ async function waitForServer(maxAttempts = 120, delay = 1000, proc = null) {
         return true;
       }
     } catch (err) {
-
-      log(`Waiting for server... attempt ${attempt}/${maxAttempts}`);
+      if (attempt === 1 || attempt % 5 === 0 || attempt === maxAttempts) {
+        log(`Waiting for server... attempt ${attempt}/${maxAttempts}`);
+      }
     }
 
     await new Promise(resolve => setTimeout(resolve, delay));
@@ -1610,7 +1633,7 @@ async function deployIncognideTeamOnStartup() {
 app.whenReady().then(async () => {
   splashWindow = new BrowserWindow({
     width: 400,
-    height: 300,
+    height: 420,
     frame: false,
     alwaysOnTop: true,
     transparent: true,
@@ -1623,11 +1646,16 @@ app.whenReady().then(async () => {
 <head>
 <style>
 body { margin:0; background:#0f0f23; display:flex; align-items:center; justify-content:center; height:100vh; font-family:system-ui,sans-serif; }
-.box { text-align:center; color:#cdd6f4; }
-.spinner { width:48px; height:48px; border:4px solid #313244; border-top-color:#89b4fa; border-radius:50%; animation:spin 1s linear infinite; margin:0 auto 20px; }
+.box { text-align:center; color:#cdd6f4; width:90%; max-width:360px; }
+.spinner { width:48px; height:48px; border:4px solid #313244; border-top-color:#89b4fa; border-radius:50%; animation:spin 1s linear infinite; margin:0 auto 16px; }
 @keyframes spin { to { transform:rotate(360deg); } }
-.title { font-size:20px; font-weight:600; margin-bottom:8px; }
-.sub { font-size:13px; color:#6c7086; }
+.title { font-size:20px; font-weight:600; margin-bottom:6px; }
+.sub { font-size:13px; color:#6c7086; margin-bottom:10px; }
+.hint { font-size:11px; color:#7f849c; margin-bottom:12px; }
+#logs { text-align:left; font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; font-size:11px; color:#a6adc8; background:#11111b; border:1px solid #313244; border-radius:6px; padding:8px; max-height:140px; overflow-y:auto; line-height:1.35; }
+#logs:empty::before { content:'Waiting for startup...'; color:#585b70; }
+#logs div { white-space:pre-wrap; word-break:break-word; }
+#status { margin-top:10px; font-size:12px; color:#89b4fa; min-height:16px; }
 </style>
 </head>
 <body>
@@ -1635,11 +1663,29 @@ body { margin:0; background:#0f0f23; display:flex; align-items:center; justify-c
 <div class="spinner"></div>
 <div class="title">Incognide</div>
 <div class="sub">Starting backend...</div>
+<div class="hint">This may take a few seconds or minutes.</div>
+<div id="logs"></div>
+<div id="status"></div>
 </div>
+<script>
+window.__addLog = function(msg) {
+  const logs = document.getElementById('logs');
+  const line = document.createElement('div');
+  line.textContent = msg;
+  logs.appendChild(line);
+  logs.scrollTop = logs.scrollHeight;
+  const status = document.getElementById('status');
+  if (status) status.textContent = msg;
+  while (logs.children.length > 50) logs.removeChild(logs.firstChild);
+};
+</script>
 </body>
 </html>
   `));
-  splashWindow.once('ready-to-show', () => splashWindow.show());
+  splashWindow.once('ready-to-show', () => {
+    splashWindow.show();
+    flushSplashLogs();
+  });
 
   const dataPath = ensureUserDataDirectory();
   await ensureTablesExist();
