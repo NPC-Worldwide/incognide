@@ -16,6 +16,8 @@ readCsvContent: (filePath) =>
 readFileBuffer: (filePath) => ipcRenderer.invoke('read-file-buffer', filePath),
 readDocxContent: (filePath) =>
   ipcRenderer.invoke('read-docx-content', filePath),
+readPdfText: (filePath) =>
+  ipcRenderer.invoke('read-pdf-text', filePath),
     getDefaultConfig: () => ipcRenderer.invoke('getDefaultConfig'),
     getProjectCtx: (currentPath) => ipcRenderer.invoke('getProjectCtx', currentPath),
     readDirectoryStructure: (dirPath, options) => ipcRenderer.invoke('readDirectoryStructure', dirPath, options),

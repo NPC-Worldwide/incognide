@@ -598,18 +598,18 @@ const PdfViewer = ({
         }
         const scale = currentScale || 1;
         style.textContent = `
-            :root, html, body,
             .pdf-viewer-container,
-            .pdf-viewer-container *,
-            .rpv-core__viewer,
-            .rpv-core__inner-pages,
-            .rpv-core__inner-page,
-            .rpv-core__page-layer,
-            .rpv-core__text-layer {
+            .pdf-viewer-container .rpv-core__viewer,
+            .pdf-viewer-container .rpv-core__inner-pages,
+            .pdf-viewer-container .rpv-core__inner-page,
+            .pdf-viewer-container .rpv-core__page-layer,
+            .pdf-viewer-container .rpv-core__text-layer,
+            .pdf-viewer-container .rpv-core__text-layer span {
                 --scale-factor: ${scale} !important;
+                --rpv-scale-factor: ${scale} !important;
             }
-            .rpv-core__text-layer,
-            .rpv-core__text-layer span {
+            .pdf-viewer-container .rpv-core__text-layer,
+            .pdf-viewer-container .rpv-core__text-layer span {
                 color: transparent !important;
                 -webkit-text-fill-color: transparent !important;
                 fill: transparent !important;

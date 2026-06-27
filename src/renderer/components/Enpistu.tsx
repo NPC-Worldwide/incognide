@@ -4861,6 +4861,7 @@ const handleBrowserDialogNavigate = (url) => {
                 const fileContexts = contexts.filter((c: any) => c.type === 'file');
                 const browserContexts = contexts.filter((c: any) => c.type === 'browser');
                 const terminalContexts = contexts.filter((c: any) => c.type === 'terminal');
+                const pdfContexts = contexts.filter((c: any) => c.type === 'pdf');
                 const paneInventory = contexts.find((c: any) => c.type === 'pane_inventory');
                 let contextPrompt = '';
 
@@ -4876,6 +4877,24 @@ const handleBrowserDialogNavigate = (url) => {
                     contextPrompt += fileContexts.map((ctx: any) =>
                         `File: ${ctx.path}\n\`\`\`\n${ctx.content}\n\`\`\``
                     ).join('\n\n');
+                }
+
+                if (pdfContexts.length > 0) {
+                    if (contextPrompt) contextPrompt += '\n\n';
+                    const pdfTextPromises = pdfContexts.map(async (ctx: any) => {
+                        try {
+                            const result = await (window as any).api?.readPdfText?.(ctx.path);
+                            if (result?.text) {
+                                return `PDF: ${ctx.path}\n\`\`\`\n${result.text}\n\`\`\``;
+                            }
+                            console.warn('[Context] readPdfText returned no text for', ctx.path, result);
+                        } catch (err) {
+                            console.error('[Context] Failed to get PDF text for', ctx.path, err);
+                        }
+                        return `PDF (open): ${ctx.path}`;
+                    });
+                    const pdfTexts = await Promise.all(pdfTextPromises);
+                    contextPrompt += pdfTexts.join('\n\n');
                 }
 
                 if (browserContexts.length > 0) {

@@ -280,17 +280,18 @@
     display: none !important;
 }
 
+.pdf-viewer-container .rpv-core__inner-page,
 .rpv-core__inner-page {
-    --scale-factor: 1 !important;
+    --scale-factor: var(--rpv-scale-factor, 1);
 }
 
+.pdf-viewer-container .rpv-core__page-layer,
 .rpv-core__page-layer {
-    --scale-factor: 1 !important;
+    --scale-factor: var(--rpv-scale-factor, 1);
 }
 
 .pdf-viewer-container .rpv-core__text-layer {
-    will-change: transform;
-    transform: translateZ(0);
+    transform-origin: 0 0;
 }
 .pdf-viewer-container .rpv-core__selection-layer {
     display: block !important;

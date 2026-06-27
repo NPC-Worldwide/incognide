@@ -1,5 +1,5 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { X, Tag, Star, Download, Upload, Plus, Trash2, Save, Check, ChevronDown, ChevronRight } from 'lucide-react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { X, Tag, Star, Plus, Trash2, Save, ChevronDown, ChevronRight, Hash, Type } from 'lucide-react';
 
 export interface TextSpanLabel {
     id: string;
@@ -11,6 +11,20 @@ export interface TextSpanLabel {
     notes?: string;
 }
 
+export type MetricType = 'boolean' | 'integer' | 'float';
+
+export interface MetricDefinition {
+    id: string;
+    name: string;
+    type: MetricType;
+    min?: number;
+    max?: number;
+}
+
+export interface UserMetric extends MetricDefinition {
+    value: boolean | number;
+}
+
 export interface MessageLabel {
     id: string;
     messageId: string;
@@ -19,12 +33,8 @@ export interface MessageLabel {
     content: string;
     timestamp: string;
 
-    categories: string[];
-    qualityScore?: number;
-    relevanceScore?: number;
-    accuracyScore?: number;
-    helpfulnessScore?: number;
     tags: string[];
+    metrics: UserMetric[];
     notes?: string;
 
     textSpans: TextSpanLabel[];
@@ -38,12 +48,8 @@ export interface ConversationLabel {
     conversationId: string;
     title?: string;
 
-    categories: string[];
-    qualityScore?: number;
-    relevanceScore?: number;
-    completenessScore?: number;
-    usefulnessScore?: number;
     tags: string[];
+    metrics: UserMetric[];
     notes?: string;
 
     summary?: string;
@@ -65,21 +71,6 @@ export interface ContextFile {
     addedAt: string;
     source: 'sidebar' | 'external' | 'open-pane';
 }
-
-const DEFAULT_CATEGORIES = [
-    'high-quality',
-    'low-quality',
-    'factually-correct',
-    'factually-incorrect',
-    'helpful',
-    'not-helpful',
-    'creative',
-    'technical',
-    'casual',
-    'formal',
-    'needs-improvement',
-    'exemplary',
-];
 
 const DEFAULT_SPAN_CATEGORIES = [
     'important',
@@ -104,40 +95,51 @@ interface MessageLabelingProps {
     existingLabel?: MessageLabel;
     onSave: (label: MessageLabel) => void;
     onClose: () => void;
-    categories?: string[];
     spanCategories?: string[];
 }
 
-const StarRating = ({ value, onChange, max = 5, label }: {
-    value: number;
-    onChange: (v: number) => void;
-    max?: number;
-    label: string;
-}) => {
-    const [hover, setHover] = useState(0);
+export const MetricDefinitionStorage = {
+    storageKey: 'incognide_labelMetricDefinitions',
 
-    return (
-        <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-400 w-24">{label}</span>
-            <div className="flex gap-0.5">
-                {Array.from({ length: max }, (_, i) => i + 1).map((star) => (
-                    <button
-                        key={star}
-                        type="button"
-                        className={`p-0.5 transition-colors ${
-                            star <= (hover || value) ? 'text-yellow-400' : 'text-gray-600'
-                        } hover:text-yellow-300`}
-                        onClick={() => onChange(star === value ? 0 : star)}
-                        onMouseEnter={() => setHover(star)}
-                        onMouseLeave={() => setHover(0)}
-                    >
-                        <Star size={16} fill={star <= (hover || value) ? 'currentColor' : 'none'} />
-                    </button>
-                ))}
-            </div>
-            <span className="text-xs text-gray-500 w-6">{value > 0 ? value : '-'}</span>
-        </div>
-    );
+    getAll(): MetricDefinition[] {
+        try {
+            const data = localStorage.getItem(this.storageKey);
+            return data ? JSON.parse(data) : [];
+        } catch {
+            return [];
+        }
+    },
+
+    save(definition: MetricDefinition): void {
+        const definitions = this.getAll();
+        const existingIndex = definitions.findIndex(d => d.id === definition.id || d.name.toLowerCase() === definition.name.toLowerCase());
+        if (existingIndex >= 0) {
+            definitions[existingIndex] = definition;
+        } else {
+            definitions.push(definition);
+        }
+        localStorage.setItem(this.storageKey, JSON.stringify(definitions));
+    },
+
+    delete(id: string): void {
+        const definitions = this.getAll().filter(d => d.id !== id);
+        localStorage.setItem(this.storageKey, JSON.stringify(definitions));
+    },
+
+    getByName(name: string): MetricDefinition | undefined {
+        return this.getAll().find(d => d.name.toLowerCase() === name.toLowerCase());
+    },
+
+    getAllNames(): string[] {
+        return this.getAll().map(d => d.name);
+    }
+};
+
+export const collectAllTags = (): string[] => {
+    const tags = new Set<string>();
+    MessageLabelStorage.getAll().forEach(label => label.tags?.forEach(t => tags.add(t)));
+    ConversationLabelStorage.getAll().forEach(label => label.tags?.forEach(t => tags.add(t)));
+    return Array.from(tags).sort();
 };
 
 const TagInput = ({ tags, onChange, suggestions }: {
@@ -213,23 +215,192 @@ const TagInput = ({ tags, onChange, suggestions }: {
     );
 };
 
+const MetricValueEditor = ({ metric, onChange }: {
+    metric: UserMetric;
+    onChange: (metric: UserMetric) => void;
+}) => {
+    if (metric.type === 'boolean') {
+        return (
+            <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                    type="checkbox"
+                    checked={!!metric.value}
+                    onChange={(e) => onChange({ ...metric, value: e.target.checked })}
+                    className="w-4 h-4 rounded border-gray-600 text-blue-600 bg-gray-700 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-300">{metric.value ? 'True' : 'False'}</span>
+            </label>
+        );
+    }
+
+    const numValue = typeof metric.value === 'number' ? metric.value : 0;
+    const min = metric.min ?? 0;
+    const max = metric.max ?? 100;
+    const step = metric.type === 'integer' ? 1 : 0.1;
+
+    return (
+        <div className="flex items-center gap-2 flex-1">
+            <input
+                type="number"
+                min={min}
+                max={max}
+                step={step}
+                value={numValue}
+                onChange={(e) => {
+                    const v = e.target.value === '' ? min : parseFloat(e.target.value);
+                    onChange({ ...metric, value: v });
+                }}
+                className="w-20 theme-input text-xs px-2 py-1 rounded"
+            />
+            {max > min && (
+                <input
+                    type="range"
+                    min={min}
+                    max={max}
+                    step={step}
+                    value={numValue}
+                    onChange={(e) => onChange({ ...metric, value: parseFloat(e.target.value) })}
+                    className="flex-1 min-w-[60px]"
+                />
+            )}
+        </div>
+    );
+};
+
+const AddMetricForm = ({ onAdd, existingNames }: {
+    onAdd: (metric: UserMetric) => void;
+    existingNames: string[];
+}) => {
+    const [name, setName] = useState('');
+    const [type, setType] = useState<MetricType>('integer');
+    const [min, setMin] = useState<string>('0');
+    const [max, setMax] = useState<string>('10');
+    const [showSuggestions, setShowSuggestions] = useState(false);
+
+    const filteredNames = existingNames.filter(
+        n => n.toLowerCase().includes(name.toLowerCase())
+    );
+
+    const handleAdd = () => {
+        if (!name.trim()) return;
+        const definition = MetricDefinitionStorage.getByName(name.trim()) || {
+            id: crypto.randomUUID(),
+            name: name.trim(),
+            type,
+            min: type !== 'boolean' ? parseFloat(min || '0') : undefined,
+            max: type !== 'boolean' ? parseFloat(max || '10') : undefined,
+        };
+        MetricDefinitionStorage.save(definition);
+        const defaultValue = definition.type === 'boolean'
+            ? false
+            : (definition.min ?? 0);
+        onAdd({ ...definition, value: defaultValue });
+        setName('');
+        setType('integer');
+        setMin('0');
+        setMax('10');
+        setShowSuggestions(false);
+    };
+
+    return (
+        <div className="p-2 bg-gray-800 rounded border border-gray-700 space-y-2">
+            <div className="text-xs text-gray-400">Add metric</div>
+            <div className="relative">
+                <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => {
+                        setName(e.target.value);
+                        setShowSuggestions(true);
+                    }}
+                    onFocus={() => setShowSuggestions(true)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAdd();
+                        }
+                    }}
+                    placeholder="Metric name..."
+                    className="w-full theme-input text-xs px-2 py-1 rounded"
+                />
+                {showSuggestions && filteredNames.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-gray-800 border border-gray-600 rounded shadow-lg max-h-24 overflow-y-auto">
+                        {filteredNames.map(n => (
+                            <button
+                                key={n}
+                                type="button"
+                                className="w-full text-left px-2 py-1 text-xs hover:bg-gray-700 text-gray-300"
+                                onClick={() => {
+                                    const def = MetricDefinitionStorage.getByName(n);
+                                    if (def) {
+                                        setName(def.name);
+                                        setType(def.type);
+                                        setMin(def.min?.toString() ?? '0');
+                                        setMax(def.max?.toString() ?? '10');
+                                    } else {
+                                        setName(n);
+                                    }
+                                    setShowSuggestions(false);
+                                }}
+                            >
+                                {n}
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+            <div className="flex items-center gap-2">
+                <select
+                    value={type}
+                    onChange={(e) => setType(e.target.value as MetricType)}
+                    className="theme-input text-xs px-2 py-1 rounded"
+                >
+                    <option value="boolean">Boolean</option>
+                    <option value="integer">Integer</option>
+                    <option value="float">Float</option>
+                </select>
+                {type !== 'boolean' && (
+                    <>
+                        <input
+                            type="number"
+                            value={min}
+                            onChange={(e) => setMin(e.target.value)}
+                            placeholder="Min"
+                            className="w-16 theme-input text-xs px-2 py-1 rounded"
+                        />
+                        <span className="text-xs text-gray-500">to</span>
+                        <input
+                            type="number"
+                            value={max}
+                            onChange={(e) => setMax(e.target.value)}
+                            placeholder="Max"
+                            className="w-16 theme-input text-xs px-2 py-1 rounded"
+                        />
+                    </>
+                )}
+                <button
+                    type="button"
+                    onClick={handleAdd}
+                    disabled={!name.trim()}
+                    className="ml-auto theme-button-primary px-2 py-1 text-xs rounded flex items-center gap-1 disabled:opacity-50"
+                >
+                    <Plus size={12} /> Add
+                </button>
+            </div>
+        </div>
+    );
+};
+
 export const MessageLabeling: React.FC<MessageLabelingProps> = ({
     message,
     existingLabel,
     onSave,
     onClose,
-    categories = DEFAULT_CATEGORIES,
     spanCategories = DEFAULT_SPAN_CATEGORIES,
 }) => {
 
-    const [selectedCategories, setSelectedCategories] = useState<string[]>(
-        existingLabel?.categories || []
-    );
-    const [qualityScore, setQualityScore] = useState(existingLabel?.qualityScore || 0);
-    const [relevanceScore, setRelevanceScore] = useState(existingLabel?.relevanceScore || 0);
-    const [accuracyScore, setAccuracyScore] = useState(existingLabel?.accuracyScore || 0);
-    const [helpfulnessScore, setHelpfulnessScore] = useState(existingLabel?.helpfulnessScore || 0);
     const [tags, setTags] = useState<string[]>(existingLabel?.tags || []);
+    const [metrics, setMetrics] = useState<UserMetric[]>(existingLabel?.metrics || []);
     const [notes, setNotes] = useState(existingLabel?.notes || '');
 
     const [textSpans, setTextSpans] = useState<TextSpanLabel[]>(existingLabel?.textSpans || []);
@@ -239,7 +410,10 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
     const [spanNotes, setSpanNotes] = useState('');
 
     const contentRef = useRef<HTMLDivElement>(null);
-    const [expandedSection, setExpandedSection] = useState<'categories' | 'scores' | 'spans' | 'notes' | null>('categories');
+    const [expandedSection, setExpandedSection] = useState<'tags' | 'metrics' | 'spans' | 'notes' | null>('tags');
+
+    const allTags = useMemo(() => collectAllTags(), []);
+    const allMetricNames = useMemo(() => MetricDefinitionStorage.getAllNames(), []);
 
     const handleTextSelection = useCallback(() => {
         const selection = window.getSelection();
@@ -289,12 +463,25 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
         setTextSpans(textSpans.filter(s => s.id !== id));
     };
 
-    const toggleCategory = (category: string) => {
-        if (selectedCategories.includes(category)) {
-            setSelectedCategories(selectedCategories.filter(c => c !== category));
+    const addMetric = (metric: UserMetric) => {
+        const existingIndex = metrics.findIndex(m => m.name.toLowerCase() === metric.name.toLowerCase());
+        if (existingIndex >= 0) {
+            const updated = [...metrics];
+            updated[existingIndex] = { ...metric, value: metrics[existingIndex].value };
+            setMetrics(updated);
         } else {
-            setSelectedCategories([...selectedCategories, category]);
+            setMetrics([...metrics, metric]);
         }
+    };
+
+    const updateMetric = (index: number, updated: UserMetric) => {
+        const next = [...metrics];
+        next[index] = updated;
+        setMetrics(next);
+    };
+
+    const removeMetric = (index: number) => {
+        setMetrics(metrics.filter((_, i) => i !== index));
     };
 
     const handleSave = () => {
@@ -305,12 +492,8 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
             role: message.role as 'user' | 'assistant',
             content: message.content,
             timestamp: message.timestamp,
-            categories: selectedCategories,
-            qualityScore: qualityScore > 0 ? qualityScore : undefined,
-            relevanceScore: relevanceScore > 0 ? relevanceScore : undefined,
-            accuracyScore: accuracyScore > 0 ? accuracyScore : undefined,
-            helpfulnessScore: helpfulnessScore > 0 ? helpfulnessScore : undefined,
             tags,
+            metrics,
             notes: notes || undefined,
             textSpans,
             labeledAt: new Date().toISOString(),
@@ -328,7 +511,7 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
         const parts: React.ReactNode[] = [];
         let lastEnd = 0;
 
-        sortedSpans.forEach((span, idx) => {
+        sortedSpans.forEach((span) => {
 
             if (span.startOffset > lastEnd) {
                 parts.push(message.content.slice(lastEnd, span.startOffset));
@@ -463,35 +646,47 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
 
                     <div className="w-80 p-4 overflow-y-auto space-y-2">
                         <div className="border-b border-gray-700 pb-2">
-                            <SectionHeader title="Categories" section="categories" icon={Tag} />
-                            {expandedSection === 'categories' && (
-                                <div className="pt-2 flex flex-wrap gap-1">
-                                    {categories.map(category => (
-                                        <button
-                                            key={category}
-                                            type="button"
-                                            className={`px-2 py-1 rounded text-xs transition-colors ${
-                                                selectedCategories.includes(category)
-                                                    ? 'bg-blue-600 text-white'
-                                                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                                            }`}
-                                            onClick={() => toggleCategory(category)}
-                                        >
-                                            {category}
-                                        </button>
-                                    ))}
+                            <SectionHeader title={`Tags (${tags.length})`} section="tags" icon={Tag} />
+                            {expandedSection === 'tags' && (
+                                <div className="pt-2">
+                                    <TagInput tags={tags} onChange={setTags} suggestions={allTags} />
                                 </div>
                             )}
                         </div>
 
                         <div className="border-b border-gray-700 pb-2">
-                            <SectionHeader title="Scores" section="scores" icon={Star} />
-                            {expandedSection === 'scores' && (
+                            <SectionHeader title={`Metrics (${metrics.length})`} section="metrics" icon={Hash} />
+                            {expandedSection === 'metrics' && (
                                 <div className="pt-2 space-y-2">
-                                    <StarRating label="Quality" value={qualityScore} onChange={setQualityScore} />
-                                    <StarRating label="Relevance" value={relevanceScore} onChange={setRelevanceScore} />
-                                    <StarRating label="Accuracy" value={accuracyScore} onChange={setAccuracyScore} />
-                                    <StarRating label="Helpfulness" value={helpfulnessScore} onChange={setHelpfulnessScore} />
+                                    {metrics.length === 0 && (
+                                        <div className="text-xs text-gray-500 text-center py-2">
+                                            No metrics yet. Add one below.
+                                        </div>
+                                    )}
+                                    {metrics.map((metric, idx) => (
+                                        <div key={metric.id || idx} className="p-2 bg-gray-800 rounded border border-gray-700">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-xs font-medium text-gray-300">{metric.name}</span>
+                                                <div className="flex items-center gap-1">
+                                                    <span className="text-[10px] px-1.5 py-0.5 bg-gray-700 rounded text-gray-400">
+                                                        {metric.type}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeMetric(idx)}
+                                                        className="p-1 hover:bg-gray-700 rounded text-gray-500 hover:text-red-400"
+                                                    >
+                                                        <Trash2 size={12} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <MetricValueEditor
+                                                metric={metric}
+                                                onChange={(updated) => updateMetric(idx, updated)}
+                                            />
+                                        </div>
+                                    ))}
+                                    <AddMetricForm onAdd={addMetric} existingNames={allMetricNames} />
                                 </div>
                             )}
                         </div>
@@ -533,27 +728,16 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
                         </div>
 
                         <div className="pb-2">
-                            <SectionHeader title="Tags & Notes" section="notes" icon={Tag} />
+                            <SectionHeader title="Notes" section="notes" icon={Type} />
                             {expandedSection === 'notes' && (
-                                <div className="pt-2 space-y-3">
-                                    <div>
-                                        <label className="text-xs text-gray-400 block mb-1">Custom Tags</label>
-                                        <TagInput
-                                            tags={tags}
-                                            onChange={setTags}
-                                            suggestions={[...categories, 'needs-review', 'verified', 'training-data']}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs text-gray-400 block mb-1">Notes</label>
-                                        <textarea
-                                            value={notes}
-                                            onChange={(e) => setNotes(e.target.value)}
-                                            placeholder="Add notes about this message..."
-                                            className="w-full theme-input text-xs px-2 py-1 rounded resize-none"
-                                            rows={3}
-                                        />
-                                    </div>
+                                <div className="pt-2">
+                                    <textarea
+                                        value={notes}
+                                        onChange={(e) => setNotes(e.target.value)}
+                                        placeholder="Add notes about this message..."
+                                        className="w-full theme-input text-xs px-2 py-1 rounded resize-none"
+                                        rows={3}
+                                    />
                                 </div>
                             )}
                         </div>
@@ -562,7 +746,7 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
 
                 <div className="flex items-center justify-between p-4 border-t border-gray-700">
                     <div className="text-xs text-gray-500">
-                        {selectedCategories.length} categories, {textSpans.length} spans
+                        {tags.length} tags, {metrics.length} metrics, {textSpans.length} spans
                     </div>
                     <div className="flex gap-2">
                         <button
@@ -653,14 +837,8 @@ export const MessageLabelStorage = {
                 content: label.content,
 
                 _labels: {
-                    categories: label.categories,
-                    scores: {
-                        quality: label.qualityScore,
-                        relevance: label.relevanceScore,
-                        accuracy: label.accuracyScore,
-                        helpfulness: label.helpfulnessScore,
-                    },
                     tags: label.tags,
+                    metrics: label.metrics,
                     spans: label.textSpans,
                 }
             }));
@@ -777,5 +955,87 @@ export const ContextFileStorage = {
         return this.getAll().find(f => f.path === path);
     }
 };
+
+const SCHEMA_VERSION_KEY = 'incognide_labelSchemaVersion';
+const CURRENT_SCHEMA_VERSION = 2;
+
+const migrateOldLabel = (label: any, scoreFields: { [key: string]: string }): Partial<MessageLabel | ConversationLabel> => {
+    const metrics: UserMetric[] = [];
+    Object.entries(scoreFields).forEach(([field, name]) => {
+        const value = label[field];
+        if (typeof value === 'number' && value > 0) {
+            const definition: MetricDefinition = {
+                id: crypto.randomUUID(),
+                name,
+                type: 'integer',
+                min: 1,
+                max: 5,
+            };
+            MetricDefinitionStorage.save(definition);
+            metrics.push({ ...definition, value });
+        }
+    });
+
+    const oldCategories: string[] = label.categories || [];
+    const oldTags: string[] = label.tags || [];
+    const tags = Array.from(new Set([...oldTags, ...oldCategories]));
+
+    return { tags, metrics };
+};
+
+const migrateLabelsIfNeeded = () => {
+    try {
+        const version = parseInt(localStorage.getItem(SCHEMA_VERSION_KEY) || '0', 10);
+        if (version >= CURRENT_SCHEMA_VERSION) return;
+
+        const messageScoreFields = {
+            qualityScore: 'Quality',
+            relevanceScore: 'Relevance',
+            accuracyScore: 'Accuracy',
+            helpfulnessScore: 'Helpfulness',
+        };
+
+        const conversationScoreFields = {
+            qualityScore: 'Quality',
+            relevanceScore: 'Relevance',
+            completenessScore: 'Completeness',
+            usefulnessScore: 'Usefulness',
+        };
+
+        const messageLabels = MessageLabelStorage.getAll();
+        let messageMigrated = false;
+        messageLabels.forEach(label => {
+            if ((label as any).categories?.length || (label as any).qualityScore || (label as any).relevanceScore || (label as any).accuracyScore || (label as any).helpfulnessScore) {
+                const { tags, metrics } = migrateOldLabel(label, messageScoreFields);
+                const updated: MessageLabel = {
+                    ...label,
+                    tags,
+                    metrics: [...(label.metrics || []), ...metrics],
+                };
+                MessageLabelStorage.save(updated);
+                messageMigrated = true;
+            }
+        });
+
+        const conversationLabels = ConversationLabelStorage.getAll();
+        conversationLabels.forEach(label => {
+            if ((label as any).categories?.length || (label as any).qualityScore || (label as any).relevanceScore || (label as any).completenessScore || (label as any).usefulnessScore) {
+                const { tags, metrics } = migrateOldLabel(label, conversationScoreFields);
+                const updated: ConversationLabel = {
+                    ...label,
+                    tags,
+                    metrics: [...(label.metrics || []), ...metrics],
+                };
+                ConversationLabelStorage.save(updated);
+            }
+        });
+
+        localStorage.setItem(SCHEMA_VERSION_KEY, CURRENT_SCHEMA_VERSION.toString());
+    } catch (err) {
+        console.error('Failed to migrate label schema:', err);
+    }
+};
+
+migrateLabelsIfNeeded();
 
 export default MessageLabeling;

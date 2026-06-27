@@ -3,6 +3,7 @@ import { BACKEND_URL } from '../config';
 import MarkdownRenderer from './MarkdownRenderer';
 import { AgentPromptCard } from './AgentPrompt';
 import { ToolCallDisplay } from './ToolCallDisplay';
+import { MessageLabel } from './MessageLabeling';
 import { Paperclip, Tag, Star, ChevronDown, ChevronUp, Volume2, VolumeX, Loader, RotateCcw, History, Cpu, Bot, Zap, Send, GitBranch, Columns, ChevronLeft, ChevronRight, SlidersHorizontal, Square, CheckSquare, Trash2 } from 'lucide-react';
 
 const highlightSearchTerm = (content: string, searchTerm: string): string => {
@@ -21,8 +22,8 @@ const parseMessageContent = (content: string): { body: string; contextBlocks: st
     const contextBlocks: string[] = [];
     const body = content.replace(/<context>([\s\S]*?)<\/context>/g, (match, inner) => {
         contextBlocks.push(inner.trim());
-        return '\n<context>\n</context>\n';
-    }).trim();
+        return '';
+    }).replace(/\n{2,}/g, '\n').trim();
     return { body, contextBlocks };
 };
 
@@ -41,7 +42,7 @@ const ContextBlocks = ({ blocks }: { blocks: string[] }) => {
                 }
             </div>
             {isExpanded && (
-                <div className="px-3 py-2 theme-bg-primary border-t border-[var(--border-color,#313244)]">
+                <div className="px-3 py-2 theme-bg-primary border-t border-[var(--border-color,#313244)] max-h-[min(40vh,320px)] min-h-[120px] overflow-y-auto resize-y">
                     <div className="prose prose-sm prose-invert max-w-none theme-text-secondary text-sm whitespace-pre-wrap">
                         {blocks.join('\n\n')}
                     </div>
@@ -99,7 +100,7 @@ export const ChatMessage = memo(({
     activeRunIndex?: number;
     messageIndex?: number;
     onLabelMessage?: (msg: any) => void;
-    messageLabel?: string;
+    messageLabel?: MessageLabel;
     conversationId?: string;
     onOpenFile?: (path: string) => void;
     availableModels?: any[];
@@ -108,11 +109,8 @@ export const ChatMessage = memo(({
     const showStreamingIndicators = !!message.isStreaming;
     const messageId = message.id || message.timestamp;
 
-    const { body: rawDisplayBody, contextBlocks } = parseMessageContent(message.content || '');
+    const { body: displayBody, contextBlocks } = parseMessageContent(message.content || '');
     const hasContextBlocks = contextBlocks.length > 0;
-    const displayBody = hasContextBlocks
-        ? rawDisplayBody.replace(/\n<context>\n<\/context>\n/g, '\n')
-        : rawDisplayBody;
     const isLongMessage = message.role === 'user' && countLines(displayBody) > MAX_COLLAPSED_LINES;
     const [isExpanded, setIsExpanded] = useState(false);
     const [expandedReasoning, setExpandedReasoning] = useState<Set<number>>(new Set());
@@ -252,74 +250,6 @@ export const ChatMessage = memo(({
                 </div>
             )}
 
-            {message.role === 'user' && !messageSelectionMode && onResendMessage && (
-                <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onResendMessage(message);
-                        }}
-                        className="p-1 theme-hover rounded-full transition-all"
-                        title="Resend"
-                    >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="23 4 23 10 17 10"></polyline>
-                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                        </svg>
-                    </button>
-                </div>
-            )}
-
-            {!messageSelectionMode && onLabelMessage && (
-                <div className={`absolute ${message.role === 'user' ? 'bottom-2 right-8' : 'bottom-2 right-2'} opacity-0 group-hover:opacity-100 transition-opacity z-10 flex items-center gap-1`}>
-                    {messageLabel && (
-                        <span className="flex items-center gap-0.5 text-[10px] text-yellow-400" title={`Labeled: ${messageLabel.categories?.join(', ') || 'No categories'}`}>
-                            {messageLabel.qualityScore && (
-                                <span className="flex items-center">
-                                    <Star size={10} fill="currentColor" />
-                                    {messageLabel.qualityScore}
-                                </span>
-                            )}
-                            {messageLabel.categories?.length > 0 && (
-                                <span className="px-1 bg-blue-600/30 rounded">{messageLabel.categories.length}</span>
-                            )}
-                        </span>
-                    )}
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onLabelMessage({ ...message, conversationId });
-                        }}
-                        className={`p-1 theme-hover rounded-full transition-all ${messageLabel ? 'text-yellow-400' : ''}`}
-                        title={messageLabel ? "Edit labels" : "Add labels"}
-                    >
-                        <Tag size={14} />
-                    </button>
-                </div>
-            )}
-
-            {message.role === 'assistant' && !messageSelectionMode && !showStreamingIndicators && message.content && (
-                <div className="absolute bottom-2 right-8 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            playTTS();
-                        }}
-                        className={`p-1 theme-hover rounded-full transition-all ${isSpeaking ? 'text-blue-400' : ''}`}
-                        title={isSpeaking ? "Stop speaking" : "Read aloud"}
-                        disabled={isLoadingTTS}
-                    >
-                        {isLoadingTTS ? (
-                            <Loader size={14} className="animate-spin" />
-                        ) : isSpeaking ? (
-                            <VolumeX size={14} />
-                        ) : (
-                            <Volume2 size={14} />
-                        )}
-                    </button>
-                </div>
-            )}
-
             <div className="flex justify-between items-center text-xs theme-text-muted mb-1 opacity-80">
                 <div className="flex items-center gap-1.5">
                     <span className="font-semibold">{message.role === 'user' ? 'You' : (stripSourcePrefix(message.npc) || 'Agent')}</span>
@@ -335,7 +265,72 @@ export const ChatMessage = memo(({
                         </span>
                     )}
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                    {message.role === 'assistant' && !messageSelectionMode && !showStreamingIndicators && message.content && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                playTTS();
+                            }}
+                            className={`p-0.5 rounded transition-colors ${isSpeaking ? 'text-blue-400 hover:text-blue-300' : 'text-gray-500 hover:text-gray-300'}`}
+                            title={isSpeaking ? "Stop speaking" : "Read aloud"}
+                            disabled={isLoadingTTS}
+                        >
+                            {isLoadingTTS ? (
+                                <Loader size={14} className="animate-spin" />
+                            ) : isSpeaking ? (
+                                <VolumeX size={14} />
+                            ) : (
+                                <Volume2 size={14} />
+                            )}
+                        </button>
+                    )}
+                    {message.role === 'user' && !messageSelectionMode && onResendMessage && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onResendMessage(message);
+                            }}
+                            className="p-0.5 rounded transition-colors text-gray-500 hover:text-gray-300"
+                            title="Resend"
+                        >
+                            <RotateCcw size={14} />
+                        </button>
+                    )}
+                    {!messageSelectionMode && onLabelMessage && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onLabelMessage({ ...message, conversationId });
+                            }}
+                            className={`p-0.5 rounded transition-colors ${messageLabel ? 'text-yellow-400 hover:text-yellow-300' : 'text-gray-500 hover:text-gray-300'}`}
+                            title={messageLabel ? "Edit labels" : "Add labels"}
+                        >
+                            <Tag size={14} />
+                        </button>
+                    )}
+                    {messageLabel && (
+                        <span
+                            className="flex items-center gap-1 text-[10px] text-yellow-400"
+                            title={[
+                                `Tags: ${messageLabel.tags?.join(', ') || 'none'}`,
+                                `Metrics: ${messageLabel.metrics?.map(m => `${m.name}=${m.value}`).join(', ') || 'none'}`
+                            ].join('\n')}
+                        >
+                            {messageLabel.metrics?.filter(m => typeof m.value === 'number').slice(0, 1).map(m => (
+                                <span key={m.id || m.name} className="flex items-center">
+                                    <Star size={10} fill="currentColor" />
+                                    {m.value}
+                                </span>
+                            ))}
+                            {messageLabel.tags?.slice(0, 2).map(tag => (
+                                <span key={tag} className="px-1 bg-blue-600/30 rounded">{tag}</span>
+                            ))}
+                            {messageLabel.metrics && messageLabel.metrics.length > 1 && (
+                                <span className="px-1 bg-gray-700 rounded">+{messageLabel.metrics.length - 1}</span>
+                            )}
+                        </span>
+                    )}
                     <button
                         onClick={(e) => {
                             e.stopPropagation();

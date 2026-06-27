@@ -23,7 +23,7 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedLabels, setSelectedLabels] = useState<Set<string>>(new Set());
-    const [filterCategory, setFilterCategory] = useState<string>('');
+    const [filterTag, setFilterTag] = useState<string>('');
     const [filterRole, setFilterRole] = useState<'all' | 'user' | 'assistant'>('all');
     const [expandedConversations, setExpandedConversations] = useState<Set<string>>(new Set());
     const [exportFormat, setExportFormat] = useState<'json' | 'jsonl' | 'finetune'>('json');
@@ -31,12 +31,12 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
 
     const labels = useMemo(() => Object.values(messageLabels), [messageLabels]);
 
-    const allCategories = useMemo(() => {
-        const cats = new Set<string>();
+    const allTags = useMemo(() => {
+        const tags = new Set<string>();
         labels.forEach(label => {
-            label.categories?.forEach(cat => cats.add(cat));
+            label.tags?.forEach(t => tags.add(t));
         });
-        return Array.from(cats).sort();
+        return Array.from(tags).sort();
     }, [labels]);
 
     const labelsByConversation = useMemo(() => {
@@ -61,14 +61,14 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
             if (searchTerm) {
                 const search = searchTerm.toLowerCase();
                 const matchesContent = label.content?.toLowerCase().includes(search);
-                const matchesCategories = label.categories?.some(c => c.toLowerCase().includes(search));
                 const matchesTags = label.tags?.some(t => t.toLowerCase().includes(search));
-                if (!matchesContent && !matchesCategories && !matchesTags) {
+                const matchesMetrics = label.metrics?.some(m => m.name.toLowerCase().includes(search) || String(m.value).toLowerCase().includes(search));
+                if (!matchesContent && !matchesTags && !matchesMetrics) {
                     return false;
                 }
             }
 
-            if (filterCategory && !label.categories?.includes(filterCategory)) {
+            if (filterTag && !label.tags?.includes(filterTag)) {
                 return false;
             }
 
@@ -78,7 +78,7 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
 
             return true;
         });
-    }, [labels, searchTerm, filterCategory, filterRole]);
+    }, [labels, searchTerm, filterTag, filterRole]);
 
     const toggleSelectLabel = (id: string) => {
         const newSelected = new Set(selectedLabels);
@@ -161,7 +161,12 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
                         return {
                             messages: sortedLabels.map(label => ({
                                 role: label.role,
-                                content: label.content
+                                content: label.content,
+                                _labels: {
+                                    tags: label.tags,
+                                    metrics: label.metrics,
+                                    spans: label.textSpans,
+                                }
                             }))
                         };
                     });
@@ -238,13 +243,14 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
         const totalLabels = labels.length;
         const userMessages = labels.filter(l => l.role === 'user').length;
         const assistantMessages = labels.filter(l => l.role === 'assistant').length;
-        const withScores = labels.filter(l => l.qualityScore || l.relevanceScore || l.accuracyScore || l.helpfulnessScore).length;
+        const withMetrics = labels.filter(l => l.metrics?.length > 0).length;
+        const withTags = labels.filter(l => l.tags?.length > 0).length;
         const withSpans = labels.filter(l => l.textSpans?.length > 0).length;
         const conversations = Object.keys(labelsByConversation).length;
         const labeledConversations = convLabels.length;
         const trainingConversations = convLabels.filter(c => c.includeInTraining).length;
 
-        return { totalLabels, userMessages, assistantMessages, withScores, withSpans, conversations, labeledConversations, trainingConversations };
+        return { totalLabels, userMessages, assistantMessages, withMetrics, withTags, withSpans, conversations, labeledConversations, trainingConversations };
     }, [labels, labelsByConversation, convLabels]);
 
     if (!isOpen) return null;
@@ -282,7 +288,10 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
                     <span className="text-purple-400 font-medium">{stats.assistantMessages}</span> assistant
                 </span>
                 <span className="text-gray-400">
-                    <span className="text-yellow-400 font-medium">{stats.withScores}</span> with scores
+                    <span className="text-yellow-400 font-medium">{stats.withMetrics}</span> with metrics
+                </span>
+                <span className="text-gray-400">
+                    <span className="text-blue-400 font-medium">{stats.withTags}</span> with tags
                 </span>
                 <span className="text-gray-400">
                     <span className="text-orange-400 font-medium">{stats.withSpans}</span> with spans
@@ -302,13 +311,13 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
                 </div>
 
                 <select
-                    value={filterCategory}
-                    onChange={(e) => setFilterCategory(e.target.value)}
+                    value={filterTag}
+                    onChange={(e) => setFilterTag(e.target.value)}
                     className="theme-input text-xs px-2 py-2 rounded"
                 >
-                    <option value="">All categories</option>
-                    {allCategories.map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
+                    <option value="">All tags</option>
+                    {allTags.map(tag => (
+                        <option key={tag} value={tag}>{tag}</option>
                     ))}
                 </select>
 
@@ -403,12 +412,12 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
                                                                 }`}>
                                                                     {label.role}
                                                                 </span>
-                                                                {label.qualityScore && (
-                                                                    <span className="flex items-center gap-0.5 text-xs text-yellow-400">
+                                                                {label.metrics?.filter(m => typeof m.value === 'number').slice(0, 1).map(m => (
+                                                                    <span key={m.id || m.name} className="flex items-center gap-0.5 text-xs text-yellow-400">
                                                                         <Star size={10} fill="currentColor" />
-                                                                        {label.qualityScore}
+                                                                        {m.name}={m.value}
                                                                     </span>
-                                                                )}
+                                                                ))}
                                                                 <span className="text-[10px] text-gray-500">
                                                                     {new Date(label.timestamp).toLocaleString()}
                                                                 </span>
@@ -416,11 +425,16 @@ const LabeledDataManager: React.FC<LabeledDataManagerProps> = ({
                                                             <p className="text-sm text-gray-300 line-clamp-2">
                                                                 {label.content}
                                                             </p>
-                                                            {(label.categories?.length > 0 || label.textSpans?.length > 0) && (
+                                                            {(label.tags?.length > 0 || label.metrics?.length > 0 || label.textSpans?.length > 0) && (
                                                                 <div className="flex flex-wrap gap-1 mt-2">
-                                                                    {label.categories?.map(cat => (
-                                                                        <span key={cat} className="px-1.5 py-0.5 bg-gray-700 rounded text-[10px] text-gray-300">
-                                                                            {cat}
+                                                                    {label.tags?.map(tag => (
+                                                                        <span key={tag} className="px-1.5 py-0.5 bg-blue-600/30 rounded text-[10px] text-blue-300">
+                                                                            {tag}
+                                                                        </span>
+                                                                    ))}
+                                                                    {label.metrics?.filter(m => m.type === 'boolean').map(m => (
+                                                                        <span key={m.id || m.name} className={`px-1.5 py-0.5 rounded text-[10px] ${m.value ? 'bg-green-600/30 text-green-300' : 'bg-gray-700 text-gray-300'}`}>
+                                                                            {m.name}: {m.value ? 'yes' : 'no'}
                                                                         </span>
                                                                     ))}
                                                                     {label.textSpans?.length > 0 && (

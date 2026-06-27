@@ -158,6 +158,32 @@ function register(ctx) {
     }
   }
 
+  async function extractPdfText(filePath) {
+    try {
+      const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+      const data = new Uint8Array(await fsPromises.readFile(filePath));
+      const doc = await pdfjsLib.getDocument({ data }).promise;
+      const parts = [];
+      for (let i = 1; i <= doc.numPages; i++) {
+        const page = await doc.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map((item) => item.str).join(' ');
+        if (pageText.trim()) parts.push(`--- Page ${i} ---\n${pageText.trim()}`);
+      }
+      return { text: parts.join('\n\n'), error: null };
+    } catch (err) {
+      console.error('[PDF Text] Failed to extract text:', filePath, err.message);
+      return { text: '', error: `Failed to extract PDF text: ${err.message}` };
+    }
+  }
+
+  ipcMain.handle('read-pdf-text', async (_, filePath) => {
+    console.log('[read-pdf-text] called for', filePath);
+    const result = await extractPdfText(filePath);
+    console.log('[read-pdf-text] result length', result.text?.length, 'error', result.error);
+    return result;
+  });
+
   ipcMain.handle('read-docx-content', async (_, filePath) => {
     console.log('[DOCX Main] read-docx-content called for:', filePath);
     try {
