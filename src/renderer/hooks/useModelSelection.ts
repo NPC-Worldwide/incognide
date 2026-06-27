@@ -33,7 +33,6 @@ export function useModelSelection() {
     const [teamConfigs, setTeamConfigs] = useState<Record<string, any>>({});
     const [modelWarning, setModelWarning] = useState<string | null>(null);
 
-    // Resolve model/provider from NPC -> team -> null whenever currentNPC or availableNPCs changes
     useEffect(() => {
         if (!currentNPC || availableNPCs.length === 0) {
             setCurrentModel(null);
@@ -46,7 +45,6 @@ export function useModelSelection() {
             setModelWarning(`NPC "${currentNPC}" not found in loaded teams.`);
             return;
         }
-        // Cascade: NPC config -> team config -> null
         let m = npc.model || null;
         let p = npc.provider || null;
         if (!m || !p) {

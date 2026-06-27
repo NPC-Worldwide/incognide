@@ -64,7 +64,6 @@ const ModelList = ({ models, activeProvider, isDeleting, onDelete, onStartChat }
 };
 
 const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider: string) => void } = {}) => {
-    // Local provider state
     const [providerStatuses, setProviderStatuses] = useState<Record<string, string>>({
         gguf: 'ready', llamacpp: 'checking', lmstudio: 'checking',
         ollama: 'checking', ...(isMac ? { omlx: 'checking' } : {})
@@ -90,7 +89,6 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
     const [hfRepoFiles, setHfRepoFiles] = useState<any[]>([]);
     const [isLoadingFiles, setIsLoadingFiles] = useState(false);
 
-    // API provider state
     const [detectedProviders, setDetectedProviders] = useState<any[]>([]);
     const [customProviders, setCustomProviders] = useState<Record<string, any>>({});
     const [apiModels, setApiModels] = useState<Record<string, any[]>>({});
@@ -188,7 +186,6 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
     const toggleExpand = (key: string) => {
         setExpanded(prev => {
             const next = !prev[key];
-            // Auto-fetch models on first expand
             if (next && !providerModels[key] && !apiModels[key] && !apiLoading[key]) {
                 const local = LOCAL_PROVIDERS[key];
                 if (local) {
@@ -215,19 +212,16 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
         return () => { cleanupProgress(); cleanupComplete(); cleanupError(); };
     }, []);
 
-    // Build unified provider list: local first, then detected API, then custom
     const allProviders = useMemo(() => {
         const seen = new Set<string>();
         const list: Array<{ key: string; name: string; baseUrl: string; apiKeyVar: string; local: boolean; custom?: boolean; color: string; bgColor: string; description?: string; docsUrl?: string; defaultPort?: number | null }> = [];
 
-        // Local providers
         for (const [key, info] of Object.entries(LOCAL_PROVIDERS)) {
             if (seen.has(key)) continue;
             seen.add(key);
             list.push({ key, name: info.name, baseUrl: '', apiKeyVar: '', local: true, color: info.color, bgColor: info.bgColor, description: info.description, docsUrl: info.docsUrl, defaultPort: info.defaultPort });
         }
 
-        // Detected API providers from env
         for (const d of detectedProviders) {
             if (seen.has(d.provider)) continue;
             seen.add(d.provider);
@@ -245,7 +239,6 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
             });
         }
 
-        // Custom providers from YAML — only show if the API key exists in environment
         const detectedEnvVars = new Set(detectedProviders.map(d => d.envVar));
         for (const [name, config] of Object.entries(customProviders)) {
             if (seen.has(name)) continue;
@@ -282,7 +275,7 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
         setIsDeleting(null);
     };
 
-    const handleScanModels = async () => { setIsScanning(true); await fetchModelsForProvider('ollama' /* use currently expanded local */); setIsScanning(false); };
+    const handleScanModels = async () => { setIsScanning(true); await fetchModelsForProvider('ollama'); setIsScanning(false); };
 
     const handleSearchHf = async () => {
         if (!hfSearchQuery.trim() || isSearchingHf) return;
@@ -308,7 +301,6 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
 
     return (
         <div className="space-y-3 h-full overflow-y-auto">
-            {/* Add custom provider */}
             <div className="flex items-center justify-between">
                 <h4 className="text-xs font-semibold theme-text-secondary">All Providers</h4>
                 <button onClick={() => setShowAddProvider(!showAddProvider)}
@@ -344,7 +336,6 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
                 </div>
             )}
 
-            {/* Provider list */}
             {allProviders.map(p => {
                 const isExpanded = expanded[p.key];
                 const isLocal = p.local;
@@ -371,7 +362,6 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
 
                         {isExpanded && (
                             <div className="border-t theme-border bg-black/10 px-3 py-2 space-y-2">
-                                {/* Local provider controls */}
                                 {isLocal && (
                                     <>
                                         <div className="flex items-center justify-between">
@@ -397,7 +387,6 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
                                             </div>
                                         </div>
 
-                                        {/* Ollama pull */}
                                         {p.key === 'ollama' && status === 'running' && (
                                             <div className="flex gap-1.5">
                                                 <input value={pullModelName} onChange={e => setPullModelName(e.target.value)}
@@ -422,7 +411,6 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
                                             </div>
                                         )}
 
-                                        {/* GGUF section */}
                                         {p.key === 'gguf' && (
                                             <div className="space-y-2">
                                                 <div className="flex gap-1.5">
@@ -470,7 +458,6 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
                                     </>
                                 )}
 
-                                {/* API provider controls */}
                                 {!isLocal && (
                                     <div className="flex items-center justify-between">
                                         <span className="text-[10px] theme-text-muted truncate max-w-[70%]">{p.baseUrl}</span>
@@ -483,7 +470,6 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
 
                                 {error && <p className="text-[10px] text-red-400">{error}</p>}
 
-                                {/* Models list */}
                                 {models.length > 0 ? (
                                     <ModelList models={models} activeProvider={p.key} isDeleting={isDeleting} onDelete={handleDeleteModel} onStartChat={onStartChat} />
                                 ) : !loading && !error && (

@@ -29,7 +29,6 @@ const BackendPane: React.FC<BackendPaneProps> = ({ onClose }) => {
     const [activeTab, setActiveTab] = useState<'status' | 'logs' | 'api'>('status');
     const [restarting, setRestarting] = useState(false);
 
-    // API tester state
     const [apiEndpoint, setApiEndpoint] = useState('/api/health');
     const [apiMethod, setApiMethod] = useState<'GET' | 'POST'>('GET');
     const [apiBody, setApiBody] = useState('');
@@ -38,7 +37,6 @@ const BackendPane: React.FC<BackendPaneProps> = ({ onClose }) => {
 
     const logsEndRef = useRef<HTMLDivElement>(null);
 
-    // Fetch health on mount and periodically
     useEffect(() => {
         const fetchHealth = async () => {
             try {
@@ -53,7 +51,6 @@ const BackendPane: React.FC<BackendPaneProps> = ({ onClose }) => {
         return () => clearInterval(interval);
     }, []);
 
-    // Load logs
     const loadLogs = async (logType: 'backend' | 'electron' = 'backend') => {
         setLogsLoading(true);
         try {
@@ -132,7 +129,6 @@ const BackendPane: React.FC<BackendPaneProps> = ({ onClose }) => {
 
     return (
         <div className="h-full flex flex-col theme-bg-primary text-sm">
-            {/* Tabs */}
             <div className="flex border-b theme-border">
                 {(['status', 'logs', 'api'] as const).map(tab => (
                     <button
@@ -149,11 +145,9 @@ const BackendPane: React.FC<BackendPaneProps> = ({ onClose }) => {
                 ))}
             </div>
 
-            {/* Content */}
             <div className="flex-1 overflow-auto p-4">
                 {activeTab === 'status' && (
                     <div className="space-y-4">
-                        {/* Status card */}
                         <div className="p-4 rounded-lg theme-bg-secondary border theme-border">
                             <div className="flex items-center justify-between mb-4">
                                 <h3 className="font-medium theme-text-primary">Backend Status</h3>
@@ -188,7 +182,6 @@ const BackendPane: React.FC<BackendPaneProps> = ({ onClose }) => {
                             </div>
                         </div>
 
-                        {/* Actions */}
                         <div className="flex gap-2">
                             <button
                                 onClick={handleRestart}
@@ -245,7 +238,6 @@ const BackendPane: React.FC<BackendPaneProps> = ({ onClose }) => {
 
                 {activeTab === 'api' && (
                     <div className="space-y-4">
-                        {/* Available Routes */}
                         <div className="grid grid-cols-2 gap-2">
                             {[
                                 { method: 'GET', path: '/api/health', desc: 'Health check' },

@@ -112,7 +112,6 @@ const GitForestPanel: React.FC<{ currentPath: string }> = ({ currentPath }) => {
 
     return (
         <div className="space-y-4">
-            {/* Node Status */}
             <div className="theme-bg-secondary rounded-lg p-3">
                 <div className="flex items-center justify-between mb-2">
                     <h3 className="text-sm font-medium theme-text-primary flex items-center gap-2">
@@ -144,7 +143,6 @@ const GitForestPanel: React.FC<{ currentPath: string }> = ({ currentPath }) => {
                 </div>
             </div>
 
-            {/* Connected Peers */}
             {peers.length > 0 && (
                 <div className="theme-bg-secondary rounded-lg p-3">
                     <h3 className="text-sm font-medium theme-text-primary flex items-center gap-2 mb-2">
@@ -161,7 +159,6 @@ const GitForestPanel: React.FC<{ currentPath: string }> = ({ currentPath }) => {
                 </div>
             )}
 
-            {/* Hosted Repos */}
             <div className="theme-bg-secondary rounded-lg p-3">
                 <h3 className="text-sm font-medium theme-text-primary flex items-center gap-2 mb-2">
                     <Upload size={14} className="text-blue-400" /> Hosted Repos
@@ -196,7 +193,6 @@ const GitForestPanel: React.FC<{ currentPath: string }> = ({ currentPath }) => {
                 )}
             </div>
 
-            {/* Add Current Repo */}
             {!isCurrentRepoHosted && currentPath && (
                 <div className="theme-bg-secondary rounded-lg p-3">
                     <h3 className="text-sm font-medium theme-text-primary flex items-center gap-2 mb-2">

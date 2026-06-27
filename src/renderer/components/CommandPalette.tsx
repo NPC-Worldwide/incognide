@@ -32,7 +32,6 @@ const PANE_COMMANDS: PaneCommand[] = [
     { id: 'disk-usage', label: 'Disk Usage', aliases: ['/disk'], icon: '💾', category: 'pane' },
     { id: 'data-dash', label: 'Data Dash', aliases: ['/data', '/db', '/dash'], icon: '📊', category: 'pane' },
     { id: 'help', label: 'Help', aliases: ['/help'], icon: '❓', category: 'pane' },
-    // Team management submenus
     { id: 'team:npcs', label: 'NPCs', aliases: ['/npcs', '/npc'], icon: '👤', category: 'team' },
     { id: 'team:context', label: 'Context', aliases: ['/context', '/ctx'], icon: '📋', category: 'team' },
     { id: 'team:jinxes', label: 'Jinxes', aliases: ['/jinxes', '/jinx'], icon: '🔧', category: 'team' },
@@ -42,7 +41,6 @@ const PANE_COMMANDS: PaneCommand[] = [
     { id: 'team:mcp', label: 'MCP', aliases: ['/mcp'], icon: '🔌', category: 'team' },
     { id: 'team:models', label: 'SQL Models', aliases: ['/sql', '/models'], icon: '🗃️', category: 'team' },
     { id: 'team:databases', label: 'Databases', aliases: ['/databases', '/nql'], icon: '🗄️', category: 'team' },
-    // Actions
     { id: 'action:pomodoro', label: 'Pomodoro', aliases: ['/pomo', '/pomodoro'], icon: '🍅', category: 'action' },
 ];
 

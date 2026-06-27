@@ -99,7 +99,6 @@ export const PaneHeader = React.memo(({
                             }
                         }}
                         onBlur={(e) => {
-                            // Don't cancel if clicking the confirm button
                             const related = e.relatedTarget as HTMLElement;
                             if (related?.closest?.('[data-rename-confirm]')) return;
                             onCancelRename?.();

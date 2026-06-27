@@ -3,6 +3,7 @@ import { BACKEND_URL } from '../config';
 import { goUpDirectory as goUpDirectoryApi } from '../api/fileSystem';
 import { Code2, FileText, FileJson, BarChart3, File } from 'lucide-react';
 import { executeStudioAction, StudioContext } from '../studioActions';
+import { getPaneTitle } from '../studioActions/paneActions';
 
 export const triggerAutoTTS = async (text: string) => {
     if (!text?.trim()) return;
@@ -176,7 +177,6 @@ export const useLoadWebsiteHistory = (
                 subdomains: Map<string, { hostname: string; count: number; lastVisited: string; favicon: string }>;
             }>();
 
-            // First pass: collect unique first-path-segments per root domain
             const domainPathSegments = new Map<string, Set<string>>();
             response.history.forEach((item: any) => {
                 try {
@@ -205,7 +205,6 @@ export const useLoadWebsiteHistory = (
                     const group = domainGroups.get(root)!;
                     group.totalCount++;
 
-                    // Use hostname + first path segment as subkey when domain has multiple path segments
                     const pathSegments = domainPathSegments.get(root);
                     const seg = url.pathname.split('/').filter(Boolean)[0] || '';
                     const hasMultiplePaths = pathSegments && pathSegments.size > 1;
@@ -360,7 +359,12 @@ export const loadAvailableNPCs = async (
 
 export const hashContext = (contexts: any[]) => {
     const contentString = contexts
-        .map(ctx => `${ctx.type}:${ctx.path || ctx.url}:${ctx.content?.substring(0, 100)}`)
+        .map(ctx => {
+            if (ctx.type === 'pane_inventory') {
+                return `pane_inventory:${(ctx.panes || []).map((p: any) => `${p.paneId}:${p.type}:${p.title}:${p.contentId || p.url || ''}`).join(',')}`;
+            }
+            return `${ctx.type}:${ctx.path || ctx.url}:${ctx.content?.substring(0, 100)}`;
+        })
         .join('|');
 
     const bytes = new TextEncoder().encode(contentString);
@@ -375,59 +379,76 @@ export const gatherWorkspaceContext = (contentDataRef: React.MutableRefObject<an
     const contexts: any[] = [];
 
     Object.entries(contentDataRef.current).forEach(([paneId, paneData]: [string, any]) => {
-
         if (excludedPaneIds && excludedPaneIds.has(paneId)) return;
+        if (!paneData?.contentType) return;
+
+        const title = getPaneTitle(paneData);
+        const baseContext: any = {
+            paneId,
+            type: paneData.contentType,
+            title,
+            contentId: paneData.contentId || null,
+        };
+
         const fileContentTypes = ['editor', 'latex', 'csv', 'notebook', 'docx', 'pptx', 'exp'];
         if (fileContentTypes.includes(paneData.contentType) && (paneData.fileContent || paneData.contentId)) {
             contexts.push({
+                ...baseContext,
                 type: 'file',
                 path: paneData.contentId,
                 content: paneData.fileContent || '',
-                paneId: paneId,
                 source: 'open-pane'
             });
         } else if (paneData.contentType === 'image' && paneData.contentId) {
             contexts.push({
+                ...baseContext,
                 type: 'image',
                 path: paneData.contentId,
-                paneId: paneId,
                 source: 'open-pane'
             });
         } else if (paneData.contentType === 'browser' && paneData.browserUrl) {
             contexts.push({
+                ...baseContext,
                 type: 'browser',
                 url: paneData.browserUrl,
-                viewId: paneData.contentId,
-                paneId: paneId
+                viewId: paneData.contentId
             });
         } else if (paneData.contentType === 'pdf' && paneData.contentId) {
             contexts.push({
+                ...baseContext,
                 type: 'pdf',
-                path: paneData.contentId,
-                paneId: paneId
+                path: paneData.contentId
             });
         } else if (paneData.contentType === 'terminal' && paneData.getTerminalContext) {
-
             try {
                 const terminalOutput = paneData.getTerminalContext();
-                if (terminalOutput && terminalOutput.trim()) {
-                    contexts.push({
-                        type: 'terminal',
-                        content: terminalOutput,
-                        paneId: paneId,
-                        shellType: paneData.shellType || 'system'
-                    });
-                }
+                contexts.push({
+                    ...baseContext,
+                    type: 'terminal',
+                    content: terminalOutput || '',
+                    shellType: paneData.shellType || 'system'
+                });
             } catch (err) {
                 console.warn('Failed to get terminal context:', err);
             }
+        } else if (['chat', 'agent'].includes(paneData.contentType)) {
+            contexts.push({
+                ...baseContext,
+                npc: paneData.npc || null,
+                model: paneData.model || null,
+                source: 'open-pane'
+            });
+        } else {
+            contexts.push({
+                ...baseContext,
+                source: 'open-pane'
+            });
         }
     });
 
     if (contextFiles && contextFiles.length > 0) {
         contextFiles.forEach((file: any) => {
-
-            const alreadyIncluded = contexts.some(ctx => ctx.path === file.path);
+            const alreadyIncluded = contexts.some(ctx => ctx.type === 'file' && ctx.path === file.path);
             if (!alreadyIncluded && file.content) {
                 contexts.push({
                     type: 'file',
@@ -458,7 +479,6 @@ export const useSwitchToPath = (
     return useCallback(async (newPath: string) => {
         if (newPath === currentPath) return;
 
-        // Check if another window already has this folder — focus it instead
         try {
             const allWindows = await (window as any).api?.getAllWindowsInfo?.() || [];
             const normNew = newPath.replace(/\/+$/, '');
@@ -956,8 +976,6 @@ export const usePaneAwareStreamListeners = (
 
                     const existing = message.toolCalls || [];
                     const merged = [...existing];
-                    // Match on tc.id ONLY — function name is not unique across multiple
-                    // sequential calls to the same tool (e.g. `sh` invoked 3 times in a row).
                     normalizedCalls.forEach((tc: any) => {
                         const idx = tc.id ? merged.findIndex((mtc: any) => mtc.id && mtc.id === tc.id) : -1;
                         if (idx >= 0) {

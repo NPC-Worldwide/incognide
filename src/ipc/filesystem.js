@@ -8,9 +8,6 @@ const { spawn, execSync, spawnSync } = require('child_process');
 function register(ctx) {
   const { ipcMain, getMainWindow, log } = ctx;
 
-  // ============================================
-  // Helper: expandHomeDir
-  // ============================================
   const expandHomeDir = (filepath) => {
     if (filepath.startsWith('~')) {
       return path.join(os.homedir(), filepath.slice(1));
@@ -18,9 +15,6 @@ function register(ctx) {
     return filepath;
   };
 
-  // ============================================
-  // File watchers
-  // ============================================
   const fileWatchers = new Map();
 
   ipcMain.handle('file:watch', async (event, filePath) => {
@@ -51,9 +45,6 @@ function register(ctx) {
     }
   });
 
-  // ============================================
-  // Helper: getFileType
-  // ============================================
   function getFileType(filePath) {
     const ext = path.extname(filePath).toLowerCase();
     const mimeTypes = {
@@ -68,10 +59,6 @@ function register(ctx) {
     };
     return mimeTypes[ext] || 'application/octet-stream';
   }
-
-  // ============================================
-  // Open file / dialog
-  // ============================================
 
   ipcMain.handle('open-file', async (_event, filePath) => {
     try {
@@ -117,10 +104,6 @@ function register(ctx) {
     return null;
   });
 
-  // ============================================
-  // CSV / XLSX reading
-  // ============================================
-
   ipcMain.handle('read-csv-content', async (_, filePath) => {
     try {
       const XLSX = require('xlsx');
@@ -140,47 +123,76 @@ function register(ctx) {
     }
   });
 
-  // ============================================
-  // DOCX reading (mammoth + JSZip)
-  // ============================================
+  function extractOdtContent(filePath) {
+    try {
+      const AdmZip = require('adm-zip');
+      const zip = new AdmZip(filePath);
+      const contentXml = zip.readAsText('content.xml');
+      if (!contentXml) {
+        return { content: '<p>OpenDocument file appears empty.</p>', error: null, isOdt: true };
+      }
+      const paragraphs = [];
+      const pRegex = /<text:(?:p|h)[^>]*>([\s\S]*?)<\/text:(?:p|h)>/g;
+      let match;
+      while ((match = pRegex.exec(contentXml)) !== null) {
+        let text = match[1]
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        text = text
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&amp;/g, '&')
+          .replace(/&quot;/g, '"')
+          .replace(/&apos;/g, "'");
+        if (text) {
+          paragraphs.push(`<p>${text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`);
+        }
+      }
+      if (!paragraphs.length) {
+        return { content: '<p>No readable text found in this OpenDocument file.</p>', error: null, isOdt: true };
+      }
+      return { content: paragraphs.join(''), error: null, isOdt: true };
+    } catch (err) {
+      return { content: '', error: `Failed to read OpenDocument file: ${err.message}`, isOdt: true };
+    }
+  }
 
   ipcMain.handle('read-docx-content', async (_, filePath) => {
     console.log('[DOCX Main] read-docx-content called for:', filePath);
     try {
+      const ext = path.extname(filePath).toLowerCase();
+      if (ext === '.odt') {
+        return extractOdtContent(filePath);
+      }
       const mammoth = require('mammoth');
       const JSZip = require('jszip');
       console.log('[DOCX Main] mammoth loaded');
       const buffer = await fsPromises.readFile(filePath);
       console.log('[DOCX Main] buffer read, length:', buffer?.length);
-      // Handle empty/new docx files
       if (!buffer || buffer.length === 0) {
         console.log('[DOCX Main] Empty file, returning blank');
         return { content: '', error: null, isNew: true };
       }
 
-      // Extract font information from DOCX
       let defaultFont = 'Calibri';
       let headingFont = 'Calibri';
       const fonts = new Set();
 
-      // Load the zip once, outside the try block so it's accessible for preprocessing
       const zip = await JSZip.loadAsync(buffer);
 
       try {
 
-        // Check styles.xml for default fonts
         const stylesFile = zip.file('word/styles.xml');
         if (stylesFile) {
           const stylesXml = await stylesFile.async('string');
 
-          // Extract default font from docDefaults
           const defaultFontMatch = stylesXml.match(/<w:rFonts[^>]*w:ascii="([^"]+)"/);
           if (defaultFontMatch) {
             defaultFont = defaultFontMatch[1];
             fonts.add(defaultFont);
           }
 
-          // Look for theme fonts
           const majorFontMatch = stylesXml.match(/w:majorFont[^>]*w:ascii="([^"]+)"/);
           const minorFontMatch = stylesXml.match(/w:minorFont[^>]*w:ascii="([^"]+)"/);
           if (majorFontMatch) {
@@ -193,12 +205,10 @@ function register(ctx) {
           }
         }
 
-        // Also check theme for fonts
         const themeFile = zip.file('word/theme/theme1.xml');
         if (themeFile) {
           const themeXml = await themeFile.async('string');
 
-          // Extract major (heading) and minor (body) fonts from theme
           const majorMatch = themeXml.match(/<a:majorFont>[\s\S]*?<a:latin typeface="([^"]+)"[\s\S]*?<\/a:majorFont>/);
           const minorMatch = themeXml.match(/<a:minorFont>[\s\S]*?<a:latin typeface="([^"]+)"[\s\S]*?<\/a:minorFont>/);
 
@@ -212,24 +222,20 @@ function register(ctx) {
           }
         }
 
-        // Also scan document.xml for inline fonts (most commonly used font wins)
         const documentFile = zip.file('word/document.xml');
         if (documentFile) {
           const documentXml = await documentFile.async('string');
 
-          // Find all rFonts declarations and count occurrences
           const fontCounts = {};
           const fontMatches = documentXml.matchAll(/<w:rFonts[^>]*w:ascii="([^"]+)"/g);
           for (const match of fontMatches) {
             const fontName = match[1];
-            // Skip system/default fonts
             if (fontName && fontName !== 'Arial' && fontName !== 'Calibri' && fontName !== 'Times New Roman') {
               fontCounts[fontName] = (fontCounts[fontName] || 0) + 1;
               fonts.add(fontName);
             }
           }
 
-          // Find the most used custom font and set it as default
           let maxCount = 0;
           for (const [fontName, count] of Object.entries(fontCounts)) {
             if (count > maxCount) {
@@ -244,18 +250,16 @@ function register(ctx) {
         console.log('[DOCX Main] Font extraction failed, using defaults:', fontErr.message);
       }
 
-      // Extract page dimensions from sectPr
-      let pageWidth = 8.5;  // Default letter size in inches
+      let pageWidth = 8.5;
       let pageHeight = 11;
       let marginTop = 1;
       let marginBottom = 1;
       let marginLeft = 1;
       let marginRight = 1;
-      let lineSpacing = 1.15;  // Default Word line spacing
+      let lineSpacing = 1.15;
       let paragraphSpacingBefore = 0;
-      let paragraphSpacingAfter = 8;  // Default 8pt after
+      let paragraphSpacingAfter = 8;
 
-      // Pre-process the DOCX to preserve empty paragraphs and page breaks
       let processedBuffer = buffer;
       try {
         const documentFile = zip.file('word/document.xml');
@@ -263,19 +267,15 @@ function register(ctx) {
           let documentXml = await documentFile.async('string');
           let changesMade = false;
 
-          // Count paragraphs before changes
           const totalParagraphs = (documentXml.match(/<w:p[ >]/g) || []).length;
           console.log('[DOCX Main] Total paragraphs in document:', totalParagraphs);
 
-          // Extract page size from sectPr (section properties)
-          // Values are in twips (1/20 of a point, 1440 twips = 1 inch)
           const pgSzMatch = documentXml.match(/<w:pgSz[^>]*w:w="(\d+)"[^>]*w:h="(\d+)"/);
           if (pgSzMatch) {
             pageWidth = parseInt(pgSzMatch[1]) / 1440;
             pageHeight = parseInt(pgSzMatch[2]) / 1440;
             console.log('[DOCX Main] Page size:', pageWidth, 'x', pageHeight, 'inches');
           }
-          // Also try reverse order (w:h before w:w)
           const pgSzMatch2 = documentXml.match(/<w:pgSz[^>]*w:h="(\d+)"[^>]*w:w="(\d+)"/);
           if (pgSzMatch2) {
             pageHeight = parseInt(pgSzMatch2[1]) / 1440;
@@ -283,7 +283,6 @@ function register(ctx) {
             console.log('[DOCX Main] Page size (alt):', pageWidth, 'x', pageHeight, 'inches');
           }
 
-          // Extract margins from pgMar
           const pgMarMatch = documentXml.match(/<w:pgMar[^>]*>/);
           if (pgMarMatch) {
             const marStr = pgMarMatch[0];
@@ -298,12 +297,8 @@ function register(ctx) {
             console.log('[DOCX Main] Margins:', marginTop, marginBottom, marginLeft, marginRight);
           }
 
-          // Extract line spacing from the most common spacing element
-          // w:line value with lineRule="auto" means: value/240 = line spacing multiplier
-          // e.g., 240 = single (1.0), 276 = 1.15, 360 = 1.5, 480 = double (2.0)
           const spacingMatches = documentXml.match(/<w:spacing[^>]*w:line="(\d+)"[^>]*w:lineRule="auto"[^>]*>/g) || [];
           if (spacingMatches.length > 0) {
-            // Count occurrences to find the most common
             const lineCounts = {};
             for (const match of spacingMatches) {
               const lineMatch = match.match(/w:line="(\d+)"/);
@@ -312,7 +307,6 @@ function register(ctx) {
                 lineCounts[lineVal] = (lineCounts[lineVal] || 0) + 1;
               }
             }
-            // Find most common
             let maxCount = 0;
             let mostCommonLine = 240;
             for (const [val, count] of Object.entries(lineCounts)) {
@@ -325,7 +319,6 @@ function register(ctx) {
             console.log('[DOCX Main] Line spacing:', lineSpacing, '(raw value:', mostCommonLine, ')');
           }
 
-          // Also extract paragraph spacing (before/after) from most common
           const beforeMatches = documentXml.match(/w:before="(\d+)"/g) || [];
           const afterMatches = documentXml.match(/w:after="(\d+)"/g) || [];
           if (beforeMatches.length > 0) {
@@ -338,7 +331,7 @@ function register(ctx) {
             for (const [val, count] of Object.entries(beforeCounts)) {
               if (count > maxCount) {
                 maxCount = count;
-                paragraphSpacingBefore = parseInt(val) / 20; // Convert twips to points
+                paragraphSpacingBefore = parseInt(val) / 20;
               }
             }
           }
@@ -352,61 +345,47 @@ function register(ctx) {
             for (const [val, count] of Object.entries(afterCounts)) {
               if (count > maxCount) {
                 maxCount = count;
-                paragraphSpacingAfter = parseInt(val) / 20; // Convert twips to points
+                paragraphSpacingAfter = parseInt(val) / 20;
               }
             }
           }
           console.log('[DOCX Main] Paragraph spacing - before:', paragraphSpacingBefore, 'pt, after:', paragraphSpacingAfter, 'pt');
 
-          // Step 0: Handle page breaks - convert <w:br w:type="page"/> to marker
           const pageBreakPattern = /<w:br[^>]*w:type="page"[^>]*\/?>/g;
           const pageBreakCount = (documentXml.match(pageBreakPattern) || []).length;
           if (pageBreakCount > 0) {
-            documentXml = documentXml.replace(pageBreakPattern, '<w:t xml:space="preserve">\u2042PAGEBREAK\u2042</w:t>');
+            documentXml = documentXml.replace(pageBreakPattern, '<w:t xml:space="preserve">⁂PAGEBREAK⁂</w:t>');
             console.log('[DOCX Main] Marked', pageBreakCount, 'page breaks for preservation');
             changesMade = true;
           }
 
-          // Step 1: Find empty runs (w:r with no w:t) and add a special marker
-          // Pattern: <w:r ...><w:rPr>...</w:rPr></w:r> (run with properties but no text)
           const emptyRunPattern = /(<w:r[^>]*>(?:<w:rPr>[\s\S]*?<\/w:rPr>)?)\s*(<\/w:r>)/g;
           const emptyRunCount = (documentXml.match(emptyRunPattern) || []).length;
           if (emptyRunCount > 0) {
-            documentXml = documentXml.replace(emptyRunPattern, '$1<w:t xml:space="preserve">\u2042EMPTYRUN\u2042</w:t>$2');
+            documentXml = documentXml.replace(emptyRunPattern, '$1<w:t xml:space="preserve">⁂EMPTYRUN⁂</w:t>$2');
             console.log('[DOCX Main] Marked', emptyRunCount, 'empty runs for preservation');
             changesMade = true;
           }
 
-          // Step 2: Find empty paragraphs (w:p with no w:r containing w:t)
-          // These are paragraphs that only have paragraph properties or are completely empty
-          // Match: <w:p>...</w:pPr></w:p> or <w:p></w:p> (no runs at all)
-          // We add a run with marker text to preserve them
-          // Allow whitespace between elements
           const emptyParagraphNoRunPattern = /(<w:p(?:[^>]*)>(?:\s*<w:pPr>[\s\S]*?<\/w:pPr>)?)\s*(<\/w:p>)/g;
           const emptyParaCount = (documentXml.match(emptyParagraphNoRunPattern) || []).length;
           if (emptyParaCount > 0) {
-            documentXml = documentXml.replace(emptyParagraphNoRunPattern, '$1<w:r><w:t xml:space="preserve">\u2042EMPTYRUN\u2042</w:t></w:r>$2');
+            documentXml = documentXml.replace(emptyParagraphNoRunPattern, '$1<w:r><w:t xml:space="preserve">⁂EMPTYRUN⁂</w:t></w:r>$2');
             console.log('[DOCX Main] Marked', emptyParaCount, 'empty paragraphs (no runs) for preservation');
             changesMade = true;
           }
 
-          // Step 3: Find paragraphs that only have bookmarks but no text
-          // Pattern: <w:p>...<w:bookmarkStart.../><w:bookmarkEnd/>...</w:p> (only bookmarks, no text runs)
-          // We need to add visible content to these as well
-          // Allow whitespace between elements
           const bookmarkOnlyPattern = /(<w:p(?:[^>]*)>(?:\s*<w:pPr>[\s\S]*?<\/w:pPr>)?(?:\s*<w:bookmarkStart[^>]*\/>|\s*<w:bookmarkEnd[^>]*\/>)+)\s*(<\/w:p>)/g;
           const bookmarkOnlyCount = (documentXml.match(bookmarkOnlyPattern) || []).length;
           if (bookmarkOnlyCount > 0) {
-            documentXml = documentXml.replace(bookmarkOnlyPattern, '$1<w:r><w:t xml:space="preserve">\u2042EMPTYRUN\u2042</w:t></w:r>$2');
+            documentXml = documentXml.replace(bookmarkOnlyPattern, '$1<w:r><w:t xml:space="preserve">⁂EMPTYRUN⁂</w:t></w:r>$2');
             console.log('[DOCX Main] Marked', bookmarkOnlyCount, 'bookmark-only paragraphs for preservation');
             changesMade = true;
           }
 
           if (changesMade) {
-            // Update the zip with modified document.xml
             zip.file('word/document.xml', documentXml);
 
-            // Generate new buffer
             processedBuffer = await zip.generateAsync({ type: 'nodebuffer' });
             console.log('[DOCX Main] Regenerated buffer with preserved empty content');
           }
@@ -415,43 +394,34 @@ function register(ctx) {
         console.log('[DOCX Main] Pre-processing failed, using original:', preprocessErr.message);
       }
 
-      // Convert to HTML with style mapping for better preservation
       const options = {
         buffer: processedBuffer,
-        // Don't ignore empty paragraphs - preserve line breaks
         ignoreEmptyParagraphs: false,
         styleMap: [
-          // Standard Word heading styles
           "p[style-name='Heading 1'] => h1:fresh",
           "p[style-name='Heading 2'] => h2:fresh",
           "p[style-name='Heading 3'] => h3:fresh",
           "p[style-name='Heading 4'] => h4:fresh",
           "p[style-name='Heading 5'] => h5:fresh",
           "p[style-name='Heading 6'] => h6:fresh",
-          // Alternative heading style names (Google Docs, LibreOffice, etc.)
           "p[style-name='heading 1'] => h1:fresh",
           "p[style-name='heading 2'] => h2:fresh",
           "p[style-name='heading 3'] => h3:fresh",
           "p[style-name='heading 4'] => h4:fresh",
           "p[style-name='heading 5'] => h5:fresh",
           "p[style-name='heading 6'] => h6:fresh",
-          // Title and subtitle
           "p[style-name='Title'] => h1.title:fresh",
           "p[style-name='title'] => h1.title:fresh",
           "p[style-name='Subtitle'] => h2.subtitle:fresh",
           "p[style-name='subtitle'] => h2.subtitle:fresh",
-          // Text formatting
           "r[style-name='Strong'] => strong",
           "r[style-name='Emphasis'] => em",
-          // Quotes
           "p[style-name='Quote'] => blockquote:fresh",
           "p[style-name='Block Quote'] => blockquote:fresh",
           "p[style-name='quote'] => blockquote:fresh",
-          // Lists
           "p[style-name='List Paragraph'] => li:fresh",
           "p[style-name='List Number'] => li:fresh",
           "p[style-name='List Bullet'] => li:fresh",
-          // Normal paragraph (ensure it's wrapped)
           "p[style-name='Normal'] => p:fresh",
           "p[style-name='normal'] => p:fresh",
           "p[style-name='Body Text'] => p:fresh",
@@ -469,41 +439,28 @@ function register(ctx) {
       const result = await mammoth.convertToHtml(options);
       console.log('[DOCX Main] Mammoth conversion done, HTML length:', result.value?.length);
 
-      // Post-process HTML to ensure empty paragraphs render properly
       let html = result.value || '';
 
-      // Convert page break markers to visible page break elements
-      const pageBreakMarkerCount = (html.match(/\u2042PAGEBREAK\u2042/g) || []).length;
-      html = html.replace(/\u2042PAGEBREAK\u2042/g, '</p><div class="docx-page-break"></div><p>');
+      const pageBreakMarkerCount = (html.match(/⁂PAGEBREAK⁂/g) || []).length;
+      html = html.replace(/⁂PAGEBREAK⁂/g, '</p><div class="docx-page-break"></div><p>');
       console.log('[DOCX Main] Converted', pageBreakMarkerCount, 'page break markers');
 
-      // Convert our empty run markers to non-breaking space
-      // The marker \u2042EMPTYRUN\u2042 was inserted during pre-processing
-      const markerCount = (html.match(/\u2042EMPTYRUN\u2042/g) || []).length;
-      html = html.replace(/\u2042EMPTYRUN\u2042/g, '&nbsp;');
+      const markerCount = (html.match(/⁂EMPTYRUN⁂/g) || []).length;
+      html = html.replace(/⁂EMPTYRUN⁂/g, '&nbsp;');
       console.log('[DOCX Main] Converted', markerCount, 'empty run markers to &nbsp;');
 
-      // Replace empty paragraphs with paragraphs containing a <br> so they render
-      // Handle variations: <p></p>, <p> </p>, <p class="..."></p>, etc.
       html = html.replace(/<p([^>]*)>\s*<\/p>/g, '<p$1><br></p>');
 
-      // Also handle empty headings
       html = html.replace(/<(h[1-6])([^>]*)>\s*<\/\1>/g, '<$1$2><br></$1>');
 
-      // Handle paragraphs/headings that only contain anchor tags (no visible text)
-      // These are bookmarks in Word that create no visual space
-      // Pattern: <p><a id="..."></a></p> or <h1><a id="..."></a></h1>
       html = html.replace(/<p([^>]*)>(\s*<a[^>]*><\/a>\s*)<\/p>/g, '<p$1>$2<br></p>');
       html = html.replace(/<(h[1-6])([^>]*)>(\s*<a[^>]*><\/a>\s*)<\/\1>/g, '<$1$2>$3<br></$1>');
 
-      // Handle multiple consecutive anchors with no text
       html = html.replace(/<p([^>]*)>((?:\s*<a[^>]*><\/a>\s*)+)<\/p>/g, '<p$1>$2<br></p>');
       html = html.replace(/<(h[1-6])([^>]*)>((?:\s*<a[^>]*><\/a>\s*)+)<\/\1>/g, '<$1$2>$3<br></$1>');
 
-      // Handle empty list items
       html = html.replace(/<li([^>]*)>\s*<\/li>/g, '<li$1><br></li>');
 
-      // Ensure there's at least one paragraph if content is empty
       if (!html.trim()) {
         html = '<p><br></p>';
       }
@@ -537,10 +494,6 @@ function register(ctx) {
     }
   });
 
-  // ============================================
-  // Write file buffer
-  // ============================================
-
   ipcMain.handle('write-file-buffer', async (_e, filePath, uint8) => {
     try {
       fs.writeFileSync(filePath, Buffer.from(uint8));
@@ -549,10 +502,6 @@ function register(ctx) {
       return { error: err.message };
     }
   });
-
-  // ============================================
-  // Save generated image
-  // ============================================
 
   ipcMain.handle('save-generated-image', async (event, blob, folderPath, filename) => {
     try {
@@ -565,10 +514,6 @@ function register(ctx) {
         return { success: false, error: error.message };
     }
   });
-
-  // ============================================
-  // Compile LaTeX
-  // ============================================
 
   ipcMain.handle('compile-latex', async (_event, texPath, opts) => {
     console.log('[LATEX] compile-latex called with:', texPath, opts);
@@ -585,38 +530,31 @@ function register(ctx) {
     ];
     if (opts?.shellEscape) compileArgs.unshift('-shell-escape');
 
-    // Auto-detect if bibliography processing is needed:
-    // 1. Caller explicitly requested it
-    // 2. .tex contains \bibliography{}, \addbibresource{}, \printbibliography, or \cite commands
-    // 3. .bib files exist in the same directory
     let needsBib = !!opts?.bibtex;
     if (!needsBib) {
       try {
         const texContent = fs.readFileSync(texPath, 'utf8');
         needsBib = /\\bibliography\{|\\addbibresource\{|\\printbibliography|\\cite[ptsa]*\{/.test(texContent);
-      } catch (e) { /* ignore read error */ }
+      } catch (e) { }
     }
     if (!needsBib) {
       try {
         const dirFiles = fs.readdirSync(workingDir);
         needsBib = dirFiles.some(f => f.endsWith('.bib'));
-      } catch (e) { /* ignore */ }
+      } catch (e) { }
     }
 
-    // Auto-detect biblatex (uses biber) vs natbib/standard (uses bibtex)
     let useBiber = false;
     if (needsBib) {
       try {
         const texContent = fs.readFileSync(texPath, 'utf8');
         useBiber = /\\usepackage(\[.*?\])?\{biblatex\}/.test(texContent);
-      } catch (e) { /* ignore */ }
+      } catch (e) { }
     }
 
-    // First pass — generates .aux with citation keys
     console.log('[LATEX] Running first pass:', engine, compileArgs.join(' '));
     const first = spawnSync(engine, compileArgs, { encoding: 'utf8', cwd: workingDir });
 
-    // Bibliography pass — biber for biblatex, bibtex for everything else
     if (needsBib) {
       if (useBiber) {
         console.log('[LATEX] Running biber on:', base);
@@ -626,7 +564,6 @@ function register(ctx) {
         console.log('[LATEX] Running bibtex on:', base);
         const bib = spawnSync('bibtex', [base], { encoding: 'utf8', cwd: workingDir });
         console.log('[LATEX] Bibtex:', bib.status === 0 ? 'OK' : (bib.stderr || 'FAILED'));
-        // Fallback to biber if bibtex fails (some setups use biber without biblatex package)
         if (bib.status !== 0) {
           console.log('[LATEX] bibtex failed, trying biber as fallback...');
           spawnSync('biber', [base], { encoding: 'utf8', cwd: workingDir });
@@ -634,11 +571,9 @@ function register(ctx) {
       }
     }
 
-    // Second pass — resolves citations from .bbl
     console.log('[LATEX] Running second pass');
     spawnSync(engine, compileArgs, { encoding: 'utf8', cwd: workingDir });
 
-    // Third pass — resolves cross-references and page numbers
     console.log('[LATEX] Running third pass');
     const result = spawnSync(engine, compileArgs, { encoding: 'utf8', cwd: workingDir });
 
@@ -655,10 +590,6 @@ function register(ctx) {
     };
   });
 
-  // ============================================
-  // File existence check
-  // ============================================
-
   ipcMain.handle('file-exists', async (_event, filePath) => {
     try {
       await fsPromises.access(filePath);
@@ -668,10 +599,6 @@ function register(ctx) {
     }
   });
 
-  // ============================================
-  // Zip operations (archiver / adm-zip)
-  // ============================================
-
   ipcMain.handle('zip-items', async (_event, itemPaths, customName) => {
     const archiver = require('archiver');
 
@@ -680,19 +607,15 @@ function register(ctx) {
         return { error: 'No items to zip' };
       }
 
-      // Determine output path - use parent of first item
       const firstItem = itemPaths[0];
       const parentDir = path.dirname(firstItem);
 
-      // Use custom name or generate default
       let baseName = customName || (itemPaths.length === 1
         ? path.basename(firstItem, path.extname(firstItem))
         : 'archive');
 
-      // Remove .zip if user added it
       baseName = baseName.replace(/\.zip$/i, '');
 
-      // Find unique filename
       let zipPath = path.join(parentDir, `${baseName}.zip`);
       let counter = 1;
       while (fs.existsSync(zipPath)) {
@@ -715,7 +638,6 @@ function register(ctx) {
 
         archive.pipe(output);
 
-        // Add each item
         for (const itemPath of itemPaths) {
           const stat = fs.statSync(itemPath);
           const name = path.basename(itemPath);
@@ -735,7 +657,6 @@ function register(ctx) {
     }
   });
 
-  // Read zip file contents (list entries)
   ipcMain.handle('read-zip-contents', async (_event, zipPath) => {
     const AdmZip = require('adm-zip');
 
@@ -763,7 +684,6 @@ function register(ctx) {
     }
   });
 
-  // Extract zip file contents
   ipcMain.handle('extract-zip', async (_event, zipPath, targetDir, entryPath = null) => {
     const AdmZip = require('adm-zip');
 
@@ -779,14 +699,12 @@ function register(ctx) {
       const zip = new AdmZip(zipPath);
 
       if (entryPath) {
-        // Extract specific entry
         const entry = zip.getEntry(entryPath);
         if (!entry) {
           return { error: `Entry not found: ${entryPath}` };
         }
 
         if (entry.isDirectory) {
-          // Extract directory and all its contents
           const entries = zip.getEntries().filter(e => e.entryName.startsWith(entryPath));
           for (const e of entries) {
             zip.extractEntryTo(e, targetDir, true, true);
@@ -796,7 +714,6 @@ function register(ctx) {
         }
         console.log(`[ZIP] Extracted ${entryPath} to ${targetDir}`);
       } else {
-        // Extract all
         zip.extractAllTo(targetDir, true);
         console.log(`[ZIP] Extracted all to ${targetDir}`);
       }
@@ -807,10 +724,6 @@ function register(ctx) {
       return { error: err.message };
     }
   });
-
-  // ============================================
-  // Read file buffer / show in folder / close window
-  // ============================================
 
   ipcMain.handle('read-file-buffer', async (event, filePath) => {
     try {
@@ -842,10 +755,6 @@ function register(ctx) {
       mainWindow.close();
     }
   });
-
-  // ============================================
-  // Read / write / delete file content
-  // ============================================
 
   ipcMain.handle('read-file-content', async (_, filePath) => {
     try {
@@ -922,7 +831,6 @@ function register(ctx) {
     }
   });
 
-  // Save data to a temp file (for clipboard paste of images/large text)
   ipcMain.handle('save-temp-file', async (_, { name, data, encoding }) => {
     try {
       const tempDir = path.join(os.tmpdir(), 'incognide-paste');
@@ -951,10 +859,6 @@ function register(ctx) {
       return { success: false, error: err.message };
     }
   });
-
-  // ============================================
-  // Read directory images
-  // ============================================
 
   ipcMain.handle('readDirectoryImages', async (_, dirPath, maxDepth) => {
     const depth = typeof maxDepth === 'number' ? maxDepth : 2;
@@ -989,10 +893,6 @@ function register(ctx) {
     }
   });
 
-  // ============================================
-  // Directory structure / navigation
-  // ============================================
-
   ipcMain.handle('readDirectoryStructure', async (_, dirPath, options) => {
     const allowedExtensions = ['.py',
                                '.md',
@@ -1002,7 +902,6 @@ function register(ctx) {
                                '.csv',
                                '.xlsx',
                                '.doc',
-                               '.xlsx',
                                '.ipynb',
                                '.exp',
                                '.tsx',
@@ -1019,13 +918,11 @@ function register(ctx) {
                                '.npc',
                                '.jinx',
                                '.pdf',
-                               '.csv',
                                '.sh',
                                '.ctx',
                                '.cpp',
                                '.c',
                                '.r',
-                               '.json',
                                '.jpg',
                                '.jpeg',
                                '.png',
@@ -1041,9 +938,20 @@ function register(ctx) {
                                '.db',
                                '.sqlite',
                                '.sqlite3',
+                               '.mp4',
+                               '.mov',
+                               '.avi',
+                               '.mkv',
+                               '.webm',
+                               '.wmv',
+                               '.m4v',
+                               '.flv',
+                               '.ogv',
+                               '.odt',
+                               '.ods',
+                               '.odp',
                               ];
 
-    // Merge in user-defined custom extensions
     if (options?.customExtensions?.length) {
       for (const ext of options.customExtensions) {
         const normalized = ext.startsWith('.') ? ext.toLowerCase() : ('.' + ext.toLowerCase());
@@ -1055,7 +963,6 @@ function register(ctx) {
 
     const ignorePatterns = ['node_modules', '.git', '.DS_Store'];
 
-    // Determine max depth based on path - limit to 2 levels for home directory
     const homeDir = os.homedir();
     const isHomeDir = dirPath === homeDir || dirPath === '~' || dirPath === homeDir + '/';
     const maxDepth = isHomeDir ? 2 : Infinity;
@@ -1066,7 +973,6 @@ function register(ctx) {
       try {
         items = await fsPromises.readdir(currentPath, { withFileTypes: true });
       } catch (err) {
-        // Can't read this directory - return empty result
         if (err.code === 'EACCES' || err.code === 'EPERM') {
           console.log(`[Main Process] Permission denied, skipping: ${currentPath}`);
           return result;
@@ -1081,7 +987,6 @@ function register(ctx) {
 
         const itemPath = path.join(currentPath, item.name);
         if (item.isDirectory()) {
-          // Only recurse if we haven't hit max depth
           if (depth < maxDepth) {
             try {
               result[item.name] = {
@@ -1090,7 +995,6 @@ function register(ctx) {
                 children: await readDirRecursive(itemPath, depth + 1)
               };
             } catch (err) {
-              // If we can't read subdirectory, still show it but mark as inaccessible
               if (err.code === 'EACCES' || err.code === 'EPERM') {
                 console.log(`[Main Process] Permission denied for subdirectory: ${itemPath}`);
                 result[item.name] = {
@@ -1104,11 +1008,10 @@ function register(ctx) {
               }
             }
           } else {
-            // At max depth, just show directory without children
             result[item.name] = {
               type: 'directory',
               path: itemPath,
-              children: {} // Empty children - will be loaded on expand
+              children: {}
             };
           }
         } else if (item.isFile()) {
@@ -1168,7 +1071,6 @@ function register(ctx) {
           size = stats.size;
           modified = stats.mtime.toISOString();
         } catch (e) {
-          // Ignore stat errors
         }
         return {
           name: item.name,
@@ -1185,10 +1087,6 @@ function register(ctx) {
     }
   });
 
-  // ============================================
-  // Ensure directory
-  // ============================================
-
   ipcMain.handle('ensureDirectory', async (_, dirPath) => {
     try {
       const fullPath = expandHomeDir(dirPath);
@@ -1199,10 +1097,6 @@ function register(ctx) {
       throw error;
     }
   });
-
-  // ============================================
-  // Create / delete directory, recursive contents
-  // ============================================
 
   ipcMain.handle('create-directory', async (_, directoryPath) => {
     try {
@@ -1224,7 +1118,6 @@ function register(ctx) {
     }
   });
 
-  // Add this handler to get all file paths inside a folder for AI overview
   ipcMain.handle('get-directory-contents-recursive', async (_, directoryPath) => {
       const allFiles = [];
       async function readDir(currentDir) {
@@ -1247,10 +1140,6 @@ function register(ctx) {
       }
   });
 
-  // ============================================
-  // Analyze disk usage
-  // ============================================
-
   ipcMain.handle('analyze-disk-usage', async (_, folderPath) => {
     console.log('[DiskUsage Main] Received request for:', folderPath);
 
@@ -1259,13 +1148,11 @@ function register(ctx) {
         return null;
     }
 
-    // Skip virtual/system filesystems that can cause hangs or permission errors
     const SKIP_PATHS = ['/proc', '/sys', '/dev', '/run', '/snap', '/tmp/.X11-unix', '/var/run'];
     const shouldSkip = (p) => SKIP_PATHS.some(skip => p === skip || p.startsWith(skip + '/'));
 
     try {
         const analyzePath = async (currentPath, depth = 0, maxDepth = 3) => {
-            // Skip virtual filesystems
             if (shouldSkip(currentPath)) {
                 return null;
             }
@@ -1291,7 +1178,6 @@ function register(ctx) {
                 try {
                     const entries = await fsPromises.readdir(currentPath, { withFileTypes: true });
 
-                    // Only go deeper if we haven't hit max depth
                     if (depth < maxDepth) {
                         for (const entry of entries) {
                             const childPath = path.join(currentPath, entry.name);
@@ -1309,15 +1195,12 @@ function register(ctx) {
                                     }
                                 }
                             } catch (childErr) {
-                                // Skip inaccessible files/folders
                                 console.warn(`Skipping inaccessible: ${childPath}`);
                             }
                         }
                     } else {
-                        // At max depth, just count sizes without going deeper
                         for (const entry of entries) {
                             const childPath = path.join(currentPath, entry.name);
-                            // Skip virtual filesystems at max depth too
                             if (shouldSkip(childPath)) continue;
                             try {
                                 const childStats = await fsPromises.stat(childPath);
@@ -1328,7 +1211,6 @@ function register(ctx) {
                                     folderCount++;
                                 }
                             } catch (e) {
-                                // Skip inaccessible
                             }
                         }
                     }
@@ -1336,7 +1218,6 @@ function register(ctx) {
                     console.warn(`Cannot read directory: ${currentPath}`);
                 }
 
-                // Sort children by size (largest first)
                 children.sort((a, b) => (b.size || 0) - (a.size || 0));
 
                 return {
@@ -1362,10 +1243,6 @@ function register(ctx) {
     }
   });
 
-  // ============================================
-  // Rename file
-  // ============================================
-
   ipcMain.handle('renameFile', async (_, oldPath, newPath) => {
     try {
       await fsPromises.rename(oldPath, newPath);
@@ -1386,17 +1263,12 @@ function register(ctx) {
     }
   });
 
-  // ============================================
-  // File Permission Management (chmod/chown)
-  // ============================================
-
   ipcMain.handle('chmod', async (_, { path: filePath, mode, recursive, useSudo }) => {
       try {
           if (!filePath || !mode) {
               return { success: false, error: 'Path and mode are required' };
           }
 
-          // Validate mode format (octal like 755, 0755, etc.)
           if (!/^[0-7]{3,4}$/.test(mode)) {
               return { success: false, error: 'Invalid mode format. Use octal format (e.g., 755)' };
           }
@@ -1451,7 +1323,7 @@ function register(ctx) {
               try {
                   entries = await fs.promises.readdir(dir, { withFileTypes: true });
               } catch (e) {
-                  return; // Permission denied or other error
+                  return;
               }
 
               for (const entry of entries) {
@@ -1470,7 +1342,7 @@ function register(ctx) {
                       filesChecked++;
                       try {
                           const stat = await fs.promises.stat(fullPath);
-                          if (stat.size > 1024 * 1024) continue; // Skip files > 1MB
+                          if (stat.size > 1024 * 1024) continue;
 
                           const content = await fs.promises.readFile(fullPath, 'utf-8');
                           const lines = content.split('\n');
@@ -1491,14 +1363,12 @@ function register(ctx) {
                               });
                           }
                       } catch (e) {
-                          // Binary file or read error - skip
                       }
                   }
               }
           };
 
           await walkDir(searchPath);
-          // Sort: non-hidden first, then by path length (shorter = closer to root)
           results.sort((a, b) => {
               const aHidden = a.name.startsWith('.') || a.path.includes('\\.') || a.path.includes('/.');
               const bHidden = b.name.startsWith('.') || b.path.includes('\\.') || b.path.includes('/.');

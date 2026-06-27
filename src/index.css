@@ -1,16 +1,13 @@
-/* src/index.css */
 @import url('https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600;700&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  /* Light Mode Colors - Base colors that can be customized */
   --theme-bg-light: #e4f1ea;
   --theme-text-light: #1e293b;
   --theme-primary-light: #ec4899;
 
-  /* Light Mode - Derived colors (automatically calculated from base) */
   --theme-bg-secondary-light: color-mix(in srgb, var(--theme-bg-light), #000 5%);
   --theme-bg-tertiary-light: color-mix(in srgb, var(--theme-bg-light), #000 10%);
   --theme-text-secondary-light: color-mix(in srgb, var(--theme-text-light), var(--theme-bg-light) 30%);
@@ -39,12 +36,10 @@
   --theme-primary-rgb: 236, 72, 153;
   --theme-success-rgb: 16, 185, 129;
 
-  /* Dark Mode Colors - Base colors that can be customized */
   --theme-bg-dark: #0f172a;
   --theme-text-dark: #f1f5f9;
   --theme-primary-dark: #3b82f6;
 
-  /* Dark Mode - Derived colors (automatically calculated from base) */
   --theme-bg-secondary-dark: color-mix(in srgb, var(--theme-bg-dark), #fff 8%);
   --theme-bg-tertiary-dark: color-mix(in srgb, var(--theme-bg-dark), #fff 15%);
   --theme-text-secondary-dark: color-mix(in srgb, var(--theme-text-dark), var(--theme-bg-dark) 10%);
@@ -71,7 +66,6 @@
   --theme-selected-border-dark: color-mix(in srgb, var(--theme-primary-dark), #fff 20%);
   --theme-selected-shadow-dark: color-mix(in srgb, var(--theme-primary-dark) 60%, transparent);
 
-  /* Default to dark mode */
   --theme-bg: var(--theme-bg-dark);
   --theme-bg-secondary: var(--theme-bg-secondary-dark);
   --theme-bg-tertiary: var(--theme-bg-tertiary-dark);
@@ -333,7 +327,6 @@ body.resizing-input webview {
     pointer-events: none !important;
 }
 
-/* DARK MODE PROSE STYLES - using theme variables */
 .prose {
     max-width: none !important;
     text-align: left !important;
@@ -639,7 +632,6 @@ body.dark-mode .cm-gutters {
   border-right: 1px solid var(--theme-border);
 }
 
-/* Compact line numbers */
 .cm-gutters {
   padding-left: 0 !important;
 }
@@ -779,7 +771,7 @@ body.dark-mode .cm-activeLineGutter {
 .cron-daemon-panel-content {
     padding: 1rem 1.5rem;
     overflow-y: auto;
-    flex-grow: 1;   
+    flex-grow: 1;
     color: var(--theme-text);
 }
 
@@ -798,7 +790,7 @@ body.dark-mode .cm-activeLineGutter {
 }
 
 .action-grid-button .lucide-clock {
-    color: var(--theme-primary); 
+    color: var(--theme-primary);
 }
 .action-grid-button .lucide-image {
     color: #a855f7;
@@ -840,7 +832,7 @@ body.dark-mode .cm-activeLineGutter {
     color: var(--theme-text-muted);
     border: 1px solid var(--theme-border-secondary);
     border-radius: 4px;
-    box-shadow: 
+    box-shadow:
         inset 0 1px 4px rgba(0, 0, 0, 0.4),
         0 1px 1px rgba(0, 0, 0, 0.2),
         0 2px 4px rgba(0, 0, 0, 0.15);
@@ -856,7 +848,7 @@ body.dark-mode .cm-activeLineGutter {
     background-color: var(--theme-button-hover);
     color: var(--theme-text);
     transform: translateY(-2px);
-    box-shadow: 
+    box-shadow:
         inset 0 1px 4px rgba(0, 0, 0, 0.5),
         0 5px 10px rgba(0, 0, 0, 0.3),
         0 0 15px rgba(var(--theme-primary-rgb), 0.4);
@@ -912,10 +904,6 @@ body.dark-mode .cm-activeLineGutter {
         border-radius: 0.5rem;
     }
 }
-
-/* ============================================
-   LIGHT MODE OVERRIDES - MUST BE AT THE END
-   ============================================ */
 
 body.light-mode .bg-gray-900 { background-color: var(--theme-bg) !important; }
 body.light-mode .bg-gray-800 { background-color: var(--theme-bg-secondary) !important; }
@@ -977,12 +965,11 @@ body.light-mode ::-webkit-scrollbar-thumb:hover {
     background: var(--theme-text-muted);
 }
 
-/* LIGHT MODE PROSE - PINK THEMED */
-body.light-mode .prose h1, 
-body.light-mode .prose h2, 
-body.light-mode .prose h3, 
-body.light-mode .prose h4, 
-body.light-mode .prose h5, 
+body.light-mode .prose h1,
+body.light-mode .prose h2,
+body.light-mode .prose h3,
+body.light-mode .prose h4,
+body.light-mode .prose h5,
 body.light-mode .prose h6 {
     color: #1e293b !important;
 }
@@ -1001,7 +988,7 @@ body.light-mode .prose em {
     color: #475569 !important;
 }
 
-body.light-mode .prose ul, 
+body.light-mode .prose ul,
 body.light-mode .prose ol {
     color: #1e293b !important;
 }
@@ -1047,7 +1034,7 @@ body.light-mode .prose th {
     color: #831843 !important;
 }
 
-body.light-mode .prose th, 
+body.light-mode .prose th,
 body.light-mode .prose td {
     color: #1e293b !important;
     border: 1px solid #f9a8d4 !important;
@@ -1087,12 +1074,10 @@ body.light-mode .prose table tr:nth-child(even) {
     background-color: #fdf2f8 !important;
 }
 
-/* LIGHT MODE HOVER - SEAFOAM */
 body.light-mode .theme-hover:hover {
     background-color: rgba(15, 61, 45, 0.18) !important;
 }
 
-/* LIGHT MODE ACTION GRID BUTTONS - SEAFOAM */
 body.light-mode .action-grid-button {
     background-color: var(--theme-bg-tertiary-light);
     color: var(--theme-text-muted-light);
@@ -1117,7 +1102,6 @@ body.light-mode .action-grid-button:active {
         0 1px 2px rgba(0, 0, 0, 0.08);
 }
 
-/* LIGHT MODE SELECTIONS - SEAFOAM */
 body.light-mode .message-selected {
     background: rgba(15, 61, 45, 0.2) !important;
     color: #0f3d2d !important;
@@ -1173,7 +1157,6 @@ body.light-mode .conversation-selected svg {
     color: #134e4a !important;
 }
 
-/* LIGHT MODE CODEMIRROR */
 body.light-mode .cm-editor {
   color: var(--theme-text);
   background-color: var(--theme-bg);
@@ -1204,13 +1187,11 @@ body.light-mode .cm-focused .cm-activeLine,
 body.light-mode .cm-focused .cm-activeLineGutter {
   background-color: var(--theme-bg-tertiary);
 }
-/* Code blocks inside tertiary bg in light mode */
 body.light-mode .theme-bg-tertiary pre,
 body.light-mode .theme-bg-tertiary code {
     background-color: #fdf2f8 !important;
     color: #831843 !important;
 }
-/* OVERRIDE HARDCODED HOVER COLORS IN LIGHT MODE */
 body.light-mode .hover\:bg-gray-800:hover {
     background-color: rgba(15, 61, 45, 0.18) !important;
 }
@@ -1219,7 +1200,6 @@ body.light-mode button:hover {
     background-color: rgba(15, 61, 45, 0.15) !important;
 }
 
-/* Make sure dropdowns don't get pink background, only pink on item hover */
 body.light-mode .group:hover > div {
     background-color: var(--theme-bg-secondary) !important;
 }
@@ -1227,23 +1207,16 @@ body.light-mode .group:hover > div {
 body.light-mode .group:hover > div > button:hover {
     background-color: rgba(15, 61, 45, 0.18) !important;
 }
-/* OVERRIDE ALL HARDCODED GRAY HOVERS IN LIGHT MODE */
 body.light-mode .hover\:bg-gray-800:hover,
 body.light-mode .hover\:bg-gray-700:hover,
 body.light-mode .hover\:bg-gray-600:hover {
     background-color: rgba(15, 61, 45, 0.2) !important;
 }
 
-/* ============================================
-   SIDEBAR LIGHT MODE FIXES - Full contrast fixes
-   ============================================ */
-
-/* Gray text that's too light in light mode */
 body.light-mode .text-gray-600 { color: #64748b !important; }
 body.light-mode .text-gray-700 { color: #475569 !important; }
 body.light-mode .text-gray-800 { color: #334155 !important; }
 
-/* White/black transparency backgrounds - need solid colors in light mode */
 body.light-mode .bg-white\/5 { background-color: rgba(0, 0, 0, 0.03) !important; }
 body.light-mode .bg-white\/10 { background-color: rgba(0, 0, 0, 0.05) !important; }
 body.light-mode .bg-white\/20 { background-color: rgba(0, 0, 0, 0.08) !important; }
@@ -1252,7 +1225,6 @@ body.light-mode .bg-black\/30 { background-color: rgba(0, 0, 0, 0.08) !important
 body.light-mode .bg-black\/40 { background-color: rgba(0, 0, 0, 0.1) !important; }
 body.light-mode .bg-black\/50 { background-color: rgba(0, 0, 0, 0.12) !important; }
 
-/* Hover states with white/black transparency */
 body.light-mode .hover\:bg-white\/5:hover { background-color: rgba(15, 61, 45, 0.15) !important; }
 body.light-mode .hover\:bg-white\/10:hover { background-color: rgba(15, 61, 45, 0.2) !important; }
 body.light-mode .hover\:bg-white\/20:hover { background-color: rgba(15, 61, 45, 0.25) !important; }
@@ -1274,15 +1246,12 @@ body.light-mode .hover\:bg-teal-600\/30:hover { background-color: rgba(236, 72, 
 body.light-mode .border-teal-500 { border-color: rgba(236, 72, 153, 0.8) !important; }
 body.light-mode .border-teal-400 { border-color: rgba(236, 72, 153, 0.7) !important; }
 
-/* Border colors with white transparency */
 body.light-mode .border-white\/10 { border-color: rgba(0, 0, 0, 0.1) !important; }
 body.light-mode .border-white\/20 { border-color: rgba(0, 0, 0, 0.15) !important; }
 body.light-mode .border-gray-700\/50 { border-color: rgba(0, 0, 0, 0.1) !important; }
 
-/* Placeholder text */
 body.light-mode .placeholder-gray-600::placeholder { color: #94a3b8 !important; }
 
-/* Status colors - ensure good contrast in light mode */
 body.light-mode .text-yellow-300 { color: #ca8a04 !important; }
 body.light-mode .text-yellow-400 { color: #d97706 !important; }
 body.light-mode .text-green-300 { color: #15803d !important; }
@@ -1296,7 +1265,6 @@ body.light-mode .text-purple-400 { color: #a855f7 !important; }
 body.light-mode .text-cyan-400 { color: #0891b2 !important; }
 body.light-mode .text-orange-300 { color: #ea580c !important; }
 
-/* Background status colors - adjust for light mode visibility */
 body.light-mode .bg-yellow-500\/20 { background-color: rgba(234, 179, 8, 0.55) !important; }
 body.light-mode .bg-green-500\/20 { background-color: rgba(34, 197, 94, 0.55) !important; }
 body.light-mode .bg-red-500\/20 { background-color: rgba(239, 68, 68, 0.55) !important; }
@@ -1306,7 +1274,6 @@ body.light-mode .bg-orange-500\/20 { background-color: rgba(249, 115, 22, 0.55) 
 body.light-mode .bg-cyan-500\/20 { background-color: rgba(6, 182, 212, 0.55) !important; }
 body.light-mode .bg-teal-500\/20 { background-color: rgba(20, 184, 166, 0.55) !important; }
 
-/* Git diff viewer colors for light mode */
 body.light-mode .bg-red-900\/10 { background-color: rgba(239, 68, 68, 0.08) !important; }
 body.light-mode .bg-red-900\/20 { background-color: rgba(239, 68, 68, 0.12) !important; }
 body.light-mode .bg-red-900\/30 { background-color: rgba(239, 68, 68, 0.15) !important; }
@@ -1337,7 +1304,6 @@ body.light-mode .bg-teal-500\/10 { background-color: rgba(20, 184, 166, 0.5) !im
 body.light-mode .bg-indigo-900\/20 { background-color: rgba(99, 102, 241, 0.5) !important; }
 body.light-mode .bg-emerald-900\/20 { background-color: rgba(16, 185, 129, 0.5) !important; }
 
-/* Gradient backgrounds for git viewer header */
 body.light-mode .from-orange-900\/20 { --tw-gradient-from: rgba(249, 115, 22, 0.45) !important; }
 body.light-mode .to-amber-900\/20 { --tw-gradient-to: rgba(245, 158, 11, 0.45) !important; }
 body.light-mode .from-purple-900\/20 { --tw-gradient-from: rgba(168, 85, 247, 0.5) !important; }
@@ -1350,7 +1316,6 @@ body.light-mode .to-orange-900\/20 { --tw-gradient-to: rgba(249, 115, 22, 0.5) !
 body.light-mode .from-green-900\/20 { --tw-gradient-from: rgba(34, 197, 94, 0.5) !important; }
 body.light-mode .to-emerald-900\/20 { --tw-gradient-to: rgba(16, 185, 129, 0.5) !important; }
 
-/* Stronger button backgrounds in light mode */
 body.light-mode .bg-green-600\/20 { background-color: rgba(22, 163, 74, 0.4) !important; }
 body.light-mode .bg-green-600\/30 { background-color: rgba(22, 163, 74, 0.5) !important; }
 body.light-mode .bg-blue-600\/20 { background-color: rgba(37, 99, 235, 0.4) !important; }
@@ -1364,7 +1329,6 @@ body.light-mode .bg-purple-600\/30 { background-color: rgba(147, 51, 234, 0.5) !
 body.light-mode .bg-red-600\/20 { background-color: rgba(220, 38, 38, 0.4) !important; }
 body.light-mode .bg-red-600\/30 { background-color: rgba(220, 38, 38, 0.5) !important; }
 
-/* Sidebar section hover states */
 body.light-mode .hover\:text-purple-400:hover { color: #9333ea !important; }
 body.light-mode .hover\:text-yellow-400:hover { color: #d97706 !important; }
 body.light-mode .hover\:text-green-400:hover { color: #16a34a !important; }
@@ -1372,11 +1336,9 @@ body.light-mode .hover\:text-cyan-400:hover { color: #0891b2 !important; }
 body.light-mode .hover\:text-gray-300:hover { color: #475569 !important; }
 body.light-mode .hover\:text-gray-200:hover { color: #334155 !important; }
 
-/* Make icons more visible in light mode */
 body.light-mode svg.text-gray-500 { color: #64748b !important; }
 body.light-mode svg.text-gray-400 { color: #94a3b8 !important; }
 
-/* Inputs in sidebar settings */
 body.light-mode input.bg-black\/30,
 body.light-mode select.bg-black\/30,
 body.light-mode textarea.bg-black\/30 {
@@ -1392,20 +1354,16 @@ body.light-mode .bg-white\/5 input {
     color: var(--theme-text) !important;
 }
 
-/* Sidebar file tree improvements */
 body.light-mode .text-gray-200 { color: #1e293b !important; }
 body.light-mode .text-gray-300 { color: #334155 !important; }
 
-/* Selected file/conversation states */
 body.light-mode .file-selected,
 body.light-mode [class*="bg-blue-500/20"] {
     background-color: rgba(236, 72, 153, 0.15) !important;
 }
 
-/* Ensure grip handles are visible */
 body.light-mode .text-gray-500.cursor-grab { color: #94a3b8 !important; }
 body.light-mode svg[class*="GripVertical"] { color: #94a3b8 !important; }
-/* Thin scrollbars */
 .overflow-auto, .overflow-y-auto {
     scrollbar-width: thin;
     scrollbar-color: rgba(100,100,100,0.3) transparent;
@@ -1429,9 +1387,6 @@ body.light-mode svg[class*="GripVertical"] { color: #94a3b8 !important; }
     background: rgba(100,100,100,0.5);
 }
 
-/* ============================================
-   LIGHT MODE ICON COLORS - Ensure contrast on seafoam background
-   ============================================ */
 body.light-mode .text-emerald-400 { color: #14532d !important; }
 body.light-mode .text-teal-400 { color: #134e4a !important; }
 body.light-mode .text-cyan-400 { color: #164e63 !important; }
@@ -1451,7 +1406,6 @@ body.light-mode .text-red-400 { color: #991b1b !important; }
 body.light-mode .text-blue-400 { color: #1e3a8a !important; }
 body.light-mode .text-purple-400 { color: #581c87 !important; }
 
-/* Status bar buttons - ensure high contrast */
 body.light-mode .p-2.rounded-full {
     color: #0f3d2d !important;
 }
@@ -1466,7 +1420,6 @@ body.light-mode .p-2.rounded-full.text-red-400 {
     color: #991b1b !important;
 }
 
-/* Exception for PPTX slide content - let inline styles win */
 .pptx-slide-content,
 .pptx-slide-content * {
     color: inherit !important;
@@ -1480,7 +1433,6 @@ body.light-mode .p-2.rounded-full.text-red-400 {
     font-weight: revert !important;
 }
 
-/* Webview overlay to block interaction during layout resize/drag */
 .webview-resize-overlay {
     pointer-events: none;
     display: none;

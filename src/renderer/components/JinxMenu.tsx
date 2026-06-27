@@ -54,7 +54,6 @@ const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, teamKey = un
         const target = jinxes.find(j => j.name === initialJinxName || j.jinx_name === initialJinxName);
         if (target) {
             handleJinxSelect(target);
-            // Expand folders containing the target
             const parts = (target.path || target.jinx_name || initialJinxName).split('/');
             if (parts.length > 1) {
                 let path = '';

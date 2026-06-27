@@ -1,9 +1,4 @@
 #!/usr/bin/env node
-/**
- * Incognide Daemon — Background job scheduler
- * Spawns as a detached Node.js process. Schedules jinx, fine-tuning, and inference jobs
- * from SQLite. Survives app restarts.
- */
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
@@ -59,8 +54,8 @@ const PID = process.pid;
 let db;
 let server;
 let port;
-const scheduledTasks = new Map(); // jobId -> cron.Task
-const jobDefinitions = new Map();   // jobId -> row
+const scheduledTasks = new Map();
+const jobDefinitions = new Map();
 
 function dbAll(query, params = []) {
   return new Promise((resolve, reject) => {
@@ -104,7 +99,6 @@ async function loadJobs() {
     if (existing && existing.updated_at === row.updated_at && scheduledTasks.has(row.id)) {
       continue;
     }
-    // Unschedule old if any
     if (scheduledTasks.has(row.id)) {
       scheduledTasks.get(row.id).stop();
       scheduledTasks.delete(row.id);
@@ -118,7 +112,6 @@ async function loadJobs() {
       console.error(`[daemon] Invalid cron for job "${row.name}": ${row.schedule}`);
     }
   }
-  // Remove disabled/deleted jobs
   for (const [id, task] of scheduledTasks.entries()) {
     if (!newIds.has(id)) {
       task.stop();
@@ -236,7 +229,6 @@ async function executeJob(row) {
     durationMs = Date.now() - startTime;
   }
 
-  // Update last_run_at
   try {
     await dbRun(
       `UPDATE scheduled_jobs SET last_run_at = datetime('now') WHERE id = ?`,
@@ -244,7 +236,6 @@ async function executeJob(row) {
     );
   } catch {}
 
-  // Log to jinx_execution_log (reused for all job types)
   try {
     await dbRun(
       `INSERT INTO jinx_execution_log
@@ -371,7 +362,6 @@ async function runFinetuneJob(row, scriptName, logFilePath) {
 }
 
 async function runInferenceJob(row, logFilePath) {
-  // Inference jobs: command field is treated as a shell command to run
   const cmd = row.command || '';
   if (!cmd) {
     return { status: 'error', outputSummary: 'Empty inference command' };
@@ -536,7 +526,6 @@ async function runKnowledgeGraphJob(row, logFilePath) {
     if (model) args.push('--model', model);
     if (provider) args.push('--provider', provider);
   } else {
-    // Legacy SQLite fallback
     const dbPath = payload.dbPath || DB_PATH;
     args.push('--db-path', dbPath);
     if (payload.full) args.push('--full');
@@ -612,7 +601,6 @@ function startHttpServer() {
             res.end(JSON.stringify({ status: 'error', message: 'Job not found' }));
             return;
           }
-          // Execute without awaiting so HTTP returns immediately
           executeJob(row[0]);
           res.writeHead(200);
           res.end(JSON.stringify({ status: 'started', jobId }));
@@ -1000,7 +988,6 @@ async function main() {
     await heartbeat();
   }, HEARTBEAT_INTERVAL_MS);
 
-  // Graceful shutdown on SIGTERM/SIGINT
   const shutdown = () => {
     console.log('[daemon] Shutting down...');
     for (const task of scheduledTasks.values()) task.stop();

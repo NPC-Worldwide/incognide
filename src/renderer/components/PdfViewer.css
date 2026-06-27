@@ -1,9 +1,3 @@
-/* PdfViewer.css - COMPLETE FIXED VERSION */
-
-/* ============================================
-   FORCE NATIVE TEXT SELECTION TO SHOW BLUE
-   ============================================ */
-
 .pdf-viewer-container .rpv-core__text-layer,
 .rpv-core__text-layer {
     user-select: text !important;
@@ -13,7 +7,6 @@
     pointer-events: auto !important;
     cursor: text !important;
     z-index: 2 !important;
-    /* Critical positioning - overlay on canvas */
     position: absolute !important;
     top: 0 !important;
     left: 0 !important;
@@ -35,10 +28,6 @@
     -moz-user-select: text !important;
     pointer-events: auto !important;
 }
-
-/* ============================================
-   BLUE SELECTION HIGHLIGHT
-   ============================================ */
 
 .pdf-viewer-container ::selection {
     background: #3b82f6 !important;
@@ -82,10 +71,6 @@
     color: white !important;
 }
 
-/* ============================================
-   CANVAS BEHIND TEXT
-   ============================================ */
-
 .pdf-viewer-container .rpv-core__canvas-layer,
 .rpv-core__canvas-layer {
     pointer-events: none !important;
@@ -97,10 +82,6 @@
     pointer-events: none !important;
 }
 
-/* ============================================
-   VIEWER
-   ============================================ */
-
 .pdf-viewer-container .rpv-core__viewer {
     user-select: text !important;
     -webkit-user-select: text !important;
@@ -111,14 +92,12 @@
     cursor: text !important;
 }
 
-/* Gray background behind pages — like standard PDF viewers */
 .pdf-viewer-container .rpv-core__inner-pages,
 .pdf-viewer-container .rpv-core__viewer,
 .pdf-viewer-container .rpv-core__inner-container {
     background-color: #525659 !important;
 }
 
-/* Without defaultLayoutPlugin, the core viewer needs to fill the container */
 .pdf-viewer-container .rpv-core__viewer,
 .pdf-viewer-container .rpv-core__inner-container {
     height: 100% !important;
@@ -132,10 +111,6 @@
 
 
 
-/* ============================================
-   HIDE ONLY POPUPS/TOOLTIPS
-   ============================================ */
-
 .pdf-viewer-container .rpv-core__popover {
     display: none !important;
 }
@@ -143,10 +118,6 @@
 .pdf-viewer-container .rpv-core__tooltip {
     display: none !important;
 }
-
-/* ============================================
-   ANNOTATION LAYER
-   ============================================ */
 
 .pdf-viewer-container .rpv-core__annotation-layer {
     pointer-events: none !important;
@@ -157,11 +128,6 @@
     pointer-events: auto !important;
 }
 
-/* ============================================
-   PAGE LAYERS
-   ============================================ */
-
-/* Remove default box-shadow border between pages */
 .pdf-viewer-container .rpv-core__page-layer::after,
 .rpv-core__page-layer::after {
     box-shadow: none !important;
@@ -172,7 +138,6 @@
     user-select: text !important;
     -webkit-user-select: text !important;
     position: relative !important;
-    /* Override rpv's flex centering — prevents blank space when canvas is smaller than container */
     align-items: flex-start !important;
     justify-content: flex-start !important;
 }
@@ -184,10 +149,6 @@
     pointer-events: auto !important;
 }
 
-
-/* ============================================
-   DARK MODE
-   ============================================ */
 
 .dark-mode .pdf-viewer-container ::selection {
     background: #06b6d4 !important;
@@ -209,10 +170,6 @@
     color: white !important;
 }
 
-/* ============================================
-   LIGHT MODE
-   ============================================ */
-
 .light-mode .pdf-viewer-container ::selection {
     background: #1e40af !important;
     color: white !important;
@@ -233,11 +190,6 @@
     color: white !important;
 }
 
-/* ============================================
-   TOOLBAR
-   ============================================ */
-
-/* Hide default layout toolbar and sidebar — we use our own */
 .pdf-viewer-container .rpv-default-layout__toolbar {
     display: none !important;
 }
@@ -246,10 +198,6 @@
     display: none !important;
 }
 
-
-/* ============================================
-   SCROLLBAR
-   ============================================ */
 
 .pdf-viewer-container::-webkit-scrollbar {
     width: 10px;
@@ -269,10 +217,6 @@
     background: rgba(59, 130, 246, 0.7);
 }
 
-/* ============================================
-   LOADING/ERROR
-   ============================================ */
-
 .pdf-viewer-container .rpv-core__spinner {
     user-select: none !important;
 }
@@ -283,26 +227,15 @@
     padding: 1rem;
 }
 
-/* ============================================
-   FOCUS
-   ============================================ */
-
 .pdf-viewer-container:focus-visible {
     outline: 2px solid #3b82f6;
     outline-offset: 2px;
 }
 
-/* ============================================
-   SCALE FACTOR - Must be set on container and text layer
-   Required for pdfjs-dist text layer rendering
-   ============================================ */
-
-/* Set scale-factor only on the text layer where it's needed for text selection */
 .pdf-viewer-container {
     --scale-factor: 1;
 }
 
-/* Text layer spans - MUST be invisible but selectable */
 .rpv-core__text-layer > span,
 .rpv-core__text-layer span,
 .pdf-viewer-container .rpv-core__text-layer > span,
@@ -310,7 +243,6 @@
     position: absolute !important;
     white-space: pre !important;
     transform-origin: 0% 0% !important;
-    /* Make text completely invisible */
     color: transparent !important;
     -webkit-text-fill-color: transparent !important;
     -webkit-text-stroke: 0 !important;
@@ -320,14 +252,12 @@
     background-color: transparent !important;
     fill: transparent !important;
     stroke: transparent !important;
-    /* Prevent any border/outline showing text */
     border: none !important;
     outline: none !important;
     box-shadow: none !important;
     text-decoration: none !important;
 }
 
-/* Hide the text visually but keep it selectable */
 .rpv-core__text-layer,
 .pdf-viewer-container .rpv-core__text-layer {
     opacity: 1 !important;
@@ -339,20 +269,17 @@
     stroke: transparent !important;
 }
 
-/* Override any inline styles that pdfjs might set */
 [style*="color"] .rpv-core__text-layer span,
 .rpv-core__text-layer span[style*="color"] {
     color: transparent !important;
     -webkit-text-fill-color: transparent !important;
 }
 
-/* Target any br elements that might show */
 .rpv-core__text-layer br,
 .pdf-viewer-container .rpv-core__text-layer br {
     display: none !important;
 }
 
-/* Make sure inner page container has scale factor */
 .rpv-core__inner-page {
     --scale-factor: 1 !important;
 }
@@ -360,10 +287,6 @@
 .rpv-core__page-layer {
     --scale-factor: 1 !important;
 }
-
-/* ============================================
-   PERFORMANCE
-   ============================================ */
 
 .pdf-viewer-container .rpv-core__text-layer {
     will-change: transform;
@@ -377,41 +300,27 @@
     z-index: 5 !important;
 }
 
-/* ============================================
-   HIGHLIGHT PLUGIN STYLES
-   ============================================ */
-
-/* Ensure highlight areas are visible */
 .rpv-highlight__area {
     opacity: 0.4 !important;
 }
 
-/* Make sure highlight popover is visible */
 .rpv-highlight__popup {
     z-index: 100 !important;
 }
 
-/* Text selection cursor */
 .rpv-core__text-layer:hover {
     cursor: text !important;
 }
 
-/* Ensure highlight areas don't block text selection */
 .rpv-highlight__area--selected {
     pointer-events: none !important;
 }
 
-/* ============================================
-   PRINT STYLES
-   ============================================ */
-
 @media print {
-    /* Hide everything except the PDF viewer content */
     body > *:not(.pdf-print-root) {
         display: none !important;
     }
 
-    /* Hide app chrome: sidebars, headers, toolbars */
     .sidebar,
     .pane-header,
     [class*="PaneHeader"],
@@ -421,7 +330,6 @@
         display: none !important;
     }
 
-    /* Show the PDF viewer container full width */
     .pdf-viewer-container {
         position: absolute !important;
         top: 0 !important;
@@ -431,29 +339,24 @@
         overflow: visible !important;
     }
 
-    /* Keep highlight overlays visible */
     .pdf-highlight-overlay {
         print-color-adjust: exact !important;
         -webkit-print-color-adjust: exact !important;
     }
 
-    /* Keep drawing overlays visible */
     .pdf-drawing-overlay {
         print-color-adjust: exact !important;
         -webkit-print-color-adjust: exact !important;
     }
 
-    /* Hide the drawing canvas (live drawing surface) */
     .pdf-drawing-canvas {
         display: none !important;
     }
 
-    /* Hide the rpv default layout sidebar */
     .rpv-default-layout__sidebar {
         display: none !important;
     }
 
-    /* Hide the rpv toolbar */
     .rpv-default-layout__toolbar {
         display: none !important;
     }

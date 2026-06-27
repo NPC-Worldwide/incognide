@@ -389,7 +389,6 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
             nodePath = findNodePath(rootLayoutNodeRef.current, paneId) || [];
         }
 
-        // Defensive: if path is empty but pane isn't root, recompute
         if (nodePath.length === 0 && rootLayoutNodeRef.current?.type !== 'content') {
             const computed = findNodePath(rootLayoutNodeRef.current, paneId);
             if (computed) nodePath = computed;
@@ -536,9 +535,6 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
             updateContentPane(targetId, contentType, finalContentId);
         }
 
-        // Ensure the pane re-renders after mount (fixes files opened from command palette
-        // not showing until manual refresh — the pane-update listener may not be set up
-        // yet during the synchronous call, so defer to after React commits the render).
         setTimeout(() => {
             paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: targetId } }));
         }, 0);

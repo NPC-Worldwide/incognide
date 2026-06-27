@@ -1211,7 +1211,6 @@ const ExpViewer: React.FC<ExpViewerProps> = ({
                 y = ly - 10;
             };
 
-            // Title
             drawText(getFileName(filePath).replace(/\.[^.]+$/, ''), 20, rgb(0.1, 0.1, 0.1), true);
             if (expData.hypothesis) {
                 drawText('Hypothesis: ' + expData.hypothesis, 11, rgb(0.3, 0.3, 0.3));

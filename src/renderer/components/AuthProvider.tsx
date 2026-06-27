@@ -85,7 +85,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [hasPassphrase, setHasPassphrase] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // DEBUG: log clerk state
     useEffect(() => {
         console.log('[AUTH DEBUG] clerk instance:', clerk);
         console.log('[AUTH DEBUG] clerkLoaded:', clerkLoaded);
@@ -97,13 +96,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const stored = localStorage.getItem(HAS_PASSPHRASE_KEY);
         setHasPassphrase(stored === 'true');
 
-        // If already unlocked in this session (e.g., after reload), restore state
         if (sessionStorage.getItem(SESSION_UNLOCKED_KEY) === 'true') {
             setIsEncryptionReady(true);
         }
     }, []);
 
-    // Fallback user from Clerk data when backend sync hasn't completed yet
     const clerkFallbackUser: User | null = clerkUser ? {
         id: clerkUser.id,
         clerkId: clerkUser.id,
@@ -375,7 +372,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 refreshUser,
                 getToken,
                 openSignIn: () => {
-                    // If already signed in via Clerk, open profile instead
                     if (clerkUser) {
                         clerk.openUserProfile?.();
                         return;

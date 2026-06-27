@@ -387,7 +387,6 @@ const Sidebar = (props: any) => {
         { ext: 'csv', label: 'CSV', icon: '📊' },
     ];
 
-    // Smart filetype sense: count extensions in folder structure, sort by frequency
     const sortedFileTypes = useMemo(() => {
         const IGNORED_DIRS = new Set(['node_modules', '.git', '__pycache__', '.venv', 'venv', 'env', 'dist', 'build', '.next', '.nuxt', 'out', '.cache', '.tox', '.mypy_cache', '.pytest_cache', 'site-packages', 'target', 'vendor', 'bower_components', '.svn', '.hg', 'coverage', '.nyc_output', '.gradle', '.idea', '.vscode']);
         const extCounts: Record<string, number> = {};
@@ -415,7 +414,7 @@ const Sidebar = (props: any) => {
             const countA = extCounts[a.ext] || 0;
             const countB = extCounts[b.ext] || 0;
             if (countB !== countA) return countB - countA;
-            return 0; // preserve original order for ties
+            return 0;
         });
     }, [folderStructure]);
 
@@ -650,7 +649,6 @@ const Sidebar = (props: any) => {
     });
     const [tileEditMode, setTileEditMode] = useState(false);
     const [bottomGridEditMode, setBottomGridEditMode] = useState(false);
-    // Tile jinx state - loaded from ~/.incognide/incognide/tiles/*.jinx
     const [tileJinxes, setTileJinxes] = useState<Array<{
         filename: string;
         jinx_name: string;
@@ -668,13 +666,10 @@ const Sidebar = (props: any) => {
     const [showLivePreview, setShowLivePreview] = useState(false);
     const [livePreviewCode, setLivePreviewCode] = useState('');
 
-    // Fallback config (used until jinxes load) - 2x2 grid
-    // Moved: settings/env to top bar, npc/jinx to bottom right, datadash to top bar
     const [bottomGridConfig, setBottomGridConfig] = useState<Array<{id: string; label: string; icon: string; enabled: boolean; order: number}>>([]);
     const [draggedBottomTileId, setDraggedBottomTileId] = useState<string | null>(null);
     const [draggedTileId, setDraggedTileId] = useState<string | null>(null);
 
-    // Load tile configuration on mount
     useEffect(() => {
         const loadTilesConfig = async () => {
             try {
@@ -689,7 +684,6 @@ const Sidebar = (props: any) => {
         loadTilesConfig();
     }, []);
 
-    // Load tile jinxes on mount
     useEffect(() => {
         const loadTileJinxes = async () => {
             try {
@@ -699,14 +693,12 @@ const Sidebar = (props: any) => {
                         const content = tile.content;
                         let jinx_name = '', label = '', icon = '', order = 0, enabled = true;
 
-                        // Try JSDoc format first: @key value
                         let jinxMatch = content.match(/@jinx\s+(\S+)/);
                         let labelMatch = content.match(/@label\s+(.+)/);
                         let iconMatch = content.match(/@icon\s+(\S+)/);
                         let orderMatch = content.match(/@order\s+(\d+)/);
                         let enabledMatch = content.match(/@enabled\s+(\S+)/);
 
-                        // Fallback to old # comment format: # key: value
                         if (!labelMatch) {
                             const oldLabel = content.match(/^#\s*label:\s*(.+)/m);
                             if (oldLabel) label = oldLabel[1].trim();
@@ -734,7 +726,6 @@ const Sidebar = (props: any) => {
                         if (orderMatch) order = parseInt(orderMatch[1]) || 0;
                         if (enabledMatch) enabled = enabledMatch[1].trim() !== 'false';
 
-                        // Derive action from filename (db.jinx -> db)
                         const action = tile.filename.replace('.jinx', '');
 
                         return {
@@ -749,7 +740,6 @@ const Sidebar = (props: any) => {
                         };
                     });
 
-                    // Filter out example/disabled and sort
                     setTileJinxes(parsed.filter((t: any) => !t.filename.startsWith('_')).sort((a: any, b: any) => a.order - b.order));
                     setTileJinxesLoaded(true);
                 }
@@ -760,25 +750,21 @@ const Sidebar = (props: any) => {
         loadTileJinxes();
     }, []);
 
-    // Save a tile jinx after editing
     const saveTileJinx = useCallback(async (filename: string, content: string) => {
         try {
             await (window as any).api?.tileJinxWrite?.(filename, content);
-            // Reload jinxes
             const result = await (window as any).api?.tileJinxList?.();
             if (result?.success && result.tiles) {
                 const parsed = result.tiles.map((tile: { filename: string; content: string }) => {
                     const content = tile.content;
                     let jinx_name = '', label = '', icon = '', order = 0, enabled = true;
 
-                    // Try JSDoc format: @key value
                     let m = content.match(/@jinx\s+(\S+)/); if (m) jinx_name = m[1].trim();
                     m = content.match(/@label\s+(.+)/); if (m) label = m[1].trim();
                     m = content.match(/@icon\s+(\S+)/); if (m) icon = m[1].trim();
                     m = content.match(/@order\s+(\d+)/); if (m) order = parseInt(m[1]) || 0;
                     m = content.match(/@enabled\s+(\S+)/); if (m) enabled = m[1].trim() !== 'false';
 
-                    // Fallback to old # format
                     if (!label) { m = content.match(/^#\s*label:\s*(.+)/m); if (m) label = m[1].trim(); }
                     if (!icon) { m = content.match(/^#\s*icon:\s*(\S+)/m); if (m) icon = m[1].trim(); }
                     if (!order) { m = content.match(/^#\s*order:\s*(\d+)/m); if (m) order = parseInt(m[1]) || 0; }
@@ -797,18 +783,14 @@ const Sidebar = (props: any) => {
         }
     }, []);
 
-    // Reorder tiles via drag and drop
     const handleTileReorder = useCallback(async (fromIdx: number, toIdx: number) => {
         if (fromIdx === toIdx) return;
         const newTiles = [...tileJinxes];
         const [moved] = newTiles.splice(fromIdx, 1);
         newTiles.splice(toIdx, 0, moved);
 
-        // Update order values in each tile's metadata and save
         for (let i = 0; i < newTiles.length; i++) {
             const tile = newTiles[i];
-            // Update order in the rawContent header
-            // Update order - try JSDoc format first, then old # format
             let updatedContent = tile.rawContent;
             if (/@order\s+\d+/.test(updatedContent)) {
                 updatedContent = updatedContent.replace(/(@order\s+)\d+/, `$1${i}`);
@@ -823,18 +805,13 @@ const Sidebar = (props: any) => {
         setDraggedTileIdx(null);
     }, [tileJinxes]);
 
-    // Compile TSX and prepare for react-live preview
     const compileForPreview = useCallback(async (code: string): Promise<string> => {
         try {
-            // Find the EXPORTED component name BEFORE stripping exports
-            // Look for "export default ComponentName" at end of file
             const exportDefaultMatch = code.match(/export\s+default\s+(\w+)\s*;?\s*$/m);
-            // Or "export default function/const ComponentName"
             const exportDefaultFuncMatch = code.match(/export\s+default\s+(?:function|const)\s+(\w+)/);
 
             let componentName = exportDefaultMatch?.[1] || exportDefaultFuncMatch?.[1];
 
-            // Fallback: find first component definition
             if (!componentName) {
                 const funcMatch = code.match(/(?:const|function)\s+(\w+)\s*(?::\s*React\.FC)?[=(:]/);
                 componentName = funcMatch?.[1] || 'Component';
@@ -842,13 +819,11 @@ const Sidebar = (props: any) => {
 
             console.log('[PREVIEW] Detected component:', componentName);
 
-            // Remove JSDoc metadata and imports
             let cleaned = code.replace(/\/\*\*[\s\S]*?\*\/\s*\n?/, '');
             cleaned = cleaned.replace(/^#[^\n]*\n/gm, '');
             cleaned = cleaned.replace(/^import\s+.*?['"];?\s*$/gm, '');
             cleaned = cleaned.replace(/^export\s+(default\s+)?/gm, '');
 
-            // Compile TypeScript to JavaScript via IPC
             const result = await (window as any).api?.transformTsx?.(cleaned);
             if (!result?.success) {
                 return `render(<div className="p-4 text-red-400">Compile Error: ${result?.error || 'Unknown error'}</div>)`;
@@ -858,7 +833,6 @@ const Sidebar = (props: any) => {
             if (!compiled) {
                 return `render(<div className="p-4 text-red-400">No output from compiler</div>)`;
             }
-            // Remove module system artifacts
             compiled = compiled.replace(/["']use strict["'];?\n?/g, '');
             compiled = compiled.replace(/Object\.defineProperty\(exports[\s\S]*?\);/g, '');
             compiled = compiled.replace(/exports\.\w+\s*=\s*/g, '');
@@ -2292,7 +2266,6 @@ const renderWebsiteList = () => {
                     } catch { return 'other'; }
                 };
 
-                // Build a map of domain -> set of first path segments to know which domains need path subdivision
                 const domainPathSegments = new Map<string, Set<string>>();
                 allItems.forEach(item => {
                     try {
@@ -2425,7 +2398,6 @@ const renderWebsiteList = () => {
                     )}
 
                     {groupBy === 'domain' && (() => {
-                        // Group by root domain, then by path segment within
                         const rootGroups = new Map<string, Map<string, any[]>>();
                         allItems.forEach(item => {
                             const domain = getDomain(item.url);
@@ -4001,7 +3973,7 @@ const renderFolderList = (structure) => {
             if (fileSort === 'modified') {
                 const aTime = a.mtime || 0;
                 const bTime = b.mtime || 0;
-                if (aTime !== bTime) return bTime - aTime; // newest first
+                if (aTime !== bTime) return bTime - aTime;
                 return aName.localeCompare(bName);
             }
             if (fileSort === 'type') {
@@ -5464,7 +5436,6 @@ return (
 
         <div className={`border-b theme-border flex-shrink-0 relative group/header ${sidebarCollapsed || topBarCollapsed ? 'hidden' : ''}`} style={{ height: topBarHeight }}>
             <div className="grid grid-cols-3 divide-x theme-border h-full" data-tutorial="creation-tiles">
-                {/* Terminal with agent selector */}
                 <div className="relative" data-dropdown="terminal" data-tutorial="terminal-button">
                     <button
                         onClick={() => createNewTerminal?.(defaultNewTerminalType)}
@@ -5538,7 +5509,6 @@ return (
                         </div>
                     )}
                 </div>
-                {/* Code file */}
                 <div className="relative" data-dropdown="code-file" data-tutorial="code-file-button">
                     <button
                         onClick={() => createFileWithExtension(defaultCodeFileType)}
@@ -5577,7 +5547,6 @@ return (
                         </div>
                     )}
                 </div>
-                {/* Documents (docx/xlsx/pptx) */}
                 <div className="relative" data-dropdown="doc" data-tutorial="document-button">
                     <button
                         onClick={() => createNewDocument?.(defaultNewDocumentType)}
@@ -5714,7 +5683,15 @@ return (
                         setDropTargetSection(null);
                     }}
                 >
-                    {(sidebarSectionOrder || ['websites', 'files', 'git']).filter((s: string) => ['websites', 'files', 'git'].includes(s)).map((sectionId: string) => {
+                    {(() => {
+                        const required = ['websites', 'files', 'git'];
+                        const base = sidebarSectionOrder || ['websites', 'files', 'git'];
+                        const filtered = base.filter((s: string) => required.includes(s));
+                        for (const section of required) {
+                            if (!filtered.includes(section)) filtered.push(section);
+                        }
+                        return filtered;
+                    })().map((sectionId: string) => {
                         const sectionColors: Record<string, string> = {
                             websites: 'ring-purple-500',
                             files: 'ring-yellow-500',
@@ -5734,7 +5711,6 @@ return (
                             >
                                 {sectionId === 'websites' && <div data-tutorial="website-browser" className="h-full overflow-hidden">{renderWebsiteList()}</div>}
                                 {sectionId === 'files' && <div data-tutorial="file-browser" className="h-full overflow-hidden">{renderFolderList(folderStructure)}</div>}
-                                {/* conversations moved to RightSidebar */}
                                 {sectionId === 'git' && <div data-tutorial="git-browser" className="h-full overflow-hidden">{renderGitSection()}</div>}
                             </div>
                         );

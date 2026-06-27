@@ -11,7 +11,6 @@ import KgIcon from './icons/KgIcon';
 import ContextFilesPanel from './ContextFilesPanel';
 
 const getMcpServerDisplayName = (serverPath: string): string => {
-    // Handle team-based: "python -m npcpy.mcp_server --team /path/to/npc_team"
     const teamMatch = serverPath.match(/--team\s+(.+)$/);
     if (teamMatch) {
         const teamPath = teamMatch[1].trim().replace(/\/$/, '');
@@ -23,7 +22,6 @@ const getMcpServerDisplayName = (serverPath: string): string => {
         }
         return last.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     }
-    // Handle npx/uvx commands
     if (serverPath.startsWith('npx ') || serverPath.startsWith('uvx ')) {
         const parts = serverPath.split(/\s+/);
         const pkg = parts[parts.length - 1];
@@ -208,7 +206,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     const [showMcpServersDropdown, setShowMcpServersDropdown] = useState(false);
     const [localMcpServers, setLocalMcpServers] = useState<any[]>([]);
 
-    // NPC-resolved tools (from NPC config: jinxes + mcp_servers + python tools)
     const [npcResolvedTools, setNpcResolvedTools] = useState<any[]>([]);
     const [teamServers, setTeamServers] = useState<any[]>([]);
     const [npcToolsLoading, setNpcToolsLoading] = useState(false);
@@ -252,13 +249,11 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     useEffect(() => {
         loadAvailableNPCs();
     }, [paneId, currentPath]);
-    // Track which MCP servers are enabled (multi-select)
     const [enabledServers, setEnabledServers] = useState<Set<string>>(new Set());
 
     const toggleServer = async (serverPath: string) => {
         const isEnabled = enabledServers.has(serverPath);
         if (isEnabled) {
-            // Remove this server's tools
             const serverLabel = getFileName(serverPath)?.replace(/\.py$/, '') || serverPath;
             setEnabledServers(prev => { const next = new Set(prev); next.delete(serverPath); return next; });
             setAvailableMcpTools(prev => prev.filter((t: any) => t._serverPath !== serverPath));
@@ -269,7 +264,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                 return prev.filter(n => !removedNames.has(n));
             });
         } else {
-            // Add this server's tools
             setEnabledServers(prev => new Set(prev).add(serverPath));
             setMcpToolsLoading(true);
             try {
@@ -299,15 +293,12 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         }
     };
 
-    // Try to list tools, auto-starting the server if needed
     const ensureServerAndListTools = async (serverPath: string): Promise<any> => {
         const api = (window as any).api;
         let res = await api.listMcpTools({ serverPath, currentPath });
         if (res.error || !(res.tools?.length)) {
-            // Server may not be running — attempt to start it
             try {
                 await api.startMcpServer?.({ serverPath, currentPath });
-                // Brief wait for server startup
                 await new Promise(r => setTimeout(r, 1500));
                 res = await api.listMcpTools({ serverPath, currentPath });
             } catch (startErr: any) {
@@ -317,7 +308,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         return res;
     };
 
-    // Legacy single-server loader (kept for backward compat / auto-load)
     const loadToolsForServer = async (serverPath: string) => {
         setEnabledServers(new Set([serverPath]));
         setMcpToolsLoading(true);
@@ -349,7 +339,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         }
     };
 
-    // Load NPC-resolved tools when NPC changes or tool_agent mode activates
     const loadNpcTools = async (npcName: string) => {
         if (!npcName) return;
         setNpcToolsLoading(true);
@@ -366,7 +355,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                 const npcTools = data.npc_tools || [];
                 setNpcResolvedTools(npcTools);
                 setTeamServers(data.team_servers || []);
-                // Merge NPC-resolved tools into existing tools (NPC-specific are IN ADDITION to team ones)
                 setAvailableMcpTools(prev => {
                     const existingNames = new Set(prev.map((t: any) => t.function?.name));
                     const npcToolDefs = npcTools.map((t: any) => ({
@@ -389,13 +377,11 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         }
     };
 
-    // Auto-enable ALL listed MCP servers by default and load their tools
     useEffect(() => {
         if (availableMcpServers.length > 0) {
             setLocalMcpServers(availableMcpServers);
             const allPaths = availableMcpServers.map((s: any) => s.serverPath).filter(Boolean);
             setEnabledServers(new Set(allPaths));
-            // Load tools for all servers
             (async () => {
                 setMcpToolsLoading(true);
                 const allTools: any[] = [];

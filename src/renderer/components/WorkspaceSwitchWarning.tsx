@@ -34,7 +34,6 @@ export const WorkspaceSwitchWarning: React.FC<WorkspaceSwitchWarningProps> = ({
     return (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
             <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-md">
-                {/* Header */}
                 <div className="flex items-center gap-3 p-4 border-b border-gray-700">
                     <div className="p-2 bg-amber-500/20 rounded-lg">
                         <AlertTriangle size={24} className="text-amber-400" />
@@ -51,7 +50,6 @@ export const WorkspaceSwitchWarning: React.FC<WorkspaceSwitchWarningProps> = ({
                     </button>
                 </div>
 
-                {/* Content */}
                 <div className="p-4 space-y-4">
                     <div className="text-sm text-gray-300">
                         Switching from <span className="font-medium text-white">{getFolderName(currentPath)}</span> to{' '}
@@ -84,7 +82,6 @@ export const WorkspaceSwitchWarning: React.FC<WorkspaceSwitchWarningProps> = ({
                     </div>
                 </div>
 
-                {/* Actions */}
                 <div className="flex gap-3 p-4 border-t border-gray-700">
                     <button
                         onClick={onOpenInNewWindow}

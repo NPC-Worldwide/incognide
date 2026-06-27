@@ -87,6 +87,18 @@
         "name": "Video"
       },
       {
+        "ext": "mov",
+        "name": "Video"
+      },
+      {
+        "ext": "docx",
+        "name": "Word Document"
+      },
+      {
+        "ext": "odt",
+        "name": "OpenDocument Text"
+      },
+      {
         "ext": "js",
         "name": "Code"
       },

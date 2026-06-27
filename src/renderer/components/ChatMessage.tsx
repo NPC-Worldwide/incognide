@@ -16,6 +16,41 @@ const stripSourcePrefix = (name: string): string => {
     return name.replace(/^(project:|global:)/, '');
 };
 
+const parseMessageContent = (content: string): { body: string; contextBlocks: string[] } => {
+    if (!content) return { body: content, contextBlocks: [] };
+    const contextBlocks: string[] = [];
+    const body = content.replace(/<context>([\s\S]*?)<\/context>/g, (match, inner) => {
+        contextBlocks.push(inner.trim());
+        return '\n<context>\n</context>\n';
+    }).trim();
+    return { body, contextBlocks };
+};
+
+const ContextBlocks = ({ blocks }: { blocks: string[] }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+    return (
+        <>
+            <div
+                className="flex items-center gap-2 px-3 py-1.5 theme-bg-tertiary cursor-pointer hover:brightness-110 transition-all"
+                onClick={() => setIsExpanded(!isExpanded)}
+            >
+                <span className="text-xs text-blue-400 font-semibold">Context</span>
+                {isExpanded
+                    ? <ChevronDown size={14} className="theme-text-muted flex-shrink-0" />
+                    : <ChevronRight size={14} className="theme-text-muted flex-shrink-0" />
+                }
+            </div>
+            {isExpanded && (
+                <div className="px-3 py-2 theme-bg-primary border-t border-[var(--border-color,#313244)]">
+                    <div className="prose prose-sm prose-invert max-w-none theme-text-secondary text-sm whitespace-pre-wrap">
+                        {blocks.join('\n\n')}
+                    </div>
+                </div>
+            )}
+        </>
+    );
+};
+
 const countLines = (content: string): number => {
     if (!content) return 0;
     const newlineCount = (content.match(/\n/g) || []).length;
@@ -73,7 +108,12 @@ export const ChatMessage = memo(({
     const showStreamingIndicators = !!message.isStreaming;
     const messageId = message.id || message.timestamp;
 
-    const isLongMessage = message.role === 'user' && countLines(message.content) > MAX_COLLAPSED_LINES;
+    const { body: rawDisplayBody, contextBlocks } = parseMessageContent(message.content || '');
+    const hasContextBlocks = contextBlocks.length > 0;
+    const displayBody = hasContextBlocks
+        ? rawDisplayBody.replace(/\n<context>\n<\/context>\n/g, '\n')
+        : rawDisplayBody;
+    const isLongMessage = message.role === 'user' && countLines(displayBody) > MAX_COLLAPSED_LINES;
     const [isExpanded, setIsExpanded] = useState(false);
     const [expandedReasoning, setExpandedReasoning] = useState<Set<number>>(new Set());
 
@@ -112,7 +152,7 @@ export const ChatMessage = memo(({
             return;
         }
 
-        let textContent = message.content || '';
+        let textContent = displayBody || '';
         if (message.contentParts) {
             textContent = message.contentParts
                 .filter((p: any) => p.type === 'text')
@@ -169,7 +209,6 @@ export const ChatMessage = memo(({
         }
     };
 
-    // Prompt messages get their own rendering
     if (message.role === 'prompt' && message.promptData) {
         return (
             <div
@@ -339,6 +378,7 @@ export const ChatMessage = memo(({
                         )}
                     </div>
                 )}
+
                 {message.contentParts && message.contentParts.length > 0 ? (
                     <>
                         {message.contentParts.map((part, partIdx) => {
@@ -389,10 +429,10 @@ export const ChatMessage = memo(({
                 ) : (
                     <>
                         <div className={`prose prose-sm prose-invert max-w-none theme-text-primary ${isLongMessage && !isExpanded ? 'max-h-24 overflow-hidden relative' : ''}`}>
-                            {searchTerm && message.content ? (
-                                <MarkdownRenderer content={highlightSearchTerm(message.content, searchTerm)} onOpenFile={onOpenFile} />
+                            {searchTerm && displayBody ? (
+                                <MarkdownRenderer content={highlightSearchTerm(displayBody, searchTerm)} onOpenFile={onOpenFile} />
                             ) : (
-                                <MarkdownRenderer content={message.content || ''} onOpenFile={onOpenFile} />
+                                <MarkdownRenderer content={displayBody || ''} onOpenFile={onOpenFile} />
                             )}
                             {showStreamingIndicators && message.type !== 'error' && (
                                 <span className="ml-1 inline-block w-0.5 h-4 theme-text-primary animate-pulse stream-cursor"></span>
@@ -401,6 +441,12 @@ export const ChatMessage = memo(({
                                 <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-inherit to-transparent pointer-events-none" />
                             )}
                         </div>
+                        {hasContextBlocks && (
+                            <div className="mt-2 rounded-md border-l-2 border-blue-500 overflow-hidden">
+                                <ContextBlocks blocks={contextBlocks} />
+                            </div>
+                        )}
+
                         {isLongMessage && (
                             <button
                                 onClick={(e) => {
@@ -417,7 +463,7 @@ export const ChatMessage = memo(({
                                 ) : (
                                     <>
                                         <ChevronDown size={14} />
-                                        <span>Show more ({countLines(message.content)} lines)</span>
+                                        <span>Show more ({countLines(displayBody)} lines)</span>
                                     </>
                                 )}
                             </button>

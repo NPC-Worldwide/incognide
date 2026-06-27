@@ -1,4 +1,3 @@
-// Transparent filesystem proxy — routes calls to local IPC or SSH based on active connection
 let _activeConnectionId: string | null = null;
 
 export function setActiveConnectionId(id: string | null) {
@@ -13,9 +12,6 @@ export function isRemote(): boolean {
     return !!_activeConnectionId;
 }
 
-// ============================================================
-// Directory
-// ============================================================
 export async function readDirectoryStructure(dirPath: string, options?: any) {
     if (_activeConnectionId) {
         return (window as any).api.sshReadDirectory({ id: _activeConnectionId, dirPath });
@@ -79,9 +75,6 @@ export async function getNpcshHome() {
     return (window as any).api.getNpcshHome?.();
 }
 
-// ============================================================
-// File
-// ============================================================
 export async function readFileContent(filePath: string) {
     if (_activeConnectionId) {
         return (window as any).api.sshReadFile({ id: _activeConnectionId, filePath });
@@ -117,11 +110,7 @@ export async function readFileBuffer(filePath: string) {
     return (window as any).api.readFileBuffer(filePath);
 }
 
-// ============================================================
-// Path helpers
-// ============================================================
 export async function open_directory_picker() {
-    // Remote doesn't support native picker; return current connection home
     if (_activeConnectionId) {
         return null;
     }

@@ -136,7 +136,6 @@ const compileJinxFile = async (jinxFilename) => {
   const cachePath = path.join(tileJinxCacheDir, jinxFilename.replace('.jinx', '.js'));
 
   try {
-    // Check if TypeScript is available
     let ts;
     try {
       ts = require('typescript');
@@ -145,7 +144,6 @@ const compileJinxFile = async (jinxFilename) => {
       return createFallbackJinx(jinxFilename, cachePath, 'TypeScript not available');
     }
 
-    // Read the source file
     let source;
     try {
       source = await fsPromises.readFile(jinxPath, 'utf8');
@@ -154,18 +152,15 @@ const compileJinxFile = async (jinxFilename) => {
       return createFallbackJinx(jinxFilename, cachePath, `Read error: ${readErr.message}`);
     }
 
-    // Extract component name from exports
     const exportMatch = source.match(/export\s+default\s+(\w+)\s*;?\s*$/m);
     const exportFuncMatch = source.match(/export\s+default\s+(?:function|const)\s+(\w+)/);
     const componentName = exportMatch?.[1] || exportFuncMatch?.[1] || 'Component';
 
-    // Clean the source for transpilation
     let cleaned = source.replace(/\/\*\*[\s\S]*?\*\/\s*\n?/, '');
     cleaned = cleaned.replace(/^#[^\n]*\n/gm, '');
     cleaned = cleaned.replace(/^import\s+.*?['"];?\s*$/gm, '');
     cleaned = cleaned.replace(/^export\s+(default\s+)?/gm, '');
 
-    // Transpile the TypeScript
     let result;
     try {
       result = ts.transpileModule(cleaned, {
@@ -183,7 +178,6 @@ const compileJinxFile = async (jinxFilename) => {
       return createFallbackJinx(jinxFilename, cachePath, `Transpile error: ${transpileErr.message}`, componentName);
     }
 
-    // Check for diagnostics
     if (result.diagnostics && result.diagnostics.length > 0) {
       const errors = result.diagnostics.map(d => {
         try {
@@ -193,10 +187,8 @@ const compileJinxFile = async (jinxFilename) => {
         }
       }).join('\n');
       console.error(`Compile diagnostics in ${jinxFilename}:`, errors);
-      // Continue anyway, might still work
     }
 
-    // Clean up the compiled output
     let compiled = result.outputText || '';
     compiled = compiled.replace(/["']use strict["'];?\n?/g, '');
     compiled = compiled.replace(/Object\.defineProperty\(exports[\s\S]*?\);/g, '');
@@ -207,7 +199,6 @@ const compileJinxFile = async (jinxFilename) => {
     compiled = compiled.replace(/\w+_\d+\.(\w+)/g, '$1');
     compiled = compiled.replace(/react_1\.(\w+)/g, '$1');
 
-    // If compiled output is empty or too short, use fallback
     if (!compiled || compiled.trim().length < 10) {
       console.warn(`Empty compiled output for ${jinxFilename}, using fallback`);
       return createFallbackJinx(jinxFilename, cachePath, 'Empty compiled output', componentName);
@@ -230,11 +221,9 @@ var __component = ${componentName};
   }
 };
 
-// Helper function to create a fallback jinx file when compilation fails
 const createFallbackJinx = async (jinxFilename, cachePath, errorMessage, componentName = 'FallbackComponent') => {
   try {
     const fallbackCode = `// Fallback for ${jinxFilename} - compilation failed: ${errorMessage}
-// This stub allows the app to start even when jinx compilation fails
 
 const ${componentName} = () => {
   return React.createElement('div', { 
@@ -401,7 +390,6 @@ function register(ctx) {
     }
   });
 
-  // --- Daemon lifecycle ---
   ipcMain.handle('daemon:start', async () => {
     try {
       spawnDaemon();
@@ -438,7 +426,6 @@ function register(ctx) {
     }
   });
 
-  // --- Scheduled jobs (local SQLite) ---
   ipcMain.handle('scheduledJob:list', async () => {
     try {
       const rows = await dbQuery(`SELECT * FROM scheduled_jobs ORDER BY created_at DESC`);
@@ -463,7 +450,6 @@ function register(ctx) {
           params.enabled !== undefined ? params.enabled : 1,
         ]
       );
-      // Notify daemon to reload
       try {
         const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
         if (state?.[0]?.port) {
@@ -697,7 +683,6 @@ function register(ctx) {
     }
   });
 
-  // --- KG Pipeline (4-step lifecycle on .knowledge.yaml stores) ---
   const kgPipelineProcs = new Map();
 
   ipcMain.handle('kgPipeline:run', async (event, params) => {
@@ -779,7 +764,6 @@ function register(ctx) {
     return { aborted: !!controller };
   });
 
-  // Legacy cron job handlers (now backed by local scheduled_jobs table)
   ipcMain.handle('getCronJobs', async () => {
     const rows = await dbQuery(`SELECT * FROM scheduled_jobs WHERE job_type = 'jinx' ORDER BY created_at DESC`);
     return { jobs: rows };
@@ -933,22 +917,17 @@ function register(ctx) {
     }
   });
 
-  // --- Cross-platform crontab helper ---
-  // Linux & macOS have crontab; Windows does not (returns empty).
   const _getCrontabLocal = () => {
     const platform = process.platform;
     const result = {};
     if (platform === 'win32') {
-      // Windows: no crontab. Return scheduled tasks summary instead.
       try {
         result.scheduled_tasks = execSync('schtasks /query /fo LIST', { encoding: 'utf8', timeout: 10000 });
       } catch {}
       return result;
     }
-    // Linux & macOS: user crontab
     try { result.user_crontab = execSync('crontab -l 2>/dev/null', { encoding: 'utf8', timeout: 5000 }); } catch {}
     if (platform === 'linux') {
-      // Linux: system crontab, cron.d, systemd timers, systemd user services
       try { result.system_crontab = fs.readFileSync('/etc/crontab', 'utf8'); } catch {}
       try {
         const cronDDir = '/etc/cron.d';
@@ -964,7 +943,6 @@ function register(ctx) {
       try { result.timers = execSync('systemctl list-timers --all --no-pager 2>/dev/null', { encoding: 'utf8', timeout: 5000 }); } catch {}
       try { result.services = execSync('systemctl --user list-units --type=service --state=running --no-pager 2>/dev/null', { encoding: 'utf8', timeout: 5000 }); } catch {}
     }
-    // macOS: launchd plist dirs (informational)
     if (platform === 'darwin') {
       try {
         const launchDirs = ['/Library/LaunchDaemons', '/Library/LaunchAgents',
@@ -984,7 +962,6 @@ function register(ctx) {
     return result;
   };
 
-  // --- Cross-platform system daemons helper ---
   const _getSystemDaemonsLocal = () => {
     const platform = process.platform;
     const result = {};
@@ -997,7 +974,6 @@ function register(ctx) {
     } else if (platform === 'win32') {
       try { result.scheduled_tasks = execSync('schtasks /query /fo LIST', { encoding: 'utf8', timeout: 10000 }); } catch {}
     }
-    // npcsh triggers (cross-platform)
     try {
       const triggersDir = path.join(os.homedir(), '.incognide', 'triggers');
       if (fs.existsSync(triggersDir)) {
@@ -1007,21 +983,17 @@ function register(ctx) {
     return result;
   };
 
-  // --- Cross-platform service info helper ---
   const _getServiceInfoLocal = (unit) => {
     const platform = process.platform;
     const result = {};
-    // Sanitize unit name to prevent command injection — allow only alphanumeric, dots, hyphens, underscores
     const safeUnit = String(unit).replace(/[^a-zA-Z0-9._\-]/g, '');
     if (!safeUnit) return result;
     if (platform === 'linux') {
       try { result.unit_file = execSync(`systemctl cat ${safeUnit} 2>/dev/null`, { encoding: 'utf8', timeout: 5000 }); } catch {}
       try { result.journal = execSync(`journalctl -u ${safeUnit} --no-pager -n 100 2>/dev/null`, { encoding: 'utf8', timeout: 5000 }); } catch {}
     } else if (platform === 'darwin') {
-      // unit here is a launchd label
       try { result.unit_file = execSync(`launchctl print system/${safeUnit} 2>/dev/null || launchctl print gui/$(id -u)/${safeUnit} 2>/dev/null`, { encoding: 'utf8', timeout: 5000 }); } catch {}
       try {
-        // Try to find the plist file
         const searchDirs = ['/Library/LaunchDaemons', '/Library/LaunchAgents',
                             path.join(os.homedir(), 'Library/LaunchAgents')];
         for (const dir of searchDirs) {
@@ -1043,7 +1015,6 @@ function register(ctx) {
       const r = await callBackendApi(`${BACKEND_URL}/api/cron/crontab`);
       if (r && !r.error) return r;
     } catch {}
-    // Fallback: gather crontab data locally
     return _getCrontabLocal();
   });
 
@@ -1052,7 +1023,6 @@ function register(ctx) {
       const r = await callBackendApi(`${BACKEND_URL}/api/cron/daemons`);
       if (r && !r.error) return r;
     } catch {}
-    // Fallback: gather system daemon data locally
     return _getSystemDaemonsLocal();
   });
 
@@ -1061,7 +1031,6 @@ function register(ctx) {
       const r = await callBackendApi(`${BACKEND_URL}/api/cron/service-info/${encodeURIComponent(unit)}`);
       if (r && !r.error) return r;
     } catch {}
-    // Fallback: gather service info locally
     return _getServiceInfoLocal(unit);
   });
 
@@ -1091,11 +1060,9 @@ function register(ctx) {
       if (daemon.process) {
         try {
           if (process.platform === 'win32') {
-            // Windows: kill the process tree since detached isn't used
             try { execSync(`taskkill /PID ${daemon.process.pid} /T /F`, { timeout: 5000 }); }
             catch { daemon.process.kill(); }
           } else {
-            // Unix: kill process group if detached, otherwise just kill
             try { process.kill(-daemon.process.pid, 'SIGTERM'); }
             catch { daemon.process.kill(); }
           }
@@ -1329,7 +1296,6 @@ function register(ctx) {
     const OLLAMA_DOWNLOAD_URL = 'https://ollama.com/download';
 
     if (process.platform === 'darwin') {
-      // Try brew first
       try {
         execSync('which brew', { stdio: 'ignore', timeout: 5000 });
         log('[Main Process] Homebrew found, attempting brew install ollama...');
@@ -2024,7 +1990,6 @@ function register(ctx) {
     }
     const detected = KNOWN_PROVIDERS.filter(k => envSources.has(k.envVar));
 
-    // Add custom providers from YAML — only if their API key exists in environment
     try {
       const cpPath = path.join(INCOGNIDE_HOME, 'custom_providers.yaml');
       const content = await fsPromises.readFile(cpPath, 'utf8');
@@ -2196,7 +2161,6 @@ function register(ctx) {
 
     return new Promise((resolve) => {
 
-      // Install npcpy with extras AND npcsh explicitly (npcsh is not a dependency of npcpy)
       const args = ['-m', 'pip', 'install', '--upgrade', `npcpy[${safeExtras}]`, 'npcsh'];
       log(`[SETUP] Installing npcpy and npcsh: ${pythonPath} ${args.join(' ')}`);
 
@@ -2606,7 +2570,6 @@ function register(ctx) {
                 if (key) env_vars[key] = value;
             }
         } catch (readErr) {
-            // .env may not exist — return empty vars
         }
         return { env_vars };
     } catch (err) {
@@ -2628,7 +2591,6 @@ function register(ctx) {
     }
   });
 
-  // Map of .incogniderc env var names -> settings keys
   const SETTINGS_KEY_MAP = {
     INCOGNIDE_CHAT_MODEL: 'model',
     INCOGNIDE_CHAT_PROVIDER: 'provider',
@@ -2671,7 +2633,6 @@ function register(ctx) {
     try {
         const rcPath = path.join(os.homedir(), '.incogniderc');
 
-        // Read existing file to merge with new values
         let existing = {};
         let oldActivityEnabled = false;
         let oldBaseRepo = '';
@@ -2706,7 +2667,6 @@ function register(ctx) {
             }
         } catch {}
 
-        // Merge new global_settings into existing
         for (const [settingKey, value] of Object.entries(global_settings || {})) {
             const envKey = SETTINGS_KEY_MAP_REVERSE[settingKey] || settingKey;
             if (value === '' || value === null || value === undefined) {
@@ -2715,7 +2675,6 @@ function register(ctx) {
                 existing[envKey] = String(value);
             }
         }
-        // Merge new global_vars into existing
         for (const [envKey, value] of Object.entries(global_vars || {})) {
             if (envKey.startsWith('CUSTOM_PROVIDER_')) continue;
             if (value === '' || value === null || value === undefined) {
@@ -2728,7 +2687,6 @@ function register(ctx) {
         const lines = Object.entries(existing).map(([k, v]) => `export ${k}=${v}`);
         await fsPromises.writeFile(rcPath, lines.join('\n') + '\n');
 
-        // Sync activity intelligence scheduled job
         const newActivityEnabled = global_settings?.is_activity_intelligence_enabled === true;
         const newBaseRepo = global_settings?.activity_base_repo_id || '';
         if (newActivityEnabled !== oldActivityEnabled || (newActivityEnabled && newBaseRepo !== oldBaseRepo)) {
@@ -2746,7 +2704,6 @@ function register(ctx) {
                            VALUES (?, ?, 'activity_intelligence', '0 */6 * * *', ?, 1, datetime('now'), datetime('now'))`,
                           [id, 'Activity Intelligence', payload]
                         );
-                        // Notify daemon
                         const state = await dbQuery(`SELECT port FROM daemon_state WHERE id = 1`);
                         if (state?.[0]?.port) {
                             await fetch(`http://127.0.0.1:${state[0].port}/reload`, { method: 'POST', signal: AbortSignal.timeout(2000) });
@@ -2769,7 +2726,6 @@ function register(ctx) {
             }
         }
 
-        // Sync autocomplete scheduled job
         const newPredictiveEnabled = global_settings?.is_predictive_text_enabled === true;
         if (newPredictiveEnabled !== oldPredictiveEnabled) {
             try {
@@ -2799,7 +2755,6 @@ function register(ctx) {
             }
         }
 
-        // Sync knowledge graph scheduled job
         const newKGEnabled = global_settings?.is_knowledge_graph_enabled === true;
         if (newKGEnabled !== oldKGEnabled) {
             try {
@@ -2847,7 +2802,6 @@ function register(ctx) {
             for (const line of content.split('\n')) {
                 const trimmed = line.trim();
                 if (!trimmed || trimmed.startsWith('#')) continue;
-                // strip leading 'export '
                 const stripped = trimmed.replace(/^export\s+/, '');
                 const eqIdx = stripped.indexOf('=');
                 if (eqIdx === -1) continue;
@@ -2869,7 +2823,6 @@ function register(ctx) {
                 }
             }
         } catch (readErr) {
-            // .incogniderc may not exist — return defaults
         }
 
         return { global_settings, global_vars };
@@ -3060,7 +3013,6 @@ function register(ctx) {
     return null;
   });
 
-  // Helper: check if a TCP port is open (returns boolean)
   const _checkPort = (host, port, timeoutMs = 2000) => {
     return new Promise((resolve) => {
       const net = require('net');
@@ -3077,7 +3029,6 @@ function register(ctx) {
     });
   };
 
-  // Provider config: endpoint to query for models, port to check
   const LOCAL_PROVIDER_CONFIG = {
     ollama:   { port: 11434, tagsUrl: 'http://127.0.0.1:11434/api/tags',       modelsKey: 'models',  nameKey: 'name'  },
     lmstudio: { port: 1234,  tagsUrl: 'http://127.0.0.1:1234/v1/models',       modelsKey: 'data',    nameKey: 'id'    },
@@ -3088,7 +3039,6 @@ function register(ctx) {
   ipcMain.handle('scan-local-models', async (event, provider) => {
     try {
         const homeDir = os.homedir();
-        // Scan common model dirs for GGUF files (same approach as scan-gguf-models)
         const ollamaModels = process.env.OLLAMA_MODELS || path.join(homeDir, '.ollama', 'models');
         const scanDirs = [
             path.join(ollamaModels, 'blobs'),
@@ -3136,7 +3086,6 @@ function register(ctx) {
             await scanDir(dir);
         }
 
-        // Also fetch named models from running API if available
         const cfg = provider && LOCAL_PROVIDER_CONFIG[provider];
         if (cfg && cfg.tagsUrl) {
             try {
@@ -3170,7 +3119,6 @@ function register(ctx) {
         if (!cfg) return { running: false, installed: false, error: `Unknown provider: ${provider}` };
 
         let running = false;
-        // Only consider running if the API endpoint responds with valid models data
         if (cfg.tagsUrl) {
             try {
                 const res = await fetch(cfg.tagsUrl, { signal: AbortSignal.timeout(2000) });
@@ -3223,45 +3171,32 @@ function register(ctx) {
         const appData = process.env.APPDATA || path.join(homeDir, 'AppData', 'Roaming');
         const localAppData = process.env.LOCALAPPDATA || path.join(homeDir, 'AppData', 'Local');
 
-        // Scan well-known model directories across all platforms
-        // Windows: %USERPROFILE% = C:\Users\<name>, %APPDATA% = ...\AppData\Roaming, %LOCALAPPDATA% = ...\AppData\Local
-        // macOS/Linux: ~ = /Users/<name> or /home/<name>
         const ollamaModels = process.env.OLLAMA_MODELS || path.join(homeDir, '.ollama', 'models');
         const hfCache = process.env.HF_HOME || process.env.HUGGINGFACE_HUB_CACHE || path.join(homeDir, '.cache', 'huggingface', 'hub');
 
         const defaultDirs = [
-            // HuggingFace — all platforms use ~/.cache/huggingface/hub
             hfCache,
 
-            // LM Studio — all platforms use ~/.cache/lm-studio/models
             path.join(homeDir, '.cache', 'lm-studio', 'models'),
             path.join(homeDir, '.lmstudio', 'models'),
 
-            // Ollama — all platforms use ~/.ollama/models (env: OLLAMA_MODELS)
             path.join(ollamaModels, 'blobs'),
 
-            // GPT4All — Linux: ~/.local/share/gpt4all, Windows: %LOCALAPPDATA%/nomic.ai/GPT4All
             path.join(homeDir, '.local', 'share', 'gpt4all'),
             path.join(localAppData, 'nomic.ai', 'GPT4All', 'models'),
             path.join(localAppData, 'nomic.ai', 'GPT4All'),
 
-            // Jan.ai — ~/jan/models
             path.join(homeDir, 'jan', 'models'),
 
-            // Msty — %APPDATA%/Msty/models
             path.join(appData, 'Msty', 'models'),
 
-            // llama.cpp — relative to install, check common spots
             path.join(homeDir, 'llama.cpp', 'models'),
             path.join(homeDir, '.local', 'share', 'llama.cpp', 'models'),
 
-            // KoboldCPP
             path.join(homeDir, 'koboldcpp', 'models'),
 
-            // oobabooga
             path.join(homeDir, 'text-generation-webui', 'models'),
 
-            // incognide / generic
             path.join(homeDir, '.incognide', 'models', 'gguf'),
             path.join(homeDir, '.incognide', 'models'),
             path.join(homeDir, 'models'),
@@ -3306,7 +3241,6 @@ function register(ctx) {
                                             size: stats.size,
                                             modified_at: stats.mtime.toISOString(),
                                             source: (() => {
-                                                    // Normalize to forward slashes for matching (Windows uses backslashes)
                                                     const d = dir.replace(/\\/g, '/').toLowerCase();
                                                     if (d.includes('huggingface')) return 'HuggingFace';
                                                     if (d.includes('lm-studio') || d.includes('lmstudio')) return 'LM Studio';
@@ -3391,7 +3325,6 @@ function register(ctx) {
     }
   });
 
-  // TODO: download-hf-model kept on backend — complex streaming + auth + large file handling
   ipcMain.handle('download-hf-model', async (event, { url, targetDir }) => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/models/hf/download`, {
@@ -3413,7 +3346,6 @@ function register(ctx) {
         const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
         if (!response.ok) throw new Error(`HuggingFace API returned HTTP ${response.status}`);
         const data = await response.json();
-        // data is an array of model objects from the HF API
         return { models: Array.isArray(data) ? data : [] };
     } catch (err) {
         console.error('Error searching HF models:', err);
@@ -3440,7 +3372,6 @@ function register(ctx) {
     }
   });
 
-  // TODO: download-hf-file kept on backend — complex streaming + auth + large file handling
   ipcMain.handle('download-hf-file', async (event, { repoId, filename, targetDir }) => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/models/hf/download_file`, {
@@ -3508,7 +3439,6 @@ function register(ctx) {
         }
         const peakHours = Object.entries(hourCounts).sort((a, b) => b[1] - a[1]).map(([h]) => parseInt(h));
 
-        // SSM model prediction
         let ssmPredictions = [];
         try {
             ssmPredictions = await _predictWithSSM();
@@ -3624,13 +3554,11 @@ function register(ctx) {
               return { success: false, error: 'Daemon not running' };
           }
 
-          // Find the activity intelligence scheduled job
           const rows = await dbQuery(
             `SELECT id FROM scheduled_jobs WHERE job_type = 'activity_intelligence' LIMIT 1`
           );
           let jobId;
           if (!rows.length) {
-              // No scheduled job yet — create an ad-hoc one and run it immediately
               jobId = `ai_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
               const { base_repo_id } = await _readActivitySettings();
               await dbQuery(
@@ -3659,7 +3587,6 @@ function register(ctx) {
       }
   });
 
-  // --- Autocomplete intelligence ---
 
   async function _readPredictiveSettings() {
       try {
@@ -3768,7 +3695,6 @@ function register(ctx) {
       }
   });
 
-  // --- Knowledge Graph ---
 
   async function _readKGSettings() {
       try {
@@ -4215,7 +4141,6 @@ function register(ctx) {
     }
   });
 
-  // ── Custom Providers YAML ──────────────────────────────────────────────
   ipcMain.handle('custom-providers:read', async () => {
     try {
       const filePath = path.join(INCOGNIDE_HOME, 'custom_providers.yaml');
@@ -4244,7 +4169,6 @@ function register(ctx) {
     }
   });
 
-  // ── Teams YAML ─────────────────────────────────────────────────────────
   ipcMain.handle('teams:read', async () => {
     try {
       const filePath = path.join(INCOGNIDE_HOME, 'teams.yaml');
@@ -4299,12 +4223,10 @@ function register(ctx) {
       const checkDir = async (dir, name) => {
         if (seen.has(dir)) return;
         if (registeredPaths.has(dir)) return;
-        // Skip if this dir is inside an already-registered path
         for (const rp of registeredPaths) {
           if (dir.startsWith(rp + path.sep) || rp.startsWith(dir + path.sep)) return;
         }
 
-        // Also check if dir contains a npc_team/ subdirectory
         const dirsToCheck = [dir];
         const npcTeamDir = path.join(dir, 'npc_team');
         try { await fsPromises.access(npcTeamDir); if (!seen.has(npcTeamDir) && !registeredPaths.has(npcTeamDir)) dirsToCheck.push(npcTeamDir); } catch {}
@@ -4333,12 +4255,10 @@ function register(ctx) {
         }
       };
 
-      // Check project directory
       if (currentPath) {
         await checkDir(currentPath, path.basename(currentPath));
       }
 
-      // Check well-known locations (only npc_team subdirectories)
       const wellKnown = [
         { name: 'incognide', dir: path.join(INCOGNIDE_HOME, 'npc_team') },
       ];
@@ -4346,7 +4266,6 @@ function register(ctx) {
         await checkDir(wk.dir, wk.name);
       }
 
-      // Check subdirectories one level deep under .incognide for teams
       try {
         const incognideEntries = await fsPromises.readdir(INCOGNIDE_HOME);
         for (const entry of incognideEntries) {
@@ -4356,7 +4275,6 @@ function register(ctx) {
         }
       } catch {}
 
-      // Check one level deep under the project directory too
       if (currentPath) {
         try {
           const entries = await fsPromises.readdir(currentPath);

@@ -35,7 +35,6 @@ function buildTree(entries: StoreEntry[]): TreeNode {
             }
             node = node.children[part];
         }
-        // Ensure last node is marked leaf
         node.isLeaf = true;
         node.counts = { memoryCount: entry.memoryCount, knowledgeCount: entry.knowledgeCount };
     }
@@ -57,7 +56,6 @@ const StoreRegistryPanel: React.FC<Props> = ({ onSaved }) => {
             const r = await (window as any).api?.scanKnowledgeStores?.();
             const list = (r?.stores || []) as StoreEntry[];
             setStores(list);
-            // auto-expand all
             const allPaths = new Set<string>();
             for (const s of list) {
                 const parts = s.directory.split('/').filter(Boolean);
@@ -121,7 +119,6 @@ const StoreRegistryPanel: React.FC<Props> = ({ onSaved }) => {
         const hasChildren = children.length > 0;
         const isExpanded = expanded.has(node.path);
 
-        // Leaf store with no children -> simple row
         if (node.isLeaf && !hasChildren) {
             return (
                 <div key={node.path} className="flex items-center gap-2 px-2 py-1 hover:bg-gray-800/40">
@@ -142,7 +139,6 @@ const StoreRegistryPanel: React.FC<Props> = ({ onSaved }) => {
             );
         }
 
-        // Folder that may also be a registered store itself
         return (
             <div key={node.path}>
                 <div

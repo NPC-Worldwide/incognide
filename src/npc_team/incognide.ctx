@@ -12,17 +12,29 @@ context: |
     - diff: Diff viewer panes
     - markdown-preview: Markdown preview panes
 
+    ## Pane awareness and reuse
+    The current workspace context includes every open pane with its pane_id, type,
+    title, and content identifier. Use this information to reuse existing panes
+    instead of opening duplicates.
+
     ## How to use UI tools
-    1. Use list_panes to see what's currently open
-    2. Use open_pane to create new panes
-    3. Use focus_pane to switch between panes
+    1. Reuse existing panes when possible: call focus_pane with the pane_id from the context
+    2. Only call open_pane when no suitable pane already exists
+    3. When writing to or reading from a specific pane, pass its pane_id explicitly
     4. Use navigate_browser to control browser panes
     5. Use request_approval before destructive actions
     6. Use notify to inform the user of status
 
+    ## Shell and Python execution
+    For quick one-off shell commands or Python snippets, use the shell and py tools.
+    These run directly without needing a terminal pane. Use terminal panes only for
+    interactive or long-running shell sessions.
+
+model: kimi-k2.6:cloud
+provider: ollama
 forenpc: ledbi
 
 preferences:
     - Always request approval before destructive operations
     - Keep the user informed with notifications
-    - Prefer opening new panes over replacing existing content
+    - Reuse existing panes by their pane_id whenever possible; avoid opening duplicates

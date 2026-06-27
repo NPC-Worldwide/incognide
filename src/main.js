@@ -124,6 +124,7 @@ function loadShellEnv() {
 loadShellEnv();
 
 const RECENT_PATHS_FILE = path.join(INCOGNIDE_HOME, 'recent_paths.json');
+const WINDOW_STATE_FILE = path.join(INCOGNIDE_HOME, 'window_state.json');
 
 function loadRecentPaths() {
   try {
@@ -150,6 +151,55 @@ function addRecentPath(newPath) {
   const filtered = paths.filter(p => p !== newPath);
   filtered.unshift(newPath);
   saveRecentPaths(filtered.slice(0, 20));
+}
+
+const DEFAULT_WINDOW_STATE = { width: 1200, height: 800 };
+
+function loadWindowState() {
+  try {
+    if (fs.existsSync(WINDOW_STATE_FILE)) {
+      const data = JSON.parse(fs.readFileSync(WINDOW_STATE_FILE, 'utf-8'));
+      if (data && typeof data.width === 'number' && typeof data.height === 'number' &&
+          data.width >= 400 && data.height >= 300) {
+        return data;
+      }
+    }
+  } catch (e) {
+    console.error('[WINDOW_STATE] Error loading:', e.message);
+  }
+  return { ...DEFAULT_WINDOW_STATE };
+}
+
+function saveWindowState(state) {
+  try {
+    fs.writeFileSync(WINDOW_STATE_FILE, JSON.stringify(state, null, 2));
+  } catch (e) {
+    console.error('[WINDOW_STATE] Error saving:', e.message);
+  }
+}
+
+function clampWindowStateToDisplays(state) {
+  const { screen } = require('electron');
+  const displays = screen.getAllDisplays();
+  if (!displays.length) return state;
+  const primary = screen.getPrimaryDisplay();
+  const area = primary.workArea;
+  let { x, y, width, height, maximized } = state;
+  const fitsSomeDisplay = displays.some(d => {
+    const wa = d.workArea;
+    return x !== undefined && y !== undefined &&
+      x + width > wa.x + 50 && x < wa.x + wa.width - 50 &&
+      y + height > wa.y + 50 && y < wa.y + wa.height - 50;
+  });
+  if (!fitsSomeDisplay || x === undefined || y === undefined) {
+    x = area.x + Math.round((area.width - width) / 2);
+    y = area.y + Math.round((area.height - height) / 2);
+  }
+  width = Math.min(width, area.width - 100);
+  height = Math.min(height, area.height - 100);
+  x = Math.max(area.x, Math.min(x, area.x + area.width - width - 20));
+  y = Math.max(area.y, Math.min(y, area.y + area.height - height - 20));
+  return { x, y, width, height, maximized: !!maximized };
 }
 
 if (IS_DEV_MODE) {
@@ -645,14 +695,10 @@ const ensureTablesExist = async () => {
       await dbQuery(createMessageAttachmentsTable);
       await dbQuery(createIndexes);
 
-      // FTS5 index for unified search across conversations
       try {
           await dbQuery(`CREATE VIRTUAL TABLE IF NOT EXISTS conversation_history_fts USING fts5(content, content='conversation_history', content_rowid=rowid)`);
-          // Trigger: insert into FTS
           await dbQuery(`CREATE TRIGGER IF NOT EXISTS conversation_history_fts_insert AFTER INSERT ON conversation_history BEGIN INSERT INTO conversation_history_fts(rowid, content) VALUES (new.rowid, new.content); END`);
-          // Trigger: delete from FTS
           await dbQuery(`CREATE TRIGGER IF NOT EXISTS conversation_history_fts_delete AFTER DELETE ON conversation_history BEGIN DELETE FROM conversation_history_fts WHERE rowid=old.rowid; END`);
-          // Trigger: update FTS
           await dbQuery(`CREATE TRIGGER IF NOT EXISTS conversation_history_fts_update AFTER UPDATE OF content ON conversation_history BEGIN UPDATE conversation_history_fts SET content=new.content WHERE rowid=old.rowid; END`);
           console.log('[DB] FTS5 index ready on conversation_history');
       } catch (ftsErr) {
@@ -676,7 +722,6 @@ const ensureTablesExist = async () => {
       await addColumnIfMissing('activity_log', 'directory_path', 'TEXT');
       await addColumnIfMissing('activity_log', 'device_id', 'TEXT');
 
-      // Migrate scheduled_jobs CHECK constraint to include new job types
       try {
           const master = await dbQuery(`SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'`);
           if (master.length && master[0].sql) {
@@ -1059,12 +1104,10 @@ function scheduleCronJob(job) {
     const logFile = path.join(logDir, `${job.id}.log`);
     try { await fsPromises.mkdir(logDir, { recursive: true }); } catch {}
 
-    // Resolve jinx file path from command name
     const parts = job.command.replace(/^\//, '').split(/\s+/);
     const jinxName = parts[0];
     const jinxArgs = parts.slice(1);
 
-    // Search for the jinx file in npc_team dirs
     const searchDirs = [
       path.join(os.homedir(), '.incognide', 'npc_team', 'jinxes'),
       path.join(INCOGNIDE_HOME, 'npc_team', 'jinxes'),
@@ -1084,7 +1127,6 @@ function scheduleCronJob(job) {
       return;
     }
 
-    // Execute jinx file directly (shebang handles routing)
     const child = spawn(jinxFile, jinxArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
     let output = '';
     child.stdout.on('data', d => { output += d; });
@@ -1165,7 +1207,6 @@ function getWorkspacePathForWebContents(webContents) {
   return paths.length > 0 ? paths[paths.length - 1] : app.getPath('downloads');
 }
 
-// File opening handlers for system-level file associations (#195)
 let pendingFileOpen = null;
 
 function getContentTypeFromExtension(filePath) {
@@ -1203,12 +1244,15 @@ function getContentTypeFromExtension(filePath) {
     'webp': 'image',
     'bmp': 'image',
     'svg': 'image',
-    'mp4': 'image',
-    'mov': 'image',
-    'webm': 'image',
-    'avi': 'image',
-    'mkv': 'image',
-    'm4v': 'image'
+    'mp4': 'video',
+    'mov': 'video',
+    'webm': 'video',
+    'avi': 'video',
+    'mkv': 'video',
+    'm4v': 'video',
+    'wmv': 'video',
+    'flv': 'video',
+    'ogv': 'video'
   };
   return mimeTypes[ext] || 'editor';
 }
@@ -1218,7 +1262,6 @@ function handleFileOpen(filePath) {
   
   const windows = BrowserWindow.getAllWindows();
   if (windows.length === 0) {
-    // Store for when window is created
     pendingFileOpen = filePath;
     log(`[FILE-OPEN] No windows open, storing for later: ${filePath}`);
     return;
@@ -1231,7 +1274,6 @@ function handleFileOpen(filePath) {
   const contentType = getContentTypeFromExtension(filePath);
   log(`[FILE-OPEN] Opening ${filePath} as type: ${contentType}`);
   
-  // Send to renderer to open the file
   mainWindow.webContents.send('open-file-from-os', {
     filePath: filePath,
     contentType: contentType
@@ -1244,17 +1286,13 @@ function handleFileOpen(filePath) {
 function parseFileArgs(argv) {
   log(`[FILE-ARGS] Parsing command line args: ${JSON.stringify(argv)}`);
   
-  // Look for file paths in argv (skip first two which are exec path and script)
   const args = argv.slice(1);
   
   for (const arg of args) {
-    // Skip flags
     if (arg.startsWith('-') || arg.startsWith('--')) continue;
-    
-    // Skip URLs (handled by deep link)
+
     if (arg.startsWith('http://') || arg.startsWith('https://') || arg.startsWith('file://')) continue;
-    
-    // Check if it's a file path
+
     if (fs.existsSync(arg) && fs.statSync(arg).isFile()) {
       log(`[FILE-ARGS] Found file in args: ${arg}`);
       handleFileOpen(arg);
@@ -1262,17 +1300,14 @@ function parseFileArgs(argv) {
     }
   }
   
-  // Also check for --folder argument
   const folderArg = argv.find(arg => arg.startsWith('--folder='));
   if (folderArg) {
     const folderPath = folderArg.replace('--folder=', '');
     log(`[FILE-ARGS] Found folder arg: ${folderPath}`);
-    // Folder switching is handled elsewhere
     return;
   }
 }
 
-// Process any pending file open after window is ready
 function processPendingFileOpen(mainWindow) {
   if (pendingFileOpen) {
     log(`[FILE-OPEN] Processing pending file: ${pendingFileOpen}`);
@@ -1323,7 +1358,6 @@ app.on('web-contents-created', (event, contents) => {
       if (ctxParentWin && !ctxParentWin.isDestroyed()) {
         const menuTemplate = [];
 
-        // Clipboard operations (native roles work through webview isolation)
         if (isEditable) {
           menuTemplate.push({ role: 'cut' });
         }
@@ -1337,12 +1371,10 @@ app.on('web-contents-created', (event, contents) => {
           menuTemplate.push({ role: 'selectAll' });
         }
 
-        // Separator if we had clipboard items
         if (menuTemplate.length > 0) {
           menuTemplate.push({ type: 'separator' });
         }
 
-        // Link actions
         if (linkURL) {
           menuTemplate.push({
             label: 'Open Link in New Tab',
@@ -1355,7 +1387,6 @@ app.on('web-contents-created', (event, contents) => {
           menuTemplate.push({ type: 'separator' });
         }
 
-        // Image actions
         if (mediaType === 'image' && srcURL) {
           menuTemplate.push({
             label: 'Save Image As...',
@@ -1368,7 +1399,6 @@ app.on('web-contents-created', (event, contents) => {
           menuTemplate.push({ type: 'separator' });
         }
 
-        // Navigation
         menuTemplate.push({
           label: 'Back',
           enabled: contents.navigationHistory.canGoBack(),
@@ -1432,7 +1462,6 @@ app.on('web-contents-created', (event, contents) => {
     });
   }
 
-  // Handle screen sharing requests from webviews (Google Meet, etc.)
   if (contents.getType() === 'webview') {
     contents.session.setDisplayMediaRequestHandler(async (request, callback) => {
       try {
@@ -1449,10 +1478,8 @@ app.on('web-contents-created', (event, contents) => {
     });
   }
 
-  // Handle OAuth/auth callbacks — allow new-window for auth flows
   if (contents.getType() === 'webview') {
     contents.setWindowOpenHandler(({ url }) => {
-      // Allow OAuth callbacks and auth flows to open
       if (url.includes('accounts.google.com') || url.includes('login') || url.includes('auth') || url.includes('oauth') || url.includes('callback')) {
         return { action: 'allow' };
       }
@@ -1503,7 +1530,6 @@ app.on('web-contents-created', (event, contents) => {
     contents.on('did-create-window', (newWindow) => {
       const checkAndRedirect = (realUrl) => {
         if (realUrl && realUrl !== 'about:blank') {
-          // Let localhost OAuth callbacks (e.g. gcloud's localhost:8085) reach local HTTP servers
           if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(realUrl)) {
             log(`[WebView] Popup navigated to localhost (OAuth callback), skipping redirect: ${realUrl}`);
             return;
@@ -1596,7 +1622,6 @@ async function deployIncognideTeamOnStartup() {
       log(`[Deploy] npc_team source not found at: ${npcTeamSrc}`);
       return { success: false, error: 'Source not found' };
     }
-    // Always deploy — overwrite any existing files so updates (like jinx fixes) propagate
     const entries = await fsPromises.readdir(destBase);
     const hasManifest = fs.existsSync(manifestPath);
     if (entries.length > 0 && hasManifest) {
@@ -1698,7 +1723,6 @@ window.__addLog = function(msg) {
     }
   }
 
-  // Auto-start daemon if it was running or if there are enabled scheduled jobs
   try {
     const daemonStatus = await getDaemonStatus();
     if (daemonStatus.running) {
@@ -1754,8 +1778,6 @@ window.__addLog = function(msg) {
     const devScriptPath = path.join(app.getAppPath(), 'incognide_serve.py');
     const devScriptExists = !app.isPackaged && fs.existsSync(devScriptPath);
 
-    // In dev, prefer python + incognide_serve.py so stdout/stderr flow into logBackend.
-    // In prod, use the bundled PyInstaller binary.
     let spawnMode = 'bundled';
     if (!app.isPackaged && devScriptExists) {
       const pyPath = getBackendPythonPath();
@@ -1844,7 +1866,6 @@ window.__addLog = function(msg) {
         timestamp: new Date().toISOString(),
       };
       killBackendProcess();
-      // Continue — renderer will show a recovery UI via BackendErrorBanner
     } else {
       _backendStartupError = null;
     }
@@ -2451,7 +2472,6 @@ if (!gotTheLock) {
       );
 
       if (urlArg) {
-        // OAuth callback URLs (localhost) must reach the local HTTP server, not Electron's browser pane
         const isLocalhostCallback = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(urlArg);
         if (isLocalhostCallback) {
           log(`[SECOND-INSTANCE] Ignoring localhost OAuth callback (letting it reach local HTTP server): ${urlArg}`);
@@ -2584,7 +2604,6 @@ if (!gotTheLock) {
 function createWindow(cliArgs = {}) {
     const { folder, bookmarks, openUrl, blank } = cliArgs;
 
-    // If opening a specific folder, check if a window already has it open
     if (folder) {
         const normFolder = folder.replace(/\/+$/, '');
         for (const [windowId, wsPath] of workspacePathByWindow.entries()) {
@@ -2617,9 +2636,13 @@ function createWindow(cliArgs = {}) {
 
     app.setName('Incognide');
 
+    const windowState = clampWindowStateToDisplays(loadWindowState());
+
     mainWindow = new BrowserWindow({
-      width: 1200,
-      height: 800,
+      width: windowState.width,
+      height: windowState.height,
+      x: windowState.x,
+      y: windowState.y,
       show: false,
       icon: appIcon || iconPath,
       title: 'Incognide',
@@ -2642,12 +2665,38 @@ function createWindow(cliArgs = {}) {
         splashWindow.close();
         splashWindow = null;
       }
+      if (windowState.maximized) {
+        mainWindow.maximize();
+      }
     });
+
+    const win = mainWindow;
+    let saveStateTimeout;
+    const doSaveWindowState = () => {
+      try {
+        const bounds = typeof win.getNormalBounds === 'function' ? win.getNormalBounds() : win.getBounds();
+        saveWindowState({ ...bounds, maximized: win.isMaximized() });
+      } catch (e) {
+        console.error('[WINDOW_STATE] Failed to save state:', e.message);
+      }
+    };
+    const queueSaveWindowState = () => {
+      clearTimeout(saveStateTimeout);
+      saveStateTimeout = setTimeout(doSaveWindowState, 500);
+    };
+    win.on('resize', queueSaveWindowState);
+    win.on('move', queueSaveWindowState);
+    win.on('maximize', doSaveWindowState);
+    win.on('unmaximize', doSaveWindowState);
+    win.on('close', () => {
+      clearTimeout(saveStateTimeout);
+      doSaveWindowState();
+    });
+
     mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
       callback(true);
     });
 
-    // Mac trackpad swipe gestures for browser back/forward
     if (process.platform === 'darwin') {
       mainWindow.on('swipe', (event, direction) => {
         if (direction === 'left') mainWindow.webContents.send('browser-swipe-back');
@@ -2673,22 +2722,18 @@ function createWindow(cliArgs = {}) {
 
 applyAppMenu();
     
-    // Add Referer header for tile servers that require it (OSM, OpenTopoMap)
     mainWindow.webContents.session.webRequest.onBeforeSendHeaders({ urls: ['*://*.tile.openstreetmap.org/*', '*://*.tile.opentopomap.org/*'] }, (details, callback) => {
       details.requestHeaders['Referer'] = 'https://incognide.com';
       details.requestHeaders['User-Agent'] = 'Incognide/0.1 (https://incognide.com)';
       callback({ requestHeaders: details.requestHeaders });
     });
 
-    // Add Referer header for tile servers that require it (OSM, OpenTopoMap)
     mainWindow.webContents.session.webRequest.onBeforeSendHeaders({ urls: ['*://*.tile.openstreetmap.org/*', '*://*.tile.opentopomap.org/*'] }, (details, callback) => {
       details.requestHeaders['Referer'] = 'https://incognide.com';
       details.requestHeaders['User-Agent'] = 'Incognide/0.1 (https://incognide.com)';
       callback({ requestHeaders: details.requestHeaders });
     });
 
-    // Clerk requires an Origin header for PATCH requests to /v1/environment.
-    // Electron doesn't send one automatically for cross-origin requests from localhost.
     mainWindow.webContents.session.webRequest.onBeforeSendHeaders({ urls: ['https://*.clerk.accounts.dev/*', 'https://clerk.app.incognide.com/*'] }, (details, callback) => {
       if (!details.requestHeaders['Origin']) {
         details.requestHeaders['Origin'] = `http://localhost:${FRONTEND_PORT}`;
@@ -2701,7 +2746,6 @@ applyAppMenu();
       const defaultSession = require('electron').session.defaultSession;
       defaultSession.webRequest.onHeadersReceived((details, callback) => {
         const responseHeaders = { ...details.responseHeaders };
-        // Rewrite Clerk cookies to SameSite=None so they survive cross-site (localhost -> clerk.app.incognide.com)
         if (responseHeaders['set-cookie']) {
           responseHeaders['set-cookie'] = responseHeaders['set-cookie'].map(cookie => {
             if (cookie.toLowerCase().includes('clerk') || cookie.toLowerCase().includes('__client')) {
@@ -2733,7 +2777,6 @@ applyAppMenu();
       });
     }
 
-    // Clear stale Clerk cookies from old dev instance to avoid key mismatch
     mainWindow.webContents.session.clearStorageData({
       storages: ['cookies'],
       origin: 'https://clerk.app.incognide.com'
@@ -2772,7 +2815,6 @@ applyAppMenu();
           '.map': 'application/json',
         };
 
-        // Studio action queue (replaces python backend studio endpoints)
         const _pendingStudioActions = {};
         let _studioActionCounter = 0;
         const _studioActionResults = {};
@@ -2804,7 +2846,6 @@ applyAppMenu();
         frontendServer = http.createServer(async (req, res) => {
           const url = (req.url || '/').split('?')[0];
 
-          // --- Studio action routes ---
           if (url === '/api/studio/action' && req.method === 'POST') {
             const data = await _readBody(req);
             const action = data.action;
@@ -2853,14 +2894,14 @@ applyAppMenu();
               'X-Accel-Buffering': 'no'
             });
             const send = (payload) => {
-              try { res.write(`data: ${JSON.stringify(payload)}\n\n`); } catch { /* closed */ }
+              try { res.write(`data: ${JSON.stringify(payload)}\n\n`); } catch {}
             };
             _studioSSESubscribers.push(send);
             for (const [aid, action] of Object.entries(_pendingStudioActions)) {
               if (action.status === 'pending') send({ id: aid, ...action });
             }
             const keepalive = setInterval(() => {
-              try { res.write(': keepalive\n\n'); } catch { /* closed */ }
+              try { res.write(': keepalive\n\n'); } catch {}
             }, 30000);
             req.on('close', () => {
               clearInterval(keepalive);
@@ -2882,7 +2923,6 @@ applyAppMenu();
             return;
           }
 
-          // --- Static file serving ---
           let filePath = path.join(distDir, decodeURIComponent(url));
           if (filePath.endsWith('/')) filePath += 'index.html';
           if (!filePath.startsWith(distDir)) {
@@ -2933,7 +2973,6 @@ applyAppMenu();
     const cliWorkspaceArgs = { folder, bookmarks, openUrl };
 
     mainWindow.webContents.on('did-finish-load', async () => {
-      // Send startup error notification if backend failed to start
       if (_backendStartupError) {
         await new Promise(resolve => setTimeout(resolve, 500));
         mainWindow.webContents.send('backend:startup-error', _backendStartupError);
@@ -2981,7 +3020,6 @@ applyAppMenu();
         mainWindow.webContents.send('open-url-in-browser', { url: pendingUrl });
       }
 
-      // Process any file that was opened before the window was ready
       processPendingFileOpen(mainWindow);
 
       startInterceptFileWatcher();
@@ -3033,9 +3071,6 @@ registerAll({
   INCOGNIDE_HOME,
 });
 
-// Generic proxy fetch — bypasses CORS for renderer requests to external APIs
-
-// Recent paths IPC handlers
 ipcMain.handle('get-recent-paths', async () => {
   return loadRecentPaths();
 });
@@ -3072,7 +3107,6 @@ ipcMain.handle('proxy-fetch', async (_event, url, options = {}) => {
   }
 });
 
-// List serial ports (for radio connections)
 ipcMain.handle('list-serial-ports', async () => {
   try {
     const { SerialPort } = require('serialport');
@@ -3085,10 +3119,7 @@ ipcMain.handle('list-serial-ports', async () => {
 
 ipcMain.handle('open-new-window', async (event, initialPath, options) => {
   if (initialPath) {
-    // Normalize for comparison (strip trailing slashes)
     const normPath = initialPath.replace(/\/+$/, '');
-    // Check if a window already has this folder open — focus it instead
-    // (skip dedup when launching a preset — we want all windows)
     if (!options?.skipDedup) {
       for (const [windowId, wsPath] of workspacePathByWindow.entries()) {
         if (wsPath && wsPath.replace(/\/+$/, '') === normPath) {
@@ -3132,7 +3163,6 @@ ipcMain.handle('get-all-windows-info', async () => {
     }));
 });
 
-// Request a specific window to serialize its workspace and send it back
 ipcMain.handle('request-window-workspace', async (_event, windowId) => {
   const allWindows = BrowserWindow.getAllWindows();
   const target = allWindows.find(w => !w.isDestroyed() && (w.webContents?.id === windowId || w.id === windowId));
@@ -3146,7 +3176,6 @@ ipcMain.handle('request-window-workspace', async (_event, windowId) => {
   }
 });
 
-// Tell a specific window to restore a workspace layout
 ipcMain.handle('restore-window-workspace', async (_event, windowId, workspaceData) => {
   const allWindows = BrowserWindow.getAllWindows();
   const target = allWindows.find(w => !w.isDestroyed() && (w.webContents?.id === windowId || w.id === windowId));
@@ -3289,7 +3318,6 @@ ipcMain.handle('backend:tryLocalPython', async () => {
   log('Searching for local Python >= 3.10...');
   const versionedBinaries = ['python3.13', 'python3.12', 'python3.11', 'python3.10'];
 
-  // Try versioned binaries first
   for (const bin of versionedBinaries) {
     try {
       const result = execSync(`${bin} --version 2>&1`, { timeout: 5000 }).toString().trim();
@@ -3303,11 +3331,9 @@ ipcMain.handle('backend:tryLocalPython', async () => {
         }
       }
     } catch (e) {
-      // not found or not executable
     }
   }
 
-  // Check pyenv versions
   const pyenvBase = path.join(os.homedir(), '.pyenv', 'versions');
   if (fs.existsSync(pyenvBase)) {
     try {
@@ -3327,7 +3353,6 @@ ipcMain.handle('backend:tryLocalPython', async () => {
               }
             }
           } catch (e) {
-            // skip
           }
         }
       }
@@ -3352,13 +3377,11 @@ ipcMain.handle('backend:installAndStart', async (event, { pythonPath, npcpyExtra
 
     sendProgress(`Creating virtual environment at ${venvDir}...`);
 
-    // Delete existing venv if present
     if (fs.existsSync(venvDir)) {
       sendProgress('Removing existing venv...');
       fs.rmSync(venvDir, { recursive: true, force: true });
     }
 
-    // Create venv
     execSync(`"${pythonPath}" -m venv "${venvDir}"`, { timeout: 60000 });
     sendProgress('Virtual environment created.');
 
@@ -3388,11 +3411,9 @@ ipcMain.handle('backend:installAndStart', async (event, { pythonPath, npcpyExtra
 
     sendProgress('Installation complete. Starting backend...');
 
-    // Kill existing backend if any
     killBackendProcess();
     await new Promise(resolve => setTimeout(resolve, 500));
 
-    // Set up env and spawn with venv python
     _backendEnv = {
       ...process.env,
       INCOGNIDE_PORT: String(BACKEND_PORT),
@@ -3414,7 +3435,6 @@ ipcMain.handle('backend:installAndStart', async (event, { pythonPath, npcpyExtra
 
     if (ready) {
       _backendStartupError = null;
-      // Save the venv python path to .incogniderc
       saveBackendPythonPath(venvPython);
       sendProgress('Backend started successfully.');
       if (mainWindow && !mainWindow.isDestroyed()) {

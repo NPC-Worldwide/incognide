@@ -791,7 +791,6 @@ const CodeEditorPane = ({
         return () => window.removeEventListener('keydown', handleCycleMode, true);
     }, [keybindMode, enabledModes]);
 
-    // Auto-load file content if pane has a path but no content (e.g. opened from OS file association)
     useEffect(() => {
         const pd = contentDataRef.current[nodeId];
         if (pd?.contentId && !pd.isUntitled && pd.fileContent === undefined) {
@@ -906,7 +905,7 @@ const CodeEditorPane = ({
             } catch (e) {
                 currentPaneData._selfWriting = false;
             }
-        }, 30000);  // 30s idle before autosave — explicit Cmd+S still saves instantly
+        }, 30000);
         return () => clearTimeout(timer);
     }, [fileContent, fileChanged, nodeId, contentDataRef, setRootLayoutNode]);
 
@@ -947,7 +946,6 @@ const CodeEditorPane = ({
                 const result = await readFileContent(changedPath);
                 const diskContent = typeof result === 'string' ? result : result?.content;
                 if (diskContent == null) return;
-                // Echo guard: ignore disk events whose content matches the last bytes we wrote.
                 if (diskContent === pd._lastWrittenContent) return;
                 if (diskContent === pd.fileContent) return;
                 if (pd.fileChanged) {

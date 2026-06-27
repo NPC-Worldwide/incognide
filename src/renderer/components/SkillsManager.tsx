@@ -164,7 +164,6 @@ const SkillsManager: React.FC<SkillsManagerProps> = ({ currentPath, embedded = t
 
     useEffect(() => { loadAllJinxes(); }, [currentPath]);
 
-    // Auto-select jinx by name when opened from sidebar
     useEffect(() => {
         if (!initialJinxName || loading) return;
         const all = [...jinxesByTeam.project, ...jinxesByTeam.incognide];

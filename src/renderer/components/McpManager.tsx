@@ -329,7 +329,6 @@ const McpManager: React.FC<McpManagerProps> = ({ currentPath, embedded = true })
     const handleCloneTeam = useCallback(async (repoUrl: string) => {
         try {
             setError(null);
-            // Normalize URL
             let url = repoUrl.trim();
             if (!url.startsWith('http') && !url.startsWith('git@')) {
                 url = `https://github.com/${url}`;
@@ -338,10 +337,8 @@ const McpManager: React.FC<McpManagerProps> = ({ currentPath, embedded = true })
             const repoName = url.split('/').pop()?.replace('.git', '') || 'team';
             const destPath = `~/.incognide/teams/${repoName}`;
 
-            // Clone via terminal-like exec
             await (window as any).api.executeCommand?.(`git clone ${url} ${destPath}`);
 
-            // Check if npc_team subfolder exists, otherwise use root
             let teamPath = destPath;
             try {
                 const dirContents = await (window as any).api.readDirectory?.(destPath);
@@ -413,7 +410,6 @@ const McpManager: React.FC<McpManagerProps> = ({ currentPath, embedded = true })
 
     const getServerDisplayName = (server: McpServer): string => {
         if (server.name) return server.name;
-        // Handle npx/uvx commands
         if (server.serverPath.startsWith('npx ') || server.serverPath.startsWith('uvx ')) {
             const parts = server.serverPath.split(/\s+/);
             const pkg = parts[parts.length - 1];

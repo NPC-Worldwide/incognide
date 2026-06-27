@@ -11,7 +11,6 @@ import KgIcon from './icons/KgIcon';
 import ContextFilesPanel from './ContextFilesPanel';
 
 const getMcpServerDisplayName = (serverPath: string): string => {
-    // Handle team-based: "python -m npcpy.mcp_server --team /path/to/npc_team"
     const teamMatch = serverPath.match(/--team\s+(.+)$/);
     if (teamMatch) {
         const teamPath = teamMatch[1].trim().replace(/\/$/, '');
@@ -23,7 +22,6 @@ const getMcpServerDisplayName = (serverPath: string): string => {
         }
         return last.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     }
-    // Handle npx/uvx commands
     if (serverPath.startsWith('npx ') || serverPath.startsWith('uvx ')) {
         const parts = serverPath.split(/\s+/);
         const pkg = parts[parts.length - 1];
@@ -207,7 +205,6 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
     const [showMcpServersDropdown, setShowMcpServersDropdown] = useState(false);
     const [localMcpServers, setLocalMcpServers] = useState<any[]>([]);
 
-    // NPC-resolved tools (from NPC config: jinxes + mcp_servers + python tools)
     const [npcResolvedTools, setNpcResolvedTools] = useState<any[]>([]);
     const [teamServers, setTeamServers] = useState<any[]>([]);
     const [npcToolsLoading, setNpcToolsLoading] = useState(false);
@@ -251,13 +248,11 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
     useEffect(() => {
         loadAvailableNPCs();
     }, [paneId, currentPath]);
-    // Track which MCP servers are enabled (multi-select)
     const [enabledServers, setEnabledServers] = useState<Set<string>>(() => new Set(enabledMcpServers || []));
 
     const toggleServer = async (serverPath: string) => {
         const isEnabled = enabledServers.has(serverPath);
         if (isEnabled) {
-            // Remove this server's tools
             const serverLabel = getFileName(serverPath)?.replace(/\.py$/, '') || serverPath;
             setEnabledServers(prev => { const next = new Set(prev); next.delete(serverPath); return next; });
             setAvailableMcpTools(prev => prev.filter((t: any) => t._serverPath !== serverPath));
@@ -268,7 +263,6 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                 return prev.filter(n => !removedNames.has(n));
             });
         } else {
-            // Add this server's tools
             setEnabledServers(prev => new Set(prev).add(serverPath));
             setMcpToolsLoading(true);
             try {
@@ -298,15 +292,12 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         }
     };
 
-    // Try to list tools, auto-starting the server if needed
     const ensureServerAndListTools = async (serverPath: string): Promise<any> => {
         const api = (window as any).api;
         let res = await api.listMcpTools({ serverPath, currentPath });
         if (res.error || !(res.tools?.length)) {
-            // Server may not be running — attempt to start it
             try {
                 await api.startMcpServer?.({ serverPath, currentPath });
-                // Brief wait for server startup
                 await new Promise(r => setTimeout(r, 1500));
                 res = await api.listMcpTools({ serverPath, currentPath });
             } catch (startErr: any) {
@@ -316,7 +307,6 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         return res;
     };
 
-    // Legacy single-server loader (kept for backward compat / auto-load)
     const loadToolsForServer = async (serverPath: string) => {
         setEnabledServers(new Set([serverPath]));
         setMcpToolsLoading(true);
@@ -348,7 +338,6 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         }
     };
 
-    // Load NPC-resolved tools when NPC changes or tool_agent mode activates
     const loadNpcTools = async (npcName: string) => {
         if (!npcName) return;
         setNpcToolsLoading(true);
@@ -388,24 +377,20 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         }
     }, [availableMcpServers]);
 
-    // When NPC changes in tool_agent mode, load its resolved tools
     useEffect(() => {
         if (executionMode !== 'tool_agent' || !currentNPC) return;
         loadNpcTools(currentNPC);
     }, [currentNPC, executionMode]);
 
-    // Force tool_agent mode on mount — this pane is always agent
     useEffect(() => {
         if (executionMode !== 'tool_agent') setExecutionMode('tool_agent');
     }, [executionMode]);
 
-    // Auto-enable ALL listed MCP servers by default and load their tools
     useEffect(() => {
         if (availableMcpServers.length > 0) {
             setLocalMcpServers(availableMcpServers);
             const allPaths = availableMcpServers.map((s: any) => s.serverPath).filter(Boolean);
             setEnabledServers(new Set(allPaths));
-            // Load tools for all servers
             (async () => {
                 setMcpToolsLoading(true);
                 const allTools: any[] = [];
@@ -482,7 +467,6 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
     const [showJinxSuggestion, setShowJinxSuggestion] = useState(false);
     const firstJinxInputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
-    // Only show jinxes that belong to the current NPC (scoped to npcResolvedTools)
     useEffect(() => {
         if (!localInput) {
             setDetectedJinxes([]);
@@ -980,8 +964,8 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
             'docx': 'Document', 'pptx': 'Presentation', 'zip': 'Archive',
             'exp': 'Experiment', 'folder': 'Folder',
         };
-        Object.entries(contentDataRef.current).forEach(([paneId, paneData]: [string, any]) => {
-            if (!paneData.contentType || paneData.contentType === 'chat') return;
+        Object.entries(contentDataRef.current).forEach(([openPaneId, paneData]: [string, any]) => {
+            if (!paneData.contentType || paneData.contentType === 'chat' || openPaneId === paneId) return;
             let label = '';
             if ((paneData.contentType === 'editor' || paneData.contentType === 'latex' || paneData.contentType === 'csv' || paneData.contentType === 'notebook') && paneData.contentId) label = getFileName(paneData.contentId) || paneData.contentId;
             else if (paneData.contentType === 'browser' && paneData.browserUrl) { try { label = new URL(paneData.browserUrl).hostname; } catch { label = paneData.browserUrl.slice(0, 20); } }
@@ -989,10 +973,10 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
             else if (paneData.contentType === 'image' && paneData.contentId) label = getFileName(paneData.contentId) || 'Image';
             else if (paneData.contentType === 'terminal') label = `Term${paneData.shellType ? ` (${paneData.shellType})` : ''}`;
             else label = PANE_LABELS[paneData.contentType] || paneData.contentType;
-            if (label) panes.push({ id: paneId, type: paneData.contentType, label });
+            if (label) panes.push({ id: openPaneId, type: paneData.contentType, label });
         });
         return panes;
-    }, [paneVersion]);
+    }, [paneVersion, paneId]);
 
     const isPaneIncluded = (paneId: string) => {
         if (contextPaneOverrides && contextPaneOverrides[paneId] !== undefined) return contextPaneOverrides[paneId];
@@ -1059,10 +1043,10 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                                     ? 'bg-teal-500/15 text-teal-300 border-teal-500/30 hover:bg-teal-500/25'
                                     : 'bg-white/3 text-gray-500 border-white/5 hover:bg-white/5 line-through'
                             }`}
-                            title={`${pane.label} - ${included ? 'included in context' : 'excluded from context'}`}
+                            title={`${pane.label} (${pane.id}) - ${included ? 'included in context' : 'excluded from context'}`}
                         >
                             {paneIcon(pane.type)}
-                            <span className="max-w-[80px] truncate">{pane.label}</span>
+                            <span className="max-w-[80px] truncate" title={pane.id}>{pane.label}</span>
                             {included ? <Eye size={9} className="flex-shrink-0 opacity-60" /> : <EyeOff size={9} className="flex-shrink-0 opacity-40" />}
                         </button>
                     );

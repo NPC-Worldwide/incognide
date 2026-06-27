@@ -1,11 +1,6 @@
 import React, { useState } from 'react';
 import { resolvePrompt, type PromptData } from '../studioActions/uiActions';
 
-/**
- * Renders an interactive prompt card within a chat message.
- * Before response: shows interactive buttons/inputs.
- * After response: shows the recorded choice (read-only).
- */
 export function AgentPromptCard({ promptData }: { promptData: PromptData }) {
   const [textValue, setTextValue] = useState('');
   const [formValues, setFormValues] = useState<Record<string, string>>({});
@@ -74,7 +69,6 @@ export function AgentPromptCard({ promptData }: { promptData: PromptData }) {
     width: '100%',
   };
 
-  // -- CHOICES --
   if (promptData.prompt_type === 'choices') {
     const options: string[] = Array.isArray(promptData.options) ? promptData.options : [];
     const selectedChoice = promptData.response?.choice;
@@ -106,7 +100,6 @@ export function AgentPromptCard({ promptData }: { promptData: PromptData }) {
     );
   }
 
-  // -- CONFIRM --
   if (promptData.prompt_type === 'confirm') {
     const confirmed = promptData.response?.confirmed;
     return (
@@ -139,7 +132,6 @@ export function AgentPromptCard({ promptData }: { promptData: PromptData }) {
     );
   }
 
-  // -- TEXT INPUT --
   if (promptData.prompt_type === 'text') {
     const respondedText = promptData.response?.text;
     return (
@@ -184,7 +176,6 @@ export function AgentPromptCard({ promptData }: { promptData: PromptData }) {
     );
   }
 
-  // -- FORM --
   if (promptData.prompt_type === 'form') {
     const fields: Array<{ name: string; label?: string; type?: string; placeholder?: string }> =
       Array.isArray(promptData.options) ? promptData.options : (promptData.options?.fields || []);
@@ -232,7 +223,6 @@ export function AgentPromptCard({ promptData }: { promptData: PromptData }) {
     );
   }
 
-  // Fallback
   return (
     <div style={cardStyle}>
       <div style={labelStyle}>Agent prompt</div>

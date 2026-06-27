@@ -235,8 +235,6 @@ const NotebookViewer = ({
                     setPythonPath(checkResult.pythonPath);
                 }
 
-                // Always list kernels — discovered envs show up regardless of whether
-                // the workspace python has jupyter installed
                 const result = await (window as any).api.jupyterListKernels({ workspacePath });
                 if (result?.success && result.kernels) {
                     setAvailableKernels(result.kernels);

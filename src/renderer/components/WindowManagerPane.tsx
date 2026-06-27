@@ -198,7 +198,6 @@ const WindowManagerPane: React.FC = () => {
         savePresets(updated);
     }, [presets]);
 
-    // Group windows by display
     const displayGroups = new Map<number, WindowInfo[]>();
     for (const w of windows) {
         const d = w.display ?? 0;
@@ -223,7 +222,6 @@ const WindowManagerPane: React.FC = () => {
 
     return (
         <div className="h-full flex flex-col theme-bg-primary theme-text-primary overflow-hidden">
-            {/* Header */}
             <div className="flex items-center gap-2 px-4 py-3 border-b theme-border shrink-0">
                 <Monitor size={18} className="text-teal-400" />
                 <span className="font-semibold text-sm">Window Manager</span>
@@ -243,7 +241,6 @@ const WindowManagerPane: React.FC = () => {
 
             <div className="flex-1 overflow-y-auto p-4 space-y-5">
 
-                {/* Displays Section */}
                 <div>
                     <SectionHeader title="Displays" count={displays.length} collapsed={displaysCollapsed} onToggle={() => setDisplaysCollapsed(!displaysCollapsed)} color="blue" />
                     {!displaysCollapsed && (
@@ -275,7 +272,6 @@ const WindowManagerPane: React.FC = () => {
                     )}
                 </div>
 
-                {/* Windows Section */}
                 <div>
                     <SectionHeader title="Open Windows" count={windows.length} collapsed={windowsCollapsed} onToggle={() => setWindowsCollapsed(!windowsCollapsed)} />
                     {!windowsCollapsed && (
@@ -318,7 +314,6 @@ const WindowManagerPane: React.FC = () => {
                                                             </div>
                                                         </div>
                                                         <div className="flex items-center gap-0.5 shrink-0">
-                                                            {/* Focus / Bring Forward */}
                                                             <button
                                                                 onClick={() => handleFocusWindow(w.windowId)}
                                                                 className="p-1 rounded opacity-60 hover:opacity-100 hover:bg-teal-500/20 text-teal-400 transition-all"
@@ -326,7 +321,6 @@ const WindowManagerPane: React.FC = () => {
                                                             >
                                                                 <Eye size={13} />
                                                             </button>
-                                                            {/* Minimize */}
                                                             <button
                                                                 onClick={() => handleMinimizeWindow(w.windowId)}
                                                                 className="p-1 rounded opacity-60 hover:opacity-100 hover:bg-yellow-500/20 text-yellow-400 transition-all"
@@ -334,7 +328,6 @@ const WindowManagerPane: React.FC = () => {
                                                             >
                                                                 <Minimize2 size={13} />
                                                             </button>
-                                                            {/* Maximize */}
                                                             <button
                                                                 onClick={() => handleMaximizeWindow(w.windowId)}
                                                                 className="p-1 rounded opacity-60 hover:opacity-100 hover:bg-blue-500/20 text-blue-400 transition-all"
@@ -342,7 +335,6 @@ const WindowManagerPane: React.FC = () => {
                                                             >
                                                                 <Maximize2 size={13} />
                                                             </button>
-                                                            {/* Move to display */}
                                                             {displays.length > 1 && (
                                                                 <div className="relative">
                                                                     <button
@@ -371,7 +363,6 @@ const WindowManagerPane: React.FC = () => {
                                                                     )}
                                                                 </div>
                                                             )}
-                                                            {/* Close */}
                                                             <button
                                                                 onClick={() => handleCloseWindow(w.windowId)}
                                                                 className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/20 text-red-400 transition-all"
@@ -391,7 +382,6 @@ const WindowManagerPane: React.FC = () => {
                     )}
                 </div>
 
-                {/* Save Preset */}
                 <div>
                     <SectionHeader title="Save Multi-Window Preset" collapsed={false} onToggle={() => {}} />
                     <p className="text-[10px] theme-text-muted mb-2">
@@ -417,7 +407,6 @@ const WindowManagerPane: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Saved Presets */}
                 <div>
                     <SectionHeader title="Saved Presets" count={presets.length} collapsed={presetsCollapsed} onToggle={() => setPresetsCollapsed(!presetsCollapsed)} />
                     {!presetsCollapsed && (

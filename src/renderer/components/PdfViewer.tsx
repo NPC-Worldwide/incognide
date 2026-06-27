@@ -870,15 +870,12 @@ const PdfViewer = ({
     }, [textInput, filePath, drawingColor, loadDrawings]);
 
 
-    // Helper to ensure we have the PDF buffer (load from cache or disk)
     const ensurePdfBuffer = useCallback(async (): Promise<ArrayBuffer | null> => {
-        // First try cache
         let buffer = pdfBufferCache.get(filePath);
         if (buffer) {
             return buffer;
         }
-        
-        // Cache miss - try to reload from disk
+
         if (!filePath) {
             console.error('[PdfViewer] No filePath available');
             return null;
@@ -946,7 +943,6 @@ const PdfViewer = ({
                     const fontFamily = parts.length >= 3 && parts[0] === 'TEXT' ? parts[1] : "'Dancing Script', cursive";
                     const displayText = parts.length >= 3 && parts[0] === 'TEXT' ? parts.slice(2).join(':') : d.svg_path;
 
-                    // Render signature with correct font to canvas, embed as image
                     const sigCanvas = document.createElement('canvas');
                     const fontSize = 48;
                     const sigCtx = sigCanvas.getContext('2d')!;
@@ -956,7 +952,6 @@ const PdfViewer = ({
                     const textHeight = Math.ceil(fontSize * 1.4);
                     sigCanvas.width = textWidth;
                     sigCanvas.height = textHeight;
-                    // Re-set font after resize
                     sigCtx.font = `${fontSize}px ${fontFamily}`;
                     sigCtx.fillStyle = d.stroke_color || '#000000';
                     sigCtx.textBaseline = 'top';
@@ -1073,7 +1068,6 @@ const PdfViewer = ({
             }
         } catch (err) {
             console.error('[PdfViewer] Save dialog failed, using fallback:', err);
-            // Fallback: blob download
             try {
                 const blob = new Blob([pdfBytes], { type: 'application/pdf' });
                 const url = URL.createObjectURL(blob);
@@ -1112,8 +1106,7 @@ const PdfViewer = ({
             const iframe = document.createElement('iframe');
             iframe.style.display = 'none';
             iframe.src = url;
-            
-            // Handle print completion and cleanup
+
             const cleanup = () => {
                 try {
                     if (iframe.parentNode) {
@@ -1130,7 +1123,6 @@ const PdfViewer = ({
                 setTimeout(() => {
                     try {
                         iframe.contentWindow?.print();
-                        // Cleanup after print dialog closes
                         setTimeout(cleanup, 1000);
                     } catch (err) {
                         console.error('[PdfViewer] Print command failed:', err);
@@ -1139,8 +1131,7 @@ const PdfViewer = ({
                     }
                 }, 500);
             };
-            
-            // Handle error case
+
             iframe.onerror = () => {
                 console.error('[PdfViewer] Failed to load PDF in print iframe');
                 cleanup();
@@ -1372,26 +1363,21 @@ const PdfViewer = ({
                     overflow: visible;
                 `;
 
-                // Helper: add drag + resize to a foreignObject-based drawing
                 const addDragResize = (fo: SVGForeignObjectElement, d: any, div: HTMLElement) => {
                     fo.style.pointerEvents = 'auto';
                     fo.style.cursor = 'grab';
 
-                    // Resize handle (bottom-right corner)
                     const handle = document.createElement('div');
                     handle.style.cssText = `position: absolute; right: 0; bottom: 0; width: 10px; height: 10px; cursor: nwse-resize; background: rgba(59,130,246,0.5); border-radius: 2px; pointer-events: auto; opacity: 0; transition: opacity 0.15s;`;
-                    // Show handle on hover over foreignObject
                     fo.addEventListener('mouseenter', () => { handle.style.opacity = '1'; });
                     fo.addEventListener('mouseleave', () => { handle.style.opacity = '0'; });
 
-                    // Wrap content in a positioned container
                     const wrapper = document.createElement('div');
                     wrapper.style.cssText = 'position: relative; width: 100%; height: 100%; pointer-events: none;';
                     wrapper.appendChild(div);
                     wrapper.appendChild(handle);
                     fo.appendChild(wrapper);
 
-                    // Resize
                     handle.addEventListener('mousedown', (e: MouseEvent) => {
                         if (e.button !== 0) return;
                         e.preventDefault(); e.stopPropagation();
@@ -1429,7 +1415,6 @@ const PdfViewer = ({
                         document.addEventListener('mouseup', onUp);
                     });
 
-                    // Drag (on the foreignObject itself, not the handle)
                     let dragStart: { mx: number; my: number; ox: number; oy: number } | null = null;
                     fo.addEventListener('mousedown', (e: MouseEvent) => {
                         if (e.button !== 0 || (e.target as HTMLElement) === handle) return;
@@ -1503,7 +1488,6 @@ const PdfViewer = ({
                         hitRect.style.pointerEvents = 'auto';
                         hitRect.style.cursor = 'grab';
                         g.appendChild(hitRect);
-                        // Resize handle for drawn signature
                         const resizeRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
                         resizeRect.setAttribute('x', '90'); resizeRect.setAttribute('y', '90');
                         resizeRect.setAttribute('width', '10'); resizeRect.setAttribute('height', '10');
@@ -1525,7 +1509,6 @@ const PdfViewer = ({
                         path.setAttribute('stroke-linejoin', 'round');
                         path.style.pointerEvents = 'none';
                         g.appendChild(path);
-                        // Resize handler
                         resizeRect.addEventListener('mousedown', (e: MouseEvent) => {
                             if (e.button !== 0) return;
                             e.preventDefault(); e.stopPropagation();
@@ -1556,7 +1539,6 @@ const PdfViewer = ({
                             document.addEventListener('mousemove', onMove);
                             document.addEventListener('mouseup', onUp);
                         });
-                        // Drag handler
                         let sigDragStart: { mx: number; my: number; ox: number; oy: number } | null = null;
                         hitRect.addEventListener('mousedown', (e: MouseEvent) => {
                             if (e.button !== 0) return;
