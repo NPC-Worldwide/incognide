@@ -306,16 +306,22 @@ export const loadAvailableNPCs = async (
     setNpcsLoading(true);
     setNpcsError(null);
     try {
+        const projectTeamPath = normalizePath(`${pathToUse}/npc_team`);
         const teamFetches: Promise<any>[] = [
             window.api.getNPCTeamProject(pathToUse),
         ];
         const teamKeys: string[] = ['project'];
+        const teamPaths: Record<string, string> = { project: projectTeamPath };
 
         try {
             const teamsData = await window.api.teamsRead();
             if (teamsData?.teams) {
                 for (const [key, teamPath] of Object.entries(teamsData.teams)) {
+                    const resolvedPath = normalizePath(String(teamPath || '').replace(/^~(?=\/|$)/, (window as any).api?.getHomeDir?.() || os.homedir()));
+                    // Skip registered teams that point to the same directory as the current project team
+                    if (resolvedPath === projectTeamPath) continue;
                     teamKeys.push(key);
+                    teamPaths[key] = resolvedPath;
                     teamFetches.push(window.api.getNPCTeamFromPath(key));
                 }
             }
@@ -340,6 +346,7 @@ export const loadAvailableNPCs = async (
                     display_name: `${npc.name} | ${teamKey === 'project' ? 'Project' : (npc.team_name || teamKey)}`,
                     source: teamKey === 'project' ? 'project' : 'global',
                     team: teamKey,
+                    teamPath: teamPaths[teamKey] || '',
                     _teamConfig: value.teamConfig,
                 });
             });

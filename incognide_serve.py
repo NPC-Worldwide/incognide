@@ -71,8 +71,32 @@ if __name__ == "__main__":
 
     incognide_home = os.environ.get('INCOGNIDE_HOME', os.path.expanduser('~/.incognide'))
     db_path = os.environ.get('INCOGNIDE_DB_PATH', os.path.join(incognide_home, 'history.db'))
+
+    teams = {}
+    try:
+        import yaml
+        teams_yaml_path = os.path.join(incognide_home, 'teams.yaml')
+        if os.path.isfile(teams_yaml_path):
+            with open(teams_yaml_path, 'r') as f:
+                yaml_data = yaml.safe_load(f) or {}
+            loaded = yaml_data.get('teams', yaml_data)
+            if isinstance(loaded, dict):
+                for team_name, team_path in loaded.items():
+                    tp = os.path.abspath(os.path.expanduser(str(team_path).replace('~', os.path.expanduser('~'))))
+                    if os.path.isdir(tp):
+                        teams[str(team_name)] = tp
+            elif isinstance(loaded, list):
+                for team_path in loaded:
+                    tp = os.path.abspath(os.path.expanduser(str(team_path).replace('~', os.path.expanduser('~'))))
+                    if os.path.isdir(tp):
+                        team_name = os.path.basename(tp)
+                        teams[team_name] = tp
+    except Exception:
+        pass
+
     start_flask_server(
         port=port,
         cors_origins=f"localhost:{frontend_port}",
         db_path=db_path,
+        teams=teams,
         debug=False)

@@ -224,14 +224,14 @@ const AddMetricForm = ({ onAdd, existingNames }: {
                     </div>
                 )}
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-nowrap">
                 <select
                     value={type}
                     onChange={(e) => setType(e.target.value as any)}
-                    className="theme-input text-xs px-2 py-1 rounded"
+                    className="theme-input text-xs px-1 py-1 rounded w-20 shrink-0"
                 >
-                    <option value="boolean">Boolean</option>
-                    <option value="integer">Integer</option>
+                    <option value="boolean">Bool</option>
+                    <option value="integer">Int</option>
                     <option value="float">Float</option>
                 </select>
                 {type !== 'boolean' && (
@@ -241,15 +241,15 @@ const AddMetricForm = ({ onAdd, existingNames }: {
                             value={min}
                             onChange={(e) => setMin(e.target.value)}
                             placeholder="Min"
-                            className="w-16 theme-input text-xs px-2 py-1 rounded"
+                            className="w-14 theme-input text-xs px-1 py-1 rounded shrink-0"
                         />
-                        <span className="text-xs text-gray-500">to</span>
+                        <span className="text-xs text-gray-500 shrink-0">-</span>
                         <input
                             type="number"
                             value={max}
                             onChange={(e) => setMax(e.target.value)}
                             placeholder="Max"
-                            className="w-16 theme-input text-xs px-2 py-1 rounded"
+                            className="w-14 theme-input text-xs px-1 py-1 rounded shrink-0"
                         />
                     </>
                 )}
@@ -257,7 +257,7 @@ const AddMetricForm = ({ onAdd, existingNames }: {
                     type="button"
                     onClick={handleAdd}
                     disabled={!name.trim()}
-                    className="ml-auto theme-button-primary px-2 py-1 text-xs rounded flex items-center gap-1 disabled:opacity-50"
+                    className="theme-button-primary px-2 py-1 text-xs rounded flex items-center gap-1 disabled:opacity-50 shrink-0 ml-auto"
                 >
                     <Plus size={12} /> Add
                 </button>

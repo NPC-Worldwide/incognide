@@ -120,7 +120,6 @@ import { getFileName,
     handleBatchMemoryProcess,
     toggleTheme,
     loadDefaultPath,
-    fetchModels,
     loadConversations,
     goUpDirectory,
     usePaneAwareStreamListeners,
@@ -407,7 +406,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         currentModel, setCurrentModel, currentProvider, setCurrentProvider,
         currentNPC, setCurrentNPC, selectedModels, setSelectedModels,
         selectedNPCs, setSelectedNPCs, broadcastMode, setBroadcastMode,
-        availableModels, setAvailableModels, modelsLoading, setModelsLoading,
+        availableModels, modelsLoading, setModelsLoading,
         modelsError, setModelsError, ollamaToolModels, setOllamaToolModels,
         availableNPCs, setAvailableNPCs, npcsLoading, setNpcsLoading,
         npcsError, setNpcsError, executionMode, setExecutionMode,
@@ -6103,7 +6102,6 @@ const handleBrowserDialogNavigate = (url) => {
                     }
                 }
 
-                await fetchModels(null, setModelsLoading, setModelsError, setAvailableModels);
                 await loadAvailableNPCs(null, setNpcsLoading, setNpcsError, setAvailableNPCs);
                 setLoading(false);
                 return;
@@ -6152,7 +6150,6 @@ const handleBrowserDialogNavigate = (url) => {
                 await loadConversationsWithoutAutoSelect(currentPath);
             }
 
-            await fetchModels(currentPath, setModelsLoading, setModelsError, setAvailableModels);
             const { npcs: fetchedNPCs, teamConfigs: fetchedTeamConfigs } = await loadAvailableNPCs(currentPath, setNpcsLoading, setNpcsError, setAvailableNPCs);
             if (fetchedTeamConfigs) {
                 setTeamConfigs(fetchedTeamConfigs);
@@ -7264,7 +7261,7 @@ const handleBrowserDialogNavigate = (url) => {
             {labelingModal.isOpen && labelingModal.message && (
                 <MessageLabeling
                     message={labelingModal.message}
-                    existingLabel={messageLabels[labelingModal.message.id]}
+                    existingLabel={messageLabels[labelingModal.message.id || labelingModal.message.timestamp]}
                     onSave={handleSaveLabel}
                     onClose={handleCloseLabelingModal}
                 />

@@ -12,17 +12,17 @@ const LOCAL_PROVIDERS: Record<string, any> = {
     ...(isMac ? { omlx: { name: 'OMLX', description: 'Apple Silicon optimized', defaultPort: 8000, docsUrl: 'https://github.com/jundot/omlx', color: 'text-pink-400', bgColor: 'bg-pink-600', local: true } } : {}),
 };
 
-const API_PROVIDER_META: Record<string, { name: string; color: string; bgColor: string; docsUrl: string }> = {
-    anthropic: { name: 'Anthropic', color: 'text-amber-400', bgColor: 'bg-amber-600', docsUrl: 'https://docs.anthropic.com/en/docs/about-claude/models' },
-    deepseek: { name: 'DeepSeek', color: 'text-cyan-400', bgColor: 'bg-cyan-600', docsUrl: 'https://api-docs.deepseek.com/' },
-    gemini: { name: 'Gemini', color: 'text-blue-400', bgColor: 'bg-blue-600', docsUrl: 'https://ai.google.dev/gemini-api/docs/models' },
-    groq: { name: 'Groq', color: 'text-orange-400', bgColor: 'bg-orange-600', docsUrl: 'https://console.groq.com/docs/models' },
-    mistral: { name: 'Mistral', color: 'text-indigo-400', bgColor: 'bg-indigo-600', docsUrl: 'https://docs.mistral.ai/getting-started/models/models_overview/' },
-    openai: { name: 'OpenAI', color: 'text-green-400', bgColor: 'bg-green-600', docsUrl: 'https://platform.openai.com/docs/models' },
-    openrouter: { name: 'OpenRouter', color: 'text-violet-400', bgColor: 'bg-violet-600', docsUrl: 'https://openrouter.ai/models' },
-    perplexity: { name: 'Perplexity', color: 'text-sky-400', bgColor: 'bg-sky-600', docsUrl: 'https://docs.perplexity.ai/' },
-    together: { name: 'Together', color: 'text-teal-400', bgColor: 'bg-teal-600', docsUrl: 'https://docs.together.ai/docs/models' },
-    xai: { name: 'xAI', color: 'text-gray-300', bgColor: 'bg-gray-600', docsUrl: 'https://docs.x.ai/' },
+export const API_PROVIDER_META: Record<string, { name: string; color: string; bgColor: string; docsUrl: string; defaultModel?: string }> = {
+    anthropic: { name: 'Anthropic', color: 'text-amber-400', bgColor: 'bg-amber-600', docsUrl: 'https://docs.anthropic.com/en/docs/about-claude/models', defaultModel: 'claude-sonnet-4' },
+    deepseek: { name: 'DeepSeek', color: 'text-cyan-400', bgColor: 'bg-cyan-600', docsUrl: 'https://api-docs.deepseek.com/', defaultModel: 'deepseek-chat' },
+    gemini: { name: 'Gemini', color: 'text-blue-400', bgColor: 'bg-blue-600', docsUrl: 'https://ai.google.dev/gemini-api/docs/models', defaultModel: 'gemini-2.5-flash' },
+    groq: { name: 'Groq', color: 'text-orange-400', bgColor: 'bg-orange-600', docsUrl: 'https://console.groq.com/docs/models', defaultModel: 'llama-3.3-70b-versatile' },
+    mistral: { name: 'Mistral', color: 'text-indigo-400', bgColor: 'bg-indigo-600', docsUrl: 'https://docs.mistral.ai/getting-started/models/models_overview/', defaultModel: 'mistral-large-latest' },
+    openai: { name: 'OpenAI', color: 'text-green-400', bgColor: 'bg-green-600', docsUrl: 'https://platform.openai.com/docs/models', defaultModel: 'gpt-4o' },
+    openrouter: { name: 'OpenRouter', color: 'text-violet-400', bgColor: 'bg-violet-600', docsUrl: 'https://openrouter.ai/models', defaultModel: 'openai/gpt-4o' },
+    perplexity: { name: 'Perplexity', color: 'text-sky-400', bgColor: 'bg-sky-600', docsUrl: 'https://docs.perplexity.ai/', defaultModel: 'sonar-pro' },
+    together: { name: 'Together', color: 'text-teal-400', bgColor: 'bg-teal-600', docsUrl: 'https://docs.together.ai/docs/models', defaultModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo' },
+    xai: { name: 'xAI', color: 'text-gray-300', bgColor: 'bg-gray-600', docsUrl: 'https://docs.x.ai/', defaultModel: 'grok-3' },
 };
 
 const ModelList = ({ models, activeProvider, isDeleting, onDelete, onStartChat }: any) => {

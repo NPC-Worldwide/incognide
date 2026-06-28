@@ -1949,7 +1949,6 @@ function register(ctx) {
     { provider: 'fireworks_ai', envVar: 'FIREWORKS_API_KEY', baseUrl: 'https://api.fireworks.ai/inference/v1', displayName: 'Fireworks AI' },
     { provider: 'gemini', envVar: 'GEMINI_API_KEY', baseUrl: 'https://generativelanguage.googleapis.com/v1beta', displayName: 'Google Gemini' },
     { provider: 'groq', envVar: 'GROQ_API_KEY', baseUrl: 'https://api.groq.com/openai/v1', displayName: 'Groq' },
-    { provider: 'huggingFace', envVar: 'HF_TOKEN', baseUrl: 'https://api-inference.huggingface.co', displayName: 'Hugging Face' },
     { provider: 'hyperbolic', envVar: 'HYPERBOLIC_API_KEY', baseUrl: 'https://api.hyperbolic.xyz/v1', displayName: 'Hyperbolic' },
     { provider: 'mistral', envVar: 'MISTRAL_API_KEY', baseUrl: 'https://api.mistral.ai/v1', displayName: 'Mistral AI' },
     { provider: 'moonshot', envVar: 'MOONSHOT_API_KEY', baseUrl: 'https://api.moonshot.cn/v1', displayName: 'Moonshot AI' },
@@ -1965,6 +1964,7 @@ function register(ctx) {
     { provider: 'vertex_ai', envVar: 'VERTEX_AI_API_KEY', baseUrl: 'https://{region}-aiplatform.googleapis.com', displayName: 'Google Vertex AI' },
     { provider: 'watsonx', envVar: 'WATSONX_API_KEY', baseUrl: 'https://{region}.ml.cloud.ibm.com', displayName: 'IBM Watsonx' },
     { provider: 'xai', envVar: 'XAI_API_KEY', baseUrl: 'https://api.x.ai/v1', displayName: 'xAI' },
+    { provider: 'ollama', envVar: 'OLLAMA_API_KEY', baseUrl: 'http://localhost:11434', displayName: 'Ollama' },
   ];
 
   ipcMain.handle('get-known-providers', async () => {

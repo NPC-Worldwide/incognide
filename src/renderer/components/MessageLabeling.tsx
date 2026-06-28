@@ -1,5 +1,5 @@
-import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { X, Tag, Star, Plus, Trash2, Save, ChevronDown, ChevronRight, Hash, Type } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { X, Tag, Plus, Trash2, Save, ChevronDown, ChevronRight, Hash, Type } from 'lucide-react';
 
 export interface TextSpanLabel {
     id: string;
@@ -37,8 +37,6 @@ export interface MessageLabel {
     metrics: UserMetric[];
     notes?: string;
 
-    textSpans: TextSpanLabel[];
-
     labeledAt: string;
     labeledBy?: string;
 }
@@ -72,18 +70,6 @@ export interface ContextFile {
     source: 'sidebar' | 'external' | 'open-pane';
 }
 
-const DEFAULT_SPAN_CATEGORIES = [
-    'important',
-    'error',
-    'good-reasoning',
-    'bad-reasoning',
-    'citation-needed',
-    'key-insight',
-    'redundant',
-    'unclear',
-    'well-explained',
-];
-
 interface MessageLabelingProps {
     message: {
         id: string;
@@ -95,7 +81,6 @@ interface MessageLabelingProps {
     existingLabel?: MessageLabel;
     onSave: (label: MessageLabel) => void;
     onClose: () => void;
-    spanCategories?: string[];
 }
 
 export const MetricDefinitionStorage = {
@@ -349,14 +334,14 @@ const AddMetricForm = ({ onAdd, existingNames }: {
                     </div>
                 )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-nowrap">
                 <select
                     value={type}
                     onChange={(e) => setType(e.target.value as MetricType)}
-                    className="theme-input text-xs px-2 py-1 rounded"
+                    className="theme-input text-xs px-1 py-1 rounded w-20 shrink-0"
                 >
-                    <option value="boolean">Boolean</option>
-                    <option value="integer">Integer</option>
+                    <option value="boolean">Bool</option>
+                    <option value="integer">Int</option>
                     <option value="float">Float</option>
                 </select>
                 {type !== 'boolean' && (
@@ -366,15 +351,15 @@ const AddMetricForm = ({ onAdd, existingNames }: {
                             value={min}
                             onChange={(e) => setMin(e.target.value)}
                             placeholder="Min"
-                            className="w-16 theme-input text-xs px-2 py-1 rounded"
+                            className="w-14 theme-input text-xs px-1 py-1 rounded shrink-0"
                         />
-                        <span className="text-xs text-gray-500">to</span>
+                        <span className="text-xs text-gray-500 shrink-0">-</span>
                         <input
                             type="number"
                             value={max}
                             onChange={(e) => setMax(e.target.value)}
                             placeholder="Max"
-                            className="w-16 theme-input text-xs px-2 py-1 rounded"
+                            className="w-14 theme-input text-xs px-1 py-1 rounded shrink-0"
                         />
                     </>
                 )}
@@ -382,7 +367,7 @@ const AddMetricForm = ({ onAdd, existingNames }: {
                     type="button"
                     onClick={handleAdd}
                     disabled={!name.trim()}
-                    className="ml-auto theme-button-primary px-2 py-1 text-xs rounded flex items-center gap-1 disabled:opacity-50"
+                    className="theme-button-primary px-2 py-1 text-xs rounded flex items-center gap-1 disabled:opacity-50 shrink-0 ml-auto"
                 >
                     <Plus size={12} /> Add
                 </button>
@@ -396,72 +381,16 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
     existingLabel,
     onSave,
     onClose,
-    spanCategories = DEFAULT_SPAN_CATEGORIES,
 }) => {
 
     const [tags, setTags] = useState<string[]>(existingLabel?.tags || []);
     const [metrics, setMetrics] = useState<UserMetric[]>(existingLabel?.metrics || []);
     const [notes, setNotes] = useState(existingLabel?.notes || '');
 
-    const [textSpans, setTextSpans] = useState<TextSpanLabel[]>(existingLabel?.textSpans || []);
-    const [selectedText, setSelectedText] = useState<{ text: string; start: number; end: number } | null>(null);
-    const [spanCategory, setSpanCategory] = useState(spanCategories[0]);
-    const [spanScore, setSpanScore] = useState(0);
-    const [spanNotes, setSpanNotes] = useState('');
-
-    const contentRef = useRef<HTMLDivElement>(null);
-    const [expandedSection, setExpandedSection] = useState<'tags' | 'metrics' | 'spans' | 'notes' | null>('tags');
+    const [expandedSection, setExpandedSection] = useState<'tags' | 'metrics' | 'notes' | null>('tags');
 
     const allTags = useMemo(() => collectAllTags(), []);
     const allMetricNames = useMemo(() => MetricDefinitionStorage.getAllNames(), []);
-
-    const handleTextSelection = useCallback(() => {
-        const selection = window.getSelection();
-        if (!selection || selection.isCollapsed || !contentRef.current) {
-            return;
-        }
-
-        const selectedStr = selection.toString().trim();
-        if (!selectedStr) return;
-
-        const range = selection.getRangeAt(0);
-        const preSelectionRange = range.cloneRange();
-        preSelectionRange.selectNodeContents(contentRef.current);
-        preSelectionRange.setEnd(range.startContainer, range.startOffset);
-
-        const startOffset = preSelectionRange.toString().length;
-        const endOffset = startOffset + selectedStr.length;
-
-        setSelectedText({
-            text: selectedStr,
-            start: startOffset,
-            end: endOffset,
-        });
-    }, []);
-
-    const addSpanLabel = () => {
-        if (!selectedText) return;
-
-        const newSpan: TextSpanLabel = {
-            id: crypto.randomUUID(),
-            startOffset: selectedText.start,
-            endOffset: selectedText.end,
-            text: selectedText.text,
-            category: spanCategory,
-            score: spanScore > 0 ? spanScore : undefined,
-            notes: spanNotes || undefined,
-        };
-
-        setTextSpans([...textSpans, newSpan]);
-        setSelectedText(null);
-        setSpanScore(0);
-        setSpanNotes('');
-        window.getSelection()?.removeAllRanges();
-    };
-
-    const removeSpanLabel = (id: string) => {
-        setTextSpans(textSpans.filter(s => s.id !== id));
-    };
 
     const addMetric = (metric: UserMetric) => {
         const existingIndex = metrics.findIndex(m => m.name.toLowerCase() === metric.name.toLowerCase());
@@ -487,7 +416,7 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
     const handleSave = () => {
         const label: MessageLabel = {
             id: existingLabel?.id || crypto.randomUUID(),
-            messageId: message.id,
+            messageId: message.id || message.timestamp,
             conversationId: message.conversationId || '',
             role: message.role as 'user' | 'assistant',
             content: message.content,
@@ -495,49 +424,10 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
             tags,
             metrics,
             notes: notes || undefined,
-            textSpans,
             labeledAt: new Date().toISOString(),
         };
 
         onSave(label);
-    };
-
-    const renderHighlightedContent = () => {
-        if (textSpans.length === 0) {
-            return message.content;
-        }
-
-        const sortedSpans = [...textSpans].sort((a, b) => a.startOffset - b.startOffset);
-        const parts: React.ReactNode[] = [];
-        let lastEnd = 0;
-
-        sortedSpans.forEach((span) => {
-
-            if (span.startOffset > lastEnd) {
-                parts.push(message.content.slice(lastEnd, span.startOffset));
-            }
-
-            parts.push(
-                <span
-                    key={span.id}
-                    className="bg-yellow-500/30 border-b border-yellow-500 cursor-pointer relative group"
-                    title={`${span.category}${span.score ? ` (${span.score}/5)` : ''}`}
-                >
-                    {span.text}
-                    <span className="absolute -top-6 left-0 hidden group-hover:block bg-gray-800 text-xs px-2 py-1 rounded whitespace-nowrap z-10">
-                        {span.category} {span.score ? `★${span.score}` : ''}
-                    </span>
-                </span>
-            );
-
-            lastEnd = span.endOffset;
-        });
-
-        if (lastEnd < message.content.length) {
-            parts.push(message.content.slice(lastEnd));
-        }
-
-        return parts;
     };
 
     const SectionHeader = ({ title, section, icon: Icon }: { title: string; section: typeof expandedSection; icon: any }) => (
@@ -572,76 +462,9 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
 
                 <div className="flex-1 overflow-hidden flex">
                     <div className="flex-1 p-4 overflow-y-auto border-r border-gray-700">
-                        <div className="mb-2 text-xs text-gray-400">
-                            Select text to add span labels. Highlighted text shows existing labels.
+                        <div className="prose prose-sm prose-invert max-w-none p-3 bg-gray-800 rounded whitespace-pre-wrap">
+                            {message.content}
                         </div>
-                        <div
-                            ref={contentRef}
-                            className="prose prose-sm prose-invert max-w-none p-3 bg-gray-800 rounded whitespace-pre-wrap select-text cursor-text"
-                            onMouseUp={handleTextSelection}
-                        >
-                            {renderHighlightedContent()}
-                        </div>
-
-                        {selectedText && (
-                            <div className="mt-4 p-3 bg-gray-800 rounded border border-blue-500">
-                                <div className="text-xs text-blue-400 mb-2">Selected Text:</div>
-                                <div className="text-sm mb-3 p-2 bg-gray-700 rounded max-h-20 overflow-y-auto">
-                                    "{selectedText.text}"
-                                </div>
-                                <div className="space-y-2">
-                                    <div className="flex items-center gap-2">
-                                        <select
-                                            value={spanCategory}
-                                            onChange={(e) => setSpanCategory(e.target.value)}
-                                            className="theme-input text-xs px-2 py-1 rounded flex-1"
-                                        >
-                                            {spanCategories.map(cat => (
-                                                <option key={cat} value={cat}>{cat}</option>
-                                            ))}
-                                        </select>
-                                        <div className="flex items-center gap-1">
-                                            {[1, 2, 3, 4, 5].map(s => (
-                                                <button
-                                                    key={s}
-                                                    type="button"
-                                                    className={`p-0.5 ${s <= spanScore ? 'text-yellow-400' : 'text-gray-600'}`}
-                                                    onClick={() => setSpanScore(s === spanScore ? 0 : s)}
-                                                >
-                                                    <Star size={12} fill={s <= spanScore ? 'currentColor' : 'none'} />
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <input
-                                        type="text"
-                                        value={spanNotes}
-                                        onChange={(e) => setSpanNotes(e.target.value)}
-                                        placeholder="Notes (optional)"
-                                        className="w-full theme-input text-xs px-2 py-1 rounded"
-                                    />
-                                    <div className="flex gap-2">
-                                        <button
-                                            type="button"
-                                            className="flex-1 theme-button-primary px-3 py-1 text-xs rounded flex items-center justify-center gap-1"
-                                            onClick={addSpanLabel}
-                                        >
-                                            <Plus size={12} /> Add Label
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className="theme-button px-3 py-1 text-xs rounded"
-                                            onClick={() => {
-                                                setSelectedText(null);
-                                                window.getSelection()?.removeAllRanges();
-                                            }}
-                                        >
-                                            Cancel
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
                     </div>
 
                     <div className="w-80 p-4 overflow-y-auto space-y-2">
@@ -691,42 +514,6 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
                             )}
                         </div>
 
-                        <div className="border-b border-gray-700 pb-2">
-                            <SectionHeader title={`Text Spans (${textSpans.length})`} section="spans" icon={Tag} />
-                            {expandedSection === 'spans' && (
-                                <div className="pt-2 space-y-2 max-h-40 overflow-y-auto">
-                                    {textSpans.length === 0 ? (
-                                        <div className="text-xs text-gray-500 text-center py-2">
-                                            Select text in the message to add span labels
-                                        </div>
-                                    ) : (
-                                        textSpans.map(span => (
-                                            <div key={span.id} className="flex items-start gap-2 p-2 bg-gray-800 rounded text-xs">
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="text-gray-400 truncate">"{span.text}"</div>
-                                                    <div className="flex items-center gap-2 mt-1">
-                                                        <span className="px-1.5 py-0.5 bg-yellow-600/30 text-yellow-300 rounded">
-                                                            {span.category}
-                                                        </span>
-                                                        {span.score && (
-                                                            <span className="text-yellow-400">★{span.score}</span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <button
-                                                    type="button"
-                                                    className="p-1 hover:bg-gray-700 rounded text-gray-500 hover:text-red-400"
-                                                    onClick={() => removeSpanLabel(span.id)}
-                                                >
-                                                    <Trash2 size={12} />
-                                                </button>
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-                            )}
-                        </div>
-
                         <div className="pb-2">
                             <SectionHeader title="Notes" section="notes" icon={Type} />
                             {expandedSection === 'notes' && (
@@ -746,7 +533,7 @@ export const MessageLabeling: React.FC<MessageLabelingProps> = ({
 
                 <div className="flex items-center justify-between p-4 border-t border-gray-700">
                     <div className="text-xs text-gray-500">
-                        {tags.length} tags, {metrics.length} metrics, {textSpans.length} spans
+                        {tags.length} tags, {metrics.length} metrics
                     </div>
                     <div className="flex gap-2">
                         <button
@@ -839,7 +626,6 @@ export const MessageLabelStorage = {
                 _labels: {
                     tags: label.tags,
                     metrics: label.metrics,
-                    spans: label.textSpans,
                 }
             }));
 
