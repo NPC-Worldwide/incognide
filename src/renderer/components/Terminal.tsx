@@ -382,7 +382,6 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             };
             terminalRef.current?.addEventListener('contextmenu', nativeContextHandler, true);
 
-            // Restore saved terminal buffer from previous mount (move/de-tab)
             const savedBuffer = paneData?._terminalBuffer
                 || ((window as any).__terminalBuffers?.[terminalId]);
             if (savedBuffer) {
@@ -394,9 +393,8 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             }
 
             requestAnimationFrame(() => {
-                try { fitAddon.fit(); } catch (e) { /* terminal may not be visible yet */ }
+                try { fitAddon.fit(); } catch (e) {}
             });
-            // Delayed re-fit for when pane layout settles after tab drags/moves
             setTimeout(() => {
                 try { fitAddon.fit(); } catch {}
             }, 50);
@@ -425,7 +423,6 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                             range: { start: { x: startIdx + 1, y: lineNumber }, end: { x: startIdx + filePath.length + 1 + match[2].length + (match[3] ? match[3].length + 1 : 0), y: lineNumber } },
                             text: `${filePath}:${line}${match[3] ? ':' + col : ''}`,
                             activate: async () => {
-                                // Get the terminal's actual cwd for resolving relative paths
                                 let termCwd = currentPath;
                                 try {
                                     const result = await (window as any).api?.getTerminalCwd?.(terminalId);
@@ -437,11 +434,10 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                             }
                         });
                     }
-                    // Also match URLs and open them in browser panes
                     const urlRegex = /https?:\/\/[^\s'"<>)\]]+/g;
                     let urlMatch;
                     while ((urlMatch = urlRegex.exec(text)) !== null) {
-                        const url = urlMatch[0].replace(/[.,;:!?)]+$/, ''); // trim trailing punctuation
+                        const url = urlMatch[0].replace(/[.,;:!?)\]]+$/, '');
                         links.push({
                             range: { start: { x: urlMatch.index + 1, y: lineNumber }, end: { x: urlMatch.index + url.length + 1, y: lineNumber } },
                             text: url,
@@ -466,7 +462,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                         const wasAtBottom = term.buffer.active?.viewportY === term.buffer.active?.baseY;
                         const scrollOffset = term.buffer.active?.viewportY ?? 0;
 
-                        try { fitAddon.fit(); } catch (e) { /* terminal may not be visible in tab stack */ }
+                        try { fitAddon.fit(); } catch (e) {}
 
                         if (wasAtBottom) {
                             term.scrollToBottom();
@@ -487,19 +483,15 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             resizeObserverRef.current = resizeObserver;
             resizeObserver.observe(terminalRef.current);
 
-            // Fallback: window resize doesn't always trigger ResizeObserver
-            // on the terminal div (e.g. single pane filling the window)
             const handleWindowResize = () => {
                 if (resizeTimeout) clearTimeout(resizeTimeout);
                 resizeTimeout = setTimeout(() => {
                     requestAnimationFrame(() => {
-                        // Preserve scroll position during resize
                         const wasAtBottom = term.buffer.active?.viewportY === term.buffer.active?.baseY;
                         const scrollOffset = term.buffer.active?.viewportY ?? 0;
 
                         try { fitAddon.fit(); } catch {}
 
-                        // Restore scroll position
                         if (wasAtBottom) {
                             term.scrollToBottom();
                         } else if (scrollOffset !== term.buffer.active?.viewportY) {
@@ -602,7 +594,6 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                 }
 
                 if (event.ctrlKey && !event.metaKey && !event.shiftKey && key === 'a') {
-                    // Let xterm pass Ctrl+A through to the PTY naturally
                     return true;
                 }
 
@@ -699,7 +690,6 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
 
         }
 
-        // Handle image paste — save to temp file and type path into terminal
         const showPasteNotification = (message: string, isError = false) => {
             if (pasteNotificationTimer.current) clearTimeout(pasteNotificationTimer.current);
             setPasteNotification({ message, isError });
@@ -815,7 +805,6 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                     }
 
                     const autoSource = localStorage.getItem(AUTO_SOURCE_KEY);
-                    // Only source profile on NEW sessions — not when resuming a reused session
                     if (!result.reused && autoSource === 'true' && isSessionReady.current && terminalId) {
                         const cmd = getShellProfileCommand();
                         window.api.writeToTerminal({ id: terminalId, data: cmd + '\n' });
@@ -929,7 +918,6 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             xtermInstance.current.options.minimumContrastRatio = minimumContrastRatio;
             xtermInstance.current.options.bellStyle = bellStyle;
 
-            // Preserve scroll position during settings-triggered resize
             const wasAtBottom = xtermInstance.current.buffer.active?.viewportY === xtermInstance.current.buffer.active?.baseY;
             const scrollOffset = xtermInstance.current.buffer.active?.viewportY ?? 0;
             fitAddonRef.current?.fit();

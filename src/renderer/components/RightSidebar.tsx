@@ -253,7 +253,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     }, []);
 
     const groupedNpcs = useMemo(() => {
-        // Find which registered team matches the current project folder
         let currentTeamKey: string | null = null;
         if (currentPath) {
             for (const [key, teamPath] of Object.entries(registeredTeams)) {

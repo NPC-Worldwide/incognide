@@ -2,7 +2,7 @@
 
 import { registerAction, StudioContext, StudioActionResult } from './index';
 
-const PANE_TYPE_INFO: Record<string, { title: string; description: string; needsPath?: boolean; needsUrl?: boolean }> = {
+export const PANE_TYPE_INFO: Record<string, { title: string; description: string; needsPath?: boolean; needsUrl?: boolean }> = {
   'chat':             { title: 'Chat',             description: 'AI chat conversation' },
   'agent':            { title: 'Agent',            description: 'AI agent with tools' },
   'editor':           { title: 'Code Editor',      description: 'Edit code and text files', needsPath: true },
@@ -81,7 +81,7 @@ export function collectPaneInfo(
   return [];
 }
 
-function getPaneTitle(data: any): string {
+export function getPaneTitle(data: any): string {
   if (!data) return 'Untitled';
 
   const { contentType, contentId } = data;
@@ -218,9 +218,15 @@ async function close_pane(
     return { success: false, error: `Pane not found: ${paneId}` };
   }
 
+  const paneData = ctx.contentDataRef.current[paneId];
   ctx.closeContentPane(paneId, nodePath);
 
-  return { success: true, closedPaneId: paneId };
+  return {
+    success: true,
+    closedPaneId: paneId,
+    title: getPaneTitle(paneData),
+    type: paneData?.contentType || 'unknown'
+  };
 }
 
 async function focus_pane(
@@ -240,7 +246,14 @@ async function focus_pane(
 
   ctx.setActiveContentPaneId(paneId);
 
-  return { success: true, activePaneId: paneId };
+  const focusedData = ctx.contentDataRef.current[paneId];
+  return {
+    success: true,
+    activePaneId: paneId,
+    title: getPaneTitle(focusedData),
+    type: focusedData?.contentType || 'unknown',
+    contentId: focusedData?.contentId || null
+  };
 }
 
 async function split_pane(
@@ -310,7 +323,10 @@ async function list_panes(
 
   const enrichedPanes = panes.map(pane => {
     const data = ctx.contentDataRef.current[pane.id] || {};
-    const extra: Record<string, any> = {};
+    const extra: Record<string, any> = {
+      title: getPaneTitle(data),
+      contentId: data.contentId || null,
+    };
     if (data.browserUrl) extra.url = data.browserUrl;
     if (data.shellType) extra.shellType = data.shellType;
     if (data.contentId && typeof data.contentId === 'string' && data.contentId.includes('/')) {

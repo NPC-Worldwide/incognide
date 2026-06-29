@@ -146,7 +146,6 @@ const SememolutionPanel: React.FC = () => {
     const [detail, setDetail] = useState<PopulationDetail | null>(null);
     const [showCreate, setShowCreate] = useState(false);
 
-    // Refresh KG size so we know if the user is eligible to enable Sememolution.
     const fetchKgSize = useCallback(async () => {
         try {
             const g = await api?.kg_getGraphData?.({ generation: null });
@@ -154,7 +153,7 @@ const SememolutionPanel: React.FC = () => {
             const facts = nodes.filter((n: any) => n.type === 'fact').length;
             const concepts = nodes.filter((n: any) => n.type === 'concept').length;
             setKgSize({ facts, concepts });
-        } catch { /* ignore */ }
+        } catch {}
     }, [api]);
     useEffect(() => { fetchKgSize(); }, [fetchKgSize]);
 
@@ -341,7 +340,6 @@ const SememolutionPanel: React.FC = () => {
         <div className="flex-1 flex flex-col overflow-hidden">
             {header}
             <div className="flex-1 overflow-hidden flex">
-            {/* LEFT: population list */}
             <div className="w-64 border-r theme-border flex flex-col flex-shrink-0">
                 <div className="flex items-center justify-between px-3 py-2 border-b theme-border">
                     <div className="flex items-center gap-1.5">
@@ -409,7 +407,6 @@ const SememolutionPanel: React.FC = () => {
                 </div>
             </div>
 
-            {/* RIGHT: population detail */}
             <div className="flex-1 overflow-hidden flex flex-col min-w-0">
                 {!selectedId && (
                     <div className="flex-1 flex items-center justify-center theme-text-muted text-sm italic">
@@ -438,7 +435,6 @@ const SememolutionPanel: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Stats strip */}
                         <div className="px-4 py-1.5 border-b theme-border flex items-center gap-4 text-[11px] theme-text-muted">
                             <span>individuals: <span className="theme-text-primary font-mono">{detail.stats?.total}</span></span>
                             <span>avg fit: <span className="theme-text-primary font-mono">{fmt(detail.stats?.avg_fitness)}</span></span>
@@ -448,7 +444,6 @@ const SememolutionPanel: React.FC = () => {
                             <span>λbreadth μ: <span className="theme-text-primary font-mono">{fmt(detail.stats?.lambda_breadth?.mean, 2)}</span></span>
                         </div>
 
-                        {/* Query box */}
                         <div className="px-4 py-2 border-b theme-border">
                             <div className="flex items-center gap-2">
                                 <input type="text" value={queryText} onChange={e => setQueryText(e.target.value)}
@@ -477,7 +472,6 @@ const SememolutionPanel: React.FC = () => {
                             )}
                         </div>
 
-                        {/* Individuals list */}
                         <div className="flex-1 overflow-y-auto">
                             {detail.individuals.map(ind => {
                                 const draft = genomeDrafts[ind.individual_id];

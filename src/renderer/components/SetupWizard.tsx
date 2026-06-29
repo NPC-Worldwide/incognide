@@ -505,7 +505,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                     <p className="text-gray-400 text-sm">Set up local and cloud providers. Skip anything you don't need.</p>
                 </div>
 
-                {/* Local Providers */}
                 <div className="space-y-2">
                     <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
                         <Cpu size={14} /> Local Providers
@@ -559,13 +558,11 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                     </button>
                 </div>
 
-                {/* Cloud / API Providers */}
                 <div className="space-y-2">
                     <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
                         <Cloud size={14} /> Cloud Providers
                     </h3>
 
-                    {/* Detected keys */}
                     {detectedProviders.length > 0 && (
                         <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-2 text-xs text-green-300">
                             <div className="flex items-center gap-1 mb-1">
@@ -580,7 +577,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                         </div>
                     )}
 
-                    {/* Provider inputs */}
                     {addedProviders.length > 0 && addedProviders.map(k => (
                         <div key={k.envVar} className="flex items-center gap-2">
                             <div className="flex-1">
@@ -603,7 +599,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                         </div>
                     ))}
 
-                    {/* Add provider dropdown */}
                     <div className="flex gap-2">
                         <select
                             value={selectedProviderToAdd}
@@ -627,7 +622,6 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                         </select>
                     </div>
 
-                    {/* Custom provider form */}
                     {showCustomProvider && (
                         <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3 space-y-3">
                             <h4 className="text-xs font-medium text-gray-300">Custom Provider</h4>

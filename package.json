@@ -1,6 +1,6 @@
 {
   "name": "incognide",
-  "version": "0.2.18",
+  "version": "0.2.19",
   "description": "Explore the unknown, build the future, own your data.",
   "author": "Chris Agostino <info@npcworldwi.de>",
   "license": "MIT",
@@ -85,6 +85,18 @@
       {
         "ext": "mkv",
         "name": "Video"
+      },
+      {
+        "ext": "mov",
+        "name": "Video"
+      },
+      {
+        "ext": "docx",
+        "name": "Word Document"
+      },
+      {
+        "ext": "odt",
+        "name": "OpenDocument Text"
       },
       {
         "ext": "js",

@@ -102,15 +102,13 @@ export const useSync = (): UseSyncReturn => {
         try {
             const deviceId = await (window as any).api?.getDeviceId?.();
 
-            // --- PUSH ---
             const pushToken = await getToken();
             if (!pushToken) throw new Error('No auth token');
 
-            // First sync ever for this device — do a full dump
             const initialSyncDone = localStorage.getItem('incognide-initial-sync-done');
             const needsFullDump = !initialSyncDone;
             const since = needsFullDump ? '1970-01-01T00:00:00.000Z' : (lastSyncRef.current?.toISOString() || '1970-01-01T00:00:00.000Z');
-            setSyncProgress(5); // exporting local data
+            setSyncProgress(5);
             const data = await (window as any).api?.syncExportData?.({ since, fullDump: needsFullDump });
             const changes: Array<{
                 entity_type: string; entity_id: string;
@@ -129,7 +127,7 @@ export const useSync = (): UseSyncReturn => {
                     changes.push({ entity_type: 'message', entity_id: msg.message_id, encrypted_data, iv, action: 'upsert' });
                     encryptedCount++;
                     if (encryptedCount % 100 === 0) {
-                        const encProgress = 10 + Math.round((encryptedCount / totalItems) * 10); // 10-20%
+                        const encProgress = 10 + Math.round((encryptedCount / totalItems) * 10);
                         setSyncProgress(encProgress);
                     }
                 }
@@ -143,12 +141,11 @@ export const useSync = (): UseSyncReturn => {
                     changes.push({ entity_type: 'history', entity_id: `hist_${h.id}`, encrypted_data, iv, action: 'upsert' });
                     encryptedCount++;
                 }
-                setSyncProgress(25); // encryption done
+                setSyncProgress(25);
             }
 
             let totalPushed = 0;
             if (changes.length > 0) {
-                // Size-aware batching: accumulate up to ~500KB per request
                 const MAX_BATCH_BYTES = 500 * 1024;
                 const batches: typeof changes[] = [];
                 let current: typeof changes = [];
@@ -172,7 +169,7 @@ export const useSync = (): UseSyncReturn => {
                 for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
                     const batch = batches[batchIdx];
                     const batchNum = batchIdx + 1;
-                    const startProgress = 25 + Math.round((batchIdx / totalBatches) * 35); // 25-60%
+                    const startProgress = 25 + Math.round((batchIdx / totalBatches) * 35);
                     setSyncProgress(startProgress);
 
                     const token = await getToken();
@@ -200,8 +197,7 @@ export const useSync = (): UseSyncReturn => {
                 console.log('[SYNC] Nothing to push');
             }
 
-            // --- PULL (fresh token in case push took a while) ---
-            setSyncProgress(65); // pull starts at 65%
+            setSyncProgress(65);
             const pullToken = await getToken();
             if (!pullToken) throw new Error('No auth token for pull');
 
@@ -213,7 +209,7 @@ export const useSync = (): UseSyncReturn => {
 
             const pullData = await pullResp.json();
             const pullChanges = pullData.changes || [];
-            setSyncProgress(80); // received data = 80%
+            setSyncProgress(80);
 
             if (pullChanges.length > 0) {
                 const messages: any[] = [];
@@ -234,7 +230,7 @@ export const useSync = (): UseSyncReturn => {
                     }
                 }
 
-                setSyncProgress(90); // decrypted
+                setSyncProgress(90);
                 const imported = await (window as any).api?.syncImportData?.({ messages, bookmarks, history });
                 console.log(`[SYNC] Imported:`, imported);
             } else {
@@ -261,7 +257,6 @@ export const useSync = (): UseSyncReturn => {
         }
     }, [isOnline, isAuthenticated, isEncryptionReady, getToken]);
 
-    // Auto-sync interval — stable deps, no recreation loop
     useEffect(() => {
         const intervalMs = SYNC_FREQUENCIES[syncFrequency];
         if (syncIntervalRef.current) {
@@ -271,7 +266,6 @@ export const useSync = (): UseSyncReturn => {
 
         if (!isAuthenticated || !isOnline || !isEncryptionReady || intervalMs === 0) return;
 
-        // Initial sync on mount
         triggerSync();
 
         syncIntervalRef.current = setInterval(triggerSync, intervalMs);

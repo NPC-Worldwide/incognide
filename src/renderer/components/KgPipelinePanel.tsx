@@ -201,7 +201,6 @@ const KgPipelinePanel: React.FC<KgPipelinePanelProps> = ({ currentPath }) => {
 
     return (
         <div className="flex flex-col gap-3 p-3 border-b theme-border bg-gray-950/60">
-            {/* Header */}
             <div className="flex items-center justify-between">
                 <h4 className="text-xs font-bold theme-text-primary flex items-center gap-1.5">
                     <Terminal size={13} className="text-green-400" />
@@ -212,7 +211,6 @@ const KgPipelinePanel: React.FC<KgPipelinePanelProps> = ({ currentPath }) => {
                 </span>
             </div>
 
-            {/* Step cards */}
             <div className="grid grid-cols-4 gap-2">
                 {STEPS.map((s) => {
                     const active = step === s.id;
@@ -237,7 +235,6 @@ const KgPipelinePanel: React.FC<KgPipelinePanelProps> = ({ currentPath }) => {
             </div>
             <p className="text-[10px] theme-text-muted -mt-1">{activeStep.desc}</p>
 
-            {/* Registry Editor */}
             <div className="space-y-2 border border-gray-700/50 rounded bg-gray-900/30 p-2">
                 <div className="flex items-center justify-between">
                     <span className="text-[11px] font-bold theme-text-primary flex items-center gap-1">
@@ -297,7 +294,6 @@ const KgPipelinePanel: React.FC<KgPipelinePanelProps> = ({ currentPath }) => {
                     )}
                 </div>
 
-                {/* Add to Registry */}
                 <div className="flex items-center gap-1 pt-1 border-t border-gray-700/30">
                     <input
                         type="text"
@@ -315,7 +311,6 @@ const KgPipelinePanel: React.FC<KgPipelinePanelProps> = ({ currentPath }) => {
                     </button>
                 </div>
 
-                {/* Discover */}
                 <div className="flex items-center gap-1">
                     <input
                         type="text"
@@ -334,7 +329,6 @@ const KgPipelinePanel: React.FC<KgPipelinePanelProps> = ({ currentPath }) => {
                 </div>
             </div>
 
-            {/* Settings */}
             <div className="grid grid-cols-1 gap-2">
                 <select
                     value={modelProvider}
@@ -425,7 +419,6 @@ const KgPipelinePanel: React.FC<KgPipelinePanelProps> = ({ currentPath }) => {
                 )}
             </div>
 
-            {/* Run / Error */}
             <div className="flex items-center gap-2">
                 {running ? (
                     <button
@@ -451,7 +444,6 @@ const KgPipelinePanel: React.FC<KgPipelinePanelProps> = ({ currentPath }) => {
                 </div>
             )}
 
-            {/* Logs */}
             {logs.length > 0 && (
                 <div className="border border-gray-700 rounded bg-black/50 p-2 space-y-1 max-h-60 overflow-y-auto font-mono text-[10px]">
                     {logs.map((entry, i) => (

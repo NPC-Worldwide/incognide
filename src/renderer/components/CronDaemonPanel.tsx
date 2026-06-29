@@ -24,9 +24,6 @@ interface CronDaemonPanelProps {
   isPane?: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Cron helpers
-// ---------------------------------------------------------------------------
 function parseCron(cron: string): { freq: string; minute: string; hour: string; dayOfWeek: string; dayOfMonth: string } {
   const parts = (cron || '* * * * *').trim().split(/\s+/);
   const [min = '*', hr = '*', dom = '*', mon = '*', dow = '*'] = parts;
@@ -68,9 +65,6 @@ function humanizeCron(cron: string): string {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Job form builders
-// ---------------------------------------------------------------------------
 interface JobFormProps {
   job: JobConfig;
   onChange: (patch: Partial<JobConfig>) => void;
@@ -396,9 +390,6 @@ const ScheduleBuilder: React.FC<{ cron: string; onChange: (cron: string) => void
   );
 };
 
-// ---------------------------------------------------------------------------
-// Main Panel
-// ---------------------------------------------------------------------------
 const CronDaemonPanel: React.FC<CronDaemonPanelProps> = ({
   isOpen,
   onClose,
@@ -442,7 +433,6 @@ const CronDaemonPanel: React.FC<CronDaemonPanelProps> = ({
     try {
       const r = await api?.scheduledJobList?.();
       const list: any[] = r?.jobs || r || [];
-      // Ensure defaults are present if table is empty
       const ensure = (id: string, name: string, type: string, schedule: string) => {
         const existing = list.find((j: any) => j.job_type === type || j.id === id);
         if (existing) {
@@ -569,7 +559,6 @@ const CronDaemonPanel: React.FC<CronDaemonPanelProps> = ({
       const res = await api?.scheduledJobRunNow?.(job.id);
       if (res?.error) throw new Error(res.error);
       await loadJobs();
-      // auto-expand logs
       setExpandedLogs(prev => new Set(prev).add(job.id));
       loadLogs(job.id);
     } catch (e: any) {
@@ -658,7 +647,6 @@ const CronDaemonPanel: React.FC<CronDaemonPanelProps> = ({
           const jobLogs = logsMap[job.id] || [];
           return (
             <div key={job.id} className="border theme-border rounded-lg p-3 space-y-3">
-              {/* Header */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   {job.job_type === 'finetune_instruction' && <FileText size={14} className="text-purple-400" />}
@@ -703,23 +691,19 @@ const CronDaemonPanel: React.FC<CronDaemonPanelProps> = ({
                 </div>
               </div>
 
-              {/* Schedule Builder */}
               <ScheduleBuilder
                 cron={job.schedule}
                 onChange={cron => updateJob(idx, { schedule: cron })}
               />
 
-              {/* Params */}
               {renderJobForm(job, idx)}
 
-              {/* Last run */}
               {job.last_run_at && (
                 <div className="text-[10px] theme-text-muted flex items-center gap-1">
                   <Clock size={10} /> Last run: {new Date(job.last_run_at).toLocaleString()}
                 </div>
               )}
 
-              {/* Save */}
               <button
                 onClick={() => saveJob(job)}
                 disabled={savingId === job.id}
@@ -729,7 +713,6 @@ const CronDaemonPanel: React.FC<CronDaemonPanelProps> = ({
                 Save
               </button>
 
-              {/* Logs */}
               {isExpanded && (
                 <div className="border-t theme-border pt-2 space-y-1">
                   <div className="text-[10px] font-semibold theme-text-secondary flex items-center gap-1">
@@ -760,7 +743,6 @@ const CronDaemonPanel: React.FC<CronDaemonPanelProps> = ({
           );
         })}
 
-        {/* Add new job */}
         {showAdd ? (
           <div className="border theme-border rounded-lg p-3 space-y-2">
             <label className="text-xs theme-text-secondary block">New Job Name</label>

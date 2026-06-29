@@ -556,7 +556,7 @@ const CsvViewer = ({
     const [localEditName, setLocalEditName] = useState('');
     const renameInputRef = useRef<HTMLInputElement>(null);
 
-    const isXlsx = filePath?.endsWith('.xlsx') || filePath?.endsWith('.xls');
+    const isXlsx = filePath?.endsWith('.xlsx') || filePath?.endsWith('.xls') || filePath?.endsWith('.ods');
 
     useEffect(() => {
         loadSpreadsheet();

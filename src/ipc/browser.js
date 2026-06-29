@@ -360,7 +360,6 @@ function register(ctx) {
       const forwardAndClose = (realUrl) => {
         if (handled) return;
         if (!realUrl || realUrl === 'about:blank') return;
-        // Let localhost OAuth callbacks (e.g. gcloud's localhost:8085) reach local HTTP servers
         if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(realUrl)) {
           log('[Browser] Popup navigated to localhost (OAuth callback), skipping forward:', realUrl);
           return;
@@ -1011,7 +1010,7 @@ function register(ctx) {
   ipcMain.handle('browser-get-selected-text', (event, { viewId }) => {
     if (browserViews.has(viewId)) {
       return new Promise((resolve) => {
-        browserViews.get(viewId).view.webContents.executeJavaScript(` // Access webContents via .view
+        browserViews.get(viewId).view.webContents.executeJavaScript(`
           window.getSelection().toString();
         `).then(selectedText => {
           resolve({ success: true, selectedText });

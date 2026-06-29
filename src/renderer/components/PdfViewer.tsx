@@ -1,5 +1,6 @@
 import { getFileName } from './utils';
 import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
+import { createPortal } from 'react-dom';
 import { Viewer, Worker, SpecialZoomLevel, ScrollMode, ViewMode } from '@react-pdf-viewer/core';
 import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
 import { zoomPlugin } from '@react-pdf-viewer/zoom';
@@ -13,6 +14,7 @@ import {
 import PdfDrawingCanvas from './PdfDrawingCanvas';
 import SignatureModal from './SignatureModal';
 import { useAiEnabled } from './AiFeatureContext';
+import { useLayoutEffect } from 'react';
 
 import '@react-pdf-viewer/core/lib/styles/index.css';
 import '@react-pdf-viewer/default-layout/lib/styles/index.css';
@@ -104,7 +106,8 @@ const PdfContextMenu = ({
     selectedPdfText,
     selectedColor,
     setSelectedColor,
-    onAddComment
+    onAddComment,
+    wrapperRef
 }) => {
 
     const aiEnabled = useAiEnabled();
@@ -128,19 +131,40 @@ const PdfContextMenu = ({
         setPdfContextMenuPos(null);
     }, [handleApplyPromptToPdfText, selectedPdfText, setPdfContextMenuPos]);
 
+    const menuRef = React.useRef<HTMLDivElement>(null);
+    const [pos, setPos] = React.useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+    React.useLayoutEffect(() => {
+        if (!pdfContextMenuPos) return;
+        const menu = menuRef.current;
+        const wrapper = wrapperRef?.current;
+        let bounds = { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+        try {
+            if (wrapper) {
+                const r = wrapper.getBoundingClientRect();
+                bounds = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+            }
+        } catch {}
+        const width = menu?.offsetWidth || 160;
+        const height = menu?.offsetHeight || 100;
+        let x = pdfContextMenuPos.x;
+        let y = pdfContextMenuPos.y;
+        if (x + width > bounds.right) x = bounds.right - width;
+        if (y + height > bounds.bottom) y = bounds.bottom - height;
+        if (x < bounds.left) x = bounds.left;
+        if (y < bounds.top) y = bounds.top;
+        setPos({ x, y });
+    }, [pdfContextMenuPos, wrapperRef]);
+
     if (!pdfContextMenuPos) return null;
 
-    const menuWidth = 180;
-    const menuHeight = 220;
-    const clampedX = Math.min(pdfContextMenuPos.x, window.innerWidth - menuWidth);
-    const clampedY = Math.min(pdfContextMenuPos.y, window.innerHeight - menuHeight);
-
-    return (
+    const menuContent = (
         <>
             <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setPdfContextMenuPos(null)} />
             <div
+                ref={menuRef}
                 className="fixed theme-bg-secondary theme-border border rounded shadow-lg py-1 z-50 text-sm min-w-[160px]"
-                style={{ top: Math.max(0, clampedY), left: Math.max(0, clampedX) }}
+                style={{ top: pos.y, left: pos.x }}
                 onMouseDown={(e) => e.preventDefault()}
             >
                 {selectedPdfText?.text ? (
@@ -192,6 +216,8 @@ const PdfContextMenu = ({
             </div>
         </>
     );
+
+    return createPortal(menuContent, document.body);
 };
 
 const AnnotationsPanel = ({
@@ -538,6 +564,7 @@ const PdfViewer = ({
     const [currentScale, setCurrentScale] = useState(1);
     const [inlineComment, setInlineComment] = useState<{ highlightId: number; x: number; y: number } | null>(null);
     const [inlineCommentText, setInlineCommentText] = useState('');
+    const [commentMode, setCommentMode] = useState<'view' | 'edit'>('edit');
 
     const [drawingMode, setDrawingMode] = useState(false);
     const [drawingTool, setDrawingTool] = useState<'pen' | 'eraser' | null>(null);
@@ -575,18 +602,18 @@ const PdfViewer = ({
         }
         const scale = currentScale || 1;
         style.textContent = `
-            :root, html, body,
             .pdf-viewer-container,
-            .pdf-viewer-container *,
-            .rpv-core__viewer,
-            .rpv-core__inner-pages,
-            .rpv-core__inner-page,
-            .rpv-core__page-layer,
-            .rpv-core__text-layer {
+            .pdf-viewer-container .rpv-core__viewer,
+            .pdf-viewer-container .rpv-core__inner-pages,
+            .pdf-viewer-container .rpv-core__inner-page,
+            .pdf-viewer-container .rpv-core__page-layer,
+            .pdf-viewer-container .rpv-core__text-layer,
+            .pdf-viewer-container .rpv-core__text-layer span {
                 --scale-factor: ${scale} !important;
+                --rpv-scale-factor: ${scale} !important;
             }
-            .rpv-core__text-layer,
-            .rpv-core__text-layer span {
+            .pdf-viewer-container .rpv-core__text-layer,
+            .pdf-viewer-container .rpv-core__text-layer span {
                 color: transparent !important;
                 -webkit-text-fill-color: transparent !important;
                 fill: transparent !important;
@@ -847,15 +874,12 @@ const PdfViewer = ({
     }, [textInput, filePath, drawingColor, loadDrawings]);
 
 
-    // Helper to ensure we have the PDF buffer (load from cache or disk)
     const ensurePdfBuffer = useCallback(async (): Promise<ArrayBuffer | null> => {
-        // First try cache
         let buffer = pdfBufferCache.get(filePath);
         if (buffer) {
             return buffer;
         }
-        
-        // Cache miss - try to reload from disk
+
         if (!filePath) {
             console.error('[PdfViewer] No filePath available');
             return null;
@@ -923,7 +947,6 @@ const PdfViewer = ({
                     const fontFamily = parts.length >= 3 && parts[0] === 'TEXT' ? parts[1] : "'Dancing Script', cursive";
                     const displayText = parts.length >= 3 && parts[0] === 'TEXT' ? parts.slice(2).join(':') : d.svg_path;
 
-                    // Render signature with correct font to canvas, embed as image
                     const sigCanvas = document.createElement('canvas');
                     const fontSize = 48;
                     const sigCtx = sigCanvas.getContext('2d')!;
@@ -933,7 +956,6 @@ const PdfViewer = ({
                     const textHeight = Math.ceil(fontSize * 1.4);
                     sigCanvas.width = textWidth;
                     sigCanvas.height = textHeight;
-                    // Re-set font after resize
                     sigCtx.font = `${fontSize}px ${fontFamily}`;
                     sigCtx.fillStyle = d.stroke_color || '#000000';
                     sigCtx.textBaseline = 'top';
@@ -1050,7 +1072,6 @@ const PdfViewer = ({
             }
         } catch (err) {
             console.error('[PdfViewer] Save dialog failed, using fallback:', err);
-            // Fallback: blob download
             try {
                 const blob = new Blob([pdfBytes], { type: 'application/pdf' });
                 const url = URL.createObjectURL(blob);
@@ -1089,8 +1110,7 @@ const PdfViewer = ({
             const iframe = document.createElement('iframe');
             iframe.style.display = 'none';
             iframe.src = url;
-            
-            // Handle print completion and cleanup
+
             const cleanup = () => {
                 try {
                     if (iframe.parentNode) {
@@ -1107,7 +1127,6 @@ const PdfViewer = ({
                 setTimeout(() => {
                     try {
                         iframe.contentWindow?.print();
-                        // Cleanup after print dialog closes
                         setTimeout(cleanup, 1000);
                     } catch (err) {
                         console.error('[PdfViewer] Print command failed:', err);
@@ -1116,8 +1135,7 @@ const PdfViewer = ({
                     }
                 }, 500);
             };
-            
-            // Handle error case
+
             iframe.onerror = () => {
                 console.error('[PdfViewer] Failed to load PDF in print iframe');
                 cleanup();
@@ -1292,6 +1310,8 @@ const PdfViewer = ({
                     bubble.addEventListener('click', (e) => {
                         e.stopPropagation();
                         const bubbleRect = bubble.getBoundingClientRect();
+                        const hasAnnotation = !!(highlight.content?.annotation);
+                        setCommentMode(hasAnnotation ? 'view' : 'edit');
                         setInlineComment({ highlightId: highlight.id, x: bubbleRect.right + 4, y: bubbleRect.top });
                         setInlineCommentText(highlight.content?.annotation || '');
                     });
@@ -1349,26 +1369,21 @@ const PdfViewer = ({
                     overflow: visible;
                 `;
 
-                // Helper: add drag + resize to a foreignObject-based drawing
                 const addDragResize = (fo: SVGForeignObjectElement, d: any, div: HTMLElement) => {
                     fo.style.pointerEvents = 'auto';
                     fo.style.cursor = 'grab';
 
-                    // Resize handle (bottom-right corner)
                     const handle = document.createElement('div');
                     handle.style.cssText = `position: absolute; right: 0; bottom: 0; width: 10px; height: 10px; cursor: nwse-resize; background: rgba(59,130,246,0.5); border-radius: 2px; pointer-events: auto; opacity: 0; transition: opacity 0.15s;`;
-                    // Show handle on hover over foreignObject
                     fo.addEventListener('mouseenter', () => { handle.style.opacity = '1'; });
                     fo.addEventListener('mouseleave', () => { handle.style.opacity = '0'; });
 
-                    // Wrap content in a positioned container
                     const wrapper = document.createElement('div');
                     wrapper.style.cssText = 'position: relative; width: 100%; height: 100%; pointer-events: none;';
                     wrapper.appendChild(div);
                     wrapper.appendChild(handle);
                     fo.appendChild(wrapper);
 
-                    // Resize
                     handle.addEventListener('mousedown', (e: MouseEvent) => {
                         if (e.button !== 0) return;
                         e.preventDefault(); e.stopPropagation();
@@ -1406,7 +1421,6 @@ const PdfViewer = ({
                         document.addEventListener('mouseup', onUp);
                     });
 
-                    // Drag (on the foreignObject itself, not the handle)
                     let dragStart: { mx: number; my: number; ox: number; oy: number } | null = null;
                     fo.addEventListener('mousedown', (e: MouseEvent) => {
                         if (e.button !== 0 || (e.target as HTMLElement) === handle) return;
@@ -1480,7 +1494,6 @@ const PdfViewer = ({
                         hitRect.style.pointerEvents = 'auto';
                         hitRect.style.cursor = 'grab';
                         g.appendChild(hitRect);
-                        // Resize handle for drawn signature
                         const resizeRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
                         resizeRect.setAttribute('x', '90'); resizeRect.setAttribute('y', '90');
                         resizeRect.setAttribute('width', '10'); resizeRect.setAttribute('height', '10');
@@ -1502,7 +1515,6 @@ const PdfViewer = ({
                         path.setAttribute('stroke-linejoin', 'round');
                         path.style.pointerEvents = 'none';
                         g.appendChild(path);
-                        // Resize handler
                         resizeRect.addEventListener('mousedown', (e: MouseEvent) => {
                             if (e.button !== 0) return;
                             e.preventDefault(); e.stopPropagation();
@@ -1533,7 +1545,6 @@ const PdfViewer = ({
                             document.addEventListener('mousemove', onMove);
                             document.addEventListener('mouseup', onUp);
                         });
-                        // Drag handler
                         let sigDragStart: { mx: number; my: number; ox: number; oy: number } | null = null;
                         hitRect.addEventListener('mousedown', (e: MouseEvent) => {
                             if (e.button !== 0) return;
@@ -2026,7 +2037,18 @@ const PdfViewer = ({
                     if (!text || !position) return;
                     await saveHighlight(text, position, color || selectedColor);
                     setShowAnnotationsPanel(true);
+                    await loadHighlights();
+                    const newHighlight = localHighlights
+                        .slice()
+                        .sort((a, b) => b.id - a.id)
+                        .find((h) => h.content?.text === text);
+                    if (newHighlight && localContextMenuPos) {
+                        setCommentMode('edit');
+                        setInlineComment({ highlightId: newHighlight.id, x: localContextMenuPos.x, y: localContextMenuPos.y });
+                        setInlineCommentText('');
+                    }
                 }}
+                wrapperRef={viewerWrapperRef}
             />
 
             {inlineComment && (
@@ -2041,40 +2063,73 @@ const PdfViewer = ({
                             <MessageSquare size={14} className="text-gray-400" />
                             <span className="text-xs font-medium text-gray-300">Comment</span>
                         </div>
-                        <textarea
-                            value={inlineCommentText}
-                            onChange={(e) => setInlineCommentText(e.target.value)}
-                            placeholder="Add a comment..."
-                            className="w-full p-2 text-xs rounded bg-gray-800 border theme-border resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            rows={3}
-                            autoFocus
-                        />
-                        <div className="flex gap-1.5 mt-2">
-                            <button
-                                onClick={async () => {
-                                    await handleUpdateHighlight(inlineComment.highlightId, inlineCommentText);
-                                    setInlineComment(null);
-                                }}
-                                className="flex-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-xs font-medium"
-                            >
-                                Save
-                            </button>
-                            <button
-                                onClick={() => {
-                                    handleDeleteHighlight(inlineComment.highlightId);
-                                    setInlineComment(null);
-                                }}
-                                className="px-3 py-1.5 bg-red-600/20 hover:bg-red-600/40 text-red-400 rounded text-xs"
-                            >
-                                Delete
-                            </button>
-                            <button
-                                onClick={() => setInlineComment(null)}
-                                className="px-3 py-1.5 bg-gray-600 hover:bg-gray-500 rounded text-xs"
-                            >
-                                Cancel
-                            </button>
-                        </div>
+                        {commentMode === 'view' ? (
+                            <>
+                                <p className="text-xs text-gray-200 whitespace-pre-wrap mb-3">{inlineCommentText}</p>
+                                <div className="flex gap-1.5">
+                                    <button
+                                        onClick={() => setCommentMode('edit')}
+                                        className="flex-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-xs font-medium"
+                                    >
+                                        Edit
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            handleDeleteHighlight(inlineComment.highlightId);
+                                            setInlineComment(null);
+                                        }}
+                                        className="px-3 py-1.5 bg-red-600/20 hover:bg-red-600/40 text-red-400 rounded text-xs"
+                                    >
+                                        Delete
+                                    </button>
+                                    <button
+                                        onClick={() => setInlineComment(null)}
+                                        className="px-3 py-1.5 bg-gray-600 hover:bg-gray-500 rounded text-xs"
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <textarea
+                                    value={inlineCommentText}
+                                    onChange={(e) => setInlineCommentText(e.target.value)}
+                                    placeholder="Add a comment..."
+                                    className="w-full p-2 text-xs rounded bg-gray-800 border theme-border resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    rows={3}
+                                    autoFocus
+                                />
+                                <div className="flex gap-1.5 mt-2">
+                                    <button
+                                        onClick={async () => {
+                                            await handleUpdateHighlight(inlineComment.highlightId, inlineCommentText);
+                                            setCommentMode('view');
+                                        }}
+                                        className="flex-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-xs font-medium"
+                                    >
+                                        Save
+                                    </button>
+                                    {commentMode === 'edit' && (
+                                        <button
+                                            onClick={() => {
+                                                handleDeleteHighlight(inlineComment.highlightId);
+                                                setInlineComment(null);
+                                            }}
+                                            className="px-3 py-1.5 bg-red-600/20 hover:bg-red-600/40 text-red-400 rounded text-xs"
+                                        >
+                                            Delete
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => setInlineComment(null)}
+                                        className="px-3 py-1.5 bg-gray-600 hover:bg-gray-500 rounded text-xs"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </>
             )}

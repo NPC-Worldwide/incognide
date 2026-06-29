@@ -271,7 +271,6 @@ const GitPane: React.FC<GitPaneProps> = ({ nodeId, currentPath, openFileDiffPane
         } catch { return []; }
     }, [currentPath]);
 
-    // Initial load
     useEffect(() => {
         loadGitStatus();
     }, [loadGitStatus]);

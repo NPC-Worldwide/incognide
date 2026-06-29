@@ -24,6 +24,7 @@ const NPCTeamMenu = ({
 }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [saveSuccess, setSaveSuccess] = useState(false);
     const [npcs, setNpcs] = useState([]);
     const [selectedNpc, setSelectedNpc] = useState(null);
     const [editedNpc, setEditedNpc] = useState(null);
@@ -349,6 +350,7 @@ const NPCTeamMenu = ({
     };
 
     const handleSave = async () => {
+        setError(null);
         const jinxesToSave = editedNpc.jinxes.length === 1 &&
                editedNpc.jinxes[0] === '*'
             ? '*'
@@ -362,6 +364,12 @@ const NPCTeamMenu = ({
         let yamlContent: string;
         if (_original_content) {
             yamlContent = saveNPCFile(_original_content, cleanNpc);
+            for (const field of ['model', 'provider', 'api_url', 'api_key']) {
+                const value = cleanNpc[field];
+                if (value !== undefined && value !== null && value !== '' && !new RegExp(`^\\s*${field}\\s*:`, 'm').test(yamlContent)) {
+                    yamlContent = `${field}: ${value}\n${yamlContent}`;
+                }
+            }
         } else {
             const jinxValues = Array.isArray(cleanNpc.jinxes)
                 ? cleanNpc.jinxes.map((j: any) => {
@@ -373,13 +381,28 @@ const NPCTeamMenu = ({
                 : cleanNpc.jinxes;
             yamlContent = yaml.dump({ ...cleanNpc, jinxes: jinxValues }, { lineWidth: -1 });
         }
-        await writeFileContent(editedNpc.source_path, yamlContent);
+        const result = await writeFileContent(editedNpc.source_path, yamlContent);
+        if (result?.error) {
+            console.error('[NPCTeamMenu] Failed to save NPC:', result.error);
+            setError(`Failed to save NPC: ${result.error}`);
+            setSaveSuccess(false);
+            return;
+        }
+
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 2000);
 
         const updatedNpcs = await (teamKey
             ? window.api.getNPCTeamFromPath(teamKey)
             : window.api.getNPCTeamProject(currentPath));
         setNpcs(updatedNpcs.npcs || []);
-        setSelectedNpc(npcToSave);
+        const refreshed = (updatedNpcs.npcs || []).find((n: any) => n.name === npcToSave.name);
+        if (refreshed) {
+            setSelectedNpc(refreshed);
+            setEditedNpc({ ...refreshed, jinxes: refreshed.jinxes === '*' ? ['*'] : Array.isArray(refreshed.jinxes) ? refreshed.jinxes : refreshed.jinxes ? [refreshed.jinxes] : ['*'] });
+        } else {
+            setSelectedNpc(npcToSave);
+        }
     };
 
     const labelExecution = async (messageId, label) => {
@@ -588,6 +611,12 @@ const NPCTeamMenu = ({
                                                 >
                                                     <Save size={16} />
                                                 </button>
+                                                {saveSuccess && (
+                                                    <span className="text-xs text-green-400 self-center">Saved</span>
+                                                )}
+                                                {error && (
+                                                    <span className="text-xs text-red-400 self-center" title={error}>Error</span>
+                                                )}
                                             </div>
                                         </div>
 
@@ -656,7 +685,6 @@ const NPCTeamMenu = ({
                                                 </span>
                                             </div>
 
-                                            {/* Searchable dropdown to add jinxes */}
                                             <div className="relative mb-3"
                                             >
                                                 <div className="flex items-center
@@ -865,7 +893,6 @@ const NPCTeamMenu = ({
                                                 )}
                                             </div>
 
-                                            {/* Current patterns — sorted, one per line */}
                                             <div className="space-y-1"
                                             >
                                                 {editedNpc.jinxes?.length > 0 ? (
@@ -1198,7 +1225,6 @@ const NPCTeamMenu = ({
                                             </button>
                                         </div>
 
-                                        {/* Selection Action Bar */}
                                         <div className="flex items-center gap-2 p-2 bg-gray-800/50 rounded">
                                             <span className="text-xs text-gray-400">
                                                 {selectedMemories.size} selected

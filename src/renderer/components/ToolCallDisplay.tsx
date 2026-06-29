@@ -12,7 +12,6 @@ interface ToolCallProps {
   };
 }
 
-// Icons for studio action tool names
 const ACTION_ICONS: Record<string, React.ReactNode> = {
   list_panes: <Layout size={13} />,
   open_pane: <Layout size={13} />,
@@ -26,7 +25,6 @@ const ACTION_ICONS: Record<string, React.ReactNode> = {
   prompt: <Bell size={13} />,
 };
 
-// Human-readable action descriptions
 function describeAction(name: string, args: any): string {
   try {
     switch (name) {
@@ -109,7 +107,6 @@ export function ToolCallDisplay({ tool }: ToolCallProps) {
   try {
     parsedArgs = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : rawArgs;
   } catch {
-    // leave null
   }
 
   const resultVal = tool.result_preview || '';
@@ -127,7 +124,6 @@ export function ToolCallDisplay({ tool }: ToolCallProps) {
   const description = isStudioAction ? describeAction(displayName, parsedArgs) : displayName;
   const summary = isStudioAction && resultVal ? summarizeResult(displayName, resultVal) : null;
 
-  // Compact rendering for studio actions
   if (isStudioAction) {
     return (
       <div className={`my-1.5 rounded-md border-l-2 ${statusColor} overflow-hidden`}>
@@ -174,7 +170,6 @@ export function ToolCallDisplay({ tool }: ToolCallProps) {
     );
   }
 
-  // Default rendering for non-studio tools — collapsed by default
   const argDisplay = rawArgs && String(rawArgs).trim().length > 0
     ? (typeof rawArgs === 'string' ? rawArgs : JSON.stringify(rawArgs, null, 2))
     : 'No arguments';

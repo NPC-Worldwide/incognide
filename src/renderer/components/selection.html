@@ -57,7 +57,6 @@
                 height: parseInt(selection.style.height)
             };
 
-            // Only send if we actually drew something
             if (bounds.width > 0 && bounds.height > 0) {
                 console.log('Sending selection-complete with bounds:', bounds);
                 ipcRenderer.send('selection-complete', bounds);
@@ -67,7 +66,6 @@
             }
         });
 
-        // Cancel on escape
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 console.log('Escape pressed, cancelling');

@@ -50,7 +50,6 @@ function register(ctx) {
           } catch {}
       };
 
-      // Local venv dirs in workspace
       if (workspacePath) {
           for (const venvDir of ['.venv', 'venv', '.env', 'env']) {
               for (const bin of ['python3', 'python']) {
@@ -59,7 +58,6 @@ function register(ctx) {
           }
       }
 
-      // pyenv versions
       const pyenvRoot = process.env.PYENV_ROOT || path.join(home, '.pyenv');
       try {
           const versions = await fsPromises.readdir(path.join(pyenvRoot, 'versions'));
@@ -68,7 +66,6 @@ function register(ctx) {
           }
       } catch {}
 
-      // uv managed pythons
       for (const uvDir of [
           path.join(home, '.local', 'share', 'uv', 'python'),
           path.join(home, 'Library', 'Application Support', 'uv', 'python'),
@@ -81,7 +78,6 @@ function register(ctx) {
           } catch {}
       }
 
-      // conda environments
       try {
           const condaResult = await new Promise((resolve) => {
               const proc = spawn('conda', ['env', 'list', '--json'], { env: { ...process.env } });
@@ -107,8 +103,6 @@ function register(ctx) {
       try {
           const workspacePythonPath = await getWorkspacePythonPath(workspacePath);
 
-          // Get formally registered kernels — use workspace python, not a fixed binary,
-          // so we pick up whatever jupyter is on PATH/in the env.
           const registeredKernels = await new Promise((resolve) => {
               const proc = spawn(workspacePythonPath, ['-m', 'jupyter', 'kernelspec', 'list', '--json'], {
                   env: { ...process.env },
@@ -132,10 +126,8 @@ function register(ctx) {
               proc.on('error', () => resolve([]));
           });
 
-          // Discover unregistered python environments
           const discovered = await discoverPythonEnvironments(workspacePath);
 
-          // Get the python path embedded in each registered kernelspec so we can deduplicate
           const registeredPythons = new Set();
           for (const k of registeredKernels) {
               if (k.resourceDir) {
@@ -147,7 +139,6 @@ function register(ctx) {
               }
           }
 
-          // Add discovered envs that aren't already registered
           const extraKernels = [];
           for (const env of discovered) {
               try {
@@ -184,13 +175,11 @@ function register(ctx) {
       try {
           let pythonPath = pythonOverridePath || await getWorkspacePythonPath(workspacePath);
 
-          // Auto-register unregistered envs before starting
           if (needsRegistration && pythonOverridePath) {
               log(`[Jupyter] Auto-registering kernel: ${kernelName} with ${pythonOverridePath}`);
               const displayName = kernelName.replace(/_/g, ' ');
               const isUvManaged = pythonOverridePath.includes(`${path.sep}uv${path.sep}python${path.sep}`);
               const regResult = await new Promise((resolve) => {
-                  // uv-managed pythons need uv run to invoke ipykernel
                   const cmd = isUvManaged ? 'uv' : pythonOverridePath;
                   const args = isUvManaged
                       ? ['run', '--python', pythonOverridePath, '-m', 'ipykernel', 'install', '--user', '--name', kernelName, '--display-name', displayName]
@@ -404,7 +393,6 @@ try:
     client.start_channels()
     client.wait_for_ready(timeout=10)
 
-    # Introspection code to run in kernel
     introspect_code = '''
 import json
 def _incognide_get_variables():
@@ -412,7 +400,6 @@ def _incognide_get_variables():
     ns = ip.user_ns
     variables = []
     skip_types = (type, type(json), type(lambda: None))
-    # Skip IPython internals, system vars, and common imports
     skip_names = {
         'In', 'Out', 'get_ipython', 'exit', 'quit',
         '_', '__', '___', '_i', '_ii', '_iii', '_oh', '_dh', '_sh',
@@ -427,7 +414,6 @@ def _incognide_get_variables():
         'IPython', 'ipykernel', 'traitlets',
         'display', 'HTML', 'Image', 'Markdown',
     }
-    # Also skip anything that looks like an internal/config var
     skip_prefixes = ('_', 'original_', 'is_', 'has_', 'PYTHON', 'LC_', 'XDG_')
 
     for name, val in ns.items():
@@ -435,13 +421,11 @@ def _incognide_get_variables():
             continue
         if isinstance(val, skip_types):
             continue
-        # Skip modules
         if type(val).__name__ == 'module':
             continue
 
         var_info = {'name': name, 'type': type(val).__name__}
 
-        # Get size/shape info
         try:
             if hasattr(val, 'shape'):
                 var_info['shape'] = str(val.shape)
@@ -452,7 +436,6 @@ def _incognide_get_variables():
         except:
             pass
 
-        # DataFrame specific info
         try:
             if type(val).__name__ == 'DataFrame':
                 var_info['columns'] = list(val.columns)[:20]
@@ -462,7 +445,6 @@ def _incognide_get_variables():
         except:
             pass
 
-        # Series info
         try:
             if type(val).__name__ == 'Series':
                 var_info['dtype'] = str(val.dtype)
@@ -470,7 +452,6 @@ def _incognide_get_variables():
         except:
             pass
 
-        # Get short repr
         try:
             r = repr(val)
             var_info['repr'] = r[:100] + '...' if len(r) > 100 else r
@@ -499,7 +480,6 @@ del _incognide_get_variables
                 result_json = text[idx + 8:].strip()
                 break
             elif t == 'error':
-                # Capture error from introspection
                 import sys
                 sys.stderr.write(f"Introspection error: {c.get('ename')}: {c.get('evalue')}\\n")
             elif t == 'status' and c.get('execution_state') == 'idle':
@@ -515,7 +495,6 @@ del _incognide_get_variables
         variables = json.loads(result_json)
         print(json.dumps({'success': True, 'variables': variables}))
     else:
-        # Debug: include the messages we received
         print(json.dumps({'success': True, 'variables': [], 'debug_msgs': all_msgs[:10]}))
 except Exception as e:
     print(json.dumps({'success': False, 'error': str(e), 'variables': []}))
@@ -597,10 +576,8 @@ def _incognide_get_df_data():
     total_rows = len(df)
     total_cols = len(df.columns)
 
-    # Get slice of data
     df_slice = df.iloc[{offset}:{offset}+{limit}]
 
-    # Convert to records, handling various types
     def safe_val(v):
         if pd.isna(v):
             return None
@@ -614,7 +591,6 @@ def _incognide_get_df_data():
     for idx, row in df_slice.iterrows():
         rows.append({{"__index__": safe_val(idx), **{{col: safe_val(row[col]) for col in df.columns}}}})
 
-    # Column info with stats
     columns = []
     for col in df.columns:
         col_info = {{"name": str(col), "dtype": str(df[col].dtype)}}
@@ -849,7 +825,6 @@ except Exception as e:
       });
 
       if (isUvManaged) {
-          // uv-managed base pythons are externally managed (PEP 668) — use uv pip install
           const result = await doInstall('uv', ['pip', 'install', '--python', pythonPath, 'ipykernel', 'jupyter_client']);
           if (!result.success) return result;
       } else {

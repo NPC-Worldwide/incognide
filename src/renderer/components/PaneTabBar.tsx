@@ -102,9 +102,6 @@ const getTabIcon = (contentType: string) => {
 };
 
 const getTabTitle = (tab: Tab, contentDataRef?: any, nodeId?: string): string => {
-    // For chat/agent tabs always compute from npc + id, ignore any stale title.
-    // Fall back to per-tab virtual data (kept in sync after stamp) or the parent pane
-    // data, so existing tabs get the current NPC name without needing re-creation.
     if (tab.contentType === 'chat' || tab.contentType === 'agent') {
         const virtualId = nodeId ? `${nodeId}_${tab.id}` : null;
         const vd = virtualId ? contentDataRef?.current?.[virtualId] : null;
@@ -120,7 +117,6 @@ const getTabTitle = (tab: Tab, contentDataRef?: any, nodeId?: string): string =>
         return shortId || (tab.contentType === 'agent' ? 'Agent' : 'Chat');
     }
 
-    // For file-based types, don't let stale raw content-type strings hide the file name
     const fileTypes = new Set(['editor', 'image', 'pdf', 'csv', 'latex', 'docx', 'pptx', 'zip', 'folder', 'markdown-preview']);
     const isFileBased = fileTypes.has(tab.contentType);
     if (tab.title && !isFileBased) return tab.title;

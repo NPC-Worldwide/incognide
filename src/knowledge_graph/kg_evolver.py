@@ -1,24 +1,3 @@
-"""
-Knowledge Graph Evolver — collects, links, and indexes local knowledge.
-
-Functional. No classes. No pickle, no json for model state.
-
-Sources:
-  - activity_log (types, paths, npcs)
-  - browser_history (urls, titles)
-  - autocomplete_suggestions/training (accepted text)
-  - jinx_execution_log (jinx names, npcs, paths)
-  - .knowledge.yaml files in ~/.incognide directories
-
-Operations:
-  - evolve: scan sources, extract entities, create triples, cross-link
-  - query: search entities and triples by keyword / relation
-  - crosslink: find entities appearing in multiple contexts and link them
-  - search: hybrid keyword + graph-traversal search
-
-Storage: SQLite tables kg_entities, kg_relations, kg_triples, kg_locations, kg_evolutions.
-"""
-
 import json
 import os
 import re
@@ -31,7 +10,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-# Ensure npcpy is importable from typical monorepo layouts
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 for _rel in (
     os.path.join(_SCRIPT_DIR, '..', '..', 'npcpy'),
@@ -46,14 +24,9 @@ try:
 except ImportError:
     KnowledgeStore = None
 
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-
 DEFAULT_DB_PATH = os.path.expanduser('~/.incognide/history.db')
 DEFAULT_MODEL_DIR = os.path.expanduser('~/.incognide/knowledge_graph')
 
-# Standard relation types seeded on first run
 STANDARD_RELATIONS = [
     ('located_in', 'spatial'),
     ('mentioned_in', 'contextual'),
@@ -67,7 +40,6 @@ STANDARD_RELATIONS = [
     ('similar_to', 'semantic'),
 ]
 
-# Stop words for entity extraction
 STOP_WORDS = {
     'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
     'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
@@ -89,16 +61,10 @@ STOP_WORDS = {
     'one', 'two', 'first', 'last', 'next', 'previous', 'new', 'old',
 }
 
-# ---------------------------------------------------------------------------
-# Entity extraction
-# ---------------------------------------------------------------------------
-
 
 def _extract_tokens(text: str) -> List[str]:
-    """Extract candidate entity tokens from text."""
     if not text:
         return []
-    # Lowercase, split on non-alphanumeric, filter length > 2, filter stop words
     tokens = re.findall(r'[a-zA-Z][a-zA-Z0-9_\-\.]{2,}', text)
     out = []
     for t in tokens:
@@ -109,7 +75,6 @@ def _extract_tokens(text: str) -> List[str]:
 
 
 def _extract_entities_from_json(data: str) -> List[Tuple[str, str, str]]:
-    """Extract (name, type, context) from JSON activity data."""
     entities = []
     try:
         obj = json.loads(data)
@@ -130,32 +95,22 @@ def _extract_entities_from_json(data: str) -> List[Tuple[str, str, str]]:
 
 
 def _extract_url_entities(url: str, title: str = '') -> List[Tuple[str, str, str]]:
-    """Extract domain and path tokens from a URL."""
     entities = []
     if not url:
         return entities
-    # Domain
     m = re.match(r'https?://([^/]+)', url)
     if m:
         domain = m.group(1)
         entities.append((domain, 'domain', url[:120]))
-        # Subdomain tokens
         for part in domain.split('.'):
             if len(part) > 2 and part not in STOP_WORDS:
                 entities.append((part, 'domain_part', domain))
-    # Path tokens
     path = url.split('://', 1)[-1].split('/', 1)[-1] if '/' in url else ''
     for tok in _extract_tokens(path):
         entities.append((tok, 'url_term', url[:120]))
-    # Title tokens
     for tok in _extract_tokens(title or ''):
         entities.append((tok, 'title_term', title[:120]))
     return entities
-
-
-# ---------------------------------------------------------------------------
-# Database helpers
-# ---------------------------------------------------------------------------
 
 
 def _get_conn(db_path: str) -> sqlite3.Connection:
@@ -165,7 +120,6 @@ def _get_conn(db_path: str) -> sqlite3.Connection:
 
 
 def _ensure_standard_relations(conn: sqlite3.Connection) -> Dict[str, int]:
-    """Seed standard relations, return name -> id mapping."""
     mapping = {}
     cursor = conn.cursor()
     for name, rel_type in STANDARD_RELATIONS:
@@ -181,7 +135,6 @@ def _ensure_standard_relations(conn: sqlite3.Connection) -> Dict[str, int]:
 
 
 def _get_or_create_entity(conn: sqlite3.Connection, name: str, entity_type: str, source: str, metadata: Optional[str] = None) -> int:
-    """Get existing entity id or create new. Returns entity id."""
     cursor = conn.cursor()
     cursor.execute(
         "SELECT id FROM kg_entities WHERE name = ? AND entity_type = ?",
@@ -199,7 +152,6 @@ def _get_or_create_entity(conn: sqlite3.Connection, name: str, entity_type: str,
 
 
 def _record_location(conn: sqlite3.Connection, entity_id: int, location_type: str, location_value: str, context_snippet: str = '') -> None:
-    """Record where an entity was found."""
     cursor = conn.cursor()
     cursor.execute(
         "SELECT id FROM kg_locations WHERE entity_id = ? AND location_type = ? AND location_value = ?",
@@ -263,13 +215,7 @@ def _log_evolution(conn: sqlite3.Connection, run_type: str, entities_found: int,
     conn.commit()
 
 
-# ---------------------------------------------------------------------------
-# Source scanners
-# ---------------------------------------------------------------------------
-
-
 def _scan_activity_log(conn: sqlite3.Connection, since: Optional[str]) -> List[Tuple[str, str, str, str, str]]:
-    """Scan activity_log and return list of (entity_name, entity_type, context, location_type, location_value)."""
     results = []
     cursor = conn.cursor()
     if since:
@@ -288,18 +234,14 @@ def _scan_activity_log(conn: sqlite3.Connection, since: Optional[str]) -> List[T
         npc = row['npc'] or ''
         ts = row['timestamp'] or ''
 
-        # Activity type as entity
         results.append((activity_type, 'activity_type', f'timestamp={ts}', 'activity_log', directory or 'global'))
 
-        # NPC as entity
         if npc:
             results.append((npc, 'npc', f'activity_type={activity_type}', 'activity_log', directory or 'global'))
 
-        # Extract from JSON data
         for name, etype, ctx in _extract_entities_from_json(data):
             results.append((name, etype, ctx, 'activity_log', directory or 'global'))
 
-        # Directory as entity
         if directory:
             dir_name = os.path.basename(directory) or directory
             results.append((dir_name, 'directory', f'activity={activity_type}', 'activity_log', directory))
@@ -379,7 +321,6 @@ def _scan_jinx_executions(conn: sqlite3.Connection, since: Optional[str]) -> Lis
 
 
 def _scan_knowledge_yaml(conn: sqlite3.Connection) -> List[Tuple[str, str, str, str, str]]:
-    """Scan .knowledge.yaml files in ~/.incognide tree."""
     results = []
     base = os.path.expanduser('~/.incognide')
     try:
@@ -401,13 +342,7 @@ def _scan_knowledge_yaml(conn: sqlite3.Connection) -> List[Tuple[str, str, str, 
     return results
 
 
-# ---------------------------------------------------------------------------
-# Cross-linking
-# ---------------------------------------------------------------------------
-
-
 def _build_cross_links(conn: sqlite3.Connection) -> int:
-    """Find entities appearing in multiple contexts and create co_occurs_with links."""
     cursor = conn.cursor()
     relation_id = _get_or_create_relation(conn, 'co_occurs_with', 'statistical')
     cross_links = 0
@@ -421,7 +356,6 @@ def _build_cross_links(conn: sqlite3.Connection) -> int:
     """)
     multi_context = cursor.fetchall()
 
-    # For each pair of entities that share a location_value, link them
     for i, row_i in enumerate(multi_context):
         eid_i = row_i['id']
         name_i = row_i['name']
@@ -449,10 +383,6 @@ def _build_cross_links(conn: sqlite3.Connection) -> int:
     return cross_links
 
 
-# ---------------------------------------------------------------------------
-# YAML-based evolve (plaintext knowledge stores)
-# ---------------------------------------------------------------------------
-
 def evolve_yaml(stores: List[str] = None,
                 workspace: str = None,
                 include_memories: bool = True,
@@ -460,7 +390,6 @@ def evolve_yaml(stores: List[str] = None,
                 full_rebuild: bool = False,
                 model: str = None,
                 provider: str = None) -> Dict[str, Any]:
-    """Evolve knowledge graph across plaintext .knowledge.yaml stores."""
     if KnowledgeStore is None:
         return {"status": "error", "reason": "npcpy.memory.knowledge_store not available"}
 
@@ -470,7 +399,6 @@ def evolve_yaml(stores: List[str] = None,
     if not stores:
         return {"status": "skipped", "reason": "no_stores_found"}
 
-    # Aggregate corpus from all selected stores
     all_facts = []
     all_concepts = []
     for spath in stores:
@@ -525,13 +453,7 @@ def evolve_yaml(stores: List[str] = None,
     return {"status": "success", **stats}
 
 
-# ---------------------------------------------------------------------------
-# Evolve
-# ---------------------------------------------------------------------------
-
-
 def evolve(db_path: str, full: bool = False) -> Dict[str, Any]:
-    """Main evolution routine: scan all sources, build/update the knowledge graph."""
     start_time = time.time()
     conn = _get_conn(db_path)
 
@@ -549,7 +471,6 @@ def evolve(db_path: str, full: bool = False) -> Dict[str, Any]:
     entity_id_map: Dict[Tuple[str, str], int] = {}
     triples_created = 0
 
-    # Batch insert entities and record locations
     for name, entity_type, context, location_type, location_value in all_entities:
         key = (name, entity_type)
         if key not in entity_id_map:
@@ -559,7 +480,6 @@ def evolve(db_path: str, full: bool = False) -> Dict[str, Any]:
             eid = entity_id_map[key]
         _record_location(conn, eid, location_type, location_value, context)
 
-    # Create co-occurrence triples within each location_value
     location_groups: Dict[str, List[int]] = {}
     cursor = conn.cursor()
     cursor.execute("SELECT entity_id, location_type, location_value FROM kg_locations")
@@ -575,13 +495,11 @@ def evolve(db_path: str, full: bool = False) -> Dict[str, Any]:
         unique_eids = list(set(eids))
         if len(unique_eids) < 2:
             continue
-        # Pairwise co-occurrence within location
         for i in range(len(unique_eids)):
-            for j in range(i + 1, min(i + 5, len(unique_eids))):  # cap pairs to avoid explosion
+            for j in range(i + 1, min(i + 5, len(unique_eids))):
                 _add_triple(conn, unique_eids[i], relation_id_co, unique_eids[j], weight=1.0, source='cooccurrence', metadata=loc_key)
                 triples_created += 1
 
-    # Directory-based location links: if entity appears in a directory location, link to directory entity
     cursor.execute("""
         SELECT e.id, l.location_value
         FROM kg_entities e
@@ -604,7 +522,6 @@ def evolve(db_path: str, full: bool = False) -> Dict[str, Any]:
         _add_triple(conn, eid, relation_id_loc, dir_eid, weight=1.0, source='directory_link', metadata=loc)
         triples_created += 1
 
-    # Cross-link entities across contexts
     cross_links = _build_cross_links(conn)
 
     duration_ms = int((time.time() - start_time) * 1000)
@@ -620,11 +537,6 @@ def evolve(db_path: str, full: bool = False) -> Dict[str, Any]:
         'duration_ms': duration_ms,
         'summary': summary,
     }
-
-
-# ---------------------------------------------------------------------------
-# Query / Search
-# ---------------------------------------------------------------------------
 
 
 def query_entity(db_path: str, name: str, entity_type: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -686,7 +598,6 @@ def search_triples(db_path: str, head_name: Optional[str] = None, relation_name:
 
 
 def get_entity_graph(db_path: str, entity_name: str, max_depth: int = 2, breadth: int = 10) -> Dict[str, Any]:
-    """BFS graph traversal starting from an entity."""
     conn = _get_conn(db_path)
     cursor = conn.cursor()
 
@@ -742,12 +653,10 @@ def get_entity_graph(db_path: str, entity_name: str, max_depth: int = 2, breadth
 
 
 def hybrid_search(db_path: str, query: str, max_results: int = 20) -> List[Dict[str, Any]]:
-    """Hybrid search: keyword match on entities + triple graph traversal."""
     conn = _get_conn(db_path)
     cursor = conn.cursor()
     results = []
 
-    # Keyword match entities
     cursor.execute(
         "SELECT * FROM kg_entities WHERE name LIKE ? LIMIT ?",
         (f'%{query}%', max_results),
@@ -761,7 +670,6 @@ def hybrid_search(db_path: str, query: str, max_results: int = 20) -> List[Dict[
             'score': 1.0,
         })
 
-    # Keyword match triples
     cursor.execute("""
         SELECT eh.name AS head_name, r.name AS rel_name, et.name AS tail_name, t.weight
         FROM kg_triples t
@@ -783,10 +691,6 @@ def hybrid_search(db_path: str, query: str, max_results: int = 20) -> List[Dict[
     conn.close()
     return results[:max_results]
 
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 if __name__ == '__main__':
     import argparse

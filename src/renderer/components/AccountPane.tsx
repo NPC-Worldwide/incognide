@@ -46,7 +46,6 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                     </div>
                 </div>
 
-                {/* Profile */}
                 <div className="theme-bg-secondary rounded-xl border theme-border overflow-hidden">
                     <div className="px-5 py-4 border-b theme-border">
                         <h2 className="text-sm font-medium theme-text-muted uppercase tracking-wide">Profile</h2>
@@ -78,7 +77,6 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                     </div>
                 </div>
 
-                {/* Auth */}
                 <div className="theme-bg-secondary rounded-xl border theme-border overflow-hidden">
                     <div className="px-5 py-4 border-b theme-border">
                         <h2 className="text-sm font-medium theme-text-muted uppercase tracking-wide">Authentication</h2>
@@ -124,7 +122,6 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                     </div>
                 </div>
 
-                {/* Encryption */}
                 {auth.isAuthenticated && (
                     <div className="theme-bg-secondary rounded-xl border theme-border overflow-hidden">
                         <div className="px-5 py-4 border-b theme-border">
@@ -185,7 +182,6 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                     </div>
                 )}
 
-                {/* Subscription */}
                 <div className="theme-bg-secondary rounded-xl border theme-border overflow-hidden">
                     <div className="px-5 py-4 border-b theme-border">
                         <h2 className="text-sm font-medium theme-text-muted uppercase tracking-wide">Subscription</h2>
@@ -211,7 +207,6 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                     </div>
                 </div>
 
-                {/* Sync Status */}
                 {auth.isAuthenticated && (
                     <div className="theme-bg-secondary rounded-xl border theme-border overflow-hidden">
                         <div className="px-5 py-4 border-b theme-border">
@@ -234,7 +229,6 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                                 </div>
                             </div>
 
-                            {/* Progress bar */}
                             {syncStatus === 'syncing' && (
                                 <div className="w-full h-1.5 theme-bg-tertiary rounded-full overflow-hidden">
                                     <div
@@ -244,7 +238,6 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                                 </div>
                             )}
 
-                            {/* Last sync stats */}
                             {lastSyncStats && syncStatus === 'synced' && (
                                 <div className="text-xs theme-text-muted flex items-center gap-3">
                                     <span>Pushed {lastSyncStats.pushed}</span>

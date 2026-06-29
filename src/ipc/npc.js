@@ -519,7 +519,6 @@ function register(ctx) {
         try {
           originalContent = await fsPromises.readFile(sourcePath, 'utf8');
         } catch {
-          // File doesn't exist, fall through to full write
         }
 
         if (!originalContent) {

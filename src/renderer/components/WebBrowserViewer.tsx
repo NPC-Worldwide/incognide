@@ -349,7 +349,6 @@ const WebBrowserViewer = memo(({
                 if (!webview) return { success: false, error: 'Webview not available' };
 
                 try {
-                    // Wrap in async IIFE so top-level await works in executeJavaScript context
                     const wrapped = `(async () => {\n${code}\n})()`;
                     const result = await webview.executeJavaScript(wrapped);
                     return { success: true, result };
@@ -476,11 +475,9 @@ const WebBrowserViewer = memo(({
             setError(null);
             setIsSecure(url.startsWith('https://'));
 
-            // Track navigation history for back/forward dropdown
             if (url && url !== 'about:blank') {
                 const hist = navHistoryRef.current;
                 const idx = navHistoryIndexRef.current;
-                // Truncate forward history if we navigated from a non-tip position
                 if (idx < hist.length - 1) {
                     navHistoryRef.current = hist.slice(0, idx + 1);
                 }
@@ -550,9 +547,7 @@ const WebBrowserViewer = memo(({
 
         };
         const handleDidFailLoad = (e) => {
-            // -3 = aborted (ignore), also ignore sub-frame failures (e.g. Google cookie rotation)
             if (e.errorCode === -3 || e.isMainFrame === false) return;
-            // Ignore Google's RotateCookiesPage failures — background cookie exchange for multi-account sessions
             if (e.validatedURL && e.validatedURL.includes('accounts.google.com/RotateCookiesPage')) return;
             setLoading(false);
             setError(`Failed to load page (Error ${e.errorCode}: ${e.validatedURL})`);
@@ -573,7 +568,6 @@ const WebBrowserViewer = memo(({
             const url = e.url;
             if (!url || url === 'about:blank') return;
 
-            // OAuth/auth popups should navigate in-place so callbacks work
             const isAuthFlow = url.includes('accounts.google.com') || url.includes('/oauth') ||
                 url.includes('/auth') || url.includes('/login') || url.includes('/callback') ||
                 url.includes('workos.com') || url.includes('/sso');
@@ -658,10 +652,7 @@ const WebBrowserViewer = memo(({
             }, 50);
         };
 
-        // before-input-event: intercept keyboard shortcuts that don't propagate
-        // through Electron's webview isolation (clipboard ops + find)
         const handleBeforeInput = (e: any) => {
-            // Electron webview fires this with different shapes depending on version
             const input = e.input || e.args?.[0] || e.detail;
             if (!input) return;
             if (input.type !== 'keyDown' && input.type) return;
@@ -671,17 +662,12 @@ const WebBrowserViewer = memo(({
 
             if (!isMod) return;
 
-            // Ctrl/Cmd+F — open find bar
             if (key === 'f') {
                 if (e.preventDefault) e.preventDefault();
                 openFindBar();
                 return;
             }
 
-            // Clipboard operations: Ctrl/Cmd+C/V/X/A
-            // Electron webview isolation blocks these from reaching the guest page
-            // natively, so we forward them using the webview's built-in methods
-            // which operate on the guest's focused element / selection.
             if (key === 'c' && !input.shift) {
                 webview.copy();
                 return;
@@ -701,8 +687,6 @@ const WebBrowserViewer = memo(({
         };
         webview.addEventListener('before-input-event', handleBeforeInput);
 
-        // Inject keyboard interceptors into the webview page and communicate
-        // back via console.log (works even without nodeIntegration)
         const injectKeyboardHooks = () => {
             try {
                 webview.executeJavaScript(`
@@ -716,9 +700,6 @@ const WebBrowserViewer = memo(({
                             }
                         }, true);
 
-                        // Clipboard fallback: ensure copy/paste/cut work inside the
-                        // guest page even when Electron's webview isolation intercepts
-                        // the native keyboard events before they reach the page.
                         document.addEventListener('keydown', function(e) {
                             if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
                             var key = e.key.toLowerCase();
@@ -727,8 +708,6 @@ const WebBrowserViewer = memo(({
                             } else if (key === 'x' && !e.shiftKey) {
                                 document.execCommand('cut');
                             } else if (key === 'v' && !e.shiftKey) {
-                                // Paste is handled by before-input-event -> webview.paste()
-                                // Do NOT also paste here or it will double-paste
                             } else if (key === 'a' && !e.shiftKey) {
                                 document.execCommand('selectAll');
                             }
@@ -814,7 +793,6 @@ const WebBrowserViewer = memo(({
     const handleForward = useCallback(() => webviewRef.current?.goForward(), []);
     const handleRefresh = useCallback(() => webviewRef.current?.reload(), []);
 
-    // Mac trackpad swipe gestures
     useEffect(() => {
         const api = (window as any).api;
         const offBack = api?.onBrowserSwipeBack?.(() => handleBack());
@@ -913,7 +891,6 @@ const WebBrowserViewer = memo(({
         return () => window.removeEventListener('incognide-zoom', handleZoom as EventListener);
     }, [nodeId]);
 
-    // Handle browser context menu actions (save image, open link, etc.)
     useEffect(() => {
         const handleContextAction = async (data: any) => {
             const { action, url } = data || {};
@@ -934,12 +911,10 @@ const WebBrowserViewer = memo(({
                     console.error('[WebBrowser] Error calling browserSaveImage:', err);
                 }
             } else if (action === 'openLink') {
-                // Handle open link if needed
                 console.log('[WebBrowser] Open link:', url);
             }
         };
         
-        // Use the exposed Electron API to listen for context actions
         const unsubscribe = (window as any).api?.onBrowserContextAction?.(handleContextAction);
         return () => {
             if (unsubscribe) unsubscribe();

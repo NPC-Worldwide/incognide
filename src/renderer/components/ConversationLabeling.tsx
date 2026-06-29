@@ -1,23 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { X, Tag, Star, Save, ChevronDown, ChevronRight, Check, MessageSquare } from 'lucide-react';
-import { ConversationLabel, ConversationLabelStorage } from './MessageLabeling';
-
-const DEFAULT_CONVERSATION_CATEGORIES = [
-    'high-quality',
-    'low-quality',
-    'complete',
-    'incomplete',
-    'technical',
-    'creative',
-    'informational',
-    'troubleshooting',
-    'coding',
-    'writing',
-    'analysis',
-    'brainstorming',
-    'exemplary',
-    'needs-review',
-];
+import { X, Tag, Save, ChevronDown, ChevronRight, Check, MessageSquare, Hash, Type, Plus, Trash2 } from 'lucide-react';
+import { ConversationLabel, ConversationLabelStorage, MetricDefinitionStorage, UserMetric, collectAllTags } from './MessageLabeling';
 
 interface ConversationLabelingProps {
     conversation: {
@@ -32,40 +15,7 @@ interface ConversationLabelingProps {
     existingLabel?: ConversationLabel;
     onSave: (label: ConversationLabel) => void;
     onClose: () => void;
-    categories?: string[];
 }
-
-const StarRating = ({ value, onChange, max = 5, label }: {
-    value: number;
-    onChange: (v: number) => void;
-    max?: number;
-    label: string;
-}) => {
-    const [hover, setHover] = useState(0);
-
-    return (
-        <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-400 w-28">{label}</span>
-            <div className="flex gap-0.5">
-                {Array.from({ length: max }, (_, i) => i + 1).map((star) => (
-                    <button
-                        key={star}
-                        type="button"
-                        className={`p-0.5 transition-colors ${
-                            star <= (hover || value) ? 'text-yellow-400' : 'text-gray-600'
-                        } hover:text-yellow-300`}
-                        onClick={() => onChange(star === value ? 0 : star)}
-                        onMouseEnter={() => setHover(star)}
-                        onMouseLeave={() => setHover(0)}
-                    >
-                        <Star size={16} fill={star <= (hover || value) ? 'currentColor' : 'none'} />
-                    </button>
-                ))}
-            </div>
-            <span className="text-xs text-gray-500 w-6">{value > 0 ? value : '-'}</span>
-        </div>
-    );
-};
 
 const TagInput = ({ tags, onChange, suggestions }: {
     tags: string[];
@@ -140,27 +90,196 @@ const TagInput = ({ tags, onChange, suggestions }: {
     );
 };
 
+const MetricValueEditor = ({ metric, onChange }: {
+    metric: UserMetric;
+    onChange: (metric: UserMetric) => void;
+}) => {
+    if (metric.type === 'boolean') {
+        return (
+            <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                    type="checkbox"
+                    checked={!!metric.value}
+                    onChange={(e) => onChange({ ...metric, value: e.target.checked })}
+                    className="w-4 h-4 rounded border-gray-600 text-blue-600 bg-gray-700 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-300">{metric.value ? 'True' : 'False'}</span>
+            </label>
+        );
+    }
+
+    const numValue = typeof metric.value === 'number' ? metric.value : 0;
+    const min = metric.min ?? 0;
+    const max = metric.max ?? 100;
+    const step = metric.type === 'integer' ? 1 : 0.1;
+
+    return (
+        <div className="flex items-center gap-2 flex-1">
+            <input
+                type="number"
+                min={min}
+                max={max}
+                step={step}
+                value={numValue}
+                onChange={(e) => {
+                    const v = e.target.value === '' ? min : parseFloat(e.target.value);
+                    onChange({ ...metric, value: v });
+                }}
+                className="w-20 theme-input text-xs px-2 py-1 rounded"
+            />
+            {max > min && (
+                <input
+                    type="range"
+                    min={min}
+                    max={max}
+                    step={step}
+                    value={numValue}
+                    onChange={(e) => onChange({ ...metric, value: parseFloat(e.target.value) })}
+                    className="flex-1 min-w-[60px]"
+                />
+            )}
+        </div>
+    );
+};
+
+const AddMetricForm = ({ onAdd, existingNames }: {
+    onAdd: (metric: UserMetric) => void;
+    existingNames: string[];
+}) => {
+    const [name, setName] = useState('');
+    const [type, setType] = useState<'boolean' | 'integer' | 'float'>('integer');
+    const [min, setMin] = useState<string>('0');
+    const [max, setMax] = useState<string>('10');
+    const [showSuggestions, setShowSuggestions] = useState(false);
+
+    const filteredNames = existingNames.filter(
+        n => n.toLowerCase().includes(name.toLowerCase())
+    );
+
+    const handleAdd = () => {
+        if (!name.trim()) return;
+        const definition = MetricDefinitionStorage.getByName(name.trim()) || {
+            id: crypto.randomUUID(),
+            name: name.trim(),
+            type,
+            min: type !== 'boolean' ? parseFloat(min || '0') : undefined,
+            max: type !== 'boolean' ? parseFloat(max || '10') : undefined,
+        };
+        MetricDefinitionStorage.save(definition);
+        const defaultValue = definition.type === 'boolean'
+            ? false
+            : (definition.min ?? 0);
+        onAdd({ ...definition, value: defaultValue });
+        setName('');
+        setType('integer');
+        setMin('0');
+        setMax('10');
+        setShowSuggestions(false);
+    };
+
+    return (
+        <div className="p-2 bg-gray-800 rounded border border-gray-700 space-y-2">
+            <div className="text-xs text-gray-400">Add metric</div>
+            <div className="relative">
+                <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => {
+                        setName(e.target.value);
+                        setShowSuggestions(true);
+                    }}
+                    onFocus={() => setShowSuggestions(true)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAdd();
+                        }
+                    }}
+                    placeholder="Metric name..."
+                    className="w-full theme-input text-xs px-2 py-1 rounded"
+                />
+                {showSuggestions && filteredNames.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-gray-800 border border-gray-600 rounded shadow-lg max-h-24 overflow-y-auto">
+                        {filteredNames.map(n => (
+                            <button
+                                key={n}
+                                type="button"
+                                className="w-full text-left px-2 py-1 text-xs hover:bg-gray-700 text-gray-300"
+                                onClick={() => {
+                                    const def = MetricDefinitionStorage.getByName(n);
+                                    if (def) {
+                                        setName(def.name);
+                                        setType(def.type);
+                                        setMin(def.min?.toString() ?? '0');
+                                        setMax(def.max?.toString() ?? '10');
+                                    } else {
+                                        setName(n);
+                                    }
+                                    setShowSuggestions(false);
+                                }}
+                            >
+                                {n}
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+            <div className="flex items-center gap-2 flex-nowrap">
+                <select
+                    value={type}
+                    onChange={(e) => setType(e.target.value as any)}
+                    className="theme-input text-xs px-1 py-1 rounded w-20 shrink-0"
+                >
+                    <option value="boolean">Bool</option>
+                    <option value="integer">Int</option>
+                    <option value="float">Float</option>
+                </select>
+                {type !== 'boolean' && (
+                    <>
+                        <input
+                            type="number"
+                            value={min}
+                            onChange={(e) => setMin(e.target.value)}
+                            placeholder="Min"
+                            className="w-14 theme-input text-xs px-1 py-1 rounded shrink-0"
+                        />
+                        <span className="text-xs text-gray-500 shrink-0">-</span>
+                        <input
+                            type="number"
+                            value={max}
+                            onChange={(e) => setMax(e.target.value)}
+                            placeholder="Max"
+                            className="w-14 theme-input text-xs px-1 py-1 rounded shrink-0"
+                        />
+                    </>
+                )}
+                <button
+                    type="button"
+                    onClick={handleAdd}
+                    disabled={!name.trim()}
+                    className="theme-button-primary px-2 py-1 text-xs rounded flex items-center gap-1 disabled:opacity-50 shrink-0 ml-auto"
+                >
+                    <Plus size={12} /> Add
+                </button>
+            </div>
+        </div>
+    );
+};
+
 export const ConversationLabeling: React.FC<ConversationLabelingProps> = ({
     conversation,
     existingLabel,
     onSave,
     onClose,
-    categories = DEFAULT_CONVERSATION_CATEGORIES,
 }) => {
-    const [selectedCategories, setSelectedCategories] = useState<string[]>(
-        existingLabel?.categories || []
-    );
-    const [qualityScore, setQualityScore] = useState(existingLabel?.qualityScore || 0);
-    const [relevanceScore, setRelevanceScore] = useState(existingLabel?.relevanceScore || 0);
-    const [completenessScore, setCompletenessScore] = useState(existingLabel?.completenessScore || 0);
-    const [usefulnessScore, setUsefulnessScore] = useState(existingLabel?.usefulnessScore || 0);
     const [tags, setTags] = useState<string[]>(existingLabel?.tags || []);
+    const [metrics, setMetrics] = useState<UserMetric[]>(existingLabel?.metrics || []);
     const [notes, setNotes] = useState(existingLabel?.notes || '');
     const [summary, setSummary] = useState(existingLabel?.summary || '');
     const [includeInTraining, setIncludeInTraining] = useState(existingLabel?.includeInTraining ?? true);
     const [trainingWeight, setTrainingWeight] = useState(existingLabel?.trainingWeight || 1.0);
 
-    const [expandedSection, setExpandedSection] = useState<'categories' | 'scores' | 'training' | 'notes' | 'preview' | null>('categories');
+    const [expandedSection, setExpandedSection] = useState<'tags' | 'metrics' | 'training' | 'notes' | 'preview' | null>('tags');
 
     const stats = useMemo(() => {
         const messages = conversation.messages || [];
@@ -170,12 +289,28 @@ export const ConversationLabeling: React.FC<ConversationLabelingProps> = ({
         return { total: messages.length, user: userMessages, assistant: assistantMessages, tokens: totalTokens };
     }, [conversation.messages]);
 
-    const toggleCategory = (category: string) => {
-        if (selectedCategories.includes(category)) {
-            setSelectedCategories(selectedCategories.filter(c => c !== category));
+    const allTags = useMemo(() => collectAllTags(), []);
+    const allMetricNames = useMemo(() => MetricDefinitionStorage.getAllNames(), []);
+
+    const addMetric = (metric: UserMetric) => {
+        const existingIndex = metrics.findIndex(m => m.name.toLowerCase() === metric.name.toLowerCase());
+        if (existingIndex >= 0) {
+            const updated = [...metrics];
+            updated[existingIndex] = { ...metric, value: metrics[existingIndex].value };
+            setMetrics(updated);
         } else {
-            setSelectedCategories([...selectedCategories, category]);
+            setMetrics([...metrics, metric]);
         }
+    };
+
+    const updateMetric = (index: number, updated: UserMetric) => {
+        const next = [...metrics];
+        next[index] = updated;
+        setMetrics(next);
+    };
+
+    const removeMetric = (index: number) => {
+        setMetrics(metrics.filter((_, i) => i !== index));
     };
 
     const handleSave = () => {
@@ -183,12 +318,8 @@ export const ConversationLabeling: React.FC<ConversationLabelingProps> = ({
             id: existingLabel?.id || crypto.randomUUID(),
             conversationId: conversation.id,
             title: conversation.title,
-            categories: selectedCategories,
-            qualityScore: qualityScore > 0 ? qualityScore : undefined,
-            relevanceScore: relevanceScore > 0 ? relevanceScore : undefined,
-            completenessScore: completenessScore > 0 ? completenessScore : undefined,
-            usefulnessScore: usefulnessScore > 0 ? usefulnessScore : undefined,
             tags,
+            metrics,
             notes: notes || undefined,
             summary: summary || undefined,
             includeInTraining,
@@ -247,35 +378,47 @@ export const ConversationLabeling: React.FC<ConversationLabelingProps> = ({
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-2">
                     <div className="border-b border-gray-700 pb-2">
-                        <SectionHeader title="Categories" section="categories" icon={Tag} />
-                        {expandedSection === 'categories' && (
-                            <div className="pt-2 flex flex-wrap gap-1">
-                                {categories.map(category => (
-                                    <button
-                                        key={category}
-                                        type="button"
-                                        className={`px-2 py-1 rounded text-xs transition-colors ${
-                                            selectedCategories.includes(category)
-                                                ? 'bg-blue-600 text-white'
-                                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                                        }`}
-                                        onClick={() => toggleCategory(category)}
-                                    >
-                                        {category}
-                                    </button>
-                                ))}
+                        <SectionHeader title={`Tags (${tags.length})`} section="tags" icon={Tag} />
+                        {expandedSection === 'tags' && (
+                            <div className="pt-2">
+                                <TagInput tags={tags} onChange={setTags} suggestions={allTags} />
                             </div>
                         )}
                     </div>
 
                     <div className="border-b border-gray-700 pb-2">
-                        <SectionHeader title="Scores" section="scores" icon={Star} />
-                        {expandedSection === 'scores' && (
+                        <SectionHeader title={`Metrics (${metrics.length})`} section="metrics" icon={Hash} />
+                        {expandedSection === 'metrics' && (
                             <div className="pt-2 space-y-2">
-                                <StarRating label="Quality" value={qualityScore} onChange={setQualityScore} />
-                                <StarRating label="Relevance" value={relevanceScore} onChange={setRelevanceScore} />
-                                <StarRating label="Completeness" value={completenessScore} onChange={setCompletenessScore} />
-                                <StarRating label="Usefulness" value={usefulnessScore} onChange={setUsefulnessScore} />
+                                {metrics.length === 0 && (
+                                    <div className="text-xs text-gray-500 text-center py-2">
+                                        No metrics yet. Add one below.
+                                    </div>
+                                )}
+                                {metrics.map((metric, idx) => (
+                                    <div key={metric.id || idx} className="p-2 bg-gray-800 rounded border border-gray-700">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className="text-xs font-medium text-gray-300">{metric.name}</span>
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-[10px] px-1.5 py-0.5 bg-gray-700 rounded text-gray-400">
+                                                    {metric.type}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeMetric(idx)}
+                                                    className="p-1 hover:bg-gray-700 rounded text-gray-500 hover:text-red-400"
+                                                >
+                                                    <Trash2 size={12} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <MetricValueEditor
+                                            metric={metric}
+                                            onChange={(updated) => updateMetric(idx, updated)}
+                                        />
+                                    </div>
+                                ))}
+                                <AddMetricForm onAdd={addMetric} existingNames={allMetricNames} />
                             </div>
                         )}
                     </div>
@@ -323,27 +466,16 @@ export const ConversationLabeling: React.FC<ConversationLabelingProps> = ({
                     </div>
 
                     <div className="border-b border-gray-700 pb-2">
-                        <SectionHeader title="Tags & Notes" section="notes" icon={Tag} />
+                        <SectionHeader title="Notes" section="notes" icon={Type} />
                         {expandedSection === 'notes' && (
-                            <div className="pt-2 space-y-3">
-                                <div>
-                                    <label className="text-xs text-gray-400 block mb-1">Custom Tags</label>
-                                    <TagInput
-                                        tags={tags}
-                                        onChange={setTags}
-                                        suggestions={[...categories, 'verified', 'needs-review', 'favorite']}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs text-gray-400 block mb-1">Notes</label>
-                                    <textarea
-                                        value={notes}
-                                        onChange={(e) => setNotes(e.target.value)}
-                                        placeholder="Add notes about this conversation..."
-                                        className="w-full theme-input text-xs px-2 py-1 rounded resize-none"
-                                        rows={3}
-                                    />
-                                </div>
+                            <div className="pt-2">
+                                <textarea
+                                    value={notes}
+                                    onChange={(e) => setNotes(e.target.value)}
+                                    placeholder="Add notes about this conversation..."
+                                    className="w-full theme-input text-xs px-2 py-1 rounded resize-none"
+                                    rows={3}
+                                />
                             </div>
                         )}
                     </div>
@@ -372,7 +504,7 @@ export const ConversationLabeling: React.FC<ConversationLabelingProps> = ({
 
                 <div className="flex items-center justify-between p-4 border-t border-gray-700">
                     <div className="text-xs text-gray-500">
-                        {selectedCategories.length} categories
+                        {tags.length} tags, {metrics.length} metrics
                         {includeInTraining && <span className="text-green-400 ml-2">✓ Training</span>}
                     </div>
                     <div className="flex gap-2">

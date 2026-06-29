@@ -1,6 +1,7 @@
 
 
 import { registerAction, StudioContext, StudioActionResult } from './index';
+import { getPaneTitle } from './paneActions';
 
 async function read_pane(
   args: { paneId?: string },
@@ -23,7 +24,6 @@ async function read_pane(
   const fileContentTypes = ['editor', 'markdown-preview', 'latex', 'notebook', 'exp'];
 
   if (fileContentTypes.includes(contentType)) {
-    // Retry if fileContent hasn't loaded yet (editor component loads async after pane creation)
     let attempts = 0;
     while (!content && attempts < 20) {
       const currentData = ctx.contentDataRef.current[paneId];
@@ -120,6 +120,7 @@ async function read_pane(
   return {
     success: true,
     paneId,
+    title: getPaneTitle(data),
     type: contentType,
     path: contentId,
     content
@@ -157,6 +158,7 @@ async function write_file(
   return {
     success: true,
     paneId,
+    title: getPaneTitle(data),
     path: args.path || data.contentId,
     bytesWritten: args.content.length
   };
@@ -217,7 +219,6 @@ async function run_terminal(
   }
 
   try {
-    // Retry if the PTY session isn't ready yet (e.g. terminal just opened)
     let result: any = null;
     for (let attempt = 0; attempt < 20; attempt++) {
       result = await (window as any).api?.writeToTerminal?.({
@@ -235,10 +236,8 @@ async function run_terminal(
       };
     }
 
-    // Wait for output to appear so the agent can see results
     await new Promise(resolve => setTimeout(resolve, 500));
 
-    // Read terminal output and return it
     let output: string | null = null;
     if (data.getTerminalContext) {
       try { output = data.getTerminalContext(); } catch {}
@@ -247,6 +246,7 @@ async function run_terminal(
     return {
       success: true,
       paneId,
+      title: getPaneTitle(data),
       terminalId,
       command,
       output: output || '(command sent, output may still be streaming)',
@@ -280,19 +280,19 @@ async function write_pane(
     if (args.path && args.path !== data.contentId) {
       ctx.updateContentPane(paneId, 'editor', args.path);
     }
-    return { success: true, paneId, type: contentType, bytesWritten: args.content.length };
+    return { success: true, paneId, title: getPaneTitle(data), type: contentType, bytesWritten: args.content.length };
   }
 
   if (contentType === 'docx' && data.writeDocumentContent) {
     const result = await data.writeDocumentContent(args.content, args.position || 'replace');
-    return { success: true, paneId, type: 'docx', ...result };
+    return { success: true, paneId, title: getPaneTitle(data), type: 'docx', ...result };
   }
 
   if (contentType === 'csv' && data.updateSpreadsheetCells) {
     try {
       const updates = JSON.parse(args.content);
       const result = await data.updateSpreadsheetCells(updates);
-      return { success: true, paneId, type: 'csv', ...result };
+      return { success: true, paneId, title: getPaneTitle(data), type: 'csv', ...result };
     } catch {
       return { success: false, error: 'For spreadsheets, content must be JSON array of {row, col, value}' };
     }
@@ -302,7 +302,7 @@ async function write_pane(
     try {
       const { shapeIndex, text, slideIndex } = JSON.parse(args.content);
       const result = await data.updateSlideText(shapeIndex, text, slideIndex);
-      return { success: true, paneId, type: 'pptx', ...result };
+      return { success: true, paneId, title: getPaneTitle(data), type: 'pptx', ...result };
     } catch {
       return { success: false, error: 'For presentations, content must be JSON {shapeIndex, text, slideIndex?}' };
     }
@@ -310,7 +310,7 @@ async function write_pane(
 
   if (contentType === 'terminal') {
     await (window as any).api?.writeToTerminal?.({ id: data.contentId, data: args.content + '\n' });
-    return { success: true, paneId, type: 'terminal', message: 'Sent to terminal' };
+    return { success: true, paneId, title: getPaneTitle(data), type: 'terminal', message: 'Sent to terminal' };
   }
 
   return { success: false, error: `Write not supported for pane type: ${contentType}` };
@@ -332,13 +332,13 @@ async function interact(
 
   if (contentType === 'terminal') {
     await (window as any).api?.writeToTerminal?.({ id: data.contentId, data: args.code + '\n' });
-    return { success: true, paneId, type: 'terminal', message: 'Command sent' };
+    return { success: true, paneId, title: getPaneTitle(data), type: 'terminal', message: 'Command sent' };
   }
 
   if (contentType === 'browser' && data.browserEval) {
     try {
       const result = await data.browserEval(args.code);
-      return { success: true, paneId, type: 'browser', result };
+      return { success: true, paneId, title: getPaneTitle(data), type: 'browser', result };
     } catch (e: any) {
       return { success: false, error: `Browser eval error: ${e.message || e}` };
     }
@@ -347,7 +347,7 @@ async function interact(
   if (contentType === 'csv' && data.evalSpreadsheet) {
     try {
       const result = await data.evalSpreadsheet(args.code);
-      return { success: true, paneId, type: 'csv', result };
+      return { success: true, paneId, title: getPaneTitle(data), type: 'csv', result };
     } catch (e: any) {
       return { success: false, error: `Spreadsheet eval error: ${e.message || e}` };
     }
@@ -356,7 +356,7 @@ async function interact(
   if (contentType === 'docx' && data.evalDocument) {
     try {
       const result = await data.evalDocument(args.code);
-      return { success: true, paneId, type: 'docx', result };
+      return { success: true, paneId, title: getPaneTitle(data), type: 'docx', result };
     } catch (e: any) {
       return { success: false, error: `Document eval error: ${e.message || e}` };
     }
@@ -365,7 +365,7 @@ async function interact(
   if (contentType === 'pptx' && data.evalPresentation) {
     try {
       const result = await data.evalPresentation(args.code);
-      return { success: true, paneId, type: 'pptx', result };
+      return { success: true, paneId, title: getPaneTitle(data), type: 'pptx', result };
     } catch (e: any) {
       return { success: false, error: `Presentation eval error: ${e.message || e}` };
     }
@@ -390,19 +390,19 @@ async function navigate_pane(
 
   if (contentType === 'browser' && data.navigateTo) {
     await data.navigateTo(args.target);
-    return { success: true, paneId, type: 'browser', url: args.target };
+    return { success: true, paneId, title: getPaneTitle(data), type: 'browser', url: args.target };
   }
 
   if (contentType === 'pptx' && data.goToSlide) {
     const idx = parseInt(args.target);
     if (isNaN(idx)) return { success: false, error: 'target must be a slide index number for presentations' };
     await data.goToSlide(idx);
-    return { success: true, paneId, type: 'pptx', slideIndex: idx };
+    return { success: true, paneId, title: getPaneTitle(data), type: 'pptx', slideIndex: idx };
   }
 
   if (contentType === 'csv' && data.switchSheet) {
     await data.switchSheet(args.target);
-    return { success: true, paneId, type: 'csv', sheet: args.target };
+    return { success: true, paneId, title: getPaneTitle(data), type: 'csv', sheet: args.target };
   }
 
   return { success: false, error: `Navigate not supported for pane type: ${contentType}` };

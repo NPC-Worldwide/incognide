@@ -5,13 +5,10 @@ const BackendErrorBanner: React.FC = () => {
   const [error, setError] = useState<{ message?: string; binaryPath?: string; exitCode?: number | null } | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
-  // On mount: query for existing startup error, and listen for future ones
   useEffect(() => {
     const api = (window as any).api;
     if (!api) return;
 
-    // Verify backend is actually unreachable before showing. If health check passes,
-    // a running backend (e.g. dev server) means no need for the banner.
     const verifyAndSet = async (err: any) => {
       if (!err) return;
       try {
@@ -35,7 +32,6 @@ const BackendErrorBanner: React.FC = () => {
       setDismissed(true);
     });
 
-    // Periodically re-check — if backend comes up later, auto-dismiss
     const iv = setInterval(async () => {
       try {
         const health = await api.backendHealth?.();
@@ -53,7 +49,6 @@ const BackendErrorBanner: React.FC = () => {
     };
   }, []);
 
-  // Nothing to show if no error or user dismissed
   if (!error || dismissed) return null;
 
   const exitCodeStr = error.exitCode !== null && error.exitCode !== undefined

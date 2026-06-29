@@ -104,6 +104,7 @@ const DocxViewer = ({
 }) => {
     const paneData = contentDataRef.current[nodeId];
     const filePath = paneData?.contentId;
+    const isOpenDocument = filePath?.endsWith('.odt') || filePath?.endsWith('.odp');
 
     const [isLocalRenaming, setIsLocalRenaming] = useState(false);
     const [localEditName, setLocalEditName] = useState('');
@@ -391,11 +392,9 @@ const DocxViewer = ({
 
     const saveDocument = useCallback(async () => {
         if (!hasChanges || !editorRef.current) return;
-        // Re-read filePath from contentData in case it was renamed
         const currentFilePath = contentDataRef.current[nodeId]?.contentId || filePath;
         const isUntitled = currentFilePath.includes('/tmp/') || contentDataRef.current[nodeId]?.isUntitled;
 
-        // For untitled files, prompt Save As to workspace folder
         if (isUntitled) {
             const defaultName = getFileName(currentFilePath) || 'document.docx';
             const newPath = await (window as any).api?.showSaveDialog?.({
@@ -407,7 +406,6 @@ const DocxViewer = ({
             try {
                 const content = editorRef.current.innerHTML;
                 await (window as any).api.writeDocxContent(newPath, content, { font: currentFont });
-                // Update pane to point to new file
                 if (contentDataRef.current[nodeId]) {
                     contentDataRef.current[nodeId].contentId = newPath;
                     contentDataRef.current[nodeId].isUntitled = false;
@@ -424,6 +422,7 @@ const DocxViewer = ({
             return;
         }
 
+        if (isOpenDocument) return;
         setIsSaving(true);
         try {
             const content = editorRef.current.innerHTML;
@@ -540,7 +539,6 @@ const DocxViewer = ({
         input.click();
     }, [insertAtCursor]);
 
-    // Insert link
     const insertLink = useCallback(() => {
         const url = prompt('Enter URL:');
         if (url) {
@@ -549,7 +547,6 @@ const DocxViewer = ({
         }
     }, [execCommand]);
 
-    // Print
     const printDocument = useCallback(() => {
         const printWindow = window.open('', '_blank');
         if (!printWindow) return;
@@ -588,7 +585,6 @@ const DocxViewer = ({
         setTimeout(() => printWindow.print(), 250);
     }, [filePath, currentFont, pageSize]);
 
-    // Export functions
     const exportAsHtml = useCallback(async () => {
         const newPath = filePath.replace(/\.[^.]+$/, '.html');
         const html = `<!DOCTYPE html>
@@ -621,7 +617,6 @@ ${htmlContent}
         alert('Exported to ' + newPath);
     }, [htmlContent, filePath]);
 
-    // Find and replace
     const findInDocument = useCallback(() => {
         if (!findText.trim() || !editorRef.current) {
             setMatchCount(0);
@@ -657,7 +652,6 @@ ${htmlContent}
         }
     }, [findText, replaceText, handleInput]);
 
-    // Apply template
     const applyTemplate = useCallback((template: typeof TEMPLATES[0]) => {
         if (editorRef.current) {
             editorRef.current.innerHTML = template.content;
@@ -666,7 +660,6 @@ ${htmlContent}
         setShowTemplatePicker(false);
     }, [handleInput]);
 
-    // Keyboard shortcuts
     const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
         const isCtrl = e.ctrlKey || e.metaKey;
         if (isCtrl && e.key === 's') { e.preventDefault(); saveDocument(); }
@@ -679,7 +672,6 @@ ${htmlContent}
         else if (isCtrl && e.key === 'f') { e.preventDefault(); setShowFindReplace(true); }
     }, [saveDocument, undo, redo, execCommand]);
 
-    // Close dropdowns on outside click
     useEffect(() => {
         const handleClick = (e: MouseEvent) => {
             const target = e.target as HTMLElement;
@@ -697,14 +689,10 @@ ${htmlContent}
         return () => document.removeEventListener('click', handleClick);
     }, []);
 
-    // ═══════════════════════════════════════════════════════════════════
-    // Studio Actions: Expose document methods for AI control
-    // ═══════════════════════════════════════════════════════════════════
     useEffect(() => {
         if (!contentDataRef.current[nodeId]) return;
         const ref = contentDataRef.current[nodeId];
 
-        // READ: Get document content as text or HTML
         ref.readDocumentContent = async (opts?: { format?: 'text' | 'html' }) => {
             const format = opts?.format || 'text';
             if (format === 'html') {
@@ -719,7 +707,6 @@ ${htmlContent}
             };
         };
 
-        // EVAL: Execute arbitrary JS with access to {html, text, editorEl}
         ref.evalDocument = async (code: string) => {
             try {
                 const fn = new Function('ctx', code);
@@ -739,7 +726,6 @@ ${htmlContent}
             }
         };
 
-        // WRITE: Replace entire document content
         ref.writeDocumentContent = async (html: string) => {
             if (editorRef.current) {
                 editorRef.current.innerHTML = html;
@@ -749,7 +735,6 @@ ${htmlContent}
             return { success: true };
         };
 
-        // WRITE: Insert content at position
         ref.insertDocumentContent = async (html: string, position?: 'cursor' | 'end' | 'start') => {
             if (!editorRef.current) return { success: false, error: 'Editor not ready' };
             if (position === 'end') {
@@ -764,20 +749,17 @@ ${htmlContent}
             return { success: true };
         };
 
-        // FORMAT: Apply formatting command
         ref.formatDocument = async (command: string, value?: string) => {
             editorRef.current?.focus();
             execCommand(command, value || null);
             return { success: true, command };
         };
 
-        // TABLE: Insert table
         ref.insertDocumentTable = async (rows: number, cols: number) => {
             insertTable(rows, cols);
             return { success: true, rows, cols };
         };
 
-        // FIND
         ref.findInDocument = async (searchText: string) => {
             const content = editorRef.current?.innerText || '';
             const regex = new RegExp(searchText, 'gi');
@@ -785,7 +767,6 @@ ${htmlContent}
             return { success: true, matchCount: matches?.length || 0, searchText };
         };
 
-        // FIND & REPLACE
         ref.replaceInDocument = async (search: string, replacement: string, all?: boolean) => {
             if (!editorRef.current) return { success: false, error: 'Editor not ready' };
             const content = editorRef.current.innerHTML;
@@ -800,18 +781,15 @@ ${htmlContent}
             return { success: true, changed };
         };
 
-        // SAVE
         ref.saveDocument = async () => {
             await saveDocument();
             return { success: true };
         };
 
-        // STATS
         ref.getDocumentStats = async () => {
             return { success: true, ...documentStats, filePath };
         };
 
-        // EXPORT
         ref.exportDocumentAs = async (format: 'html' | 'markdown') => {
             if (format === 'html') await exportAsHtml();
             else if (format === 'markdown') await exportAsMarkdown();
@@ -832,7 +810,6 @@ ${htmlContent}
 
     return (
         <div className="h-full flex flex-col theme-bg-secondary overflow-hidden">
-            {/* Header Bar */}
             <div
                 draggable={!isLocalRenaming}
                 onDragStart={(e) => {
@@ -1269,7 +1246,7 @@ ${htmlContent}
                     `}</style>
                     <div
                         ref={editorRef}
-                        contentEditable
+                        contentEditable={!isOpenDocument}
                         suppressContentEditableWarning
                         onInput={handleInput}
                         onKeyDown={handleKeyDown}

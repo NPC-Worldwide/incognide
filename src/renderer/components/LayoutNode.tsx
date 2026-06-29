@@ -7,7 +7,7 @@ import {
     Image as ImageIcon, Tag, Folder, Users, Settings, Images, BookOpen,
     FolderCog, HardDrive, Tags, Network, LayoutDashboard, Share2, Maximize2, Minimize2,
     FlaskConical, HelpCircle, Search, Music, Save, ZoomIn, ZoomOut, RotateCw, RefreshCw,
-    Box, Grid3X3, Eye, EyeOff, RotateCcw
+    Box, Grid3X3, Eye, EyeOff, RotateCcw, Video
 } from 'lucide-react';
 import PaneHeader from './PaneHeader';
 import PaneTabBar from './PaneTabBar';
@@ -346,7 +346,6 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             return () => emitter.removeEventListener('pane-update', handler);
         }, [node.id]);
 
-        // Clear drag overlay if drag ends anywhere (prevents stuck green/blue indicators)
         useEffect(() => {
             const clearDrag = () => {
                 dragCounterRef.current = 0;
@@ -366,40 +365,37 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             e.stopPropagation();
             const comp = componentRef.current;
 
-            // Handle native file drops from OS file manager (Finder, Nautilus, etc.)
             const nativeFiles = e.dataTransfer?.files;
             if ((!comp.draggedItem) && nativeFiles && nativeFiles.length > 0 && !lockedPanes.has(node.id)) {
                 const getContentTypeForExt = (filePath: string) => {
                     const ext = filePath.split('.').pop()?.toLowerCase();
                     if (ext === 'pdf') return 'pdf';
-                    if (['csv', 'xlsx', 'xls'].includes(ext)) return 'csv';
+                    if (['csv', 'xlsx', 'xls', 'ods'].includes(ext)) return 'csv';
                     if (ext === 'pptx') return 'pptx';
                     if (ext === 'tex') return 'latex';
                     if (ext === 'ipynb') return 'notebook';
                     if (ext === 'exp') return 'exp';
-                    if (['docx', 'doc'].includes(ext)) return 'docx';
+                    if (['docx', 'doc', 'odt', 'odp'].includes(ext)) return 'docx';
                     if (ext === 'zip') return 'zip';
                     if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(ext)) return 'image';
+                    if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'm4v', 'flv', 'ogv'].includes(ext)) return 'video';
                     if (ext === 'stl') return 'stl';
                     return 'editor';
                 };
 
                 const filePaths: string[] = [];
                 for (let i = 0; i < nativeFiles.length; i++) {
-                    // Electron File objects have a .path property with the absolute filesystem path
                     const filePath = (nativeFiles[i] as any).path;
                     if (filePath) filePaths.push(filePath);
                 }
 
                 if (filePaths.length > 0) {
-                    // First file: open in the drop target pane (respecting drop side)
                     const firstPath = filePaths[0];
                     const firstContentType = getContentTypeForExt(firstPath);
 
                     if (side === 'center') {
                         const paneData = contentDataRef.current[node.id];
                         if (paneData) {
-                            // Initialize tabs array if needed
                             if (!paneData.tabs || paneData.tabs.length === 0) {
                                 const currentTitle = paneData.contentType === 'browser'
                                     ? (paneData.browserUrl || 'Browser')
@@ -419,7 +415,6 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                                 paneData.activeTabIndex = 0;
                             }
 
-                            // Save current tab state
                             const currentTabIndex = paneData.activeTabIndex || 0;
                             if (paneData.tabs[currentTabIndex]) {
                                 const curVd = contentDataRef.current[`${node.id}_${paneData.tabs[currentTabIndex].id}`];
@@ -427,7 +422,6 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                                 paneData.tabs[currentTabIndex].fileChanged = curVd?.fileChanged ?? paneData.fileChanged;
                             }
 
-                            // Add new tab for the dropped file
                             const newTab = {
                                 id: `tab_${Date.now()}_${paneData.tabs.length}`,
                                 contentType: firstContentType,
@@ -441,7 +435,6 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                             paneData.fileContent = null;
                             paneData.fileChanged = false;
 
-                            // Load file content for editor types
                             if (firstContentType === 'editor') {
                                 (async () => {
                                     try {
@@ -464,11 +457,9 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                             updateContentPane(node.id, firstContentType, firstPath);
                         }
                     } else {
-                        // Directional drop — split pane
                         performSplit(path, side, firstContentType, firstPath);
                     }
 
-                    // Additional files: open in new panes
                     for (let i = 1; i < filePaths.length; i++) {
                         const fp = filePaths[i];
                         const ct = getContentTypeForExt(fp);
@@ -523,9 +514,6 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                                     if (vd.chatStats !== undefined) tab.chatStats = vd.chatStats;
                                 }
                             });
-                            // If the source pane's chat state isn't on any tab yet (e.g. the
-                            // pane was single-chat without tabs), stash it on the active tab
-                            // we're about to migrate so it survives the merge.
                             if (((sourcePaneData.contentType === 'chat' || sourcePaneData.contentType === 'agent') || sourcePaneData.contentType === 'agent') && sourcePaneData.chatMessages) {
                                 const srcActive = sourcePaneData.tabs[sourcePaneData.activeTabIndex ?? 0];
                                 if (srcActive && ((srcActive.contentType === 'chat' || srcActive.contentType === 'agent') || srcActive.contentType === 'agent') && !srcActive.chatMessages) {
@@ -557,8 +545,6 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                                 fileChanged: sourcePaneData.fileChanged,
                                 _scrollTopPos: sourcePaneData._scrollTopPos,
                                 shellType: sourcePaneData.shellType,
-                                // Chat state must travel with the tab so in-flight messages
-                                // aren't wiped when the pane is merged into another.
                                 chatMessages: sourcePaneData.chatMessages,
                                 executionMode: sourcePaneData.executionMode,
                                 selectedJinx: sourcePaneData.selectedJinx,
@@ -587,8 +573,6 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                             targetPaneData.fileChanged = activeTab.fileChanged || false;
                         }
 
-                        // Hydrate chat top-level fields from the active tab so renderChatView
-                        // finds chatMessages (and so in-flight streams write to the right place).
                         if (((activeTab.contentType === 'chat' || activeTab.contentType === 'agent') || activeTab.contentType === 'agent') && activeTab.chatMessages) {
                             targetPaneData.chatMessages = activeTab.chatMessages;
                             targetPaneData.executionMode = activeTab.executionMode;
@@ -602,9 +586,6 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                             });
                         }
 
-                        // Re-route any in-flight streams from the old pane id to the merged
-                        // target pane, otherwise an already-requested LLM response would
-                        // land in a deleted pane and the UI would appear to hang.
                         try {
                             if (streamToPaneRef?.current) {
                                 const oldId = comp.draggedItem.id;
@@ -771,7 +752,6 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                 }
 
                 forceRender(n => n + 1);
-                // Notify source pane to re-render (it lost a tab)
                 componentRef.current?.paneUpdateEmitter?.dispatchEvent(
                     new CustomEvent('pane-update', { detail: { paneId: sourceNodeId } })
                 );
@@ -788,13 +768,14 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             } else if (comp.draggedItem.type === 'file') {
                 const ext = comp.draggedItem.id.split('.').pop()?.toLowerCase();
                 if (ext === 'pdf') contentType = 'pdf';
-                else if (['csv', 'xlsx', 'xls'].includes(ext)) contentType = 'csv';
-                else if (['docx', 'doc'].includes(ext)) contentType = 'docx';
+                else if (['csv', 'xlsx', 'xls', 'ods'].includes(ext)) contentType = 'csv';
+                else if (['docx', 'doc', 'odt', 'odp'].includes(ext)) contentType = 'docx';
                 else if (ext === 'pptx') contentType = 'pptx';
                 else if (ext === 'tex') contentType = 'latex';
                 else if (ext === 'zip') contentType = 'zip';
                 else if (ext === 'ipynb') contentType = 'notebook';
                 else if (ext === 'exp') contentType = 'exp';
+                else if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'm4v', 'flv', 'ogv'].includes(ext)) contentType = 'video';
                 else contentType = 'editor';
             } else if (comp.draggedItem.type === 'browser') {
                 contentType = 'browser';
@@ -1229,6 +1210,9 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
         } else if (contentType === 'image') {
             headerIcon = <ImageIcon size={14} className="text-purple-400" />;
             headerTitle = getFileName(contentId) || 'Image Viewer';
+        } else if (contentType === 'video') {
+            headerIcon = <Video size={14} className="text-red-400" />;
+            headerTitle = getFileName(contentId) || 'Video';
         } else if (contentType === 'stl') {
             headerIcon = <Box size={14} className="text-cyan-400" />;
             headerTitle = getFileName(contentId) || 'STL Viewer';

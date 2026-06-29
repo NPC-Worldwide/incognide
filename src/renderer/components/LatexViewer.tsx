@@ -1263,16 +1263,12 @@ const LatexViewer = ({
                 const result = await (window as any).api.readFileContent(changedPath);
                 const diskContent = typeof result === 'string' ? result : result?.content;
                 if (diskContent == null) return;
-                // Echo guard: ignore disk events whose content matches what we just wrote (chokidar
-                // sometimes fires after our self-writing window expires).
                 if (diskContent === lastWrittenContentRef.current) return;
                 if (diskContent === contentRef.current) return;
                 if (hasChangesRef.current) {
-                    // Don't show a modal — surface a non-blocking banner. User picks Reload or Ignore.
                     setDiskChangeContent(diskContent);
                     return;
                 }
-                // No unsaved changes → silently sync to disk content.
                 setContent(diskContent);
                 setHasChanges(false);
                 setDiskChangeContent(null);
@@ -1711,7 +1707,6 @@ const LatexViewer = ({
                         accumulatedRef.text += text;
                     }
                 } catch {
-                    // non-JSON payload, append raw
                     accumulatedRef.text += payload;
                 }
             }
@@ -2276,7 +2271,6 @@ const LatexViewer = ({
                 <div className="flex flex-col flex-shrink-0 theme-bg-secondary" style={{
                     borderTop: '1px solid var(--theme-border)',
                 }}>
-                    {/* Drag handle for resizing */}
                     <div
                         onMouseDown={handleLogResizeStart}
                         className="h-1.5 cursor-ns-resize flex items-center justify-center hover:bg-blue-500/10 transition-colors"

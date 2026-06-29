@@ -1298,7 +1298,6 @@ const PptxViewer = ({
     input.click();
   }, [idx]);
 
-  // Add shape
   const addShape = useCallback((shapeType: string, color: string = '#4285f4') => {
     setSlides(prev => {
       const next = [...prev];
@@ -1318,7 +1317,6 @@ const PptxViewer = ({
     setShowShapePicker(false);
   }, [idx]);
 
-  // Update shape transform (position/size) in EMU
   const updateShapeXfrm = useCallback((shapeIdx: number, updates: Partial<{ x: number; y: number; cx: number; cy: number }>) => {
     setSlides(prev => {
       const next = [...prev];
@@ -1334,7 +1332,6 @@ const PptxViewer = ({
     setHasChanges(true);
   }, [idx]);
 
-  // Delete selected shape
   const deleteSelectedShape = useCallback(() => {
     if (selectedShapeIdx === null) return;
     setSlides(prev => {
@@ -1351,7 +1348,6 @@ const PptxViewer = ({
     setHasChanges(true);
   }, [idx, selectedShapeIdx]);
 
-  // Mouse move/up handlers for shape dragging/resizing — always attached
   const selectedShapeIdxRef = useRef(selectedShapeIdx);
   selectedShapeIdxRef.current = selectedShapeIdx;
   const updateShapeXfrmRef = useRef(updateShapeXfrm);
@@ -1370,7 +1366,7 @@ const PptxViewer = ({
       if (mode === 'move') {
         updateShapeXfrmRef.current(si, { x: Math.max(0, origX + dxEmu), y: Math.max(0, origY + dyEmu) });
       } else if (mode === 'resize') {
-        const minSize = 100000; // ~10px min
+        const minSize = 100000;
         if (handle === 'se') {
           updateShapeXfrmRef.current(si, { cx: Math.max(minSize, origCx + dxEmu), cy: Math.max(minSize, origCy + dyEmu) });
         } else if (handle === 'e') {
@@ -1408,17 +1404,14 @@ const PptxViewer = ({
     };
   }, [zoom, pxPerEmu]);
 
-  // Clear selection on slide change
   useEffect(() => {
     setSelectedShapeIdx(null);
     setEditingShapeIdx(null);
   }, [idx]);
 
-  // Delete key handler for selected shapes
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (selectedShapeIdx !== null && editingShapeIdx === null && (e.key === 'Delete' || e.key === 'Backspace')) {
-        // Only delete if we're not editing text inside the shape
         const active = document.activeElement;
         if (active && (active as HTMLElement).contentEditable === 'true') return;
         e.preventDefault();
@@ -1433,7 +1426,6 @@ const PptxViewer = ({
     return () => window.removeEventListener('keydown', handleKey);
   }, [selectedShapeIdx, editingShapeIdx, deleteSelectedShape]);
 
-  // Set slide background
   const setSlideBackground = useCallback((bg: string) => {
     setSlides(prev => {
       const next = [...prev];
@@ -1444,7 +1436,6 @@ const PptxViewer = ({
     setShowBgPicker(false);
   }, [idx]);
 
-  // Set slide gradient
   const setSlideGradient = useCallback((colors: string[]) => {
     const gradient = `linear-gradient(135deg, ${colors[0]}, ${colors[1]})`;
     setSlides(prev => {
@@ -1456,10 +1447,9 @@ const PptxViewer = ({
     setShowBgPicker(false);
   }, [idx]);
 
-  // Apply slide layout
   const layoutToShapes = useCallback((layout: typeof SLIDE_LAYOUTS[0]): Shape[] => {
     return layout.shapes.map((s: any) => {
-      const sizeHundredths = (s.size || 18) * 100; // convert pt to hundredths for inline style
+      const sizeHundredths = (s.size || 18) * 100;
       const boldTag = s.bold ? 'font-weight: bold' : '';
       const styleStr = [
         `font-size: ${s.size || 18}pt`,
@@ -1493,7 +1483,6 @@ const PptxViewer = ({
     setShowLayoutPicker(false);
   }, [idx, layoutToShapes]);
 
-  // Add slide - creates a new blank slide with Title Slide layout after current position
   const addSlide = useCallback(() => {
     if (!slides.length) return;
 
@@ -1511,7 +1500,6 @@ const PptxViewer = ({
     setHasChanges(true);
   }, [slides, idx, layoutToShapes]);
 
-  // Delete slide
   const deleteSlide = useCallback(() => {
     if (slides.length <= 1) return;
     setSlides(prev => prev.filter((_, i) => i !== idx));
@@ -1519,7 +1507,6 @@ const PptxViewer = ({
     setHasChanges(true);
   }, [slides.length, idx]);
 
-  // Duplicate slide
   const duplicateSlide = useCallback(() => {
     if (!activeSlide) return;
     const cloned: Slide = {
@@ -1535,7 +1522,6 @@ const PptxViewer = ({
     setHasChanges(true);
   }, [activeSlide, slides.length, idx]);
 
-  // Save
   const handleRenameAndSave = useCallback(async (newName) => {
     if (!newName) return;
     const currentFilePath = contentDataRef.current[nodeId]?.contentId || filePath;
@@ -1609,7 +1595,6 @@ const PptxViewer = ({
     }
   }, [zip, presDoc, presRelsDoc, slides, filePath, hasChanges, currentPath, nodeId, contentDataRef]);
 
-  // Presentation mode
   const enterPresentation = useCallback(() => {
     setIsPresentationMode(true);
     presentationRef.current?.requestFullscreen?.();
@@ -1620,7 +1605,6 @@ const PptxViewer = ({
     document.exitFullscreen?.();
   }, []);
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === 's') {
@@ -1640,7 +1624,6 @@ const PptxViewer = ({
     return () => window.removeEventListener('keydown', handleKey);
   }, [save, isPresentationMode, idx, slides.length, exitPresentation]);
 
-  // Fullscreen change
   useEffect(() => {
     const handler = () => {
       if (!document.fullscreenElement) setIsPresentationMode(false);
@@ -1649,7 +1632,6 @@ const PptxViewer = ({
     return () => document.removeEventListener('fullscreenchange', handler);
   }, []);
 
-  // Close dropdowns on click outside
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (!(e.target as HTMLElement).closest('.dropdown-container')) {
@@ -1664,7 +1646,6 @@ const PptxViewer = ({
     return () => document.removeEventListener('click', handler);
   }, []);
 
-  // Helper to compute color brightness (0-255)
   const getColorBrightness = useCallback((color: string): number => {
     if (!color) return 255;
     const hex = color.replace('#', '').replace(/^linear-gradient.*$/, 'ffffff');
@@ -1672,20 +1653,16 @@ const PptxViewer = ({
     const r = parseInt(hex.substr(0, 2), 16);
     const g = parseInt(hex.substr(2, 2), 16);
     const b = parseInt(hex.substr(4, 2), 16);
-    // Perceived brightness formula
     return (r * 299 + g * 587 + b * 114) / 1000;
   }, []);
 
-  // Render slide content
   const renderSlideContent = useCallback((slide: Slide, scale: number = 1, editable: boolean = true) => {
-    // Determine default text color based on slide background brightness
     const bgBrightness = getColorBrightness(slide.background || '#ffffff');
     const useLight = bgBrightness < 128; // Dark background = use light text
     const defaultTextColor = useLight
       ? (themeColors['lt1'] || '#ffffff')
       : (themeColors['dk1'] || themeColors['dk2'] || '#000000');
 
-    // Selection border + resize handles for a selected element
     const renderSelectionOverlay = (si: number) => {
       if (!editable || selectedShapeIdx !== si) return null;
       const handleSize = 8;
@@ -1725,7 +1702,6 @@ const PptxViewer = ({
                   origCx: shape.xfrm.cx, origCy: shape.xfrm.cy,
                   mode: 'resize', handle: h,
                 };
-                // Force re-render to attach mousemove/mouseup listeners
                 setSelectedShapeIdx(si);
               }}
             />
@@ -1734,7 +1710,6 @@ const PptxViewer = ({
       );
     };
 
-    // Wrapper for click-to-select, double-click-to-edit, drag-to-move
     const wrapShape = (si: number, el: React.ReactNode, style: React.CSSProperties) => {
       const isSelected = selectedShapeIdx === si;
       const isEditing = editingShapeIdx === si;
@@ -1744,7 +1719,6 @@ const PptxViewer = ({
           style={{ ...style, cursor: editable ? (isEditing ? 'text' : isSelected ? 'move' : 'pointer') : 'default', zIndex: isSelected && editable ? 50 : style.zIndex }}
           onMouseDown={(e) => {
             if (!editable) return;
-            // If editing text, don't start a drag
             if (isEditing) return;
             e.stopPropagation();
             setSelectedShapeIdx(si);
@@ -1783,14 +1757,12 @@ const PptxViewer = ({
       };
 
       if (shape.type === 'text') {
-        // Build text box styles (relative inside wrapper)
         const textBoxStyle: React.CSSProperties = {
           width: '100%',
           height: '100%',
           padding: 4 * scale,
           boxSizing: 'border-box' as const,
         };
-        // Only apply background if there's a fill color and noFill is not set
         if (shape.fillColor && !shape.noFill) {
           textBoxStyle.backgroundColor = shape.fillColor;
         }
@@ -1892,9 +1864,6 @@ const PptxViewer = ({
     });
   }, [emuToPx, updateParaHTML, themeColors, selectedShapeIdx, editingShapeIdx, zoom, pxPerEmu]);
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Studio Actions: Expose presentation methods for AI control
-  // ═══════════════════════════════════════════════════════════════════
   const slidesRef = useRef(slides);
   const idxRef = useRef(idx);
   useEffect(() => { slidesRef.current = slides; }, [slides]);
@@ -1904,7 +1873,6 @@ const PptxViewer = ({
     if (!contentDataRef.current[nodeId]) return;
     const ref = contentDataRef.current[nodeId];
 
-    // READ: Get presentation overview with text content per slide
     ref.readPresentation = async () => {
       const s = slidesRef.current;
       return {
@@ -1930,7 +1898,6 @@ const PptxViewer = ({
       };
     };
 
-    // READ: Get detailed info about a specific slide
     ref.readSlide = async (slideIndex?: number) => {
       const si = slideIndex ?? idxRef.current;
       const slide = slidesRef.current[si];
@@ -1955,7 +1922,6 @@ const PptxViewer = ({
       };
     };
 
-    // EVAL: Execute arbitrary JS with access to slides data
     ref.evalPresentation = async (code: string) => {
       try {
         const fn = new Function('ctx', code);
@@ -1974,7 +1940,6 @@ const PptxViewer = ({
       }
     };
 
-    // NAVIGATE: Go to slide
     ref.goToSlide = async (slideIndex: number) => {
       if (slideIndex < 0 || slideIndex >= slidesRef.current.length) {
         return { success: false, error: `Invalid slide index: ${slideIndex}. Total: ${slidesRef.current.length}` };
@@ -1983,7 +1948,6 @@ const PptxViewer = ({
       return { success: true, slideIndex };
     };
 
-    // WRITE: Update text in a shape
     ref.updateSlideText = async (shapeIndex: number, text: string, slideIndex?: number) => {
       const si = slideIndex ?? idxRef.current;
       setSlides(prev => {
@@ -1993,9 +1957,7 @@ const PptxViewer = ({
         const sh = { ...shapes[shapeIndex] };
         if (sh.paras && sh.paras.length > 0) {
           const paras = [...sh.paras];
-          // Replace all paragraph text, keep first para formatting
           paras[0] = { ...paras[0], html: text.replace(/</g, '&lt;').replace(/>/g, '&gt;') };
-          // Remove extra paragraphs if just setting a single text
           sh.paras = [paras[0]];
         }
         shapes[shapeIndex] = sh;
@@ -2007,13 +1969,11 @@ const PptxViewer = ({
       return { success: true };
     };
 
-    // STRUCT: Add slide
     ref.addPresentationSlide = async () => {
       addSlide();
       return { success: true, slideCount: slidesRef.current.length + 1 };
     };
 
-    // STRUCT: Delete slide
     ref.deletePresentationSlide = async (slideIndex?: number) => {
       const si = slideIndex ?? idxRef.current;
       if (slidesRef.current.length <= 1) return { success: false, error: 'Cannot delete the only slide' };
@@ -2023,7 +1983,6 @@ const PptxViewer = ({
       return { success: true };
     };
 
-    // STRUCT: Duplicate slide
     ref.duplicatePresentationSlide = async (slideIndex?: number) => {
       const si = slideIndex ?? idxRef.current;
       const slide = slidesRef.current[si];
@@ -2042,26 +2001,22 @@ const PptxViewer = ({
       return { success: true, slideCount: slidesRef.current.length + 1 };
     };
 
-    // STYLE: Set slide background
     ref.setPresentationSlideBackground = async (color: string) => {
       setSlideBackground(color);
       return { success: true, color };
     };
 
-    // SHAPE: Add shape
     ref.addPresentationShape = async (shapeType: string, color?: string) => {
       addShape(shapeType, color || '#4285f4');
       return { success: true, shapeType };
     };
 
-    // SAVE
     ref.savePresentation = async () => {
       await save();
       return { success: true };
     };
   }, [nodeId, filePath, hasChanges, addSlide, addShape, setSlideBackground, save, updateParaHTML]);
 
-  // Error state
   if (err) {
     return (
       <div className="h-full flex flex-col theme-bg-secondary p-4">
@@ -2076,7 +2031,6 @@ const PptxViewer = ({
     );
   }
 
-  // Loading state
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center theme-bg-secondary">
@@ -2088,7 +2042,6 @@ const PptxViewer = ({
     );
   }
 
-  // No slides
   if (!slides.length || !activeSlide) {
     return (
       <div className="h-full flex items-center justify-center theme-bg-secondary">
@@ -2097,7 +2050,6 @@ const PptxViewer = ({
     );
   }
 
-  // Presentation mode
   if (isPresentationMode) {
     const scale = Math.min(window.innerWidth / slideWidth, window.innerHeight / slideHeight);
     return (
@@ -2127,7 +2079,6 @@ const PptxViewer = ({
     );
   }
 
-  // Main editor
   return (
     <div
       className="h-full flex flex-col theme-bg-secondary overflow-hidden"
@@ -2137,7 +2088,6 @@ const PptxViewer = ({
         setPptxContextMenu({ x: e.clientX, y: e.clientY });
       }}
     >
-      {/* Header */}
       <div
         draggable={!isLocalRenaming}
         onDragStart={(e) => {

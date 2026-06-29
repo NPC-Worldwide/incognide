@@ -1,4 +1,6 @@
 name: levi
+model: kimi-k2.6:cloud
+provider: ollama
 ascii_art: |2
      / \__
     (    @\___
@@ -73,6 +75,8 @@ jinxes:
   - {{ Jinx('request_approval') }}
   - {{ Jinx('notify') }}
   - {{ Jinx('prompt') }}
+  - {{ Jinx('shell') }}
+  - {{ Jinx('py') }}
   - {{ Jinx('knowledge_search') }}
   - {{ Jinx('knowledge_load') }}
   - {{ Jinx('knowledge_context') }}

@@ -189,10 +189,8 @@ const CookiesTab: React.FC<{ currentPath?: string; browserSessionMode?: string; 
     useEffect(() => {
         (async () => {
             try {
-                // Try global partition first, then any known partitions
                 const r = await (window as any).api?.browserGetCookieDomains?.({ partition: 'browser-global' });
                 let allDomains: string[] = r?.domains || [];
-                // Also check project partition if applicable
                 if (currentPath) {
                     const key = currentPath.replace(/[^a-z0-9]/gi, '_');
                     const r2 = await (window as any).api?.browserGetCookieDomains?.({ partition: `browser-project-${key}` }).catch(() => null);

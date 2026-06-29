@@ -1,24 +1,16 @@
-
-
 import { registerAction, StudioContext, StudioActionResult } from './index';
-
-// ---------------------------------------------------------------------------
-// Prompt system — injects interactive prompts into chat message history
-// ---------------------------------------------------------------------------
 
 export interface PromptData {
   id: string;
   message: string;
   prompt_type: 'choices' | 'confirm' | 'text' | 'form';
   options: any;
-  response?: any;       // filled when user responds
-  respondedAt?: string;  // ISO timestamp
+  response?: any;
+  respondedAt?: string;
 }
 
-// Pending prompt resolvers — keyed by promptId
 const _pendingResolvers: Map<string, (value: any) => void> = new Map();
 
-/** Called by the UI when user responds to a prompt */
 export function resolvePrompt(promptId: string, value: any): void {
   const resolve = _pendingResolvers.get(promptId);
   if (resolve) {
@@ -28,12 +20,10 @@ export function resolvePrompt(promptId: string, value: any): void {
 }
 
 function findChatPaneData(ctx: StudioContext, paneId?: string): any {
-  // Find the active chat pane
   const targetId = (!paneId || paneId === 'active') ? ctx.activeContentPaneId : paneId;
   const data = ctx.contentDataRef.current[targetId];
   if ((data?.contentType === 'chat' || data?.contentType === 'agent')) return { paneData: data, paneId: targetId };
 
-  // Fallback: search all panes for a chat
   for (const [id, d] of Object.entries(ctx.contentDataRef.current)) {
     if ((d as any)?.contentType === 'chat' || (d as any)?.contentType === 'agent') return { paneData: d, paneId: id };
   }
@@ -51,7 +41,6 @@ async function prompt_user(
     return { success: false, error: 'message is required' };
   }
 
-  // Parse options if it's a JSON string
   if (typeof options === 'string') {
     try { options = JSON.parse(options); } catch { options = []; }
   }
@@ -65,7 +54,6 @@ async function prompt_user(
     options: options || [],
   };
 
-  // Inject a prompt message into the chat pane
   const { paneData, paneId } = findChatPaneData(ctx, args.pane_id);
   if (paneData?.chatMessages) {
     const promptMsg = {
@@ -80,18 +68,15 @@ async function prompt_user(
       -(paneData.chatMessages.displayedMessageCount || 20)
     );
 
-    // Trigger re-render
     if (ctx.notifyPaneUpdate && paneId) {
       ctx.notifyPaneUpdate(paneId);
     }
   }
 
-  // Wait for user response
   const userResponse = await new Promise<any>((resolve) => {
     _pendingResolvers.set(promptId, resolve);
   });
 
-  // Update the prompt message with the response
   if (paneData?.chatMessages) {
     const msg = paneData.chatMessages.allMessages.find(
       (m: any) => m.id === `msg_${promptId}`

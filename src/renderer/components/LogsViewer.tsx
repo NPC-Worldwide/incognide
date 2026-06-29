@@ -32,11 +32,9 @@ const LogsViewer: React.FC<LogsViewerProps> = ({ onClose }) => {
             return { text: '', level: 'debug' };
         }
 
-        // Extract timestamp if present [2024-01-01T12:00:00.000Z]
         const timestampMatch = trimmed.match(/^\[([^\]]+)\]/);
         const timestamp = timestampMatch ? timestampMatch[1] : undefined;
 
-        // Determine log level
         let level: LogLine['level'] = 'info';
         const lowerLine = trimmed.toLowerCase();
 
@@ -57,7 +55,6 @@ const LogsViewer: React.FC<LogsViewerProps> = ({ onClose }) => {
 
         try {
             const content = await (window as any).api?.readLogFile?.(logType);
-            // API returns string directly or empty string
             const text = typeof content === 'string' ? content : '';
             setLogContent(text);
             const lines = text.split('\n').map(parseLogLine);
@@ -74,7 +71,6 @@ const LogsViewer: React.FC<LogsViewerProps> = ({ onClose }) => {
     const getLogsDirectory = useCallback(async () => {
         try {
             const result = await (window as any).api?.getLogsDir?.();
-            // API returns { logsDir, electronLog, backendLog }
             if (result?.logsDir) setLogsDir(result.logsDir);
         } catch (err) {
             console.error('Failed to get logs directory:', err);
@@ -146,7 +142,6 @@ const LogsViewer: React.FC<LogsViewerProps> = ({ onClose }) => {
     return (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
             <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-4xl max-h-[80vh] flex flex-col">
-                {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-gray-700">
                     <div className="flex items-center gap-3">
                         <FileText size={20} className="text-blue-400" />
@@ -160,9 +155,7 @@ const LogsViewer: React.FC<LogsViewerProps> = ({ onClose }) => {
                     </button>
                 </div>
 
-                {/* Toolbar */}
                 <div className="flex items-center gap-3 p-3 border-b border-gray-800 flex-wrap">
-                    {/* Log type tabs */}
                     <div className="flex rounded-lg bg-gray-800 p-0.5">
                         <button
                             onClick={() => setLogType('backend')}
@@ -188,7 +181,6 @@ const LogsViewer: React.FC<LogsViewerProps> = ({ onClose }) => {
                         </button>
                     </div>
 
-                    {/* Filter */}
                     <div className="flex items-center gap-1.5">
                         <Filter size={14} className="text-gray-500" />
                         <select
@@ -202,7 +194,6 @@ const LogsViewer: React.FC<LogsViewerProps> = ({ onClose }) => {
                         </select>
                     </div>
 
-                    {/* Stats */}
                     <div className="flex items-center gap-2 text-xs">
                         {errorCount > 0 && (
                             <span className="px-2 py-0.5 bg-red-900/50 text-red-400 rounded">
@@ -218,7 +209,6 @@ const LogsViewer: React.FC<LogsViewerProps> = ({ onClose }) => {
 
                     <div className="flex-1" />
 
-                    {/* Actions */}
                     <button
                         onClick={() => setAutoRefresh(!autoRefresh)}
                         className={`p-1.5 rounded-lg transition-colors ${
@@ -257,7 +247,6 @@ const LogsViewer: React.FC<LogsViewerProps> = ({ onClose }) => {
                     </button>
                 </div>
 
-                {/* Log content */}
                 <div
                     ref={logContainerRef}
                     className="flex-1 overflow-auto p-4 font-mono text-xs bg-gray-950"
@@ -285,7 +274,6 @@ const LogsViewer: React.FC<LogsViewerProps> = ({ onClose }) => {
                     )}
                 </div>
 
-                {/* Footer */}
                 <div className="flex items-center justify-between px-4 py-2 border-t border-gray-800 text-xs text-gray-500">
                     <span>
                         {filteredLines.length} lines

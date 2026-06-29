@@ -174,7 +174,6 @@ const DBTool: React.FC<DBToolProps> = ({
                     if (res.error) throw new Error(res.error);
                     setDbTables(res.tables || []);
                     await testDbConnection(selectedDatabase);
-                    // Set default query to first table if available
                     if (res.tables && res.tables.length > 0 && !sqlQuery) {
                         setSqlQuery(`SELECT * FROM ${res.tables[0]} LIMIT 10;`);
                     }

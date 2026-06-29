@@ -391,17 +391,33 @@ function register(ctx) {
     return null;
   }
 
-  ipcMain.handle('get-provider-models', async (event, { provider }) => {
-    // Delegate to the backend /api/models endpoint which already handles all provider auth
+  async function _loadRegisteredTeamPaths() {
+    let registeredTeams = [];
     try {
-      const response = await fetch(`${BACKEND_URL}/api/models?currentPath=~`);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      const filtered = (data.models || []).filter((m) => m.provider === provider || m.provider === provider.toLowerCase());
-      return { models: filtered.map((m) => ({ id: m.value || m.id || m.name, name: m.display_name || m.value || m.id || m.name, provider: m.provider })) };
-    } catch {
-      return { models: [], error: 'Backend unavailable' };
-    }
+      const teamsContent = await fsPromises.readFile(path.join(INCOGNIDE_HOME, 'teams.yaml'), 'utf8');
+      const teamsParsed = yaml.load(teamsContent);
+      for (const teamPath of Object.values(teamsParsed?.teams || {})) {
+        const tp = String(teamPath || '').replace(/^~(?=\/|$)/, os.homedir());
+        if (tp) registeredTeams.push(tp);
+      }
+    } catch {}
+    return registeredTeams;
+  }
+
+  ipcMain.handle('get-provider-models', async (event, { provider }) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/available_models?currentPath=~`);
+      if (response.ok) {
+        const data = await response.json();
+        const normalizedProvider = (provider || '').toLowerCase();
+        const filtered = (data.models || []).filter((m) => {
+          const mp = (m.provider || '').toLowerCase();
+          return mp === normalizedProvider || mp.startsWith(`${normalizedProvider}_`) || mp.endsWith(`_${normalizedProvider}`);
+        });
+        return { models: filtered.map((m) => ({ id: m.value || m.id || m.name, name: m.display_name || m.value || m.id || m.name, provider: m.provider })) };
+      }
+    } catch {}
+    return { models: [], error: 'No models found' };
   });
 
   ipcMain.handle('getAvailableImageModels', async (event, currentPath) => {

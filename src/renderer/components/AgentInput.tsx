@@ -1,8 +1,9 @@
-import { getFileName } from './utils';
+import { getFileName, normalizePath } from './utils';
+import yaml from 'js-yaml';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { BACKEND_URL } from '../config';
 import {
-    Send, Paperclip, Maximize2, ChevronDown, Star, ListFilter, FolderTree, Minimize2, Mic, MicOff, Volume2, GitBranch, Save, Trash2, Zap, X, RefreshCw,
+    Send, Paperclip, Maximize2, ChevronDown, Star, ListFilter, FolderTree, Minimize2, Mic, MicOff, Volume2, GitBranch, Save, Trash2, Zap, X, RefreshCw, Plus,
     FileCode, Globe, FileText, Terminal as TerminalIcon, Eye, EyeOff, ToggleLeft, ToggleRight,
     Database, BarChart3, BrainCircuit, Image, Bot, Users, Music, Search, BookOpen, Folder, HardDrive, HelpCircle, Clock, Settings, MessageSquare, Tag
 } from 'lucide-react';
@@ -11,7 +12,6 @@ import KgIcon from './icons/KgIcon';
 import ContextFilesPanel from './ContextFilesPanel';
 
 const getMcpServerDisplayName = (serverPath: string): string => {
-    // Handle team-based: "python -m npcpy.mcp_server --team /path/to/npc_team"
     const teamMatch = serverPath.match(/--team\s+(.+)$/);
     if (teamMatch) {
         const teamPath = teamMatch[1].trim().replace(/\/$/, '');
@@ -23,7 +23,6 @@ const getMcpServerDisplayName = (serverPath: string): string => {
         }
         return last.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     }
-    // Handle npx/uvx commands
     if (serverPath.startsWith('npx ') || serverPath.startsWith('uvx ')) {
         const parts = serverPath.split(/\s+/);
         const pkg = parts[parts.length - 1];
@@ -141,6 +140,7 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         currentProvider, setCurrentProvider, favoriteModels, toggleFavoriteModel,
         showAllModels, setShowAllModels, modelsToDisplay, ollamaToolModels, setError,
         currentNPC, setCurrentNPC,
+        availableNPCs, npcsLoading, npcsError,
         selectedModels, setSelectedModels, selectedNPCs, setSelectedNPCs,
         broadcastMode, setBroadcastMode,
         availableMcpServers, enabledMcpServers,
@@ -207,57 +207,14 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
     const [showMcpServersDropdown, setShowMcpServersDropdown] = useState(false);
     const [localMcpServers, setLocalMcpServers] = useState<any[]>([]);
 
-    // NPC-resolved tools (from NPC config: jinxes + mcp_servers + python tools)
     const [npcResolvedTools, setNpcResolvedTools] = useState<any[]>([]);
     const [teamServers, setTeamServers] = useState<any[]>([]);
     const [npcToolsLoading, setNpcToolsLoading] = useState(false);
-    const [availableNPCs, setAvailableNPCs] = useState<any[]>([]);
-    const [npcsLoading, setNpcsLoading] = useState(false);
-    const [npcsError, setNpcsError] = useState<string | null>(null);
-    const loadAvailableNPCs = async () => {
-        setNpcsLoading(true);
-        setNpcsError(null);
-        try {
-            const teamsData = await window.api.teamsRead();
-            const registeredPaths = Object.entries(teamsData?.teams || {});
-            const teamFetches: Promise<any>[] = registeredPaths.map(([key, teamPath]) =>
-                window.api.getNPCTeamFromPath(teamPath)
-            );
-            const results = await Promise.allSettled(teamFetches);
-            const combinedNPCs: any[] = [];
-            results.forEach((result, idx) => {
-                const [teamKey] = registeredPaths[idx];
-                const value = result.status === 'fulfilled' ? result.value : {};
-                const npcs = value.npcs || [];
-                npcs.forEach((npc: any) => {
-                    combinedNPCs.push({
-                        ...npc,
-                        value: npc.name,
-                        display_name: `${npc.name} | ${npc.team_name || teamKey}`,
-                        source: 'registered',
-                        team: teamKey,
-                        _teamConfig: value.teamConfig,
-                    });
-                });
-            });
-            setAvailableNPCs(combinedNPCs);
-        } catch (err: any) {
-            setNpcsError(err.message);
-            setAvailableNPCs([]);
-        } finally {
-            setNpcsLoading(false);
-        }
-    };
-    useEffect(() => {
-        loadAvailableNPCs();
-    }, [paneId, currentPath]);
-    // Track which MCP servers are enabled (multi-select)
     const [enabledServers, setEnabledServers] = useState<Set<string>>(() => new Set(enabledMcpServers || []));
 
     const toggleServer = async (serverPath: string) => {
         const isEnabled = enabledServers.has(serverPath);
         if (isEnabled) {
-            // Remove this server's tools
             const serverLabel = getFileName(serverPath)?.replace(/\.py$/, '') || serverPath;
             setEnabledServers(prev => { const next = new Set(prev); next.delete(serverPath); return next; });
             setAvailableMcpTools(prev => prev.filter((t: any) => t._serverPath !== serverPath));
@@ -268,7 +225,6 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                 return prev.filter(n => !removedNames.has(n));
             });
         } else {
-            // Add this server's tools
             setEnabledServers(prev => new Set(prev).add(serverPath));
             setMcpToolsLoading(true);
             try {
@@ -298,15 +254,12 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         }
     };
 
-    // Try to list tools, auto-starting the server if needed
     const ensureServerAndListTools = async (serverPath: string): Promise<any> => {
         const api = (window as any).api;
         let res = await api.listMcpTools({ serverPath, currentPath });
         if (res.error || !(res.tools?.length)) {
-            // Server may not be running — attempt to start it
             try {
                 await api.startMcpServer?.({ serverPath, currentPath });
-                // Brief wait for server startup
                 await new Promise(r => setTimeout(r, 1500));
                 res = await api.listMcpTools({ serverPath, currentPath });
             } catch (startErr: any) {
@@ -316,7 +269,6 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         return res;
     };
 
-    // Legacy single-server loader (kept for backward compat / auto-load)
     const loadToolsForServer = async (serverPath: string) => {
         setEnabledServers(new Set([serverPath]));
         setMcpToolsLoading(true);
@@ -348,7 +300,6 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         }
     };
 
-    // Load NPC-resolved tools when NPC changes or tool_agent mode activates
     const loadNpcTools = async (npcName: string) => {
         if (!npcName) return;
         setNpcToolsLoading(true);
@@ -388,24 +339,20 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         }
     }, [availableMcpServers]);
 
-    // When NPC changes in tool_agent mode, load its resolved tools
     useEffect(() => {
         if (executionMode !== 'tool_agent' || !currentNPC) return;
         loadNpcTools(currentNPC);
     }, [currentNPC, executionMode]);
 
-    // Force tool_agent mode on mount — this pane is always agent
     useEffect(() => {
         if (executionMode !== 'tool_agent') setExecutionMode('tool_agent');
     }, [executionMode]);
 
-    // Auto-enable ALL listed MCP servers by default and load their tools
     useEffect(() => {
         if (availableMcpServers.length > 0) {
             setLocalMcpServers(availableMcpServers);
             const allPaths = availableMcpServers.map((s: any) => s.serverPath).filter(Boolean);
             setEnabledServers(new Set(allPaths));
-            // Load tools for all servers
             (async () => {
                 setMcpToolsLoading(true);
                 const allTools: any[] = [];
@@ -438,12 +385,38 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
     const [showNpcsDropdown, setShowNpcsDropdown] = useState(false);
     const modelsDropdownRef = useRef<HTMLDivElement>(null);
 
+    const [showAddModelPanel, setShowAddModelPanel] = useState(false);
+    const [addModelName, setAddModelName] = useState('');
+    const [addModelProvider, setAddModelProvider] = useState('');
+    const [addModelApiUrl, setAddModelApiUrl] = useState('');
+    const [addModelApiKey, setAddModelApiKey] = useState('');
+    const [addModelProviderType, setAddModelProviderType] = useState('');
+    const [addModelError, setAddModelError] = useState<string | null>(null);
+    const [addModelSaving, setAddModelSaving] = useState(false);
+    const [providerModelSelector, setProviderModelSelector] = useState<{
+        provider: any;
+        models: string[];
+        selected: Set<string>;
+        loading: boolean;
+        error: string | null;
+    } | null>(null);
+    const [detectedProviders, setDetectedProviders] = useState<any[]>([]);
+    const [detectedProvidersLoading, setDetectedProvidersLoading] = useState(false);
+
+    const teamCtxProviders = useMemo(() => {
+        if (!currentNPC || availableNPCs.length === 0) return [];
+        const npc = availableNPCs.find((n: any) => n.value === currentNPC || n.name === currentNPC);
+        const providers = npc?._teamConfig?.providers || [];
+        return Array.isArray(providers) ? providers : [];
+    }, [currentNPC, availableNPCs]);
+
     const [modelSearch, setModelSearch] = useState('');
     const [npcSearch, setNpcSearch] = useState('');
     const [jinxSearch, setJinxSearch] = useState('');
     const modelSearchRef = useRef<HTMLInputElement>(null);
     const npcSearchRef = useRef<HTMLInputElement>(null);
     const jinxSearchRef = useRef<HTMLInputElement>(null);
+    const addModelNameRef = useRef<HTMLInputElement>(null);
 
     const [disableThinking, setDisableThinking] = useState(() => {
         try { return localStorage.getItem('incognide-disable-thinking') === 'true'; } catch { return false; }
@@ -482,7 +455,209 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
     const [showJinxSuggestion, setShowJinxSuggestion] = useState(false);
     const firstJinxInputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
-    // Only show jinxes that belong to the current NPC (scoped to npcResolvedTools)
+    const currentNpcTeamPath = useMemo(() => {
+        if (!currentNPC || availableNPCs.length === 0) return null;
+        const npc = availableNPCs.find((n: any) => n.value === currentNPC || n.name === currentNPC);
+        return npc?.teamPath || null;
+    }, [currentNPC, availableNPCs]);
+
+    const currentNpcTeamKey = useMemo(() => {
+        if (!currentNPC || availableNPCs.length === 0) return null;
+        const npc = availableNPCs.find((n: any) => n.value === currentNPC || n.name === currentNPC);
+        return npc?.team || null;
+    }, [currentNPC, availableNPCs]);
+
+    const findCtxFile = async (dirPath: string) => {
+        try {
+            const items = await (window as any).api.readDirectory(dirPath);
+            const ctxFiles = (items || []).filter((item: any) => item.name && item.name.endsWith('.ctx'));
+            if (ctxFiles.length > 0) return ctxFiles[0].name;
+        } catch {}
+        return null;
+    };
+
+    const saveProviderToTeamCtx = async (providerName: string, models: string[] | null, options?: { apiUrl?: string; apiKey?: string; providerType?: string }) => {
+        if (!currentNpcTeamPath) throw new Error('No team path for the selected NPC.');
+        const ctxFile = await findCtxFile(currentNpcTeamPath);
+        const targetFile = ctxFile || 'team.ctx';
+        const filePath = normalizePath(`${currentNpcTeamPath}/${targetFile}`);
+
+        let rawCtx: string | null = null;
+        try {
+            const result = await (window as any).api.readFileContent(filePath);
+            rawCtx = typeof result === 'string' ? result : result?.content;
+        } catch {}
+
+        let ctx: any = {};
+        if (rawCtx) {
+            try {
+                const processed = rawCtx.replace(/(?<!["'])\{\{[^{}]*\}\}(?!["'])/g, (match: string) => `"${match}"`);
+                ctx = yaml.load(processed) || {};
+            } catch {
+                ctx = {};
+            }
+        }
+
+        const providers: any[] = Array.isArray(ctx.providers) ? [...ctx.providers] : [];
+        const existing = providers.find((p: any) => p.name === providerName);
+
+        const newEntry: any = {
+            name: providerName,
+            ...(options?.apiUrl ? { api_url: options.apiUrl } : {}),
+        };
+        if (Array.isArray(models) && models.length > 0) {
+            newEntry.models = models;
+        }
+
+        if (!existing) {
+            providers.push(newEntry);
+        } else {
+            const idx = providers.indexOf(existing);
+            const merged = { ...existing };
+            if (options?.apiUrl) merged.api_url = options.apiUrl;
+            if (Array.isArray(models) && models.length > 0) {
+                const existingModels = new Set(merged.models || []);
+                models.forEach((m) => existingModels.add(m));
+                merged.models = Array.from(existingModels);
+            } else if (models === null) {
+                delete merged.models;
+            }
+            providers[idx] = merged;
+        }
+
+        const cleanCtx = { ...ctx, providers };
+        delete cleanCtx.external_jinx_teams;
+        delete cleanCtx.EXTERNAL_JINX_TEAMS;
+
+        const result = await (window as any).api.writeFileContent(filePath, yaml.dump(cleanCtx, { lineWidth: -1 }));
+        if (result?.error) throw new Error(result.error);
+
+        return { filePath, targetFile };
+    };
+
+    const saveModelToTeamCtx = async (modelName: string, providerName: string, options?: { apiUrl?: string; apiKey?: string; providerType?: string }) => {
+        await saveProviderToTeamCtx(providerName, [modelName], options);
+    };
+
+    const handleSaveNewModel = async () => {
+        const mName = addModelName.trim();
+        const pName = addModelProvider.trim();
+        if (!mName || !pName) {
+            setAddModelError('Model name and provider are required.');
+            return;
+        }
+        setAddModelSaving(true);
+        setAddModelError(null);
+        try {
+            await saveModelToTeamCtx(mName, pName, {
+                apiUrl: addModelApiUrl.trim() || undefined,
+                apiKey: addModelApiKey.trim() || undefined,
+                providerType: addModelProviderType.trim() || pName,
+            });
+            setCurrentModel(mName);
+            setCurrentProvider(pName);
+            setSelectedModels([mName]);
+            setAddModelName('');
+            setAddModelProvider('');
+            setAddModelApiUrl('');
+            setAddModelApiKey('');
+            setAddModelProviderType('');
+            setShowAddModelPanel(false);
+            setModelSearch('');
+            setShowModelsDropdown(false);
+            setError?.('');
+        } catch (err: any) {
+            setAddModelError(err.message || 'Failed to save model.');
+        } finally {
+            setAddModelSaving(false);
+        }
+    };
+
+    const openProviderModelSelector = async (prov: any) => {
+        const providerName = prov.name || prov.displayName || prov.provider;
+        const providerType = prov.provider || providerName;
+        const existingModels = Array.isArray(prov.models) ? prov.models : [];
+        setProviderModelSelector({ provider: prov, models: [], selected: new Set(), loading: true, error: null });
+        try {
+            const result = await (window as any).api.getProviderModels({ provider: providerType });
+            const fetchedModels = (result?.models || []).map((m: any) => m.id || m.name || m.value).filter(Boolean);
+            const models = fetchedModels.length > 0 ? fetchedModels : existingModels;
+            setProviderModelSelector({
+                provider: prov,
+                models,
+                selected: new Set(models),
+                loading: false,
+                error: models.length === 0 ? 'No models found for this provider.' : null,
+            });
+        } catch (err: any) {
+            setProviderModelSelector({
+                provider: prov,
+                models: existingModels,
+                selected: new Set(existingModels),
+                loading: false,
+                error: err.message || 'Failed to load models.',
+            });
+        }
+    };
+
+    const handleSaveSelectedProviderModels = async () => {
+        if (!providerModelSelector || providerModelSelector.selected.size === 0) return;
+        const prov = providerModelSelector.provider;
+        const providerName = prov.name || prov.displayName || prov.provider;
+        const providerType = prov.provider || providerName;
+        setAddModelSaving(true);
+        setAddModelError(null);
+        try {
+            const allSelected = providerModelSelector.selected.size === providerModelSelector.models.length && providerModelSelector.models.length > 0;
+            await saveProviderToTeamCtx(providerName, allSelected ? null : Array.from(providerModelSelector.selected), {
+                providerType,
+            });
+            const first = allSelected ? providerModelSelector.models[0] : Array.from(providerModelSelector.selected)[0];
+            setCurrentModel(first);
+            setCurrentProvider(providerName);
+            setSelectedModels([first]);
+            setProviderModelSelector(null);
+            setShowAddModelPanel(false);
+            setModelSearch('');
+            setShowModelsDropdown(false);
+            setError?.('');
+        } catch (err: any) {
+            setAddModelError(err.message || 'Failed to save models.');
+        } finally {
+            setAddModelSaving(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!showAddModelPanel) {
+            setProviderModelSelector(null);
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            setDetectedProvidersLoading(true);
+            try {
+                const d = await (window as any).api?.detectProviderKeys?.();
+                if (!cancelled) setDetectedProviders(Array.isArray(d) ? d : []);
+            } catch {
+                if (!cancelled) setDetectedProviders([]);
+            }
+            if (!cancelled) setDetectedProvidersLoading(false);
+        })();
+        return () => { cancelled = true; };
+    }, [showAddModelPanel]);
+
+    const ctxProviderNames = useMemo(() => {
+        return new Set(teamCtxProviders.map((p: any) => p.name || p.provider));
+    }, [teamCtxProviders]);
+
+    const extraDetectedProviders = useMemo(() => {
+        return detectedProviders.filter((d: any) => {
+            const name = d.provider || d.name;
+            return name && !ctxProviderNames.has(name);
+        });
+    }, [detectedProviders, ctxProviderNames]);
+
     useEffect(() => {
         if (!localInput) {
             setDetectedJinxes([]);
@@ -573,13 +748,22 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
     const isJinxMode = false;
     const hasJinxContent = false;
 
-    const filteredModels = useMemo(() => {
-        if (!modelSearch.trim()) return modelsToDisplay;
-        const q = modelSearch.toLowerCase();
-        return modelsToDisplay.filter((m: any) =>
-            m.display_name?.toLowerCase().includes(q) || m.value?.toLowerCase().includes(q) || m.provider?.toLowerCase().includes(q)
-        );
-    }, [modelsToDisplay, modelSearch]);
+    const sortedFilteredModels = useMemo(() => {
+        const q = modelSearch.trim().toLowerCase();
+        const base = q
+            ? modelsToDisplay.filter((m: any) =>
+                m.display_name?.toLowerCase().includes(q) || m.value?.toLowerCase().includes(q) || m.provider?.toLowerCase().includes(q)
+            )
+            : modelsToDisplay;
+        return [...base].sort((a: any, b: any) => {
+            const aFav = favoriteModels.has(a.value) ? 1 : 0;
+            const bFav = favoriteModels.has(b.value) ? 1 : 0;
+            if (aFav !== bFav) return bFav - aFav;
+            return (a.display_name || a.value).localeCompare(b.display_name || b.value);
+        });
+    }, [modelsToDisplay, modelSearch, favoriteModels]);
+
+    const filteredModels = sortedFilteredModels;
 
     const filteredNPCs = useMemo(() => {
         if (!npcSearch.trim()) return availableNPCs;
@@ -600,9 +784,17 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
     useEffect(() => {
         if (showModelsDropdown) {
             setModelSearch('');
+            setShowAddModelPanel(false);
+            setAddModelError(null);
             setTimeout(() => modelSearchRef.current?.focus(), 50);
         }
     }, [showModelsDropdown]);
+
+    useEffect(() => {
+        if (showAddModelPanel) {
+            setTimeout(() => addModelNameRef.current?.focus(), 50);
+        }
+    }, [showAddModelPanel]);
 
     useEffect(() => {
         if (showNpcsDropdown) {
@@ -980,8 +1172,8 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
             'docx': 'Document', 'pptx': 'Presentation', 'zip': 'Archive',
             'exp': 'Experiment', 'folder': 'Folder',
         };
-        Object.entries(contentDataRef.current).forEach(([paneId, paneData]: [string, any]) => {
-            if (!paneData.contentType || paneData.contentType === 'chat') return;
+        Object.entries(contentDataRef.current).forEach(([openPaneId, paneData]: [string, any]) => {
+            if (!paneData.contentType || paneData.contentType === 'chat' || openPaneId === paneId) return;
             let label = '';
             if ((paneData.contentType === 'editor' || paneData.contentType === 'latex' || paneData.contentType === 'csv' || paneData.contentType === 'notebook') && paneData.contentId) label = getFileName(paneData.contentId) || paneData.contentId;
             else if (paneData.contentType === 'browser' && paneData.browserUrl) { try { label = new URL(paneData.browserUrl).hostname; } catch { label = paneData.browserUrl.slice(0, 20); } }
@@ -989,10 +1181,10 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
             else if (paneData.contentType === 'image' && paneData.contentId) label = getFileName(paneData.contentId) || 'Image';
             else if (paneData.contentType === 'terminal') label = `Term${paneData.shellType ? ` (${paneData.shellType})` : ''}`;
             else label = PANE_LABELS[paneData.contentType] || paneData.contentType;
-            if (label) panes.push({ id: paneId, type: paneData.contentType, label });
+            if (label) panes.push({ id: openPaneId, type: paneData.contentType, label });
         });
         return panes;
-    }, [paneVersion]);
+    }, [paneVersion, paneId]);
 
     const isPaneIncluded = (paneId: string) => {
         if (contextPaneOverrides && contextPaneOverrides[paneId] !== undefined) return contextPaneOverrides[paneId];
@@ -1059,10 +1251,10 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                                     ? 'bg-teal-500/15 text-teal-300 border-teal-500/30 hover:bg-teal-500/25'
                                     : 'bg-white/3 text-gray-500 border-white/5 hover:bg-white/5 line-through'
                             }`}
-                            title={`${pane.label} - ${included ? 'included in context' : 'excluded from context'}`}
+                            title={`${pane.label} (${pane.id}) - ${included ? 'included in context' : 'excluded from context'}`}
                         >
                             {paneIcon(pane.type)}
-                            <span className="max-w-[80px] truncate">{pane.label}</span>
+                            <span className="max-w-[80px] truncate" title={pane.id}>{pane.label}</span>
                             {included ? <Eye size={9} className="flex-shrink-0 opacity-60" /> : <EyeOff size={9} className="flex-shrink-0 opacity-40" />}
                         </button>
                     );
@@ -1545,8 +1737,183 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                                             </div>
                                         );
                                     })}
-                                    {filteredModels.length === 0 && (
+                                    {filteredModels.length === 0 && !showAddModelPanel && (
                                         <div className="px-2 py-3 text-xs text-gray-500 text-center">No models found</div>
+                                    )}
+                                </div>
+                                <div className="border-t theme-border p-2 space-y-2">
+                                    {!showAddModelPanel ? (
+                                        <button
+                                            onClick={() => setShowAddModelPanel(true)}
+                                            disabled={!currentNpcTeamPath}
+                                            className="w-full flex items-center justify-center gap-1 text-[10px] px-2 py-1 rounded bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white transition-colors"
+                                            title={currentNpcTeamPath ? `Add a model to ${currentNpcTeamKey === 'project' ? 'project team' : currentNpcTeamKey} .ctx` : 'Select an NPC first'}
+                                        >
+                                            <Plus size={12} /> Add Model to Team
+                                        </button>
+                                    ) : (
+                                        <div className="space-y-1.5">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-[10px] font-medium text-blue-300">Add model to team .ctx</span>
+                                                <button onClick={() => { setShowAddModelPanel(false); setAddModelError(null); }} className="text-gray-500 hover:text-gray-300"><X size={12} /></button>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-1.5">
+                                                <input
+                                                    ref={addModelNameRef}
+                                                    type="text"
+                                                    value={addModelName}
+                                                    onChange={e => setAddModelName(e.target.value)}
+                                                    placeholder="Model name"
+                                                    className="theme-input text-xs px-2 py-1 rounded"
+                                                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSaveNewModel(); } }}
+                                                />
+                                                <input
+                                                    type="text"
+                                                    value={addModelProvider}
+                                                    onChange={e => setAddModelProvider(e.target.value)}
+                                                    placeholder="Provider name"
+                                                    className="theme-input text-xs px-2 py-1 rounded"
+                                                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSaveNewModel(); } }}
+                                                />
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-1.5">
+                                                <input
+                                                    type="text"
+                                                    value={addModelProviderType}
+                                                    onChange={e => setAddModelProviderType(e.target.value)}
+                                                    placeholder="Provider type (optional)"
+                                                    className="theme-input text-xs px-2 py-1 rounded"
+                                                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSaveNewModel(); } }}
+                                                />
+                                                <input
+                                                    type="text"
+                                                    value={addModelApiUrl}
+                                                    onChange={e => setAddModelApiUrl(e.target.value)}
+                                                    placeholder="API URL (optional)"
+                                                    className="theme-input text-xs px-2 py-1 rounded"
+                                                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSaveNewModel(); } }}
+                                                />
+                                            </div>
+                                            <input
+                                                type="password"
+                                                value={addModelApiKey}
+                                                onChange={e => setAddModelApiKey(e.target.value)}
+                                                placeholder="API Key (optional)"
+                                                className="w-full theme-input text-xs px-2 py-1 rounded"
+                                                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSaveNewModel(); } }}
+                                            />
+                                            {providerModelSelector ? (
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-[10px] font-medium text-blue-300">
+                                                            {providerModelSelector.loading ? 'Loading models...' : `Select models for ${providerModelSelector.provider?.name || providerModelSelector.provider?.displayName || providerModelSelector.provider?.provider}`}
+                                                        </span>
+                                                        <button onClick={() => setProviderModelSelector(null)} className="text-gray-500 hover:text-gray-300"><X size={12} /></button>
+                                                    </div>
+                                                    {providerModelSelector.loading ? (
+                                                        <div className="text-[10px] text-gray-400">Loading... (uses .ctx models as fallback)</div>
+                                                    ) : (
+                                                        <>
+                                                            <div className="flex items-center gap-2 text-[10px] text-gray-400">
+                                                                <button
+                                                                    onClick={() => setProviderModelSelector(prev => prev ? { ...prev, selected: new Set(prev.models) } : null)}
+                                                                    className="text-blue-400 hover:text-blue-300"
+                                                                >All</button>
+                                                                <button
+                                                                    onClick={() => setProviderModelSelector(prev => prev ? { ...prev, selected: new Set() } : null)}
+                                                                    className="text-blue-400 hover:text-blue-300"
+                                                                >None</button>
+                                                            </div>
+                                                            <div className="max-h-40 overflow-y-auto space-y-1 p-1 border theme-border rounded">
+                                                                {providerModelSelector.models.map((m: string) => {
+                                                                    const checked = providerModelSelector.selected.has(m);
+                                                                    return (
+                                                                        <label key={m} className={`flex items-center gap-2 px-2 py-1 text-[10px] rounded cursor-pointer ${checked ? 'bg-blue-500/20 text-blue-200' : 'hover:bg-white/5'}`}>
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={checked}
+                                                                                onChange={() => setProviderModelSelector(prev => {
+                                                                                    if (!prev) return null;
+                                                                                    const next = new Set(prev.selected);
+                                                                                    if (next.has(m)) next.delete(m); else next.add(m);
+                                                                                    return { ...prev, selected: next };
+                                                                                })}
+                                                                                className="w-3.5 h-3.5 accent-blue-500"
+                                                                            />
+                                                                            <span className="truncate">{m}</span>
+                                                                        </label>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                            {providerModelSelector.error && <div className="text-[10px] text-red-400">{providerModelSelector.error}</div>}
+                                                            <button
+                                                                onClick={handleSaveSelectedProviderModels}
+                                                                disabled={addModelSaving || providerModelSelector.selected.size === 0}
+                                                                className="w-full text-[10px] px-2 py-1 rounded bg-green-600 hover:bg-green-500 disabled:bg-gray-700 text-white transition-colors"
+                                                            >
+                                                                {addModelSaving ? 'Saving...' : `Add ${providerModelSelector.selected.size} model(s) to team .ctx`}
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-1">
+                                                    {teamCtxProviders.length > 0 && (
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {teamCtxProviders.map((prov: any, idx: number) => {
+                                                                const providerName = prov.name || prov.displayName || prov.provider || `Provider ${idx + 1}`;
+                                                                return (
+                                                                    <button
+                                                                        key={`ctx-${providerName}-${idx}`}
+                                                                        onClick={() => openProviderModelSelector(prov)}
+                                                                        disabled={addModelSaving}
+                                                                        className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-blue-300 hover:bg-blue-500/20 transition-colors disabled:opacity-50"
+                                                                    >
+                                                                        + {providerName}
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                    {extraDetectedProviders.length > 0 && (
+                                                        <div className="space-y-1">
+                                                            <div className="text-[10px] text-gray-400">Detected API keys in env — click to add to .ctx:</div>
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {extraDetectedProviders.map((prov: any, idx: number) => {
+                                                                    const providerName = prov.displayName || prov.name || prov.provider || `Provider ${idx + 1}`;
+                                                                    return (
+                                                                        <button
+                                                                            key={`env-${providerName}-${idx}`}
+                                                                            onClick={() => openProviderModelSelector(prov)}
+                                                                            disabled={addModelSaving}
+                                                                            className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-emerald-300 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
+                                                                        >
+                                                                            + {providerName}
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {detectedProvidersLoading && (
+                                                        <div className="text-[10px] text-gray-400">Scanning env for API keys…</div>
+                                                    )}
+                                                    {teamCtxProviders.length === 0 && extraDetectedProviders.length === 0 && !detectedProvidersLoading && (
+                                                        <div className="text-[10px] text-gray-400">No providers found in team .ctx or env. Add one manually below.</div>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {addModelError && (
+                                                <div className="text-[10px] text-red-400">{addModelError}</div>
+                                            )}
+                                            <button
+                                                onClick={handleSaveNewModel}
+                                                disabled={addModelSaving || !addModelName.trim() || !addModelProvider.trim()}
+                                                className="w-full text-[10px] px-2 py-1 rounded bg-green-600 hover:bg-green-500 disabled:bg-gray-700 text-white transition-colors"
+                                            >
+                                                {addModelSaving ? 'Saving...' : `Save to ${currentNpcTeamKey === 'project' ? 'project' : currentNpcTeamKey} .ctx`}
+                                            </button>
+                                        </div>
                                     )}
                                 </div>
                             </div>

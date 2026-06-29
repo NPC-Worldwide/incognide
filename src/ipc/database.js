@@ -901,8 +901,6 @@ function register(ctx) {
     }
   });
 
-  // ---- Sync: export data from history.db ----
-
   ipcMain.handle('sync:export-data', async (_, { since, fullDump }) => {
     const sinceTs = (fullDump || !since) ? '1970-01-01T00:00:00.000Z' : since;
     return new Promise((resolve, reject) => {
