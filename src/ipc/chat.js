@@ -560,6 +560,54 @@ function register(ctx) {
     }
   });
 
+  ipcMain.handle('saveMessage', async (_, message) => {
+    try {
+      const db = new sqlite3.Database(dbPath);
+      const query = `
+        INSERT OR REPLACE INTO conversation_history
+        (message_id, timestamp, role, content, conversation_id, directory_path,
+         model, provider, npc, team, reasoning_content, tool_calls, tool_results,
+         parent_message_id, params, input_tokens, output_tokens, cost, execution_mode,
+         device_id, device_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+      const params = [
+        message.message_id,
+        message.timestamp,
+        message.role,
+        message.content,
+        message.conversation_id,
+        message.directory_path,
+        message.model || null,
+        message.provider || null,
+        message.npc || null,
+        message.team || null,
+        message.reasoning_content || null,
+        message.tool_calls ? JSON.stringify(message.tool_calls) : null,
+        message.tool_results ? JSON.stringify(message.tool_results) : null,
+        message.parent_message_id || null,
+        message.params ? JSON.stringify(message.params) : null,
+        message.input_tokens || null,
+        message.output_tokens || null,
+        message.cost || null,
+        message.execution_mode,
+        message.device_id || null,
+        message.device_name || null,
+      ];
+      await new Promise((resolve, reject) => {
+        db.run(query, params, function(err) {
+          db.close();
+          if (err) reject(err);
+          else resolve({ lastID: this.lastID, changes: this.changes });
+        });
+      });
+      return { success: true };
+    } catch (err) {
+      console.error('[saveMessage] Error saving message:', err);
+      return { success: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('generative-fill', async (event, params) => {
     try {
         const response = await fetch(`${BACKEND_URL}/api/generative_fill`, {
@@ -1097,10 +1145,13 @@ function register(ctx) {
             conversation_id as id,
             MIN(timestamp) as timestamp,
             MAX(timestamp) as last_message_timestamp,
-            GROUP_CONCAT(content) as preview,
+            (SELECT content FROM conversation_history AS c2 WHERE c2.conversation_id = conversation_history.conversation_id AND c2.role = 'user' ORDER BY timestamp DESC, id DESC LIMIT 1) as preview,
             GROUP_CONCAT(DISTINCT CASE WHEN npc IS NOT NULL AND npc != '' THEN npc END) as npcs,
             GROUP_CONCAT(DISTINCT CASE WHEN model IS NOT NULL AND model != '' THEN model END) as models,
             GROUP_CONCAT(DISTINCT CASE WHEN provider IS NOT NULL AND provider != '' THEN provider END) as providers,
+            (SELECT npc FROM conversation_history AS c2 WHERE c2.conversation_id = conversation_history.conversation_id AND c2.npc IS NOT NULL AND c2.npc != '' ORDER BY timestamp DESC, id DESC LIMIT 1) as npc,
+            (SELECT model FROM conversation_history AS c2 WHERE c2.conversation_id = conversation_history.conversation_id AND c2.model IS NOT NULL AND c2.model != '' ORDER BY timestamp DESC, id DESC LIMIT 1) as model,
+            (SELECT provider FROM conversation_history AS c2 WHERE c2.conversation_id = conversation_history.conversation_id AND c2.provider IS NOT NULL AND c2.provider != '' ORDER BY timestamp DESC, id DESC LIMIT 1) as provider,
             MAX(execution_mode) as execution_mode
           FROM conversation_history
           WHERE REPLACE(RTRIM(directory_path, '/\\'), '\\', '/') = ?
@@ -1122,10 +1173,10 @@ function register(ctx) {
         npcs: (row.npcs || '').split(',').filter(Boolean),
         models: (row.models || '').split(',').filter(Boolean),
         providers: (row.providers || '').split(',').filter(Boolean),
-        execution_mode: row.execution_mode || 'chat',
-        npc: (row.npcs || '').split(',')[0] || '',
-        model: (row.models || '').split(',')[0] || '',
-        provider: (row.providers || '').split(',')[0] || '',
+        execution_mode: row.execution_mode,
+        npc: row.npc || (row.npcs || '').split(',')[0] || '',
+        model: row.model || (row.models || '').split(',')[0] || '',
+        provider: row.provider || (row.providers || '').split(',')[0] || '',
       }));
 
       return { conversations, error: null };

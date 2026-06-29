@@ -4925,9 +4925,11 @@ const handleBrowserDialogNavigate = (url) => {
                     ).join('\n\n');
                 }
 
-                const contextBlock = "<context>\n" + contextPrompt + "\n</context>";
-
-                finalPromptForUserMessage = contextBlock + "\n\n" + submittedInput;
+                if (contextPrompt.trim()) {
+                    finalPromptForUserMessage = "<context>\n" + contextPrompt + "\n</context>\n\n" + submittedInput;
+                } else {
+                    finalPromptForUserMessage = submittedInput;
+                }
 
                 setContextHash(newHash);
             }
@@ -5029,6 +5031,20 @@ const handleBrowserDialogNavigate = (url) => {
             notifyAllPanes();
 
             try {
+                const userSavePayload = {
+                    message_id: userMessage.id,
+                    timestamp: userMessage.timestamp,
+                    role: 'user',
+                    content: userMessage.content,
+                    conversation_id: conversationId,
+                    directory_path: currentPath,
+                    model: useModel,
+                    provider: useProvider,
+                    npc: useNpc,
+                    parent_message_id: userMessage.parentMessageId,
+                    execution_mode: paneExecMode,
+                };
+                window.api.saveMessage(userSavePayload).catch((err: any) => console.error('[SUBMIT] Failed to save user message:', err));
 
                 const npcName = useNpc?.replace(/^(project:|global:)/, '') || 'agent';
 
@@ -5423,7 +5439,10 @@ const handleBrowserDialogNavigate = (url) => {
                 id: conversation.id,
                 title: 'New Conversation',
                 preview: 'No content',
-                timestamp: conversation.timestamp || new Date().toISOString()
+                timestamp: conversation.timestamp || new Date().toISOString(),
+                execution_mode: contentType === 'agent' ? 'tool_agent' : 'chat',
+                npc: npcToUse,
+                model: modelToUse,
             };
 
             setDirectoryConversations(prev => [formattedNewConversation, ...prev]);
@@ -5747,14 +5766,21 @@ const handleBrowserDialogNavigate = (url) => {
                 console.log('[REFRESH] Got response:', response);
 
                 if (response?.conversations) {
-                    const formattedConversations = response.conversations.map((conv: any) => ({
-                        id: conv.id,
-                        title: conv.preview?.split('\n')[0]?.substring(0, 30) || 'New Conversation',
-                        preview: conv.preview || 'No content',
-                        timestamp: conv.timestamp || Date.now(),
-                        last_message_timestamp: conv.last_message_timestamp || conv.timestamp || Date.now(),
-                        execution_mode: conv.execution_mode || 'chat'
-                    }));
+                    const formattedConversations = response.conversations.map((conv: any) => {
+                        const cleanPreview = typeof conv.preview === 'string'
+                            ? conv.preview.replace(/\s*<context>[\s\S]*?<\/context>\s*/g, '').trim()
+                            : (conv.preview || '');
+                        return {
+                            id: conv.id,
+                            title: cleanPreview?.split('\n')[0]?.substring(0, 30) || 'New Conversation',
+                            preview: cleanPreview || 'No content',
+                            timestamp: conv.timestamp || Date.now(),
+                            last_message_timestamp: conv.last_message_timestamp || conv.timestamp || Date.now(),
+                            execution_mode: conv.execution_mode,
+                            npc: conv.npc,
+                            model: conv.model,
+                        };
+                    });
 
                     formattedConversations.sort((a: any, b: any) =>
                         new Date(b.last_message_timestamp).getTime() - new Date(a.last_message_timestamp).getTime()
@@ -5835,7 +5861,8 @@ const handleBrowserDialogNavigate = (url) => {
         parseAgenticResponse,
         getConversationStats,
         refreshConversations,
-        studioContext
+        studioContext,
+        currentPath
     );
 
 
@@ -7812,20 +7839,21 @@ const handleConversationSelect = async (conversationId: string, skipMessageLoad 
 
     const convoMeta = directoryConversationsRef.current.find((c: any) => c.id === conversationId);
     const targetExecutionMode = convoMeta?.execution_mode || 'chat';
+    const targetContentType = targetExecutionMode === 'tool_agent' ? 'agent' : 'chat';
 
     if (!rootLayoutNode) {
         const newPaneId = generateId();
         const newLayout = { id: newPaneId, type: 'content' };
 
         contentDataRef.current[newPaneId] = {
-            contentType: 'chat',
+            contentType: targetContentType,
             contentId: conversationId,
             chatMessages: { messages: [], allMessages: [], displayedMessageCount: 20 },
             executionMode: targetExecutionMode,
         };
         setRootLayoutNode(newLayout);
 
-        await updateContentPane(newPaneId, 'chat', conversationId, skipMessageLoad);
+        await updateContentPane(newPaneId, targetContentType, conversationId, skipMessageLoad);
 
         setActiveContentPaneId(newPaneId);
         paneIdToUpdate = newPaneId;
@@ -7838,16 +7866,17 @@ const handleConversationSelect = async (conversationId: string, skipMessageLoad 
         if (activeIsChat && activeContentPaneId) {
 
             paneIdToUpdate = activeContentPaneId;
+            contentDataRef.current[paneIdToUpdate].contentType = targetContentType;
             contentDataRef.current[paneIdToUpdate].executionMode = targetExecutionMode;
-            await updateContentPane(paneIdToUpdate, 'chat', conversationId, skipMessageLoad);
+            await updateContentPane(paneIdToUpdate, targetContentType, conversationId, skipMessageLoad);
             setActiveContentPaneId(paneIdToUpdate);
             setRootLayoutNode(prev => ({...prev}));
         } else {
 
-            const newPaneId = createAndAddPaneNodeToLayout('chat', conversationId);
+            const newPaneId = createAndAddPaneNodeToLayout(targetContentType, conversationId);
             if (newPaneId) {
                 contentDataRef.current[newPaneId].executionMode = targetExecutionMode;
-                await updateContentPane(newPaneId, 'chat', conversationId, skipMessageLoad);
+                await updateContentPane(newPaneId, targetContentType, conversationId, skipMessageLoad);
                 setActiveContentPaneId(newPaneId);
                 paneIdToUpdate = newPaneId;
             }
