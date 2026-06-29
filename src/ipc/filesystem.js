@@ -123,7 +123,7 @@ function register(ctx) {
     }
   });
 
-  function extractOdtContent(filePath) {
+  function extractOpenDocumentContent(filePath) {
     try {
       const AdmZip = require('adm-zip');
       const zip = new AdmZip(filePath);
@@ -188,8 +188,8 @@ function register(ctx) {
     console.log('[DOCX Main] read-docx-content called for:', filePath);
     try {
       const ext = path.extname(filePath).toLowerCase();
-      if (ext === '.odt') {
-        return extractOdtContent(filePath);
+      if (ext === '.odt' || ext === '.odp') {
+        return extractOpenDocumentContent(filePath);
       }
       const mammoth = require('mammoth');
       const JSZip = require('jszip');

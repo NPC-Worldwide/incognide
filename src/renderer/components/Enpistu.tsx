@@ -3035,9 +3035,8 @@ const renderChatView = useCallback(({ nodeId }) => {
                         else if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext || '')) contentType = 'image';
                         else if (ext === 'stl') contentType = 'stl';
                         else if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'm4v', 'flv', 'ogv'].includes(ext || '')) contentType = 'video';
-                        else if (['csv', 'xlsx', 'xls'].includes(ext || '')) contentType = 'csv';
-                        else if (['docx', 'doc'].includes(ext || '')) contentType = 'docx';
-                        else if (['odt', 'ods', 'odp'].includes(ext || '')) contentType = 'docx';
+                        else if (['csv', 'xlsx', 'xls', 'ods'].includes(ext || '')) contentType = 'csv';
+                        else if (['docx', 'doc', 'odt', 'odp'].includes(ext || '')) contentType = 'docx';
                         else if (ext === 'pptx') contentType = 'pptx';
                         else if (ext === 'tex') contentType = 'latex';
 
@@ -3688,8 +3687,8 @@ const renderFolderViewerPane = useCallback(({ nodeId }: { nodeId: string }) => {
         const ext = filePath.split('.').pop()?.toLowerCase();
         let contentType = 'editor';
         if (ext === 'pdf') contentType = 'pdf';
-        else if (['csv', 'xlsx', 'xls'].includes(ext || '')) contentType = 'csv';
-        else if (['docx', 'doc'].includes(ext || '')) contentType = 'docx';
+        else if (['csv', 'xlsx', 'xls', 'ods'].includes(ext || '')) contentType = 'csv';
+        else if (['docx', 'doc', 'odt', 'odp'].includes(ext || '')) contentType = 'docx';
         else if (ext === 'pptx') contentType = 'pptx';
         else if (ext === 'tex') contentType = 'latex';
         else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext || '')) contentType = 'image';
@@ -4194,7 +4193,7 @@ const renderMessageContextMenu = () => null;
 
 
             const ext = nameToUse.split('.').pop()?.toLowerCase();
-            const extTypeMap: Record<string, string> = { tex: 'latex', csv: 'csv', xlsx: 'csv', xls: 'csv', docx: 'docx', pptx: 'pptx', pdf: 'pdf', ipynb: 'notebook', md: 'editor', py: 'editor', js: 'editor', ts: 'editor', tsx: 'editor', jsx: 'editor', json: 'editor', txt: 'editor', mp4: 'video', mov: 'video', avi: 'video', mkv: 'video', webm: 'video', wmv: 'video', m4v: 'video', flv: 'video', ogv: 'video', odt: 'docx', ods: 'docx', odp: 'docx' };
+            const extTypeMap: Record<string, string> = { tex: 'latex', csv: 'csv', xlsx: 'csv', xls: 'csv', ods: 'csv', docx: 'docx', odt: 'docx', odp: 'docx', pptx: 'pptx', pdf: 'pdf', ipynb: 'notebook', md: 'editor', py: 'editor', js: 'editor', ts: 'editor', tsx: 'editor', jsx: 'editor', json: 'editor', txt: 'editor', mp4: 'video', mov: 'video', avi: 'video', mkv: 'video', webm: 'video', wmv: 'video', m4v: 'video', flv: 'video', ogv: 'video' };
             const newContentType = ext ? extTypeMap[ext] : undefined;
 
 
@@ -4928,11 +4927,7 @@ const handleBrowserDialogNavigate = (url) => {
 
                 const contextBlock = "<context>\n" + contextPrompt + "\n</context>";
 
-                if (paneExecMode === 'tool_agent') {
-                    finalPromptForUserMessage = contextBlock + "\n\n" + submittedInput + "\n\nIMPORTANT: Propose changes as unified diffs, NOT full file contents.";
-                } else {
-                    finalPromptForUserMessage = contextBlock + "\n\n" + submittedInput;
-                }
+                finalPromptForUserMessage = contextBlock + "\n\n" + submittedInput;
 
                 setContextHash(newHash);
             }
@@ -7902,7 +7897,8 @@ const handleFileClick = useCallback(async (filePath: string) => {
     else if (extension === 'exp') contentType = 'exp';
     else if (extension === 'pltx') contentType = 'exp';
     else if (['docx', 'doc'].includes(extension)) contentType = 'docx';
-    else if (['odt', 'ods', 'odp'].includes(extension)) contentType = 'docx';
+    else if (['odt', 'odp'].includes(extension)) contentType = 'docx';
+    else if (extension === 'ods') contentType = 'csv';
     else if (extension === 'zip') contentType = 'zip';
     else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(extension)) contentType = 'image';
     else if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'm4v', 'flv', 'ogv'].includes(extension)) contentType = 'video';
@@ -8799,7 +8795,8 @@ const renderMainContent = () => {
     else if (extension === 'exp') contentType = 'exp';
     else if (extension === 'pltx') contentType = 'exp';
                             else if (['docx', 'doc'].includes(extension)) contentType = 'docx';
-    else if (['odt', 'ods', 'odp'].includes(extension)) contentType = 'docx';
+    else if (['odt', 'odp'].includes(extension)) contentType = 'docx';
+    else if (extension === 'ods') contentType = 'csv';
                             else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(extension)) contentType = 'image';
                             else if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'm4v', 'flv', 'ogv'].includes(extension)) contentType = 'video';
                             else if (extension === 'stl') contentType = 'stl';

@@ -1,5 +1,6 @@
 import { getFileName } from './utils';
 import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
+import { createPortal } from 'react-dom';
 import { Viewer, Worker, SpecialZoomLevel, ScrollMode, ViewMode } from '@react-pdf-viewer/core';
 import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
 import { zoomPlugin } from '@react-pdf-viewer/zoom';
@@ -157,7 +158,7 @@ const PdfContextMenu = ({
 
     if (!pdfContextMenuPos) return null;
 
-    return (
+    const menuContent = (
         <>
             <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setPdfContextMenuPos(null)} />
             <div
@@ -215,6 +216,8 @@ const PdfContextMenu = ({
             </div>
         </>
     );
+
+    return createPortal(menuContent, document.body);
 };
 
 const AnnotationsPanel = ({
@@ -561,6 +564,7 @@ const PdfViewer = ({
     const [currentScale, setCurrentScale] = useState(1);
     const [inlineComment, setInlineComment] = useState<{ highlightId: number; x: number; y: number } | null>(null);
     const [inlineCommentText, setInlineCommentText] = useState('');
+    const [commentMode, setCommentMode] = useState<'view' | 'edit'>('edit');
 
     const [drawingMode, setDrawingMode] = useState(false);
     const [drawingTool, setDrawingTool] = useState<'pen' | 'eraser' | null>(null);
@@ -1306,6 +1310,8 @@ const PdfViewer = ({
                     bubble.addEventListener('click', (e) => {
                         e.stopPropagation();
                         const bubbleRect = bubble.getBoundingClientRect();
+                        const hasAnnotation = !!(highlight.content?.annotation);
+                        setCommentMode(hasAnnotation ? 'view' : 'edit');
                         setInlineComment({ highlightId: highlight.id, x: bubbleRect.right + 4, y: bubbleRect.top });
                         setInlineCommentText(highlight.content?.annotation || '');
                     });
@@ -2031,6 +2037,16 @@ const PdfViewer = ({
                     if (!text || !position) return;
                     await saveHighlight(text, position, color || selectedColor);
                     setShowAnnotationsPanel(true);
+                    await loadHighlights();
+                    const newHighlight = localHighlights
+                        .slice()
+                        .sort((a, b) => b.id - a.id)
+                        .find((h) => h.content?.text === text);
+                    if (newHighlight && localContextMenuPos) {
+                        setCommentMode('edit');
+                        setInlineComment({ highlightId: newHighlight.id, x: localContextMenuPos.x, y: localContextMenuPos.y });
+                        setInlineCommentText('');
+                    }
                 }}
                 wrapperRef={viewerWrapperRef}
             />
@@ -2047,40 +2063,73 @@ const PdfViewer = ({
                             <MessageSquare size={14} className="text-gray-400" />
                             <span className="text-xs font-medium text-gray-300">Comment</span>
                         </div>
-                        <textarea
-                            value={inlineCommentText}
-                            onChange={(e) => setInlineCommentText(e.target.value)}
-                            placeholder="Add a comment..."
-                            className="w-full p-2 text-xs rounded bg-gray-800 border theme-border resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            rows={3}
-                            autoFocus
-                        />
-                        <div className="flex gap-1.5 mt-2">
-                            <button
-                                onClick={async () => {
-                                    await handleUpdateHighlight(inlineComment.highlightId, inlineCommentText);
-                                    setInlineComment(null);
-                                }}
-                                className="flex-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-xs font-medium"
-                            >
-                                Save
-                            </button>
-                            <button
-                                onClick={() => {
-                                    handleDeleteHighlight(inlineComment.highlightId);
-                                    setInlineComment(null);
-                                }}
-                                className="px-3 py-1.5 bg-red-600/20 hover:bg-red-600/40 text-red-400 rounded text-xs"
-                            >
-                                Delete
-                            </button>
-                            <button
-                                onClick={() => setInlineComment(null)}
-                                className="px-3 py-1.5 bg-gray-600 hover:bg-gray-500 rounded text-xs"
-                            >
-                                Cancel
-                            </button>
-                        </div>
+                        {commentMode === 'view' ? (
+                            <>
+                                <p className="text-xs text-gray-200 whitespace-pre-wrap mb-3">{inlineCommentText}</p>
+                                <div className="flex gap-1.5">
+                                    <button
+                                        onClick={() => setCommentMode('edit')}
+                                        className="flex-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-xs font-medium"
+                                    >
+                                        Edit
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            handleDeleteHighlight(inlineComment.highlightId);
+                                            setInlineComment(null);
+                                        }}
+                                        className="px-3 py-1.5 bg-red-600/20 hover:bg-red-600/40 text-red-400 rounded text-xs"
+                                    >
+                                        Delete
+                                    </button>
+                                    <button
+                                        onClick={() => setInlineComment(null)}
+                                        className="px-3 py-1.5 bg-gray-600 hover:bg-gray-500 rounded text-xs"
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <textarea
+                                    value={inlineCommentText}
+                                    onChange={(e) => setInlineCommentText(e.target.value)}
+                                    placeholder="Add a comment..."
+                                    className="w-full p-2 text-xs rounded bg-gray-800 border theme-border resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    rows={3}
+                                    autoFocus
+                                />
+                                <div className="flex gap-1.5 mt-2">
+                                    <button
+                                        onClick={async () => {
+                                            await handleUpdateHighlight(inlineComment.highlightId, inlineCommentText);
+                                            setCommentMode('view');
+                                        }}
+                                        className="flex-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-xs font-medium"
+                                    >
+                                        Save
+                                    </button>
+                                    {commentMode === 'edit' && (
+                                        <button
+                                            onClick={() => {
+                                                handleDeleteHighlight(inlineComment.highlightId);
+                                                setInlineComment(null);
+                                            }}
+                                            className="px-3 py-1.5 bg-red-600/20 hover:bg-red-600/40 text-red-400 rounded text-xs"
+                                        >
+                                            Delete
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => setInlineComment(null)}
+                                        className="px-3 py-1.5 bg-gray-600 hover:bg-gray-500 rounded text-xs"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </>
             )}

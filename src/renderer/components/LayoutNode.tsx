@@ -370,12 +370,12 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                 const getContentTypeForExt = (filePath: string) => {
                     const ext = filePath.split('.').pop()?.toLowerCase();
                     if (ext === 'pdf') return 'pdf';
-                    if (['csv', 'xlsx', 'xls'].includes(ext)) return 'csv';
+                    if (['csv', 'xlsx', 'xls', 'ods'].includes(ext)) return 'csv';
                     if (ext === 'pptx') return 'pptx';
                     if (ext === 'tex') return 'latex';
                     if (ext === 'ipynb') return 'notebook';
                     if (ext === 'exp') return 'exp';
-                    if (['docx', 'doc', 'odt'].includes(ext)) return 'docx';
+                    if (['docx', 'doc', 'odt', 'odp'].includes(ext)) return 'docx';
                     if (ext === 'zip') return 'zip';
                     if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(ext)) return 'image';
                     if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'm4v', 'flv', 'ogv'].includes(ext)) return 'video';
@@ -768,8 +768,8 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             } else if (comp.draggedItem.type === 'file') {
                 const ext = comp.draggedItem.id.split('.').pop()?.toLowerCase();
                 if (ext === 'pdf') contentType = 'pdf';
-                else if (['csv', 'xlsx', 'xls'].includes(ext)) contentType = 'csv';
-                else if (['docx', 'doc', 'odt'].includes(ext)) contentType = 'docx';
+                else if (['csv', 'xlsx', 'xls', 'ods'].includes(ext)) contentType = 'csv';
+                else if (['docx', 'doc', 'odt', 'odp'].includes(ext)) contentType = 'docx';
                 else if (ext === 'pptx') contentType = 'pptx';
                 else if (ext === 'tex') contentType = 'latex';
                 else if (ext === 'zip') contentType = 'zip';

@@ -104,6 +104,7 @@ const DocxViewer = ({
 }) => {
     const paneData = contentDataRef.current[nodeId];
     const filePath = paneData?.contentId;
+    const isOpenDocument = filePath?.endsWith('.odt') || filePath?.endsWith('.odp');
 
     const [isLocalRenaming, setIsLocalRenaming] = useState(false);
     const [localEditName, setLocalEditName] = useState('');
@@ -421,6 +422,7 @@ const DocxViewer = ({
             return;
         }
 
+        if (isOpenDocument) return;
         setIsSaving(true);
         try {
             const content = editorRef.current.innerHTML;
@@ -1244,7 +1246,7 @@ ${htmlContent}
                     `}</style>
                     <div
                         ref={editorRef}
-                        contentEditable
+                        contentEditable={!isOpenDocument}
                         suppressContentEditableWarning
                         onInput={handleInput}
                         onKeyDown={handleKeyDown}
