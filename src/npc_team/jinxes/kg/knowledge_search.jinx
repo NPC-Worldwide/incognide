@@ -1,5 +1,7 @@
 jinx_name: knowledge_search
 description: Search memories in a directory's `.knowledge.yaml` by keyword query.
+permissions:
+  default: allow
 inputs:
   - { directory: "" }
   - { query: "" }

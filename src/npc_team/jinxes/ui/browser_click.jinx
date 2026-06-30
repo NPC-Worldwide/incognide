@@ -1,5 +1,7 @@
 jinx_name: browser_click
 description: Click an element in a browser pane by CSS selector or text content
+permissions:
+  default: allow
 inputs:
   - paneId:
       type: string

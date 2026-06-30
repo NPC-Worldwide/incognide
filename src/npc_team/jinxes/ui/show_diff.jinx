@@ -1,5 +1,7 @@
 jinx_name: show_diff
 description: Show a diff comparison between two text contents
+permissions:
+  default: allow
 inputs:
   - original:
       type: string

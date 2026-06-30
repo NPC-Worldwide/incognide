@@ -376,12 +376,51 @@ const NotebookViewer = ({
         return () => unsubscribe?.();
     }, []);
 
+    const DEFAULT_NOTEBOOK: Notebook = useMemo(() => ({
+        cells: [
+            {
+                cell_type: 'code',
+                execution_count: null,
+                metadata: {},
+                outputs: [],
+                source: []
+            }
+        ],
+        metadata: {
+            kernelspec: {
+                display_name: 'Python 3',
+                language: 'python',
+                name: 'python3'
+            },
+            language_info: {
+                name: 'python'
+            }
+        },
+        nbformat: 4,
+        nbformat_minor: 4
+    }), []);
+
     useEffect(() => {
         const load = async () => {
             if (!filePath) return;
             try {
                 const text = await (window as any).api.readFileContent(filePath);
-                if (text?.error) throw new Error(text.error);
+                if (text?.error) {
+                    const exists = await (window as any).api.fileExists?.(filePath);
+                    if (!exists) {
+                        const dirPath = filePath.substring(0, filePath.lastIndexOf('/'));
+                        if (dirPath) {
+                            await (window as any).api.ensureDirectory?.(dirPath);
+                        }
+                        const defaultNb = DEFAULT_NOTEBOOK;
+                        const writeResult = await (window as any).api.writeFileContent(filePath, JSON.stringify(defaultNb, null, 2));
+                        if (writeResult?.error) throw new Error(writeResult.error);
+                        setNotebook(defaultNb);
+                        setHasChanges(false);
+                        return;
+                    }
+                    throw new Error(text.error);
+                }
                 const content = typeof text === 'string' ? text : text?.content ?? '';
                 const parsed = JSON.parse(content);
                 setNotebook(parsed);
@@ -391,7 +430,38 @@ const NotebookViewer = ({
             }
         };
         load();
-    }, [filePath]);
+    }, [filePath, DEFAULT_NOTEBOOK]);
+
+    useEffect(() => {
+        if (!paneData?.fileChanged || !paneData?.fileContent || !notebook) return;
+        try {
+            const incoming = JSON.parse(paneData.fileContent);
+            const next = incoming?.cells ? incoming : { ...notebook, cells: [...notebook.cells, ...(Array.isArray(incoming) ? incoming : [incoming])] };
+            setNotebook(prev => {
+                if (!prev) return prev;
+                if (JSON.stringify(prev) === JSON.stringify(next)) return prev;
+                return next;
+            });
+            setHasChanges(true);
+            paneData.fileChanged = false;
+        } catch {
+            const codeCell: NotebookCell = {
+                cell_type: 'code',
+                source: String(paneData.fileContent).split('\n').map((line, i, arr) => i < arr.length - 1 ? line + '\n' : line),
+                outputs: [],
+                execution_count: null,
+                metadata: { created_at: new Date().toISOString(), paper_state: 'exploration' }
+            };
+            setNotebook(prev => {
+                if (!prev) return prev;
+                if (paneData._lastInjectedContent === paneData.fileContent) return prev;
+                paneData._lastInjectedContent = paneData.fileContent;
+                return { ...prev, cells: [...prev.cells, codeCell] };
+            });
+            setHasChanges(true);
+            paneData.fileChanged = false;
+        }
+    }, [paneData?.fileChanged, paneData?.fileContent, notebook]);
 
     const save = useCallback(async () => {
         if (!hasChanges || !notebook) return;
@@ -1772,7 +1842,7 @@ except Exception as e:
                             {!isCollapsed && (
                                 <div className="bg-gray-900">
                                     {cellType === 'code' && (
-                                        <div onFocus={() => setFocusedCellIndex(index)}>
+                                        <div onFocus={() => setFocusedCellIndex(index)} className="min-h-[80px]">
                                             <CodeMirror
                                                 value={source}
                                                 onChange={(value) => updateCellSource(index, value)}

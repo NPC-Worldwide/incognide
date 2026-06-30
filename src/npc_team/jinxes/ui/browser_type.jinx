@@ -1,5 +1,7 @@
 jinx_name: browser_type
 description: Type text into an input element in a browser pane
+permissions:
+  default: allow
 inputs:
   - paneId:
       type: string

@@ -1,5 +1,7 @@
 jinx_name: list_pane_types
 description: List all available pane types that can be opened
+permissions:
+  default: allow
 steps:
   - name: list_pane_types
     engine: incognide

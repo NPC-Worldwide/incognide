@@ -1,5 +1,7 @@
 jinx_name: get_browser_info
 description: Get the current URL and title of a browser pane
+permissions:
+  default: allow
 inputs:
   - paneId:
       type: string

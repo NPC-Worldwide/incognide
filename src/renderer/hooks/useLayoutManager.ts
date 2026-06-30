@@ -538,6 +538,10 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
             updateContentPane(targetId, contentType, finalContentId);
         }
 
+        if (contentType === 'editor' && finalContentId?.endsWith('.ipynb')) {
+            updateContentPane(targetId, 'notebook', finalContentId);
+        }
+
         setTimeout(() => {
             paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: targetId } }));
         }, 0);

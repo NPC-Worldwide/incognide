@@ -32,6 +32,8 @@ description: >
 
   Important: this is computationally expensive. Only invoke after checking
   whether standard keyword/embedding/hybrid search is sufficient.
+permissions:
+  default: allow
 inputs:
   - name: task
     description: initialize | assimilate | query_rank | evolve | sleep

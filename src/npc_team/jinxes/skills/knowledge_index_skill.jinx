@@ -24,6 +24,8 @@ description: >
 
   The index is a cache, not the source of truth. If a `.knowledge.yaml`
   is deleted or modified outside the app, re-run `scan_root` to refresh.
+permissions:
+  default: allow
 inputs:
   - name: action
     description: scan | list | upsert | remove

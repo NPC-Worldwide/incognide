@@ -1,5 +1,7 @@
 jinx_name: list_panes
 description: List all open panes in Incognide with their types, IDs, and status.
+permissions:
+  default: allow
 inputs: []
 steps:
   - name: list_panes

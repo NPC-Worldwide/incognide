@@ -89,6 +89,14 @@ function ensureIncognideRc() {
   seed('INCOGNIDE_CHAT_MODEL');
   seed('INCOGNIDE_CHAT_PROVIDER');
   seed('INCOGNIDE_DEFAULT_NPC', 'ledbi');
+  // Expand any remaining '~' in INCOGNIDE_HOME line so it never writes a literal tilde.
+  lines = lines.map(l => {
+    const match = l.match(/^(export\s+)?(INCOGNIDE_HOME=)(.*)$/);
+    if (!match) return l;
+    let val = match[3];
+    if (val.startsWith('~')) val = val.replace('~', os.homedir());
+    return `${match[1] || ''}${match[2]}${val}`;
+  });
   try {
     fs.writeFileSync(rcPath, lines.join('\n') + '\n');
   } catch (err) {
@@ -115,6 +123,9 @@ function loadShellEnv() {
             value = value.slice(1, -1);
           }
           if (value && !process.env[match[1]]) {
+            if (typeof value === 'string' && value.startsWith('~')) {
+              value = value.replace('~', os.homedir());
+            }
             process.env[match[1]] = value;
           }
         }

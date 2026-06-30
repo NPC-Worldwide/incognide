@@ -5712,13 +5712,15 @@ const handleBrowserDialogNavigate = (url) => {
             const normalized = normalizePath(fullPath);
 
 
+            const isNotebook = normalized.endsWith('.ipynb');
+            const targetContentType = isNotebook ? 'notebook' : 'editor';
             const existingPaneId = Object.keys(contentDataRef.current).find(
-                id => contentDataRef.current[id]?.contentType === 'editor' && contentDataRef.current[id]?.contentId === normalized
+                id => contentDataRef.current[id]?.contentType === targetContentType && contentDataRef.current[id]?.contentId === normalized
             );
             if (existingPaneId) {
                 setActiveContentPaneId(existingPaneId);
             } else {
-                createAndAddPaneNodeToLayout({ contentType: 'editor', contentId: normalized });
+                createAndAddPaneNodeToLayout({ contentType: targetContentType, contentId: normalized });
             }
         };
         window.addEventListener('terminal-open-file', handleTerminalOpenFile as EventListener);

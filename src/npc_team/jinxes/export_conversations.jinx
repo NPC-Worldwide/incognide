@@ -1,5 +1,7 @@
 jinx_name: export_conversations
 description: Dump recent conversations from the history DB to JSONL for archival/training. Exports last `days` (default 7).
+permissions:
+  default: allow
 inputs:
   - { db_path: "" }
   - { out_dir: "" }

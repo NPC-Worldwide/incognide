@@ -1,5 +1,7 @@
 jinx_name: request_approval
 description: Request user approval before performing an action
+permissions:
+  default: allow
 inputs:
   - message:
       type: string

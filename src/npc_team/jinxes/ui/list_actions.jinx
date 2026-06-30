@@ -1,5 +1,7 @@
 jinx_name: list_actions
 description: List all available studio actions
+permissions:
+  default: allow
 steps:
   - name: list_actions
     engine: incognide

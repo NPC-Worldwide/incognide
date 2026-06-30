@@ -1,5 +1,7 @@
 jinx_name: knowledge_context
 description: Build a context string from human-approved memories in a directory's `.knowledge.yaml`.
+permissions:
+  default: allow
 inputs:
   - { directory: "" }
   - { max_memories: "10" }

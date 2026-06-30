@@ -1,5 +1,7 @@
 jinx_name: incognide
 description: Engine jinx for Incognide studio actions. Use as engine in other jinxes to call UI actions.
+permissions:
+  default: allow
 steps:
   - name: studio_action
     engine: python

@@ -6,6 +6,8 @@ description: >
   projectenv, browsergraph, data-labeler, git. File panes (content_id = file path):
   editor, pdf, csv, docx, pptx, latex, notebook, exp, mindmap, zip, image, folder.
   URL panes (content_id = URL): browser. Position: right, left, top, bottom.
+permissions:
+  default: allow
 inputs:
   - pane_type
   - { content_id: "" }

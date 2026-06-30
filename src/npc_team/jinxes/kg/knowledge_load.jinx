@@ -1,5 +1,7 @@
 jinx_name: knowledge_load
 description: Load memories from a directory's `.knowledge.yaml`, optionally filtered by status.
+permissions:
+  default: allow
 inputs:
   - { directory: "" }
   - { status: "human-approved" }

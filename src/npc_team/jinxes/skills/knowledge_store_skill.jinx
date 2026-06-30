@@ -27,6 +27,8 @@ description: >
   When answering questions, prefer `build_context()` for recently approved
   local knowledge, and `search_memories()` for targeted recall. Always
   respect `human-rejected` memories — do not repeat them.
+permissions:
+  default: allow
 inputs:
   - name: action
     description: load | search | append | update | link | context | aggregate

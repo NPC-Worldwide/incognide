@@ -3,6 +3,8 @@ description: >
   Manage cron jobs. Actions: list (no args), add (needs schedule + command +
   job_name), remove (needs job_name), status (needs job_name).
   Schedule uses cron syntax, e.g. '*/5 * * * *' for every 5 minutes.
+permissions:
+  default: allow
 inputs:
   - action
   - { schedule: "" }

@@ -1,17 +1,25 @@
 
 
 import { registerAction, StudioContext, StudioActionResult } from './index';
-import { getPaneTitle } from './paneActions';
+import { getPaneTitle, collectPaneInfo } from './paneActions';
 
 async function read_pane(
   args: { paneId?: string },
   ctx: StudioContext
 ): Promise<StudioActionResult> {
-  const paneId = args.paneId === 'active' || !args.paneId
+  let paneId = args.paneId === 'active' || !args.paneId
     ? ctx.activeContentPaneId
     : args.paneId;
 
-  const data = ctx.contentDataRef.current[paneId];
+  let data = ctx.contentDataRef.current[paneId];
+  if (!data) {
+    const allPanes = collectPaneInfo(ctx.rootLayoutNode, ctx.contentDataRef.current, ctx.activeContentPaneId);
+    const matched = allPanes.find(p => p.id === paneId || p.path === paneId || p.contentId === paneId);
+    if (matched) {
+      paneId = matched.id;
+      data = ctx.contentDataRef.current[paneId];
+    }
+  }
 
   if (!data) {
     return { success: false, error: `Pane not found: ${paneId}` };
@@ -264,11 +272,19 @@ async function write_pane(
   args: { paneId?: string; content: string; position?: string; path?: string },
   ctx: StudioContext
 ): Promise<StudioActionResult> {
-  const paneId = args.paneId === 'active' || !args.paneId
+  let paneId = args.paneId === 'active' || !args.paneId
     ? ctx.activeContentPaneId
     : args.paneId;
 
-  const data = ctx.contentDataRef.current[paneId];
+  let data = ctx.contentDataRef.current[paneId];
+  if (!data) {
+    const allPanes = collectPaneInfo(ctx.rootLayoutNode, ctx.contentDataRef.current, ctx.activeContentPaneId);
+    const matched = allPanes.find(p => p.id === paneId || p.path === paneId || p.contentId === paneId);
+    if (matched) {
+      paneId = matched.id;
+      data = ctx.contentDataRef.current[paneId];
+    }
+  }
   if (!data) return { success: false, error: `Pane not found: ${paneId}` };
   if (!args.content) return { success: false, error: 'content is required' };
 
