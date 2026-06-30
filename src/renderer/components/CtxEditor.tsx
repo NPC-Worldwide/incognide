@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileJson, X, Save, Plus, Trash2, Search, ChevronDown, Server, Database } from 'lucide-react';
+import { FileJson, X, Save, Plus, Trash2, Search, ChevronDown, Server, Database, RefreshCw } from 'lucide-react';
 import yaml from 'js-yaml';
 import AutosizeTextarea from './AutosizeTextarea';
 
@@ -60,6 +60,7 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false }) => {
     const [jinxDropdownSearch, setJinxDropdownSearch] = useState('');
     const [mcpDropdownOpen, setMcpDropdownOpen] = useState(false);
     const [mcpDropdownSearch, setMcpDropdownSearch] = useState('');
+    const [providerScan, setProviderScan] = useState<Record<number, { loading: boolean; error?: string; models?: string[]; open: boolean }>>({});
 
     const findCtxFile = async (dirPath: string) => {
         try {
@@ -214,6 +215,31 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false }) => {
         } else {
             setCtx(prev => ({ ...prev, providers: next }));
         }
+    };
+
+    const scanProviderModels = async (index: number) => {
+        const providers = getProviders();
+        const prov = providers[index];
+        const providerName = (prov?.provider_type || prov?.name || '').trim();
+        if (!providerName) {
+            setProviderScan(prev => ({ ...prev, [index]: { open: true, error: 'Provider name or type required', loading: false } }));
+            return;
+        }
+        setProviderScan(prev => ({ ...prev, [index]: { open: true, loading: true } }));
+        try {
+            const res = await (window as any).api.getProviderModels({ provider: providerName });
+            if (res?.error) throw new Error(res.error);
+            const models = (res?.models || [])
+                .map((m: any) => (typeof m === 'string' ? m : (m.id || m.name || m.value || m.display_name)))
+                .filter(Boolean);
+            setProviderScan(prev => ({ ...prev, [index]: { open: true, loading: false, models } }));
+        } catch (err: any) {
+            setProviderScan(prev => ({ ...prev, [index]: { open: true, loading: false, error: err.message || 'Failed to discover models' } }));
+        }
+    };
+
+    const closeProviderScan = (index: number) => {
+        setProviderScan(prev => ({ ...prev, [index]: { ...prev[index], open: false } }));
     };
 
     const getJinxes = (): string[] => {
@@ -794,7 +820,17 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false }) => {
                             </div>
                             
                             <div className="space-y-1">
-                                <label className="text-xs theme-text-muted">Allowed Models</label>
+                                <div className="flex items-center justify-between">
+                                    <label className="text-xs theme-text-muted">Allowed Models</label>
+                                    <button
+                                        onClick={() => providerScan[idx]?.open ? closeProviderScan(idx) : scanProviderModels(idx)}
+                                        disabled={providerScan[idx]?.loading}
+                                        className="text-[10px] flex items-center gap-1 px-2 py-0.5 rounded bg-cyan-700/50 hover:bg-cyan-700 text-cyan-100 disabled:opacity-40"
+                                    >
+                                        <RefreshCw size={10} className={providerScan[idx]?.loading ? 'animate-spin' : ''} />
+                                        {providerScan[idx]?.loading ? 'Scanning...' : 'Scan'}
+                                    </button>
+                                </div>
                                 <div className="flex flex-wrap gap-1.5">
                                     {(prov.models || []).map((m, mIdx) => (
                                         <span key={`${m}-${mIdx}`} className="inline-flex items-center gap-1 px-2 py-1 rounded bg-gray-800 border theme-border text-xs theme-text-primary">
@@ -821,6 +857,35 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false }) => {
                                         />
                                     </div>
                                 </div>
+
+                                {providerScan[idx]?.open && (
+                                    <div className="mt-2 border theme-border rounded bg-black/20 p-2 space-y-1">
+                                        {providerScan[idx]?.loading ? (
+                                            <p className="text-[10px] theme-text-muted animate-pulse">Discovering models for {prov.provider_type || prov.name}...</p>
+                                        ) : providerScan[idx]?.error ? (
+                                            <p className="text-[10px] text-red-400">{providerScan[idx].error}</p>
+                                        ) : (providerScan[idx]?.models || []).length === 0 ? (
+                                            <p className="text-[10px] theme-text-muted">No models discovered. Make sure the provider is running or API key is set.</p>
+                                        ) : (
+                                            <div className="max-h-32 overflow-y-auto space-y-1">
+                                                <p className="text-[10px] theme-text-muted">Click a model to add it:</p>
+                                                {providerScan[idx].models.map((m) => (
+                                                    <button
+                                                        key={m}
+                                                        onClick={() => {
+                                                            addProviderModel(idx, m);
+                                                            closeProviderScan(idx);
+                                                        }}
+                                                        disabled={(prov.models || []).includes(m)}
+                                                        className="w-full text-left text-xs px-2 py-1 rounded hover:bg-gray-700 theme-text-primary disabled:opacity-40 disabled:cursor-not-allowed truncate"
+                                                    >
+                                                        {(prov.models || []).includes(m) ? `${m} ✓` : m}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     ))}
