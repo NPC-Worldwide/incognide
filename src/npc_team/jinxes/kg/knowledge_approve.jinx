@@ -1,5 +1,7 @@
 jinx_name: knowledge_approve
 description: Update a memory's status (and optionally final_memory) in a directory's `.knowledge.yaml`.
+permissions:
+  default: allow
 inputs:
   - { directory: "" }
   - { mem_id: "" }

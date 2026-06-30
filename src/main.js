@@ -38,6 +38,9 @@ const INCOGNIDE_BASE = process.env.INCOGNIDE_BASE || path.join(os.homedir(), '.i
 let splashWindow = null;
 
 let INCOGNIDE_HOME = process.env.INCOGNIDE_HOME || path.join(os.homedir(), '.incognide');
+if (typeof INCOGNIDE_HOME === 'string' && INCOGNIDE_HOME.startsWith('~')) {
+  INCOGNIDE_HOME = INCOGNIDE_HOME.replace('~', os.homedir());
+}
 try {
   const _rcPath = path.join(os.homedir(), '.incogniderc');
   if (fs.existsSync(_rcPath)) {
@@ -82,10 +85,18 @@ function ensureIncognideRc() {
       if (val) lines.push(`export ${key}=${val}`);
     }
   };
-  if (!has('INCOGNIDE_HOME')) lines.push('export INCOGNIDE_HOME=~/.incognide');
+  if (!has('INCOGNIDE_HOME')) lines.push('export INCOGNIDE_HOME=' + path.join(os.homedir(), '.incognide'));
   seed('INCOGNIDE_CHAT_MODEL');
   seed('INCOGNIDE_CHAT_PROVIDER');
   seed('INCOGNIDE_DEFAULT_NPC', 'ledbi');
+  // Expand any remaining '~' in INCOGNIDE_HOME line so it never writes a literal tilde.
+  lines = lines.map(l => {
+    const match = l.match(/^(export\s+)?(INCOGNIDE_HOME=)(.*)$/);
+    if (!match) return l;
+    let val = match[3];
+    if (val.startsWith('~')) val = val.replace('~', os.homedir());
+    return `${match[1] || ''}${match[2]}${val}`;
+  });
   try {
     fs.writeFileSync(rcPath, lines.join('\n') + '\n');
   } catch (err) {
@@ -112,6 +123,9 @@ function loadShellEnv() {
             value = value.slice(1, -1);
           }
           if (value && !process.env[match[1]]) {
+            if (typeof value === 'string' && value.startsWith('~')) {
+              value = value.replace('~', os.homedir());
+            }
             process.env[match[1]] = value;
           }
         }
@@ -623,7 +637,9 @@ const ensureTablesExist = async () => {
           input_tokens INTEGER,
           output_tokens INTEGER,
           cost TEXT,
-          execution_mode TEXT DEFAULT 'chat'
+          execution_mode TEXT,
+          device_id TEXT,
+          device_name TEXT
       );
   `;
 
@@ -721,6 +737,8 @@ const ensureTablesExist = async () => {
       await addColumnIfMissing('jinx_execution_log', 'log_file_path', 'TEXT');
       await addColumnIfMissing('activity_log', 'directory_path', 'TEXT');
       await addColumnIfMissing('activity_log', 'device_id', 'TEXT');
+      await addColumnIfMissing('conversation_history', 'device_id', 'TEXT');
+      await addColumnIfMissing('conversation_history', 'device_name', 'TEXT');
 
       try {
           const master = await dbQuery(`SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'`);

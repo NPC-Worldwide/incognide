@@ -4,6 +4,8 @@ description: >
   text (position: replace, end, start, cursor). Spreadsheet: pass JSON array
   of {row, col, value}. Presentation: pass JSON {shapeIndex, text, slideIndex?}.
   Terminal: sends as command.
+permissions:
+  default: allow
 inputs:
   - content
   - { pane_id: "active" }

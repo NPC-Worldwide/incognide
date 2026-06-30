@@ -2,6 +2,8 @@ jinx_name: prompt
 description: >
   Ask the user for input. Types: choices (pick from options), confirm (yes/no),
   text (free text input), form (multiple fields). Returns the user's response.
+permissions:
+  default: allow
 inputs:
   - message
   - { prompt_type: "choices" }

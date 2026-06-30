@@ -569,6 +569,7 @@ onTerminalClosed: (callback) => {
     }),
 
     executeCommandStream: (data) => ipcRenderer.invoke('executeCommandStream', data),
+    saveMessage: (message) => ipcRenderer.invoke('saveMessage', message),
     interruptStream: async (streamIdToInterrupt) => {
         try {
             await ipcRenderer.invoke('interruptStream', streamIdToInterrupt);

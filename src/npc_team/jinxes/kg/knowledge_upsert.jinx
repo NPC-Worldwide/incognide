@@ -1,5 +1,7 @@
 jinx_name: knowledge_upsert
 description: Append a new memory to a directory's `.knowledge.yaml`.
+permissions:
+  default: allow
 inputs:
   - { directory: "" }
   - { initial_memory: "" }

@@ -129,8 +129,12 @@ async function open_pane(
   }
 
   let contentId: string;
+  let resolvedType = type;
   if (path) {
     contentId = path;
+    if (type === 'editor' && path.endsWith('.ipynb')) {
+      resolvedType = 'notebook';
+    }
   } else if (url) {
     contentId = url;
   } else if (TOOL_PANE_TYPES.has(type)) {
@@ -155,13 +159,13 @@ async function open_pane(
 
   // Pre-populate contentData so performSplit uses this exact ID
   ctx.contentDataRef.current[newPaneId] = {
-    contentType: type,
+    contentType: resolvedType,
     contentId: contentId,
-    ...(type === 'terminal' && shellType ? { shellType } : {}),
-    ...(type === 'browser' && url ? { browserUrl: url } : {}),
+    ...(resolvedType === 'terminal' && shellType ? { shellType } : {}),
+    ...(resolvedType === 'browser' && url ? { browserUrl: url } : {}),
   };
 
-  ctx.performSplit(activePath, position, type, contentId, newPaneId);
+  ctx.performSplit(activePath, position, resolvedType, contentId, newPaneId);
 
   // Wait briefly for layout to settle, then verify the pane exists
   const maxWait = type === 'terminal' ? 2000 : 300;
@@ -184,16 +188,16 @@ async function open_pane(
     }
   }
 
-  if (actualPaneId && type === 'dbtool') {
+  if (actualPaneId && resolvedType === 'dbtool') {
     ctx.updateContentPane(actualPaneId, 'dbtool', 'dbtool');
   }
 
-  const info = PANE_TYPE_INFO[type];
+  const info = PANE_TYPE_INFO[resolvedType];
 
   return {
     success: true,
     paneId: actualPaneId || newPaneId,
-    type,
+    type: resolvedType,
     title: info?.title || type,
     contentId
   };

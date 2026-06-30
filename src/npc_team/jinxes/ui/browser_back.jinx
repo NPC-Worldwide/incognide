@@ -1,5 +1,7 @@
 jinx_name: browser_back
 description: Navigate back in a browser pane history
+permissions:
+  default: allow
 inputs:
   - paneId:
       type: string

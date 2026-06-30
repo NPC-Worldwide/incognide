@@ -1,5 +1,7 @@
 jinx_name: browser_screenshot
 description: Take a screenshot of a browser pane and return it as a data URL
+permissions:
+  default: allow
 inputs:
   - paneId:
       type: string

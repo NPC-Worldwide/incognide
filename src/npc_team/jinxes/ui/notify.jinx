@@ -1,5 +1,7 @@
 jinx_name: notify
 description: Show a notification toast to the user. Type can be info, success, warning, or error.
+permissions:
+  default: allow
 inputs:
   - message
   - { type: "info" }

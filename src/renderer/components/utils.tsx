@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { BACKEND_URL } from '../config';
 import { goUpDirectory as goUpDirectoryApi } from '../api/fileSystem';
 import { Code2, FileText, FileJson, BarChart3, File } from 'lucide-react';
@@ -733,14 +733,21 @@ export const loadConversations = async (
         const normalizedPath = normalizePath(dirPath);
         if (!normalizedPath) return;
         const response = await window.api.getConversations(normalizedPath);
-        const formattedConversations = response?.conversations?.map((conv: any) => ({
-            id: conv.id,
-            title: conv.preview?.split('\n')[0]?.substring(0, 30) || 'New Conversation',
-            preview: conv.preview || 'No content',
-            timestamp: conv.timestamp || Date.now(),
-            last_message_timestamp: conv.last_message_timestamp || conv.timestamp || Date.now(),
-            execution_mode: conv.execution_mode || 'chat',
-        })) || [];
+        const formattedConversations = response?.conversations?.map((conv: any) => {
+            const cleanPreview = typeof conv.preview === 'string'
+                ? conv.preview.replace(/\s*<context>[\s\S]*?<\/context>\s*/g, '').trim()
+                : (conv.preview || '');
+            return {
+                id: conv.id,
+                title: cleanPreview?.split('\n')[0]?.substring(0, 30) || 'New Conversation',
+                preview: cleanPreview || 'No content',
+                timestamp: conv.timestamp || Date.now(),
+                last_message_timestamp: conv.last_message_timestamp || conv.timestamp || Date.now(),
+                execution_mode: conv.execution_mode,
+                npc: conv.npc,
+                model: conv.model,
+            };
+        }) || [];
 
         formattedConversations.sort((a: any, b: any) =>
             new Date(b.last_message_timestamp).getTime() - new Date(a.last_message_timestamp).getTime()
@@ -842,8 +849,12 @@ export const usePaneAwareStreamListeners = (
     parseAgenticResponse: (content: string, contexts: any[]) => any[],
     getConversationStats: (messages: any[]) => any,
     refreshConversations: () => Promise<void>,
-    studioContext?: StudioContext | null
+    studioContext?: StudioContext | null,
+    currentPath?: string
 ) => {
+    const currentPathRef = useRef(currentPath);
+    currentPathRef.current = currentPath;
+
     return useEffect(() => {
         if (!config?.stream || listenersAttached.current) {
             return;
@@ -852,6 +863,33 @@ export const usePaneAwareStreamListeners = (
         const notifyPaneUpdate = (paneId: string) => {
             paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
         };
+
+        const saveAssistantMessage = (paneData: any, msg: any) => {
+            const path = currentPathRef.current;
+            if (typeof path !== 'string' || !paneData?.contentId) return;
+            const payload = {
+                message_id: msg.id,
+                timestamp: msg.timestamp || new Date().toISOString(),
+                role: 'assistant',
+                content: msg.content,
+                conversation_id: paneData.contentId,
+                directory_path: path,
+                model: msg.model,
+                provider: msg.provider,
+                npc: msg.npc,
+                parent_message_id: msg.parentMessageId,
+                execution_mode: paneData.executionMode,
+                input_tokens: msg.input_tokens,
+                output_tokens: msg.output_tokens,
+                cost: msg.cost,
+                reasoning_content: msg.reasoningContent || null,
+                tool_calls: msg.toolCalls || null,
+            };
+            (window as any).api.saveMessage(payload).catch((err: any) =>
+                console.error('[ASSISTANT_AUTOSAVE] Failed to save assistant message:', err)
+            );
+        };
+
 
         const handleStreamData = (_: any, { streamId: incomingStreamId, chunk }: any) => {
             const targetPaneId = streamToPaneRef.current[incomingStreamId];
@@ -1076,6 +1114,9 @@ export const usePaneAwareStreamListeners = (
 
                 paneData.chatMessages.messages = paneData.chatMessages.allMessages.slice(-(paneData.chatMessages.displayedMessageCount || 20));
                 notifyPaneUpdate(targetPaneId);
+                if (message.role === 'assistant' && message.isStreaming) {
+                    saveAssistantMessage(paneData, message);
+                }
             } catch (err) {
                 console.error('[REACT] Error processing stream chunk:', err, 'Raw chunk:', chunk);
             }
@@ -1120,6 +1161,8 @@ export const usePaneAwareStreamListeners = (
                         if (wasVoiceInput && msg.content) {
                             triggerAutoTTS(msg.content);
                         }
+
+                        saveAssistantMessage(paneData, msg);
                     }
                     paneData.chatStats = getConversationStats(paneData.chatMessages.allMessages);
                 }

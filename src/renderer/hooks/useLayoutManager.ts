@@ -216,7 +216,7 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
             paneData.chatMessages = null;
             paneData.fileContent = null;
             paneData.browserUrl = newContentId;
-        } else if (newContentType === 'chat') {
+        } else if (newContentType === 'chat' || newContentType === 'agent') {
             if (!paneData.chatMessages) {
                 paneData.chatMessages = { messages: [], allMessages: [], displayedMessageCount: 20 };
             }
@@ -225,6 +225,9 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
                 paneData.executionMode = savedMode ? JSON.parse(savedMode) : 'chat';
                 paneData.selectedJinx = null;
                 paneData.showJinxDropdown = false;
+            }
+            if (newContentType === 'agent' && paneData.executionMode === 'chat') {
+                paneData.executionMode = 'tool_agent';
             }
             if (skipMessageLoad) {
                 paneData.chatMessages.messages = [];
@@ -343,7 +346,7 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
 
         setActiveContentPaneId(newPaneId);
 
-        if (newContentType === 'editor' || newContentType === 'chat') {
+        if (newContentType === 'editor' || newContentType === 'chat' || newContentType === 'agent') {
             updateContentPane(newPaneId, newContentType, newContentId);
         }
     }, [updateContentPane]);
@@ -533,6 +536,10 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
         const targetId = resultPaneId || newPaneId;
         if (contentType === 'editor' || contentType === 'chat') {
             updateContentPane(targetId, contentType, finalContentId);
+        }
+
+        if (contentType === 'editor' && finalContentId?.endsWith('.ipynb')) {
+            updateContentPane(targetId, 'notebook', finalContentId);
         }
 
         setTimeout(() => {

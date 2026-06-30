@@ -1007,7 +1007,6 @@ function register(ctx) {
       }
       for (const item of items) {
         if (item.isDirectory() && ignorePatterns.includes(item.name)) {
-          console.log(`[Main Process] Ignoring directory: ${path.join(currentPath, item.name)}`);
           continue;
         }
 

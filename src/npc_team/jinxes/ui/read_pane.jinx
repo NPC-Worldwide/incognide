@@ -3,6 +3,8 @@ description: >
   Read content from any pane. Works on all types: editor (file text),
   browser (url + title), terminal (output), csv (data + stats),
   docx (text), pptx (slides), chat (recent messages).
+permissions:
+  default: allow
 inputs:
   - { pane_id: "active" }
 steps:

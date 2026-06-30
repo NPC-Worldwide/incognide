@@ -3,6 +3,8 @@ description: >
   Run code/commands in any pane context. Browser: evaluates JavaScript.
   Terminal: runs shell command. Spreadsheet: JS with {headers, data, XLSX}.
   Document: JS eval. Presentation: JS eval.
+permissions:
+  default: allow
 inputs:
   - code
   - { pane_id: "active" }

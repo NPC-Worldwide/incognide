@@ -2,6 +2,8 @@ jinx_name: navigate
 description: >
   Navigate within a pane. Browser: go to URL. Presentation: go to slide
   (pass index as target). Spreadsheet: switch sheet (pass sheet name as target).
+permissions:
+  default: allow
 inputs:
   - target
   - { pane_id: "active" }

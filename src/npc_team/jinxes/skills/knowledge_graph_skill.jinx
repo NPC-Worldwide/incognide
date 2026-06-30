@@ -39,6 +39,8 @@ description: >
   relationships, prefer hybrid search. For pure semantic similarity
   without graph structure, use embedding search. For exploring
   connected neighborhoods, use link search with BFS.
+permissions:
+  default: allow
 inputs:
   - name: search_method
     description: keyword | embedding | link | hybrid

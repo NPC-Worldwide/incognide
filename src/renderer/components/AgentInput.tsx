@@ -1,4 +1,4 @@
-import { getFileName, normalizePath } from './utils';
+import { getFileName, normalizePath, loadAvailableNPCs } from './utils';
 import yaml from 'js-yaml';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { BACKEND_URL } from '../config';
@@ -579,8 +579,17 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         const existingModels = Array.isArray(prov.models) ? prov.models : [];
         setProviderModelSelector({ provider: prov, models: [], selected: new Set(), loading: true, error: null });
         try {
-            const result = await (window as any).api.getProviderModels({ provider: providerType });
-            const fetchedModels = (result?.models || []).map((m: any) => m.id || m.name || m.value).filter(Boolean);
+            let fetchedModels: string[] = [];
+            if (providerType === 'ollama') {
+                const res = await (window as any).api.getLocalOllamaModels();
+                fetchedModels = (res?.models || []).map((m: any) => m.name || m.model || m.id).filter(Boolean);
+            } else if (['lmstudio', 'llamacpp', 'gguf'].includes(providerType)) {
+                const res = await (window as any).api.scanLocalModels?.(providerType);
+                fetchedModels = (res?.models || []).map((m: any) => m.name || m.path || m.id).filter(Boolean);
+            } else {
+                const result = await (window as any).api.getProviderModels({ provider: providerType });
+                fetchedModels = (result?.models || []).map((m: any) => m.id || m.name || m.value).filter(Boolean);
+            }
             const models = fetchedModels.length > 0 ? fetchedModels : existingModels;
             setProviderModelSelector({
                 provider: prov,
@@ -1898,6 +1907,26 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                                                     {detectedProvidersLoading && (
                                                         <div className="text-[10px] text-gray-400">Scanning env for API keys…</div>
                                                     )}
+                                                    <div className="space-y-1 pt-1 border-t theme-border">
+                                                        <div className="text-[10px] text-gray-400">Scan local providers:</div>
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {[
+                                                                { key: 'ollama', label: 'Ollama' },
+                                                                { key: 'lmstudio', label: 'LM Studio' },
+                                                                { key: 'llamacpp', label: 'llama.cpp' },
+                                                                { key: 'gguf', label: 'GGUF' },
+                                                            ].map((lp) => (
+                                                                <button
+                                                                    key={`local-${lp.key}`}
+                                                                    onClick={() => openProviderModelSelector({ name: lp.key, provider: lp.key, displayName: lp.label })}
+                                                                    disabled={addModelSaving}
+                                                                    className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-orange-300 hover:bg-orange-500/20 transition-colors disabled:opacity-50"
+                                                                >
+                                                                    + {lp.label}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
                                                     {teamCtxProviders.length === 0 && extraDetectedProviders.length === 0 && !detectedProvidersLoading && (
                                                         <div className="text-[10px] text-gray-400">No providers found in team .ctx or env. Add one manually below.</div>
                                                     )}

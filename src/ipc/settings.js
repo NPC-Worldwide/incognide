@@ -95,38 +95,6 @@ const generateJinxHeader = (meta) => `
 
 const ensureTileJinxDir = async () => {
   await fsPromises.mkdir(tileJinxDir, { recursive: true });
-
-  for (const [filename, meta] of Object.entries(tileSourceMap)) {
-    const jinxPath = path.join(tileJinxDir, filename);
-    const sourcePath = path.join(componentsDir, meta.source);
-
-    try {
-
-      const sourceStats = await fsPromises.stat(sourcePath);
-
-      let shouldWrite = false;
-      try {
-        const jinxStats = await fsPromises.stat(jinxPath);
-
-        if (sourceStats.mtime > jinxStats.mtime) {
-          console.log(`[Tiles] Source ${meta.source} is newer than ${filename}, syncing...`);
-          shouldWrite = true;
-        }
-      } catch {
-
-        shouldWrite = true;
-      }
-
-      if (shouldWrite) {
-        const sourceCode = await fsPromises.readFile(sourcePath, 'utf8');
-        const header = generateJinxHeader({ ...meta, filename });
-        await fsPromises.writeFile(jinxPath, header + sourceCode);
-        console.log(`[Tiles] Wrote ${filename} from ${meta.source}`);
-      }
-    } catch (err) {
-      console.warn(`Could not sync ${filename} from ${meta.source}:`, err.message);
-    }
-  }
 };
 
 const tileJinxCacheDir = path.join(tileJinxDir, '.cache');

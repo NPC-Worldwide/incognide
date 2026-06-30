@@ -171,10 +171,11 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     const [convoSearch, setConvoSearch] = useState('');
     const [agentSearch, setAgentSearch] = useState('');
     const [npcSearch, setNpcSearch] = useState('');
-    const [groupBy, setGroupBy] = useState<'time' | 'npc' | 'model' | 'none'>('time');
+    const [convoGroupBy, setConvoGroupBy] = useState<'time' | 'npc' | 'model' | 'none'>('time');
+    const [agentGroupBy, setAgentGroupBy] = useState<'time' | 'npc' | 'model' | 'none'>('time');
 
     const chatConvos = useMemo(() => {
-        const base = (directoryConversations || []).filter((c: any) => !c.execution_mode || c.execution_mode === 'chat');
+        const base = (directoryConversations || []).filter((c: any) => c.execution_mode === 'chat');
         if (!convoSearch.trim()) return base;
         const q = convoSearch.toLowerCase();
         return base.filter((c: any) =>
@@ -185,7 +186,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     }, [directoryConversations, convoSearch]);
 
     const agentConvos = useMemo(() => {
-        const base = (directoryConversations || []).filter((c: any) => c.execution_mode && c.execution_mode !== 'chat');
+        const base = (directoryConversations || []).filter((c: any) => c.execution_mode === 'tool_agent');
         if (!agentSearch.trim()) return base;
         const q = agentSearch.toLowerCase();
         return base.filter((c: any) =>
@@ -195,7 +196,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         );
     }, [directoryConversations, agentSearch]);
 
-    const groupConvos = (list: any[]) => {
+    const groupConvos = (list: any[], groupBy: 'time' | 'npc' | 'model' | 'none') => {
         if (groupBy === 'none') return { All: list };
         if (groupBy === 'npc') {
             return list.reduce((acc: any, c: any) => {
@@ -229,8 +230,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         }, {});
     };
 
-    const groupedConvos = useMemo(() => groupConvos(chatConvos), [chatConvos, groupBy]);
-    const groupedAgentRuns = useMemo(() => groupConvos(agentConvos), [agentConvos, groupBy]);
+    const groupedConvos = useMemo(() => groupConvos(chatConvos, convoGroupBy), [chatConvos, convoGroupBy]);
+    const groupedAgentRuns = useMemo(() => groupConvos(agentConvos, agentGroupBy), [agentConvos, agentGroupBy]);
 
     const filteredNpcs = useMemo(() => {
         if (!npcSearch.trim()) return availableNPCs || [];
@@ -448,8 +449,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                         {(['time', 'npc', 'model', 'none'] as const).map(g => (
                             <button
                                 key={g}
-                                onClick={() => setGroupBy(g)}
-                                className={`px-1.5 py-0.5 rounded ${groupBy === g ? 'bg-green-500/20 text-green-400' : 'theme-text-muted hover:theme-text-primary'}`}
+                                onClick={() => setConvoGroupBy(g)}
+                                className={`px-1.5 py-0.5 rounded ${convoGroupBy === g ? 'bg-green-500/20 text-green-400' : 'theme-text-muted hover:theme-text-primary'}`}
                             >
                                 {g === 'time' ? 'Time' : g === 'npc' ? 'NPC' : g === 'model' ? 'Model' : 'None'}
                             </button>
@@ -524,8 +525,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                         {(['time', 'npc', 'model', 'none'] as const).map(g => (
                             <button
                                 key={g}
-                                onClick={() => setGroupBy(g)}
-                                className={`px-1.5 py-0.5 rounded ${groupBy === g ? 'bg-amber-500/20 text-amber-400' : 'theme-text-muted hover:theme-text-primary'}`}
+                                onClick={() => setAgentGroupBy(g)}
+                                className={`px-1.5 py-0.5 rounded ${agentGroupBy === g ? 'bg-amber-500/20 text-amber-400' : 'theme-text-muted hover:theme-text-primary'}`}
                             >
                                 {g === 'time' ? 'Time' : g === 'npc' ? 'NPC' : g === 'model' ? 'Model' : 'None'}
                             </button>
