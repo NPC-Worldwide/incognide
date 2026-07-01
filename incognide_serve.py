@@ -70,7 +70,11 @@ if __name__ == "__main__":
     print(f"Starting Flask server on http://0.0.0.0:{port} ({mode_str} mode)")
 
     incognide_home = os.environ.get('INCOGNIDE_HOME', os.path.expanduser('~/.incognide'))
+    if incognide_home.startswith('~'):
+        incognide_home = os.path.expanduser(incognide_home)
     db_path = os.environ.get('INCOGNIDE_DB_PATH', os.path.join(incognide_home, 'history.db'))
+    if db_path.startswith('~'):
+        db_path = os.path.expanduser(db_path)
 
     teams = {}
     try:
