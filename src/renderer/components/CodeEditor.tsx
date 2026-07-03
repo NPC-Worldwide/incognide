@@ -596,6 +596,16 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
 
                 if (wasHidden && this.savedScrollTop > 0) this.pendingRestore = true;
 
+                // Detect external document reload (full replacement)
+                if (update.docChanged && !this.pendingRestore) {
+                    let isFullReplace = false;
+                    const oldLen = update.startState.doc.length;
+                    update.changes.iterChanges((fromA: number, toA: number) => {
+                        if (fromA === 0 && toA === oldLen) isFullReplace = true;
+                    });
+                    if (isFullReplace) this.pendingRestore = true;
+                }
+
                 if (this.pendingRestore) {
                     this.pendingRestore = false;
                     const st = this.savedScrollTop;
@@ -773,6 +783,25 @@ const CodeEditorPane = ({
     const [showKeybindGuide, setShowKeybindGuide] = useState(false);
     const [diskChangeContent, setDiskChangeContent] = useState<string | null>(null);
     const [showModeDropdown, setShowModeDropdown] = useState(false);
+    const [diskConflictModal, setDiskConflictModal] = useState<{ isOpen: boolean; diskMtime: number | null; diskContent: string | null }>({ isOpen: false, diskMtime: null, diskContent: null });
+    const diskMtimeRef = useRef<number | null>(null);
+    const diskContentRef = useRef<string | null>(null);
+    const pendingDiskConflictRef = useRef(false);
+
+    const updateDiskState = useCallback((content: string, mtime: number) => {
+        diskContentRef.current = content;
+        diskMtimeRef.current = mtime;
+        pendingDiskConflictRef.current = false;
+    }, []);
+
+    const checkDiskState = useCallback(async (filePath: string) => {
+        try {
+            const stats = await (window as any).api.getFileStats(filePath);
+            return { mtime: stats?.mtimeMs || 0, exists: true };
+        } catch {
+            return { mtime: 0, exists: false };
+        }
+    }, []);
 
     useEffect(() => {
         const handleCycleMode = (e: KeyboardEvent) => {
@@ -796,11 +825,15 @@ const CodeEditorPane = ({
         if (pd?.contentId && !pd.isUntitled && pd.fileContent === undefined) {
             (async () => {
                 try {
-                    const result = await readFileContent(pd.contentId);
+                    const [result, stats] = await Promise.all([
+                        readFileContent(pd.contentId),
+                        (window as any).api.getFileStats(pd.contentId).catch(() => null)
+                    ]);
                     const content = typeof result === 'string' ? result : result?.content;
                     if (content != null) {
                         pd.fileContent = content;
                         pd.fileChanged = false;
+                        updateDiskState(content, stats?.mtimeMs || 0);
                         setRootLayoutNode(p => ({ ...p }));
                     }
                 } catch (e) {
@@ -808,7 +841,7 @@ const CodeEditorPane = ({
                 }
             })();
         }
-    }, [nodeId]);
+    }, [nodeId, updateDiskState]);
 
     if (!paneData) return null;
 
@@ -875,15 +908,53 @@ const CodeEditorPane = ({
             return;
         }
 
-        if (currentPaneData.contentId && currentPaneData.fileChanged) {
+        if (!currentPaneData.contentId || !currentPaneData.fileChanged) return;
+
+        const { mtime } = await checkDiskState(currentPaneData.contentId);
+        const knownMtime = diskMtimeRef.current;
+        if (knownMtime != null && mtime !== 0 && mtime !== knownMtime) {
+            try {
+                const result = await readFileContent(currentPaneData.contentId);
+                const diskContent = typeof result === 'string' ? result : result?.content;
+                setDiskConflictModal({ isOpen: true, diskMtime: mtime, diskContent: diskContent ?? null });
+            } catch {
+                setDiskConflictModal({ isOpen: true, diskMtime: mtime, diskContent: null });
+            }
+            return;
+        }
+
+        currentPaneData._selfWriting = true;
+        currentPaneData._lastWrittenContent = currentPaneData.fileContent;
+        await writeFileContent(currentPaneData.contentId, currentPaneData.fileContent);
+        currentPaneData.fileChanged = false;
+        const newStats = await checkDiskState(currentPaneData.contentId);
+        updateDiskState(currentPaneData.fileContent || '', newStats.mtime);
+        setRootLayoutNode(p => ({ ...p }));
+        setTimeout(() => { currentPaneData._selfWriting = false; }, 4000);
+    }, [nodeId, contentDataRef, setRootLayoutNode, setPromptModal, currentPath, checkDiskState, updateDiskState]);
+
+    const resolveDiskConflict = useCallback(async (overwrite: boolean) => {
+        const currentPaneData = contentDataRef.current[nodeId];
+        if (!currentPaneData?.contentId || !diskConflictModal.isOpen) return;
+        if (overwrite) {
             currentPaneData._selfWriting = true;
             currentPaneData._lastWrittenContent = currentPaneData.fileContent;
-            await writeFileContent(currentPaneData.contentId, currentPaneData.fileContent);
+            await writeFileContent(currentPaneData.contentId, currentPaneData.fileContent || '');
             currentPaneData.fileChanged = false;
+            const newStats = await checkDiskState(currentPaneData.contentId);
+            updateDiskState(currentPaneData.fileContent || '', newStats.mtime);
+            setDiskChangeContent(null);
             setRootLayoutNode(p => ({ ...p }));
             setTimeout(() => { currentPaneData._selfWriting = false; }, 4000);
+        } else {
+            if (diskConflictModal.diskContent != null) {
+                updateDiskState(diskConflictModal.diskContent, diskConflictModal.diskMtime || 0);
+            } else {
+                pendingDiskConflictRef.current = true;
+            }
         }
-    }, [nodeId, contentDataRef, setRootLayoutNode, setPromptModal, currentPath]);
+        setDiskConflictModal({ isOpen: false, diskMtime: null, diskContent: null });
+    }, [nodeId, contentDataRef, setRootLayoutNode, diskConflictModal, checkDiskState, updateDiskState]);
 
     useEffect(() => {
         const paneData = contentDataRef.current[nodeId];
@@ -894,12 +965,23 @@ const CodeEditorPane = ({
     useEffect(() => {
         const currentPaneData = contentDataRef.current[nodeId];
         if (!currentPaneData?.fileChanged || !currentPaneData?.contentId || currentPaneData?.isUntitled) return;
+        if (pendingDiskConflictRef.current) return;
         const timer = setTimeout(async () => {
             try {
+                const { mtime } = await checkDiskState(currentPaneData.contentId);
+                if (diskMtimeRef.current != null && mtime !== 0 && mtime !== diskMtimeRef.current) {
+                    pendingDiskConflictRef.current = true;
+                    const result = await readFileContent(currentPaneData.contentId);
+                    setDiskChangeContent(typeof result === 'string' ? result : result?.content ?? null);
+                    setRootLayoutNode(p => ({ ...p }));
+                    return;
+                }
                 currentPaneData._selfWriting = true;
                 currentPaneData._lastWrittenContent = currentPaneData.fileContent;
                 await writeFileContent(currentPaneData.contentId, currentPaneData.fileContent);
                 currentPaneData.fileChanged = false;
+                const newStats = await checkDiskState(currentPaneData.contentId);
+                updateDiskState(currentPaneData.fileContent || '', newStats.mtime);
                 setRootLayoutNode(p => ({ ...p }));
                 setTimeout(() => { currentPaneData._selfWriting = false; }, 4000);
             } catch (e) {
@@ -907,23 +989,29 @@ const CodeEditorPane = ({
             }
         }, 30000);
         return () => clearTimeout(timer);
-    }, [fileContent, fileChanged, nodeId, contentDataRef, setRootLayoutNode]);
+    }, [fileContent, fileChanged, nodeId, contentDataRef, setRootLayoutNode, checkDiskState, updateDiskState]);
 
     const reloadFromDisk = useCallback(async () => {
         const pd = contentDataRef.current[nodeId];
         if (!pd?.contentId || pd.isUntitled) return;
         try {
-            const result = await (window as any).api.readFileContent(pd.contentId);
+            const [result, stats] = await Promise.all([
+                (window as any).api.readFileContent(pd.contentId),
+                (window as any).api.getFileStats(pd.contentId).catch(() => null)
+            ]);
             const diskContent = typeof result === 'string' ? result : result?.content;
             if (diskContent != null) {
                 pd.fileContent = diskContent;
                 pd.fileChanged = false;
+                updateDiskState(diskContent, stats?.mtimeMs || 0);
+                pendingDiskConflictRef.current = false;
+                setDiskChangeContent(null);
                 setRootLayoutNode(p => ({ ...p }));
             }
         } catch (e) {
             console.error('[CodeEditor] Reload failed:', e);
         }
-    }, [nodeId, contentDataRef, setRootLayoutNode]);
+    }, [nodeId, contentDataRef, setRootLayoutNode, updateDiskState]);
 
     useEffect(() => {
         const handleEscape = (e: KeyboardEvent) => {
@@ -943,19 +1031,22 @@ const CodeEditorPane = ({
             if (!pd || pd.contentId !== changedPath) return;
             if (pd._selfWriting) return;
             try {
+                const stats = await (window as any).api.getFileStats(changedPath).catch(() => null);
+                const newMtime = stats?.mtimeMs || 0;
+                if (newMtime && diskMtimeRef.current != null && newMtime === diskMtimeRef.current) return;
+
                 const result = await readFileContent(changedPath);
                 const diskContent = typeof result === 'string' ? result : result?.content;
                 if (diskContent == null) return;
-                if (diskContent === pd._lastWrittenContent) return;
-                if (diskContent === pd.fileContent) return;
-                if (pd.fileChanged) {
-                    setDiskChangeContent(diskContent);
+                if (diskContent === diskContentRef.current) return;
+                if (diskContent === pd.fileContent) {
+                    updateDiskState(diskContent, newMtime);
+                    setDiskChangeContent(null);
                     return;
                 }
-                pd.fileContent = diskContent;
-                pd.fileChanged = false;
-                setDiskChangeContent(null);
-                setRootLayoutNode(p => ({ ...p }));
+                pendingDiskConflictRef.current = true;
+                setDiskChangeContent(diskContent);
+                updateDiskState(diskContent, newMtime);
             } catch (e) {
                 console.error('[FILE-WATCH] Error reloading:', e);
             }
@@ -964,7 +1055,7 @@ const CodeEditorPane = ({
             removeListener();
             (window as any).api.unwatchFile(fp);
         };
-    }, [nodeId, contentDataRef, setRootLayoutNode]);
+    }, [nodeId, contentDataRef, setRootLayoutNode, updateDiskState]);
 
     const onEditorContextMenu = useCallback((e, selection) => {
         e.preventDefault();
@@ -987,26 +1078,21 @@ const CodeEditorPane = ({
             {diskChangeContent !== null && (
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-900/40 border-b border-yellow-700/50 text-yellow-200 text-xs shrink-0">
                     <RefreshCw size={12} className="text-yellow-400 shrink-0" />
-                    <span className="flex-1">File changed on disk. Reload and lose your unsaved changes?</span>
+                    <span className="flex-1">File changed on disk. You have unsaved changes.</span>
                     <button
-                        onClick={() => {
-                            const pd = contentDataRef.current[nodeId];
-                            if (pd && diskChangeContent != null) {
-                                pd.fileContent = diskChangeContent;
-                                pd.fileChanged = false;
-                                setRootLayoutNode(p => ({ ...p }));
-                            }
-                            setDiskChangeContent(null);
-                        }}
+                        onClick={reloadFromDisk}
                         className="px-2 py-0.5 rounded bg-yellow-600/50 hover:bg-yellow-600/80 text-yellow-100 font-medium transition-colors"
                     >
-                        Reload
+                        Reload (discard local)
                     </button>
                     <button
-                        onClick={() => setDiskChangeContent(null)}
+                        onClick={() => {
+                            pendingDiskConflictRef.current = true;
+                            setDiskChangeContent(null);
+                        }}
                         className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-gray-300 transition-colors"
                     >
-                        Ignore
+                        Keep local
                     </button>
                 </div>
             )}
@@ -1252,6 +1338,32 @@ const CodeEditorPane = ({
                     )}
                 </div>
             </div>
+
+            {diskConflictModal.isOpen && createPortal(
+                <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/70">
+                    <div className="theme-bg-secondary theme-border border rounded-lg shadow-xl p-5 max-w-md w-full mx-4">
+                        <h3 className="text-base font-semibold theme-text-primary mb-2">File changed on disk</h3>
+                        <p className="text-sm theme-text-secondary mb-4">
+                            The file has been modified on disk since you loaded it. Do you want to overwrite those changes with your version?
+                        </p>
+                        <div className="flex justify-end gap-2">
+                            <button
+                                onClick={() => resolveDiskConflict(false)}
+                                className="px-3 py-1.5 rounded text-sm font-medium theme-text-secondary hover:bg-white/10 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => resolveDiskConflict(true)}
+                                className="px-3 py-1.5 rounded text-sm font-medium bg-red-600 hover:bg-red-500 text-white transition-colors"
+                            >
+                                Overwrite disk
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
 
             {editorContextMenuPos && createPortal(
                 <>

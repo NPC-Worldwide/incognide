@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { BACKEND_URL } from '../config';
 import { writeFileContent } from '../api/fileSystem';
 import yaml from 'js-yaml';
 import { saveNPCFile } from 'npcts/core';
 import {
-    Bot, Loader, ChevronDown, X, Save, MessageSquare,
+    Bot, Loader, ChevronDown, ChevronRight, X, Save, MessageSquare,
     Plus, Trash2, History, CheckCircle, XCircle, Tag,
     Brain, GitBranch, Edit, Search, Download, Filter,
-    Database, Sparkles, Zap, LayoutDashboard
+    Database, Sparkles, Zap, LayoutDashboard, RefreshCw
 } from 'lucide-react';
+import ModelSelector from './ModelSelector';
 import AutosizeTextarea from './AutosizeTextarea';
 import ForceGraph2D from 'react-force-graph-2d';
 
@@ -28,10 +30,14 @@ const NPCTeamMenu = ({
     const [npcs, setNpcs] = useState([]);
     const [selectedNpc, setSelectedNpc] = useState(null);
     const [editedNpc, setEditedNpc] = useState(null);
+    const [npcDropdownOpen, setNpcDropdownOpen] = useState(false);
+    const [npcSearch, setNpcSearch] = useState('');
     const [availableJinxes, setAvailableJinxes] = useState([]);
     const [jinxDropdownOpen, setJinxDropdownOpen] = useState(false);
     const [jinxDropdownSearch, setJinxDropdownSearch] = useState('');
-    const [activeTab, setActiveTab] = useState('config');
+    const [expandedJinxFolders, setExpandedJinxFolders] = useState<Set<string>>(new Set());
+    const jinxDropdownButtonRef = useRef<HTMLButtonElement | null>(null);
+    const npcDropdownButtonRef = useRef<HTMLButtonElement | null>(null);
     const [expandedExecution, setExpandedExecution] = useState(null);
 
     const [executionHistory, setExecutionHistory] = useState([]);
@@ -70,7 +76,14 @@ const NPCTeamMenu = ({
 
     const [kgData, setKgData] = useState({ nodes: [], links: [] });
     const [kgLoading, setKgLoading] = useState(false);
-    const graphRef = useRef();
+    const graphRef = useRef(null);
+    const [showNewAgentModal, setShowNewAgentModal] = useState(false);
+    const [newAgentName, setNewAgentName] = useState('');
+    const [availableModels, setAvailableModels] = useState<any[]>([]);
+    const [modelsLoading, setModelsLoading] = useState(false);
+    const [modelsError, setModelsError] = useState<string | null>(null);
+
+    const teamPathForCtx = currentPath || teamKey || '';
 
     useEffect(() => {
         const handleKeyDown = (event) => {
@@ -309,9 +322,11 @@ const NPCTeamMenu = ({
                     ? [npc.jinxes]
                     : ['*'];
         setEditedNpc({ ...npc, jinxes: jinxesArray });
-        setActiveTab('config');
         setSelectedExecutions(new Set());
         setVisibleCount(50);
+        setNpcDropdownOpen(false);
+        setNpcSearch('');
+        loadAvailableModels();
 
         const historyResponse = await fetch(
             `${BACKEND_URL}/api/npc/executions?npcName=${encodeURIComponent(npc.name)}`
@@ -330,8 +345,73 @@ const NPCTeamMenu = ({
         }
     };
 
+    const handleCreateNewAgent = async () => {
+        const name = newAgentName.trim();
+        if (!name) return;
+        const safeName = name.replace(/[^a-zA-Z0-9_\-]/g, '_');
+        const dir = teamKey || (currentPath ? `${currentPath}/npc_team` : '');
+        if (!dir) {
+            setError('No team path available to create agent');
+            return;
+        }
+        const filePath = `${dir}/${safeName}.npc`;
+        const yamlContent = yaml.dump({
+            name,
+            primary_directive: '',
+            model: '',
+            provider: '',
+            jinxes: ['*'],
+        }, { lineWidth: -1 });
+        const result = await writeFileContent(filePath, yamlContent);
+        if (result?.error) {
+            setError(`Failed to create agent: ${result.error}`);
+            return;
+        }
+        setShowNewAgentModal(false);
+        setNewAgentName('');
+        const npcResponse = teamKey
+            ? await window.api.getNPCTeamFromPath(teamKey)
+            : await window.api.getNPCTeamProject(currentPath);
+        const updatedNpcs = npcResponse.npcs || [];
+        setNpcs(updatedNpcs);
+        const created = updatedNpcs.find((n: any) => n.name === name);
+        if (created) {
+            handleNPCSelect(created);
+        }
+    };
+
     const handleInputChange = (field, value) => {
         setEditedNpc(prev => ({ ...prev, [field]: value }));
+    };
+
+    const loadAvailableModels = async () => {
+        if (!currentPath && !teamKey) return [];
+        setModelsLoading(true);
+        setModelsError(null);
+        try {
+            const response = await window.api.getAvailableModels(teamKey || currentPath);
+            const models = Array.isArray(response) ? response : response?.models || [];
+            setAvailableModels(models);
+            return models;
+        } catch (err: any) {
+            console.error('[NPCTeamMenu] Failed to load models:', err);
+            setModelsError(err.message || 'Failed to load models');
+            setAvailableModels([]);
+            return [];
+        } finally {
+            setModelsLoading(false);
+        }
+    };
+
+    const handleModelChange = (model: any) => {
+        if (!model) return;
+        setEditedNpc(prev => ({
+            ...prev,
+            model: model.value,
+            provider: model.provider || prev.provider || '',
+            api_url: model.base_url || prev.api_url || '',
+            api_key: model.api_key_var || prev.api_key || '',
+        }));
     };
 
     const removeJinxPattern = (index) => {
@@ -504,984 +584,227 @@ const NPCTeamMenu = ({
 
     const content = (
         <>
-            <div className="flex flex-1 min-h-0 overflow-hidden border theme-border rounded-lg">
-                    <div className="w-1/5 border-r theme-border
-                        flex flex-col min-h-0">
-                        <div className="flex-1 overflow-y-auto p-2">
-                            {loading ? (
-                                <div className="flex items-center
-                                    justify-center p-8">
-                                    <Loader className="animate-spin
-                                        text-blue-400" />
-                                </div>
-                            ) : (
-                                <div className="space-y-1">
-                                    {npcs.map((npc) => (
-                                        <button
-                                            key={npc.name}
-                                            onClick={() => handleNPCSelect(npc)}
-                                            className={`flex items-center gap-2
-                                                w-full p-2 rounded text-sm
-                                                text-left
-                                                ${selectedNpc?.name === npc.name
-                                                    ? 'bg-blue-600/50'
-                                                    : 'theme-hover'}`}
-                                        >
-                                            <Bot size={14} />
-                                            <span className="flex-1 truncate">
-                                                {npc.name}
-                                            </span>
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {selectedNpc && editedNpc ? (
-                        <div className="flex-1 flex flex-col min-h-0">
-                            <div className="flex border-b theme-border
-                                flex-shrink-0">
-                                <button
-                                    onClick={() => setActiveTab('config')}
-                                    className={`px-4 py-2 text-sm
-                                        ${activeTab === 'config'
-                                            ? 'border-b-2 border-blue-500'
-                                            : 'theme-text-secondary'}`}
-                                >
-                                    Config
-                                </button>
-                                <button
-                                    onClick={() => setActiveTab('history')}
-                                    className={`px-4 py-2 text-sm
-                                        ${activeTab === 'history'
-                                            ? 'border-b-2 border-blue-500'
-                                            : 'theme-text-secondary'}`}
-                                >
-                                    History ({executionHistory.length})
-                                </button>
-                                <button
-                                    onClick={() => setActiveTab('memory')}
-                                    className={`px-4 py-2 text-sm
-                                        ${activeTab === 'memory'
-                                            ? 'border-b-2 border-blue-500'
-                                            : 'theme-text-secondary'}`}
-                                >
-                                    Memory ({memories.length})
-                                </button>
-                                <button
-                                    onClick={() => setActiveTab('kg')}
-                                    className={`px-4 py-2 text-sm
-                                        ${activeTab === 'kg'
-                                            ? 'border-b-2 border-blue-500'
-                                            : 'theme-text-secondary'}`}
-                                >
-                                    Knowledge
-                                </button>
-                            </div>
-
-                            <div className="flex-1 overflow-y-auto p-4">
-                                {activeTab === 'config' && (
-                                    <div className="space-y-4">
-                                        <div className="flex justify-between
-                                            items-start gap-2">
-                                            <input
-                                                className="flex-1 theme-input
-                                                    text-lg font-bold p-2"
-                                                value={editedNpc.name}
-                                                onChange={(e) => handleInputChange(
-                                                    'name',
-                                                    e.target.value
-                                                )}
-                                            />
-                                            <div className="flex gap-1">
-                                                <button
-                                                    onClick={handleChatWithNpc}
-                                                    className="theme-button-primary
-                                                        p-2 rounded"
-                                                    title="Chat"
-                                                >
-                                                    <MessageSquare size={16} />
-                                                </button>
-                                                <button
-                                                    onClick={handleSave}
-                                                    className="theme-button-success
-                                                        p-2 rounded"
-                                                    title="Save"
-                                                >
-                                                    <Save size={16} />
-                                                </button>
-                                                {saveSuccess && (
-                                                    <span className="text-xs text-green-400 self-center">Saved</span>
-                                                )}
-                                                {error && (
-                                                    <span className="text-xs text-red-400 self-center" title={error}>Error</span>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        <div>
-                                            <label className="block text-xs
-                                                theme-text-secondary mb-1">
-                                                Primary Directive
-                                            </label>
-                                            <AutosizeTextarea
-                                                className="w-full theme-input p-2
-                                                    rounded text-sm min-h-[80px]"
-                                                value={editedNpc.primary_directive || ''}
-                                                onChange={(e) => handleInputChange(
-                                                    'primary_directive',
-                                                    e.target.value
-                                                )}
-                                            />
-                                        </div>
-
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <div>
-                                                <label className="block text-xs
-                                                    theme-text-secondary mb-1">
-                                                    Model
-                                                </label>
-                                                <input
-                                                    className="w-full theme-input
-                                                        p-2 rounded text-sm"
-                                                    value={editedNpc.model || ''}
-                                                    onChange={(e) => handleInputChange(
-                                                        'model',
-                                                        e.target.value
-                                                    )}
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs
-                                                    theme-text-secondary mb-1">
-                                                    Provider
-                                                </label>
-                                                <input
-                                                    className="w-full theme-input
-                                                        p-2 rounded text-sm"
-                                                    value={editedNpc.provider || ''}
-                                                    onChange={(e) => handleInputChange(
-                                                        'provider',
-                                                        e.target.value
-                                                    )}
-                                                />
-                                            </div>
-                                        </div>
-
-                                        <div>
-                                            <div className="flex justify-between
-                                                items-center mb-2"
-                                            >
-                                                <label className="text-sm
-                                                    font-semibold"
-                                                >
-                                                    Jinx Patterns
-                                                </label>
-                                                <span className="text-xs
-                                                    theme-text-secondary"
-                                                >
-                                                    {(editedNpc.jinxes || []).length}
-                                                </span>
-                                            </div>
-
-                                            <div className="relative mb-3"
-                                            >
-                                                <div className="flex items-center
-                                                    gap-1 w-full"
-                                                >
-                                                    <div className="relative flex-1"
-                                                    >
-                                                        <Search size={12}
-                                                            className="absolute
-                                                                left-2 top-1/2
-                                                                -translate-y-1/2
-                                                                text-gray-500" />
-                                                        <input
-                                                            type="text"
-                                                            placeholder="Search jinxes..."
-                                                            className="w-full
-                                                                theme-input pl-7 pr-2
-                                                                py-1.5 rounded text-xs"
-                                                            value={jinxDropdownSearch}
-                                                            onChange={(e) => {
-                                                                setJinxDropdownSearch(
-                                                                    e.target.value
-                                                                );
-                                                                setJinxDropdownOpen(true);
-                                                            }}
-                                                            onFocus={() =>
-                                                                setJinxDropdownOpen(true)
-                                                            }
-                                                        />
-                                                    </div>
-                                                    <button
-                                                        onClick={() =>
-                                                            setJinxDropdownOpen(
-                                                                !jinxDropdownOpen
-                                                            )
-                                                        }
-                                                        className="p-1.5
-                                                            theme-button-subtle rounded"
-                                                    >
-                                                        <ChevronDown
-                                                            size={14}
-                                                            className={`text-gray-500
-                                                                transition-transform
-                                                                ${jinxDropdownOpen
-                                                                    ? 'rotate-180'
-                                                                    : ''}`}
-                                                        />
-                                                    </button>
-                                                </div>
-
-                                                {jinxDropdownOpen && (
-                                                    <div className="absolute z-10
-                                                        left-0 right-0 mt-0.5 border
-                                                        rounded theme-border
-                                                        theme-bg-secondary shadow-lg
-                                                        max-h-56 overflow-y-auto"
-                                                    >
-                                                        {(() => {
-                                                            const current = new Set(
-                                                                editedNpc.jinxes || []
-                                                            );
-                                                            const filtered =
-                                                                availableJinxes.filter(
-                                                                    j => {
-                                                                        const n = j.name ||
-                                                                            j.jinx_name;
-                                                                        if (current.has(n)
-                                                                        ) return false;
-                                                                        if (!jinxDropdownSearch
-                                                                        ) return true;
-                                                                        return n.toLowerCase()
-                                                                            .includes(
-                                                                                jinxDropdownSearch
-                                                                                    .toLowerCase()
-                                                                            );
-                                                                    }
-                                                                );
-                                                            if (filtered.length === 0) {
-                                                                return (
-                                                                    <p className="text-xs
-                                                                        theme-text-secondary
-                                                                        italic p-2"
-                                                                    >
-                                                                        No jinxes found
-                                                                    </p>
-                                                                );
-                                                            }
-                                                            const byFolder = {};
-                                                            for (const j of filtered.sort(
-                                                                (a, b) =>
-                                                                    (a.name || a.jinx_name)
-                                                                        .localeCompare(
-                                                                            b.name ||
-                                                                            b.jinx_name
-                                                                        )
-                                                            )) {
-                                                                const n = j.name ||
-                                                                    j.jinx_name;
-                                                                const parts = (j.path || n)
-                                                                    .split('/');
-                                                                const folder =
-                                                                    parts.length > 1
-                                                                        ? parts.slice(
-                                                                              0,
-                                                                              -1
-                                                                          )
-                                                                              .join('/')
-                                                                        : '';
-                                                                if (!byFolder[folder]) {
-                                                                    byFolder[folder] = [];
-                                                                }
-                                                                byFolder[folder].push(j);
-                                                            }
-                                                            const items = [];
-                                                            const folders = Object.keys(
-                                                                byFolder
-                                                            ).sort();
-                                                            for (const folder of folders) {
-                                                                if (folder) {
-                                                                    items.push(
-                                                                        <div
-                                                                            key={folder}
-                                                                            className="px-2
-                                                                                py-0.5
-                                                                                text-[10px]
-                                                                                font-semibold
-                                                                                uppercase
-                                                                                tracking-wider
-                                                                                text-gray-500
-                                                                                theme-border-b"
-                                                                        >
-                                                                            {folder}
-                                                                        </div>
-                                                                    );
-                                                                }
-                                                                for (const j of byFolder[
-                                                                    folder
-                                                                ]) {
-                                                                    const n = j.name ||
-                                                                        j.jinx_name;
-                                                                    items.push(
-                                                                        <div
-                                                                            key={j.path || n}
-                                                                            className="flex
-                                                                                items-center
-                                                                                gap-1
-                                                                                w-full
-                                                                                px-2 py-1"
-                                                                        >
-                                                                            <button
-                                                                                onClick={() => {
-                                                                                    onOpenJinxTab?.(
-                                                                                        n
-                                                                                    );
-                                                                                    setJinxDropdownOpen(
-                                                                                        false
-                                                                                    );
-                                                                                }}
-                                                                                className="flex-1
-                                                                                    text-left
-                                                                                    text-xs
-                                                                                    theme-hover
-                                                                                    truncate
-                                                                                    flex
-                                                                                    items-center
-                                                                                    gap-1.5
-                                                                                    rounded
-                                                                                    px-1"
-                                                                                title={
-                                                                                    j.description ||
-                                                                                    n
-                                                                                }
-                                                                            >
-                                                                                <Zap
-                                                                                    size={10}
-                                                                                    className="text-blue-400"
-                                                                                />
-                                                                                {n}
-                                                                            </button>
-                                                                            <button
-                                                                                onClick={() => {
-                                                                                    addJinxToNpc(
-                                                                                        n
-                                                                                    );
-                                                                                    setJinxDropdownSearch(
-                                                                                        ''
-                                                                                    );
-                                                                                    setJinxDropdownOpen(
-                                                                                        false
-                                                                                    );
-                                                                                }}
-                                                                                className="p-1
-                                                                                    theme-button-subtle
-                                                                                    rounded"
-                                                                                title="Add to Agent"
-                                                                            >
-                                                                                <Plus size={12} />
-                                                                            </button>
-                                                                        </div>
-                                                                    );
-                                                                }
-                                                            }
-                                                            return items;
-                                                        })()}
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            <div className="space-y-1"
-                                            >
-                                                {editedNpc.jinxes?.length > 0 ? (
-                                                    editedNpc.jinxes
-                                                        .slice()
-                                                        .sort((a, b) =>
-                                                            a.localeCompare(b)
-                                                        )
-                                                        .map((pattern) => (
-                                                            <div
-                                                                key={pattern}
-                                                                className="flex
-                                                                    items-center
-                                                                    justify-between
-                                                                    w-full px-2 py-1
-                                                                    rounded text-xs
-                                                                    theme-bg-secondary"
-                                                            >
-                                                                <button
-                                                                    onClick={() =>
-                                                                        onOpenJinxTab?.(
-                                                                            pattern
-                                                                        )
-                                                                    }
-                                                                    className="flex
-                                                                        items-center
-                                                                        gap-1.5
-                                                                        text-left
-                                                                        flex-1
-                                                                        truncate
-                                                                        theme-hover
-                                                                        rounded px-1"
-                                                                >
-                                                                    {pattern === '*' ? (
-                                                                        <Sparkles
-                                                                            size={12}
-                                                                            className="text-yellow-500" />
-                                                                    ) : (
-                                                                        <Zap
-                                                                            size={12}
-                                                                            className="text-blue-400" />
-                                                                    )}
-                                                                    <span
-                                                                        className="font-mono"
-                                                                    >{pattern}</span>
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => {
-                                                                        const idx = (
-                                                                            editedNpc.jinxes ||
-                                                                            []
-                                                                        ).indexOf(
-                                                                            pattern
-                                                                        );
-                                                                        if (idx >= 0) {
-                                                                            removeJinxPattern(
-                                                                                idx
-                                                                            );
-                                                                        }
-                                                                    }}
-                                                                    className="p-0.5
-                                                                        rounded
-                                                                        theme-hover
-                                                                        text-gray-500"
-                                                                >
-                                                                    <X size={12} />
-                                                                </button>
-                                                            </div>
-                                                        ))
-                                                ) : (
-                                                    <span className="text-xs
-                                                        theme-text-secondary italic"
-                                                    >
-                                                        No jinx patterns set
-                                                    </span>
-                                                )}
-                                            </div>
-
-                                        </div>
-                                    </div>
-                                )}
-
-                                {activeTab === 'history' && (
-                                    <div className="space-y-4">
-                                        <div className="flex items-center 
-                                            justify-between">
-                                            <h3 className="text-sm font-semibold 
-                                                flex items-center gap-2">
-                                                <History size={16} /> 
-                                                Execution History
-                                            </h3>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-xs 
-                                                    theme-text-secondary">
-                                                    {selectedExecutions.size} selected
-                                                </span>
-                                                {selectedExecutions.size > 0 && (
-                                                    <button
-                                                        onClick={() => 
-                                                            setShowDatasetBuilder(true)
-                                                        }
-                                                        className="theme-button-primary 
-                                                            px-3 py-1 rounded text-xs 
-                                                            flex items-center gap-1"
-                                                    >
-                                                        <Database size={12} />
-                                                        Create Dataset
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        <div className="grid grid-cols-4 gap-2">
-                                            <div className="relative col-span-2">
-                                                <Search size={14} 
-                                                    className="absolute left-2 
-                                                        top-1/2 -translate-y-1/2 
-                                                        text-gray-400" />
-                                                <input
-                                                    type="text"
-                                                    value={executionSearch}
-                                                    onChange={(e) => 
-                                                        setExecutionSearch(e.target.value)
-                                                    }
-                                                    placeholder="Search executions..."
-                                                    className="w-full theme-input 
-                                                        pl-8 p-1.5 text-xs"
-                                                />
-                                            </div>
-                                            <select
-                                                value={executionLabelFilter}
-                                                onChange={(e) => 
-                                                    setExecutionLabelFilter(e.target.value)
-                                                }
-                                                className="theme-input p-1.5 text-xs"
-                                            >
-                                                <option value="all">All Labels</option>
-                                                <option value="good">Good</option>
-                                                <option value="bad">Bad</option>
-                                                <option value="training">Training</option>
-                                                <option value="">Unlabeled</option>
-                                            </select>
-                                            <select
-                                                value={executionDateRange}
-                                                onChange={(e) => 
-                                                    setExecutionDateRange(e.target.value)
-                                                }
-                                                className="theme-input p-1.5 text-xs"
-                                            >
-                                                <option value="all">All Time</option>
-                                                <option value="7d">Last 7 days</option>
-                                                <option value="30d">Last 30 days</option>
-                                                <option value="90d">Last 90 days</option>
-                                            </select>
-                                        </div>
-
-                                        <div className="flex items-center gap-2 
-                                            text-xs">
-                                            <button
-                                                onClick={selectAllVisible}
-                                                className="theme-button-subtle 
-                                                    px-2 py-1 rounded"
-                                            >
-                                                Select Visible
-                                            </button>
-                                            <button
-                                                onClick={clearSelection}
-                                                className="theme-button-subtle 
-                                                    px-2 py-1 rounded"
-                                            >
-                                                Clear
-                                            </button>
-                                            <span className="theme-text-secondary">
-                                                Showing {Math.min(visibleCount, filteredExecutions.length)} of {filteredExecutions.length}
-                                            </span>
-                                        </div>
-
-                                        {filteredExecutions.length > 0 ? (
-                                            <div className="space-y-2">
-                                                {filteredExecutions
-                                                    .slice(0, visibleCount)
-                                                    .map((exec) => (
-                                                    <div 
-                                                        key={exec.message_id} 
-                                                        className={`p-3 
-                                                            bg-gray-900/50 
-                                                            rounded border 
-                                                            text-xs
-                                                            ${selectedExecutions.has(exec.message_id)
-                                                                ? 'border-blue-500'
-                                                                : 'theme-border'}`}
-                                                    >
-                                                        <div className="flex 
-                                                            items-start gap-2">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={selectedExecutions.has(exec.message_id)}
-                                                                onChange={() => 
-                                                                    toggleExecutionSelection(exec.message_id)
-                                                                }
-                                                                className="mt-1"
-                                                            />
-                                                            <div className="flex-1">
-                                                                <div 
-                                                                    className={`font-mono 
-                                                                        mb-1 cursor-pointer 
-                                                                        hover:text-blue-400
-                                                                        ${expandedExecution === exec.message_id 
-                                                                            ? 'whitespace-pre-wrap' 
-                                                                            : 'truncate'}`}
-                                                                    onClick={() => 
-                                                                        setExpandedExecution(
-                                                                            expandedExecution === exec.message_id 
-                                                                                ? null 
-                                                                                : exec.message_id
-                                                                        )
-                                                                    }
-                                                                >
-                                                                    {expandedExecution === exec.message_id 
-                                                                        ? exec.input 
-                                                                        : exec.input?.length > 80 
-                                                                            ? exec.input.substring(0, 80) + '...' 
-                                                                            : exec.input}
-                                                                </div>
-                                                                {expandedExecution === exec.message_id && exec.output && (
-                                                                    <div className="mt-2 p-2 
-                                                                        bg-green-900/20 rounded 
-                                                                        font-mono text-green-300">
-                                                                        <div className="text-[10px] 
-                                                                            text-green-500 mb-1">
-                                                                            Response:
-                                                                        </div>
-                                                                        {exec.output.length > 500
-                                                                            ? exec.output.substring(0, 500) + '...'
-                                                                            : exec.output}
-                                                                    </div>
-                                                                )}
-                                                                <div className="text-gray-400 
-                                                                    text-xs mt-1">
-                                                                    {exec.timestamp} | {exec.model}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex gap-1 mt-2 
-                                                            ml-6">
-                                                            <button
-                                                                onClick={() => 
-                                                                    labelExecution(
-                                                                        exec.message_id, 
-                                                                        'good'
-                                                                    )
-                                                                }
-                                                                className={`p-1 rounded 
-                                                                    ${exec.label === 'good' 
-                                                                        ? 'bg-green-600' 
-                                                                        : 'theme-button-subtle'}`}
-                                                                title="Good"
-                                                            >
-                                                                <CheckCircle size={12} />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => 
-                                                                    labelExecution(
-                                                                        exec.message_id, 
-                                                                        'bad'
-                                                                    )
-                                                                }
-                                                                className={`p-1 rounded 
-                                                                    ${exec.label === 'bad' 
-                                                                        ? 'bg-red-600' 
-                                                                        : 'theme-button-subtle'}`}
-                                                                title="Bad"
-                                                            >
-                                                                <XCircle size={12} />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => 
-                                                                    labelExecution(
-                                                                        exec.message_id, 
-                                                                        'training'
-                                                                    )
-                                                                }
-                                                                className={`p-1 rounded 
-                                                                    ${exec.label === 'training' 
-                                                                        ? 'bg-yellow-600' 
-                                                                        : 'theme-button-subtle'}`}
-                                                                title="Training"
-                                                            >
-                                                                <Tag size={12} />
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                                {visibleCount < filteredExecutions.length && (
-                                                    <button
-                                                        onClick={() => 
-                                                            setVisibleCount(v => v + 50)
-                                                        }
-                                                        className="w-full theme-button 
-                                                            py-2 rounded text-xs 
-                                                            flex items-center 
-                                                            justify-center gap-2"
-                                                    >
-                                                        <ChevronDown size={14} />
-                                                        Load More ({filteredExecutions.length - visibleCount} remaining)
-                                                    </button>
-                                                )}
-                                            </div>
-                                        ) : (
-                                            <div className="text-xs 
-                                                theme-text-secondary italic 
-                                                text-center p-4">
-                                                No executions match filters
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
-                                {activeTab === 'memory' && (
-                                    <div className="space-y-4">
-                                        <div className="flex items-center gap-2">
-                                            <Brain size={16} className="text-orange-400" />
-                                            <h3 className="text-sm font-semibold">Agent Memories</h3>
-                                            <button
-                                                onClick={() => loadNpcMemories(selectedNpc.name)}
-                                                disabled={memoryLoading}
-                                                className="ml-auto text-xs theme-button-subtle"
-                                            >
-                                                {memoryLoading ? 'Loading...' : 'Refresh'}
-                                            </button>
-                                        </div>
-
-                                        <div className="flex items-center gap-2 p-2 bg-gray-800/50 rounded">
-                                            <span className="text-xs text-gray-400">
-                                                {selectedMemories.size} selected
-                                            </span>
-                                            <button
-                                                onClick={selectAllFilteredMemories}
-                                                className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded"
-                                            >
-                                                Select All
-                                            </button>
-                                            {selectedMemories.size > 0 && (
-                                                <>
-                                                    <button
-                                                        onClick={clearMemorySelection}
-                                                        className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded"
-                                                    >
-                                                        Clear
-                                                    </button>
-                                                    <button
-                                                        onClick={() => setShowFineTuneModal(true)}
-                                                        className="text-xs px-2 py-1 bg-amber-600 hover:bg-amber-500 rounded flex items-center gap-1"
-                                                    >
-                                                        <Sparkles size={12} /> Fine-tune
-                                                    </button>
-                                                </>
-                                            )}
-                                        </div>
-
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <div className="relative">
-                                                <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
-                                                <input
-                                                    type="text"
-                                                    value={memorySearch}
-                                                    onChange={(e) => setMemorySearch(e.target.value)}
-                                                    placeholder="Search memories..."
-                                                    className="w-full theme-input pl-8 p-1.5 text-xs"
-                                                />
-                                            </div>
-                                            <select
-                                                value={memoryFilter}
-                                                onChange={(e) => setMemoryFilter(e.target.value)}
-                                                className="theme-input p-1.5 text-xs"
-                                            >
-                                                <option value="all">All</option>
-                                                <option value="pending_approval">Pending</option>
-                                                <option value="human-approved">Approved</option>
-                                                <option value="human-edited">Edited</option>
-                                                <option value="human-rejected">Rejected</option>
-                                            </select>
-                                        </div>
-
-                                        {memoryLoading ? (
-                                            <div className="flex justify-center p-4">
-                                                <Loader className="animate-spin text-orange-400" />
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-2">
-                                                {filteredMemories.map((mem) => (
-                                                    <div
-                                                        key={mem.id}
-                                                        onClick={() => toggleMemorySelection(mem.id)}
-                                                        className={`p-3 bg-gray-900/50 rounded border text-xs cursor-pointer transition-colors ${
-                                                            selectedMemories.has(mem.id)
-                                                                ? 'border-amber-500 bg-amber-900/20'
-                                                                : 'theme-border hover:border-gray-500'
-                                                        }`}
-                                                    >
-                                                        <div className="flex items-start gap-2">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={selectedMemories.has(mem.id)}
-                                                                onChange={() => toggleMemorySelection(mem.id)}
-                                                                onClick={(e) => e.stopPropagation()}
-                                                                className="mt-0.5 rounded border-gray-600"
-                                                            />
-                                                            <div className="flex-1 font-mono text-xs">
-                                                                {mem.final_memory || mem.initial_memory}
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex justify-between items-center mt-2">
-                                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                                                                mem.status === 'human-approved'
-                                                                    ? 'bg-green-900 text-green-300'
-                                                                    : mem.status === 'human-edited'
-                                                                        ? 'bg-blue-900 text-blue-300'
-                                                                        : mem.status === 'human-rejected'
-                                                                            ? 'bg-red-900 text-red-300'
-                                                                            : 'bg-yellow-900 text-yellow-300'
-                                                            }`}>
-                                                                {mem.status}
-                                                            </span>
-                                                            <span className="text-gray-400 text-[10px]">
-                                                                {mem.timestamp}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                                {filteredMemories.length === 0 && (
-                                                    <div className="text-center theme-text-secondary p-4">
-                                                        No memories found
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
-                                {activeTab === 'kg' && (
-                                    <div className="space-y-4">
-                                        <div className="flex items-center gap-2">
-                                            <GitBranch size={16}
-                                                className="text-green-400" />
-                                            <h3 className="text-sm font-semibold">
-                                                Concept Network
-                                            </h3>
-                                            <button
-                                                onClick={() =>
-                                                    loadNpcKnowledgeGraph(
-                                                        selectedNpc.name
-                                                    )
-                                                }
-                                                disabled={kgLoading}
-                                                className="ml-auto text-xs
-                                                    theme-button-subtle"
-                                            >
-                                                {kgLoading
-                                                    ? 'Loading...'
-                                                    : 'Refresh'}
-                                            </button>
-                                        </div>
-
-                                        <div className="text-xs
-                                            theme-text-secondary">
-                                            Nodes: {kgData.nodes.length} |
-                                            Links: {kgData.links.length}
-                                        </div>
-
-                                        {kgLoading ? (
-                                            <div className="flex justify-center p-8">
-                                                <Loader className="animate-spin
-                                                    text-green-400" />
-                                            </div>
-                                        ) : (
-                                            <div className="h-80
-                                                theme-bg-tertiary rounded
-                                                overflow-hidden">
-                                                <ForceGraph2D
-                                                    ref={graphRef}
-                                                    graphData={kgData}
-                                                    nodeLabel="id"
-                                                    nodeVal={n => n.size || 4}
-                                                    nodeColor={n =>
-                                                        n.type === 'npc'
-                                                            ? '#3b82f6'
-                                                            : '#a855f7'}
-                                                    linkColor={() =>
-                                                        'rgba(255,255,255,0.2)'}
-                                                    width={600}
-                                                    height={320}
-                                                    backgroundColor="transparent"
-                                                />
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="flex-1 flex items-center justify-center
-                            theme-text-secondary">
-                            Select an Agent
-                        </div>
+            <div className="flex flex-1 min-h-0 flex-col">
+                <div className="p-2 border-b theme-border flex-shrink-0 flex items-center gap-2">
+                    <button
+                        ref={npcDropdownButtonRef}
+                        onClick={() => setNpcDropdownOpen(!npcDropdownOpen)}
+                        disabled={loading || npcs.length === 0}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded text-sm theme-bg-secondary theme-text-primary theme-border border hover:bg-white/5 disabled:opacity-40 min-w-[200px] w-auto max-w-[25vw]"
+                    >
+                        <Bot size={14} />
+                        <span className="flex-1 truncate text-left">
+                            {selectedNpc ? selectedNpc.name : 'Select an Agent'}
+                        </span>
+                        <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${npcDropdownOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {npcDropdownOpen && createPortal(
+                        <AgentDropdown
+                            buttonRef={npcDropdownButtonRef}
+                            npcs={npcs}
+                            selectedNpc={selectedNpc}
+                            npcSearch={npcSearch}
+                            setNpcSearch={setNpcSearch}
+                            onSelect={handleNPCSelect}
+                            onClose={() => setNpcDropdownOpen(false)}
+                        />,
+                        document.body
                     )}
-            </div>
+                    <button
+                        onClick={() => setShowNewAgentModal(true)}
+                        className="theme-button-primary px-3 py-1.5
+                            rounded text-sm flex items-center
+                            justify-center gap-2"
+                    >
+                        <Plus size={16} /> New Agent
+                    </button>
+                </div>
 
-            {showDatasetBuilder && (
-                <div className="fixed inset-0 bg-black/70 flex items-center
-                    justify-center z-[60]">
-                    <div className="theme-bg-secondary p-6 rounded-lg
-                        shadow-xl w-full max-w-md">
-                        <h3 className="text-lg font-semibold mb-4
-                            flex items-center gap-2">
-                            <Database className="text-purple-400" />
-                            Create Training Dataset
-                        </h3>
+                <div className="flex-1 flex flex-col min-h-0">
+                    {selectedNpc && editedNpc ? (
+                        <div className="flex-1 overflow-y-auto p-6">
+                        <div className="space-y-6">
+                            <div className="flex justify-between items-start gap-4">
+                                <div className="flex-grow space-y-2">
+                                    <div>
+                                        <label className="block text-xs theme-text-secondary mb-1">Agent Name</label>
+                                        <input
+                                            className="w-full theme-input text-xl font-bold p-2"
+                                            value={editedNpc.name}
+                                            onChange={(e) => handleInputChange('name', e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="text-xs theme-text-secondary font-mono truncate" title={editedNpc.source_path || ''}>
+                                        {editedNpc.source_path || ''}
+                                    </div>
+                                </div>
+                                <div className="flex gap-2 mt-6">
+                                    <button onClick={handleChatWithNpc} className="theme-button px-3 py-2 rounded text-sm flex items-center gap-2" title="Chat">
+                                        <MessageSquare size={16} /> Chat
+                                    </button>
+                                    <button onClick={handleSave} className="theme-button-success px-4 py-2 rounded text-sm flex items-center gap-2" title="Save">
+                                        <Save size={16} /> Save
+                                    </button>
+                                </div>
+                            </div>
 
-                        <div className="space-y-4">
+                            {saveSuccess && <div className="text-xs text-green-400">Saved</div>}
+                            {error && <div className="text-xs text-red-400" title={error}>Error: {error}</div>}
+
                             <div>
-                                <label className="text-sm
-                                    theme-text-secondary block mb-1">
-                                    Dataset Name
-                                </label>
-                                <input
-                                    type="text"
-                                    value={datasetName}
-                                    onChange={(e) =>
-                                        setDatasetName(e.target.value)
-                                    }
-                                    placeholder={`${selectedNpc?.name}_dataset`}
-                                    className="w-full theme-input p-2 text-sm"
+                                <label className="block text-sm font-semibold theme-text-secondary mb-1">Model</label>
+                                <div className="mb-3">
+                                    <ModelSelector
+                                        availableModels={availableModels}
+                                        selectedModel={editedNpc.model}
+                                        onSelect={handleModelChange}
+                                        loading={modelsLoading}
+                                        error={modelsError}
+                                        teamPathForCtx={teamPathForCtx}
+                                        onModelsChanged={loadAvailableModels}
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-semibold theme-text-secondary mb-1">Primary Directive</label>
+                                <AutosizeTextarea
+                                    className="w-full theme-input p-2 rounded text-sm resize-none min-h-[60px]"
+                                    value={editedNpc.primary_directive || ''}
+                                    onChange={(e) => handleInputChange('primary_directive', e.target.value)}
+                                    placeholder="Describe this agent's role..."
                                 />
                             </div>
 
+                            <div className="space-y-2">
+                                <div className="flex justify-between items-center mb-2">
+                                    <label className="text-sm font-semibold theme-text-secondary">Jinx Patterns</label>
+                                    <span className="text-xs theme-text-secondary">{(editedNpc.jinxes || []).length}</span>
+                                </div>
+                                <div className="mb-3">
+                                    <button
+                                        ref={jinxDropdownButtonRef}
+                                        onClick={() => setJinxDropdownOpen(!jinxDropdownOpen)}
+                                        className="flex items-center gap-2 px-3 py-1.5 rounded text-sm theme-bg-secondary theme-text-primary theme-border border hover:bg-white/5 min-w-[200px] w-auto max-w-[25vw]"
+                                    >
+                                        <Zap size={14} className="text-blue-400" />
+                                        <span className="flex-1 truncate text-left">Add Jinx Pattern</span>
+                                        <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${jinxDropdownOpen ? 'rotate-180' : ''}`} />
+                                    </button>
+                                    {jinxDropdownOpen && createPortal(
+                                        <JinxDropdown
+                                            buttonRef={jinxDropdownButtonRef}
+                                            availableJinxes={availableJinxes}
+                                            editedNpc={editedNpc}
+                                            jinxDropdownSearch={jinxDropdownSearch}
+                                            setJinxDropdownSearch={setJinxDropdownSearch}
+                                            expandedJinxFolders={expandedJinxFolders}
+                                            setExpandedJinxFolders={setExpandedJinxFolders}
+                                            addJinxToNpc={addJinxToNpc}
+                                            onClose={() => setJinxDropdownOpen(false)}
+                                        />,
+                                        document.body
+                                    )}
+                                </div>
+                                <div className="space-y-1">
+                                    {editedNpc.jinxes?.length > 0 ? (
+                                        editedNpc.jinxes.slice().sort((a, b) => a.localeCompare(b)).map((pattern) => (
+                                            <div key={pattern} className="flex items-center justify-between w-full px-2 py-1 rounded text-xs theme-bg-secondary">
+                                                <button
+                                                    onClick={() => onOpenJinxTab?.(pattern)}
+                                                    className="flex items-center gap-1.5 text-left flex-1 truncate theme-hover rounded px-1"
+                                                >
+                                                    {pattern === '*' ? <Sparkles size={12} className="text-yellow-500" /> : <Zap size={12} className="text-blue-400" />}
+                                                    <span className="font-mono">{pattern}</span>
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        const idx = (editedNpc.jinxes || []).indexOf(pattern);
+                                                        if (idx >= 0) removeJinxPattern(idx);
+                                                    }}
+                                                    className="p-0.5 rounded theme-hover text-gray-500"
+                                                >
+                                                    <X size={12} />
+                                                </button>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <span className="text-xs theme-text-secondary italic">No jinx patterns set</span>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    ) : (
+                        <div className="flex items-center justify-center
+                            h-full theme-text-secondary">
+                            Select or create an Agent
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {showDatasetBuilder && (
+                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60]">
+                    <div className="theme-bg-secondary p-6 rounded-lg shadow-xl w-full max-w-md">
+                        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                            <Database className="text-purple-400" />
+                            Create Training Dataset
+                        </h3>
+                        <div className="space-y-4">
                             <div>
-                                <label className="text-sm
-                                    theme-text-secondary block mb-1">
-                                    Format
-                                </label>
-                                <select
-                                    value={datasetFormat}
-                                    onChange={(e) =>
-                                        setDatasetFormat(e.target.value)
-                                    }
-                                    className="w-full theme-input p-2 text-sm"
-                                >
-                                    <option value="sft">
-                                        SFT (Supervised Fine-Tuning)
-                                    </option>
-                                    <option value="dpo">
-                                        DPO (Direct Preference Optimization)
-                                    </option>
-                                    <option value="conversation">
-                                        Conversation Format
-                                    </option>
+                                <label className="text-sm theme-text-secondary block mb-1">Dataset Name</label>
+                                <input type="text" value={datasetName} onChange={(e) => setDatasetName(e.target.value)} placeholder={`${selectedNpc?.name}_dataset`} className="w-full theme-input p-2 text-sm" />
+                            </div>
+                            <div>
+                                <label className="text-sm theme-text-secondary block mb-1">Format</label>
+                                <select value={datasetFormat} onChange={(e) => setDatasetFormat(e.target.value)} className="w-full theme-input p-2 text-sm">
+                                    <option value="sft">SFT (Supervised Fine-Tuning)</option>
+                                    <option value="dpo">DPO (Direct Preference Optimization)</option>
+                                    <option value="conversation">Conversation Format</option>
                                 </select>
                             </div>
-
-                            <div className="text-sm theme-text-secondary">
-                                {selectedExecutions.size} executions selected
-                            </div>
-
+                            <div className="text-sm theme-text-secondary">{selectedExecutions.size} executions selected</div>
                             {datasetFormat === 'dpo' && (
-                                <div className="text-xs text-yellow-400
-                                    bg-yellow-900/20 p-2 rounded">
-                                    DPO format requires labeled data. Only
-                                    executions marked as "good" or "bad"
-                                    will be included.
-                                </div>
+                                <div className="text-xs text-yellow-400 bg-yellow-900/20 p-2 rounded">DPO format requires labeled data.</div>
                             )}
                         </div>
-
                         <div className="flex justify-end gap-3 mt-6">
-                            <button
-                                onClick={() => setShowDatasetBuilder(false)}
-                                className="theme-button px-4 py-2
-                                    text-sm rounded"
-                            >
-                                Cancel
+                            <button onClick={() => setShowDatasetBuilder(false)} className="theme-button px-4 py-2 text-sm rounded">Cancel</button>
+                            <button onClick={exportDataset} className="theme-button-primary px-4 py-2 text-sm rounded flex items-center gap-2">
+                                <Download size={14} /> Export Dataset
                             </button>
-                            <button
-                                onClick={exportDataset}
-                                className="theme-button-primary px-4 py-2
-                                    text-sm rounded flex items-center gap-2"
-                            >
-                                <Download size={14} />
-                                Export Dataset
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showNewAgentModal && (
+                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60]">
+                    <div className="theme-bg-secondary p-6 rounded-lg shadow-xl w-full max-w-md">
+                        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                            <Bot className="text-green-400" /> New Agent
+                        </h3>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-sm theme-text-secondary block mb-1">Agent Name</label>
+                                <input
+                                    type="text"
+                                    value={newAgentName}
+                                    onChange={(e) => setNewAgentName(e.target.value)}
+                                    placeholder="agent_name"
+                                    className="w-full theme-input p-2 text-sm"
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') handleCreateNewAgent();
+                                        if (e.key === 'Escape') setShowNewAgentModal(false);
+                                    }}
+                                />
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-3 mt-6">
+                            <button onClick={() => setShowNewAgentModal(false)} className="theme-button px-4 py-2 text-sm rounded">Cancel</button>
+                            <button onClick={handleCreateNewAgent} className="theme-button-primary px-4 py-2 text-sm rounded flex items-center gap-2">
+                                <Plus size={14} /> Create
                             </button>
                         </div>
                     </div>
@@ -1493,34 +816,19 @@ const NPCTeamMenu = ({
                     <div className="theme-bg-secondary p-6 rounded-lg shadow-xl w-full max-w-md">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-lg font-semibold flex items-center gap-2">
-                                <Sparkles className="text-amber-400" />
-                                Fine-tune on {selectedMemories.size} Memories
+                                <Sparkles className="text-amber-400" /> Fine-tune on {selectedMemories.size} Memories
                             </h3>
-                            <button onClick={() => setShowFineTuneModal(false)}>
-                                <X size={20} className="text-gray-400 hover:text-white" />
-                            </button>
+                            <button onClick={() => setShowFineTuneModal(false)}><X size={20} className="text-gray-400 hover:text-white" /></button>
                         </div>
-
                         <div className="space-y-4 mb-6">
                             <div>
                                 <label className="text-sm theme-text-secondary block mb-1">Model Name</label>
-                                <input
-                                    type="text"
-                                    value={fineTuneConfig.outputName}
-                                    onChange={(e) => setFineTuneConfig(p => ({ ...p, outputName: e.target.value }))}
-                                    placeholder={`${selectedNpc?.name}_model`}
-                                    className="w-full theme-input p-2 text-sm"
-                                />
+                                <input type="text" value={fineTuneConfig.outputName} onChange={(e) => setFineTuneConfig(p => ({ ...p, outputName: e.target.value }))} placeholder={`${selectedNpc?.name}_model`} className="w-full theme-input p-2 text-sm" />
                             </div>
-
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="text-xs theme-text-secondary block mb-1">Strategy</label>
-                                    <select
-                                        value={fineTuneConfig.strategy}
-                                        onChange={(e) => setFineTuneConfig(p => ({ ...p, strategy: e.target.value }))}
-                                        className="w-full theme-input p-2 text-sm"
-                                    >
+                                    <select value={fineTuneConfig.strategy} onChange={(e) => setFineTuneConfig(p => ({ ...p, strategy: e.target.value }))} className="w-full theme-input p-2 text-sm">
                                         <option value="sft">SFT</option>
                                         <option value="dpo">DPO</option>
                                         <option value="usft">USFT</option>
@@ -1528,75 +836,34 @@ const NPCTeamMenu = ({
                                 </div>
                                 <div>
                                     <label className="text-xs theme-text-secondary block mb-1">Base Model</label>
-                                    <select
-                                        value={fineTuneConfig.baseModel}
-                                        onChange={(e) => setFineTuneConfig(p => ({ ...p, baseModel: e.target.value }))}
-                                        className="w-full theme-input p-2 text-sm"
-                                    >
+                                    <select value={fineTuneConfig.baseModel} onChange={(e) => setFineTuneConfig(p => ({ ...p, baseModel: e.target.value }))} className="w-full theme-input p-2 text-sm">
                                         <option value="google/gemma-3-270m-it">Gemma 270M</option>
                                         <option value="google/gemma-3-1b-it">Gemma 1B</option>
                                         <option value="Qwen/Qwen3-0.6B">Qwen 0.6B</option>
                                     </select>
                                 </div>
                             </div>
-
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="text-xs theme-text-secondary block mb-1">Epochs</label>
-                                    <input
-                                        type="number"
-                                        value={fineTuneConfig.epochs}
-                                        onChange={(e) => setFineTuneConfig(p => ({ ...p, epochs: parseInt(e.target.value) }))}
-                                        className="w-full theme-input p-2 text-sm"
-                                    />
+                                    <input type="number" value={fineTuneConfig.epochs} onChange={(e) => setFineTuneConfig(p => ({ ...p, epochs: parseInt(e.target.value) }))} className="w-full theme-input p-2 text-sm" />
                                 </div>
                                 <div>
                                     <label className="text-xs theme-text-secondary block mb-1">Learning Rate</label>
-                                    <input
-                                        type="number"
-                                        step="0.00001"
-                                        value={fineTuneConfig.learningRate}
-                                        onChange={(e) => setFineTuneConfig(p => ({ ...p, learningRate: parseFloat(e.target.value) }))}
-                                        className="w-full theme-input p-2 text-sm"
-                                    />
+                                    <input type="number" step="0.00001" value={fineTuneConfig.learningRate} onChange={(e) => setFineTuneConfig(p => ({ ...p, learningRate: parseFloat(e.target.value) }))} className="w-full theme-input p-2 text-sm" />
                                 </div>
                             </div>
                         </div>
-
                         <div className="space-y-3 mb-4 border-t theme-border pt-3">
                             <div className="flex items-center gap-4">
-                                <label className="flex items-center gap-2 text-sm">
-                                    <input
-                                        type="radio"
-                                        checked={fineTuneRunMode === 'now'}
-                                        onChange={() => setFineTuneRunMode('now')}
-                                        className="accent-amber-500"
-                                    />
-                                    Run now
-                                </label>
-                                <label className="flex items-center gap-2 text-sm">
-                                    <input
-                                        type="radio"
-                                        checked={fineTuneRunMode === 'schedule'}
-                                        onChange={() => setFineTuneRunMode('schedule')}
-                                        className="accent-amber-500"
-                                    />
-                                    Schedule
-                                </label>
+                                <label className="flex items-center gap-2 text-sm"><input type="radio" checked={fineTuneRunMode === 'now'} onChange={() => setFineTuneRunMode('now')} className="accent-amber-500" /> Run now</label>
+                                <label className="flex items-center gap-2 text-sm"><input type="radio" checked={fineTuneRunMode === 'schedule'} onChange={() => setFineTuneRunMode('schedule')} className="accent-amber-500" /> Schedule</label>
                             </div>
-
                             {fineTuneRunMode === 'schedule' && (
                                 <>
                                     <div>
                                         <label className="text-xs theme-text-secondary block mb-1">Cron Schedule</label>
-                                        <input
-                                            type="text"
-                                            value={fineTuneSchedule}
-                                            onChange={(e) => setFineTuneSchedule(e.target.value)}
-                                            placeholder="0 0 * * *"
-                                            className="w-full theme-input p-2 text-sm font-mono"
-                                        />
-                                        <p className="text-[10px] text-gray-500 mt-1">Example: 0 2 * * 0 = weekly on Sunday at 2am</p>
+                                        <input type="text" value={fineTuneSchedule} onChange={(e) => setFineTuneSchedule(e.target.value)} placeholder="0 0 * * *" className="w-full theme-input p-2 text-sm font-mono" />
                                     </div>
                                     <div>
                                         <label className="text-xs theme-text-secondary block mb-1">Python Environment</label>
@@ -1620,19 +887,10 @@ const NPCTeamMenu = ({
                                             {pythonEnvsLoading ? <Loader size={14} className="animate-spin" /> : <RefreshCw size={14} />}
                                         </button>
                                         {pythonEnvs.length > 0 && (
-                                            <select
-                                                value={fineTunePythonEnv?.path || ''}
-                                                onChange={(e) => {
-                                                    const env = pythonEnvs.find((p: any) => p.path === e.target.value);
-                                                    setFineTunePythonEnv(env || null);
-                                                }}
-                                                className="w-full theme-input p-2 text-sm mt-1"
-                                            >
+                                            <select value={fineTunePythonEnv?.path || ''} onChange={(e) => { const env = pythonEnvs.find((p: any) => p.path === e.target.value); setFineTunePythonEnv(env || null); }} className="w-full theme-input p-2 text-sm mt-1">
                                                 <option value="">Select environment...</option>
                                                 {pythonEnvs.map((env: any) => (
-                                                    <option key={env.path || env.name} value={env.path || ''}>
-                                                        {env.name}{env.notInstalled ? ' (not installed)' : ''}
-                                                    </option>
+                                                    <option key={env.path || env.name} value={env.path || ''}>{env.name}{env.notInstalled ? ' (not installed)' : ''}</option>
                                                 ))}
                                             </select>
                                         )}
@@ -1640,25 +898,10 @@ const NPCTeamMenu = ({
                                 </>
                             )}
                         </div>
-
-                        {fineTuneStatus && (
-                            <div className="text-sm text-amber-400 mb-4 p-2 bg-amber-900/20 rounded">
-                                {fineTuneStatus}
-                            </div>
-                        )}
-
+                        {fineTuneStatus && <div className="text-sm text-amber-400 mb-4 p-2 bg-amber-900/20 rounded">{fineTuneStatus}</div>}
                         <div className="flex justify-end gap-3">
-                            <button
-                                onClick={() => setShowFineTuneModal(false)}
-                                className="theme-button px-4 py-2 text-sm rounded"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={handleNpcFineTune}
-                                disabled={isFineTuning}
-                                className="bg-amber-600 hover:bg-amber-500 disabled:bg-gray-600 px-4 py-2 text-sm rounded flex items-center gap-2"
-                            >
+                            <button onClick={() => setShowFineTuneModal(false)} className="theme-button px-4 py-2 text-sm rounded">Cancel</button>
+                            <button onClick={handleNpcFineTune} disabled={isFineTuning} className="bg-amber-600 hover:bg-amber-500 disabled:bg-gray-600 px-4 py-2 text-sm rounded flex items-center gap-2">
                                 {isFineTuning ? <Loader size={14} className="animate-spin" /> : <Zap size={14} />}
                                 {isFineTuning ? 'Training...' : 'Start Training'}
                             </button>
@@ -1677,7 +920,7 @@ const NPCTeamMenu = ({
         <div className="fixed inset-0 bg-black/60 flex items-center
             justify-center z-50 p-4 overflow-hidden" onClick={onClose}>
             <div className="theme-bg-secondary rounded-lg shadow-xl
-                w-full max-w-7xl h-[85vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                w-full max-w-6xl h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
                 <header className="w-full border-b theme-border p-4
                     flex justify-between items-center flex-shrink-0">
                     <h3 className="text-lg font-semibold flex
@@ -1707,6 +950,203 @@ const NPCTeamMenu = ({
                 <main className="flex-1 p-4 overflow-hidden">
                     {content}
                 </main>
+            </div>
+        </div>
+    );
+};
+
+const AgentDropdown = ({
+    buttonRef,
+    npcs,
+    selectedNpc,
+    npcSearch,
+    setNpcSearch,
+    onSelect,
+    onClose,
+}: any) => {
+    const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+    useEffect(() => {
+        const update = () => {
+            const rect = buttonRef.current?.getBoundingClientRect();
+            if (rect) {
+                setPos({ top: rect.bottom + 4, left: rect.left });
+            }
+        };
+        update();
+        window.addEventListener('resize', update);
+        return () => window.removeEventListener('resize', update);
+    }, [buttonRef]);
+
+    useEffect(() => {
+        const onClick = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            if (!buttonRef.current?.contains(target) && !document.getElementById('npc-dropdown-portal')?.contains(target)) {
+                onClose();
+            }
+        };
+        document.addEventListener('mousedown', onClick);
+        return () => document.removeEventListener('mousedown', onClick);
+    }, [buttonRef, onClose]);
+
+    if (!pos) return null;
+
+    const filtered = npcs.filter((npc) =>
+        !npcSearch || npc.name.toLowerCase().includes(npcSearch.toLowerCase())
+    );
+
+    return (
+        <div
+            id="npc-dropdown-portal"
+            className="fixed z-[100] theme-bg-primary border theme-border rounded-lg shadow-2xl overflow-hidden min-w-[260px] w-auto max-w-[25vw]"
+            style={{ top: pos.top, left: pos.left }}
+        >
+            <div className="px-2 py-1.5 border-b theme-border">
+                <input
+                    type="text"
+                    value={npcSearch}
+                    onChange={(e) => setNpcSearch(e.target.value)}
+                    placeholder="Search agents..."
+                    className="w-full theme-input border theme-border rounded px-2 py-1 text-xs theme-text-primary placeholder-gray-500 focus:outline-none focus:border-green-500/50"
+                    onKeyDown={(e) => e.stopPropagation()}
+                />
+            </div>
+            <div className="max-h-64 overflow-y-auto p-1">
+                {filtered.map((npc) => (
+                    <button
+                        key={npc.name}
+                        onClick={() => onSelect(npc)}
+                        className={`flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded text-left ${selectedNpc?.name === npc.name ? 'bg-green-500/20 text-green-200' : 'hover:bg-white/5'}`}
+                    >
+                        <Bot size={12} />
+                        <span className="truncate flex-1">{npc.name}</span>
+                    </button>
+                ))}
+                {filtered.length === 0 && (
+                    <div className="px-2 py-3 text-xs text-gray-500 text-center">No agents found</div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+const JinxDropdown = ({
+    buttonRef,
+    availableJinxes,
+    editedNpc,
+    jinxDropdownSearch,
+    setJinxDropdownSearch,
+    expandedJinxFolders,
+    setExpandedJinxFolders,
+    addJinxToNpc,
+    onClose,
+}: any) => {
+    const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+    useEffect(() => {
+        const update = () => {
+            const rect = buttonRef.current?.getBoundingClientRect();
+            if (rect) {
+                setPos({ top: rect.bottom + 4, left: rect.left });
+            }
+        };
+        update();
+        window.addEventListener('resize', update);
+        return () => window.removeEventListener('resize', update);
+    }, [buttonRef]);
+
+    useEffect(() => {
+        const onClick = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            if (!buttonRef.current?.contains(target) && !document.getElementById('jinx-dropdown-portal')?.contains(target)) {
+                onClose();
+            }
+        };
+        document.addEventListener('mousedown', onClick);
+        return () => document.removeEventListener('mousedown', onClick);
+    }, [buttonRef, onClose]);
+
+    if (!pos) return null;
+
+    const current = new Set(editedNpc.jinxes || []);
+    const filtered = availableJinxes.filter((j: any) => {
+        const n = j.name || j.jinx_name;
+        if (current.has(n)) return false;
+        if (!jinxDropdownSearch) return true;
+        return n.toLowerCase().includes(jinxDropdownSearch.toLowerCase());
+    });
+
+    return (
+        <div
+            id="jinx-dropdown-portal"
+            className="fixed z-[100] theme-bg-primary border theme-border rounded-lg shadow-2xl overflow-hidden min-w-[260px] w-auto max-w-[25vw]"
+            style={{ top: pos.top, left: pos.left }}
+        >
+            <div className="px-2 py-1.5 border-b theme-border">
+                <input
+                    type="text"
+                    placeholder="Search jinxes..."
+                    className="w-full theme-input border theme-border rounded px-2 py-1 text-xs theme-text-primary placeholder-gray-500 focus:outline-none focus:border-blue-500/50"
+                    value={jinxDropdownSearch}
+                    onChange={(e) => setJinxDropdownSearch(e.target.value)}
+                    onKeyDown={(e) => e.stopPropagation()}
+                />
+            </div>
+            <div className="max-h-72 overflow-y-auto p-1">
+                {filtered.length === 0 ? (
+                    <div className="px-2 py-3 text-xs text-gray-500 text-center">No jinxes found</div>
+                ) : (
+                    (() => {
+                        const byFolder: Record<string, any[]> = {};
+                        for (const j of filtered.sort((a: any, b: any) => (a.name || a.jinx_name).localeCompare(b.name || b.jinx_name))) {
+                            const n = j.name || j.jinx_name;
+                            const parts = (j.path || n).split('/');
+                            const folder = parts.length > 1 ? parts.slice(0, -1).join('/') : '(root)';
+                            if (!byFolder[folder]) byFolder[folder] = [];
+                            byFolder[folder].push(j);
+                        }
+                        const items: React.ReactNode[] = [];
+                        const folders = Object.keys(byFolder).sort();
+                        for (const folder of folders) {
+                            const isExpanded = expandedJinxFolders.has(folder);
+                            items.push(
+                                <button
+                                    key={`folder-${folder}`}
+                                    onClick={() => setExpandedJinxFolders((prev: Set<string>) => {
+                                        const next = new Set(prev);
+                                        if (next.has(folder)) next.delete(folder); else next.add(folder);
+                                        return next;
+                                    })}
+                                    className="flex items-center gap-1 w-full px-2 py-1 text-xs font-semibold text-gray-400 hover:bg-white/5 text-left"
+                                >
+                                    <ChevronRight size={10} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                    {folder}
+                                </button>
+                            );
+                            if (isExpanded) {
+                                for (const j of byFolder[folder]) {
+                                    const n = j.name || j.jinx_name;
+                                    items.push(
+                                        <button
+                                            key={j.path || n}
+                                            onClick={() => {
+                                                addJinxToNpc(n);
+                                                setJinxDropdownSearch('');
+                                                onClose();
+                                            }}
+                                            className="flex items-center gap-2 w-full pl-6 pr-2 py-1 text-xs text-left hover:bg-white/5"
+                                            title={j.description || n}
+                                        >
+                                            <Zap size={12} className="text-blue-400" />
+                                            <span className="truncate flex-1">{n}</span>
+                                        </button>
+                                    );
+                                }
+                            }
+                        }
+                        return items;
+                    })()
+                )}
             </div>
         </div>
     );

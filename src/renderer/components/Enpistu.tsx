@@ -538,17 +538,25 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(() => {
         try { return localStorage.getItem('incognide_rightSidebarCollapsed') === 'true'; } catch { return false; }
     });
+    const RIGHT_SIDEBAR_MIN_WIDTH = 260;
     const [rightSidebarWidth, setRightSidebarWidth] = useState(() => {
-        try { const v = parseInt(localStorage.getItem('incognide_rightSidebarWidth') || '260'); return isNaN(v) ? 260 : v; } catch { return 260; }
+        try {
+            const v = parseInt(localStorage.getItem('incognide_rightSidebarWidth') || String(RIGHT_SIDEBAR_MIN_WIDTH));
+            return isNaN(v) ? RIGHT_SIDEBAR_MIN_WIDTH : Math.max(v, RIGHT_SIDEBAR_MIN_WIDTH);
+        } catch { return RIGHT_SIDEBAR_MIN_WIDTH; }
     });
     const [isResizingRightSidebar, setIsResizingRightSidebar] = useState(false);
     useEffect(() => { try { localStorage.setItem('incognide_rightSidebarCollapsed', String(rightSidebarCollapsed)); } catch {} }, [rightSidebarCollapsed]);
-    useEffect(() => { try { localStorage.setItem('incognide_rightSidebarWidth', String(rightSidebarWidth)); } catch {} }, [rightSidebarWidth]);
+    useEffect(() => {
+        const clamped = Math.max(rightSidebarWidth, RIGHT_SIDEBAR_MIN_WIDTH);
+        if (clamped !== rightSidebarWidth) setRightSidebarWidth(clamped);
+        try { localStorage.setItem('incognide_rightSidebarWidth', String(clamped)); } catch {}
+    }, [rightSidebarWidth]);
     useEffect(() => {
         if (!isResizingRightSidebar) return;
         const onMove = (e: MouseEvent) => {
             const w = window.innerWidth - e.clientX;
-            if (w >= 160 && w <= 600) setRightSidebarWidth(w);
+            if (w >= RIGHT_SIDEBAR_MIN_WIDTH && w <= 600) setRightSidebarWidth(w);
         };
         const onUp = () => setIsResizingRightSidebar(false);
         document.addEventListener('mousemove', onMove);

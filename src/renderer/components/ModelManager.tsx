@@ -18,6 +18,7 @@ export const API_PROVIDER_META: Record<string, { name: string; color: string; bg
     gemini: { name: 'Gemini', color: 'text-blue-400', bgColor: 'bg-blue-600', docsUrl: 'https://ai.google.dev/gemini-api/docs/models', defaultModel: 'gemini-2.5-flash' },
     groq: { name: 'Groq', color: 'text-orange-400', bgColor: 'bg-orange-600', docsUrl: 'https://console.groq.com/docs/models', defaultModel: 'llama-3.3-70b-versatile' },
     mistral: { name: 'Mistral', color: 'text-indigo-400', bgColor: 'bg-indigo-600', docsUrl: 'https://docs.mistral.ai/getting-started/models/models_overview/', defaultModel: 'mistral-large-latest' },
+    moonshot: { name: 'Moonshot', color: 'text-pink-400', bgColor: 'bg-pink-600', docsUrl: 'https://platform.moonshot.cn/docs/intro', defaultModel: 'moonshot-v1-8k' },
     openai: { name: 'OpenAI', color: 'text-green-400', bgColor: 'bg-green-600', docsUrl: 'https://platform.openai.com/docs/models', defaultModel: 'gpt-4o' },
     openrouter: { name: 'OpenRouter', color: 'text-violet-400', bgColor: 'bg-violet-600', docsUrl: 'https://openrouter.ai/models', defaultModel: 'openai/gpt-4o' },
     perplexity: { name: 'Perplexity', color: 'text-sky-400', bgColor: 'bg-sky-600', docsUrl: 'https://docs.perplexity.ai/', defaultModel: 'sonar-pro' },

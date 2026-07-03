@@ -9,6 +9,13 @@ const yaml = require('js-yaml');
 
 let INCOGNIDE_HOME = process.env.INCOGNIDE_HOME || path.join(os.homedir(), '.incognide');
 
+const expandTilde = (filepath) => {
+  if (typeof filepath !== 'string') return filepath;
+  if (filepath.startsWith('~/')) return path.join(os.homedir(), filepath.slice(2));
+  if (filepath === '~') return os.homedir();
+  return filepath;
+};
+
 const pythonEnvConfigPath = path.join(INCOGNIDE_HOME, 'python_envs.json');
 
 const ensurePythonEnvConfig = async () => {
@@ -2640,7 +2647,7 @@ function register(ctx) {
             if (value === '' || value === null || value === undefined) {
                 delete existing[envKey];
             } else {
-                existing[envKey] = String(value);
+                existing[envKey] = expandTilde(String(value));
             }
         }
         for (const [envKey, value] of Object.entries(global_vars || {})) {
@@ -2648,8 +2655,14 @@ function register(ctx) {
             if (value === '' || value === null || value === undefined) {
                 delete existing[envKey];
             } else {
-                existing[envKey] = String(value);
+                existing[envKey] = expandTilde(String(value));
             }
+        }
+
+        const homeValue = existing.INCOGNIDE_HOME;
+        if (homeValue && typeof homeValue === 'string') {
+            INCOGNIDE_HOME = homeValue;
+            await fsPromises.mkdir(INCOGNIDE_HOME, { recursive: true });
         }
 
         const lines = Object.entries(existing).map(([k, v]) => `export ${k}=${v}`);

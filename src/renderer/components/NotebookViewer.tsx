@@ -1,5 +1,6 @@
 import { getFileName } from './utils';
 import React, { useEffect, useState, useCallback, useMemo, memo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { BACKEND_URL } from '../config';
 import { Save, Play, Plus, Trash2, ChevronDown, ChevronRight, X, Loader, Code2, FileText, Edit3, Circle, Zap, Square, Power, MessageSquare, Bot, BookOpen, Paperclip, Eye, EyeOff, Archive, Sparkles, RefreshCw, Table, Variable, ChevronLeft, SortAsc, SortDesc, Filter, Hash, Type, Database, ArrowUp, ArrowDown, PanelRightClose, PanelRight, Palette, Settings, Download, FileCode, FileType, PlayCircle, SkipBack, SkipForward } from 'lucide-react';
 import CodeMirror from '@uiw/react-codemirror';
@@ -107,6 +108,12 @@ const NotebookViewer = ({
     const [isSaving, setIsSaving] = useState(false);
     const [isExecuting, setIsExecuting] = useState<number | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [diskChangeContent, setDiskChangeContent] = useState<Notebook | null>(null);
+    const [diskConflictModal, setDiskConflictModal] = useState<{ isOpen: boolean; diskMtime: number | null; diskContent: Notebook | null }>({ isOpen: false, diskMtime: null, diskContent: null });
+    const diskMtimeRef = useRef<number | null>(null);
+    const diskContentRef = useRef<Notebook | null>(null);
+    const pendingDiskConflictRef = useRef(false);
+    const selfWritingRef = useRef(false);
     const [collapsedCells, setCollapsedCells] = useState<Set<number>>(new Set());
     const [editingMarkdownCell, setEditingMarkdownCell] = useState<number | null>(null);
 
@@ -400,11 +407,78 @@ const NotebookViewer = ({
         nbformat_minor: 4
     }), []);
 
+    const updateDiskState = useCallback((nb: Notebook, mtime: number) => {
+        diskContentRef.current = nb;
+        diskMtimeRef.current = mtime;
+        pendingDiskConflictRef.current = false;
+    }, []);
+
+    const checkDiskState = useCallback(async (fp: string) => {
+        try {
+            const stats = await (window as any).api.getFileStats(fp);
+            return { mtime: stats?.mtimeMs || 0, exists: true };
+        } catch {
+            return { mtime: 0, exists: false };
+        }
+    }, []);
+
+    const reloadFromDisk = useCallback(async () => {
+        if (!filePath) return;
+        try {
+            const [result, stats] = await Promise.all([
+                (window as any).api.readFileContent(filePath),
+                (window as any).api.getFileStats(filePath).catch(() => null)
+            ]);
+            const text = typeof result === 'string' ? result : result?.content ?? '';
+            const parsed = JSON.parse(text);
+            setNotebook(parsed);
+            setHasChanges(false);
+            updateDiskState(parsed, stats?.mtimeMs || 0);
+            setDiskChangeContent(null);
+            if (paneData) paneData.fileChanged = false;
+        } catch (e: any) {
+            setError('Failed to reload: ' + (e.message || String(e)));
+        }
+    }, [filePath, updateDiskState, paneData]);
+
+    const resolveDiskConflict = useCallback(async (overwrite: boolean) => {
+        if (!diskConflictModal.isOpen || !filePath || !notebook) return;
+        if (overwrite) {
+            setIsSaving(true);
+            try {
+                selfWritingRef.current = true;
+                await (window as any).api.writeFileContent(filePath, JSON.stringify(notebook, null, 2));
+                setHasChanges(false);
+                const newStats = await checkDiskState(filePath);
+                updateDiskState(notebook, newStats.mtime);
+                setDiskChangeContent(null);
+                setTimeout(() => { selfWritingRef.current = false; }, 4000);
+            } catch (e: any) {
+                selfWritingRef.current = false;
+                setError(e.message || String(e));
+            } finally {
+                setIsSaving(false);
+            }
+        } else {
+            if (diskConflictModal.diskContent != null) {
+                updateDiskState(diskConflictModal.diskContent, diskConflictModal.diskMtime || 0);
+                setNotebook(diskConflictModal.diskContent);
+                setHasChanges(false);
+            } else {
+                pendingDiskConflictRef.current = true;
+            }
+        }
+        setDiskConflictModal({ isOpen: false, diskMtime: null, diskContent: null });
+    }, [diskConflictModal, filePath, notebook, checkDiskState, updateDiskState]);
+
     useEffect(() => {
         const load = async () => {
             if (!filePath) return;
             try {
-                const text = await (window as any).api.readFileContent(filePath);
+                const [text, stats] = await Promise.all([
+                    (window as any).api.readFileContent(filePath),
+                    (window as any).api.getFileStats(filePath).catch(() => null)
+                ]);
                 if (text?.error) {
                     const exists = await (window as any).api.fileExists?.(filePath);
                     if (!exists) {
@@ -417,6 +491,7 @@ const NotebookViewer = ({
                         if (writeResult?.error) throw new Error(writeResult.error);
                         setNotebook(defaultNb);
                         setHasChanges(false);
+                        updateDiskState(defaultNb, stats?.mtimeMs || 0);
                         return;
                     }
                     throw new Error(text.error);
@@ -425,6 +500,7 @@ const NotebookViewer = ({
                 const parsed = JSON.parse(content);
                 setNotebook(parsed);
                 setHasChanges(false);
+                updateDiskState(parsed, stats?.mtimeMs || 0);
             } catch (e: any) {
                 setError(e.message || String(e));
             }
@@ -463,19 +539,76 @@ const NotebookViewer = ({
         }
     }, [paneData?.fileChanged, paneData?.fileContent, notebook]);
 
+    useEffect(() => {
+        if (!filePath) return;
+        (window as any).api.watchFile(filePath);
+        const removeListener = (window as any).api.onFileChanged(async (changedPath: string) => {
+            if (changedPath !== filePath) return;
+            if (selfWritingRef.current) return;
+            try {
+                const stats = await (window as any).api.getFileStats(filePath).catch(() => null);
+                const newMtime = stats?.mtimeMs || 0;
+                if (newMtime && diskMtimeRef.current != null && newMtime === diskMtimeRef.current) return;
+
+                const result = await (window as any).api.readFileContent(filePath);
+                const text = typeof result === 'string' ? result : result?.content ?? '';
+                const parsed = JSON.parse(text);
+                if (JSON.stringify(parsed) === JSON.stringify(diskContentRef.current)) return;
+                if (JSON.stringify(parsed) === JSON.stringify(notebookRef.current)) {
+                    updateDiskState(parsed, newMtime);
+                    return;
+                }
+                if (hasChanges) {
+                    pendingDiskConflictRef.current = true;
+                    setDiskChangeContent(parsed);
+                    return;
+                }
+                setNotebook(parsed);
+                setHasChanges(false);
+                updateDiskState(parsed, newMtime);
+                setDiskChangeContent(null);
+            } catch (e) {
+                console.error('[FILE-WATCH] Error reloading notebook:', e);
+            }
+        });
+        return () => {
+            removeListener();
+            (window as any).api.unwatchFile(filePath);
+        };
+    }, [filePath, hasChanges, updateDiskState]);
+
     const save = useCallback(async () => {
-        if (!hasChanges || !notebook) return;
+        if (!hasChanges || !notebook || !filePath) return;
+        const { mtime } = await checkDiskState(filePath);
+        const knownMtime = diskMtimeRef.current;
+        if (knownMtime != null && mtime !== 0 && mtime !== knownMtime) {
+            try {
+                const result = await (window as any).api.readFileContent(filePath);
+                const text = typeof result === 'string' ? result : result?.content ?? '';
+                const parsed = JSON.parse(text);
+                setDiskConflictModal({ isOpen: true, diskMtime: mtime, diskContent: parsed });
+            } catch {
+                setDiskConflictModal({ isOpen: true, diskMtime: mtime, diskContent: null });
+            }
+            return;
+        }
         setIsSaving(true);
         setError(null);
         try {
+            selfWritingRef.current = true;
             await (window as any).api.writeFileContent(filePath, JSON.stringify(notebook, null, 2));
             setHasChanges(false);
+            const newStats = await checkDiskState(filePath);
+            updateDiskState(notebook, newStats.mtime);
+            setDiskChangeContent(null);
+            setTimeout(() => { selfWritingRef.current = false; }, 4000);
         } catch (e: any) {
+            selfWritingRef.current = false;
             setError(e.message || String(e));
         } finally {
             setIsSaving(false);
         }
-    }, [hasChanges, notebook, filePath]);
+    }, [hasChanges, notebook, filePath, checkDiskState, updateDiskState]);
 
     const updateCellSource = useCallback((index: number, newSource: string) => {
         if (!notebook) return;
@@ -1629,6 +1762,54 @@ except Exception as e:
                         </button>
                         </div>
                         </div>
+
+                        {diskChangeContent !== null && (
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-900/40 border-b border-yellow-700/50 text-yellow-200 text-xs shrink-0">
+                                <RefreshCw size={12} className="text-yellow-400 shrink-0" />
+                                <span className="flex-1">File changed on disk. You have unsaved changes.</span>
+                                <button
+                                    onClick={reloadFromDisk}
+                                    className="px-2 py-0.5 rounded bg-yellow-600/50 hover:bg-yellow-600/80 text-yellow-100 font-medium transition-colors"
+                                >
+                                    Reload (discard local)
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        pendingDiskConflictRef.current = true;
+                                        setDiskChangeContent(null);
+                                    }}
+                                    className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-gray-300 transition-colors"
+                                >
+                                    Keep local
+                                </button>
+                            </div>
+                        )}
+
+                        {diskConflictModal.isOpen && createPortal(
+                            <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/70">
+                                <div className="theme-bg-secondary theme-border border rounded-lg shadow-xl p-5 max-w-md w-full mx-4">
+                                    <h3 className="text-base font-semibold theme-text-primary mb-2">File changed on disk</h3>
+                                    <p className="text-sm theme-text-secondary mb-4">
+                                        The file has been modified on disk since you loaded it. Do you want to overwrite those changes with your version?
+                                    </p>
+                                    <div className="flex justify-end gap-2">
+                                        <button
+                                            onClick={() => resolveDiskConflict(false)}
+                                            className="px-3 py-1.5 rounded text-sm font-medium theme-text-secondary hover:bg-white/10 transition-colors"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={() => resolveDiskConflict(true)}
+                                            className="px-3 py-1.5 rounded text-sm font-medium bg-red-600 hover:bg-red-500 text-white transition-colors"
+                                        >
+                                            Overwrite disk
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>,
+                            document.body
+                        )}
                     </div>
 
                     {jupyterInstalled === false && (
