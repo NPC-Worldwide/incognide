@@ -326,7 +326,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     return (
         <div
             className="flex-shrink-0 theme-bg-primary border-l theme-border flex flex-col overflow-hidden relative"
-            style={{ width: `${width}px` }}
+            style={{ width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` }}
         >
             <div
                 className="absolute top-0 bottom-0 left-0 w-1 cursor-col-resize hover:bg-blue-500 transition-colors z-10"

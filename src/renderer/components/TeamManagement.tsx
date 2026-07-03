@@ -14,7 +14,6 @@ import JinxMenu from './JinxMenu';
 import CronDaemonPanel from './CronDaemonPanel';
 import MemoryManagement from './MemoryManagement';
 import ModelManager from './ModelManager';
-import VoiceManager from './VoiceManager';
 import StoreRegistryPanel from './StoreRegistryPanel';
 const KnowledgeGraphEditor = lazy(() => import('./KnowledgeGraphEditor'));
 
@@ -35,7 +34,7 @@ interface TeamManagementProps {
     onOpenJinxPane?: (name: string) => void;
 }
 
-type TabId = 'context' | 'npcs' | 'jinxes' | 'knowledge' | 'cron' | 'models' | 'ai-settings' | 'llm-models' | 'voice';
+type TabId = 'context' | 'npcs' | 'jinxes' | 'knowledge' | 'cron' | 'models' | 'llm-models';
 
 const SqlModelsContent = ({ currentPath, teamKey, npcList = [], jinxList = [] }: { currentPath: string; teamKey?: string; npcList?: any[]; jinxList?: any[] }) => {
     const [models, setModels] = useState<any[]>([]);
@@ -561,234 +560,6 @@ const ResizableSplitPane: React.FC<{
     );
 };
 
-const AI_DEFAULT_SETTINGS = {
-    model: 'llama3',
-    provider: 'ollama',
-    embedding_model: 'nomic-text-embed',
-    embedding_provider: 'ollama',
-    search_provider: 'duckduckgo',
-    default_to_agent: false,
-    is_predictive_text_enabled: false,
-    predictive_text_model: 'llama3',
-    predictive_text_provider: 'ollama',
-};
-
-const AiSettingsContent = () => {
-    const [settings, setSettings] = useState<any>(AI_DEFAULT_SETTINGS);
-    const [globalVars, setGlobalVars] = useState<{ key: string; value: string }[]>([{ key: '', value: '' }]);
-    const [visibleFields, setVisibleFields] = useState<Record<string, boolean>>({});
-    const [saving, setSaving] = useState(false);
-    const [customProviders, setCustomProviders] = useState<Record<string, any>>({});
-
-    const isSensitiveField = (key: string) => {
-        const sensitiveWords = ['key', 'token', 'secret', 'password', 'api'];
-        return sensitiveWords.some(w => key.toLowerCase().includes(w));
-    };
-
-    useEffect(() => {
-        (async () => {
-            const data = await (window as any).api.loadGlobalSettings();
-            if (data.error) return;
-            setSettings({ ...AI_DEFAULT_SETTINGS, ...(data.global_settings || {}) });
-            if (data.global_vars && Object.keys(data.global_vars).length > 0) {
-                const parsed = Object.entries(data.global_vars)
-                    .map(([key, value]) => ({ key, value: value as string }));
-                setGlobalVars(parsed.length > 0 ? parsed : [{ key: '', value: '' }]);
-            }
-            try {
-                const cpData = await (window as any).api.customProvidersRead();
-                if (cpData?.providers) setCustomProviders(cpData.providers);
-            } catch {}
-        })();
-    }, []);
-
-    const handleSave = async () => {
-        setSaving(true);
-        try {
-            const existingData = await (window as any).api.loadGlobalSettings();
-            const existingSettings = existingData.global_settings || {};
-
-            const newVars: Record<string, string> = {};
-            globalVars.forEach(({ key, value }) => {
-                if (key && value) newVars[key] = value;
-            });
-
-            await (window as any).api.saveGlobalSettings({
-                global_settings: { ...existingSettings, ...settings },
-                global_vars: newVars,
-            });
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    const baseProviderOptions = [
-        { value: 'ollama', label: 'Ollama' },
-        { value: 'openai', label: 'OpenAI' },
-        { value: 'anthropic', label: 'Anthropic' },
-        { value: 'gemini', label: 'Gemini' },
-        { value: 'lmstudio', label: 'LM Studio' },
-        { value: 'llamacpp', label: 'llama.cpp' },
-    ];
-    const customProviderOptions = Object.entries(customProviders).map(([name]) => ({
-        value: name, label: name.charAt(0).toUpperCase() + name.slice(1),
-    }));
-    const providerOptions = [...baseProviderOptions, ...customProviderOptions.filter(
-        cp => !baseProviderOptions.some(bp => bp.value === cp.value)
-    )];
-
-    const searchProviderOptions = [
-        { value: 'duckduckgo', label: 'DuckDuckGo' },
-        { value: 'google', label: 'Google' },
-        { value: 'brave', label: 'Brave Search' },
-        { value: 'perplexity', label: 'Perplexity' },
-    ];
-
-    return (
-        <div className="space-y-6">
-            <div className="space-y-4">
-                <h3 className="text-sm font-semibold theme-text-secondary">Language Model</h3>
-                <div className="grid grid-cols-2 gap-3">
-                    <div>
-                        <label className="text-xs theme-text-muted block mb-1">Model</label>
-                        <input
-                            type="text"
-                            value={settings.model || ''}
-                            onChange={e => setSettings({ ...settings, model: e.target.value })}
-                            className="w-full theme-input text-sm"
-                            placeholder="llama3"
-                        />
-                    </div>
-                    <div>
-                        <label className="text-xs theme-text-muted block mb-1">Provider</label>
-                        <select
-                            value={settings.provider || 'ollama'}
-                            onChange={e => setSettings({ ...settings, provider: e.target.value })}
-                            className="w-full theme-input text-sm"
-                        >
-                            {providerOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                    </div>
-                </div>
-
-                <h3 className="text-sm font-semibold theme-text-secondary pt-2">Embeddings</h3>
-                <div className="grid grid-cols-2 gap-3">
-                    <div>
-                        <label className="text-xs theme-text-muted block mb-1">Embedding Model</label>
-                        <input
-                            type="text"
-                            value={settings.embedding_model || ''}
-                            onChange={e => setSettings({ ...settings, embedding_model: e.target.value })}
-                            className="w-full theme-input text-sm"
-                            placeholder="nomic-text-embed"
-                        />
-                    </div>
-                    <div>
-                        <label className="text-xs theme-text-muted block mb-1">Embedding Provider</label>
-                        <select
-                            value={settings.embedding_provider || 'ollama'}
-                            onChange={e => setSettings({ ...settings, embedding_provider: e.target.value })}
-                            className="w-full theme-input text-sm"
-                        >
-                            {providerOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                    </div>
-                </div>
-
-                <h3 className="text-sm font-semibold theme-text-secondary pt-2">Search</h3>
-                <div>
-                    <label className="text-xs theme-text-muted block mb-1">Search Provider</label>
-                    <select
-                        value={settings.search_provider || 'duckduckgo'}
-                        onChange={e => setSettings({ ...settings, search_provider: e.target.value })}
-                        className="w-full theme-input text-sm"
-                    >
-                        {searchProviderOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                </div>
-
-                <h3 className="text-sm font-semibold theme-text-secondary pt-2">Behavior</h3>
-                <div className="theme-bg-tertiary p-3 rounded-lg space-y-3">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                            type="checkbox"
-                            checked={!!settings.is_predictive_text_enabled}
-                            onChange={e => setSettings({ ...settings, is_predictive_text_enabled: e.target.checked })}
-                            className="w-4 h-4"
-                        />
-                        <span className="text-sm">Predictive Text (Copilot)</span>
-                    </label>
-                </div>
-
-                <h3 className="text-sm font-semibold theme-text-secondary pt-2">API Keys &amp; Global Variables</h3>
-                <div className="space-y-2">
-                    {globalVars.map((variable, index) => (
-                        <div key={index} className="flex gap-2">
-                            <input
-                                type="text"
-                                value={variable.key}
-                                onChange={e => {
-                                    const next = [...globalVars];
-                                    next[index] = { ...next[index], key: e.target.value };
-                                    setGlobalVars(next);
-                                }}
-                                placeholder="Variable name (e.g. OPENAI_API_KEY)"
-                                className="flex-1 theme-input text-sm"
-                            />
-                            <div className="flex-1 relative">
-                                <input
-                                    type={visibleFields[`gv_${index}`] || !isSensitiveField(variable.key) ? 'text' : 'password'}
-                                    value={variable.value}
-                                    onChange={e => {
-                                        const next = [...globalVars];
-                                        next[index] = { ...next[index], value: e.target.value };
-                                        setGlobalVars(next);
-                                    }}
-                                    placeholder="Value"
-                                    className="w-full theme-input text-sm"
-                                />
-                                {isSensitiveField(variable.key) && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setVisibleFields(prev => ({ ...prev, [`gv_${index}`]: !prev[`gv_${index}`] }))}
-                                        className="absolute right-2 top-1/2 -translate-y-1/2 theme-text-muted"
-                                    >
-                                        {visibleFields[`gv_${index}`] ? <EyeOff size={16} /> : <Eye size={16} />}
-                                    </button>
-                                )}
-                            </div>
-                            <button
-                                onClick={() => {
-                                    const next = globalVars.filter((_, i) => i !== index);
-                                    setGlobalVars(next.length > 0 ? next : [{ key: '', value: '' }]);
-                                }}
-                                className="p-2 text-red-400 hover:bg-red-900/20 rounded"
-                            >
-                                <Trash2 size={16} />
-                            </button>
-                        </div>
-                    ))}
-                    <button
-                        onClick={() => setGlobalVars([...globalVars, { key: '', value: '' }])}
-                        className="theme-button px-3 py-1.5 rounded text-sm flex items-center gap-2"
-                    >
-                        <Plus size={14} /> Add Variable
-                    </button>
-                </div>
-            </div>
-
-            <div className="border-t theme-border pt-4 flex justify-end">
-                <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="theme-button-primary px-4 py-2 rounded text-sm flex items-center gap-2 disabled:opacity-50"
-                >
-                    <Save size={16} /> {saving ? 'Saving...' : 'Save AI Settings'}
-                </button>
-            </div>
-        </div>
-    );
-};
 
 const TeamManagement: React.FC<TeamManagementProps> = ({
     isOpen,
@@ -952,9 +723,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
     if (!isOpen) return null;
 
     const generalSections: { id: TabId; label: string; icon: React.ReactNode }[] = [
-        { id: 'ai-settings', label: 'AI Settings', icon: <Cpu size={16} /> },
         { id: 'llm-models', label: 'Models', icon: <Box size={16} /> },
-        { id: 'voice', label: 'Voice / TTS', icon: <Mic size={16} /> },
     ];
 
     const teamSections: { id: TabId; label: string; icon: React.ReactNode }[] = [
@@ -1016,9 +785,14 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                 onChange={e => setSelectedTeam(e.target.value)}
                                 className="w-full theme-input text-xs py-1.5 px-2 rounded"
                             >
-                                {Object.entries(registeredTeams).map(([key, path]) => (
-                                    <option key={key} value={key}>{key}</option>
-                                ))}
+                                {Object.entries(registeredTeams).map(([key, teamPath]) => {
+                                    const parentName = typeof teamPath === 'string' && teamPath.endsWith('/npc_team')
+                                        ? teamPath.split('/').slice(-2)[0]
+                                        : key;
+                                    return (
+                                        <option key={key} value={key}>{parentName}</option>
+                                    );
+                                })}
                                 {projectTeamPath && (
                                     <option value="project">{projectTeamCtxName || 'Project'} (unregistered)</option>
                                 )}
@@ -1077,8 +851,8 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
 
                 
                 <div className="flex-1 flex flex-col overflow-hidden">
-                    {(activeTab === 'cron' || activeTab === 'llm-models' || activeTab === 'voice' || activeTab === 'knowledge') ? null : (
-                        <div className="flex-1 overflow-auto p-6">
+                    {(activeTab === 'cron' || activeTab === 'llm-models' || activeTab === 'knowledge') ? null : (
+                        <div className="flex-1 overflow-hidden p-6 flex flex-col">
                             {activeTab === 'context' && (
                                 <CtxEditor
                                     isOpen={true}
@@ -1088,17 +862,15 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                 />
                             )}
                             {activeTab === 'npcs' && (
-                                <div className="space-y-4">
-                                    <NPCTeamMenu
-                                        isOpen={true}
-                                        onClose={() => {}}
-                                        currentPath={npcMenuPath}
-                                        startNewConversation={startNewConversation}
-                                        embedded={true}
-                                        teamKey={npcMenuKey}
-                                        onOpenJinxTab={onOpenJinxPane}
-                                    />
-                                </div>
+                                <NPCTeamMenu
+                                    isOpen={true}
+                                    onClose={() => {}}
+                                    currentPath={npcMenuPath}
+                                    startNewConversation={startNewConversation}
+                                    embedded={true}
+                                    teamKey={npcMenuKey}
+                                    onOpenJinxTab={onOpenJinxPane}
+                                />
                             )}
                             {activeTab === 'jinxes' && (
                                 <JinxMenu
@@ -1116,9 +888,6 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                     teamKey={npcMenuKey}
                                 />
                             )}
-                            {activeTab === 'ai-settings' && (
-                                <AiSettingsContent />
-                            )}
                         </div>
                     )}
                     {activeTab === 'cron' && (
@@ -1134,11 +903,6 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                     {activeTab === 'llm-models' && (
                         <div className="flex-1 flex flex-col overflow-hidden">
                             <ModelManager onStartChat={startNewChat} />
-                        </div>
-                    )}
-                    {activeTab === 'voice' && (
-                        <div className="flex-1 flex flex-col overflow-hidden">
-                            <VoiceManager />
                         </div>
                     )}
                     {activeTab === 'knowledge' && (

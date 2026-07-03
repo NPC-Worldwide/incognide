@@ -11,6 +11,13 @@ const yaml = require('js-yaml');
 
 const dbPath = process.env.INCOGNIDE_DB_PATH || path.join(os.homedir(), '.incognide', 'history.db');
 
+const expandTilde = (filepath) => {
+  if (typeof filepath !== 'string') return filepath;
+  if (filepath.startsWith('~/')) return path.join(os.homedir(), filepath.slice(2));
+  if (filepath === '~') return os.homedir();
+  return filepath;
+};
+
 /**
  * Categorize backend errors into user-friendly messages
  */
@@ -455,6 +462,7 @@ function register(ctx) {
   });
 
   ipcMain.handle('generate_images', async (event, { prompt, n, model, provider, attachments, baseFilename='image_gen_', currentPath='~/.incognide/images', workspacePath, width, height, customModelPath }) => {
+    currentPath = expandTilde(currentPath);
     log(`[Main Process] Image gen request: n=${n} prompt="${prompt}" model="${model}" provider=${provider}`);
 
     if (!prompt) return { error: 'Prompt cannot be empty' };
@@ -483,9 +491,7 @@ function register(ctx) {
       }
     }
 
-    const outputDir = currentPath.startsWith('~')
-      ? path.join(os.homedir(), currentPath.slice(1).replace(/^\//, ''))
-      : currentPath;
+    const outputDir = expandTilde(currentPath);
 
     const python = await resolveWorkspacePython(workspacePath);
     if (!python) {

@@ -1,5 +1,6 @@
 import { getFileName, generateId } from './utils';
 import React, { useEffect, useState, useCallback, useMemo, memo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
     Save, Play, ExternalLink, X, SplitSquareHorizontal, Loader, ChevronDown,
     Table, Image, List, Link, FileText, Code, Sigma, Layout, Quote, Hash,
@@ -737,6 +738,10 @@ const LatexViewer = ({
     const [isCompact, setIsCompact] = useState(false);
     const [showSavedFlash, setShowSavedFlash] = useState(false);
     const [diskChangeContent, setDiskChangeContent] = useState<string | null>(null);
+    const [diskConflictModal, setDiskConflictModal] = useState<{ isOpen: boolean; diskMtime: number | null; diskContent: string | null }>({ isOpen: false, diskMtime: null, diskContent: null });
+    const diskMtimeRef = useRef<number | null>(null);
+    const diskContentRef = useRef<string | null>(null);
+    const pendingDiskConflictRef = useRef(false);
     const lastWrittenContentRef = useRef<string | null>(null);
     const [openPdfOnBuild, setOpenPdfOnBuild] = useState(() => localStorage.getItem('latex_openPdfOnBuild') !== 'false');
     const [texEngine, setTexEngine] = useState<string>(() => localStorage.getItem('latex_engine') || 'pdflatex');
@@ -839,6 +844,72 @@ const LatexViewer = ({
             return next;
         });
     }, [paneData]);
+
+    const updateDiskState = useCallback((diskContent: string, mtime: number) => {
+        diskContentRef.current = diskContent;
+        diskMtimeRef.current = mtime;
+        pendingDiskConflictRef.current = false;
+    }, []);
+
+    const checkDiskState = useCallback(async (fp: string) => {
+        try {
+            const stats = await (window as any).api.getFileStats(fp);
+            return { mtime: stats?.mtimeMs || 0, exists: true };
+        } catch {
+            return { mtime: 0, exists: false };
+        }
+    }, []);
+
+    const reloadFromDisk = useCallback(async () => {
+        if (!filePath) return;
+        try {
+            const [result, stats] = await Promise.all([
+                (window as any).api.readFileContent(filePath),
+                (window as any).api.getFileStats(filePath).catch(() => null)
+            ]);
+            const diskContent = typeof result === 'string' ? result : result?.content;
+            if (diskContent != null) {
+                setContent(diskContent);
+                setHasChanges(false);
+                updateDiskState(diskContent, stats?.mtimeMs || 0);
+                setDiskChangeContent(null);
+            }
+        } catch (e) {
+            setError('Failed to reload: ' + (e.message || String(e)));
+        }
+    }, [filePath, setContent, updateDiskState]);
+
+    const resolveDiskConflict = useCallback(async (overwrite: boolean) => {
+        if (!diskConflictModal.isOpen) return;
+        if (overwrite) {
+            const currentFilePath = contentDataRef.current[nodeId]?.contentId || filePath;
+            if (!currentFilePath) return;
+            setIsSaving(true);
+            try {
+                selfWritingRef.current = true;
+                lastWrittenContentRef.current = content;
+                await (window as any).api.writeFileContent(currentFilePath, content);
+                setHasChanges(false);
+                setShowSavedFlash(true);
+                setTimeout(() => setShowSavedFlash(false), 1500);
+                const newStats = await checkDiskState(currentFilePath);
+                updateDiskState(content, newStats.mtime);
+                setDiskChangeContent(null);
+            } catch (e: any) {
+                selfWritingRef.current = false;
+                setError(e.message || String(e));
+            } finally {
+                setIsSaving(false);
+            }
+        } else {
+            if (diskConflictModal.diskContent != null) {
+                updateDiskState(diskConflictModal.diskContent, diskConflictModal.diskMtime || 0);
+            } else {
+                pendingDiskConflictRef.current = true;
+            }
+        }
+        setDiskConflictModal({ isOpen: false, diskMtime: null, diskContent: null });
+    }, [diskConflictModal, content, filePath, nodeId, contentDataRef, checkDiskState, updateDiskState]);
 
     const stats = useMemo(() => {
         const lines = content.split('\n').length;
@@ -1234,10 +1305,15 @@ const LatexViewer = ({
             }
             setIsLoading(true);
             try {
-                const text = await (window as any).api.readFileContent(filePath);
+                const [text, stats] = await Promise.all([
+                    (window as any).api.readFileContent(filePath),
+                    (window as any).api.getFileStats(filePath).catch(() => null)
+                ]);
                 if (text?.error) throw new Error(text.error);
-                setContent(typeof text === 'string' ? text : text?.content ?? '');
+                const loaded = typeof text === 'string' ? text : text?.content ?? '';
+                setContent(loaded);
                 setHasChanges(false);
+                updateDiskState(loaded, stats?.mtimeMs || 0);
                 if (paneData) paneData.fileChanged = false;
             } catch (e: any) {
                 setError(e.message || String(e));
@@ -1260,17 +1336,26 @@ const LatexViewer = ({
             if (changedPath !== filePath) return;
             if (selfWritingRef.current) return;
             try {
+                const stats = await (window as any).api.getFileStats(changedPath).catch(() => null);
+                const newMtime = stats?.mtimeMs || 0;
+                if (newMtime && diskMtimeRef.current != null && newMtime === diskMtimeRef.current) return;
+
                 const result = await (window as any).api.readFileContent(changedPath);
                 const diskContent = typeof result === 'string' ? result : result?.content;
                 if (diskContent == null) return;
-                if (diskContent === lastWrittenContentRef.current) return;
-                if (diskContent === contentRef.current) return;
+                if (diskContent === diskContentRef.current) return;
+                if (diskContent === contentRef.current) {
+                    updateDiskState(diskContent, newMtime);
+                    return;
+                }
                 if (hasChangesRef.current) {
+                    pendingDiskConflictRef.current = true;
                     setDiskChangeContent(diskContent);
                     return;
                 }
                 setContent(diskContent);
                 setHasChanges(false);
+                updateDiskState(diskContent, newMtime);
                 setDiskChangeContent(null);
             } catch (e) {
                 console.error('[FILE-WATCH] Error reloading:', e);
@@ -1280,7 +1365,7 @@ const LatexViewer = ({
             removeListener();
             (window as any).api.unwatchFile(filePath);
         };
-    }, [filePath]);
+    }, [filePath, setContent, updateDiskState]);
 
     const insertAtCursor = useCallback((text: string) => {
         const view = editorViewRef.current;
@@ -1474,6 +1559,21 @@ const LatexViewer = ({
             }
         }
 
+        if (!isUntitled) {
+            const { mtime } = await checkDiskState(savePath);
+            const knownMtime = diskMtimeRef.current;
+            if (knownMtime != null && mtime !== 0 && mtime !== knownMtime) {
+                try {
+                    const result = await (window as any).api.readFileContent(savePath);
+                    const diskContent = typeof result === 'string' ? result : result?.content;
+                    setDiskConflictModal({ isOpen: true, diskMtime: mtime, diskContent: diskContent ?? null });
+                } catch {
+                    setDiskConflictModal({ isOpen: true, diskMtime: mtime, diskContent: null });
+                }
+                return;
+            }
+        }
+
         setIsSaving(true);
         setError(null);
         try {
@@ -1481,6 +1581,9 @@ const LatexViewer = ({
             lastWrittenContentRef.current = content;
             await (window as any).api.writeFileContent(savePath, content);
             setHasChanges(false);
+            const newStats = await checkDiskState(savePath);
+            updateDiskState(content, newStats.mtime);
+            setDiskChangeContent(null);
             setShowSavedFlash(true);
             setTimeout(() => setShowSavedFlash(false), 1500);
             setTimeout(() => { selfWritingRef.current = false; }, 4000);
@@ -1490,23 +1593,34 @@ const LatexViewer = ({
         } finally {
             setIsSaving(false);
         }
-    }, [hasChanges, content, filePath, currentPath, nodeId, contentDataRef]);
+    }, [hasChanges, content, filePath, currentPath, nodeId, contentDataRef, checkDiskState, updateDiskState]);
 
     useEffect(() => {
         if (!hasChanges || !filePath || isSaving) return;
+        if (pendingDiskConflictRef.current) return;
         const timer = setTimeout(async () => {
             try {
+                const { mtime } = await checkDiskState(filePath);
+                if (diskMtimeRef.current != null && mtime !== 0 && mtime !== diskMtimeRef.current) {
+                    pendingDiskConflictRef.current = true;
+                    const result = await (window as any).api.readFileContent(filePath);
+                    setDiskChangeContent(typeof result === 'string' ? result : result?.content ?? null);
+                    return;
+                }
                 selfWritingRef.current = true;
                 lastWrittenContentRef.current = content;
                 await (window as any).api.writeFileContent(filePath, content);
                 setHasChanges(false);
+                const newStats = await checkDiskState(filePath);
+                updateDiskState(content, newStats.mtime);
+                setDiskChangeContent(null);
                 setTimeout(() => { selfWritingRef.current = false; }, 4000);
             } catch (e) {
                 selfWritingRef.current = false;
             }
         }, 30000);  // 30s idle before autosave — explicit Cmd+S / Compile still save instantly
         return () => clearTimeout(timer);
-    }, [content, hasChanges, filePath, isSaving]);
+    }, [content, hasChanges, filePath, isSaving, checkDiskState, updateDiskState]);
 
     const openPdfInSplit = useCallback((pdfPath: string) => {
         const existing = Object.keys(contentDataRef.current).find(
@@ -1523,11 +1637,22 @@ const LatexViewer = ({
 
     const compile = useCallback(async (openInSplit = true) => {
         if (hasChanges) {
+            if (filePath) {
+                const { mtime } = await checkDiskState(filePath);
+                const knownMtime = diskMtimeRef.current;
+                if (knownMtime != null && mtime !== 0 && mtime !== knownMtime) {
+                    pendingDiskConflictRef.current = true;
+                    setError('File changed on disk. Save or reload before compiling.');
+                    return;
+                }
+            }
             try {
                 selfWritingRef.current = true;
                 lastWrittenContentRef.current = content;
                 await (window as any).api.writeFileContent(filePath, content);
                 setHasChanges(false);
+                const newStats = await checkDiskState(filePath || '');
+                updateDiskState(content, newStats.mtime);
                 setTimeout(() => { selfWritingRef.current = false; }, 4000);
             } catch (e: any) {
                 selfWritingRef.current = false;
@@ -2244,27 +2369,50 @@ const LatexViewer = ({
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-900/40 border-b border-yellow-700/50 text-yellow-200 text-xs shrink-0">
                     <RefreshCw size={12} className="text-yellow-400 shrink-0" />
                     <span className="flex-1">
-                        File changed on disk. Reload and lose your unsaved changes?
+                        File changed on disk. You have unsaved changes.
                     </span>
                     <button
-                        onClick={() => {
-                            if (diskChangeContent != null) {
-                                setContent(diskChangeContent);
-                                setHasChanges(false);
-                            }
-                            setDiskChangeContent(null);
-                        }}
+                        onClick={reloadFromDisk}
                         className="px-2 py-0.5 rounded bg-yellow-600/50 hover:bg-yellow-600/80 text-yellow-100 font-medium transition-colors"
                     >
-                        Reload
+                        Reload (discard local)
                     </button>
                     <button
-                        onClick={() => setDiskChangeContent(null)}
+                        onClick={() => {
+                            pendingDiskConflictRef.current = true;
+                            setDiskChangeContent(null);
+                        }}
                         className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-gray-300 transition-colors"
                     >
-                        Ignore
+                        Keep local
                     </button>
                 </div>
+            )}
+
+            {diskConflictModal.isOpen && createPortal(
+                <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/70">
+                    <div className="theme-bg-secondary theme-border border rounded-lg shadow-xl p-5 max-w-md w-full mx-4">
+                        <h3 className="text-base font-semibold theme-text-primary mb-2">File changed on disk</h3>
+                        <p className="text-sm theme-text-secondary mb-4">
+                            The file has been modified on disk since you loaded it. Do you want to overwrite those changes with your version?
+                        </p>
+                        <div className="flex justify-end gap-2">
+                            <button
+                                onClick={() => resolveDiskConflict(false)}
+                                className="px-3 py-1.5 rounded text-sm font-medium theme-text-secondary hover:bg-white/10 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => resolveDiskConflict(true)}
+                                className="px-3 py-1.5 rounded text-sm font-medium bg-red-600 hover:bg-red-500 text-white transition-colors"
+                            >
+                                Overwrite disk
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
             )}
 
             {showLog && (

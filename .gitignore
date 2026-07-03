@@ -185,3 +185,8 @@ out/
 *.ipynb 
 *.bak
 jobs/
+
+# Ignore literal tilde directories created by unexpanded path defaults
+~/
+~/.incognide/
+

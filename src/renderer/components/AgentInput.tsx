@@ -1,15 +1,15 @@
-import { getFileName, normalizePath, loadAvailableNPCs } from './utils';
-import yaml from 'js-yaml';
+import { getFileName } from './utils';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { BACKEND_URL } from '../config';
 import {
-    Send, Paperclip, Maximize2, ChevronDown, Star, ListFilter, FolderTree, Minimize2, Mic, MicOff, Volume2, GitBranch, Save, Trash2, Zap, X, RefreshCw, Plus,
+    Send, Paperclip, Maximize2, ChevronDown, Star, ListFilter, FolderTree, Minimize2, Mic, MicOff, Volume2, GitBranch, Save, Trash2, Zap, X, RefreshCw,
     FileCode, Globe, FileText, Terminal as TerminalIcon, Eye, EyeOff, ToggleLeft, ToggleRight,
     Database, BarChart3, BrainCircuit, Image, Bot, Users, Music, Search, BookOpen, Folder, HardDrive, HelpCircle, Clock, Settings, MessageSquare, Tag
 } from 'lucide-react';
 import MemoryIcon from './icons/MemoryIcon';
 import KgIcon from './icons/KgIcon';
 import ContextFilesPanel from './ContextFilesPanel';
+import ModelSelector from './ModelSelector';
 
 const getMcpServerDisplayName = (serverPath: string): string => {
     const teamMatch = serverPath.match(/--team\s+(.+)$/);
@@ -381,42 +381,12 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         }
     }, [availableMcpServers]);
 
-    const [showModelsDropdown, setShowModelsDropdown] = useState(false);
     const [showNpcsDropdown, setShowNpcsDropdown] = useState(false);
-    const modelsDropdownRef = useRef<HTMLDivElement>(null);
 
-    const [showAddModelPanel, setShowAddModelPanel] = useState(false);
-    const [addModelName, setAddModelName] = useState('');
-    const [addModelProvider, setAddModelProvider] = useState('');
-    const [addModelApiUrl, setAddModelApiUrl] = useState('');
-    const [addModelApiKey, setAddModelApiKey] = useState('');
-    const [addModelProviderType, setAddModelProviderType] = useState('');
-    const [addModelError, setAddModelError] = useState<string | null>(null);
-    const [addModelSaving, setAddModelSaving] = useState(false);
-    const [providerModelSelector, setProviderModelSelector] = useState<{
-        provider: any;
-        models: string[];
-        selected: Set<string>;
-        loading: boolean;
-        error: string | null;
-    } | null>(null);
-    const [detectedProviders, setDetectedProviders] = useState<any[]>([]);
-    const [detectedProvidersLoading, setDetectedProvidersLoading] = useState(false);
-
-    const teamCtxProviders = useMemo(() => {
-        if (!currentNPC || availableNPCs.length === 0) return [];
-        const npc = availableNPCs.find((n: any) => n.value === currentNPC || n.name === currentNPC);
-        const providers = npc?._teamConfig?.providers || [];
-        return Array.isArray(providers) ? providers : [];
-    }, [currentNPC, availableNPCs]);
-
-    const [modelSearch, setModelSearch] = useState('');
     const [npcSearch, setNpcSearch] = useState('');
     const [jinxSearch, setJinxSearch] = useState('');
-    const modelSearchRef = useRef<HTMLInputElement>(null);
     const npcSearchRef = useRef<HTMLInputElement>(null);
     const jinxSearchRef = useRef<HTMLInputElement>(null);
-    const addModelNameRef = useRef<HTMLInputElement>(null);
 
     const [disableThinking, setDisableThinking] = useState(() => {
         try { return localStorage.getItem('incognide-disable-thinking') === 'true'; } catch { return false; }
@@ -466,206 +436,6 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         const npc = availableNPCs.find((n: any) => n.value === currentNPC || n.name === currentNPC);
         return npc?.team || null;
     }, [currentNPC, availableNPCs]);
-
-    const findCtxFile = async (dirPath: string) => {
-        try {
-            const items = await (window as any).api.readDirectory(dirPath);
-            const ctxFiles = (items || []).filter((item: any) => item.name && item.name.endsWith('.ctx'));
-            if (ctxFiles.length > 0) return ctxFiles[0].name;
-        } catch {}
-        return null;
-    };
-
-    const saveProviderToTeamCtx = async (providerName: string, models: string[] | null, options?: { apiUrl?: string; apiKey?: string; providerType?: string }) => {
-        if (!currentNpcTeamPath) throw new Error('No team path for the selected NPC.');
-        const ctxFile = await findCtxFile(currentNpcTeamPath);
-        const targetFile = ctxFile || 'team.ctx';
-        const filePath = normalizePath(`${currentNpcTeamPath}/${targetFile}`);
-
-        let rawCtx: string | null = null;
-        try {
-            const result = await (window as any).api.readFileContent(filePath);
-            rawCtx = typeof result === 'string' ? result : result?.content;
-        } catch {}
-
-        let ctx: any = {};
-        if (rawCtx) {
-            try {
-                const processed = rawCtx.replace(/(?<!["'])\{\{[^{}]*\}\}(?!["'])/g, (match: string) => `"${match}"`);
-                ctx = yaml.load(processed) || {};
-            } catch {
-                ctx = {};
-            }
-        }
-
-        const providers: any[] = Array.isArray(ctx.providers) ? [...ctx.providers] : [];
-        const existing = providers.find((p: any) => p.name === providerName);
-
-        const newEntry: any = {
-            name: providerName,
-            ...(options?.apiUrl ? { api_url: options.apiUrl } : {}),
-        };
-        if (Array.isArray(models) && models.length > 0) {
-            newEntry.models = models;
-        }
-
-        if (!existing) {
-            providers.push(newEntry);
-        } else {
-            const idx = providers.indexOf(existing);
-            const merged = { ...existing };
-            if (options?.apiUrl) merged.api_url = options.apiUrl;
-            if (Array.isArray(models) && models.length > 0) {
-                const existingModels = new Set(merged.models || []);
-                models.forEach((m) => existingModels.add(m));
-                merged.models = Array.from(existingModels);
-            } else if (models === null) {
-                delete merged.models;
-            }
-            providers[idx] = merged;
-        }
-
-        const cleanCtx = { ...ctx, providers };
-        delete cleanCtx.external_jinx_teams;
-        delete cleanCtx.EXTERNAL_JINX_TEAMS;
-
-        const result = await (window as any).api.writeFileContent(filePath, yaml.dump(cleanCtx, { lineWidth: -1 }));
-        if (result?.error) throw new Error(result.error);
-
-        return { filePath, targetFile };
-    };
-
-    const saveModelToTeamCtx = async (modelName: string, providerName: string, options?: { apiUrl?: string; apiKey?: string; providerType?: string }) => {
-        await saveProviderToTeamCtx(providerName, [modelName], options);
-    };
-
-    const handleSaveNewModel = async () => {
-        const mName = addModelName.trim();
-        const pName = addModelProvider.trim();
-        if (!mName || !pName) {
-            setAddModelError('Model name and provider are required.');
-            return;
-        }
-        setAddModelSaving(true);
-        setAddModelError(null);
-        try {
-            await saveModelToTeamCtx(mName, pName, {
-                apiUrl: addModelApiUrl.trim() || undefined,
-                apiKey: addModelApiKey.trim() || undefined,
-                providerType: addModelProviderType.trim() || pName,
-            });
-            setCurrentModel(mName);
-            setCurrentProvider(pName);
-            setSelectedModels([mName]);
-            setAddModelName('');
-            setAddModelProvider('');
-            setAddModelApiUrl('');
-            setAddModelApiKey('');
-            setAddModelProviderType('');
-            setShowAddModelPanel(false);
-            setModelSearch('');
-            setShowModelsDropdown(false);
-            setError?.('');
-        } catch (err: any) {
-            setAddModelError(err.message || 'Failed to save model.');
-        } finally {
-            setAddModelSaving(false);
-        }
-    };
-
-    const openProviderModelSelector = async (prov: any) => {
-        const providerName = prov.name || prov.displayName || prov.provider;
-        const providerType = prov.provider || providerName;
-        const existingModels = Array.isArray(prov.models) ? prov.models : [];
-        setProviderModelSelector({ provider: prov, models: [], selected: new Set(), loading: true, error: null });
-        try {
-            let fetchedModels: string[] = [];
-            if (providerType === 'ollama') {
-                const res = await (window as any).api.getLocalOllamaModels();
-                fetchedModels = (res?.models || []).map((m: any) => m.name || m.model || m.id).filter(Boolean);
-            } else if (['lmstudio', 'llamacpp', 'gguf'].includes(providerType)) {
-                const res = await (window as any).api.scanLocalModels?.(providerType);
-                fetchedModels = (res?.models || []).map((m: any) => m.name || m.path || m.id).filter(Boolean);
-            } else {
-                const result = await (window as any).api.getProviderModels({ provider: providerType });
-                fetchedModels = (result?.models || []).map((m: any) => m.id || m.name || m.value).filter(Boolean);
-            }
-            const models = fetchedModels.length > 0 ? fetchedModels : existingModels;
-            setProviderModelSelector({
-                provider: prov,
-                models,
-                selected: new Set(models),
-                loading: false,
-                error: models.length === 0 ? 'No models found for this provider.' : null,
-            });
-        } catch (err: any) {
-            setProviderModelSelector({
-                provider: prov,
-                models: existingModels,
-                selected: new Set(existingModels),
-                loading: false,
-                error: err.message || 'Failed to load models.',
-            });
-        }
-    };
-
-    const handleSaveSelectedProviderModels = async () => {
-        if (!providerModelSelector || providerModelSelector.selected.size === 0) return;
-        const prov = providerModelSelector.provider;
-        const providerName = prov.name || prov.displayName || prov.provider;
-        const providerType = prov.provider || providerName;
-        setAddModelSaving(true);
-        setAddModelError(null);
-        try {
-            const allSelected = providerModelSelector.selected.size === providerModelSelector.models.length && providerModelSelector.models.length > 0;
-            await saveProviderToTeamCtx(providerName, allSelected ? null : Array.from(providerModelSelector.selected), {
-                providerType,
-            });
-            const first = allSelected ? providerModelSelector.models[0] : Array.from(providerModelSelector.selected)[0];
-            setCurrentModel(first);
-            setCurrentProvider(providerName);
-            setSelectedModels([first]);
-            setProviderModelSelector(null);
-            setShowAddModelPanel(false);
-            setModelSearch('');
-            setShowModelsDropdown(false);
-            setError?.('');
-        } catch (err: any) {
-            setAddModelError(err.message || 'Failed to save models.');
-        } finally {
-            setAddModelSaving(false);
-        }
-    };
-
-    useEffect(() => {
-        if (!showAddModelPanel) {
-            setProviderModelSelector(null);
-            return;
-        }
-        let cancelled = false;
-        (async () => {
-            setDetectedProvidersLoading(true);
-            try {
-                const d = await (window as any).api?.detectProviderKeys?.();
-                if (!cancelled) setDetectedProviders(Array.isArray(d) ? d : []);
-            } catch {
-                if (!cancelled) setDetectedProviders([]);
-            }
-            if (!cancelled) setDetectedProvidersLoading(false);
-        })();
-        return () => { cancelled = true; };
-    }, [showAddModelPanel]);
-
-    const ctxProviderNames = useMemo(() => {
-        return new Set(teamCtxProviders.map((p: any) => p.name || p.provider));
-    }, [teamCtxProviders]);
-
-    const extraDetectedProviders = useMemo(() => {
-        return detectedProviders.filter((d: any) => {
-            const name = d.provider || d.name;
-            return name && !ctxProviderNames.has(name);
-        });
-    }, [detectedProviders, ctxProviderNames]);
 
     useEffect(() => {
         if (!localInput) {
@@ -720,11 +490,10 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
     }, [showMcpServersDropdown, setShowMcpServersDropdown]);
 
     useEffect(() => {
-        if (!showModelsDropdown && !showNpcsDropdown && !showJinxConfigDropdown && !showParamsDropdown) return;
+        if (!showNpcsDropdown && !showJinxConfigDropdown && !showParamsDropdown) return;
 
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
-                setShowModelsDropdown(false);
                 setShowNpcsDropdown(false);
                 setShowJinxConfigDropdown(false);
                 setShowParamsDropdown(false);
@@ -732,9 +501,6 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         };
 
         const handleClickOutside = (e: MouseEvent) => {
-            if (showModelsDropdown && modelsDropdownRef.current && !modelsDropdownRef.current.contains(e.target as Node)) {
-                setShowModelsDropdown(false);
-            }
             if (showNpcsDropdown && npcsDropdownRef.current && !npcsDropdownRef.current.contains(e.target as Node)) {
                 setShowNpcsDropdown(false);
             }
@@ -752,27 +518,10 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
             document.removeEventListener('keydown', handleKeyDown);
             document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, [showModelsDropdown, showNpcsDropdown, showJinxConfigDropdown, showParamsDropdown]);
+    }, [showNpcsDropdown, showJinxConfigDropdown, showParamsDropdown]);
 
     const isJinxMode = false;
     const hasJinxContent = false;
-
-    const sortedFilteredModels = useMemo(() => {
-        const q = modelSearch.trim().toLowerCase();
-        const base = q
-            ? modelsToDisplay.filter((m: any) =>
-                m.display_name?.toLowerCase().includes(q) || m.value?.toLowerCase().includes(q) || m.provider?.toLowerCase().includes(q)
-            )
-            : modelsToDisplay;
-        return [...base].sort((a: any, b: any) => {
-            const aFav = favoriteModels.has(a.value) ? 1 : 0;
-            const bFav = favoriteModels.has(b.value) ? 1 : 0;
-            if (aFav !== bFav) return bFav - aFav;
-            return (a.display_name || a.value).localeCompare(b.display_name || b.value);
-        });
-    }, [modelsToDisplay, modelSearch, favoriteModels]);
-
-    const filteredModels = sortedFilteredModels;
 
     const filteredNPCs = useMemo(() => {
         if (!npcSearch.trim()) return availableNPCs;
@@ -789,21 +538,6 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
             j.name?.toLowerCase().includes(q) || j.group?.toLowerCase().includes(q) || j.description?.toLowerCase().includes(q)
         );
     }, [jinxesToDisplay, jinxSearch]);
-
-    useEffect(() => {
-        if (showModelsDropdown) {
-            setModelSearch('');
-            setShowAddModelPanel(false);
-            setAddModelError(null);
-            setTimeout(() => modelSearchRef.current?.focus(), 50);
-        }
-    }, [showModelsDropdown]);
-
-    useEffect(() => {
-        if (showAddModelPanel) {
-            setTimeout(() => addModelNameRef.current?.focus(), 50);
-        }
-    }, [showAddModelPanel]);
 
     useEffect(() => {
         if (showNpcsDropdown) {
@@ -1436,7 +1170,7 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                                             : 'theme-bg-secondary theme-text-secondary theme-border border theme-hover'
                                     }`}
                                     disabled={npcsLoading || !!npcsError}
-                                    onClick={() => { setShowNpcsDropdown(!showNpcsDropdown); setShowModelsDropdown(false); setShowJinxDropdown(false); }}
+                                    onClick={() => { setShowNpcsDropdown(!showNpcsDropdown); setShowJinxDropdown(false); }}
                                 >
                                     {selectedNPCs.length > 1 && (
                                         <span className="w-5 h-5 rounded bg-green-500 text-white text-[10px] flex items-center justify-center font-bold flex-shrink-0">{selectedNPCs.length}</span>
@@ -1675,284 +1409,46 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
 
                 <div className={`px-1.5 py-1 relative z-50 ${isStreaming ? 'opacity-50 pointer-events-none' : ''}`}>
                 <div className="flex items-center gap-1">
-                    <div className="relative flex-1 min-w-0" ref={modelsDropdownRef}>
-                        <button
-                            className={`w-full h-9 flex items-center justify-center gap-2 rounded-lg text-xs font-medium transition-all duration-200 ${
-                                selectedModels.length > 1
-                                    ? 'bg-gradient-to-br from-blue-500/30 to-indigo-600/30 text-blue-200 border border-blue-400/40'
-                                    : 'theme-bg-secondary theme-text-secondary theme-border border theme-hover'
-                            }`}
-                            disabled={modelsLoading || !!modelsError}
-                            onClick={() => { setShowModelsDropdown(!showModelsDropdown); setShowNpcsDropdown(false); setShowJinxDropdown(false); }}
-                        >
-                            {selectedModels.length > 1 && (
-                                <span className="w-5 h-5 rounded bg-blue-500 text-white text-[10px] flex items-center justify-center font-bold flex-shrink-0">{selectedModels.length}</span>
-                            )}
-                            <span className="truncate">
-                                {modelsLoading ? '...' : modelsError ? 'Error' :
-                                    selectedModels.length === 1 ? ((modelsToDisplay.find((m: any) => m.value === selectedModels[0])?.display_name || selectedModels[0]).split(' | ')[0]) : selectedModels.length === 0 ? 'Model' : 'Models'
-                                }
-                            </span>
-                            <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${showModelsDropdown ? 'rotate-180' : ''}`} />
-                        </button>
-                        {showModelsDropdown && !modelsLoading && !modelsError && (
-                            <div className="absolute z-[100] left-0 right-0 bottom-full mb-1 theme-bg-primary backdrop-blur-xl theme-border border rounded-lg shadow-2xl overflow-hidden w-72">
-                                <div className="px-2 py-1.5 border-b theme-border">
-                                    <input
-                                        ref={modelSearchRef}
-                                        type="text"
-                                        value={modelSearch}
-                                        onChange={(e) => setModelSearch(e.target.value)}
-                                        placeholder="Search models..."
-                                        className="w-full theme-input border theme-border rounded px-2 py-1 text-xs theme-text-primary placeholder-gray-500 focus:outline-none focus:border-blue-500/50"
-                                        onKeyDown={(e) => e.stopPropagation()}
-                                    />
-                                </div>
-                                <div className="px-2 py-1 border-b theme-border flex items-center justify-between">
-                                    <button
-                                        onClick={() => setBroadcastMode(!broadcastMode)}
-                                        className={`text-[9px] px-1.5 py-0.5 rounded ${broadcastMode ? 'bg-purple-500/30 text-purple-300' : 'bg-white/5 text-gray-500 hover:text-gray-300'}`}
-                                    >
-                                        {broadcastMode ? '● Multi' : '○ Single'}
-                                    </button>
-                                    <div className="flex gap-2">
-                                        {broadcastMode && <button onClick={() => setSelectedModels(filteredModels.map((m: any) => m.value))} className="text-[9px] text-blue-400 hover:text-blue-300">All</button>}
-                                        <button onClick={() => setSelectedModels(currentModel ? [currentModel] : [])} className="text-[9px] text-gray-400 hover:text-gray-300">Reset</button>
-                                        <button onClick={() => toggleFavoriteModel(currentModel)} className={`${favoriteModels.has(currentModel) ? 'text-yellow-400' : 'text-gray-500 hover:text-yellow-400'}`}><Star size={10} /></button>
-                                        <button onClick={() => setShowAllModels(!showAllModels)} className={`${!showAllModels && favoriteModels.size > 0 ? 'text-blue-400' : 'text-gray-500'}`}><ListFilter size={10} /></button>
-                                    </div>
-                                </div>
-                                <div className="max-h-64 overflow-y-auto p-1">
-                                    {filteredModels.map((m: any, idx: number) => {
-                                        const checked = selectedModels.includes(m.value);
-                                        return (
-                                            <div key={`${m.value}-${idx}`} className={`px-2 py-1.5 text-xs rounded cursor-pointer flex items-center gap-2 transition-all ${checked ? 'bg-blue-500/20 text-blue-200' : 'hover:bg-white/5'}`}
-                                                onClick={() => {
-                                                    if (broadcastMode) {
-
-                                                        setSelectedModels(prev => prev.includes(m.value) ? (prev.length === 1 ? prev : prev.filter(x => x !== m.value)) : [...prev, m.value]);
-                                                    } else {
-
-                                                        setSelectedModels([m.value]);
-                                                    }
-                                                    if (!checked) { setCurrentModel(m.value); if (m.provider) setCurrentProvider(m.provider); }
-                                                }}>
-                                                <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0 ${checked ? 'bg-blue-500 border-blue-500' : 'border-gray-600'}`}>
-                                                    {checked && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                                                </div>
-                                                <span className="truncate flex-1">{m.display_name}</span>
-                                                {m.provider && <span className="text-[9px] text-gray-600 flex-shrink-0">{m.provider}</span>}
-                                                {favoriteModels.has(m.value) && <Star size={9} className="text-yellow-400 flex-shrink-0" />}
-                                            </div>
-                                        );
-                                    })}
-                                    {filteredModels.length === 0 && !showAddModelPanel && (
-                                        <div className="px-2 py-3 text-xs text-gray-500 text-center">No models found</div>
-                                    )}
-                                </div>
-                                <div className="border-t theme-border p-2 space-y-2">
-                                    {!showAddModelPanel ? (
-                                        <button
-                                            onClick={() => setShowAddModelPanel(true)}
-                                            disabled={!currentNpcTeamPath}
-                                            className="w-full flex items-center justify-center gap-1 text-[10px] px-2 py-1 rounded bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white transition-colors"
-                                            title={currentNpcTeamPath ? `Add a model to ${currentNpcTeamKey === 'project' ? 'project team' : currentNpcTeamKey} .ctx` : 'Select an NPC first'}
-                                        >
-                                            <Plus size={12} /> Add Model to Team
-                                        </button>
-                                    ) : (
-                                        <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-[10px] font-medium text-blue-300">Add model to team .ctx</span>
-                                                <button onClick={() => { setShowAddModelPanel(false); setAddModelError(null); }} className="text-gray-500 hover:text-gray-300"><X size={12} /></button>
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-1.5">
-                                                <input
-                                                    ref={addModelNameRef}
-                                                    type="text"
-                                                    value={addModelName}
-                                                    onChange={e => setAddModelName(e.target.value)}
-                                                    placeholder="Model name"
-                                                    className="theme-input text-xs px-2 py-1 rounded"
-                                                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSaveNewModel(); } }}
-                                                />
-                                                <input
-                                                    type="text"
-                                                    value={addModelProvider}
-                                                    onChange={e => setAddModelProvider(e.target.value)}
-                                                    placeholder="Provider name"
-                                                    className="theme-input text-xs px-2 py-1 rounded"
-                                                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSaveNewModel(); } }}
-                                                />
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-1.5">
-                                                <input
-                                                    type="text"
-                                                    value={addModelProviderType}
-                                                    onChange={e => setAddModelProviderType(e.target.value)}
-                                                    placeholder="Provider type (optional)"
-                                                    className="theme-input text-xs px-2 py-1 rounded"
-                                                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSaveNewModel(); } }}
-                                                />
-                                                <input
-                                                    type="text"
-                                                    value={addModelApiUrl}
-                                                    onChange={e => setAddModelApiUrl(e.target.value)}
-                                                    placeholder="API URL (optional)"
-                                                    className="theme-input text-xs px-2 py-1 rounded"
-                                                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSaveNewModel(); } }}
-                                                />
-                                            </div>
-                                            <input
-                                                type="password"
-                                                value={addModelApiKey}
-                                                onChange={e => setAddModelApiKey(e.target.value)}
-                                                placeholder="API Key (optional)"
-                                                className="w-full theme-input text-xs px-2 py-1 rounded"
-                                                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSaveNewModel(); } }}
-                                            />
-                                            {providerModelSelector ? (
-                                                <div className="space-y-2">
-                                                    <div className="flex items-center justify-between">
-                                                        <span className="text-[10px] font-medium text-blue-300">
-                                                            {providerModelSelector.loading ? 'Loading models...' : `Select models for ${providerModelSelector.provider?.name || providerModelSelector.provider?.displayName || providerModelSelector.provider?.provider}`}
-                                                        </span>
-                                                        <button onClick={() => setProviderModelSelector(null)} className="text-gray-500 hover:text-gray-300"><X size={12} /></button>
-                                                    </div>
-                                                    {providerModelSelector.loading ? (
-                                                        <div className="text-[10px] text-gray-400">Loading... (uses .ctx models as fallback)</div>
-                                                    ) : (
-                                                        <>
-                                                            <div className="flex items-center gap-2 text-[10px] text-gray-400">
-                                                                <button
-                                                                    onClick={() => setProviderModelSelector(prev => prev ? { ...prev, selected: new Set(prev.models) } : null)}
-                                                                    className="text-blue-400 hover:text-blue-300"
-                                                                >All</button>
-                                                                <button
-                                                                    onClick={() => setProviderModelSelector(prev => prev ? { ...prev, selected: new Set() } : null)}
-                                                                    className="text-blue-400 hover:text-blue-300"
-                                                                >None</button>
-                                                            </div>
-                                                            <div className="max-h-40 overflow-y-auto space-y-1 p-1 border theme-border rounded">
-                                                                {providerModelSelector.models.map((m: string) => {
-                                                                    const checked = providerModelSelector.selected.has(m);
-                                                                    return (
-                                                                        <label key={m} className={`flex items-center gap-2 px-2 py-1 text-[10px] rounded cursor-pointer ${checked ? 'bg-blue-500/20 text-blue-200' : 'hover:bg-white/5'}`}>
-                                                                            <input
-                                                                                type="checkbox"
-                                                                                checked={checked}
-                                                                                onChange={() => setProviderModelSelector(prev => {
-                                                                                    if (!prev) return null;
-                                                                                    const next = new Set(prev.selected);
-                                                                                    if (next.has(m)) next.delete(m); else next.add(m);
-                                                                                    return { ...prev, selected: next };
-                                                                                })}
-                                                                                className="w-3.5 h-3.5 accent-blue-500"
-                                                                            />
-                                                                            <span className="truncate">{m}</span>
-                                                                        </label>
-                                                                    );
-                                                                })}
-                                                            </div>
-                                                            {providerModelSelector.error && <div className="text-[10px] text-red-400">{providerModelSelector.error}</div>}
-                                                            <button
-                                                                onClick={handleSaveSelectedProviderModels}
-                                                                disabled={addModelSaving || providerModelSelector.selected.size === 0}
-                                                                className="w-full text-[10px] px-2 py-1 rounded bg-green-600 hover:bg-green-500 disabled:bg-gray-700 text-white transition-colors"
-                                                            >
-                                                                {addModelSaving ? 'Saving...' : `Add ${providerModelSelector.selected.size} model(s) to team .ctx`}
-                                                            </button>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <div className="space-y-1">
-                                                    {teamCtxProviders.length > 0 && (
-                                                        <div className="flex flex-wrap gap-1">
-                                                            {teamCtxProviders.map((prov: any, idx: number) => {
-                                                                const providerName = prov.name || prov.displayName || prov.provider || `Provider ${idx + 1}`;
-                                                                return (
-                                                                    <button
-                                                                        key={`ctx-${providerName}-${idx}`}
-                                                                        onClick={() => openProviderModelSelector(prov)}
-                                                                        disabled={addModelSaving}
-                                                                        className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-blue-300 hover:bg-blue-500/20 transition-colors disabled:opacity-50"
-                                                                    >
-                                                                        + {providerName}
-                                                                    </button>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    )}
-                                                    {extraDetectedProviders.length > 0 && (
-                                                        <div className="space-y-1">
-                                                            <div className="text-[10px] text-gray-400">Detected API keys in env — click to add to .ctx:</div>
-                                                            <div className="flex flex-wrap gap-1">
-                                                                {extraDetectedProviders.map((prov: any, idx: number) => {
-                                                                    const providerName = prov.displayName || prov.name || prov.provider || `Provider ${idx + 1}`;
-                                                                    return (
-                                                                        <button
-                                                                            key={`env-${providerName}-${idx}`}
-                                                                            onClick={() => openProviderModelSelector(prov)}
-                                                                            disabled={addModelSaving}
-                                                                            className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-emerald-300 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
-                                                                        >
-                                                                            + {providerName}
-                                                                        </button>
-                                                                    );
-                                                                })}
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                    {detectedProvidersLoading && (
-                                                        <div className="text-[10px] text-gray-400">Scanning env for API keys…</div>
-                                                    )}
-                                                    <div className="space-y-1 pt-1 border-t theme-border">
-                                                        <div className="text-[10px] text-gray-400">Scan local providers:</div>
-                                                        <div className="flex flex-wrap gap-1">
-                                                            {[
-                                                                { key: 'ollama', label: 'Ollama' },
-                                                                { key: 'lmstudio', label: 'LM Studio' },
-                                                                { key: 'llamacpp', label: 'llama.cpp' },
-                                                                { key: 'gguf', label: 'GGUF' },
-                                                            ].map((lp) => (
-                                                                <button
-                                                                    key={`local-${lp.key}`}
-                                                                    onClick={() => openProviderModelSelector({ name: lp.key, provider: lp.key, displayName: lp.label })}
-                                                                    disabled={addModelSaving}
-                                                                    className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-orange-300 hover:bg-orange-500/20 transition-colors disabled:opacity-50"
-                                                                >
-                                                                    + {lp.label}
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                    {teamCtxProviders.length === 0 && extraDetectedProviders.length === 0 && !detectedProvidersLoading && (
-                                                        <div className="text-[10px] text-gray-400">No providers found in team .ctx or env. Add one manually below.</div>
-                                                    )}
-                                                </div>
-                                            )}
-                                            {addModelError && (
-                                                <div className="text-[10px] text-red-400">{addModelError}</div>
-                                            )}
-                                            <button
-                                                onClick={handleSaveNewModel}
-                                                disabled={addModelSaving || !addModelName.trim() || !addModelProvider.trim()}
-                                                className="w-full text-[10px] px-2 py-1 rounded bg-green-600 hover:bg-green-500 disabled:bg-gray-700 text-white transition-colors"
-                                            >
-                                                {addModelSaving ? 'Saving...' : `Save to ${currentNpcTeamKey === 'project' ? 'project' : currentNpcTeamKey} .ctx`}
-                                            </button>
-                                        </div>
-                                    )}
+                    <ModelSelector
+                        availableModels={modelsToDisplay}
+                        multiSelect
+                        selectedModels={selectedModels}
+                        onSelectModels={(next) => {
+                            setSelectedModels(next);
+                            if (next.length === 1) {
+                                setCurrentModel(next[0]);
+                                const m = modelsToDisplay.find((x: any) => x.value === next[0]);
+                                if (m?.provider) setCurrentProvider(m.provider);
+                            }
+                        }}
+                        loading={modelsLoading}
+                        error={modelsError}
+                        teamPathForCtx={currentNpcTeamPath}
+                        onModelsChanged={() => {}}
+                        placement="top"
+                        className="w-full h-9 justify-center text-xs px-2"
+                        toolbar={(
+                            <div className="flex items-center justify-between">
+                                <button
+                                    onClick={() => setBroadcastMode(!broadcastMode)}
+                                    className={`text-[9px] px-1.5 py-0.5 rounded ${broadcastMode ? 'bg-purple-500/30 text-purple-300' : 'bg-white/5 text-gray-500 hover:text-gray-300'}`}
+                                >
+                                    {broadcastMode ? '● Multi' : '○ Single'}
+                                </button>
+                                <div className="flex gap-2">
+                                    {broadcastMode && <button onClick={() => setSelectedModels(modelsToDisplay.map((m: any) => m.value))} className="text-[9px] text-blue-400 hover:text-blue-300">All</button>}
+                                    <button onClick={() => setSelectedModels(currentModel ? [currentModel] : [])} className="text-[9px] text-gray-400 hover:text-gray-300">Reset</button>
+                                    <button onClick={() => toggleFavoriteModel(currentModel)} className={`${favoriteModels.has(currentModel) ? 'text-yellow-400' : 'text-gray-500 hover:text-yellow-400'}`}><Star size={10} /></button>
+                                    <button onClick={() => setShowAllModels(!showAllModels)} className={`${!showAllModels && favoriteModels.size > 0 ? 'text-blue-400' : 'text-gray-500'}`}><ListFilter size={10} /></button>
                                 </div>
                             </div>
                         )}
-                    </div>
+                    />
 
                     <div className="relative flex-1 min-w-0" ref={paramsDropdownRef}>
                         <button
                             className="w-full h-8 flex items-center justify-center gap-1 rounded-lg text-xs font-medium transition-all duration-200 theme-bg-tertiary theme-text-secondary border theme-border hover:opacity-80 px-2"
-                            onClick={() => { setShowParamsDropdown(!showParamsDropdown); setShowModelsDropdown(false); }}
+                            onClick={() => { setShowParamsDropdown(!showParamsDropdown); }}
                         >
                             <span className="theme-text-secondary">Params</span>
                             <ChevronDown size={8} className={`theme-text-muted transition-transform ${showParamsDropdown ? 'rotate-180' : ''}`} />

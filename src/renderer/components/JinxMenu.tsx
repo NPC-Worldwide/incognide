@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { BACKEND_URL } from '../config';
+import yaml from 'js-yaml';
 import {
-    Wrench, Loader, ChevronRight, X, Save, Plus, Trash2,
+    Wrench, Loader, ChevronDown, ChevronRight, X, Save, Plus, Trash2,
     FolderTree, Play, History, CheckCircle, XCircle, Tag
 } from 'lucide-react';
 import AutosizeTextarea from './AutosizeTextarea';
@@ -13,6 +15,10 @@ const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, teamKey = un
     const [selectedJinx, setSelectedJinx] = useState(null);
     const [editedJinx, setEditedJinx] = useState(null);
     const [expandedFolders, setExpandedFolders] = useState(new Set());
+    const [dropdownOpen, setDropdownOpen] = useState(false);
+    const [dropdownSearch, setDropdownSearch] = useState('');
+    const [dropdownExpandedFolders, setDropdownExpandedFolders] = useState<Set<string>>(new Set());
+    const dropdownButtonRef = useRef<HTMLButtonElement | null>(null);
     const [testInputs, setTestInputs] = useState({});
     const [testOutput, setTestOutput] = useState(null);
     const [testRunning, setTestRunning] = useState(false);
@@ -159,10 +165,26 @@ const JinxMenu = ({ isOpen, onClose, currentPath, embedded = false, teamKey = un
 const handleJinxSelect = async (jinx) => {
     setSelectedJinx(jinx);
 
+    let fullJinx = jinx;
+    if (jinx.source_path) {
+        try {
+            const result = await (window as any).api.readFileContent(jinx.source_path);
+            const text = typeof result === 'string' ? result : result?.content;
+            if (text) {
+                const parsed = yaml.load(text);
+                if (parsed && parsed.jinx_name) {
+                    fullJinx = { ...jinx, ...parsed };
+                }
+            }
+        } catch (e) {
+            console.error('[JinxMenu] Failed to load full jinx:', e);
+        }
+    }
+
     const normalizedInputs = [];
     const inputs = {};
 
-    for (const inp of (jinx.inputs || [])) {
+    for (const inp of (fullJinx.inputs || [])) {
         if (typeof inp === 'string') {
             normalizedInputs.push(inp);
             inputs[inp] = '';
@@ -175,7 +197,7 @@ const handleJinxSelect = async (jinx) => {
         }
     }
 
-    setEditedJinx({ ...jinx, inputs: normalizedInputs });
+    setEditedJinx({ ...fullJinx, inputs: normalizedInputs });
     setTestOutput(null);
     setTestInputs(inputs);
 
@@ -338,42 +360,48 @@ const labelExecution = async (messageId, label) => {
 
     const content = (
         <>
-            <div className="flex flex-1 min-h-0 border theme-border rounded-lg overflow-hidden">
-                    <div className="w-1/3 border-r theme-border
-                        flex flex-col min-h-0">
-                        <div className="p-2 border-b theme-border flex-shrink-0">
-                            <button
-                                onClick={handleNewJinx}
-                                className="theme-button-primary w-full p-2
-                                    rounded text-sm flex items-center
-                                    justify-center gap-2"
-                            >
-                                <Plus size={16} /> New Jinx
-                            </button>
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-2">
-                            {loading ? (
-                                <div className="flex items-center
-                                    justify-center p-8">
-                                    <Loader className="animate-spin
-                                        text-blue-400" />
-                                </div>
-                            ) : error ? (
-                                <div className="text-red-400 p-4 text-center">
-                                    {error}
-                                </div>
-                            ) : jinxes.length > 0 ? (
-                                renderTree(tree)
-                            ) : (
-                                <div className="theme-text-secondary text-sm
-                                    p-4 text-center">
-                                    No jinxes found.
-                                </div>
-                            )}
-                        </div>
+            <div className="flex flex-1 min-h-0 flex-col">
+                    <div className="p-2 border-b theme-border flex-shrink-0 flex items-center gap-2">
+                        <button
+                            ref={dropdownButtonRef}
+                            onClick={() => setDropdownOpen(!dropdownOpen)}
+                            disabled={loading || jinxes.length === 0}
+                            className="flex items-center gap-2 px-3 py-1.5 rounded text-sm theme-bg-secondary theme-text-primary theme-border border hover:bg-white/5 disabled:opacity-40 min-w-[200px] w-auto max-w-[25vw]"
+                        >
+                            <Wrench size={14} className="text-blue-400" />
+                            <span className="flex-1 truncate text-left">
+                                {selectedJinx ? (selectedJinx.jinx_name || selectedJinx.name) : 'Select a Jinx'}
+                            </span>
+                            <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${dropdownOpen ? 'rotate-180' : ''}`} />
+                        </button>
+                        {dropdownOpen && createPortal(
+                            <JinxSelectorDropdown
+                                buttonRef={dropdownButtonRef}
+                                jinxes={jinxes}
+                                selectedJinx={selectedJinx}
+                                dropdownSearch={dropdownSearch}
+                                setDropdownSearch={setDropdownSearch}
+                                dropdownExpandedFolders={dropdownExpandedFolders}
+                                setDropdownExpandedFolders={setDropdownExpandedFolders}
+                                onSelect={(jinx) => {
+                                    handleJinxSelect(jinx);
+                                    setDropdownOpen(false);
+                                }}
+                                onClose={() => setDropdownOpen(false)}
+                            />,
+                            document.body
+                        )}
+                        <button
+                            onClick={handleNewJinx}
+                            className="theme-button-primary px-3 py-1.5
+                                rounded text-sm flex items-center
+                                justify-center gap-2"
+                        >
+                            <Plus size={16} /> New Jinx
+                        </button>
                     </div>
 
-                    <div className="w-2/3 flex flex-col min-h-0">
+                    <div className="flex-1 flex flex-col min-h-0">
                         {selectedJinx && editedJinx ? (
                             <div className="flex-1 overflow-y-auto p-6">
                                 <div className="space-y-6">
@@ -687,6 +715,122 @@ const labelExecution = async (messageId, label) => {
                 <main className="flex-1 p-4 overflow-hidden">
                     {content}
                 </main>
+            </div>
+        </div>
+    );
+};
+
+const JinxSelectorDropdown = ({
+    buttonRef,
+    jinxes,
+    selectedJinx,
+    dropdownSearch,
+    setDropdownSearch,
+    dropdownExpandedFolders,
+    setDropdownExpandedFolders,
+    onSelect,
+    onClose,
+}: any) => {
+    const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+    useEffect(() => {
+        const update = () => {
+            const rect = buttonRef.current?.getBoundingClientRect();
+            if (rect) {
+                setPos({ top: rect.bottom + 4, left: rect.left });
+            }
+        };
+        update();
+        window.addEventListener('resize', update);
+        return () => window.removeEventListener('resize', update);
+    }, [buttonRef]);
+
+    useEffect(() => {
+        const onClick = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            if (!buttonRef.current?.contains(target) && !document.getElementById('jinx-selector-dropdown-portal')?.contains(target)) {
+                onClose();
+            }
+        };
+        document.addEventListener('mousedown', onClick);
+        return () => document.removeEventListener('mousedown', onClick);
+    }, [buttonRef, onClose]);
+
+    if (!pos) return null;
+
+    const filtered = jinxes.filter((j: any) => {
+        const n = j.jinx_name || j.name;
+        if (!dropdownSearch) return true;
+        return n.toLowerCase().includes(dropdownSearch.toLowerCase());
+    });
+
+    return (
+        <div
+            id="jinx-selector-dropdown-portal"
+            className="fixed z-[100] theme-bg-primary border theme-border rounded-lg shadow-2xl overflow-hidden w-64"
+            style={{ top: pos.top, left: pos.left }}
+        >
+            <div className="px-2 py-1.5 border-b theme-border">
+                <input
+                    type="text"
+                    value={dropdownSearch}
+                    onChange={(e) => setDropdownSearch(e.target.value)}
+                    placeholder="Search jinxes..."
+                    className="w-full theme-input border theme-border rounded px-2 py-1 text-xs theme-text-primary placeholder-gray-500 focus:outline-none focus:border-blue-500/50"
+                    onKeyDown={(e) => e.stopPropagation()}
+                />
+            </div>
+            <div className="max-h-72 overflow-y-auto p-1">
+                {filtered.length === 0 ? (
+                    <div className="px-2 py-3 text-xs text-gray-500 text-center">No jinxes found</div>
+                ) : (
+                    (() => {
+                        const byFolder: Record<string, any[]> = {};
+                        for (const j of filtered.sort((a: any, b: any) => (a.jinx_name || a.name).localeCompare(b.jinx_name || b.name))) {
+                            const n = j.jinx_name || j.name;
+                            const parts = (j.path || n).split('/');
+                            const folder = parts.length > 1 ? parts.slice(0, -1).join('/') : '(root)';
+                            if (!byFolder[folder]) byFolder[folder] = [];
+                            byFolder[folder].push(j);
+                        }
+                        const items: React.ReactNode[] = [];
+                        const folders = Object.keys(byFolder).sort();
+                        for (const folder of folders) {
+                            const isExpanded = dropdownExpandedFolders.has(folder);
+                            items.push(
+                                <button
+                                    key={`folder-${folder}`}
+                                    onClick={() => setDropdownExpandedFolders((prev: Set<string>) => {
+                                        const next = new Set(prev);
+                                        if (next.has(folder)) next.delete(folder); else next.add(folder);
+                                        return next;
+                                    })}
+                                    className="flex items-center gap-1 w-full px-2 py-1 text-xs font-semibold text-gray-400 hover:bg-white/5 text-left"
+                                >
+                                    <ChevronRight size={10} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                    {folder}
+                                </button>
+                            );
+                            if (isExpanded) {
+                                for (const j of byFolder[folder]) {
+                                    const n = j.jinx_name || j.name;
+                                    const isSelected = (selectedJinx?.jinx_name || selectedJinx?.name) === n;
+                                    items.push(
+                                        <button
+                                            key={j.path || n}
+                                            onClick={() => onSelect(j)}
+                                            className={`flex items-center gap-2 w-full pl-6 pr-2 py-1 text-xs text-left ${isSelected ? 'bg-blue-600/50' : 'hover:bg-white/5'}`}
+                                        >
+                                            <Wrench size={12} className="text-gray-400" />
+                                            <span className="truncate flex-1">{n}</span>
+                                        </button>
+                                    );
+                                }
+                            }
+                        }
+                        return items;
+                    })()
+                )}
             </div>
         </div>
     );

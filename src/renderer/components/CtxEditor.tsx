@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FileJson, X, Save, Plus, Trash2, Search, ChevronDown, Server, Database, RefreshCw } from 'lucide-react';
 import yaml from 'js-yaml';
 import AutosizeTextarea from './AutosizeTextarea';
+import ModelSelector from './ModelSelector';
 
 function preprocessJinja(content: string): string {
     return content.replace(
@@ -61,6 +62,8 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false }) => {
     const [mcpDropdownOpen, setMcpDropdownOpen] = useState(false);
     const [mcpDropdownSearch, setMcpDropdownSearch] = useState('');
     const [providerScan, setProviderScan] = useState<Record<number, { loading: boolean; error?: string; models?: string[]; open: boolean }>>({});
+    const [availableModels, setAvailableModels] = useState<any[]>([]);
+    const [modelsLoading, setModelsLoading] = useState(false);
 
     const findCtxFile = async (dirPath: string) => {
         try {
@@ -78,8 +81,23 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false }) => {
         if (isOpen && teamPath) {
             loadContext();
             loadJinxes();
+            loadModels();
         }
     }, [isOpen, teamPath]);
+
+    const loadModels = async () => {
+        if (!teamPath) return;
+        setModelsLoading(true);
+        try {
+            const response = await (window as any).api.getAvailableModels(teamPath);
+            const models = Array.isArray(response) ? response : response?.models || [];
+            setAvailableModels(models);
+        } catch {
+            setAvailableModels([]);
+        } finally {
+            setModelsLoading(false);
+        }
+    };
 
     useEffect(() => {
         const handleKeyDown = (event) => {
@@ -698,40 +716,29 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false }) => {
                     </div>
                     <div>
                         <label className="block text-sm theme-text-secondary mb-1">Default Model</label>
-                        <input
-                            type="text"
-                            list="model-suggestions"
-                            value={ctx.model || ''}
-                            onChange={(e) => handleFieldChange('model', e.target.value)}
-                            className="w-full theme-input text-sm"
-                            placeholder=""
+                        <ModelSelector
+                            availableModels={availableModels}
+                            selectedModel={ctx.model || null}
+                            onSelect={(m) => {
+                                handleFieldChange('model', m.value);
+                                if (m.provider) handleFieldChange('provider', m.provider);
+                                if (m.base_url) handleFieldChange('api_url', m.base_url);
+                            }}
+                            loading={modelsLoading}
+                            placeholder="Select default model"
+                            teamPathForCtx={teamPath}
+                            onModelsChanged={loadModels}
                         />
-                        <datalist id="model-suggestions">
-                            {Array.from(new Set([
-                                ...getProviders().flatMap(p => [...(p.models || []), p.model]),
-                                'llama3', 'llama3.1', 'llama3.2', 'gpt-4o', 'gpt-4o-mini',
-                                'claude-3-5-sonnet', 'claude-sonnet-4', 'gemini-2.5-pro',
-                                'gemini-2.5-flash', 'nomic-text-embed'
-                            ].filter(Boolean))).map(m => <option key={m} value={m} />)}
-                        </datalist>
                     </div>
                     <div>
                         <label className="block text-sm theme-text-secondary mb-1">Default Provider</label>
                         <input
                             type="text"
-                            list="provider-suggestions"
                             value={ctx.provider || ''}
                             onChange={(e) => handleFieldChange('provider', e.target.value)}
                             className="w-full theme-input text-sm"
                             placeholder=""
                         />
-                        <datalist id="provider-suggestions">
-                            {Array.from(new Set([
-                                ...getProviders().map(p => p.provider_type),
-                                'ollama', 'openai', 'anthropic', 'gemini', 'lmstudio',
-                                'llamacpp', 'transformers', 'lora', 'airllm', 'enpisi', 'deepseek'
-                            ].filter(Boolean))).map(p => <option key={p} value={p} />)}
-                        </datalist>
                     </div>
                     <div>
                         <label className="block text-sm theme-text-secondary mb-1">API URL</label>

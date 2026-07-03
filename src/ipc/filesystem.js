@@ -15,33 +15,105 @@ function register(ctx) {
     return filepath;
   };
 
-  const fileWatchers = new Map();
+  const dirWatchers = new Map();
+  const watchedFiles = new Map();
+  const fileWatchMtimes = new Map();
+  const fileWatchDebounce = new Map();
 
-  ipcMain.handle('file:watch', async (event, filePath) => {
-    if (!filePath || fileWatchers.has(filePath)) return;
+  const emitFileChanged = (filePath) => {
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('file:changed', filePath);
+    }
+  };
+
+  const checkWatchedFile = async (filePath) => {
     try {
-      const watcher = fs.watch(filePath, { persistent: false }, (eventType) => {
-        if (eventType === 'change') {
-          const win = getMainWindow();
-          if (win && !win.isDestroyed()) {
-            win.webContents.send('file:changed', filePath);
+      const stats = await fsPromises.stat(filePath).catch(() => null);
+      if (!stats) {
+        emitFileChanged(filePath);
+        return;
+      }
+      const lastMtime = fileWatchMtimes.get(filePath);
+      if (lastMtime !== undefined && stats.mtimeMs === lastMtime) return;
+      fileWatchMtimes.set(filePath, stats.mtimeMs);
+      if (fileWatchDebounce.has(filePath)) {
+        clearTimeout(fileWatchDebounce.get(filePath));
+      }
+      const timer = setTimeout(() => {
+        fileWatchDebounce.delete(filePath);
+        emitFileChanged(filePath);
+      }, 150);
+      fileWatchDebounce.set(filePath, timer);
+    } catch (e) {
+      console.error('[FILE-WATCH] Error checking changed file:', filePath, e.message);
+    }
+  };
+
+  const ensureDirWatcher = (dirPath) => {
+    if (dirWatchers.has(dirPath)) return;
+    try {
+      const watcher = fs.watch(dirPath, { persistent: false }, (eventType, filename) => {
+        if (!filename) {
+          for (const filePath of watchedFiles.keys()) {
+            if (path.dirname(filePath) === dirPath) checkWatchedFile(filePath);
           }
+          return;
+        }
+        for (const filePath of watchedFiles.keys()) {
+          if (path.basename(filePath) === filename) checkWatchedFile(filePath);
         }
       });
       watcher.on('error', () => {
-        fileWatchers.delete(filePath);
+        dirWatchers.delete(dirPath);
+        for (const filePath of Array.from(watchedFiles.keys()).filter(fp => path.dirname(fp) === dirPath)) {
+          watchedFiles.delete(filePath);
+          fileWatchMtimes.delete(filePath);
+          const debounce = fileWatchDebounce.get(filePath);
+          if (debounce) {
+            clearTimeout(debounce);
+            fileWatchDebounce.delete(filePath);
+          }
+        }
       });
-      fileWatchers.set(filePath, watcher);
+      dirWatchers.set(dirPath, watcher);
+    } catch (e) {
+      console.error('[FILE-WATCH] Failed to watch directory:', dirPath, e.message);
+    }
+  };
+
+  ipcMain.handle('file:watch', async (event, filePath) => {
+    if (!filePath || watchedFiles.has(filePath)) return;
+    try {
+      const dirPath = path.dirname(filePath);
+      const initialStats = await fsPromises.stat(filePath).catch(() => null);
+      if (initialStats) {
+        fileWatchMtimes.set(filePath, initialStats.mtimeMs);
+      }
+      watchedFiles.set(filePath, dirPath);
+      ensureDirWatcher(dirPath);
     } catch (e) {
       console.error('[FILE-WATCH] Failed to watch:', filePath, e.message);
     }
   });
 
   ipcMain.handle('file:unwatch', async (event, filePath) => {
-    const watcher = fileWatchers.get(filePath);
-    if (watcher) {
-      watcher.close();
-      fileWatchers.delete(filePath);
+    if (!watchedFiles.has(filePath)) return;
+    watchedFiles.delete(filePath);
+    fileWatchMtimes.delete(filePath);
+    const debounce = fileWatchDebounce.get(filePath);
+    if (debounce) {
+      clearTimeout(debounce);
+      fileWatchDebounce.delete(filePath);
+    }
+    const dirPath = path.dirname(filePath);
+    const stillWatchingDir = Array.from(watchedFiles.values()).some(d => d === dirPath);
+    if (!stillWatchingDir) {
+      const watcher = dirWatchers.get(dirPath);
+      if (watcher) {
+        watcher.close();
+        dirWatchers.delete(dirPath);
+      }
     }
   });
 
