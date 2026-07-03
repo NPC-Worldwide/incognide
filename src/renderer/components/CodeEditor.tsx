@@ -1041,12 +1041,18 @@ const CodeEditorPane = ({
                 if (diskContent === diskContentRef.current) return;
                 if (diskContent === pd.fileContent) {
                     updateDiskState(diskContent, newMtime);
-                    setDiskChangeContent(null);
                     return;
                 }
-                pendingDiskConflictRef.current = true;
-                setDiskChangeContent(diskContent);
+                if (pd.fileChanged) {
+                    pendingDiskConflictRef.current = true;
+                    setDiskChangeContent(diskContent);
+                    return;
+                }
+                pd.fileContent = diskContent;
+                pd.fileChanged = false;
                 updateDiskState(diskContent, newMtime);
+                setDiskChangeContent(null);
+                setRootLayoutNode(p => ({ ...p }));
             } catch (e) {
                 console.error('[FILE-WATCH] Error reloading:', e);
             }
