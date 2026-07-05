@@ -5,9 +5,9 @@ FROM node:20-slim AS frontend-builder
 
 WORKDIR /app
 
-COPY package.json ./
+COPY package.json package-lock.json ./
 
-RUN npm install --ignore-scripts \
+RUN npm ci --ignore-scripts \
     && npm cache clean --force
 
 COPY index.html vite.config.js tailwind.config.js tsconfig.json tsconfig.node.json ./
@@ -53,9 +53,9 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-COPY package.json ./
+COPY package.json package-lock.json ./
 
-RUN npm install --omit=dev --ignore-scripts \
+RUN npm ci --omit=dev --ignore-scripts \
     && npm cache clean --force
 
 # Rebuild native modules for Linux container
