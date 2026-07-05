@@ -3,59 +3,71 @@ import { createPortal } from 'react-dom';
 
 export const PredictiveTextOverlay = ({
     predictionSuggestion,
-    predictionTargetElement,
+    predictionTarget,
     isPredictiveTextEnabled,
-    setPredictionSuggestion,
-    setPredictionTargetElement
+    onAcceptSuggestion,
+    onDismissSuggestion,
 }) => {
     const overlayRef = useRef(null);
     const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number } | null>(null);
-    const shouldShow = predictionSuggestion && predictionTargetElement && isPredictiveTextEnabled && cursorPosition;
+    const shouldShow = predictionSuggestion && predictionTarget && isPredictiveTextEnabled && cursorPosition;
 
     useEffect(() => {
-        if (!predictionTargetElement) {
+        if (!predictionTarget) {
             setCursorPosition(null);
             return;
         }
 
+        const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max));
+
         const updateCursorPosition = () => {
             let pos: { x: number; y: number } | null = null;
 
-            if (predictionTargetElement instanceof HTMLTextAreaElement || predictionTargetElement instanceof HTMLInputElement) {
-
-                const rect = predictionTargetElement.getBoundingClientRect();
-
+            if (predictionTarget.kind === 'webview') {
+                const { webviewElement, caretRect } = predictionTarget;
+                const webviewRect = webviewElement?.getBoundingClientRect?.() || { left: 0, top: 0 };
                 pos = {
-                    x: rect.left + 10,
-                    y: Math.min(rect.bottom, window.innerHeight - 250)
+                    x: webviewRect.left + (caretRect?.right ?? 0),
+                    y: Math.min(
+                        webviewRect.top + (caretRect?.bottom ?? 0) + 5,
+                        window.innerHeight - 250
+                    ),
                 };
-            } else if (predictionTargetElement.isContentEditable) {
-
-                const selection = window.getSelection();
-                if (selection && selection.rangeCount > 0) {
-                    const range = selection.getRangeAt(0);
-                    const rects = range.getClientRects();
-                    if (rects.length > 0) {
-                        const lastRect = rects[rects.length - 1];
-                        pos = {
-                            x: lastRect.right,
-                            y: Math.min(lastRect.bottom + 5, window.innerHeight - 250)
-                        };
-                    }
-                }
-
-                if (!pos) {
-                    const rect = predictionTargetElement.getBoundingClientRect();
+            } else if (predictionTarget.kind === 'dom') {
+                const element = predictionTarget.element;
+                if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) {
+                    const rect = element.getBoundingClientRect();
                     pos = {
                         x: rect.left + 10,
-                        y: Math.min(rect.top + 30, window.innerHeight - 250)
+                        y: Math.min(rect.bottom, window.innerHeight - 250),
                     };
+                } else if (element.isContentEditable) {
+                    const selection = window.getSelection();
+                    if (selection && selection.rangeCount > 0) {
+                        const range = selection.getRangeAt(0);
+                        const rects = range.getClientRects();
+                        if (rects.length > 0) {
+                            const lastRect = rects[rects.length - 1];
+                            pos = {
+                                x: lastRect.right,
+                                y: Math.min(lastRect.bottom + 5, window.innerHeight - 250),
+                            };
+                        }
+                    }
+
+                    if (!pos) {
+                        const rect = element.getBoundingClientRect();
+                        pos = {
+                            x: rect.left + 10,
+                            y: Math.min(rect.top + 30, window.innerHeight - 250),
+                        };
+                    }
                 }
             }
 
             if (pos) {
-                pos.x = Math.max(10, Math.min(pos.x, window.innerWidth - 320));
-                pos.y = Math.max(10, Math.min(pos.y, window.innerHeight - 100));
+                pos.x = clamp(pos.x, 10, window.innerWidth - 320);
+                pos.y = clamp(pos.y, 10, window.innerHeight - 100);
             }
 
             setCursorPosition(pos);
@@ -70,55 +82,34 @@ export const PredictiveTextOverlay = ({
             window.removeEventListener('scroll', updateCursorPosition, true);
             window.removeEventListener('resize', updateCursorPosition);
         };
-    }, [predictionTargetElement]);
+    }, [predictionTarget]);
 
     const handleAcceptSuggestion = useCallback(() => {
-        if (predictionTargetElement && predictionSuggestion) {
-            const suggestionToInsert = predictionSuggestion.trim();
+        try { (window as any).api?.logAutocomplete?.({ type: 'text', inputContext: '', suggestion: predictionSuggestion, accepted: true }); } catch {}
+        onAcceptSuggestion?.();
+    }, [predictionSuggestion, onAcceptSuggestion]);
 
-            if (predictionTargetElement instanceof HTMLTextAreaElement || predictionTargetElement instanceof HTMLInputElement) {
-                const start = predictionTargetElement.selectionStart;
-                const end = predictionTargetElement.selectionEnd;
-                const value = predictionTargetElement.value;
-
-                predictionTargetElement.value = value.substring(0, start) + suggestionToInsert + value.substring(end);
-                predictionTargetElement.selectionStart = predictionTargetElement.selectionEnd = start + suggestionToInsert.length;
-                const event = new Event('input', { bubbles: true });
-                predictionTargetElement.dispatchEvent(event);
-
-            } else if (predictionTargetElement.isContentEditable) {
-                const selection = window.getSelection();
-                if (selection.rangeCount > 0) {
-                    const range = selection.getRangeAt(0);
-                    range.deleteContents();
-                    range.insertNode(document.createTextNode(suggestionToInsert));
-                    range.setStart(range.endContainer, range.endOffset);
-                    range.collapse(true);
-                }
-            }
-            setPredictionSuggestion('');
-            setPredictionTargetElement(null);
-            try { (window as any).api?.logAutocomplete?.({ type: 'text', inputContext: '', suggestion: suggestionToInsert, accepted: true }); } catch {}
-        }
-    }, [predictionSuggestion, predictionTargetElement, setPredictionSuggestion, setPredictionTargetElement]);
+    const handleDismissSuggestion = useCallback(() => {
+        try { (window as any).api?.logAutocomplete?.({ type: 'text', inputContext: '', suggestion: predictionSuggestion, accepted: false }); } catch {}
+        onDismissSuggestion?.();
+    }, [predictionSuggestion, onDismissSuggestion]);
 
     useEffect(() => {
         if (!shouldShow) return;
 
-        const handleOverlayKeyDown = (e) => {
+        const handleOverlayKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Tab' && predictionSuggestion) {
                 e.preventDefault();
                 handleAcceptSuggestion();
             } else if (e.key === 'Escape') {
                 e.preventDefault();
-                try { (window as any).api?.logAutocomplete?.({ type: 'text', inputContext: '', suggestion: predictionSuggestion, accepted: false }); } catch {}
-                setPredictionSuggestion('');
-                setPredictionTargetElement(null);
+                handleDismissSuggestion();
             }
         };
+
         document.addEventListener('keydown', handleOverlayKeyDown);
         return () => document.removeEventListener('keydown', handleOverlayKeyDown);
-    }, [shouldShow, handleAcceptSuggestion, predictionSuggestion, setPredictionSuggestion, setPredictionTargetElement]);
+    }, [shouldShow, handleAcceptSuggestion, handleDismissSuggestion, predictionSuggestion]);
 
     const style = useMemo(() => {
         if (!cursorPosition) return {};

@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     MessageSquare, Terminal, Globe, FileText, File as FileIcon,
-    BrainCircuit, Bot, Zap, Users, Database, ChevronRight, ChevronDown,
-    GitBranch, Image, BarChart3, AlertCircle, RefreshCw, Check, Columns, Layers,
-    Power, HardDrive, Download, ScrollText, Server
+    BrainCircuit, Bot, Zap, Users, Database, ChevronDown,
+    GitBranch, Image, AlertCircle, RefreshCw, Check, Columns, Layers,
+    Power, ScrollText, Server, Sun, Moon, User, X
 } from 'lucide-react';
 import npcPythonLogo from '../../assets/npc-python.png';
+import npcLogo from '../../assets/icon.png';
 import { useAiEnabled } from './AiFeatureContext';
+import { SshConnection } from '../hooks/useRemoteConnections';
 
 interface PaneItem {
     id: string;
@@ -16,13 +18,13 @@ interface PaneItem {
 }
 
 interface StatusBarProps {
-    createDBToolPane?: () => void;
     paneItems: PaneItem[];
     setActiveContentPaneId: (id: string) => void;
     height?: number;
     onStartResize?: () => void;
     sidebarCollapsed?: boolean;
     onExpandSidebar?: () => void;
+    sidebarWidth?: number;
     topBarCollapsed?: boolean;
     onExpandTopBar?: () => void;
     appVersion?: string;
@@ -31,44 +33,76 @@ interface StatusBarProps {
     onCollapse?: () => void;
     openMode?: 'pane' | 'tab';
     onToggleOpenMode?: () => void;
-    createDataDashPane?: () => void;
-    createDiskUsagePane?: () => void;
-    onOpenDownloadManager?: () => void;
     onOpenLogsViewer?: () => void;
     createBackendPane?: () => void;
     activeConnection?: { host: string } | null;
+    sshConnections?: SshConnection[];
+    onConnectSsh?: (config: Omit<SshConnection, 'isConnected' | 'currentPath'>) => Promise<{ success: boolean; error?: string }>;
+    onDisconnectSsh?: (id: string) => Promise<void>;
     onOpenSSHDialog?: () => void;
+    searchTerm: string;
+    setSearchTerm: (term: string) => void;
+    searchScope: string;
+    setSearchScope: (scope: string) => void;
+    searchInputRef?: React.RefObject<HTMLInputElement>;
+    createSearchPane?: (query?: string, scope?: string) => void;
+    deepSearchResults: any[];
+    messageSearchResults: any[];
+    setSearchResultsModalOpen: (open: boolean) => void;
+    SEARCH_SCOPES: Record<string, string>;
+    isDarkMode?: boolean;
+    toggleTheme?: () => void;
+    onOpenAccount?: () => void;
+    onOpenNewWindow?: () => void;
 }
 
 type BackendStatus = 'ok' | 'unhealthy' | 'unreachable' | 'restarting' | 'unknown';
 
 const StatusBar: React.FC<StatusBarProps> = ({
-    createDBToolPane,
     paneItems,
     setActiveContentPaneId,
     height = 48,
     onStartResize,
     sidebarCollapsed = false,
     onExpandSidebar,
+    sidebarWidth,
     appVersion,
     updateAvailable,
     onCheckForUpdates,
     onCollapse,
     openMode = 'pane',
     onToggleOpenMode,
-    createDataDashPane,
-    createDiskUsagePane,
-    onOpenDownloadManager,
     onOpenLogsViewer,
     createBackendPane,
     activeConnection,
+    sshConnections,
+    onConnectSsh,
+    onDisconnectSsh,
     onOpenSSHDialog,
+    searchTerm,
+    setSearchTerm,
+    searchScope,
+    setSearchScope,
+    searchInputRef,
+    createSearchPane,
+    deepSearchResults,
+    messageSearchResults,
+    setSearchResultsModalOpen,
+    SEARCH_SCOPES,
+    isDarkMode,
+    toggleTheme,
+    onOpenAccount,
+    onOpenNewWindow,
 }) => {
+    const buttonGroupWidth = sidebarCollapsed ? 192 : (sidebarWidth || 192);
     const aiEnabled = useAiEnabled();
     const [checkingUpdates, setCheckingUpdates] = useState(false);
     const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
     const [showQuitPrompt, setShowQuitPrompt] = useState(false);
     const [showBackendMenu, setShowBackendMenu] = useState(false);
+    const [sshMenuOpen, setSshMenuOpen] = useState(false);
+    const [passwordPromptId, setPasswordPromptId] = useState<string | null>(null);
+    const [passwordInput, setPasswordInput] = useState('');
     const [clockMode, setClockMode] = useState<'analog' | 'digital' | 'datetime'>(() => (localStorage.getItem('incognide_clockMode') as any) || 'digital');
     const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -193,32 +227,39 @@ const StatusBar: React.FC<StatusBarProps> = ({
                 className="absolute top-0 left-0 right-0 h-1 cursor-ns-resize hover:bg-blue-500/50 transition-colors z-10"
                 onMouseDown={(e) => { e.preventDefault(); onStartResize?.(); }}
             />
-            <div className="h-full theme-bg-tertiary border-t theme-border flex items-center px-3 text-[12px] theme-text-muted gap-2">
-            {sidebarCollapsed && (
-                <button
-                    onClick={() => onExpandSidebar?.()}
-                    className="p-2 rounded transition-colors text-gray-500 dark:text-gray-400 hover:opacity-80 bg-transparent"
-                    title="Expand Sidebar"
-                >
-                    <ChevronRight size={20} />
-                </button>
-            )}
-
-            <button data-tutorial="db-tool-button" onClick={() => createDBToolPane?.()} className={`${btnClass} text-blue-600 dark:text-blue-400`} title="Database Tool">
-                <Database size={20} />
-            </button>
-
-            <button data-tutorial="downloads-button" onClick={() => onOpenDownloadManager?.()} className={`${btnClass} text-cyan-600 dark:text-cyan-400`} title="Downloads">
-                <Download size={20} />
-            </button>
-
-            <button data-tutorial="data-dash-button" onClick={() => createDataDashPane?.()} className={`${btnClass} text-green-600 dark:text-green-400`} title="Data Dashboard">
-                <BarChart3 size={20} />
-            </button>
-
-            <button data-tutorial="disk-usage-button" onClick={() => createDiskUsagePane?.()} className={`${btnClass} text-gray-500 dark:text-gray-400`} title="Disk Usage">
-                <HardDrive size={20} />
-            </button>
+            <div className="h-full theme-bg-tertiary border-t theme-border flex items-center px-3 text-[12px] theme-text-muted gap-3">
+            <div className="grid grid-cols-3 h-full -ml-3" style={{ width: buttonGroupWidth }}>
+                {toggleTheme && (
+                    <button
+                        data-tutorial="theme-toggle-button"
+                        onClick={toggleTheme}
+                        className="flex items-center justify-center h-full hover:bg-teal-500/20 transition-all bg-transparent"
+                        title="Toggle Theme"
+                    >
+                        {isDarkMode ? <Moon size={18} className="text-blue-400" /> : <Sun size={18} className="text-yellow-400" />}
+                    </button>
+                )}
+                {onOpenAccount && (
+                    <button
+                        data-tutorial="account-button"
+                        onClick={onOpenAccount}
+                        className="flex items-center justify-center h-full hover:bg-teal-500/20 transition-all bg-transparent text-gray-400 hover:text-blue-400"
+                        title="Account"
+                    >
+                        <User size={18} />
+                    </button>
+                )}
+                {onOpenNewWindow && (
+                    <button
+                        data-tutorial="new-window-button"
+                        onClick={onOpenNewWindow}
+                        className="flex items-center justify-center h-full hover:bg-teal-500/20 transition-all bg-transparent"
+                        title="New Window (Cmd/Ctrl+Shift+N)"
+                    >
+                        <img src={npcLogo} alt="Incognide" style={{ width: 18, height: 18 }} className="rounded-full" />
+                    </button>
+                )}
+            </div>
 
             <div className="flex-1" />
 
@@ -234,7 +275,6 @@ const StatusBar: React.FC<StatusBarProps> = ({
                         {pane.type === 'browser' && <Globe size={20} />}
                         {pane.type === 'pdf' && <FileText size={20} />}
                         {pane.type === 'graph-viewer' && <GitBranch size={20} />}
-                        {pane.type === 'datadash' && <BarChart3 size={20} />}
                         {pane.type === 'dbtool' && <Database size={20} />}
                         {pane.type === 'memory-manager' && <BrainCircuit size={20} />}
                         {pane.type === 'photoviewer' && <Image size={20} />}
@@ -243,7 +283,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
                         {pane.type === 'teammanagement' && <Users size={20} />}
                         {pane.type === 'diff' && <GitBranch size={20} />}
                         {pane.type === 'browsergraph' && <Globe size={20} />}
-                        {!['chat', 'editor', 'terminal', 'browser', 'pdf', 'graph-viewer', 'datadash', 'dbtool', 'memory-manager', 'photoviewer', 'npcteam', 'jinx', 'teammanagement', 'diff', 'browsergraph'].includes(pane.type) && <FileIcon size={20} />}
+                        {!['chat', 'editor', 'terminal', 'browser', 'pdf', 'graph-viewer', 'dbtool', 'memory-manager', 'photoviewer', 'npcteam', 'jinx', 'teammanagement', 'diff', 'browsergraph'].includes(pane.type) && <FileIcon size={20} />}
                     </button>
                 ))}
             </div>
@@ -251,13 +291,98 @@ const StatusBar: React.FC<StatusBarProps> = ({
             <div className="flex-1" />
 
             {onOpenSSHDialog && (
-                <button
-                    onClick={() => onOpenSSHDialog?.()}
-                    className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors hover:bg-white/10 ${activeConnection ? 'text-green-400' : 'text-gray-500 hover:text-green-400'}`}
-                    title={activeConnection ? `SSH: ${activeConnection.host}` : 'Connect via SSH'}
-                >
-                    <Server size={14} />
-                </button>
+                <div className="relative">
+                    <button
+                        onClick={() => setSshMenuOpen(o => !o)}
+                        className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors hover:bg-white/10 ${activeConnection ? 'text-green-400' : 'text-gray-500 hover:text-green-400'}`}
+                        title={activeConnection ? `SSH: ${activeConnection.host}` : 'Connect via SSH'}
+                    >
+                        <Server size={14} />
+                    </button>
+                    {sshMenuOpen && (
+                        <>
+                            <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setSshMenuOpen(false)} />
+                            <div className="absolute bottom-full right-0 mb-1 theme-bg-secondary border theme-border rounded shadow-xl z-50 py-1 min-w-[220px]">
+                                {sshConnections?.length === 0 && (
+                                    <div className="px-3 py-1.5 text-[11px] text-gray-500">No saved connections</div>
+                                )}
+                                {sshConnections?.map((conn) => (
+                                    <div key={conn.id} className="flex items-center justify-between px-3 py-1.5 hover:bg-white/5">
+                                        <span className="text-xs theme-text-primary truncate max-w-[120px]">{conn.username}@{conn.host}</span>
+                                        {conn.isConnected ? (
+                                            <button
+                                                onClick={() => { onDisconnectSsh?.(conn.id); setSshMenuOpen(false); }}
+                                                className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                                            >
+                                                Disconnect
+                                            </button>
+                                        ) : (
+                                            <>
+                                                {passwordPromptId === conn.id ? (
+                                                    <div className="flex items-center gap-1">
+                                                        <input
+                                                            type="password"
+                                                            value={passwordInput}
+                                                            onChange={(e) => setPasswordInput(e.target.value)}
+                                                            placeholder="password"
+                                                            className="w-24 px-1.5 py-0.5 rounded bg-[#0f0f14] border border-[#313244] text-[10px] text-[#cdd6f4] outline-none"
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    onConnectSsh?.({ ...conn, password: passwordInput });
+                                                                    setPasswordPromptId(null);
+                                                                    setPasswordInput('');
+                                                                    setSshMenuOpen(false);
+                                                                }
+                                                            }}
+                                                        />
+                                                        <button
+                                                            onClick={() => {
+                                                                onConnectSsh?.({ ...conn, password: passwordInput });
+                                                                setPasswordPromptId(null);
+                                                                setPasswordInput('');
+                                                                setSshMenuOpen(false);
+                                                            }}
+                                                            className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400 hover:bg-green-500/30"
+                                                        >
+                                                            Go
+                                                        </button>
+                                                        <button
+                                                            onClick={() => { setPasswordPromptId(null); setPasswordInput(''); }}
+                                                            className="text-[10px] px-1.5 py-0.5 rounded text-gray-500 hover:text-white"
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => {
+                                                            if (!conn.password && !conn.privateKeyPath) {
+                                                                setPasswordPromptId(conn.id);
+                                                            } else {
+                                                                onConnectSsh?.(conn);
+                                                                setSshMenuOpen(false);
+                                                            }
+                                                        }}
+                                                        className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400 hover:bg-green-500/30"
+                                                    >
+                                                        Connect
+                                                    </button>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+                                ))}
+                                <div className="border-t theme-border my-1" />
+                                <button
+                                    onClick={() => { onOpenSSHDialog(); setSshMenuOpen(false); }}
+                                    className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-muted hover:bg-white/10"
+                                >
+                                    <Server size={12} /> New SSH connection
+                                </button>
+                            </div>
+                        </>
+                    )}
+                </div>
             )}
 
             <div className="relative group/backend">

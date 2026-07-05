@@ -98,7 +98,6 @@ async function read_pane(
         break;
 
       case 'graph-viewer':
-      case 'datadash':
       case 'dbtool':
       case 'memory-manager':
       case 'photoviewer':

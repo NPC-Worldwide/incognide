@@ -1,6 +1,6 @@
 import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { BACKEND_URL } from '../config';
-import { goUpDirectory as goUpDirectoryApi } from '../api/fileSystem';
+import { goUpDirectory as goUpDirectoryApi, readDirectoryStructure, renameFile } from '../api/fileSystem';
 import { Code2, FileText, FileJson, BarChart3, File } from 'lucide-react';
 import { executeStudioAction, StudioContext } from '../studioActions';
 import { getPaneTitle } from '../studioActions/paneActions';
@@ -788,7 +788,7 @@ export const loadDirectoryStructure = async (
             console.error('No directory path provided');
             return {};
         }
-        const structureResult = await window.api.readDirectoryStructure(dirPath);
+        const structureResult = await readDirectoryStructure(dirPath);
         if (structureResult && !structureResult.error) {
             setFolderStructure(structureResult);
         } else {
@@ -1335,7 +1335,7 @@ export const handleRenameFile = async (
     const newPath = `${dirPath}/${editedFileName}`;
 
     try {
-        const response = await window.api.renameFile(oldPath, newPath);
+        const response = await renameFile(oldPath, newPath);
         if (response?.error) throw new Error(response.error);
 
         if (contentDataRef.current[nodeId]) {

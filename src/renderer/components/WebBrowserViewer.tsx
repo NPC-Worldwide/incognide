@@ -21,7 +21,11 @@ const WebBrowserViewer = memo(({
     performSplit,
     onToggleZen,
     isZenMode,
-    hasTabBar
+    hasTabBar,
+    isPredictiveTextEnabled,
+    onPredictiveTextRequest,
+    onPredictiveTextAccept,
+    onPredictiveTextDismiss
 }) => {
     const webviewRef = useRef(null);
     const urlInputRef = useRef<HTMLInputElement>(null);
@@ -475,6 +479,10 @@ const WebBrowserViewer = memo(({
             setError(null);
             setIsSecure(url.startsWith('https://'));
 
+            try {
+                window.dispatchEvent(new CustomEvent('incognide:webview-predict', { detail: { type: 'blur', paneId: nodeId, webviewElement: webviewRef.current } }));
+            } catch {}
+
             if (url && url !== 'about:blank') {
                 const hist = navHistoryRef.current;
                 const idx = navHistoryIndexRef.current;
@@ -717,18 +725,204 @@ const WebBrowserViewer = memo(({
             } catch {}
         };
 
+        const injectPredictiveTextHooks = () => {
+            try {
+                webview.executeJavaScript(`
+                    (function() {
+                        window.__incognidePaneId = ${JSON.stringify(nodeId)};
+                        if (window.__incognidePredictiveHooks) return;
+                        window.__incognidePredictiveHooks = true;
+
+                        function isEditable(el) {
+                            if (!el) return false;
+                            if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return true;
+                            return el.isContentEditable;
+                        }
+
+                        function getActiveInfo(el) {
+                            let text = '';
+                            let pos = 0;
+                            let caretRect = null;
+                            let elementRect = el.getBoundingClientRect();
+                            if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+                                text = el.value || '';
+                                pos = el.selectionStart || 0;
+                                const mirror = document.createElement('div');
+                                const style = window.getComputedStyle(el);
+                                mirror.style.position = 'absolute';
+                                mirror.style.whiteSpace = 'pre-wrap';
+                                mirror.style.visibility = 'hidden';
+                                mirror.style.font = style.font;
+                                mirror.style.fontSize = style.fontSize;
+                                mirror.style.fontFamily = style.fontFamily;
+                                mirror.style.lineHeight = style.lineHeight;
+                                mirror.style.padding = style.padding;
+                                mirror.style.border = style.border;
+                                mirror.style.boxSizing = style.boxSizing;
+                                mirror.style.width = style.width;
+                                mirror.textContent = text.slice(0, pos).replace(/\\s/g, '\\u00a0');
+                                document.body.appendChild(mirror);
+                                const rect = mirror.getBoundingClientRect();
+                                caretRect = { left: rect.width, top: rect.top, right: rect.width, bottom: rect.bottom, width: 0, height: rect.height };
+                                mirror.remove();
+                            } else {
+                                const sel = window.getSelection();
+                                text = el.innerText || el.textContent || '';
+                                if (sel && sel.rangeCount > 0) {
+                                    const range = sel.getRangeAt(0);
+                                    const rects = range.getClientRects();
+                                    if (rects.length > 0) {
+                                        const r = rects[rects.length - 1];
+                                        caretRect = { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
+                                    }
+                                    const pre = range.cloneRange();
+                                    pre.selectNodeContents(el);
+                                    pre.setEnd(range.endContainer, range.endOffset);
+                                    pos = pre.toString().length;
+                                }
+                            }
+                            if (!caretRect) {
+                                caretRect = { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+                            }
+                            return {
+                                textContent: text,
+                                cursorPosition: pos,
+                                caretRect: caretRect,
+                                elementRect: {
+                                    left: elementRect.left,
+                                    top: elementRect.top,
+                                    right: elementRect.right,
+                                    bottom: elementRect.bottom,
+                                    width: elementRect.width,
+                                    height: elementRect.height
+                                }
+                            };
+                        }
+
+                        function send(type, extra) {
+                            try {
+                                console.log('__INCOGNIDE_PREDICT__' + JSON.stringify(Object.assign({ type: type, paneId: window.__incognidePaneId }, extra)));
+                            } catch {}
+                        }
+
+                        let activeEl = null;
+                        let composing = false;
+
+                        function onFocus(e) {
+                            const target = e.target;
+                            if (!isEditable(target)) return;
+                            activeEl = target;
+                            const info = getActiveInfo(target);
+                            send('trigger', info);
+                        }
+
+                        function onInput(e) {
+                            if (!activeEl || composing) return;
+                            const info = getActiveInfo(activeEl);
+                            send('trigger', info);
+                        }
+
+                        function onSelectionChange() {
+                            if (!activeEl || composing) return;
+                            const info = getActiveInfo(activeEl);
+                            send('update-position', info);
+                        }
+
+                        function onBlur() {
+                            if (!activeEl) return;
+                            activeEl = null;
+                            send('blur', {});
+                        }
+
+                        document.addEventListener('focusin', onFocus, true);
+                        document.addEventListener('input', onInput, true);
+                        document.addEventListener('selectionchange', onSelectionChange);
+                        document.addEventListener('compositionstart', function() { composing = true; });
+                        document.addEventListener('compositionend', function() { composing = false; if (activeEl) { const info = getActiveInfo(activeEl); send('trigger', info); } });
+                        window.addEventListener('blur', onBlur);
+
+                        window.__incognideAcceptSuggestion = function() {
+                            const suggestion = window.__incognideSuggestion || '';
+                            if (!suggestion || !activeEl) return false;
+                            if (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA') {
+                                const start = activeEl.selectionStart || 0;
+                                const end = activeEl.selectionEnd || start;
+                                const before = activeEl.value.slice(0, start);
+                                const after = activeEl.value.slice(end);
+                                activeEl.value = before + suggestion + after;
+                                const newPos = before.length + suggestion.length;
+                                activeEl.selectionStart = newPos;
+                                activeEl.selectionEnd = newPos;
+                                activeEl.dispatchEvent(new Event('input', { bubbles: true }));
+                            } else if (activeEl.isContentEditable) {
+                                const sel = window.getSelection();
+                                if (sel && sel.rangeCount > 0) {
+                                    const range = sel.getRangeAt(0);
+                                    range.deleteContents();
+                                    range.insertNode(document.createTextNode(suggestion));
+                                    range.collapse(false);
+                                    sel.removeAllRanges();
+                                    sel.addRange(range);
+                                }
+                            }
+                            window.__incognideSuggestion = '';
+                            window.__incognideHasSuggestion = false;
+                            return true;
+                        };
+
+                        window.__incognideSetSuggestion = function(s) {
+                            window.__incognideSuggestion = s || '';
+                            window.__incognideHasSuggestion = !!s;
+                        };
+
+                        document.addEventListener('keydown', function(e) {
+                            if (!activeEl) return;
+                            if (e.key === 'Tab' && window.__incognideHasSuggestion) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                send('accept', {});
+                            } else if (e.key === 'Escape' && window.__incognideHasSuggestion) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                send('dismiss', {});
+                            }
+                        }, true);
+                    })();
+                `).catch(() => {});
+            } catch {}
+        };
+
         const handleConsoleMessage = (e: any) => {
-            if (e.message === '__INCOGNIDE_CTRL_F__') {
+            const msg = e.message || '';
+            if (msg === '__INCOGNIDE_CTRL_F__') {
                 openFindBar();
+                return;
+            }
+            if (msg.startsWith('__INCOGNIDE_PREDICT__')) {
+                try {
+                    const payload = JSON.parse(msg.slice('__INCOGNIDE_PREDICT__'.length));
+                    const detail = { ...payload, webviewElement: webviewRef.current };
+                    if (payload.type === 'trigger') {
+                        detail.textContent = payload.textContent;
+                        detail.cursorPosition = payload.cursorPosition;
+                        detail.caretRect = payload.caretRect;
+                        detail.elementRect = payload.elementRect;
+                        detail.contextType = 'browser';
+                    }
+                    window.dispatchEvent(new CustomEvent('incognide:webview-predict', { detail }));
+                } catch {}
+                return;
             }
         };
 
         webview.addEventListener('dom-ready', injectKeyboardHooks);
+        webview.addEventListener('dom-ready', injectPredictiveTextHooks);
         webview.addEventListener('console-message', handleConsoleMessage);
 
         return () => {
             webview.removeEventListener('before-input-event', handleBeforeInput);
             webview.removeEventListener('dom-ready', injectKeyboardHooks);
+            webview.removeEventListener('dom-ready', injectPredictiveTextHooks);
             webview.removeEventListener('console-message', handleConsoleMessage);
         };
     }, []);
@@ -1735,7 +1929,7 @@ const WebBrowserViewer = memo(({
                     <GripVertical size={12} className="flex-shrink-0 theme-text-muted" />
                     <div className="flex-1 max-w-[60%] flex items-center gap-1 min-w-0 theme-bg-secondary rounded px-2 py-1.5">
                         {isSecure ? <Lock size={12} className="text-green-400 flex-shrink-0" /> : <Globe size={12} className="text-gray-400 flex-shrink-0" />}
-                        <input ref={urlInputRef} type="text" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleNavigate()} onContextMenu={(e) => e.stopPropagation()} placeholder="Search or enter URL..." className="flex-1 bg-transparent text-xs theme-text-primary outline-none min-w-0" onDragStart={(e) => e.stopPropagation()} draggable={false} />
+                        <input ref={urlInputRef} type="text" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleNavigate()} onContextMenu={(e) => e.stopPropagation()} placeholder="Search or enter URL..." className="browser-url-input flex-1 bg-transparent text-xs theme-text-primary outline-none min-w-0" onDragStart={(e) => e.stopPropagation()} draggable={false} />
                     </div>
                     <button onClick={() => handleNewBrowserTab('', nodeId)} className="p-0.5 theme-hover rounded" title="New tab (Ctrl+T)"><Plus size={12} /></button>
                 </div>

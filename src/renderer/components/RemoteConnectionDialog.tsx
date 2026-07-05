@@ -6,9 +6,10 @@ interface RemoteConnectionDialogProps {
     onClose: () => void;
     onSave: (config: { id: string; host: string; port: number; username: string; privateKeyPath?: string }) => void;
     onTest: (config: any) => Promise<{ success: boolean; error?: string }>;
+    onConnect?: (config: { id: string; host: string; port: number; username: string; privateKeyPath?: string }, password?: string, passphrase?: string) => Promise<{ success: boolean; error?: string }>;
 }
 
-export const RemoteConnectionDialog: React.FC<RemoteConnectionDialogProps> = ({ isOpen, onClose, onSave, onTest }) => {
+export const RemoteConnectionDialog: React.FC<RemoteConnectionDialogProps> = ({ isOpen, onClose, onSave, onTest, onConnect }) => {
     if (!isOpen) return null;
 
     const [host, setHost] = useState('');
@@ -53,6 +54,57 @@ export const RemoteConnectionDialog: React.FC<RemoteConnectionDialogProps> = ({ 
         setTestResult(null);
         setSaving(false);
         onClose();
+    };
+
+    const handleConnect = async () => {
+        if (!host || !username || !onConnect) return;
+        setTesting(true);
+        setTestResult(null);
+        const id = `ssh_${host}_${username}_${Date.now()}`;
+        try {
+            const testResult = await onTest({
+                host, port, username,
+                password: authMode === 'password' ? password : undefined,
+                privateKeyPath: authMode === 'key' ? privateKeyPath : undefined,
+                passphrase: authMode === 'key' ? passphrase : undefined,
+            });
+            if (!testResult.success) {
+                setTestResult({ success: false, message: testResult.error || 'Connection failed' });
+                setTesting(false);
+                return;
+            }
+            const connectResult = await onConnect(
+                {
+                    id,
+                    host,
+                    port,
+                    username,
+                    password: authMode === 'password' ? password : undefined,
+                    privateKeyPath: authMode === 'key' ? privateKeyPath : undefined,
+                    passphrase: authMode === 'key' ? passphrase : undefined,
+                },
+                authMode === 'password' ? password : undefined,
+                authMode === 'key' ? passphrase : undefined
+            );
+            setTesting(false);
+            if (connectResult.success) {
+                setHost('');
+                setPort(22);
+                setUsername('');
+                setPassword('');
+                setPrivateKeyPath('');
+                setPassphrase('');
+                setAuthMode('password');
+                setTestResult(null);
+                onClose();
+            } else {
+                setTestResult({ success: false, message: connectResult.error || 'Failed to start SSH session' });
+            }
+        } catch (err: any) {
+            console.error('[SSH Dialog] handleConnect error', err);
+            setTesting(false);
+            setTestResult({ success: false, message: err?.message || String(err) });
+        }
     };
 
     return (
@@ -190,6 +242,16 @@ export const RemoteConnectionDialog: React.FC<RemoteConnectionDialogProps> = ({ 
                         <Save size={12} />
                         {saving ? 'Saving...' : 'Save'}
                     </button>
+                    {onConnect && (
+                        <button
+                            onClick={handleConnect}
+                            disabled={testing || saving || !host || !username}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-green-500/20 text-green-400 border border-green-500/30 text-[12px] font-medium hover:bg-green-500/30 transition-colors disabled:opacity-40"
+                        >
+                            <Server size={12} />
+                            {testing ? 'Connecting...' : 'Connect'}
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

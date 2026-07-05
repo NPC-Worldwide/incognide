@@ -1,7 +1,7 @@
 jinx_name: open_pane
 description: >
   Open a new pane in Incognide. Tool panes (no content_id needed): chat, terminal,
-  graph-viewer, datadash, dbtool, memory-manager, photoviewer, scherzo, npcteam,
+  graph-viewer, dbtool, memory-manager, photoviewer, scherzo, npcteam,
   jinx, teammanagement, search, library, diskusage, help, settings, cron-daemon,
   projectenv, browsergraph, data-labeler, git. File panes (content_id = file path):
   editor, pdf, csv, docx, pptx, latex, notebook, exp, mindmap, zip, image, folder.

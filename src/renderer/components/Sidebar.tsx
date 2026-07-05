@@ -14,14 +14,13 @@ import {
     Loader2, ExternalLink, Link, Unlink, Filter, SortAsc, SortDesc, Table, Grid,
     List, Maximize2, Minimize2, Move, RotateCcw, ZoomIn, ZoomOut, Layers, Layout,
     Pause, Server, Mail, Cpu, Wifi, WifiOff, Power, PowerOff, Hash, AtSign, FlaskConical,
-    BrainCircuit, Music, Square, Monitor, User
+    BrainCircuit, Music, Square, User
 } from 'lucide-react';
 import CodeMirror from '@uiw/react-codemirror';
 import { javascript } from '@codemirror/lang-javascript';
 import { EditorView } from '@codemirror/view';
 import { LiveProvider, LivePreview, LiveError } from 'react-live';
 import { Modal, Tabs, Card, Button, Input, Select } from 'npcts';
-import DiskUsageAnalyzer from './DiskUsageAnalyzer';
 import AutosizeTextarea from './AutosizeTextarea';
 import ForceGraph2D from 'react-force-graph-2d';
 
@@ -37,7 +36,6 @@ import MessageLabeling from './MessageLabeling';
 import NPCTeamMenu from './NPCTeamMenu';
 import PythonEnvSettings from './PythonEnvSettings';
 import DBTool from './DBTool';
-import DataDash from './DataDash';
 import GraphViewer from './GraphViewer';
 import SettingsMenu from './SettingsMenu';
 import npcLogo from '../../assets/icon.png';
@@ -68,10 +66,10 @@ const Sidebar = (props: any) => {
         setInput, setContextMenuPos, setSidebarItemContextMenuPos, setSearchTerm,
         setIsSearching, setDeepSearchResults, setMessageSearchResults,
         setIsEditingPath, setEditedPath, setSettingsOpen, setProjectEnvEditorOpen, setBrowserUrlDialogOpen,
-        setDashboardMenuOpen, setJinxMenuOpen,
+        setJinxMenuOpen,
         setCtxEditorOpen, setTeamManagementOpen, setNpcTeamMenuOpen, setSidebarCollapsed,
         createGraphViewerPane, createBrowserGraphPane, createDataLabelerPane,
-        createDataDashPane, createDBToolPane, createNPCTeamPane, createJinxPane, createTeamManagementPane, createSkillsManagerPane, createSettingsPane, createProjectEnvPane, createDiskUsagePane, createHelpPane, createTileJinxPane, createGitPane, createBrowserSettingsPane,
+        createDBToolPane, createNPCTeamPane, createJinxPane, createTeamManagementPane, createSkillsManagerPane, createSettingsPane, createProjectEnvPane, createDiskUsagePane, createHelpPane, createTileJinxPane, createGitPane, createBrowserSettingsPane,
 
         createNewConversation, generateId, streamToPaneRef, availableNPCs, currentNPC, currentModel,
         currentProvider, executionMode, enabledMcpServers, selectedMcpTools, updateContentPane,
@@ -84,22 +82,16 @@ const Sidebar = (props: any) => {
         createAndAddPaneNodeToLayout, closeContentPane, findNodePath, findNodeByPath,
         isPredictiveTextEnabled, setIsPredictiveTextEnabled,
         topBarHeight = 48, bottomBarHeight = 48, topBarCollapsed = false,
-        onExpandTopBar, onCollapseTopBar, setDownloadManagerOpen,
-        openTeamManagementTab
+        onExpandTopBar, onCollapseTopBar,
+        openTeamManagementTab,
+        fileSearch, setFileSearch
     } = props;
 
     const aiEnabled = useAiEnabled();
     const WINDOW_WORKSPACES_KEY = 'incognideWorkspaces';
     const ACTIVE_WINDOWS_KEY = 'incognideActiveWindows';
 
-    const [diskUsageCollapsed, setDiskUsageCollapsed] = useState(true);
-    const [bottomGridCollapsed, setBottomGridCollapsed] = useState<boolean>(() => {
-        const stored = localStorage.getItem('incognide_bottomGridCollapsed');
-        return stored === 'true';
-    });
-
     const [convoSearch, setConvoSearch] = useState('');
-    const [fileSearch, setFileSearch] = useState('');
     const [fileTypeFilter, setFileTypeFilter] = useState<string>(() => localStorage.getItem('incognide_fileTypeFilter') || '');
     const [fileSort, setFileSort] = useState<'name' | 'modified' | 'type'>(() => (localStorage.getItem('incognide_fileSort') as any) || 'name');
 
@@ -177,7 +169,7 @@ const Sidebar = (props: any) => {
             maxHistory: 100,
             excludedDomains: '',
             timeRangeDays: 30,
-            groupBy: 'type',
+            groupBy: 'time',
         };
     });
 
@@ -239,10 +231,6 @@ const Sidebar = (props: any) => {
     useEffect(() => {
         localStorage.setItem('incognide_convoDateTo', convoDateTo);
     }, [convoDateTo]);
-
-    useEffect(() => {
-        localStorage.setItem('incognide_bottomGridCollapsed', String(bottomGridCollapsed));
-    }, [bottomGridCollapsed]);
 
     const loadGitStatus = useCallback(async () => {
         if (!currentPath) return;
@@ -901,7 +889,6 @@ const Sidebar = (props: any) => {
 
         Modal, Tabs, Card, Button, Input, Select,
 
-        DiskUsageAnalyzer,
         AutosizeTextarea,
         ForceGraph2D,
         ActivityIntelligence,
@@ -915,7 +902,6 @@ const Sidebar = (props: any) => {
         NPCTeamMenu,
         PythonEnvSettings,
         DBTool,
-        DataDash,
         GraphViewer,
         SettingsMenu,
         SettingsPanel: SettingsMenu,
@@ -1167,14 +1153,6 @@ const handleSidebarItemContextMenu = (e, path, type, isInaccessible = false) => 
         setSelectedFiles(new Set([path]));
     }
     setSidebarItemContextMenuPos({ x: e.clientX, y: e.clientY, path, type, isInaccessible });
-};
-
-const handleAnalyzeInDashboard = () => {
-    const selectedIds = Array.from(selectedConvos);
-    if (selectedIds.length === 0) return;
-    console.log(`Analyzing ${selectedIds.length} conversations in dashboard.`);
-    setDashboardMenuOpen(true);
-    setContextMenuPos(null);
 };
 
 const handleSummarizeAndStart = async () => {
@@ -2307,7 +2285,7 @@ const renderWebsiteList = () => {
                 <div className="theme-bg-secondary flex-1 min-h-0 overflow-y-auto">
                     <div className="flex items-center gap-1 px-1.5 py-1 border-b theme-border">
                         <span className="text-[9px] text-gray-500">Group:</span>
-                        {(['type', 'domain', 'time', 'none'] as const).map(mode => (
+                        {(['time', 'domain', 'type', 'none'] as const).map(mode => (
                             <button
                                 key={mode}
                                 onClick={() => setWebsitesSettings((s: any) => ({ ...s, groupBy: mode }))}
@@ -2705,42 +2683,7 @@ const renderWebsiteList = () => {
         );
     };
 
-    const renderDiskUsagePanel = () => {
-        console.log('[DiskUsage] renderDiskUsagePanel called, currentPath:', currentPath, 'diskUsageCollapsed:', diskUsageCollapsed);
-        if (!currentPath) {
-            console.log('[DiskUsage] No currentPath, returning null');
-            return null;
-        }
-
-        return (
-            <div className="border-b theme-border pb-1 flex-shrink-0">
-                <div className="flex items-center justify-between px-2 py-1" data-tutorial="disk-usage">
-                    <div className="text-[11px] text-gray-500 font-medium flex items-center gap-1.5">
-                        <HardDrive size={11} />
-                        Disk Usage
-                    </div>
-                    <button
-                        onClick={() => setDiskUsageCollapsed(!diskUsageCollapsed)}
-                        className="p-0.5 theme-hover rounded"
-                        title={diskUsageCollapsed ? "Expand disk usage" : "Collapse disk usage"}
-                    >
-                        <ChevronRight
-                            size={10}
-                            className={`transform transition-transform ${diskUsageCollapsed ? "" : "rotate-90"}`}
-                        />
-                    </button>
-                </div>
-                {!diskUsageCollapsed && (
-                    <div className="px-2">
-                        <DiskUsageAnalyzer path={currentPath} isDarkMode={isDarkMode} />
-                    </div>
-                )}
-            </div>
-        );
-    };
-
     const renderGitPanel = () => {
-
         if (!gitStatus) return null;
 
         const staged = Array.isArray(gitStatus.staged) ? gitStatus.staged : [];
@@ -3573,16 +3516,6 @@ const renderFolderList = (structure) => {
         return <div className="p-2 text-xs text-red-500">Error: {structure?.error || 'Failed to load'}</div>;
     }
 
-    const countItems = (struct) => {
-        let count = 0;
-        Object.values(struct).forEach((item: any) => {
-            if (item?.type === 'file') count++;
-            else if (item?.type === 'directory' && item?.children) count += countItems(item.children);
-        });
-        return count;
-    };
-    const fileCount = countItems(structure);
-
     const parseFileTypeFilter = (filter: string): string[] => {
         if (!filter.trim()) return [];
         return filter.split(/[,\s]+/)
@@ -3739,10 +3672,17 @@ const renderFolderList = (structure) => {
                                 </button>
                                 <button
                                     onClick={() => { (window as any).api?.openInNativeExplorer?.(currentPath); setFolderDropdownOpen(false); }}
-                                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] bg-teal-600/20 text-teal-400 rounded hover:bg-teal-600/30"
-                                    title="Open in Finder/Explorer"
+                                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] bg-gray-600/20 text-gray-400 rounded hover:bg-gray-600/30"
+                                    title="Open in native file manager"
                                 >
-                                    <ExternalLink size={10} /> Native
+                                    <FolderOpen size={10} /> Native
+                                </button>
+                                <button
+                                    onClick={() => { createDiskUsagePane?.(); setFolderDropdownOpen(false); }}
+                                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] bg-gray-600/20 text-gray-400 rounded hover:bg-gray-600/30"
+                                    title="Disk Usage Analyzer"
+                                >
+                                    <HardDrive size={10} /> Disk
                                 </button>
                             </div>
                             {recentPaths.filter(p => p !== currentPath).length > 0 && (
@@ -3838,25 +3778,6 @@ const renderFolderList = (structure) => {
             )}
             {!filesCollapsed && (
                 <div className="theme-bg-secondary border-b theme-border">
-                    {fileCount > 5 && (
-                        <div className="px-1 py-1">
-                            <div className="relative">
-                                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
-                                <input
-                                    type="text"
-                                    value={fileSearch}
-                                    onChange={(e) => setFileSearch(e.target.value)}
-                                    placeholder="Search files..."
-                                    className="w-full theme-bg-tertiary theme-border border rounded pl-7 pr-2 py-1 text-[11px] theme-text-primary placeholder:opacity-50 focus:outline-none focus:border-yellow-500/50"
-                                />
-                                {fileSearch && (
-                                    <button onClick={() => setFileSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:theme-text-primary">
-                                        <X size={10} />
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    )}
                     <div className="flex items-center gap-0.5 px-1 py-0.5 border-t theme-border">
                         <span className="text-[9px] text-gray-500 mr-1">Sort:</span>
                         {([['name', 'A-Z'], ['modified', 'Date'], ['type', 'Type']] as const).map(([val, label]) => (
@@ -5210,13 +5131,6 @@ onDragStart={(e) => {
                         <span>Summarize & Prompt ({selectedConvos?.size || 0})</span>
                     </button>
                 <div className="border-t theme-border my-1"></div>
-                <button
-                    onClick={handleAnalyzeInDashboard}
-                    className="flex items-center gap-2 px-4 py-3 theme-hover w-full text-left theme-text-primary"
-                >
-                    <BarChart3 size={16} />
-                    <span>Analyze in Dashboard ({selectedConvos?.size || 0})</span>
-                </button>
                 </div>
             </>
         )
@@ -6025,18 +5939,9 @@ return (
 
         {!sidebarCollapsed && (
         <div className="border-t theme-border">
-            <div className="grid grid-cols-3 divide-x theme-border" style={{ height: bottomBarHeight }}>
-                <button data-tutorial="window-manager-button" onClick={() => createAndAddPaneNodeToLayout?.('windowmanager', 'windowmanager')} className="flex items-center justify-center hover:bg-teal-500/20 transition-all" title="Window Manager"><Monitor size={16} className="text-gray-600 dark:text-gray-400" /></button>
-                <button onClick={() => setBottomGridCollapsed(!bottomGridCollapsed)} className="flex items-center justify-center hover:bg-teal-500/20 transition-all" title={bottomGridCollapsed ? "Show quick actions" : "Hide quick actions"}>{bottomGridCollapsed ? <ChevronUp size={16} className="text-gray-600 dark:text-gray-400" /> : <ChevronDown size={16} className="text-gray-600 dark:text-gray-400" />}</button>
-                <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="flex items-center justify-center hover:bg-teal-500/20 transition-all" title="Collapse sidebar"><ChevronLeft size={16} className="text-gray-600 dark:text-gray-400" /></button>
+            <div className="grid grid-cols-1 divide-x theme-border" style={{ height: bottomBarHeight }}>
+                <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="flex items-center justify-center hover:bg-teal-500/20 transition-all p-3" title="Collapse sidebar"><ChevronLeft size={18} className="text-gray-600 dark:text-gray-400" /></button>
             </div>
-            {!bottomGridCollapsed && (
-            <div className="grid grid-cols-3 divide-x theme-border border-t theme-border" style={{ height: bottomBarHeight }}>
-                <button data-tutorial="theme-toggle-button" onClick={toggleTheme} className="flex items-center justify-center hover:bg-teal-500/20 transition-all" title="Toggle Theme">{isDarkMode ? <Moon size={16} className="text-blue-400" /> : <Sun size={16} className="text-yellow-400" />}</button>
-                <button data-tutorial="account-button" onClick={() => createAndAddPaneNodeToLayout?.('account', 'account')} className="flex items-center justify-center hover:bg-teal-500/20 transition-all text-gray-400 hover:text-blue-400" title="Account"><User size={16} /></button>
-                <button data-tutorial="new-window-button" onClick={() => { if ((window as any).api?.openNewWindow) (window as any).api.openNewWindow(''); else window.open(window.location.href, '_blank'); }} className="flex items-center justify-center hover:bg-teal-500/20 transition-all" title="New Window (Cmd/Ctrl+Shift+N)"><img src={npcLogo} alt="Incognide" style={{ width: 16, height: 16 }} className="rounded-full" /></button>
-            </div>
-            )}
         </div>
         )}
 

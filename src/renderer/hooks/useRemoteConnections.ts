@@ -84,9 +84,30 @@ export function useRemoteConnections() {
         }
     }, [activeConnectionId]);
 
-    const connect = useCallback(async (id: string, password?: string, passphrase?: string) => {
-        const conn = connections.find(c => c.id === id);
-        if (!conn) return { success: false, error: 'Connection not found' };
+    const connect = useCallback(async (
+        idOrConfig: string | Omit<SshConnection, 'isConnected' | 'currentPath'>,
+        password?: string,
+        passphrase?: string
+    ) => {
+        console.log('[SSH hook] connect called', typeof idOrConfig, idOrConfig);
+        let conn: SshConnection;
+        let id: string;
+        if (typeof idOrConfig === 'string') {
+            const existing = connections.find(c => c.id === idOrConfig);
+            if (!existing) return { success: false, error: 'Connection not found' };
+            conn = existing;
+            id = existing.id;
+        } else {
+            id = idOrConfig.id;
+            conn = { ...idOrConfig, isConnected: false, currentPath: '/home/' + idOrConfig.username };
+            setConnections(prev => {
+                const filtered = prev.filter(c => c.id !== id);
+                const next = [...filtered, conn];
+                saveConfigs(next);
+                return next;
+            });
+        }
+        console.log('[SSH hook] resolved connection', conn.id, '->', conn.host + ':' + (conn.port || 22), 'auth:', password ? 'password' : (conn.privateKeyPath ? 'key' : 'none'));
         const result = await (window as any).api.sshConnect({
             id: conn.id,
             host: conn.host,
@@ -96,6 +117,7 @@ export function useRemoteConnections() {
             privateKeyPath: conn.privateKeyPath,
             passphrase: passphrase || conn.passphrase,
         });
+        console.log('[SSH hook] sshConnect raw result', JSON.stringify(result));
         if (result.success) {
             setConnections(prev => prev.map(c => c.id === id ? { ...c, isConnected: true } : c));
             setActiveConnectionId(id);

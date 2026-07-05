@@ -4,7 +4,7 @@ import { BACKEND_URL } from '../config';
 import {
     Send, Paperclip, Maximize2, ChevronDown, Star, ListFilter, FolderTree, Minimize2, Mic, MicOff, Volume2, GitBranch, Save, Trash2, Zap, X, RefreshCw,
     FileCode, Globe, FileText, Terminal as TerminalIcon, Eye, EyeOff, ToggleLeft, ToggleRight,
-    Database, BarChart3, BrainCircuit, Image, Bot, Users, Music, Search, BookOpen, Folder, HardDrive, HelpCircle, Clock, Settings, MessageSquare, Tag
+    Database, BrainCircuit, Image, Bot, Users, Music, Search, BookOpen, Folder, HardDrive, HelpCircle, Clock, Settings, MessageSquare, Tag
 } from 'lucide-react';
 import MemoryIcon from './icons/MemoryIcon';
 import KgIcon from './icons/KgIcon';
@@ -905,7 +905,7 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         if (!contentDataRef?.current) return [];
         const panes: Array<{ id: string; type: string; label: string }> = [];
         const PANE_LABELS: Record<string, string> = {
-            'graph-viewer': 'Knowledge Graph', 'datadash': 'Dashboard', 'dbtool': 'Database',
+            'graph-viewer': 'Knowledge Graph', 'dbtool': 'Database',
             'memory-manager': 'Memory', 'photoviewer': 'Photos', 'npcteam': 'Agents',
             'jinx': 'Jinxes', 'teammanagement': 'Team', 'diff': 'Diff',
             'browsergraph': 'Web Graph', 'library': 'Library',
@@ -950,7 +950,6 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
 
             case 'csv': return <FileText size={s} className={cls} />;
             case 'graph-viewer': case 'diff': case 'git': return <GitBranch size={s} className={cls} />;
-            case 'datadash': return <BarChart3 size={s} className={cls} />;
             case 'dbtool': return <Database size={s} className={cls} />;
             case 'memory-manager': return <BrainCircuit size={s} className={cls} />;
             case 'npcteam': return <Bot size={s} className={cls} />;

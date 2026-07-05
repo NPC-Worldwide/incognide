@@ -20,7 +20,6 @@ export const PANE_TYPE_INFO: Record<string, { title: string; description: string
   'zip':              { title: 'Archive',           description: 'Browse ZIP archives', needsPath: true },
   'image':            { title: 'Image',             description: 'View image files', needsPath: true },
   'graph-viewer':     { title: 'Knowledge Graph',   description: 'View and edit the knowledge graph' },
-  'datadash':         { title: 'Dashboard',         description: 'Data dashboard with analytics and stats' },
   'dbtool':           { title: 'Database Tool',     description: 'Query and manage databases' },
   'memory-manager':   { title: 'Memory Manager',    description: 'Manage AI memory and training data' },
   'browser':          { title: 'Browser',           description: 'Web browser', needsUrl: true },
@@ -44,7 +43,7 @@ export const PANE_TYPE_INFO: Record<string, { title: string; description: string
 };
 
 const TOOL_PANE_TYPES = new Set([
-  'graph-viewer', 'datadash', 'dbtool', 'memory-manager', 'browser', 'image',
+  'graph-viewer', 'dbtool', 'memory-manager', 'browser', 'image',
   'npcteam', 'jinx', 'teammanagement', 'search', 'library', 'diskusage', 'help',
   'settings', 'cron-daemon', 'projectenv', 'browsergraph', 'data-labeler', 'git',
   'mcp-manager', 'skills-manager', 'chat', 'terminal',

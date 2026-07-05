@@ -91,7 +91,6 @@ const tileJinxDir = path.join(INCOGNIDE_HOME, 'tiles');
 
 const tileSourceMap = {
   'db.jinx': { source: 'DBTool.tsx', label: 'DB Tool', icon: 'Database', order: 0 },
-  'datadash.jinx': { source: 'DataDash.tsx', label: 'Data Dash', icon: 'BarChart3', order: 1 },
 };
 
 const componentsDir = path.join(__dirname, '..', 'renderer', 'components');

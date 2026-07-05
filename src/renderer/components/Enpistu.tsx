@@ -1,15 +1,15 @@
  import React, { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
 import { BACKEND_URL } from '../config';
 import { createPortal } from 'react-dom';
-import { readFileContent, writeFileContent, createDirectory, renameFile } from '../api/fileSystem';
+import { readFileContent, writeFileContent, createDirectory, renameFile, readDirectoryStructure } from '../api/fileSystem';
 import yaml from 'js-yaml';
 import {
     Folder, File as FileIcon,  Globe, ChevronRight, ChevronLeft, Settings, Edit,
     Terminal, Image, Music, Trash, Users, Plus, ArrowUp, Camera, MessageSquare,
     ListFilter, ArrowDown,X, Wrench, FileText, Code2, FileJson, Paperclip,
-    Send, BarChart3,Minimize2,  Maximize2, MessageCircle, BrainCircuit, Star, Origami, ChevronDown, ChevronUp,
-    Clock, FolderTree, Search, HardDrive, Brain, GitBranch, Activity, Tag, Sparkles, Code, BookOpen, User, FolderOpen,
-    RefreshCw, RotateCcw, Check, KeyRound, Bot, Zap, HelpCircle, AlertCircle, MoreVertical, LayoutGrid, ExternalLink
+    Send, Minimize2,  Maximize2, MessageCircle, BrainCircuit, Star, Origami, ChevronDown, ChevronUp,
+    Clock, FolderTree, Search, Brain, GitBranch, Activity, Tag, Sparkles, Code, BookOpen, User, FolderOpen,
+    RefreshCw, RotateCcw, Check, KeyRound, Bot, Zap, HelpCircle, AlertCircle, ExternalLink
 } from 'lucide-react';
 
 import { Icon } from 'lucide-react';
@@ -40,7 +40,6 @@ import CtxEditor from './CtxEditor';
 import TeamManagement from './TeamManagement';
 import SkillsManager from './SkillsManager';
 import MarkdownRenderer from './MarkdownRenderer';
-import DataDash from './DataDash';
 import BackendPane from './BackendPane';
 import CodeEditor from './CodeEditor';
 import TerminalView from './Terminal';
@@ -67,10 +66,8 @@ import WorkspaceSwitchWarning from './WorkspaceSwitchWarning';
 import LogsViewer from './LogsViewer';
 import CronDaemonPanel from './CronDaemonPanel';
 import MemoryManagement from './MemoryManagement';
-import WindowManagerPane from './WindowManagerPane';
 import AccountPane from './AccountPane';
 import SearchPane from './SearchPane';
-import DownloadManager, { getActiveDownloadsCount, setDownloadToastCallback, setDownloadAllCompleteCallback } from './DownloadManager';
 import { LiveProvider, LivePreview, LiveError } from 'react-live';
 
 import GraphViewer from './GraphViewer';
@@ -262,7 +259,6 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const aiEnabled = useAiEnabled();
     const [gitPanelCollapsed, setGitPanelCollapsed] = useState(true);
     const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-    const [layoutPresetModalOpen, setLayoutPresetModalOpen] = useState(false);
     const [pdfHighlightsTrigger, setPdfHighlightsTrigger] = useState(0);
     const [conversationBranches, setConversationBranches] = useState(new Map());
     const [currentBranchId, setCurrentBranchId] = useState('main');
@@ -278,7 +274,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const [predictiveTextProvider, setPredictiveTextProvider] = useState<string | null>(null);
     const [predictiveTextDelay, setPredictiveTextDelay] = useState(250);
     const [predictionSuggestion, setPredictionSuggestion] = useState('');
-    const [predictionTargetElement, setPredictionTargetElement] = useState<HTMLElement | null>(null);
+    const [predictionTarget, setPredictionTarget] = useState<any | null>(null);
 
 
     const { trackActivity } = useActivityTracker();
@@ -364,9 +360,6 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const [editedPath, setEditedPath] = useState('');
     const [isHovering, setIsHovering] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
-    const [downloadManagerOpen, setDownloadManagerOpen] = useState(false);
-    const [downloadToast, setDownloadToast] = useState<{message: string; filename: string} | null>(null);
-    const [showDownloadCompletePrompt, setShowDownloadCompletePrompt] = useState(false);
     const [updateAvailable, setUpdateAvailable] = useState<{latestVersion: string; releaseUrl: string} | null>(null);
     const [appVersion, setAppVersion] = useState<string>('');
     const [projectEnvEditorOpen, setProjectEnvEditorOpen] = useState(false);
@@ -442,7 +435,6 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const initialLoadComplete = useRef(false);
     const [isStreaming, setIsStreaming] = useState(false);
     const streamIdRef = useRef(null);
-    const [dashboardMenuOpen, setDashboardMenuOpen] = useState(false);
     const [analysisContext, setAnalysisContext] = useState(null);
     const [sidebarItemContextMenuPos, setSidebarItemContextMenuPos] = useState(null);
 
@@ -477,7 +469,6 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         const saved = localStorage.getItem('incognideClockMode');
         return (saved === 'analog' || saved === 'digital' || saved === 'digital-date') ? saved : 'digital';
     });
-    const [topBarMenuOpen, setTopBarMenuOpen] = useState(false);
     const [currentTime, setCurrentTime] = useState(new Date());
     const [showCronDaemonPanel, setShowCronDaemonPanel] = useState(false);
 
@@ -671,18 +662,6 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
 
 
     useEffect(() => {
-        setDownloadToastCallback((message, filename) => {
-            setDownloadToast({ message, filename });
-
-            setTimeout(() => setDownloadToast(null), 4000);
-        });
-        setDownloadAllCompleteCallback(() => {
-            setShowDownloadCompletePrompt(true);
-        });
-    }, []);
-
-
-    useEffect(() => {
         const init = async () => {
             try {
 
@@ -840,7 +819,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const searchInputRef = useRef(null);
     const topBarRef = useRef<HTMLDivElement>(null);
     const [topBarWidth, setTopBarWidth] = useState(1000);
-    const [searchExpanded, setSearchExpanded] = useState(false);
+    const [fileSearch, setFileSearch] = useState('');
     const [webSearchExpanded, setWebSearchExpanded] = useState(false);
     const [engineMenuOpen, setEngineMenuOpen] = useState(false);
     const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
@@ -852,7 +831,6 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         knowledge: 'Knowledge',
     };
     const [searchScope, setSearchScope] = useState<string>(() => localStorage.getItem('npc-local-search-scope') || 'all');
-    const collapsedSearchRef = useRef<HTMLInputElement>(null);
     const collapsedWebSearchRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -1045,14 +1023,6 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     }, [activeContentPaneId, currentNPC, currentModel]);
 
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
-    const [lockedPanes, setLockedPanes] = useState<Set<string>>(() => {
-        try {
-            const saved = localStorage.getItem('incognide_lockedPanes');
-            return saved ? new Set(JSON.parse(saved)) : new Set();
-        } catch { return new Set(); }
-    });
-
-
     useEffect(() => {
         const handleGlobalKeyDown = (e: KeyboardEvent) => {
 
@@ -1097,11 +1067,6 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
                 window.location.reload();
             }
 
-            if (e.ctrlKey && !e.shiftKey && e.key === 'j') {
-                e.preventDefault();
-                e.stopPropagation();
-                setDownloadManagerOpen(prev => !prev);
-            }
         };
 
         document.addEventListener('keydown', handleGlobalKeyDown, true);
@@ -1114,7 +1079,11 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const loadWebsiteHistory = useLoadWebsiteHistory(currentPath, setWebsiteHistory, setCommonSites);
 
 
-    usePredictiveText({
+    const {
+        requestPrediction,
+        acceptSuggestion,
+        dismissSuggestion,
+    } = usePredictiveText({
         isPredictiveTextEnabled: aiEnabled && isPredictiveTextEnabled,
         predictiveTextModel,
         predictiveTextProvider,
@@ -1124,8 +1093,8 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         predictiveTextDelay,
         predictionSuggestion,
         setPredictionSuggestion,
-        predictionTargetElement,
-        setPredictionTargetElement,
+        predictionTarget,
+        setPredictionTarget,
     });
 
 
@@ -3648,23 +3617,6 @@ const renderBrowserGraphPane = useCallback(({ nodeId }: { nodeId: string }) => {
 
 
 
-const renderDataDashPane = useCallback(({ nodeId }: { nodeId: string }) => {
-    return (
-        <DataDash
-            initialAnalysisContext={analysisContext}
-            currentPath={currentPath}
-            currentModel={currentModel}
-            currentProvider={currentProvider}
-            currentNPC={currentNPC}
-            messageLabels={messageLabels}
-            setMessageLabels={setMessageLabels}
-            conversationLabels={conversationLabels}
-            setConversationLabels={setConversationLabels}
-        />
-    );
-}, [analysisContext, currentPath, currentModel, currentProvider, currentNPC, messageLabels, setMessageLabels, conversationLabels, setConversationLabels]);
-
-
 const renderBackendPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return <BackendPane />;
 }, []);
@@ -3771,10 +3723,6 @@ const renderMemoryManagerPane = useCallback(({ nodeId }: { nodeId: string }) => 
     );
 }, [currentNPC, currentPathRef.current]);
 
-
-const renderWindowManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
-    return <WindowManagerPane />;
-}, []);
 
 const renderAccountPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return <AccountPane nodeId={nodeId} />;
@@ -4233,7 +4181,7 @@ const renderMessageContextMenu = () => null;
 
 
             if (currentPath) {
-                const structureResult = await window.api.readDirectoryStructure(currentPath);
+                const structureResult = await readDirectoryStructure(currentPath);
                 if (structureResult && !structureResult.error) {
                     setFolderStructure(structureResult);
                 }
@@ -4344,13 +4292,6 @@ const renderMessageContextMenu = () => null;
     }, []);
 
 
-    const createDataDashPane = useCallback(async () => {
-        const newPaneId = generateId();
-        contentDataRef.current[newPaneId] = { contentType: 'datadash', contentId: 'datadash' };
-        addPaneOrTab(newPaneId);
-    }, []);
-
-
     const createBackendPane = useCallback(async () => {
         const newPaneId = generateId();
         contentDataRef.current[newPaneId] = { contentType: 'backend', contentId: 'backend' };
@@ -4358,14 +4299,15 @@ const renderMessageContextMenu = () => null;
     }, []);
 
 
-    const createDBToolPane = useCallback(async () => {
+    const createDBToolPane = useCallback(async (dbPath?: string) => {
         const newPaneId = generateId();
-        contentDataRef.current[newPaneId] = { contentType: 'dbtool', contentId: 'dbtool' };
+        const contentId = dbPath || 'dbtool';
+        contentDataRef.current[newPaneId] = { contentType: 'dbtool', contentId };
         addPaneOrTab(newPaneId);
         const targetPaneId = contentDataRef.current[newPaneId] ? newPaneId : activeContentPaneIdRef.current;
         setTimeout(async () => {
             if (targetPaneId) {
-                await updateContentPane(targetPaneId, 'dbtool', 'dbtool');
+                await updateContentPane(targetPaneId, 'dbtool', contentId);
                 notifyAllPanes();
             }
         }, 0);
@@ -4409,6 +4351,45 @@ const renderMessageContextMenu = () => null;
         contentDataRef.current[newPaneId] = { contentType: 'help', contentId: 'help' };
         addPaneOrTab(newPaneId);
     }, []);
+
+    const handleSshConnect = useCallback(async (
+        config: { id: string; host: string; port: number; username: string; privateKeyPath?: string },
+        password?: string,
+        passphrase?: string
+    ) => {
+        console.log('[SSH] handleSshConnect called', config.id, '->', config.host + ':' + config.port);
+        try {
+            const result = await connectSsh(config, password, passphrase);
+            console.log('[SSH] connectSsh result', JSON.stringify(result));
+            if (result.success) {
+                let remoteHome = '/home/' + config.username;
+                try {
+                    const execWithTimeout = (cmd: string, ms: number) => Promise.race([
+                        (window as any).api.sshExec({ id: config.id, command: cmd }),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('home lookup timed out')), ms))
+                    ]);
+                    const homeResult = await execWithTimeout('pwd', 3000);
+                    console.log('[SSH] home result', JSON.stringify(homeResult));
+                    if ((homeResult as any)?.stdout?.trim()) {
+                        remoteHome = (homeResult as any).stdout.trim();
+                    }
+                } catch (homeErr) {
+                    console.warn('[SSH] failed to get remote home, using fallback', homeErr);
+                }
+                console.log('[SSH] switching to remote path', remoteHome);
+                setCurrentPath(remoteHome);
+                setBaseDir(remoteHome);
+                sessionStorage.setItem(LAST_ACTIVE_PATH_KEY, remoteHome);
+                await loadDirectoryStructureWithoutConversationLoad(remoteHome);
+                console.log('[SSH] remote path loaded');
+            }
+            return result;
+        } catch (err: any) {
+            console.error('[SSH] handleSshConnect error', err);
+            setError(`SSH connect failed: ${err?.message || err}`);
+            return { success: false, error: String(err?.message || err) };
+        }
+    }, [connectSsh, loadDirectoryStructureWithoutConversationLoad]);
 
     const handleGlobalDragStart = useCallback((e, item) => {
 
@@ -4630,9 +4611,13 @@ const renderBrowserViewer = useCallback(({ nodeId, hasTabBar, onToggleZen, isZen
             hasTabBar={hasTabBar}
             onToggleZen={onToggleZen}
             isZenMode={isZenMode}
+            isPredictiveTextEnabled={isPredictiveTextEnabled}
+            onPredictiveTextRequest={requestPrediction}
+            onPredictiveTextAccept={acceptSuggestion}
+            onPredictiveTextDismiss={dismissSuggestion}
         />
     );
-}, [currentPath, rootLayoutNode, closeContentPane, handleNewBrowserTab, performSplit]);
+}, [currentPath, rootLayoutNode, closeContentPane, handleNewBrowserTab, performSplit, isPredictiveTextEnabled, requestPrediction, acceptSuggestion, dismissSuggestion]);
 
 const handleBrowserDialogNavigate = (url) => {
         createNewBrowser(url);
@@ -5573,9 +5558,10 @@ const handleBrowserDialogNavigate = (url) => {
                 onTabChange={(tab) => { contentDataRef.current[nodeId] = { ...contentDataRef.current[nodeId], activeTab: tab }; }}
                 initialJinxName={paneData.initialJinxName}
                 onOpenJinxPane={(name) => createTeamManagementPane({ tab: 'jinxes', initialJinxName: name })}
+                onOpenDatabase={(path) => createDBToolPane(path)}
             />
         );
-    }, [currentPath, createNewConversation, availableNPCs, availableJinxes, currentNPC, createTeamManagementPane]);
+    }, [currentPath, createNewConversation, availableNPCs, availableJinxes, currentNPC, createTeamManagementPane, createDBToolPane]);
 
 
     const renderSettingsPane = useCallback(({ nodeId }: { nodeId: string }) => {
@@ -6125,7 +6111,7 @@ const handleBrowserDialogNavigate = (url) => {
                     } catch (e) {}
                 }
                 if (storedPath) {
-                    const pathExistsResponse = await window.api.readDirectoryStructure(storedPath);
+                    const pathExistsResponse = await readDirectoryStructure(storedPath);
                     if (!pathExistsResponse?.error) {
                         setCurrentPath(storedPath);
                     } else {
@@ -6329,169 +6315,13 @@ const handleBrowserDialogNavigate = (url) => {
 
 
 
-    const applyLayoutPreset = useCallback(async (presetId: string) => {
-        const gid = () => generateId();
-        const panes: Record<string, { id: string; type: string; data: any }> = {};
-        const postSetup: Array<{ paneId: string; type: string }> = [];
-        const mkPane = (contentType: string, extra: any = {}) => {
-            const id = gid();
-            let contentId: string | null = null;
-            if (contentType === 'terminal' || contentType === 'python') {
-                contentId = `term_${gid()}`;
-                extra.shellType = extra.shellType || (contentType === 'python' ? 'python3' : 'system');
-            } else if (contentType === 'browser') {
-                contentId = `browser_${gid()}`;
-                postSetup.push({ paneId: id, type: 'browser' });
-            } else if (contentType === 'chat') {
-                extra.chatMessages = { messages: [], allMessages: [], displayedMessageCount: 20 };
-                postSetup.push({ paneId: id, type: 'chat' });
-            }
-            panes[id] = { id, type: contentType, data: { contentType, contentId, ...extra } };
-            return { id, type: 'content' as const };
-        };
-        const mkSplit = (dir: 'horizontal' | 'vertical', sizes: number[], children: any[]) => ({
-            id: gid(), type: 'split' as const, direction: dir, sizes, children,
-        });
-        let layout: any;
-        let activeId: string | undefined;
-        switch (presetId) {
-            case 'vscode': {
-                const e1 = mkPane('editor', { isUntitled: true });
-                const e2 = mkPane('editor', { isUntitled: true });
-                const term = mkPane('terminal');
-                activeId = e1.id;
-                layout = mkSplit('vertical', [70, 30], [
-                    mkSplit('horizontal', [50, 50], [e1, e2]),
-                    term,
-                ]);
-                break;
-            }
-            case 'pycharm': {
-                const editor = mkPane('editor', { isUntitled: true });
-                const chat = mkPane('chat', { executionMode: 'tool_agent' });
-                const term = mkPane('terminal');
-                activeId = editor.id;
-                layout = mkSplit('horizontal', [60, 40], [
-                    editor,
-                    mkSplit('vertical', [60, 40], [chat, term]),
-                ]);
-                break;
-            }
-            case 'spyder': {
-                const editor = mkPane('editor', { isUntitled: true });
-                const help = mkPane('help');
-                const term = mkPane('terminal');
-                activeId = editor.id;
-                layout = mkSplit('horizontal', [55, 45], [
-                    editor,
-                    mkSplit('vertical', [50, 50], [help, term]),
-                ]);
-                break;
-            }
-            case 'matlab': {
-                const editor = mkPane('editor', { isUntitled: true });
-                const term = mkPane('terminal');
-                const chat = mkPane('chat', { executionMode: 'tool_agent' });
-                activeId = editor.id;
-                layout = mkSplit('horizontal', [70, 30], [
-                    mkSplit('vertical', [65, 35], [editor, term]),
-                    chat,
-                ]);
-                break;
-            }
-            case 'jetbrains': {
-                const editor = mkPane('editor', { isUntitled: true });
-                const term = mkPane('terminal');
-                const git = mkPane('git');
-                activeId = editor.id;
-                layout = mkSplit('vertical', [70, 30], [
-                    mkSplit('horizontal', [75, 25], [editor, git]),
-                    term,
-                ]);
-                break;
-            }
-            case 'cursor': {
-                const editor = mkPane('editor', { isUntitled: true });
-                const chat = mkPane('chat', { executionMode: 'tool_agent' });
-                activeId = editor.id;
-                layout = mkSplit('horizontal', [60, 40], [editor, chat]);
-                break;
-            }
-            case 'claude-code': {
-                const t1 = mkPane('terminal');
-                const t2 = mkPane('terminal');
-                const t3 = mkPane('terminal');
-                const t4 = mkPane('terminal');
-                const t5 = mkPane('terminal');
-                const t6 = mkPane('terminal');
-                activeId = t1.id;
-                layout = mkSplit('vertical', [50, 50], [
-                    mkSplit('horizontal', [33, 34, 33], [t1, t2, t3]),
-                    mkSplit('horizontal', [33, 34, 33], [t4, t5, t6]),
-                ]);
-                break;
-            }
-            case 'writer': {
-                const doc = mkPane('docx');
-                activeId = doc.id;
-                layout = doc;
-                break;
-            }
-            case 'research': {
-                const browser = mkPane('browser');
-                const chat = mkPane('chat', { executionMode: 'tool_agent' });
-                const term = mkPane('terminal');
-                activeId = browser.id;
-                layout = mkSplit('vertical', [70, 30], [
-                    mkSplit('horizontal', [55, 45], [browser, chat]),
-                    term,
-                ]);
-                break;
-            }
-            case 'data-science': {
-                const editor = mkPane('editor', { isUntitled: true });
-                const term = mkPane('terminal');
-                const chat = mkPane('chat', { executionMode: 'tool_agent' });
-                activeId = editor.id;
-                layout = mkSplit('vertical', [60, 40], [
-                    mkSplit('horizontal', [50, 50], [editor, term]),
-                    chat,
-                ]);
-                break;
-            }
-            default:
-                return;
-        }
-        const existingIds = Object.keys(contentDataRef.current);
-        existingIds.forEach(id => delete contentDataRef.current[id]);
-        Object.values(panes).forEach(p => {
-            contentDataRef.current[p.id] = p.data;
-        });
-        setRootLayoutNode(layout);
-        if (activeId) setActiveContentPaneId(activeId);
-        setLayoutPresetModalOpen(false);
-        for (const { paneId, type } of postSetup) {
-            if (type === 'chat') {
-                try {
-                    const conversation = await window.api.createConversation({ directory_path: currentPath });
-                    if (conversation?.id && contentDataRef.current[paneId]) {
-                        contentDataRef.current[paneId].contentId = conversation.id;
-                        contentDataRef.current[paneId].conversationId = conversation.id;
-                        notifyAllPanes();
-                    }
-                } catch (e) {
-                    console.error('Failed to create conversation for preset chat pane:', e);
-                }
-            }
-        }
-    }, [setRootLayoutNode, setActiveContentPaneId, contentDataRef, currentPath]);
 
     const renderModals = () =>
     {
         
     return     (
         <>
-            <NPCTeamMenu isOpen={npcTeamMenuOpen} onClose={handleCloseNpcTeamMenu} currentPath={currentPath} startNewConversation={startNewConversationWithNpc} createDataDashPane={createDataDashPane} onOpenJinxTab={(name) => createTeamManagementPane({ tab: 'jinxes', initialJinxName: name })}/>
+            <NPCTeamMenu isOpen={npcTeamMenuOpen} onClose={handleCloseNpcTeamMenu} currentPath={currentPath} startNewConversation={startNewConversationWithNpc} onOpenJinxTab={(name) => createTeamManagementPane({ tab: 'jinxes', initialJinxName: name })}/>
             <JinxMenu isOpen={jinxMenuOpen} onClose={() => setJinxMenuOpen(false)} currentPath={currentPath}/>
 
 <SettingsMenu
@@ -6508,12 +6338,6 @@ const handleBrowserDialogNavigate = (url) => {
     setPredictiveTextProvider={setPredictiveTextProvider}
     availableModels={availableModels}
     onRerunSetup={onRerunSetup}
-/>
-
-<DownloadManager
-    isOpen={downloadManagerOpen}
-    onClose={() => setDownloadManagerOpen(false)}
-    currentPath={currentPath}
 />
 
 
@@ -6535,57 +6359,6 @@ const handleBrowserDialogNavigate = (url) => {
 )}
 
 
-
-{downloadToast && (
-    <div
-        className="fixed bottom-4 right-4 z-50 flex items-center gap-3 px-4 py-3 bg-blue-600 text-white rounded-lg shadow-lg animate-in slide-in-from-bottom-5"
-        onClick={() => setDownloadManagerOpen(true)}
-        style={{ cursor: 'pointer' }}
-    >
-        <div className="animate-spin">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-            </svg>
-        </div>
-        <div>
-            <div className="text-sm font-medium">{downloadToast.message}</div>
-            <div className="text-xs opacity-80 truncate max-w-[200px]">{downloadToast.filename}</div>
-        </div>
-        <button
-            onClick={(e) => { e.stopPropagation(); setDownloadToast(null); }}
-            className="p-1 hover:bg-white/20 rounded"
-        >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-        </button>
-    </div>
-)}
-
-
-{showDownloadCompletePrompt && (
-    <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3 px-4 py-3 bg-green-600 text-white rounded-lg shadow-lg animate-in slide-in-from-bottom-5">
-        <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-        </svg>
-        <div className="text-sm font-medium">All downloads complete</div>
-        <button
-            onClick={() => { (window as any).api?.closeWindow?.(); }}
-            className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded text-sm font-medium"
-        >
-            Close App
-        </button>
-        <button
-            onClick={() => setShowDownloadCompletePrompt(false)}
-            className="p-1 hover:bg-white/20 rounded"
-        >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-        </button>
-    </div>
-)}
 
         {messageContextMenuPos && (
             <>
@@ -7309,86 +7082,6 @@ const handleBrowserDialogNavigate = (url) => {
                 />
             )}
 
-            {layoutPresetModalOpen && (
-                <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setLayoutPresetModalOpen(false)}>
-                    <div className="w-full max-w-3xl theme-bg-primary rounded-lg border theme-border flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between p-4 border-b theme-border">
-                            <div className="flex items-center gap-3">
-                                <LayoutGrid size={20} className="text-blue-400" />
-                                <h2 className="text-lg font-semibold theme-text-primary">Layout Presets</h2>
-                            </div>
-                            <button onClick={() => setLayoutPresetModalOpen(false)} className="p-2 theme-hover rounded-lg">
-                                <X size={20} />
-                            </button>
-                        </div>
-                        <div className="flex-1 overflow-auto p-4">
-                            {currentPath && (
-                                <div className="flex gap-2 mb-4">
-                                    <button
-                                        onClick={() => {
-                                            if (!rootLayoutNode) return;
-                                            const data = serializeWorkspace(rootLayoutNode, currentPath, contentDataRef.current, activeContentPaneId, openMode);
-                                            localStorage.setItem(`incognide-default-layout:${currentPath}`, JSON.stringify(data));
-                                            setLayoutPresetModalOpen(false);
-                                        }}
-                                        disabled={!rootLayoutNode}
-                                        className="flex-1 px-3 py-2 text-sm theme-bg-secondary theme-hover rounded-lg border theme-border disabled:opacity-40"
-                                    >
-                                        Save Current as Default
-                                    </button>
-                                    <button
-                                        onClick={async () => {
-                                            const saved = localStorage.getItem(`incognide-default-layout:${currentPath}`);
-                                            if (!saved) return;
-                                            try {
-                                                const data = JSON.parse(saved);
-                                                const restored = await deserializeWorkspace(data, contentDataRef, setRootLayoutNode, setActiveContentPaneId, setIsLoadingWorkspace, generateId, getConversationStats);
-                                                if (restored) {
-                                                    if (data.openMode) {
-                                                        setOpenMode(data.openMode);
-                                                        localStorage.setItem('incognide_openMode', data.openMode);
-                                                    }
-                                                    setLayoutPresetModalOpen(false);
-                                                }
-                                            } catch (e) { console.error('Failed to load default layout:', e); }
-                                        }}
-                                        disabled={!localStorage.getItem(`incognide-default-layout:${currentPath}`)}
-                                        className="flex-1 px-3 py-2 text-sm theme-bg-secondary theme-hover rounded-lg border theme-border disabled:opacity-40"
-                                    >
-                                        Load Default
-                                    </button>
-                                </div>
-                            )}
-                            <div className="grid grid-cols-2 gap-3">
-                                {[
-                                    { id: 'vscode', name: 'VS Code', desc: '2 editors + terminal', ascii: '┌──────┬──────┐\n│editor│editor│\n├──────┴──────┤\n│  terminal   │\n└─────────────┘' },
-                                    { id: 'cursor', name: 'Cursor', desc: 'Editor + agent chat', ascii: '┌────────┬─────┐\n│ editor │chat │\n│        │     │\n└────────┴─────┘' },
-                                    { id: 'claude-code', name: 'Claude Code', desc: '6 terminals (3x2)', ascii: '┌────┬────┬────┐\n│term│term│term│\n├────┼────┼────┤\n│term│term│term│\n└────┴────┴────┘' },
-                                    { id: 'pycharm', name: 'PyCharm', desc: 'Editor + chat + terminal', ascii: '┌────────┬─────┐\n│ editor │chat │\n│        ├─────┤\n│        │term │\n└────────┴─────┘' },
-                                    { id: 'jetbrains', name: 'JetBrains', desc: 'Editor + git + terminal', ascii: '┌──────────┬───┐\n│  editor  │git│\n├──────────┴───┤\n│   terminal   │\n└──────────────┘' },
-                                    { id: 'spyder', name: 'Spyder', desc: 'Editor + help + terminal', ascii: '┌────────┬─────┐\n│ editor │help │\n│        ├─────┤\n│        │term │\n└────────┴─────┘' },
-                                    { id: 'matlab', name: 'MATLAB', desc: 'Editor + terminal + chat', ascii: '┌──────────┬────┐\n│  editor  │    │\n├──────────┤chat│\n│ terminal │    │\n└──────────┴────┘' },
-                                    { id: 'research', name: 'Research', desc: 'Browser + chat + terminal', ascii: '┌───────┬──────┐\n│browser│ chat │\n├───────┴──────┤\n│   terminal   │\n└──────────────┘' },
-                                    { id: 'data-science', name: 'Data Science', desc: 'Editor + terminal + chat', ascii: '┌───────┬──────┐\n│editor │ term │\n├───────┴──────┤\n│     chat     │\n└──────────────┘' },
-                                    { id: 'writer', name: 'Writer', desc: 'Full document editor', ascii: '┌──────────────┐\n│              │\n│     docx     │\n│              │\n└──────────────┘' },
-                                ].map(preset => (
-                                    <button
-                                        key={preset.id}
-                                        onClick={() => applyLayoutPreset(preset.id)}
-                                        className="flex gap-3 p-3 theme-bg-secondary rounded-lg theme-hover text-left group"
-                                    >
-                                        <pre className="text-[9px] leading-[1.2] theme-text-muted group-hover:text-blue-400 transition-colors flex-shrink-0">{preset.ascii}</pre>
-                                        <div className="flex flex-col justify-center min-w-0">
-                                            <div className="text-sm font-medium theme-text-primary">{preset.name}</div>
-                                            <div className="text-xs theme-text-muted">{preset.desc}</div>
-                                        </div>
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
 
         </>
 
@@ -7710,7 +7403,6 @@ const paneRenderers = useMemo(() => ({
     'data-labeler': renderDataLabelerPane,
     'graph-viewer': renderGraphViewerPane,
     browsergraph: renderBrowserGraphPane,
-    datadash: renderDataDashPane,
     backend: renderBackendPane,
     dbtool: renderDBToolPane,
     npcteam: renderNPCTeamPane,
@@ -7731,7 +7423,6 @@ const paneRenderers = useMemo(() => ({
     tilejinx: renderTileJinxPane,
     python: renderTerminalView,
     branches: renderBranchComparisonPane,
-    windowmanager: renderWindowManagerPane,
     account: renderAccountPane,
     activity: renderActivityPane,
     browsersettings: renderBrowserSettingsPane,
@@ -7742,11 +7433,11 @@ const paneRenderers = useMemo(() => ({
     renderCsvViewer, renderDocxViewer, renderBrowserViewer, renderPptxViewer,
     renderLatexViewer, renderNotebookViewer, renderExpViewer, renderPicViewer, renderVideoViewer, renderStlViewer,
     renderRadioPane, renderZipViewer, renderDataLabelerPane, renderGraphViewerPane,
-    renderBrowserGraphPane, renderDataDashPane, renderDBToolPane, renderNPCTeamPane,
+    renderBrowserGraphPane, renderDBToolPane, renderNPCTeamPane,
     renderJinxPane, renderTeamManagementPane, renderSkillsManagerPane, renderSettingsPane, renderHelpPane, renderGitPane,
     renderFolderViewerPane, renderProjectEnvPane, renderDiskUsagePane, renderMemoryManagerPane,
     renderCronDaemonPane, renderSearchPane, renderMarkdownPreviewPane, renderHtmlPreviewPane,
-    renderTileJinxPane, renderBranchComparisonPane, renderWindowManagerPane,
+    renderTileJinxPane, renderBranchComparisonPane,
     renderBrowserSettingsPane, renderModelManagerPane, renderVoiceManagerPane,
 ]);
 
@@ -7793,8 +7484,6 @@ const layoutComponentApi = useMemo(() => ({
 
     currentNPC,
 
-    lockedPanes,
-    togglePaneLocked: (nodeId: string) => { setLockedPanes(prev => { const next = new Set(prev); if (next.has(nodeId)) next.delete(nodeId); else next.add(nodeId); localStorage.setItem('incognide_lockedPanes', JSON.stringify([...next])); return next; }); },
     paneUpdateEmitter,
     getPaneZoomLevel,
     getEffectivePaneZoom,
@@ -7815,7 +7504,7 @@ const layoutComponentApi = useMemo(() => ({
     zenModePaneId,
     renamingPaneId, editedFileName, handleConfirmRename,
     handleRunScript, handleNewBrowserTab, topBarCollapsed,
-    currentPath, currentNPC, lockedPanes,
+    currentPath, currentNPC,
     getPaneZoomLevel, getEffectivePaneZoom, zoomPaneIn, zoomPaneOut, resetPaneZoom,
 ]);
 
@@ -8375,10 +8064,37 @@ const renderAttachmentThumbnails = () => {
 
 
 
-const renderMainContent = () => {
+const PANE_TITLES: Record<string, string> = {
+    'chat': 'Chat',
+    'agent': 'Agent',
+    'editor': 'File',
+    'terminal': 'Terminal',
+    'browser': 'Browser',
+    'pdf': 'PDF',
+    'graph-viewer': 'Knowledge Graph',
+    'dbtool': 'Database',
+    'memory-manager': 'Memory',
+    'npcteam': 'NPCs',
+    'jinx': 'Jinxes',
+    'teammanagement': 'Team',
+    'diff': 'Diff',
+    'browsergraph': 'Web Graph',
+};
+const layoutPaneIds = rootLayoutNode ? new Set(collectPaneIds(rootLayoutNode)) : new Set<string>();
+const paneItems = Object.entries(contentDataRef.current)
+    .filter(([paneId, data]) => layoutPaneIds.has(paneId) && data?.contentType)
+    .map(([paneId, data]: [string, any]) => {
+        const ct = data.contentType;
+        let title = PANE_TITLES[ct] || ct || 'Pane';
+        const shortId = data?.contentId?.slice(-6) || '';
+        if (ct === 'chat') title = `${data?.npc || 'Chat'} ${shortId}`.trim();
+        else if (ct === 'agent') title = `${data?.npc || 'Agent'} ${shortId}`.trim();
+        else if (ct === 'editor') title = getFileName(data?.contentId) || 'File';
+        else if (ct === 'terminal') title = `Terminal${data?.shellType ? ` (${data.shellType})` : ''}`;
+        return { id: paneId, type: ct, title, isActive: paneId === activeContentPaneId };
+    });
 
-
-    const topBar = topBarCollapsed ? (
+const topBar = topBarCollapsed ? (
         <div
             className="h-1 hover:h-4 flex items-center justify-center cursor-pointer theme-bg-secondary border-b theme-border transition-all group flex-shrink-0"
             onClick={() => { setTopBarCollapsed(false); localStorage.setItem('incognide_topBarCollapsed', 'false'); }}
@@ -8388,316 +8104,83 @@ const renderMainContent = () => {
         </div>
     ) : (
         <div className="flex-shrink-0 relative" style={{ height: topBarHeight }}>
-            <div ref={topBarRef} className="h-full px-3 flex items-center gap-3 text-[12px] theme-bg-secondary border-b theme-border">
+            <div ref={topBarRef} className="h-full px-3 relative flex items-center text-[12px] theme-bg-secondary border-b theme-border">
 
-            <button
-                data-tutorial="settings-button"
-                onClick={() => createSettingsPane?.()}
-                className="p-2 theme-hover rounded theme-text-muted"
-                title="Settings"
-            >
-                <Settings size={18} />
-            </button>
+            <div className="absolute -left-3 top-1/2 -translate-y-1/2 z-10 h-full grid grid-cols-3" style={{ width: sidebarCollapsed ? 192 : (sidebarWidth || 192) }}>
+                <button
+                    data-tutorial="settings-button"
+                    onClick={() => createSettingsPane?.()}
+                    className="flex items-center justify-center h-full p-3 hover:bg-teal-500/20 transition-all theme-text-muted"
+                    title="Settings"
+                >
+                    <Settings size={18} />
+                </button>
 
+                <button
+                    onClick={() => createHelpPane?.()}
+                    className="flex items-center justify-center h-full p-3 hover:bg-teal-500/20 transition-all theme-text-muted"
+                    title="Help"
+                    data-tutorial="help-button"
+                >
+                    <HelpCircle size={18} />
+                </button>
 
-            <button
-                onClick={() => createHelpPane?.()}
-                className="p-2 theme-hover rounded theme-text-muted"
-                title="Help"
-                data-tutorial="help-button"
-            >
-                <HelpCircle size={18} />
-            </button>
-
-            <button
-                onClick={() => setLayoutPresetModalOpen(true)}
-                className="p-2 theme-hover rounded theme-text-muted"
-                title="Layout Presets"
-            >
-                <LayoutGrid size={18} />
-            </button>
-
-            <button
-                onClick={() => { setTopBarCollapsed(true); localStorage.setItem('incognide_topBarCollapsed', 'true'); }}
-                className="p-1 theme-hover rounded theme-text-muted"
-                title="Hide top bar"
-            >
-                <ChevronUp size={14} />
-            </button>
-
-            <div className="flex-1" />
+                <button
+                    onClick={() => { setTopBarCollapsed(true); localStorage.setItem('incognide_topBarCollapsed', 'true'); }}
+                    className="flex items-center justify-center h-full p-3 hover:bg-teal-500/20 transition-all theme-text-muted"
+                    title="Hide top bar"
+                >
+                    <ChevronUp size={18} />
+                </button>
+            </div>
 
 
-            <button
-                onClick={async () => {
-                    const selectedPath = await (window as any).api?.open_directory_picker?.();
-                    if (selectedPath) setCurrentPath(selectedPath);
-                }}
-                className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-black/30 hover:bg-black/50 text-left"
-                title="Click to open a different folder"
-            >
-                <Folder size={12} className="theme-text-muted" />
-                <span className="text-[11px] theme-text-primary truncate max-w-[200px]">
-                    {currentPath ? currentPath.split(/[\\/]/).pop() : 'No folder'}
-                </span>
-            </button>
-            <button
-                onClick={() => setCommandPaletteOpen(true)}
-                className="p-1.5 theme-hover rounded theme-text-muted"
-                title={`Command palette (${navigator.platform?.toLowerCase().includes('mac') ? '⌘P' : 'Ctrl+Shift+P'})`}
-            >
-                <Sparkles size={14} />
-            </button>
-
-
-            {topBarWidth < 900 ? (
-                searchExpanded ? (
-                    <div className="flex items-center gap-2 w-32 px-2 py-1 bg-black/40 border border-blue-400 rounded ring-1 ring-blue-400/30 transition-all">
-                        <Search size={14} className="text-blue-400 flex-shrink-0" />
-                        <input
-                            ref={collapsedSearchRef}
-                            autoFocus
-                            type="text"
-                            defaultValue=""
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                    const val = (e.target as HTMLInputElement).value.trim();
-                                    if (val) {
-                                        e.preventDefault();
-                                        createSearchPane(val);
-                                        setSearchExpanded(false);
-                                    }
-                                } else if (e.key === 'Escape') {
-                                    setSearchExpanded(false);
-                                }
-                            }}
-                            onBlur={() => setTimeout(() => setSearchExpanded(false), 150)}
-                            className="flex-1 bg-transparent theme-text-primary text-xs focus:outline-none min-w-0"
-                            placeholder="Search files..."
-                        />
-                        <button onClick={() => setSearchExpanded(false)} className="p-0.5 theme-hover rounded">
-                            <X size={10} className="theme-text-muted" />
-                        </button>
-                    </div>
-                ) : (
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 z-10">
+                <div className="flex items-center rounded bg-black/30 hover:bg-black/40 focus-within:bg-black/50 transition-colors overflow-hidden">
                     <button
-                        data-tutorial="search-bar"
-                        onClick={() => { setSearchExpanded(true); }}
-                        className="p-1.5 theme-hover rounded theme-text-muted"
-                        title="Search files"
-                    >
-                        <Search size={16} className="text-blue-400" />
-                    </button>
-                )
-            ) : (
-            <div
-                data-tutorial="search-bar"
-                className="flex items-center gap-2 w-40 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400/30 transition-all"
-            >
-                <div className="relative flex-shrink-0">
-                    <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); setScopeMenuOpen(prev => !prev); }}
-                        title={`Search scope: ${SEARCH_SCOPES[searchScope] || 'All'}`}
-                        className="flex items-center gap-0.5 theme-hover rounded px-0.5 py-0.5 cursor-pointer"
-                    >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400">
-                            <circle cx="10" cy="10" r="6" />
-                            <line x1="14.5" y1="14.5" x2="20" y2="20" />
-                            <rect x="7" y="7" width="6" height="6" rx="1" className="opacity-50" strokeWidth="1.5" />
-                        </svg>
-                        <ChevronDown size={10} className="text-gray-400" />
-                    </button>
-                    {scopeMenuOpen && (
-                        <>
-                            <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setScopeMenuOpen(false)} />
-                            <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded-lg shadow-xl z-50 min-w-[160px] py-1">
-                                <div className="px-3 py-1 text-[10px] theme-text-muted uppercase tracking-wide">Search In</div>
-                                {Object.entries(SEARCH_SCOPES).sort(([a], [b]) => (a === searchScope ? -1 : b === searchScope ? 1 : 0)).map(([k, v]) => (
-                                    <button
-                                        key={k}
-                                        onClick={() => {
-                                            setSearchScope(k);
-                                            localStorage.setItem('npc-local-search-scope', k);
-                                            setScopeMenuOpen(false);
-                                        }}
-                                        className={`flex items-center justify-between w-full px-3 py-1.5 text-xs text-left theme-hover ${searchScope === k ? 'text-blue-400' : 'theme-text-primary'}`}
-                                    >
-                                        <span>{v}</span>
-                                        {searchScope === k && <Check size={12} />}
-                                    </button>
-                                ))}
-                            </div>
-                        </>
-                    )}
-                </div>
-                <input
-                    ref={searchInputRef}
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => {
-                        setSearchTerm(e.target.value);
-                        if (!e.target.value.trim()) {
-                            setIsSearching(false);
-                            setDeepSearchResults([]);
-                            setMessageSearchResults([]);
-                            setSearchResultsModalOpen(false);
-                        }
-                    }}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' && searchTerm.trim()) {
-                            e.preventDefault();
-                            trackActivity('search_query', { query: searchTerm.trim(), scope: searchScope });
-                            createSearchPane(searchTerm.trim(), searchScope);
-                            setSearchTerm('');
-                        }
-                    }}
-                    placeholder={searchScope === 'all' ? 'Search...' : SEARCH_SCOPES[searchScope]}
-                    className="flex-1 bg-transparent text-gray-100 text-xs focus:outline-none min-w-0"
-                />
-                {(deepSearchResults.length > 0 || messageSearchResults.length > 0) && (
-                    <button
-                        onClick={() => setSearchResultsModalOpen(true)}
-                        className="px-1.5 py-0.5 text-[9px] bg-blue-500 text-white rounded"
-                    >
-                        {deepSearchResults.length + messageSearchResults.length}
-                    </button>
-                )}
-                {searchTerm && (
-                    <button
-                        onClick={() => {
-                            setSearchTerm('');
-                            setIsSearching(false);
-                            setDeepSearchResults([]);
-                            setMessageSearchResults([]);
-                            setSearchResultsModalOpen(false);
+                        onClick={async () => {
+                            const selectedPath = await (window as any).api?.open_directory_picker?.();
+                            if (selectedPath) setCurrentPath(selectedPath);
                         }}
-                        className="p-0.5 hover:bg-gray-600 rounded"
+                        className="flex items-center gap-1.5 px-2 py-1 text-left hover:bg-white/5 transition-colors"
+                        title="Click to open a different folder"
                     >
-                        <X size={10} className="text-gray-300" />
+                        <Folder size={12} className="theme-text-muted" />
+                        <span className="text-[11px] theme-text-primary truncate max-w-[180px]">
+                            {currentPath ? currentPath.split(/[\\/]/).pop() : 'No folder'}
+                        </span>
                     </button>
-                )}
-            </div>
-            )}
-
-
-                {topBarWidth < 900 ? (
-                    webSearchExpanded ? (
-                        <div className="flex items-center gap-2 w-32 px-2 py-1 bg-black/40 border border-cyan-400 rounded ring-1 ring-cyan-400/30 transition-all">
-                            <Globe size={14} className="text-cyan-400 flex-shrink-0" />
-                            <input
-                                ref={collapsedWebSearchRef}
-                                autoFocus
-                                type="text"
-                                value={webSearchTerm}
-                                onChange={(e) => setWebSearchTerm(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && webSearchTerm.trim()) {
-                                        e.preventDefault();
-                                        const provider = WEB_SEARCH_PROVIDERS[webSearchProvider];
-                                        const url = provider.url + encodeURIComponent(webSearchTerm.trim());
-                                        createNewBrowser(url);
-                                        setWebSearchTerm('');
-                                        setWebSearchExpanded(false);
-                                    } else if (e.key === 'Escape') {
-                                        setWebSearchExpanded(false);
-                                    }
-                                }}
-                                onBlur={() => { if (!webSearchTerm.trim()) setWebSearchExpanded(false); }}
-                                className="flex-1 bg-transparent theme-text-primary text-xs focus:outline-none min-w-0"
-                                placeholder="Web search..."
-                            />
-                            <button onClick={() => { setWebSearchTerm(''); setWebSearchExpanded(false); }} className="p-0.5 theme-hover rounded">
-                                <X size={10} className="theme-text-muted" />
+                    <div className="w-px h-4 bg-white/10" />
+                    <div className="relative flex items-center">
+                        <Search size={12} className="absolute left-2 text-gray-500 pointer-events-none" />
+                        <input
+                            type="text"
+                            value={fileSearch}
+                            onChange={(e) => setFileSearch(e.target.value)}
+                            placeholder="Search files..."
+                            className="w-40 bg-transparent border-none pl-7 pr-6 py-1 text-[11px] theme-text-primary placeholder:opacity-50 focus:outline-none"
+                        />
+                        {fileSearch && (
+                            <button
+                                onClick={() => setFileSearch('')}
+                                className="absolute right-2 text-gray-500 hover:theme-text-primary"
+                            >
+                                <X size={10} />
                             </button>
-                        </div>
-                    ) : (
-                        <button
-                            data-tutorial="web-search-bar"
-                            onClick={() => { setWebSearchExpanded(true); }}
-                            className="p-1.5 theme-hover rounded theme-text-muted"
-                            title="Web search"
-                        >
-                            <Globe size={16} className="text-cyan-400" />
-                        </button>
-                    )
-                ) : (
-                <div data-tutorial="web-search-bar" className="flex items-center gap-2 w-32 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-cyan-400 focus-within:ring-1 focus-within:ring-cyan-400/30 transition-all">
-                <div className="relative flex-shrink-0">
-                    <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); setEngineMenuOpen(prev => !prev); }}
-                        title={`Search engine: ${WEB_SEARCH_PROVIDERS[webSearchProvider as WebSearchProvider]?.name || webSearchProvider}`}
-                        className="flex items-center gap-0.5 theme-hover rounded px-0.5 py-0.5 cursor-pointer"
-                    >
-                        <Globe size={14} className="text-cyan-400" />
-                        <ChevronDown size={10} className="text-gray-400" />
-                    </button>
-                    {engineMenuOpen && (
-                        <>
-                            <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setEngineMenuOpen(false)} />
-                            <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded-lg shadow-xl z-50 min-w-[140px] py-1">
-                                <div className="px-3 py-1 text-[10px] theme-text-muted uppercase tracking-wide">Search Engine</div>
-                                {Object.entries(WEB_SEARCH_PROVIDERS).sort(([a], [b]) => (a === webSearchProvider ? -1 : b === webSearchProvider ? 1 : 0)).map(([k, v]) => (
-                                    <button
-                                        key={k}
-                                        onClick={() => {
-                                            setWebSearchProvider(k);
-                                            localStorage.setItem('npc-browser-search-engine', k);
-                                            window.dispatchEvent(new CustomEvent('search-engine-changed', { detail: k }));
-                                            setEngineMenuOpen(false);
-                                        }}
-                                        className={`flex items-center justify-between w-full px-3 py-1.5 text-xs text-left theme-hover ${webSearchProvider === k ? 'text-cyan-400' : 'theme-text-primary'}`}
-                                    >
-                                        <span>{v.name}</span>
-                                        {webSearchProvider === k && <Check size={12} />}
-                                    </button>
-                                ))}
-                            </div>
-                        </>
-                    )}
-                </div>
-                <input
-                    type="text"
-                    value={webSearchTerm}
-                    onChange={(e) => setWebSearchTerm(e.target.value)}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' && webSearchTerm.trim()) {
-                            e.preventDefault();
-                            const provider = WEB_SEARCH_PROVIDERS[webSearchProvider as WebSearchProvider];
-                            const url = provider.url + encodeURIComponent(webSearchTerm.trim());
-                            createNewBrowser(url);
-                            setWebSearchTerm('');
-                        }
-                    }}
-                    className="flex-1 bg-transparent text-gray-100 text-xs focus:outline-none min-w-0"
-                />
-            </div>
-            )}
-
-            <div className="flex-1" />
-
-
-            <div className="flex items-center gap-2">
-                {topBarWidth < 650 && (
-                    <div className="relative">
-                        <button
-                            onClick={() => setTopBarMenuOpen(!topBarMenuOpen)}
-                            className="p-2 theme-hover rounded theme-text-muted"
-                            title="More tools"
-                        >
-                            <MoreVertical size={18} />
-                        </button>
-                        {topBarMenuOpen && (
-                            <>
-                                <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setTopBarMenuOpen(false)} />
-                                <div className="absolute right-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-50 py-1 min-w-[160px]">
-                                </div>
-                            </>
                         )}
                     </div>
-                )}
+                </div>
+                <button
+                    onClick={() => setCommandPaletteOpen(true)}
+                    className="p-1.5 theme-hover rounded theme-text-muted"
+                    title={`Command palette (${navigator.platform?.toLowerCase().includes('mac') ? '⌘P' : 'Ctrl+Shift+P'})`}
+                >
+                    <Sparkles size={14} />
+                </button>
+            </div>
 
+
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-3 z-10">
 
                 <div className="relative">
                     <button
@@ -8801,10 +8284,57 @@ const renderMainContent = () => {
         </div>
     );
 
+const statusBar = bottomBarCollapsed ? (
+    <div
+        className="h-1 hover:h-4 flex items-center justify-center cursor-pointer theme-bg-tertiary border-t theme-border transition-all group"
+        onClick={() => { setBottomBarCollapsed(false); localStorage.setItem('incognide_bottomBarCollapsed', 'false'); }}
+        title="Show status bar"
+    >
+        <ChevronUp size={10} className="opacity-0 group-hover:opacity-60" />
+    </div>
+) : (
+    <StatusBar
+        paneItems={paneItems}
+        setActiveContentPaneId={setActiveContentPaneId}
+        height={bottomBarHeight}
+        onStartResize={() => setIsResizingBottomBar(true)}
+        sidebarCollapsed={sidebarCollapsed}
+        onExpandSidebar={() => setSidebarCollapsed(false)}
+        sidebarWidth={sidebarWidth}
+        appVersion={appVersion}
+        updateAvailable={updateAvailable}
+        onCheckForUpdates={checkForUpdates}
+        onCollapse={() => { setBottomBarCollapsed(true); localStorage.setItem('incognide_bottomBarCollapsed', 'true'); }}
+        openMode={openMode}
+        onToggleOpenMode={() => { setOpenMode(m => { const next = m === 'pane' ? 'tab' : 'pane'; localStorage.setItem('incognide_openMode', next); if (currentPath && rootLayoutNode) { const data = serializeWorkspace(rootLayoutNode, currentPath, contentDataRef.current, activeContentPaneId, next); if (data) saveWorkspaceToStorage(currentPath, data); } return next; }); }}
+        onOpenLogsViewer={() => setLogsViewerOpen(true)}
+        createBackendPane={createBackendPane}
+        activeConnection={sshActiveConnection}
+        sshConnections={sshConnections}
+        onConnectSsh={(config) => handleSshConnect(config)}
+        onDisconnectSsh={(id) => disconnectSsh(id)}
+        onOpenSSHDialog={() => setSshDialogOpen(true)}
+        isDarkMode={isDarkMode}
+        toggleTheme={() => toggleTheme(setIsDarkMode)}
+        onOpenAccount={() => createAndAddPaneNodeToLayout?.('account', 'account')}
+        onOpenNewWindow={() => { if ((window as any).api?.openNewWindow) (window as any).api.openNewWindow(''); else window.open(window.location.href, '_blank'); }}
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        searchScope={searchScope}
+        setSearchScope={setSearchScope}
+        searchInputRef={searchInputRef}
+        createSearchPane={createSearchPane}
+        deepSearchResults={deepSearchResults}
+        messageSearchResults={messageSearchResults}
+        setSearchResultsModalOpen={setSearchResultsModalOpen}
+        SEARCH_SCOPES={SEARCH_SCOPES}
+    />
+);
+
+const renderMainContent = () => {
     if (!rootLayoutNode) {
         return (
             <main className={`flex-1 flex flex-col theme-bg-primary ${isDarkMode ? 'dark-mode' : 'light-mode'} overflow-hidden`}>
-                {topBar}
                 <div className="flex-1 flex overflow-hidden">
                 <div
                     className="flex-1 flex items-center justify-center border-2 border-dashed border-gray-400 m-4"
@@ -9103,77 +8633,13 @@ const renderMainContent = () => {
                 />
                 )}
                 </div>
-                {bottomBarCollapsed ? (
-                    <div
-                        className="h-1 hover:h-4 flex items-center justify-center cursor-pointer theme-bg-tertiary border-t theme-border transition-all group"
-                        onClick={() => { setBottomBarCollapsed(false); localStorage.setItem('incognide_bottomBarCollapsed', 'false'); }}
-                        title="Show status bar"
-                    >
-                        <ChevronUp size={10} className="opacity-0 group-hover:opacity-60" />
-                    </div>
-                ) : (
-                    <StatusBar
-                        createDBToolPane={createDBToolPane}
-                        paneItems={[]}
-                        setActiveContentPaneId={setActiveContentPaneId}
-                        height={bottomBarHeight}
-                        onStartResize={() => setIsResizingBottomBar(true)}
-                        sidebarCollapsed={sidebarCollapsed}
-                        onExpandSidebar={() => setSidebarCollapsed(false)}
-                        appVersion={appVersion}
-                        updateAvailable={updateAvailable}
-                        onCheckForUpdates={checkForUpdates}
-                        onCollapse={() => { setBottomBarCollapsed(true); localStorage.setItem('incognide_bottomBarCollapsed', 'true'); }}
-                        openMode={openMode}
-                        onToggleOpenMode={() => { setOpenMode(m => { const next = m === 'pane' ? 'tab' : 'pane'; localStorage.setItem('incognide_openMode', next); if (currentPath && rootLayoutNode) { const data = serializeWorkspace(rootLayoutNode, currentPath, contentDataRef.current, activeContentPaneId, next); if (data) saveWorkspaceToStorage(currentPath, data); } return next; }); }}
-                        createDataDashPane={createDataDashPane}
-                        createDiskUsagePane={createDiskUsagePane}
-                        onOpenDownloadManager={() => setDownloadManagerOpen(true)}
-                        onOpenLogsViewer={() => setLogsViewerOpen(true)}
-                        createBackendPane={createBackendPane}
-                        activeConnection={sshActiveConnection}
-                        onOpenSSHDialog={() => setSshDialogOpen(true)}
-                    />
-                )}
             </main>
         );
     }
 
 
-    const PANE_TITLES: Record<string, string> = {
-        'chat': 'Chat',
-        'agent': 'Agent',
-        'editor': 'File',
-        'terminal': 'Terminal',
-        'browser': 'Browser',
-        'pdf': 'PDF',
-        'graph-viewer': 'Knowledge Graph',
-        'datadash': 'Dashboard',
-        'dbtool': 'Database',
-        'memory-manager': 'Memory',
-        'npcteam': 'NPCs',
-        'jinx': 'Jinxes',
-        'teammanagement': 'Team',
-        'diff': 'Diff',
-        'browsergraph': 'Web Graph',
-    };
-    const layoutPaneIds = rootLayoutNode ? new Set(collectPaneIds(rootLayoutNode)) : new Set<string>();
-    const paneItems = Object.entries(contentDataRef.current)
-        .filter(([paneId, data]) => layoutPaneIds.has(paneId) && data?.contentType)
-        .map(([paneId, data]: [string, any]) => {
-            const ct = data.contentType;
-            let title = PANE_TITLES[ct] || ct || 'Pane';
-            const shortId = data?.contentId?.slice(-6) || '';
-            if (ct === 'chat') title = `${data?.npc || 'Chat'} ${shortId}`.trim();
-            else if (ct === 'agent') title = `${data?.npc || 'Agent'} ${shortId}`.trim();
-            else if (ct === 'editor') title = getFileName(data?.contentId) || 'File';
-            else if (ct === 'terminal') title = `Terminal${data?.shellType ? ` (${data.shellType})` : ''}`;
-            return { id: paneId, type: ct, title, isActive: paneId === activeContentPaneId };
-        });
-
     return (
         <main className={`flex-1 flex flex-col theme-bg-primary ${isDarkMode ? 'dark-mode' : 'light-mode'} overflow-hidden`}>
-            {topBar}
             <div
                 className="flex-1 flex overflow-hidden"
                 data-tutorial="pane-area"
@@ -9265,36 +8731,6 @@ const renderMainContent = () => {
                 />
                 )}
             </div>
-            {bottomBarCollapsed ? (
-                <div
-                    className="h-1 hover:h-4 flex items-center justify-center cursor-pointer theme-bg-tertiary border-t theme-border transition-all group"
-                    onClick={() => { setBottomBarCollapsed(false); localStorage.setItem('incognide_bottomBarCollapsed', 'false'); }}
-                    title="Show status bar"
-                >
-                    <ChevronUp size={10} className="opacity-0 group-hover:opacity-60" />
-                </div>
-            ) : (
-                <StatusBar
-                    createDBToolPane={createDBToolPane}
-                    paneItems={paneItems}
-                    setActiveContentPaneId={setActiveContentPaneId}
-                    height={bottomBarHeight}
-                    onStartResize={() => setIsResizingBottomBar(true)}
-                    sidebarCollapsed={sidebarCollapsed}
-                    onExpandSidebar={() => setSidebarCollapsed(false)}
-                    appVersion={appVersion}
-                    updateAvailable={updateAvailable}
-                    onCheckForUpdates={checkForUpdates}
-                    onCollapse={() => { setBottomBarCollapsed(true); localStorage.setItem('incognide_bottomBarCollapsed', 'true'); }}
-                    openMode={openMode}
-                    onToggleOpenMode={() => { setOpenMode(m => { const next = m === 'pane' ? 'tab' : 'pane'; localStorage.setItem('incognide_openMode', next); return next; }); }}
-                    createDataDashPane={createDataDashPane}
-                    createDiskUsagePane={createDiskUsagePane}
-                    onOpenDownloadManager={() => setDownloadManagerOpen(true)}
-                    onOpenLogsViewer={() => setLogsViewerOpen(true)}
-                    createBackendPane={createBackendPane}
-                />
-            )}
         </main>
     );
 };
@@ -9349,6 +8785,7 @@ const renderMainContent = () => {
         <style>{`@keyframes pulse { 0%, 100% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 50% { opacity: 0.6; transform: translate(-50%, -50%) scale(1.05); } }`}</style>
     </div>
 )}
+{topBar}
 <div className="flex flex-1 overflow-hidden">
     <Sidebar
 
@@ -9438,7 +8875,6 @@ const renderMainContent = () => {
         setSettingsOpen={setSettingsOpen}
         setProjectEnvEditorOpen={setProjectEnvEditorOpen}
         setBrowserUrlDialogOpen={setBrowserUrlDialogOpen}
-        setDashboardMenuOpen={setDashboardMenuOpen}
         setJinxMenuOpen={setJinxMenuOpen}
         setCtxEditorOpen={setCtxEditorOpen}
         setTeamManagementOpen={setTeamManagementOpen}
@@ -9447,8 +8883,8 @@ const renderMainContent = () => {
         createGraphViewerPane={createGraphViewerPane}
         createBrowserGraphPane={createBrowserGraphPane}
         createDataLabelerPane={createDataLabelerPane}
-        createDataDashPane={createDataDashPane}
         createDBToolPane={createDBToolPane}
+        createDiskUsagePane={createDiskUsagePane}
         createNPCTeamPane={createNPCTeamPane}
         createJinxPane={createJinxPane}
         createTeamManagementPane={createTeamManagementPane}
@@ -9496,12 +8932,13 @@ const renderMainContent = () => {
         renderSearchResults={renderSearchResults}
         isPredictiveTextEnabled={isPredictiveTextEnabled}
         setIsPredictiveTextEnabled={setIsPredictiveTextEnabled}
+        fileSearch={fileSearch}
+        setFileSearch={setFileSearch}
         topBarHeight={topBarHeight}
         bottomBarHeight={bottomBarHeight}
         topBarCollapsed={topBarCollapsed}
         onExpandTopBar={() => { setTopBarCollapsed(false); localStorage.setItem('incognide_topBarCollapsed', 'false'); }}
         onCollapseTopBar={() => { setTopBarCollapsed(true); localStorage.setItem('incognide_topBarCollapsed', 'true'); }}
-        setDownloadManagerOpen={setDownloadManagerOpen}
         activeConnection={sshActiveConnection}
         onOpenSSHDialog={() => setSshDialogOpen(true)}
     />
@@ -9509,10 +8946,10 @@ const renderMainContent = () => {
         {aiEnabled && (
             <PredictiveTextOverlay
                 predictionSuggestion={predictionSuggestion}
-                predictionTargetElement={predictionTargetElement}
+                predictionTarget={predictionTarget}
                 isPredictiveTextEnabled={isPredictiveTextEnabled}
-                setPredictionSuggestion={setPredictionSuggestion}
-                setPredictionTargetElement={setPredictionTargetElement}
+                onAcceptSuggestion={acceptSuggestion}
+                onDismissSuggestion={dismissSuggestion}
             />
         )}
         <CommandPalette
@@ -9525,8 +8962,7 @@ const renderMainContent = () => {
                     radio: 'radio', editor: 'editor', word: 'word', ppt: 'ppt',
                     excel: 'spreadsheet', git: 'git', teammanagement: 'teammanagement',
                     logs: 'logs', settings: 'settings', help: 'help',
-                    downloads: 'downloads', 'disk-usage': 'disk-usage',
-                    'data-dash': 'datadash',
+                    'disk-usage': 'disk-usage',
                 };
                 if (cmdId.startsWith('team:')) {
                     const tab = cmdId.split(':')[1];
@@ -9552,8 +8988,10 @@ const renderMainContent = () => {
                 addSshConnection(config);
             }}
             onTest={(config) => (window as any).api.sshTestConnection(config)}
+            onConnect={(config, password, passphrase) => handleSshConnect(config, password, passphrase)}
         />
 </div>
+{statusBar}
             {renderModals()}
 
 
@@ -9625,8 +9063,6 @@ const renderMainContent = () => {
                                     return renderDataLabelerPane({ nodeId: zenModePaneId });
                                 case 'graph-viewer':
                                     return renderGraphViewerPane({ nodeId: zenModePaneId });
-                                case 'datadash':
-                                    return renderDataDashPane({ nodeId: zenModePaneId });
                                 case 'backend':
                                     return renderBackendPane({ nodeId: zenModePaneId });
                                 case 'projectenv':

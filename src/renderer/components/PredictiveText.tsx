@@ -3,6 +3,21 @@ import { generateId } from './utils';
 
 const PRED_PLACEHOLDER = 'Generating...';
 
+export interface PredictiveTargetDom {
+    kind: 'dom';
+    element: HTMLElement;
+}
+
+export interface PredictiveTargetWebview {
+    kind: 'webview';
+    paneId: string;
+    webviewElement: any;
+    caretRect: { left: number; top: number; right: number; bottom: number; width: number; height: number };
+    elementRect?: { left: number; top: number; right: number; bottom: number; width: number; height: number };
+}
+
+export type PredictiveTarget = PredictiveTargetDom | PredictiveTargetWebview;
+
 interface UsePredictiveTextProps {
     isPredictiveTextEnabled: boolean;
     predictiveTextModel: string | null;
@@ -13,8 +28,8 @@ interface UsePredictiveTextProps {
     predictiveTextDelay?: number;
     predictionSuggestion: string;
     setPredictionSuggestion: (value: string | ((prev: string) => string)) => void;
-    predictionTargetElement: HTMLElement | null;
-    setPredictionTargetElement: (element: HTMLElement | null) => void;
+    predictionTarget: PredictiveTarget | null;
+    setPredictionTarget: (target: PredictiveTarget | null) => void;
 }
 
 export const usePredictiveText = ({
@@ -27,72 +42,124 @@ export const usePredictiveText = ({
     predictiveTextDelay,
     predictionSuggestion,
     setPredictionSuggestion,
-    predictionTargetElement,
-    setPredictionTargetElement,
+    predictionTarget,
+    setPredictionTarget,
 }: UsePredictiveTextProps) => {
     const predictionStreamIdRef = useRef<string | null>(null);
     const predictionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const streamBuffersRef = useRef(new Map<string, string>());
+
+    const dismissSuggestion = useCallback(() => {
+        setPredictionSuggestion('');
+        setPredictionTarget(null);
+        if (predictionStreamIdRef.current) {
+            (window as any).api?.interruptStream?.(predictionStreamIdRef.current);
+            predictionStreamIdRef.current = null;
+        }
+    }, [setPredictionSuggestion, setPredictionTarget]);
+
+    const acceptSuggestion = useCallback(() => {
+        const suggestion = predictionSuggestion.replace(/^Generating\.\.\.\s*/, '');
+        if (!suggestion || !predictionTarget) {
+            dismissSuggestion();
+            return;
+        }
+
+        if (predictionTarget.kind === 'dom') {
+            const el = predictionTarget.element;
+            if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
+                const start = el.selectionStart ?? 0;
+                const end = el.selectionEnd ?? start;
+                const before = el.value.slice(0, start);
+                const after = el.value.slice(end);
+                el.value = before + suggestion + after;
+
+                const newPos = before.length + suggestion.length;
+                el.selectionStart = newPos;
+                el.selectionEnd = newPos;
+
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+            } else if ((el as any).isContentEditable) {
+                const sel = window.getSelection();
+                if (sel && sel.rangeCount > 0) {
+                    const range = sel.getRangeAt(0);
+                    range.deleteContents();
+                    range.insertNode(document.createTextNode(suggestion));
+                    range.collapse(false);
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                }
+            }
+            try { (window as any).api?.logAutocomplete?.({ type: 'text', inputContext: '', suggestion, accepted: true }); } catch {}
+        } else if (predictionTarget.kind === 'webview') {
+            try {
+                const suggestionJson = JSON.stringify(suggestion);
+                predictionTarget.webviewElement.executeJavaScript(`window.__incognideSetSuggestion(${suggestionJson}); window.__incognideAcceptSuggestion();`, true).catch(() => {});
+            } catch {}
+        }
+
+        dismissSuggestion();
+    }, [predictionSuggestion, predictionTarget, dismissSuggestion]);
+
+    const requestPrediction = useCallback(async (target: PredictiveTarget, textContent: string, cursorPosition: number, contextType: string = 'general', filePathForContext: string | null = null) => {
+        const modelToUse = predictiveTextModel || currentModel;
+        const providerToUse = predictiveTextProvider || currentProvider;
+
+        if (!isPredictiveTextEnabled || !modelToUse || !providerToUse) {
+            dismissSuggestion();
+            return;
+        }
+
+        if (predictionTimeoutRef.current) {
+            clearTimeout(predictionTimeoutRef.current);
+            predictionTimeoutRef.current = null;
+        }
+
+        predictionTimeoutRef.current = setTimeout(async () => {
+            if (predictionStreamIdRef.current) {
+                (window as any).api?.interruptStream?.(predictionStreamIdRef.current);
+                predictionStreamIdRef.current = null;
+            }
+
+            const newStreamId = generateId();
+            predictionStreamIdRef.current = newStreamId;
+
+            setPredictionTarget(target);
+            setPredictionSuggestion(PRED_PLACEHOLDER);
+
+            await (window as any).api?.textPredict?.({
+                streamId: newStreamId,
+                text_content: textContent,
+                cursor_position: cursorPosition,
+                currentPath,
+                model: modelToUse,
+                provider: providerToUse,
+                context_type: contextType,
+                file_path: filePathForContext,
+            });
+        }, predictiveTextDelay || 250);
+    }, [isPredictiveTextEnabled, predictiveTextModel, predictiveTextProvider, currentModel, currentProvider, predictiveTextDelay, currentPath, setPredictionTarget, setPredictionSuggestion, dismissSuggestion]);
 
     const handleGlobalPredictionTrigger = useCallback((e: KeyboardEvent) => {
         const modelToUse = predictiveTextModel || currentModel;
         const providerToUse = predictiveTextProvider || currentProvider;
 
         if (!isPredictiveTextEnabled || !modelToUse || !providerToUse) {
-            setPredictionSuggestion('');
-            setPredictionTargetElement(null);
+            dismissSuggestion();
             return;
         }
 
         if (e.key === 'Tab') {
-            if (predictionSuggestion && predictionTargetElement) {
+            if (predictionSuggestion && predictionTarget) {
                 e.preventDefault();
-
-                const suggestion = predictionSuggestion.replace(/^Generating\.\.\.\s*/, '');
-                if (!suggestion) return;
-
-                const el = predictionTargetElement;
-                if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
-                    const start = el.selectionStart ?? 0;
-                    const end = el.selectionEnd ?? start;
-                    const before = el.value.slice(0, start);
-                    const after = el.value.slice(end);
-                    el.value = before + suggestion + after;
-
-                    const newPos = before.length + suggestion.length;
-                    el.selectionStart = newPos;
-                    el.selectionEnd = newPos;
-
-                    el.dispatchEvent(new Event('input', { bubbles: true }));
-                } else if (el && (el as any).isContentEditable) {
-                    const sel = window.getSelection();
-                    if (sel && sel.rangeCount > 0) {
-                        const range = sel.getRangeAt(0);
-                        range.deleteContents();
-                        range.insertNode(document.createTextNode(suggestion));
-                        range.collapse(false);
-                        sel.removeAllRanges();
-                        sel.addRange(range);
-                    }
-                }
-
-                setPredictionSuggestion('');
-                setPredictionTargetElement(null);
-                if (predictionStreamIdRef.current) {
-                    (window as any).api?.interruptStream?.(predictionStreamIdRef.current);
-                    predictionStreamIdRef.current = null;
-                }
+                acceptSuggestion();
             }
             return;
         }
 
         if (e.key === 'Escape') {
-            setPredictionSuggestion('');
-            setPredictionTargetElement(null);
-            if (predictionStreamIdRef.current) {
-                (window as any).api?.interruptStream?.(predictionStreamIdRef.current);
-                predictionStreamIdRef.current = null;
-            }
+            try { (window as any).api?.logAutocomplete?.({ type: 'text', inputContext: '', suggestion: predictionSuggestion, accepted: false }); } catch {}
+            dismissSuggestion();
             return;
         }
 
@@ -105,8 +172,7 @@ export const usePredictiveText = ({
              (activeElement as any).isContentEditable);
 
         if (!isEditable) {
-            setPredictionSuggestion('');
-            setPredictionTargetElement(null);
+            dismissSuggestion();
             return;
         }
 
@@ -127,8 +193,7 @@ export const usePredictiveText = ({
         }
 
         if (textContent.length === 0) {
-            setPredictionSuggestion('');
-            setPredictionTargetElement(null);
+            dismissSuggestion();
             return;
         }
 
@@ -143,46 +208,19 @@ export const usePredictiveText = ({
             contextType = 'browser';
         }
 
-        if (predictionTimeoutRef.current) {
-            clearTimeout(predictionTimeoutRef.current);
-            predictionTimeoutRef.current = null;
-        }
-
-        predictionTimeoutRef.current = setTimeout(async () => {
-            if (predictionStreamIdRef.current) {
-                (window as any).api?.interruptStream?.(predictionStreamIdRef.current);
-                predictionStreamIdRef.current = null;
-            }
-
-            const newStreamId = generateId();
-            predictionStreamIdRef.current = newStreamId;
-
-            setPredictionTargetElement(activeElement);
-            setPredictionSuggestion(PRED_PLACEHOLDER);
-
-            await (window as any).api?.textPredict?.({
-                streamId: newStreamId,
-                text_content: textContent,
-                cursor_position: cursorPosition,
-                currentPath,
-                model: modelToUse,
-                provider: providerToUse,
-                context_type: contextType,
-                file_path: filePathForContext,
-            });
-        }, predictiveTextDelay || 250);
+        const target: PredictiveTargetDom = { kind: 'dom', element: activeElement };
+        requestPrediction(target, textContent, cursorPosition, contextType, filePathForContext);
     }, [
         isPredictiveTextEnabled,
         predictiveTextModel,
         predictiveTextProvider,
         currentModel,
         currentProvider,
-        predictiveTextDelay,
-        currentPath,
-        setPredictionSuggestion,
-        setPredictionTargetElement,
         predictionSuggestion,
-        predictionTargetElement
+        predictionTarget,
+        acceptSuggestion,
+        dismissSuggestion,
+        requestPrediction
     ]);
 
     const setPredictionSuggestionRef = useRef(setPredictionSuggestion);
@@ -300,6 +338,55 @@ export const usePredictiveText = ({
             }
         };
     }, [handleGlobalPredictionTrigger]);
+
+    const sendSuggestionToWebview = useCallback((target: PredictiveTargetWebview, suggestion: string) => {
+        try {
+            target.webviewElement.executeJavaScript(`window.__incognideSetSuggestion(${JSON.stringify(suggestion)});`, true).catch(() => {});
+        } catch {}
+    }, []);
+
+    const updateWebviewTargetPosition = useCallback((paneId: string, webviewElement: any, caretRect: any, elementRect?: any) => {
+        setPredictionTarget(prev => {
+            if (prev?.kind !== 'webview' || prev.paneId !== paneId) return prev;
+            return { ...prev, caretRect, elementRect };
+        });
+    }, [setPredictionTarget]);
+
+    useEffect(() => {
+        const handleWebviewPredict = (event: Event) => {
+            const detail = (event as CustomEvent).detail;
+            if (!detail) return;
+            const { type, paneId, webviewElement, textContent, cursorPosition, caretRect, elementRect, contextType } = detail;
+
+            if (type === 'trigger') {
+                if (!caretRect || !webviewElement) return;
+                const target: PredictiveTargetWebview = { kind: 'webview', paneId, webviewElement, caretRect, elementRect };
+                requestPrediction(target, textContent ?? '', cursorPosition ?? 0, contextType || 'browser');
+            } else if (type === 'accept') {
+                acceptSuggestion();
+            } else if (type === 'dismiss') {
+                dismissSuggestion();
+            } else if (type === 'blur') {
+                dismissSuggestion();
+            } else if (type === 'update-position') {
+                updateWebviewTargetPosition(paneId, webviewElement, caretRect, elementRect);
+            }
+        };
+
+        window.addEventListener('incognide:webview-predict', handleWebviewPredict);
+        return () => window.removeEventListener('incognide:webview-predict', handleWebviewPredict);
+    }, [requestPrediction, acceptSuggestion, dismissSuggestion, updateWebviewTargetPosition]);
+
+    useEffect(() => {
+        if (!predictionTarget || predictionTarget.kind !== 'webview') return;
+        sendSuggestionToWebview(predictionTarget, predictionSuggestion);
+    }, [predictionSuggestion, predictionTarget, sendSuggestionToWebview]);
+
+    return {
+        requestPrediction,
+        acceptSuggestion,
+        dismissSuggestion,
+    };
 };
 
 export default usePredictiveText;

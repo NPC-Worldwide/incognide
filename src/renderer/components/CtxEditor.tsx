@@ -51,7 +51,7 @@ const MCP_MARKETPLACE: McpMarketplaceItem[] = [
     { id: 'todoist', name: 'Todoist', description: 'Manage tasks and projects in Todoist', category: 'productivity', install: 'npx -y @abhiz123/todoist-mcp-server', envVars: [{ key: 'TODOIST_API_TOKEN', label: 'API Token', placeholder: '', secret: true }] },
 ];
 
-const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false }) => {
+const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase }) => {
     const [ctx, setCtx] = useState<Record<string, any>>({});
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -662,7 +662,7 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false }) => {
 
                 <div className="space-y-2">
                     {dbs.map((db, idx) => (
-                        <div key={idx} className="flex gap-2 items-center theme-bg-tertiary p-2 rounded-lg">
+                        <div key={idx} className="flex gap-2 items-center theme-bg-tertiary p-2 rounded-lg group">
                             <input
                                 type="text"
                                 value={db.name || ''}
@@ -677,6 +677,15 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false }) => {
                                 placeholder="~/path/to/db or connection string"
                                 className="flex-1 theme-input text-xs font-mono"
                             />
+                            {onOpenDatabase && db.path && (
+                                <button
+                                    onClick={() => onOpenDatabase(db.path)}
+                                    className="p-1.5 text-blue-400 hover:bg-blue-900/30 rounded"
+                                    title="Open database"
+                                >
+                                    <Database size={12} />
+                                </button>
+                            )}
                             <button
                                 onClick={() => removeDatabase(idx)}
                                 className="p-1.5 text-red-400 hover:bg-red-900/30 rounded"

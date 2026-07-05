@@ -317,7 +317,6 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             currentPath,
             currentNPC,
 
-            lockedPanes, togglePaneLocked,
             getPaneZoomLevel, getEffectivePaneZoom,
             zoomPaneIn, zoomPaneOut, resetPaneZoom,
         } = component;
@@ -366,7 +365,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             const comp = componentRef.current;
 
             const nativeFiles = e.dataTransfer?.files;
-            if ((!comp.draggedItem) && nativeFiles && nativeFiles.length > 0 && !lockedPanes.has(node.id)) {
+            if ((!comp.draggedItem) && nativeFiles && nativeFiles.length > 0) {
                 const getContentTypeForExt = (filePath: string) => {
                     const ext = filePath.split('.').pop()?.toLowerCase();
                     if (ext === 'pdf') return 'pdf';
@@ -1261,9 +1260,6 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
         } else if (contentType === 'browsergraph') {
             headerIcon = <Share2 size={14} className="text-sky-400" />;
             headerTitle = 'Browser Graph';
-        } else if (contentType === 'datadash') {
-            headerIcon = <LayoutDashboard size={14} className="text-emerald-400" />;
-            headerTitle = 'Data Dashboard';
         } else if (contentType === 'radio') {
             headerIcon = <Radio size={14} className="text-orange-400" />;
             headerTitle = 'Radio';
@@ -1766,8 +1762,6 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                             topBarCollapsed={topBarCollapsed}
                             onExpandTopBar={onExpandTopBar}
 
-                            panesLocked={lockedPanes.has(node.id)}
-                            onTogglePanesLocked={() => togglePaneLocked(node.id)}
                             zoomControls={(
                                 <>
                                     <button
@@ -1796,7 +1790,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                         </PaneHeader>
                     )}
 
-                {localDragOver && !lockedPanes.has(node.id) && (
+                {localDragOver && (
                     <>
                         <div
                             className={`absolute left-1/4 right-1/4 top-1/4 bottom-1/4 z-[20] ${localDropSide === 'center' ? 'bg-green-500/30 border-2 border-dashed border-green-400' : ''}`}
