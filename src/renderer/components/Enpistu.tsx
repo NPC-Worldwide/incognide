@@ -274,7 +274,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const [predictiveTextProvider, setPredictiveTextProvider] = useState<string | null>(null);
     const [predictiveTextDelay, setPredictiveTextDelay] = useState(250);
     const [predictionSuggestion, setPredictionSuggestion] = useState('');
-    const [predictionTargetElement, setPredictionTargetElement] = useState<HTMLElement | null>(null);
+    const [predictionTarget, setPredictionTarget] = useState<any | null>(null);
 
 
     const { trackActivity } = useActivityTracker();
@@ -1022,14 +1022,6 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     }, [activeContentPaneId, currentNPC, currentModel]);
 
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
-    const [lockedPanes, setLockedPanes] = useState<Set<string>>(() => {
-        try {
-            const saved = localStorage.getItem('incognide_lockedPanes');
-            return saved ? new Set(JSON.parse(saved)) : new Set();
-        } catch { return new Set(); }
-    });
-
-
     useEffect(() => {
         const handleGlobalKeyDown = (e: KeyboardEvent) => {
 
@@ -1086,7 +1078,11 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const loadWebsiteHistory = useLoadWebsiteHistory(currentPath, setWebsiteHistory, setCommonSites);
 
 
-    usePredictiveText({
+    const {
+        requestPrediction,
+        acceptSuggestion,
+        dismissSuggestion,
+    } = usePredictiveText({
         isPredictiveTextEnabled: aiEnabled && isPredictiveTextEnabled,
         predictiveTextModel,
         predictiveTextProvider,
@@ -1096,8 +1092,8 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         predictiveTextDelay,
         predictionSuggestion,
         setPredictionSuggestion,
-        predictionTargetElement,
-        setPredictionTargetElement,
+        predictionTarget,
+        setPredictionTarget,
     });
 
 
@@ -4575,9 +4571,13 @@ const renderBrowserViewer = useCallback(({ nodeId, hasTabBar, onToggleZen, isZen
             hasTabBar={hasTabBar}
             onToggleZen={onToggleZen}
             isZenMode={isZenMode}
+            isPredictiveTextEnabled={isPredictiveTextEnabled}
+            onPredictiveTextRequest={requestPrediction}
+            onPredictiveTextAccept={acceptSuggestion}
+            onPredictiveTextDismiss={dismissSuggestion}
         />
     );
-}, [currentPath, rootLayoutNode, closeContentPane, handleNewBrowserTab, performSplit]);
+}, [currentPath, rootLayoutNode, closeContentPane, handleNewBrowserTab, performSplit, isPredictiveTextEnabled, requestPrediction, acceptSuggestion, dismissSuggestion]);
 
 const handleBrowserDialogNavigate = (url) => {
         createNewBrowser(url);
@@ -7444,8 +7444,6 @@ const layoutComponentApi = useMemo(() => ({
 
     currentNPC,
 
-    lockedPanes,
-    togglePaneLocked: (nodeId: string) => { setLockedPanes(prev => { const next = new Set(prev); if (next.has(nodeId)) next.delete(nodeId); else next.add(nodeId); localStorage.setItem('incognide_lockedPanes', JSON.stringify([...next])); return next; }); },
     paneUpdateEmitter,
     getPaneZoomLevel,
     getEffectivePaneZoom,
@@ -7466,7 +7464,7 @@ const layoutComponentApi = useMemo(() => ({
     zenModePaneId,
     renamingPaneId, editedFileName, handleConfirmRename,
     handleRunScript, handleNewBrowserTab, topBarCollapsed,
-    currentPath, currentNPC, lockedPanes,
+    currentPath, currentNPC,
     getPaneZoomLevel, getEffectivePaneZoom, zoomPaneIn, zoomPaneOut, resetPaneZoom,
 ]);
 
@@ -9015,10 +9013,10 @@ const renderMainContent = () => {
         {aiEnabled && (
             <PredictiveTextOverlay
                 predictionSuggestion={predictionSuggestion}
-                predictionTargetElement={predictionTargetElement}
+                predictionTarget={predictionTarget}
                 isPredictiveTextEnabled={isPredictiveTextEnabled}
-                setPredictionSuggestion={setPredictionSuggestion}
-                setPredictionTargetElement={setPredictionTargetElement}
+                onAcceptSuggestion={acceptSuggestion}
+                onDismissSuggestion={dismissSuggestion}
             />
         )}
         <CommandPalette

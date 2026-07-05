@@ -3681,7 +3681,7 @@ const renderFolderList = (structure) => {
                                     <KeyRound size={10} /> Env
                                 </button>
                                 <button
-                                    onClick={() => { (window as any).api?.openFile?.(currentPath); setFolderDropdownOpen(false); }}
+                                    onClick={() => { (window as any).api?.openInNativeExplorer?.(currentPath); setFolderDropdownOpen(false); }}
                                     className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] bg-gray-600/20 text-gray-400 rounded hover:bg-gray-600/30"
                                     title="Open in native file manager"
                                 >

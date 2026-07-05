@@ -33,19 +33,28 @@ interface RightSidebarProps {
 
 const CopilotSettingsPanel: React.FC<{
     model: string | null;
+    provider: string | null;
     delay: number;
     availableModels?: any[];
     onSave: (model: string | null, provider: string | null, delay: number) => void;
-}> = ({ model: propModel, delay: propDelay, availableModels, onSave }) => {
+}> = ({ model: propModel, provider: propProvider, delay: propDelay, availableModels, onSave }) => {
     const [localModel, setLocalModel] = useState(propModel || '');
     const [localDelay, setLocalDelay] = useState(propDelay);
 
     useEffect(() => { setLocalModel(propModel || ''); }, [propModel]);
     useEffect(() => { setLocalDelay(propDelay); }, [propDelay]);
 
+    const options = useMemo(() => {
+        const base = [...(availableModels || [])];
+        if (propModel && !base.some((m: any) => m.value === propModel)) {
+            base.unshift({ value: propModel, display_name: `${propModel} (saved)`, provider: propProvider || null });
+        }
+        return base;
+    }, [availableModels, propModel, propProvider]);
+
     const dirty = localModel !== (propModel || '') || localDelay !== propDelay;
 
-    const selectedModelObj = (availableModels || []).find((m: any) => m.value === localModel);
+    const selectedModelObj = options.find((m: any) => m.value === localModel);
 
     return (
         <div className="px-2 pb-2 space-y-1.5">
@@ -57,7 +66,7 @@ const CopilotSettingsPanel: React.FC<{
                     className="flex-1 text-[10px] theme-bg-tertiary theme-border border rounded px-1 py-0.5 theme-text-primary"
                 >
                     <option value="">—</option>
-                    {(availableModels || []).map((m: any) => (
+                    {options.map((m: any) => (
                         <option key={m.value} value={m.value}>{m.display_name || m.value}</option>
                     ))}
                 </select>
@@ -73,7 +82,7 @@ const CopilotSettingsPanel: React.FC<{
             </div>
             {dirty && (
                 <button
-                    onClick={() => onSave(localModel || null, selectedModelObj?.provider || null, localDelay)}
+                    onClick={() => onSave(localModel || null, selectedModelObj?.provider || propProvider || null, localDelay)}
                     className="w-full text-[10px] py-1 bg-violet-600 hover:bg-violet-500 text-white rounded"
                 >
                     Save
@@ -410,6 +419,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 {copilotSettingsOpen && (
                     <CopilotSettingsPanel
                         model={predictiveTextModel}
+                        provider={predictiveTextProvider}
                         delay={predictiveTextDelay ?? 250}
                         availableModels={availableModels}
                         onSave={(m, p, d) => onPredictiveTextSettingsChange?.({ model: m, provider: p, delay: d })}
