@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { normalizePath, loadDirectoryStructure as loadDirectoryStructureUtil } from '../components/utils';
-import { readDirectoryStructure } from '../api/fileSystem';
+import { readDirectoryStructure, isRemote } from '../api/fileSystem';
 
 export function useWorkspace() {
     const [currentPath, setCurrentPath] = useState('');
@@ -28,6 +28,10 @@ export function useWorkspace() {
     const MAX_WORKSPACES = 50;
 
     const loadConversationsWithoutAutoSelect = useCallback(async (dirPath: string) => {
+        if (isRemote()) {
+            setDirectoryConversations([]);
+            return;
+        }
         try {
             const normalizedPath = normalizePath(dirPath);
             if (!normalizedPath) return;

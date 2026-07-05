@@ -944,6 +944,7 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
     sshResizeTerminal: (opts) => ipcRenderer.invoke('ssh:resize-terminal', opts),
     sshKillTerminal: (opts) => ipcRenderer.invoke('ssh:kill-terminal', opts),
     sshReadFileBuffer: (opts) => ipcRenderer.invoke('ssh:read-file-buffer', opts),
+    sshGetHome: (opts) => ipcRenderer.invoke('ssh:get-home', opts),
     onSshTerminalData: (callback) => {
         const handler = (_, data) => callback(data);
         ipcRenderer.on('ssh:terminal-data', handler);

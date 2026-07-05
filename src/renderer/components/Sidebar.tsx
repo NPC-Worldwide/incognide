@@ -83,7 +83,8 @@ const Sidebar = (props: any) => {
         isPredictiveTextEnabled, setIsPredictiveTextEnabled,
         topBarHeight = 48, bottomBarHeight = 48, topBarCollapsed = false,
         onExpandTopBar, onCollapseTopBar,
-        openTeamManagementTab
+        openTeamManagementTab,
+        fileSearch, setFileSearch
     } = props;
 
     const aiEnabled = useAiEnabled();
@@ -91,7 +92,6 @@ const Sidebar = (props: any) => {
     const ACTIVE_WINDOWS_KEY = 'incognideActiveWindows';
 
     const [convoSearch, setConvoSearch] = useState('');
-    const [fileSearch, setFileSearch] = useState('');
     const [fileTypeFilter, setFileTypeFilter] = useState<string>(() => localStorage.getItem('incognide_fileTypeFilter') || '');
     const [fileSort, setFileSort] = useState<'name' | 'modified' | 'type'>(() => (localStorage.getItem('incognide_fileSort') as any) || 'name');
 
@@ -169,7 +169,7 @@ const Sidebar = (props: any) => {
             maxHistory: 100,
             excludedDomains: '',
             timeRangeDays: 30,
-            groupBy: 'type',
+            groupBy: 'time',
         };
     });
 
@@ -2285,7 +2285,7 @@ const renderWebsiteList = () => {
                 <div className="theme-bg-secondary flex-1 min-h-0 overflow-y-auto">
                     <div className="flex items-center gap-1 px-1.5 py-1 border-b theme-border">
                         <span className="text-[9px] text-gray-500">Group:</span>
-                        {(['type', 'domain', 'time', 'none'] as const).map(mode => (
+                        {(['time', 'domain', 'type', 'none'] as const).map(mode => (
                             <button
                                 key={mode}
                                 onClick={() => setWebsitesSettings((s: any) => ({ ...s, groupBy: mode }))}
@@ -3516,16 +3516,6 @@ const renderFolderList = (structure) => {
         return <div className="p-2 text-xs text-red-500">Error: {structure?.error || 'Failed to load'}</div>;
     }
 
-    const countItems = (struct) => {
-        let count = 0;
-        Object.values(struct).forEach((item: any) => {
-            if (item?.type === 'file') count++;
-            else if (item?.type === 'directory' && item?.children) count += countItems(item.children);
-        });
-        return count;
-    };
-    const fileCount = countItems(structure);
-
     const parseFileTypeFilter = (filter: string): string[] => {
         if (!filter.trim()) return [];
         return filter.split(/[,\s]+/)
@@ -3788,25 +3778,6 @@ const renderFolderList = (structure) => {
             )}
             {!filesCollapsed && (
                 <div className="theme-bg-secondary border-b theme-border">
-                    {fileCount > 5 && (
-                        <div className="px-1 py-1">
-                            <div className="relative">
-                                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
-                                <input
-                                    type="text"
-                                    value={fileSearch}
-                                    onChange={(e) => setFileSearch(e.target.value)}
-                                    placeholder="Search files..."
-                                    className="w-full theme-bg-tertiary theme-border border rounded pl-7 pr-2 py-1 text-[11px] theme-text-primary placeholder:opacity-50 focus:outline-none focus:border-yellow-500/50"
-                                />
-                                {fileSearch && (
-                                    <button onClick={() => setFileSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:theme-text-primary">
-                                        <X size={10} />
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    )}
                     <div className="flex items-center gap-0.5 px-1 py-0.5 border-t theme-border">
                         <span className="text-[9px] text-gray-500 mr-1">Sort:</span>
                         {([['name', 'A-Z'], ['modified', 'Date'], ['type', 'Type']] as const).map(([val, label]) => (
@@ -5969,12 +5940,7 @@ return (
         {!sidebarCollapsed && (
         <div className="border-t theme-border">
             <div className="grid grid-cols-1 divide-x theme-border" style={{ height: bottomBarHeight }}>
-                <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="flex items-center justify-center hover:bg-teal-500/20 transition-all" title="Collapse sidebar"><ChevronLeft size={16} className="text-gray-600 dark:text-gray-400" /></button>
-            </div>
-            <div className="grid grid-cols-3 divide-x theme-border border-t theme-border" style={{ height: bottomBarHeight }}>
-                <button data-tutorial="theme-toggle-button" onClick={toggleTheme} className="flex items-center justify-center hover:bg-teal-500/20 transition-all" title="Toggle Theme">{isDarkMode ? <Moon size={16} className="text-blue-400" /> : <Sun size={16} className="text-yellow-400" />}</button>
-                <button data-tutorial="account-button" onClick={() => createAndAddPaneNodeToLayout?.('account', 'account')} className="flex items-center justify-center hover:bg-teal-500/20 transition-all text-gray-400 hover:text-blue-400" title="Account"><User size={16} /></button>
-                <button data-tutorial="new-window-button" onClick={() => { if ((window as any).api?.openNewWindow) (window as any).api.openNewWindow(''); else window.open(window.location.href, '_blank'); }} className="flex items-center justify-center hover:bg-teal-500/20 transition-all" title="New Window (Cmd/Ctrl+Shift+N)"><img src={npcLogo} alt="Incognide" style={{ width: 16, height: 16 }} className="rounded-full" /></button>
+                <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="flex items-center justify-center hover:bg-teal-500/20 transition-all p-3" title="Collapse sidebar"><ChevronLeft size={18} className="text-gray-600 dark:text-gray-400" /></button>
             </div>
         </div>
         )}

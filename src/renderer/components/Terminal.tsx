@@ -4,6 +4,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal as TerminalIcon, Code, Sparkles, Settings, X, Type, Palette } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
+import { isRemote, getActiveConnectionId } from '../api/fileSystem';
 
 const AUTO_SOURCE_KEY = 'incognide-auto-source-profile';
 
@@ -252,6 +253,26 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
     const paneData = contentDataRef.current[nodeId];
     const terminalId = paneData?.contentId;
 
+    const writeToSession = useCallback((data: string) => {
+        if (!isSessionReady.current || !terminalId) return;
+        const remoteConnId = getActiveConnectionId();
+        if (remoteConnId) {
+            (window as any).api.sshWriteTerminal({ id: remoteConnId, sessionId: terminalId, data });
+        } else {
+            window.api.writeToTerminal({ id: terminalId, data });
+        }
+    }, [terminalId]);
+
+    const resizeSession = useCallback((cols: number, rows: number) => {
+        if (!terminalId) return;
+        const remoteConnId = getActiveConnectionId();
+        if (remoteConnId) {
+            (window as any).api.sshResizeTerminal({ id: remoteConnId, sessionId: terminalId, cols, rows });
+        } else {
+            window.api.resizeTerminal?.({ id: terminalId, cols, rows });
+        }
+    }, [terminalId]);
+
     useEffect(() => {
         if (nodeId && contentDataRef.current[nodeId]) {
             contentDataRef.current[nodeId].getTerminalContext = () => {
@@ -279,7 +300,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             if (isSessionReady.current && text) {
 
                 const bracketedText = '\x1b[200~' + text + '\x1b[201~';
-                window.api.writeToTerminal({ id: terminalId, data: bracketedText });
+                writeToSession(bracketedText);
             }
         } catch (err) {
             console.error('Failed to paste:', err);
@@ -330,7 +351,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
     const handleSourceProfile = useCallback(() => {
         if (isSessionReady.current && terminalId) {
             const cmd = getShellProfileCommand();
-            window.api.writeToTerminal({ id: terminalId, data: cmd + '\n' });
+            writeToSession(cmd + '\n');
         }
         localStorage.setItem(AUTO_SOURCE_KEY, 'true');
         setShowShellPrompt(false);
@@ -371,6 +392,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             const fitAddon = new FitAddon();
             fitAddonRef.current = fitAddon;
             term.loadAddon(fitAddon);
+            terminalRef.current.innerHTML = '';
             term.open(terminalRef.current);
             xtermInstance.current = term;
 
@@ -401,7 +423,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             setTimeout(() => {
                 try { fitAddon.fit(); } catch {}
                 if (isSessionReady.current) {
-                    window.api.resizeTerminal?.({ id: terminalId, cols: term.cols, rows: term.rows });
+                    resizeSession(term.cols, term.rows);
                 }
             }, 300);
 
@@ -471,11 +493,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                         }
 
                         if (isSessionReady.current) {
-                            window.api.resizeTerminal?.({
-                                id: terminalId,
-                                cols: term.cols,
-                                rows: term.rows
-                            });
+                            resizeSession(term.cols, term.rows);
                         }
                     });
                 }, 30);
@@ -499,11 +517,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                         }
 
                         if (isSessionReady.current) {
-                            window.api.resizeTerminal?.({
-                                id: terminalId,
-                                cols: term.cols,
-                                rows: term.rows
-                            });
+                            resizeSession(term.cols, term.rows);
                         }
                     });
                 }, 30);
@@ -523,14 +537,14 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                     event.preventDefault();
                     event.stopPropagation();
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\t' });
+                        writeToSession('\t');
                     }
                     return false;
                 }
 
                 if (event.key === 'Escape') {
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x1b' });
+                        writeToSession('\x1b');
                     }
                     return false;
                 }
@@ -543,7 +557,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                     }
 
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x03' });
+                        writeToSession('\x03');
                     }
                     return false;
                 }
@@ -555,7 +569,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                         if (isSessionReady.current && text) {
 
                             const bracketedText = '\x1b[200~' + text + '\x1b[201~';
-                            window.api.writeToTerminal({ id: terminalId, data: bracketedText });
+                            writeToSession(bracketedText);
                         }
                     });
                     return false;
@@ -580,7 +594,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
 
                 if (isMeta && key === 'l') {
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x0c' });
+                        writeToSession('\x0c');
                     }
                     return false;
                 }
@@ -601,70 +615,70 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                     event.preventDefault();
                     event.stopPropagation();
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x05' });
+                        writeToSession('\x05');
                     }
                     return false;
                 }
 
                 if (isMeta && key === 'u') {
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x15' });
+                        writeToSession('\x15');
                     }
                     return false;
                 }
 
                 if (isMeta && key === 'k') {
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x0b' });
+                        writeToSession('\x0b');
                     }
                     return false;
                 }
 
                 if (isMeta && key === 'w') {
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x17' });
+                        writeToSession('\x17');
                     }
                     return false;
                 }
 
                 if (event.altKey && key === 'b') {
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x1bb' });
+                        writeToSession('\x1bb');
                     }
                     return false;
                 }
 
                 if (event.altKey && key === 'f') {
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x1bf' });
+                        writeToSession('\x1bf');
                     }
                     return false;
                 }
 
                 if (event.altKey && key === 'd') {
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x1bd' });
+                        writeToSession('\x1bd');
                     }
                     return false;
                 }
 
                 if (event.altKey && event.key === 'Backspace') {
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x1b\x7f' });
+                        writeToSession('\x1b\x7f');
                     }
                     return false;
                 }
 
                 if (isMeta && event.key === 'ArrowLeft') {
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x1bb' });
+                        writeToSession('\x1bb');
                     }
                     return false;
                 }
 
                 if (isMeta && event.key === 'ArrowRight') {
                     if (isSessionReady.current) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\x1bf' });
+                        writeToSession('\x1bf');
                     }
                     return false;
                 }
@@ -727,7 +741,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                     });
                     if (result?.path && isSessionReady.current) {
                         const bracketedText = '\x1b[200~' + result.path + '\x1b[201~';
-                        window.api.writeToTerminal({ id: terminalId, data: bracketedText });
+                        writeToSession(bracketedText);
                         showPasteNotification(`Image saved: ${fileName}`);
                     } else if (!result?.path) {
                         showPasteNotification('Image paste failed: no path returned', true);
@@ -746,73 +760,134 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
 
         isSessionReady.current = false;
 
-        const dataCallback = (_, { id, data }) => {
-            if (id === terminalId && !isEffectCancelled) {
-                xtermInstance.current?.write(data);
+        const remoteConnId = getActiveConnectionId();
+        const isRemoteSession = !!remoteConnId;
 
-                terminalOutputBuffer.current.push(data);
+        let removeDataListener: () => void;
+        let removeClosedListener: () => void;
 
-                const fullOutput = terminalOutputBuffer.current.join('');
-                const lines = fullOutput.split('\n');
-                if (lines.length > MAX_TERMINAL_CONTEXT_LINES) {
-                    terminalOutputBuffer.current = [lines.slice(-MAX_TERMINAL_CONTEXT_LINES).join('\n')];
+        if (isRemoteSession) {
+            const dataCallback = ({ sessionId, data }: { sessionId: string; data: string }) => {
+                if (sessionId === terminalId && !isEffectCancelled) {
+                    xtermInstance.current?.write(data);
+
+                    terminalOutputBuffer.current.push(data);
+
+                    const fullOutput = terminalOutputBuffer.current.join('');
+                    const lines = fullOutput.split('\n');
+                    if (lines.length > MAX_TERMINAL_CONTEXT_LINES) {
+                        terminalOutputBuffer.current = [lines.slice(-MAX_TERMINAL_CONTEXT_LINES).join('\n')];
+                    }
                 }
-            }
-        };
-        const closedCallback = (_, { id }) => {
-            if (id === terminalId && !isEffectCancelled) {
-                isSessionReady.current = false;
-                xtermInstance.current?.write('\r\n[Session Closed]\r\n');
-            }
-        };
+            };
+            const closedCallback = ({ sessionId }: { sessionId: string }) => {
+                if (sessionId === terminalId && !isEffectCancelled) {
+                    isSessionReady.current = false;
+                    xtermInstance.current?.write('\r\n[Session Closed]\r\n');
+                }
+            };
+            removeDataListener = (window as any).api.onSshTerminalData(dataCallback);
+            removeClosedListener = (window as any).api.onSshTerminalClosed(closedCallback);
+        } else {
+            const dataCallback = (_, { id, data }) => {
+                if (id === terminalId && !isEffectCancelled) {
+                    xtermInstance.current?.write(data);
 
-        const removeDataListener = window.api.onTerminalData(dataCallback);
-        const removeClosedListener = window.api.onTerminalClosed(closedCallback);
+                    terminalOutputBuffer.current.push(data);
+
+                    const fullOutput = terminalOutputBuffer.current.join('');
+                    const lines = fullOutput.split('\n');
+                    if (lines.length > MAX_TERMINAL_CONTEXT_LINES) {
+                        terminalOutputBuffer.current = [lines.slice(-MAX_TERMINAL_CONTEXT_LINES).join('\n')];
+                    }
+                }
+            };
+            const closedCallback = (_, { id }) => {
+                if (id === terminalId && !isEffectCancelled) {
+                    isSessionReady.current = false;
+                    xtermInstance.current?.write('\r\n[Session Closed]\r\n');
+                }
+            };
+            removeDataListener = window.api.onTerminalData(dataCallback);
+            removeClosedListener = window.api.onTerminalClosed(closedCallback);
+        }
         const inputHandler = xtermInstance.current.onData(input => {
             if (isSessionReady.current && !isEffectCancelled) {
-                window.api.writeToTerminal({ id: terminalId, data: input });
+                writeToSession(input);
             }
         });
 
         const initBackendSession = async () => {
             try {
                 fitAddonRef.current?.fit();
-                const result = await window.api.createTerminalSession({
-                    id: terminalId,
-                    cwd: initialPathRef.current,
-                    cols: xtermInstance.current.cols,
-                    rows: xtermInstance.current.rows,
-                    shellType: shellType
-                });
-                if (isEffectCancelled) return;
-                if (result.success) {
-                    isSessionReady.current = true;
-                    setActiveShell(result.shell || 'system');
-
-                    requestAnimationFrame(() => {
-                        try { fitAddonRef.current?.fit(); } catch {}
-                        window.api.resizeTerminal?.({
-                            id: terminalId,
-                            cols: xtermInstance.current?.cols || 80,
-                            rows: xtermInstance.current?.rows || 24
-                        });
+                if (isRemoteSession) {
+                    const result = await (window as any).api.sshCreateTerminal({
+                        id: remoteConnId,
+                        sessionId: terminalId,
+                        cols: xtermInstance.current.cols,
+                        rows: xtermInstance.current.rows,
                     });
-                    if (activeContentPaneId === nodeId) {
-                        xtermInstance.current.focus();
-                    }
-                    if (!result.reused) {
-                        window.api.writeToTerminal({ id: terminalId, data: '\r' });
-                    }
+                    if (isEffectCancelled) return;
+                    if (result.success) {
+                        isSessionReady.current = true;
+                        setActiveShell('system');
 
-                    const autoSource = localStorage.getItem(AUTO_SOURCE_KEY);
-                    if (!result.reused && autoSource === 'true' && isSessionReady.current && terminalId) {
-                        const cmd = getShellProfileCommand();
-                        window.api.writeToTerminal({ id: terminalId, data: cmd + '\n' });
-                    } else if (!result.reused && autoSource !== 'false' && autoSource !== 'true' && result.shell === 'system') {
-                        setShowShellPrompt(true);
+                        requestAnimationFrame(() => {
+                            try { fitAddonRef.current?.fit(); } catch {}
+                            resizeSession(xtermInstance.current?.cols || 80, xtermInstance.current?.rows || 24);
+                        });
+                        if (activeContentPaneId === nodeId) {
+                            xtermInstance.current.focus();
+                        }
+                        if (initialPathRef.current && initialPathRef.current !== '/') {
+                            const safePath = initialPathRef.current.replace(/"/g, '\\"');
+                            writeToSession(`cd "${safePath}"\n`);
+                        }
+
+                        const autoSource = localStorage.getItem(AUTO_SOURCE_KEY);
+                        if (autoSource === 'true' && isSessionReady.current && terminalId) {
+                            const cmd = getShellProfileCommand();
+                            writeToSession(cmd + '\n');
+                        } else if (autoSource !== 'false' && autoSource !== 'true') {
+                            setShowShellPrompt(true);
+                        }
+                    } else {
+                        xtermInstance.current.write(`[FATAL] SSH terminal failed: ${result.error}\r\n`);
                     }
                 } else {
-                    xtermInstance.current.write(`[FATAL] Backend failed: ${result.error}\r\n`);
+                    const result = await window.api.createTerminalSession({
+                        id: terminalId,
+                        cwd: initialPathRef.current,
+                        cols: xtermInstance.current.cols,
+                        rows: xtermInstance.current.rows,
+                        shellType: shellType
+                    });
+                    if (isEffectCancelled) return;
+                    if (result.success) {
+                        isSessionReady.current = true;
+                        setActiveShell(result.shell || 'system');
+
+                        requestAnimationFrame(() => {
+                            try { fitAddonRef.current?.fit(); } catch {}
+                            resizeSession(xtermInstance.current?.cols || 80, xtermInstance.current?.rows || 24);
+                        });
+                        if (activeContentPaneId === nodeId) {
+                            xtermInstance.current.focus();
+                        }
+                        if (!result.reused) {
+                            writeToSession('\r');
+                        }
+
+                        const autoSource = localStorage.getItem(AUTO_SOURCE_KEY);
+                        if (!result.reused && autoSource === 'true' && isSessionReady.current && terminalId) {
+                            const cmd = getShellProfileCommand();
+                            writeToSession(cmd + '\n');
+                        } else if (!result.reused && autoSource !== 'false' && autoSource !== 'true' && result.shell === 'system') {
+                            setShowShellPrompt(true);
+                        }
+                    } else {
+                        xtermInstance.current.write(`[FATAL] Backend failed: ${result.error}\r\n`);
+                    }
                 }
             } catch (err) {
                 if (!isEffectCancelled) xtermInstance.current.write(`[FATAL] IPC Error: ${err.message}\r\n`);
@@ -846,6 +921,9 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             inputHandler.dispose();
             removeDataListener();
             removeClosedListener();
+            if (isRemoteSession && remoteConnId && terminalId) {
+                try { (window as any).api.sshKillTerminal({ id: remoteConnId, sessionId: terminalId }); } catch {}
+            }
             resizeObserverRef.current?.disconnect();
             resizeObserverRef.current = null;
             if (handleWindowResizeRef.current) {

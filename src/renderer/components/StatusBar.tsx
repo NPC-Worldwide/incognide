@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     MessageSquare, Terminal, Globe, FileText, File as FileIcon,
-    BrainCircuit, Bot, Zap, Users, Database, ChevronRight, ChevronDown,
+    BrainCircuit, Bot, Zap, Users, Database, ChevronDown,
     GitBranch, Image, AlertCircle, RefreshCw, Check, Columns, Layers,
-    Power, ScrollText, Server, Search, X
+    Power, ScrollText, Server, Sun, Moon, User, X
 } from 'lucide-react';
 import npcPythonLogo from '../../assets/npc-python.png';
+import npcLogo from '../../assets/icon.png';
 import { useAiEnabled } from './AiFeatureContext';
+import { SshConnection } from '../hooks/useRemoteConnections';
 
 interface PaneItem {
     id: string;
@@ -22,6 +24,7 @@ interface StatusBarProps {
     onStartResize?: () => void;
     sidebarCollapsed?: boolean;
     onExpandSidebar?: () => void;
+    sidebarWidth?: number;
     topBarCollapsed?: boolean;
     onExpandTopBar?: () => void;
     appVersion?: string;
@@ -33,6 +36,9 @@ interface StatusBarProps {
     onOpenLogsViewer?: () => void;
     createBackendPane?: () => void;
     activeConnection?: { host: string } | null;
+    sshConnections?: SshConnection[];
+    onConnectSsh?: (config: Omit<SshConnection, 'isConnected' | 'currentPath'>) => Promise<{ success: boolean; error?: string }>;
+    onDisconnectSsh?: (id: string) => Promise<void>;
     onOpenSSHDialog?: () => void;
     searchTerm: string;
     setSearchTerm: (term: string) => void;
@@ -44,6 +50,10 @@ interface StatusBarProps {
     messageSearchResults: any[];
     setSearchResultsModalOpen: (open: boolean) => void;
     SEARCH_SCOPES: Record<string, string>;
+    isDarkMode?: boolean;
+    toggleTheme?: () => void;
+    onOpenAccount?: () => void;
+    onOpenNewWindow?: () => void;
 }
 
 type BackendStatus = 'ok' | 'unhealthy' | 'unreachable' | 'restarting' | 'unknown';
@@ -55,6 +65,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
     onStartResize,
     sidebarCollapsed = false,
     onExpandSidebar,
+    sidebarWidth,
     appVersion,
     updateAvailable,
     onCheckForUpdates,
@@ -64,6 +75,9 @@ const StatusBar: React.FC<StatusBarProps> = ({
     onOpenLogsViewer,
     createBackendPane,
     activeConnection,
+    sshConnections,
+    onConnectSsh,
+    onDisconnectSsh,
     onOpenSSHDialog,
     searchTerm,
     setSearchTerm,
@@ -75,12 +89,20 @@ const StatusBar: React.FC<StatusBarProps> = ({
     messageSearchResults,
     setSearchResultsModalOpen,
     SEARCH_SCOPES,
+    isDarkMode,
+    toggleTheme,
+    onOpenAccount,
+    onOpenNewWindow,
 }) => {
+    const buttonGroupWidth = sidebarCollapsed ? 192 : (sidebarWidth || 192);
     const aiEnabled = useAiEnabled();
     const [checkingUpdates, setCheckingUpdates] = useState(false);
     const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
     const [showQuitPrompt, setShowQuitPrompt] = useState(false);
     const [showBackendMenu, setShowBackendMenu] = useState(false);
+    const [sshMenuOpen, setSshMenuOpen] = useState(false);
+    const [passwordPromptId, setPasswordPromptId] = useState<string | null>(null);
+    const [passwordInput, setPasswordInput] = useState('');
     const [clockMode, setClockMode] = useState<'analog' | 'digital' | 'datetime'>(() => (localStorage.getItem('incognide_clockMode') as any) || 'digital');
     const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -94,7 +116,6 @@ const StatusBar: React.FC<StatusBarProps> = ({
     const [backendPid, setBackendPid] = useState<number | null>(null);
     const [failCount, setFailCount] = useState(0);
     const [restarting, setRestarting] = useState(false);
-    const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const checkHealth = useCallback(async () => {
@@ -206,91 +227,36 @@ const StatusBar: React.FC<StatusBarProps> = ({
                 className="absolute top-0 left-0 right-0 h-1 cursor-ns-resize hover:bg-blue-500/50 transition-colors z-10"
                 onMouseDown={(e) => { e.preventDefault(); onStartResize?.(); }}
             />
-            <div className="h-full theme-bg-tertiary border-t theme-border flex items-center px-3 text-[12px] theme-text-muted gap-2">
-            {sidebarCollapsed && (
-                <button
-                    onClick={() => onExpandSidebar?.()}
-                    className="p-2 rounded transition-colors text-gray-500 dark:text-gray-400 hover:opacity-80 bg-transparent"
-                    title="Expand Sidebar"
-                >
-                    <ChevronRight size={20} />
-                </button>
-            )}
-
-            <div
-                data-tutorial="search-bar"
-                className="flex items-center gap-2 w-40 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400/30 transition-all"
-            >
-                <div className="relative flex-shrink-0">
+            <div className="h-full theme-bg-tertiary border-t theme-border flex items-center px-3 text-[12px] theme-text-muted gap-3">
+            <div className="grid grid-cols-3 h-full -ml-3" style={{ width: buttonGroupWidth }}>
+                {toggleTheme && (
                     <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); setScopeMenuOpen(prev => !prev); }}
-                        title={`Search scope: ${SEARCH_SCOPES[searchScope] || 'All'}`}
-                        className="flex items-center gap-0.5 theme-hover rounded px-0.5 py-0.5 cursor-pointer"
+                        data-tutorial="theme-toggle-button"
+                        onClick={toggleTheme}
+                        className="flex items-center justify-center h-full hover:bg-teal-500/20 transition-all bg-transparent"
+                        title="Toggle Theme"
                     >
-                        <Search size={14} className="text-blue-400" />
-                        <ChevronDown size={10} className="text-gray-400" />
-                    </button>
-                    {scopeMenuOpen && (
-                        <>
-                            <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setScopeMenuOpen(false)} />
-                            <div className="absolute left-0 bottom-full mb-1 theme-bg-secondary border theme-border rounded-lg shadow-xl z-50 min-w-[160px] py-1">
-                                <div className="px-3 py-1 text-[10px] theme-text-muted uppercase tracking-wide">Search In</div>
-                                {Object.entries(SEARCH_SCOPES).sort(([a], [b]) => (a === searchScope ? -1 : b === searchScope ? 1 : 0)).map(([k, v]) => (
-                                    <button
-                                        key={k}
-                                        onClick={() => {
-                                            setSearchScope(k);
-                                            localStorage.setItem('npc-local-search-scope', k);
-                                            setScopeMenuOpen(false);
-                                        }}
-                                        className={`flex items-center justify-between w-full px-3 py-1.5 text-xs text-left theme-hover ${searchScope === k ? 'text-blue-400' : 'theme-text-primary'}`}
-                                    >
-                                        <span>{v}</span>
-                                        {searchScope === k && <Check size={12} />}
-                                    </button>
-                                ))}
-                            </div>
-                        </>
-                    )}
-                </div>
-                <input
-                    ref={searchInputRef}
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => {
-                        setSearchTerm(e.target.value);
-                        if (!e.target.value.trim()) {
-                            setSearchResultsModalOpen(false);
-                        }
-                    }}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' && searchTerm.trim()) {
-                            e.preventDefault();
-                            createSearchPane?.(searchTerm.trim(), searchScope);
-                            setSearchTerm('');
-                        }
-                    }}
-                    placeholder="Search files..."
-                    className="flex-1 bg-transparent text-gray-100 text-xs focus:outline-none min-w-0"
-                />
-                {(deepSearchResults.length > 0 || messageSearchResults.length > 0) && (
-                    <button
-                        onClick={() => setSearchResultsModalOpen(true)}
-                        className="px-1.5 py-0.5 text-[9px] bg-blue-500 text-white rounded"
-                    >
-                        {deepSearchResults.length + messageSearchResults.length}
+                        {isDarkMode ? <Moon size={18} className="text-blue-400" /> : <Sun size={18} className="text-yellow-400" />}
                     </button>
                 )}
-                {searchTerm && (
+                {onOpenAccount && (
                     <button
-                        onClick={() => {
-                            setSearchTerm('');
-                            setSearchResultsModalOpen(false);
-                        }}
-                        className="p-0.5 hover:bg-gray-600 rounded"
+                        data-tutorial="account-button"
+                        onClick={onOpenAccount}
+                        className="flex items-center justify-center h-full hover:bg-teal-500/20 transition-all bg-transparent text-gray-400 hover:text-blue-400"
+                        title="Account"
                     >
-                        <X size={10} className="text-gray-300" />
+                        <User size={18} />
+                    </button>
+                )}
+                {onOpenNewWindow && (
+                    <button
+                        data-tutorial="new-window-button"
+                        onClick={onOpenNewWindow}
+                        className="flex items-center justify-center h-full hover:bg-teal-500/20 transition-all bg-transparent"
+                        title="New Window (Cmd/Ctrl+Shift+N)"
+                    >
+                        <img src={npcLogo} alt="Incognide" style={{ width: 18, height: 18 }} className="rounded-full" />
                     </button>
                 )}
             </div>
@@ -325,13 +291,98 @@ const StatusBar: React.FC<StatusBarProps> = ({
             <div className="flex-1" />
 
             {onOpenSSHDialog && (
-                <button
-                    onClick={() => onOpenSSHDialog?.()}
-                    className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors hover:bg-white/10 ${activeConnection ? 'text-green-400' : 'text-gray-500 hover:text-green-400'}`}
-                    title={activeConnection ? `SSH: ${activeConnection.host}` : 'Connect via SSH'}
-                >
-                    <Server size={14} />
-                </button>
+                <div className="relative">
+                    <button
+                        onClick={() => setSshMenuOpen(o => !o)}
+                        className={`flex items-center gap-1 px-1.5 py-1 rounded transition-colors hover:bg-white/10 ${activeConnection ? 'text-green-400' : 'text-gray-500 hover:text-green-400'}`}
+                        title={activeConnection ? `SSH: ${activeConnection.host}` : 'Connect via SSH'}
+                    >
+                        <Server size={14} />
+                    </button>
+                    {sshMenuOpen && (
+                        <>
+                            <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setSshMenuOpen(false)} />
+                            <div className="absolute bottom-full right-0 mb-1 theme-bg-secondary border theme-border rounded shadow-xl z-50 py-1 min-w-[220px]">
+                                {sshConnections?.length === 0 && (
+                                    <div className="px-3 py-1.5 text-[11px] text-gray-500">No saved connections</div>
+                                )}
+                                {sshConnections?.map((conn) => (
+                                    <div key={conn.id} className="flex items-center justify-between px-3 py-1.5 hover:bg-white/5">
+                                        <span className="text-xs theme-text-primary truncate max-w-[120px]">{conn.username}@{conn.host}</span>
+                                        {conn.isConnected ? (
+                                            <button
+                                                onClick={() => { onDisconnectSsh?.(conn.id); setSshMenuOpen(false); }}
+                                                className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                                            >
+                                                Disconnect
+                                            </button>
+                                        ) : (
+                                            <>
+                                                {passwordPromptId === conn.id ? (
+                                                    <div className="flex items-center gap-1">
+                                                        <input
+                                                            type="password"
+                                                            value={passwordInput}
+                                                            onChange={(e) => setPasswordInput(e.target.value)}
+                                                            placeholder="password"
+                                                            className="w-24 px-1.5 py-0.5 rounded bg-[#0f0f14] border border-[#313244] text-[10px] text-[#cdd6f4] outline-none"
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    onConnectSsh?.({ ...conn, password: passwordInput });
+                                                                    setPasswordPromptId(null);
+                                                                    setPasswordInput('');
+                                                                    setSshMenuOpen(false);
+                                                                }
+                                                            }}
+                                                        />
+                                                        <button
+                                                            onClick={() => {
+                                                                onConnectSsh?.({ ...conn, password: passwordInput });
+                                                                setPasswordPromptId(null);
+                                                                setPasswordInput('');
+                                                                setSshMenuOpen(false);
+                                                            }}
+                                                            className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400 hover:bg-green-500/30"
+                                                        >
+                                                            Go
+                                                        </button>
+                                                        <button
+                                                            onClick={() => { setPasswordPromptId(null); setPasswordInput(''); }}
+                                                            className="text-[10px] px-1.5 py-0.5 rounded text-gray-500 hover:text-white"
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => {
+                                                            if (!conn.password && !conn.privateKeyPath) {
+                                                                setPasswordPromptId(conn.id);
+                                                            } else {
+                                                                onConnectSsh?.(conn);
+                                                                setSshMenuOpen(false);
+                                                            }
+                                                        }}
+                                                        className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400 hover:bg-green-500/30"
+                                                    >
+                                                        Connect
+                                                    </button>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+                                ))}
+                                <div className="border-t theme-border my-1" />
+                                <button
+                                    onClick={() => { onOpenSSHDialog(); setSshMenuOpen(false); }}
+                                    className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-xs theme-text-muted hover:bg-white/10"
+                                >
+                                    <Server size={12} /> New SSH connection
+                                </button>
+                            </div>
+                        </>
+                    )}
+                </div>
             )}
 
             <div className="relative group/backend">

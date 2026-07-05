@@ -82,6 +82,10 @@ function register(ctx) {
       }
       args = ['-i'];
       actualShellType = 'python3';
+    } else if (shellType) {
+      shell = shellType;
+      args = [];
+      actualShellType = shellType;
     } else if (shellType === 'system' || !shellType) {
 
       let useNpcsh = false;

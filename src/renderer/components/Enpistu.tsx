@@ -1,7 +1,7 @@
  import React, { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
 import { BACKEND_URL } from '../config';
 import { createPortal } from 'react-dom';
-import { readFileContent, writeFileContent, createDirectory, renameFile } from '../api/fileSystem';
+import { readFileContent, writeFileContent, createDirectory, renameFile, readDirectoryStructure } from '../api/fileSystem';
 import yaml from 'js-yaml';
 import {
     Folder, File as FileIcon,  Globe, ChevronRight, ChevronLeft, Settings, Edit,
@@ -819,6 +819,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const searchInputRef = useRef(null);
     const topBarRef = useRef<HTMLDivElement>(null);
     const [topBarWidth, setTopBarWidth] = useState(1000);
+    const [fileSearch, setFileSearch] = useState('');
     const [webSearchExpanded, setWebSearchExpanded] = useState(false);
     const [engineMenuOpen, setEngineMenuOpen] = useState(false);
     const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
@@ -4180,7 +4181,7 @@ const renderMessageContextMenu = () => null;
 
 
             if (currentPath) {
-                const structureResult = await window.api.readDirectoryStructure(currentPath);
+                const structureResult = await readDirectoryStructure(currentPath);
                 if (structureResult && !structureResult.error) {
                     setFolderStructure(structureResult);
                 }
@@ -4350,6 +4351,45 @@ const renderMessageContextMenu = () => null;
         contentDataRef.current[newPaneId] = { contentType: 'help', contentId: 'help' };
         addPaneOrTab(newPaneId);
     }, []);
+
+    const handleSshConnect = useCallback(async (
+        config: { id: string; host: string; port: number; username: string; privateKeyPath?: string },
+        password?: string,
+        passphrase?: string
+    ) => {
+        console.log('[SSH] handleSshConnect called', config.id, '->', config.host + ':' + config.port);
+        try {
+            const result = await connectSsh(config, password, passphrase);
+            console.log('[SSH] connectSsh result', JSON.stringify(result));
+            if (result.success) {
+                let remoteHome = '/home/' + config.username;
+                try {
+                    const execWithTimeout = (cmd: string, ms: number) => Promise.race([
+                        (window as any).api.sshExec({ id: config.id, command: cmd }),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('home lookup timed out')), ms))
+                    ]);
+                    const homeResult = await execWithTimeout('pwd', 3000);
+                    console.log('[SSH] home result', JSON.stringify(homeResult));
+                    if ((homeResult as any)?.stdout?.trim()) {
+                        remoteHome = (homeResult as any).stdout.trim();
+                    }
+                } catch (homeErr) {
+                    console.warn('[SSH] failed to get remote home, using fallback', homeErr);
+                }
+                console.log('[SSH] switching to remote path', remoteHome);
+                setCurrentPath(remoteHome);
+                setBaseDir(remoteHome);
+                sessionStorage.setItem(LAST_ACTIVE_PATH_KEY, remoteHome);
+                await loadDirectoryStructureWithoutConversationLoad(remoteHome);
+                console.log('[SSH] remote path loaded');
+            }
+            return result;
+        } catch (err: any) {
+            console.error('[SSH] handleSshConnect error', err);
+            setError(`SSH connect failed: ${err?.message || err}`);
+            return { success: false, error: String(err?.message || err) };
+        }
+    }, [connectSsh, loadDirectoryStructureWithoutConversationLoad]);
 
     const handleGlobalDragStart = useCallback((e, item) => {
 
@@ -6071,7 +6111,7 @@ const handleBrowserDialogNavigate = (url) => {
                     } catch (e) {}
                 }
                 if (storedPath) {
-                    const pathExistsResponse = await window.api.readDirectoryStructure(storedPath);
+                    const pathExistsResponse = await readDirectoryStructure(storedPath);
                     if (!pathExistsResponse?.error) {
                         setCurrentPath(storedPath);
                     } else {
@@ -8024,10 +8064,37 @@ const renderAttachmentThumbnails = () => {
 
 
 
-const renderMainContent = () => {
+const PANE_TITLES: Record<string, string> = {
+    'chat': 'Chat',
+    'agent': 'Agent',
+    'editor': 'File',
+    'terminal': 'Terminal',
+    'browser': 'Browser',
+    'pdf': 'PDF',
+    'graph-viewer': 'Knowledge Graph',
+    'dbtool': 'Database',
+    'memory-manager': 'Memory',
+    'npcteam': 'NPCs',
+    'jinx': 'Jinxes',
+    'teammanagement': 'Team',
+    'diff': 'Diff',
+    'browsergraph': 'Web Graph',
+};
+const layoutPaneIds = rootLayoutNode ? new Set(collectPaneIds(rootLayoutNode)) : new Set<string>();
+const paneItems = Object.entries(contentDataRef.current)
+    .filter(([paneId, data]) => layoutPaneIds.has(paneId) && data?.contentType)
+    .map(([paneId, data]: [string, any]) => {
+        const ct = data.contentType;
+        let title = PANE_TITLES[ct] || ct || 'Pane';
+        const shortId = data?.contentId?.slice(-6) || '';
+        if (ct === 'chat') title = `${data?.npc || 'Chat'} ${shortId}`.trim();
+        else if (ct === 'agent') title = `${data?.npc || 'Agent'} ${shortId}`.trim();
+        else if (ct === 'editor') title = getFileName(data?.contentId) || 'File';
+        else if (ct === 'terminal') title = `Terminal${data?.shellType ? ` (${data.shellType})` : ''}`;
+        return { id: paneId, type: ct, title, isActive: paneId === activeContentPaneId };
+    });
 
-
-    const topBar = topBarCollapsed ? (
+const topBar = topBarCollapsed ? (
         <div
             className="h-1 hover:h-4 flex items-center justify-center cursor-pointer theme-bg-secondary border-b theme-border transition-all group flex-shrink-0"
             onClick={() => { setTopBarCollapsed(false); localStorage.setItem('incognide_topBarCollapsed', 'false'); }}
@@ -8037,162 +8104,83 @@ const renderMainContent = () => {
         </div>
     ) : (
         <div className="flex-shrink-0 relative" style={{ height: topBarHeight }}>
-            <div ref={topBarRef} className="h-full px-3 flex items-center gap-3 text-[12px] theme-bg-secondary border-b theme-border">
+            <div ref={topBarRef} className="h-full px-3 relative flex items-center text-[12px] theme-bg-secondary border-b theme-border">
 
-            <button
-                data-tutorial="settings-button"
-                onClick={() => createSettingsPane?.()}
-                className="p-2 theme-hover rounded theme-text-muted"
-                title="Settings"
-            >
-                <Settings size={18} />
-            </button>
+            <div className="absolute -left-3 top-1/2 -translate-y-1/2 z-10 h-full grid grid-cols-3" style={{ width: sidebarCollapsed ? 192 : (sidebarWidth || 192) }}>
+                <button
+                    data-tutorial="settings-button"
+                    onClick={() => createSettingsPane?.()}
+                    className="flex items-center justify-center h-full p-3 hover:bg-teal-500/20 transition-all theme-text-muted"
+                    title="Settings"
+                >
+                    <Settings size={18} />
+                </button>
 
+                <button
+                    onClick={() => createHelpPane?.()}
+                    className="flex items-center justify-center h-full p-3 hover:bg-teal-500/20 transition-all theme-text-muted"
+                    title="Help"
+                    data-tutorial="help-button"
+                >
+                    <HelpCircle size={18} />
+                </button>
 
-            <button
-                onClick={() => createHelpPane?.()}
-                className="p-2 theme-hover rounded theme-text-muted"
-                title="Help"
-                data-tutorial="help-button"
-            >
-                <HelpCircle size={18} />
-            </button>
-
-
-            <button
-                onClick={() => { setTopBarCollapsed(true); localStorage.setItem('incognide_topBarCollapsed', 'true'); }}
-                className="p-1 theme-hover rounded theme-text-muted"
-                title="Hide top bar"
-            >
-                <ChevronUp size={14} />
-            </button>
-
-            <div className="flex-1" />
-
-
-            <button
-                onClick={async () => {
-                    const selectedPath = await (window as any).api?.open_directory_picker?.();
-                    if (selectedPath) setCurrentPath(selectedPath);
-                }}
-                className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-black/30 hover:bg-black/50 text-left"
-                title="Click to open a different folder"
-            >
-                <Folder size={12} className="theme-text-muted" />
-                <span className="text-[11px] theme-text-primary truncate max-w-[200px]">
-                    {currentPath ? currentPath.split(/[\\/]/).pop() : 'No folder'}
-                </span>
-            </button>
-            <button
-                onClick={() => setCommandPaletteOpen(true)}
-                className="p-1.5 theme-hover rounded theme-text-muted"
-                title={`Command palette (${navigator.platform?.toLowerCase().includes('mac') ? '⌘P' : 'Ctrl+Shift+P'})`}
-            >
-                <Sparkles size={14} />
-            </button>
-
-
-
-
-                {topBarWidth < 900 ? (
-                    webSearchExpanded ? (
-                        <div className="flex items-center gap-2 w-32 px-2 py-1 bg-black/40 border border-cyan-400 rounded ring-1 ring-cyan-400/30 transition-all">
-                            <Globe size={14} className="text-cyan-400 flex-shrink-0" />
-                            <input
-                                ref={collapsedWebSearchRef}
-                                autoFocus
-                                type="text"
-                                value={webSearchTerm}
-                                onChange={(e) => setWebSearchTerm(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && webSearchTerm.trim()) {
-                                        e.preventDefault();
-                                        const provider = WEB_SEARCH_PROVIDERS[webSearchProvider];
-                                        const url = provider.url + encodeURIComponent(webSearchTerm.trim());
-                                        createNewBrowser(url);
-                                        setWebSearchTerm('');
-                                        setWebSearchExpanded(false);
-                                    } else if (e.key === 'Escape') {
-                                        setWebSearchExpanded(false);
-                                    }
-                                }}
-                                onBlur={() => { if (!webSearchTerm.trim()) setWebSearchExpanded(false); }}
-                                className="flex-1 bg-transparent theme-text-primary text-xs focus:outline-none min-w-0"
-                                placeholder="Search web..."
-                            />
-                            <button onClick={() => { setWebSearchTerm(''); setWebSearchExpanded(false); }} className="p-0.5 theme-hover rounded">
-                                <X size={10} className="theme-text-muted" />
-                            </button>
-                        </div>
-                    ) : (
-                        <button
-                            data-tutorial="web-search-bar"
-                            onClick={() => { setWebSearchExpanded(true); }}
-                            className="p-1.5 theme-hover rounded theme-text-muted"
-                            title="Web search"
-                        >
-                            <Globe size={16} className="text-cyan-400" />
-                        </button>
-                    )
-                ) : (
-                <div data-tutorial="web-search-bar" className="flex items-center gap-2 w-32 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-cyan-400 focus-within:ring-1 focus-within:ring-cyan-400/30 transition-all">
-                <div className="relative flex-shrink-0">
-                    <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); setEngineMenuOpen(prev => !prev); }}
-                        title={`Search engine: ${WEB_SEARCH_PROVIDERS[webSearchProvider as WebSearchProvider]?.name || webSearchProvider}`}
-                        className="flex items-center gap-0.5 theme-hover rounded px-0.5 py-0.5 cursor-pointer"
-                    >
-                        <Globe size={14} className="text-cyan-400" />
-                        <ChevronDown size={10} className="text-gray-400" />
-                    </button>
-                    {engineMenuOpen && (
-                        <>
-                            <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setEngineMenuOpen(false)} />
-                            <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded-lg shadow-xl z-50 min-w-[140px] py-1">
-                                <div className="px-3 py-1 text-[10px] theme-text-muted uppercase tracking-wide">Search Engine</div>
-                                {Object.entries(WEB_SEARCH_PROVIDERS).sort(([a], [b]) => (a === webSearchProvider ? -1 : b === webSearchProvider ? 1 : 0)).map(([k, v]) => (
-                                    <button
-                                        key={k}
-                                        onClick={() => {
-                                            setWebSearchProvider(k);
-                                            localStorage.setItem('npc-browser-search-engine', k);
-                                            window.dispatchEvent(new CustomEvent('search-engine-changed', { detail: k }));
-                                            setEngineMenuOpen(false);
-                                        }}
-                                        className={`flex items-center justify-between w-full px-3 py-1.5 text-xs text-left theme-hover ${webSearchProvider === k ? 'text-cyan-400' : 'theme-text-primary'}`}
-                                    >
-                                        <span>{v.name}</span>
-                                        {webSearchProvider === k && <Check size={12} />}
-                                    </button>
-                                ))}
-                            </div>
-                        </>
-                    )}
-                </div>
-                <input
-                    type="text"
-                    value={webSearchTerm}
-                    placeholder="Search web..."
-                    onChange={(e) => setWebSearchTerm(e.target.value)}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' && webSearchTerm.trim()) {
-                            e.preventDefault();
-                            const provider = WEB_SEARCH_PROVIDERS[webSearchProvider as WebSearchProvider];
-                            const url = provider.url + encodeURIComponent(webSearchTerm.trim());
-                            createNewBrowser(url);
-                            setWebSearchTerm('');
-                        }
-                    }}
-                    className="flex-1 bg-transparent text-gray-100 text-xs focus:outline-none min-w-0"
-                />
+                <button
+                    onClick={() => { setTopBarCollapsed(true); localStorage.setItem('incognide_topBarCollapsed', 'true'); }}
+                    className="flex items-center justify-center h-full p-3 hover:bg-teal-500/20 transition-all theme-text-muted"
+                    title="Hide top bar"
+                >
+                    <ChevronUp size={18} />
+                </button>
             </div>
-            )}
-
-            <div className="flex-1" />
 
 
-            <div className="flex items-center gap-2">
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 z-10">
+                <div className="flex items-center rounded bg-black/30 hover:bg-black/40 focus-within:bg-black/50 transition-colors overflow-hidden">
+                    <button
+                        onClick={async () => {
+                            const selectedPath = await (window as any).api?.open_directory_picker?.();
+                            if (selectedPath) setCurrentPath(selectedPath);
+                        }}
+                        className="flex items-center gap-1.5 px-2 py-1 text-left hover:bg-white/5 transition-colors"
+                        title="Click to open a different folder"
+                    >
+                        <Folder size={12} className="theme-text-muted" />
+                        <span className="text-[11px] theme-text-primary truncate max-w-[180px]">
+                            {currentPath ? currentPath.split(/[\\/]/).pop() : 'No folder'}
+                        </span>
+                    </button>
+                    <div className="w-px h-4 bg-white/10" />
+                    <div className="relative flex items-center">
+                        <Search size={12} className="absolute left-2 text-gray-500 pointer-events-none" />
+                        <input
+                            type="text"
+                            value={fileSearch}
+                            onChange={(e) => setFileSearch(e.target.value)}
+                            placeholder="Search files..."
+                            className="w-40 bg-transparent border-none pl-7 pr-6 py-1 text-[11px] theme-text-primary placeholder:opacity-50 focus:outline-none"
+                        />
+                        {fileSearch && (
+                            <button
+                                onClick={() => setFileSearch('')}
+                                className="absolute right-2 text-gray-500 hover:theme-text-primary"
+                            >
+                                <X size={10} />
+                            </button>
+                        )}
+                    </div>
+                </div>
+                <button
+                    onClick={() => setCommandPaletteOpen(true)}
+                    className="p-1.5 theme-hover rounded theme-text-muted"
+                    title={`Command palette (${navigator.platform?.toLowerCase().includes('mac') ? '⌘P' : 'Ctrl+Shift+P'})`}
+                >
+                    <Sparkles size={14} />
+                </button>
+            </div>
+
+
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-3 z-10">
 
                 <div className="relative">
                     <button
@@ -8296,10 +8284,57 @@ const renderMainContent = () => {
         </div>
     );
 
+const statusBar = bottomBarCollapsed ? (
+    <div
+        className="h-1 hover:h-4 flex items-center justify-center cursor-pointer theme-bg-tertiary border-t theme-border transition-all group"
+        onClick={() => { setBottomBarCollapsed(false); localStorage.setItem('incognide_bottomBarCollapsed', 'false'); }}
+        title="Show status bar"
+    >
+        <ChevronUp size={10} className="opacity-0 group-hover:opacity-60" />
+    </div>
+) : (
+    <StatusBar
+        paneItems={paneItems}
+        setActiveContentPaneId={setActiveContentPaneId}
+        height={bottomBarHeight}
+        onStartResize={() => setIsResizingBottomBar(true)}
+        sidebarCollapsed={sidebarCollapsed}
+        onExpandSidebar={() => setSidebarCollapsed(false)}
+        sidebarWidth={sidebarWidth}
+        appVersion={appVersion}
+        updateAvailable={updateAvailable}
+        onCheckForUpdates={checkForUpdates}
+        onCollapse={() => { setBottomBarCollapsed(true); localStorage.setItem('incognide_bottomBarCollapsed', 'true'); }}
+        openMode={openMode}
+        onToggleOpenMode={() => { setOpenMode(m => { const next = m === 'pane' ? 'tab' : 'pane'; localStorage.setItem('incognide_openMode', next); if (currentPath && rootLayoutNode) { const data = serializeWorkspace(rootLayoutNode, currentPath, contentDataRef.current, activeContentPaneId, next); if (data) saveWorkspaceToStorage(currentPath, data); } return next; }); }}
+        onOpenLogsViewer={() => setLogsViewerOpen(true)}
+        createBackendPane={createBackendPane}
+        activeConnection={sshActiveConnection}
+        sshConnections={sshConnections}
+        onConnectSsh={(config) => handleSshConnect(config)}
+        onDisconnectSsh={(id) => disconnectSsh(id)}
+        onOpenSSHDialog={() => setSshDialogOpen(true)}
+        isDarkMode={isDarkMode}
+        toggleTheme={() => toggleTheme(setIsDarkMode)}
+        onOpenAccount={() => createAndAddPaneNodeToLayout?.('account', 'account')}
+        onOpenNewWindow={() => { if ((window as any).api?.openNewWindow) (window as any).api.openNewWindow(''); else window.open(window.location.href, '_blank'); }}
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        searchScope={searchScope}
+        setSearchScope={setSearchScope}
+        searchInputRef={searchInputRef}
+        createSearchPane={createSearchPane}
+        deepSearchResults={deepSearchResults}
+        messageSearchResults={messageSearchResults}
+        setSearchResultsModalOpen={setSearchResultsModalOpen}
+        SEARCH_SCOPES={SEARCH_SCOPES}
+    />
+);
+
+const renderMainContent = () => {
     if (!rootLayoutNode) {
         return (
             <main className={`flex-1 flex flex-col theme-bg-primary ${isDarkMode ? 'dark-mode' : 'light-mode'} overflow-hidden`}>
-                {topBar}
                 <div className="flex-1 flex overflow-hidden">
                 <div
                     className="flex-1 flex items-center justify-center border-2 border-dashed border-gray-400 m-4"
@@ -8598,82 +8633,13 @@ const renderMainContent = () => {
                 />
                 )}
                 </div>
-                {bottomBarCollapsed ? (
-                    <div
-                        className="h-1 hover:h-4 flex items-center justify-center cursor-pointer theme-bg-tertiary border-t theme-border transition-all group"
-                        onClick={() => { setBottomBarCollapsed(false); localStorage.setItem('incognide_bottomBarCollapsed', 'false'); }}
-                        title="Show status bar"
-                    >
-                        <ChevronUp size={10} className="opacity-0 group-hover:opacity-60" />
-                    </div>
-                ) : (
-                    <StatusBar
-                        paneItems={[]}
-                        setActiveContentPaneId={setActiveContentPaneId}
-                        height={bottomBarHeight}
-                        onStartResize={() => setIsResizingBottomBar(true)}
-                        sidebarCollapsed={sidebarCollapsed}
-                        onExpandSidebar={() => setSidebarCollapsed(false)}
-                        appVersion={appVersion}
-                        updateAvailable={updateAvailable}
-                        onCheckForUpdates={checkForUpdates}
-                        onCollapse={() => { setBottomBarCollapsed(true); localStorage.setItem('incognide_bottomBarCollapsed', 'true'); }}
-                        openMode={openMode}
-                        onToggleOpenMode={() => { setOpenMode(m => { const next = m === 'pane' ? 'tab' : 'pane'; localStorage.setItem('incognide_openMode', next); if (currentPath && rootLayoutNode) { const data = serializeWorkspace(rootLayoutNode, currentPath, contentDataRef.current, activeContentPaneId, next); if (data) saveWorkspaceToStorage(currentPath, data); } return next; }); }}
-                        onOpenLogsViewer={() => setLogsViewerOpen(true)}
-                        createBackendPane={createBackendPane}
-                        activeConnection={sshActiveConnection}
-                        onOpenSSHDialog={() => setSshDialogOpen(true)}
-                        searchTerm={searchTerm}
-                        setSearchTerm={setSearchTerm}
-                        searchScope={searchScope}
-                        setSearchScope={setSearchScope}
-                        searchInputRef={searchInputRef}
-                        createSearchPane={createSearchPane}
-                        deepSearchResults={deepSearchResults}
-                        messageSearchResults={messageSearchResults}
-                        setSearchResultsModalOpen={setSearchResultsModalOpen}
-                        SEARCH_SCOPES={SEARCH_SCOPES}
-                    />
-                )}
             </main>
         );
     }
 
 
-    const PANE_TITLES: Record<string, string> = {
-        'chat': 'Chat',
-        'agent': 'Agent',
-        'editor': 'File',
-        'terminal': 'Terminal',
-        'browser': 'Browser',
-        'pdf': 'PDF',
-        'graph-viewer': 'Knowledge Graph',
-        'dbtool': 'Database',
-        'memory-manager': 'Memory',
-        'npcteam': 'NPCs',
-        'jinx': 'Jinxes',
-        'teammanagement': 'Team',
-        'diff': 'Diff',
-        'browsergraph': 'Web Graph',
-    };
-    const layoutPaneIds = rootLayoutNode ? new Set(collectPaneIds(rootLayoutNode)) : new Set<string>();
-    const paneItems = Object.entries(contentDataRef.current)
-        .filter(([paneId, data]) => layoutPaneIds.has(paneId) && data?.contentType)
-        .map(([paneId, data]: [string, any]) => {
-            const ct = data.contentType;
-            let title = PANE_TITLES[ct] || ct || 'Pane';
-            const shortId = data?.contentId?.slice(-6) || '';
-            if (ct === 'chat') title = `${data?.npc || 'Chat'} ${shortId}`.trim();
-            else if (ct === 'agent') title = `${data?.npc || 'Agent'} ${shortId}`.trim();
-            else if (ct === 'editor') title = getFileName(data?.contentId) || 'File';
-            else if (ct === 'terminal') title = `Terminal${data?.shellType ? ` (${data.shellType})` : ''}`;
-            return { id: paneId, type: ct, title, isActive: paneId === activeContentPaneId };
-        });
-
     return (
         <main className={`flex-1 flex flex-col theme-bg-primary ${isDarkMode ? 'dark-mode' : 'light-mode'} overflow-hidden`}>
-            {topBar}
             <div
                 className="flex-1 flex overflow-hidden"
                 data-tutorial="pane-area"
@@ -8765,42 +8731,6 @@ const renderMainContent = () => {
                 />
                 )}
             </div>
-            {bottomBarCollapsed ? (
-                <div
-                    className="h-1 hover:h-4 flex items-center justify-center cursor-pointer theme-bg-tertiary border-t theme-border transition-all group"
-                    onClick={() => { setBottomBarCollapsed(false); localStorage.setItem('incognide_bottomBarCollapsed', 'false'); }}
-                    title="Show status bar"
-                >
-                    <ChevronUp size={10} className="opacity-0 group-hover:opacity-60" />
-                </div>
-            ) : (
-                <StatusBar
-                    paneItems={paneItems}
-                    setActiveContentPaneId={setActiveContentPaneId}
-                    height={bottomBarHeight}
-                    onStartResize={() => setIsResizingBottomBar(true)}
-                    sidebarCollapsed={sidebarCollapsed}
-                    onExpandSidebar={() => setSidebarCollapsed(false)}
-                    appVersion={appVersion}
-                    updateAvailable={updateAvailable}
-                    onCheckForUpdates={checkForUpdates}
-                    onCollapse={() => { setBottomBarCollapsed(true); localStorage.setItem('incognide_bottomBarCollapsed', 'true'); }}
-                    openMode={openMode}
-                    onToggleOpenMode={() => { setOpenMode(m => { const next = m === 'pane' ? 'tab' : 'pane'; localStorage.setItem('incognide_openMode', next); return next; }); }}
-                    onOpenLogsViewer={() => setLogsViewerOpen(true)}
-                    createBackendPane={createBackendPane}
-                    searchTerm={searchTerm}
-                    setSearchTerm={setSearchTerm}
-                    searchScope={searchScope}
-                    setSearchScope={setSearchScope}
-                    searchInputRef={searchInputRef}
-                    createSearchPane={createSearchPane}
-                    deepSearchResults={deepSearchResults}
-                    messageSearchResults={messageSearchResults}
-                    setSearchResultsModalOpen={setSearchResultsModalOpen}
-                    SEARCH_SCOPES={SEARCH_SCOPES}
-                />
-            )}
         </main>
     );
 };
@@ -8855,6 +8785,7 @@ const renderMainContent = () => {
         <style>{`@keyframes pulse { 0%, 100% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 50% { opacity: 0.6; transform: translate(-50%, -50%) scale(1.05); } }`}</style>
     </div>
 )}
+{topBar}
 <div className="flex flex-1 overflow-hidden">
     <Sidebar
 
@@ -9001,6 +8932,8 @@ const renderMainContent = () => {
         renderSearchResults={renderSearchResults}
         isPredictiveTextEnabled={isPredictiveTextEnabled}
         setIsPredictiveTextEnabled={setIsPredictiveTextEnabled}
+        fileSearch={fileSearch}
+        setFileSearch={setFileSearch}
         topBarHeight={topBarHeight}
         bottomBarHeight={bottomBarHeight}
         topBarCollapsed={topBarCollapsed}
@@ -9055,8 +8988,10 @@ const renderMainContent = () => {
                 addSshConnection(config);
             }}
             onTest={(config) => (window as any).api.sshTestConnection(config)}
+            onConnect={(config, password, passphrase) => handleSshConnect(config, password, passphrase)}
         />
 </div>
+{statusBar}
             {renderModals()}
 
 

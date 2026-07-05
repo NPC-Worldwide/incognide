@@ -21,6 +21,37 @@ function register(ctx) {
     });
   };
 
+  const readSftpDirRecursive = async (sftp, currentPath, depth = 0) => {
+    const result = {};
+    const ignorePatterns = ['node_modules', '.git', '.DS_Store'];
+    const maxDepth = 2;
+    const list = await new Promise((resolve, reject) => {
+      sftp.readdir(currentPath, (err, items) => {
+        if (err) return reject(err);
+        resolve(items);
+      });
+    });
+    for (const item of list) {
+      const name = item.filename;
+      if (ignorePatterns.includes(name)) continue;
+      const itemPath = path.posix.join(currentPath, name);
+      if (item.attrs.isDirectory()) {
+        let children = {};
+        if (depth < maxDepth) {
+          try {
+            children = await readSftpDirRecursive(sftp, itemPath, depth + 1);
+          } catch (e) {
+            children = { error: e.message };
+          }
+        }
+        result[name] = { type: 'directory', path: itemPath, children };
+      } else {
+        result[name] = { type: 'file', path: itemPath };
+      }
+    }
+    return result;
+  };
+
   ipcMain.handle('ssh:connect', async (event, config) => {
     const { id, host, port = 22, username, password, privateKeyPath, passphrase } = config;
     if (!id || !host || !username) {
@@ -127,20 +158,8 @@ function register(ctx) {
     if (!conn) return { error: 'Not connected' };
     try {
       const sftp = await ensureSftp(conn);
-      const list = await new Promise((resolve, reject) => {
-        sftp.readdir(dirPath, (err, items) => {
-          if (err) return reject(err);
-          resolve(items);
-        });
-      });
-      const entries = list.map((item) => ({
-        name: item.filename,
-        isDirectory: item.attrs.isDirectory(),
-        isFile: item.attrs.isFile(),
-        size: item.attrs.size,
-        mtime: item.attrs.mtime,
-      }));
-      return { entries };
+      const structure = await readSftpDirRecursive(sftp, dirPath);
+      return structure;
     } catch (err) {
       return { error: err.message };
     }
@@ -255,6 +274,23 @@ function register(ctx) {
         size: stats.size,
         mtime: stats.mtime,
       };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('ssh:get-home', async (event, { id }) => {
+    const conn = getConnection(id);
+    if (!conn) return { error: 'Not connected' };
+    try {
+      const sftp = await ensureSftp(conn);
+      const home = await new Promise((resolve, reject) => {
+        sftp.realpath('.', (err, path) => {
+          if (err) return reject(err);
+          resolve(path);
+        });
+      });
+      return { home };
     } catch (err) {
       return { error: err.message };
     }
