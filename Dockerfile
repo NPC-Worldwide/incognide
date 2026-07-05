@@ -5,9 +5,9 @@ FROM node:20-slim AS frontend-builder
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+COPY package.json ./
 
-RUN npm ci --ignore-scripts \
+RUN npm install --ignore-scripts \
     && npm cache clean --force
 
 COPY index.html vite.config.js tailwind.config.js tsconfig.json tsconfig.node.json ./
