@@ -82,8 +82,6 @@ const getTabIcon = (contentType: string) => {
             return <Network size={12} className="text-violet-400" />;
         case 'browsergraph':
             return <Share2 size={12} className="text-sky-400" />;
-        case 'datadash':
-            return <LayoutDashboard size={12} className="text-emerald-400" />;
         case 'markdown-preview':
             return <FileText size={12} className="text-blue-400" />;
         case 'csv':
@@ -160,8 +158,6 @@ const getTabTitle = (tab: Tab, contentDataRef?: any, nodeId?: string): string =>
             return 'Graph Viewer';
         case 'browsergraph':
             return 'Browser Graph';
-        case 'datadash':
-            return 'Data Dashboard';
         case 'markdown-preview':
             return `Preview: ${filePath || 'Markdown'}`;
         case 'pdf':

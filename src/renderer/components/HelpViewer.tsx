@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, MessageSquare, Terminal, Globe, FileText, Zap, Users, Brain, Keyboard, Settings, FolderOpen, GitBranch, Image, Database, BookOpen, Layout, MousePointer, Command, Search, Bug, HardDrive, Beaker, Tag, Network, Palette, FileCode, BarChart3, Wrench, HelpCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, MessageSquare, Terminal, Globe, FileText, Zap, Users, Brain, Keyboard, Settings, FolderOpen, GitBranch, Image, Database, BookOpen, Layout, MousePointer, Command, Search, Bug, HardDrive, Beaker, Tag, Network, Palette, FileCode, Wrench, HelpCircle } from 'lucide-react';
 
 interface SectionProps {
     title: string;
@@ -203,7 +203,6 @@ export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
                             <PaneTypeItem icon={<Image size={12} />} name="Photo" desc="Image viewer" color="text-purple-400" />
                             <PaneTypeItem icon={<Beaker size={12} />} name="Experiment" desc="Scientific notes" color="text-pink-400" />
                             <PaneTypeItem icon={<Database size={12} />} name="DB Tool" desc="SQLite browser" color="text-amber-400" />
-                            <PaneTypeItem icon={<BarChart3 size={12} />} name="DataDash" desc="Data visualization" color="text-teal-400" />
                             <PaneTypeItem icon={<Network size={12} />} name="Graph" desc="Knowledge graph" color="text-indigo-400" />
                             <PaneTypeItem icon={<Tag size={12} />} name="Labeler" desc="Data labeling" color="text-lime-400" />
                             <PaneTypeItem icon={<FolderOpen size={12} />} name="Library" desc="File browser" color="text-sky-400" />

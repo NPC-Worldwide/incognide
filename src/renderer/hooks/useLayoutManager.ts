@@ -477,7 +477,7 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
         const singletonTypes = new Set([
             'settings', 'npcteam', 'teammanagement', 'jinx', 'library', 'help',
             'git', 'projectenv', 'diskusage', 'data-labeler', 'graph-viewer',
-            'browsergraph', 'datadash', 'windowmanager',
+            'browsergraph',
         ]);
 
         for (const [paneId, data] of Object.entries(contentDataRef.current)) {

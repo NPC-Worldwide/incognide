@@ -32,6 +32,7 @@ interface TeamManagementProps {
     onTabChange?: (tab: TabId) => void;
     initialJinxName?: string;
     onOpenJinxPane?: (name: string) => void;
+    onOpenDatabase?: (path: string) => void;
 }
 
 type TabId = 'context' | 'npcs' | 'jinxes' | 'knowledge' | 'cron' | 'models' | 'llm-models';
@@ -575,7 +576,8 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
     forceTab,
     onTabChange,
     initialJinxName,
-    onOpenJinxPane
+    onOpenJinxPane,
+    onOpenDatabase
 }) => {
     const [activeTab, setActiveTab] = useState<TabId>(initialTab || 'context');
     useEffect(() => { if (forceTab) setActiveTab(forceTab); }, [forceTab]);
@@ -859,6 +861,7 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                                     onClose={() => {}}
                                     teamPath={effectiveTeamPath}
                                     embedded={true}
+                                    onOpenDatabase={onOpenDatabase}
                                 />
                             )}
                             {activeTab === 'npcs' && (

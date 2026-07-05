@@ -8,7 +8,7 @@ import {
     Bot, Loader, ChevronDown, ChevronRight, X, Save, MessageSquare,
     Plus, Trash2, History, CheckCircle, XCircle, Tag,
     Brain, GitBranch, Edit, Search, Download, Filter,
-    Database, Sparkles, Zap, LayoutDashboard, RefreshCw
+    Database, Sparkles, Zap, RefreshCw
 } from 'lucide-react';
 import ModelSelector from './ModelSelector';
 import AutosizeTextarea from './AutosizeTextarea';
@@ -19,7 +19,6 @@ const NPCTeamMenu = ({
     onClose,
     currentPath,
     startNewConversation,
-    createDataDashPane = undefined,
     onOpenJinxTab,
     embedded = false,
     teamKey = undefined,
@@ -928,17 +927,6 @@ const NPCTeamMenu = ({
                         <Bot className="text-blue-400" /> NPC Team Editor
                     </h3>
                     <div className="flex items-center gap-4">
-                        {createDataDashPane && (
-                            <button
-                                onClick={() => {
-                                    createDataDashPane();
-                                    onClose();
-                                }}
-                                className="flex items-center gap-2 px-3 py-1.5 text-sm theme-bg-tertiary hover:bg-white/10 rounded-lg transition-colors"
-                            >
-                                <LayoutDashboard size={16} /> Dashboard
-                            </button>
-                        )}
                         <button
                             onClick={onClose}
                             className="p-1 rounded-full theme-hover"

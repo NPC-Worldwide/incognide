@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     MessageSquare, Terminal, Globe, FileText, File as FileIcon,
     BrainCircuit, Bot, Zap, Users, Database, ChevronRight, ChevronDown,
-    GitBranch, Image, BarChart3, AlertCircle, RefreshCw, Check, Columns, Layers,
-    Power, HardDrive, Download, ScrollText, Server
+    GitBranch, Image, AlertCircle, RefreshCw, Check, Columns, Layers,
+    Power, ScrollText, Server, Search, X
 } from 'lucide-react';
 import npcPythonLogo from '../../assets/npc-python.png';
 import { useAiEnabled } from './AiFeatureContext';
@@ -16,7 +16,6 @@ interface PaneItem {
 }
 
 interface StatusBarProps {
-    createDBToolPane?: () => void;
     paneItems: PaneItem[];
     setActiveContentPaneId: (id: string) => void;
     height?: number;
@@ -31,19 +30,25 @@ interface StatusBarProps {
     onCollapse?: () => void;
     openMode?: 'pane' | 'tab';
     onToggleOpenMode?: () => void;
-    createDataDashPane?: () => void;
-    createDiskUsagePane?: () => void;
-    onOpenDownloadManager?: () => void;
     onOpenLogsViewer?: () => void;
     createBackendPane?: () => void;
     activeConnection?: { host: string } | null;
     onOpenSSHDialog?: () => void;
+    searchTerm: string;
+    setSearchTerm: (term: string) => void;
+    searchScope: string;
+    setSearchScope: (scope: string) => void;
+    searchInputRef?: React.RefObject<HTMLInputElement>;
+    createSearchPane?: (query?: string, scope?: string) => void;
+    deepSearchResults: any[];
+    messageSearchResults: any[];
+    setSearchResultsModalOpen: (open: boolean) => void;
+    SEARCH_SCOPES: Record<string, string>;
 }
 
 type BackendStatus = 'ok' | 'unhealthy' | 'unreachable' | 'restarting' | 'unknown';
 
 const StatusBar: React.FC<StatusBarProps> = ({
-    createDBToolPane,
     paneItems,
     setActiveContentPaneId,
     height = 48,
@@ -56,13 +61,20 @@ const StatusBar: React.FC<StatusBarProps> = ({
     onCollapse,
     openMode = 'pane',
     onToggleOpenMode,
-    createDataDashPane,
-    createDiskUsagePane,
-    onOpenDownloadManager,
     onOpenLogsViewer,
     createBackendPane,
     activeConnection,
     onOpenSSHDialog,
+    searchTerm,
+    setSearchTerm,
+    searchScope,
+    setSearchScope,
+    searchInputRef,
+    createSearchPane,
+    deepSearchResults,
+    messageSearchResults,
+    setSearchResultsModalOpen,
+    SEARCH_SCOPES,
 }) => {
     const aiEnabled = useAiEnabled();
     const [checkingUpdates, setCheckingUpdates] = useState(false);
@@ -82,6 +94,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
     const [backendPid, setBackendPid] = useState<number | null>(null);
     const [failCount, setFailCount] = useState(0);
     const [restarting, setRestarting] = useState(false);
+    const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const checkHealth = useCallback(async () => {
@@ -204,21 +217,83 @@ const StatusBar: React.FC<StatusBarProps> = ({
                 </button>
             )}
 
-            <button data-tutorial="db-tool-button" onClick={() => createDBToolPane?.()} className={`${btnClass} text-blue-600 dark:text-blue-400`} title="Database Tool">
-                <Database size={20} />
-            </button>
-
-            <button data-tutorial="downloads-button" onClick={() => onOpenDownloadManager?.()} className={`${btnClass} text-cyan-600 dark:text-cyan-400`} title="Downloads">
-                <Download size={20} />
-            </button>
-
-            <button data-tutorial="data-dash-button" onClick={() => createDataDashPane?.()} className={`${btnClass} text-green-600 dark:text-green-400`} title="Data Dashboard">
-                <BarChart3 size={20} />
-            </button>
-
-            <button data-tutorial="disk-usage-button" onClick={() => createDiskUsagePane?.()} className={`${btnClass} text-gray-500 dark:text-gray-400`} title="Disk Usage">
-                <HardDrive size={20} />
-            </button>
+            <div
+                data-tutorial="search-bar"
+                className="flex items-center gap-2 w-40 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400/30 transition-all"
+            >
+                <div className="relative flex-shrink-0">
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setScopeMenuOpen(prev => !prev); }}
+                        title={`Search scope: ${SEARCH_SCOPES[searchScope] || 'All'}`}
+                        className="flex items-center gap-0.5 theme-hover rounded px-0.5 py-0.5 cursor-pointer"
+                    >
+                        <Search size={14} className="text-blue-400" />
+                        <ChevronDown size={10} className="text-gray-400" />
+                    </button>
+                    {scopeMenuOpen && (
+                        <>
+                            <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setScopeMenuOpen(false)} />
+                            <div className="absolute left-0 bottom-full mb-1 theme-bg-secondary border theme-border rounded-lg shadow-xl z-50 min-w-[160px] py-1">
+                                <div className="px-3 py-1 text-[10px] theme-text-muted uppercase tracking-wide">Search In</div>
+                                {Object.entries(SEARCH_SCOPES).sort(([a], [b]) => (a === searchScope ? -1 : b === searchScope ? 1 : 0)).map(([k, v]) => (
+                                    <button
+                                        key={k}
+                                        onClick={() => {
+                                            setSearchScope(k);
+                                            localStorage.setItem('npc-local-search-scope', k);
+                                            setScopeMenuOpen(false);
+                                        }}
+                                        className={`flex items-center justify-between w-full px-3 py-1.5 text-xs text-left theme-hover ${searchScope === k ? 'text-blue-400' : 'theme-text-primary'}`}
+                                    >
+                                        <span>{v}</span>
+                                        {searchScope === k && <Check size={12} />}
+                                    </button>
+                                ))}
+                            </div>
+                        </>
+                    )}
+                </div>
+                <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => {
+                        setSearchTerm(e.target.value);
+                        if (!e.target.value.trim()) {
+                            setSearchResultsModalOpen(false);
+                        }
+                    }}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' && searchTerm.trim()) {
+                            e.preventDefault();
+                            createSearchPane?.(searchTerm.trim(), searchScope);
+                            setSearchTerm('');
+                        }
+                    }}
+                    placeholder="Search files..."
+                    className="flex-1 bg-transparent text-gray-100 text-xs focus:outline-none min-w-0"
+                />
+                {(deepSearchResults.length > 0 || messageSearchResults.length > 0) && (
+                    <button
+                        onClick={() => setSearchResultsModalOpen(true)}
+                        className="px-1.5 py-0.5 text-[9px] bg-blue-500 text-white rounded"
+                    >
+                        {deepSearchResults.length + messageSearchResults.length}
+                    </button>
+                )}
+                {searchTerm && (
+                    <button
+                        onClick={() => {
+                            setSearchTerm('');
+                            setSearchResultsModalOpen(false);
+                        }}
+                        className="p-0.5 hover:bg-gray-600 rounded"
+                    >
+                        <X size={10} className="text-gray-300" />
+                    </button>
+                )}
+            </div>
 
             <div className="flex-1" />
 
@@ -234,7 +309,6 @@ const StatusBar: React.FC<StatusBarProps> = ({
                         {pane.type === 'browser' && <Globe size={20} />}
                         {pane.type === 'pdf' && <FileText size={20} />}
                         {pane.type === 'graph-viewer' && <GitBranch size={20} />}
-                        {pane.type === 'datadash' && <BarChart3 size={20} />}
                         {pane.type === 'dbtool' && <Database size={20} />}
                         {pane.type === 'memory-manager' && <BrainCircuit size={20} />}
                         {pane.type === 'photoviewer' && <Image size={20} />}
@@ -243,7 +317,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
                         {pane.type === 'teammanagement' && <Users size={20} />}
                         {pane.type === 'diff' && <GitBranch size={20} />}
                         {pane.type === 'browsergraph' && <Globe size={20} />}
-                        {!['chat', 'editor', 'terminal', 'browser', 'pdf', 'graph-viewer', 'datadash', 'dbtool', 'memory-manager', 'photoviewer', 'npcteam', 'jinx', 'teammanagement', 'diff', 'browsergraph'].includes(pane.type) && <FileIcon size={20} />}
+                        {!['chat', 'editor', 'terminal', 'browser', 'pdf', 'graph-viewer', 'dbtool', 'memory-manager', 'photoviewer', 'npcteam', 'jinx', 'teammanagement', 'diff', 'browsergraph'].includes(pane.type) && <FileIcon size={20} />}
                     </button>
                 ))}
             </div>

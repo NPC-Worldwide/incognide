@@ -1261,9 +1261,6 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
         } else if (contentType === 'browsergraph') {
             headerIcon = <Share2 size={14} className="text-sky-400" />;
             headerTitle = 'Browser Graph';
-        } else if (contentType === 'datadash') {
-            headerIcon = <LayoutDashboard size={14} className="text-emerald-400" />;
-            headerTitle = 'Data Dashboard';
         } else if (contentType === 'radio') {
             headerIcon = <Radio size={14} className="text-orange-400" />;
             headerTitle = 'Radio';
