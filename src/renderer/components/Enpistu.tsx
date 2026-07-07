@@ -1,7 +1,7 @@
  import React, { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
 import { BACKEND_URL } from '../config';
 import { createPortal } from 'react-dom';
-import { readFileContent, writeFileContent, createDirectory, renameFile, readDirectoryStructure } from '../api/fileSystem';
+import { readFileContent, writeFileContent, createDirectory, renameFile, readDirectoryStructure, getActiveConnectionId } from '../api/fileSystem';
 import yaml from 'js-yaml';
 import {
     Folder, File as FileIcon,  Globe, ChevronRight, ChevronLeft, Settings, Edit,
@@ -2781,7 +2781,12 @@ const handleSendToTerminal = useCallback((text: string) => {
 
 
     const bracketedPaste = '\x1b[200~' + text + '\x1b[201~\n';
-    window.api?.writeToTerminal?.({ id: terminalSessionId, data: bracketedPaste });
+    const paneConnectionId = contentDataRef.current[terminalPaneId]?.connectionId;
+    if (paneConnectionId) {
+        (window as any).api?.sshWriteTerminal?.({ id: paneConnectionId, sessionId: terminalSessionId, data: bracketedPaste });
+    } else {
+        window.api?.writeToTerminal?.({ id: terminalSessionId, data: bracketedPaste });
+    }
 }, []);
 
 
@@ -3339,6 +3344,7 @@ const renderFileEditor = useCallback(({ nodeId }) => {
 }, [activeContentPaneId, setActiveContentPaneId, aiEditModal, renamingPaneId, editedFileName, setRootLayoutNode, currentPath, handleRunScript, handleSendToTerminal, handleAICodeAction, lastActiveChatPaneId, lastActiveAgentPaneId, createAndAddPaneNodeToLayout, paneUpdateEmitter]);
 
 const renderTerminalView = useCallback(({ nodeId, shell }: { nodeId: string, shell?: string }) => {
+    const paneData = contentDataRef.current[nodeId];
     return (
         <TerminalView
             nodeId={nodeId}
@@ -3347,6 +3353,7 @@ const renderTerminalView = useCallback(({ nodeId, shell }: { nodeId: string, she
             activeContentPaneId={activeContentPaneId}
             setActiveContentPaneId={setActiveContentPaneId}
             shell={shell}
+            connectionId={paneData?.connectionId}
             isDarkMode={isDarkMode}
         />
     );
@@ -4198,12 +4205,15 @@ const renderMessageContextMenu = () => null;
 
     const createNewTerminal = useCallback(async (shellType: 'system' | 'npcsh' | 'guac' | 'python3' = 'system') => {
         const newTerminalId = `term_${generateId()}`;
-
+        const connectionId = getActiveConnectionId();
+        const paneBase = connectionId
+            ? { shellType, contentType: 'terminal', contentId: newTerminalId, connectionId }
+            : { shellType, contentType: 'terminal', contentId: newTerminalId };
 
         const emptyPaneId = findEmptyPaneId();
         if (emptyPaneId) {
 
-            contentDataRef.current[emptyPaneId] = { shellType, contentType: 'terminal', contentId: newTerminalId };
+            contentDataRef.current[emptyPaneId] = paneBase;
             await updateContentPane(emptyPaneId, 'terminal', newTerminalId);
             setActiveContentPaneId(emptyPaneId);
             notifyAllPanes();
@@ -4213,7 +4223,7 @@ const renderMessageContextMenu = () => null;
         const newPaneId = generateId();
 
 
-        contentDataRef.current[newPaneId] = { shellType, contentType: 'terminal', contentId: newTerminalId };
+        contentDataRef.current[newPaneId] = paneBase;
 
         addPaneOrTab(newPaneId);
 

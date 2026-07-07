@@ -4,7 +4,6 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal as TerminalIcon, Code, Sparkles, Settings, X, Type, Palette } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
-import { isRemote, getActiveConnectionId } from '../api/fileSystem';
 
 const AUTO_SOURCE_KEY = 'incognide-auto-source-profile';
 
@@ -165,7 +164,7 @@ const THEME_PRESETS = {
     }
 };
 
-const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId, setActiveContentPaneId, shell, isDarkMode = true }) => {
+const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId, setActiveContentPaneId, shell, connectionId, isDarkMode = true }) => {
     const terminalRef = useRef(null);
     const xtermInstance = useRef(null);
     const fitAddonRef = useRef(null);
@@ -252,26 +251,25 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
 
     const paneData = contentDataRef.current[nodeId];
     const terminalId = paneData?.contentId;
+    const isRemoteSession = !!connectionId;
 
     const writeToSession = useCallback((data: string) => {
         if (!isSessionReady.current || !terminalId) return;
-        const remoteConnId = getActiveConnectionId();
-        if (remoteConnId) {
-            (window as any).api.sshWriteTerminal({ id: remoteConnId, sessionId: terminalId, data });
+        if (isRemoteSession) {
+            (window as any).api.sshWriteTerminal({ id: connectionId, sessionId: terminalId, data });
         } else {
             window.api.writeToTerminal({ id: terminalId, data });
         }
-    }, [terminalId]);
+    }, [terminalId, connectionId, isRemoteSession]);
 
     const resizeSession = useCallback((cols: number, rows: number) => {
         if (!terminalId) return;
-        const remoteConnId = getActiveConnectionId();
-        if (remoteConnId) {
-            (window as any).api.sshResizeTerminal({ id: remoteConnId, sessionId: terminalId, cols, rows });
+        if (isRemoteSession) {
+            (window as any).api.sshResizeTerminal({ id: connectionId, sessionId: terminalId, cols, rows });
         } else {
             window.api.resizeTerminal?.({ id: terminalId, cols, rows });
         }
-    }, [terminalId]);
+    }, [terminalId, connectionId, isRemoteSession]);
 
     useEffect(() => {
         if (nodeId && contentDataRef.current[nodeId]) {
@@ -392,7 +390,6 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             const fitAddon = new FitAddon();
             fitAddonRef.current = fitAddon;
             term.loadAddon(fitAddon);
-            terminalRef.current.innerHTML = '';
             term.open(terminalRef.current);
             xtermInstance.current = term;
 
@@ -760,9 +757,6 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
 
         isSessionReady.current = false;
 
-        const remoteConnId = getActiveConnectionId();
-        const isRemoteSession = !!remoteConnId;
-
         let removeDataListener: () => void;
         let removeClosedListener: () => void;
 
@@ -822,7 +816,7 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
                 fitAddonRef.current?.fit();
                 if (isRemoteSession) {
                     const result = await (window as any).api.sshCreateTerminal({
-                        id: remoteConnId,
+                        id: connectionId,
                         sessionId: terminalId,
                         cols: xtermInstance.current.cols,
                         rows: xtermInstance.current.rows,
@@ -921,8 +915,8 @@ const TerminalView = ({ nodeId, contentDataRef, currentPath, activeContentPaneId
             inputHandler.dispose();
             removeDataListener();
             removeClosedListener();
-            if (isRemoteSession && remoteConnId && terminalId) {
-                try { (window as any).api.sshKillTerminal({ id: remoteConnId, sessionId: terminalId }); } catch {}
+            if (isRemoteSession && connectionId && terminalId) {
+                try { (window as any).api.sshKillTerminal({ id: connectionId, sessionId: terminalId }); } catch {}
             }
             resizeObserverRef.current?.disconnect();
             resizeObserverRef.current = null;
