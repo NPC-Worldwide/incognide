@@ -8146,39 +8146,103 @@ const topBar = topBarCollapsed ? (
 
 
             <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 z-10">
-                <div className="flex items-center rounded bg-black/30 hover:bg-black/40 focus-within:bg-black/50 transition-colors overflow-hidden">
-                    <button
-                        onClick={async () => {
-                            const selectedPath = await (window as any).api?.open_directory_picker?.();
-                            if (selectedPath) setCurrentPath(selectedPath);
-                        }}
-                        className="flex items-center gap-1.5 px-2 py-1 text-left hover:bg-white/5 transition-colors"
-                        title="Click to open a different folder"
-                    >
-                        <Folder size={12} className="theme-text-muted" />
-                        <span className="text-[11px] theme-text-primary truncate max-w-[180px]">
-                            {currentPath ? currentPath.split(/[\\/]/).pop() : 'No folder'}
-                        </span>
-                    </button>
-                    <div className="w-px h-4 bg-white/10" />
-                    <div className="relative flex items-center">
-                        <Search size={12} className="absolute left-2 text-gray-500 pointer-events-none" />
-                        <input
-                            type="text"
-                            value={fileSearch}
-                            onChange={(e) => setFileSearch(e.target.value)}
-                            placeholder="Search files..."
-                            className="w-40 bg-transparent border-none pl-7 pr-6 py-1 text-[11px] theme-text-primary placeholder:opacity-50 focus:outline-none"
-                        />
-                        {fileSearch && (
-                            <button
-                                onClick={() => setFileSearch('')}
-                                className="absolute right-2 text-gray-500 hover:theme-text-primary"
-                            >
-                                <X size={10} />
-                            </button>
+                <button
+                    onClick={async () => {
+                        const selectedPath = await (window as any).api?.open_directory_picker?.();
+                        if (selectedPath) setCurrentPath(selectedPath);
+                    }}
+                    className="flex items-center gap-1.5 px-2 py-1 text-left rounded bg-black/30 hover:bg-black/40 transition-colors"
+                    title="Click to open a different folder"
+                >
+                    <Folder size={12} className="theme-text-muted" />
+                    <span className="text-[11px] theme-text-primary truncate max-w-[180px]">
+                        {currentPath ? currentPath.split(/[\\/]/).pop() : 'No folder'}
+                    </span>
+                </button>
+
+                <div
+                    data-tutorial="search-bar"
+                    className="flex items-center gap-2 w-40 px-2 py-1 bg-black/40 border border-gray-600 rounded focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400/30 transition-all"
+                >
+                    <div className="relative flex-shrink-0">
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setScopeMenuOpen(prev => !prev); }}
+                            title={`Search scope: ${SEARCH_SCOPES[searchScope] || 'All'}`}
+                            className="flex items-center gap-0.5 theme-hover rounded px-0.5 py-0.5 cursor-pointer"
+                        >
+                            <Search size={14} className="text-blue-400" />
+                            <ChevronDown size={10} className="text-gray-400" />
+                        </button>
+                        {scopeMenuOpen && (
+                            <>
+                                <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setScopeMenuOpen(false)} />
+                                <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded-lg shadow-xl z-50 min-w-[160px] py-1">
+                                    <div className="px-3 py-1 text-[10px] theme-text-muted uppercase tracking-wide">Search In</div>
+                                    {Object.entries(SEARCH_SCOPES).sort(([a], [b]) => (a === searchScope ? -1 : b === searchScope ? 1 : 0)).map(([k, v]) => (
+                                        <button
+                                            key={k}
+                                            onClick={() => {
+                                                setSearchScope(k);
+                                                localStorage.setItem('npc-local-search-scope', k);
+                                                setScopeMenuOpen(false);
+                                            }}
+                                            className={`flex items-center justify-between w-full px-3 py-1.5 text-xs text-left theme-hover ${searchScope === k ? 'text-blue-400' : 'theme-text-primary'}`}
+                                        >
+                                            <span>{v}</span>
+                                            {searchScope === k && <Check size={12} />}
+                                        </button>
+                                    ))}
+                                </div>
+                            </>
                         )}
                     </div>
+                    <input
+                        ref={searchInputRef}
+                        type="text"
+                        value={searchTerm}
+                        onChange={(e) => {
+                            setSearchTerm(e.target.value);
+                            if (!e.target.value.trim()) {
+                                setIsSearching(false);
+                                setDeepSearchResults([]);
+                                setMessageSearchResults([]);
+                                setSearchResultsModalOpen(false);
+                            }
+                        }}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && searchTerm.trim()) {
+                                e.preventDefault();
+                                trackActivity('search_query', { query: searchTerm.trim(), scope: searchScope });
+                                createSearchPane(searchTerm.trim(), searchScope);
+                                setSearchTerm('');
+                            }
+                        }}
+                        placeholder={searchScope === 'all' ? 'Search...' : SEARCH_SCOPES[searchScope]}
+                        className="flex-1 bg-transparent text-gray-100 text-xs focus:outline-none min-w-0"
+                    />
+                    {(deepSearchResults.length > 0 || messageSearchResults.length > 0) && (
+                        <button
+                            onClick={() => setSearchResultsModalOpen(true)}
+                            className="px-1.5 py-0.5 text-[9px] bg-blue-500 text-white rounded"
+                        >
+                            {deepSearchResults.length + messageSearchResults.length}
+                        </button>
+                    )}
+                    {searchTerm && (
+                        <button
+                            onClick={() => {
+                                setSearchTerm('');
+                                setIsSearching(false);
+                                setDeepSearchResults([]);
+                                setMessageSearchResults([]);
+                                setSearchResultsModalOpen(false);
+                            }}
+                            className="p-0.5 hover:bg-gray-600 rounded"
+                        >
+                            <X size={10} className="text-gray-300" />
+                        </button>
+                    )}
                 </div>
                 <button
                     onClick={() => setCommandPaletteOpen(true)}
