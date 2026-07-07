@@ -1,6 +1,6 @@
 {
   "name": "incognide",
-  "version": "0.2.22",
+  "version": "0.2.23",
   "description": "Explore the unknown, build the future, own your data.",
   "author": "Chris Agostino <info@npcworldwi.de>",
   "license": "MIT",
@@ -293,16 +293,16 @@
     "mammoth": "^1.11.0",
     "node-cron": "^4.2.1",
     "node-fetch": "^2.7.0",
-    "npcts": "^0.1.24",
+    "npcts": "^0.1.23",
     "npm": "^11.3.0",
     "nunjucks": "^3.2.4",
     "os": "^0.1.2",
     "path": "^0.12.7",
     "pdf-lib": "^1.17.1",
-    "react": "^19.0.0",
+    "react": "^18.3.1",
     "react-chartjs-2": "^5.3.0",
     "react-datasheet-grid": "^4.11.5",
-    "react-dom": "^19.0.0",
+    "react-dom": "^18.3.1",
     "react-draggable": "^4.5.0",
     "react-force-graph-2d": "^1.28.0",
     "react-leaflet": "^4.2.1",
@@ -357,11 +357,5 @@
   },
   "optionalDependencies": {
     "node-pty": "^1.1.0-beta42"
-  },
-  "overrides": {
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "@types/react": "^19.2.6",
-    "@types/react-dom": "^19.2.3"
   }
 }
