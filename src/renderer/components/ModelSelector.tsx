@@ -13,6 +13,15 @@ export interface ModelItem {
     [key: string]: any;
 }
 
+const modelLabel = (m?: ModelItem, fallback?: string) => {
+    const raw = m?.display_name || m?.value || fallback || '';
+    const withoutProvider = raw.split(' | ')[0] || raw;
+    if (withoutProvider.includes('/') && withoutProvider.includes('.')) {
+        return withoutProvider.split('/').pop() || withoutProvider;
+    }
+    return withoutProvider;
+};
+
 interface ModelSelectorProps {
     availableModels: ModelItem[];
     selectedModel?: string | null;
@@ -656,9 +665,9 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                 ? selectedModels.length === 0
                     ? placeholder
                     : selectedModels.length === 1
-                        ? ((selectedObj?.display_name || selectedModels[0]).split(' | ')[0])
+                        ? modelLabel(selectedObj, selectedModels[0])
                         : `${selectedModels.length} models`
-                : selectedObj?.display_name || selectedModel || placeholder;
+                : modelLabel(selectedObj, selectedModel || placeholder);
 
     const handleSelect = (model: ModelItem) => {
         onSelect?.(model);
