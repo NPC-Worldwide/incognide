@@ -35,6 +35,16 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
         setSettingUp(false);
     };
 
+    const handleResetPassphrase = () => {
+        const ok = window.confirm(
+            'Forgot your passphrase? This forgets the current passphrase and re-encrypts your local data with a new one. Your old synced data will be replaced. Continue?'
+        );
+        if (!ok) return;
+        auth.resetPassphrase();
+        setPassphrase('');
+        setPassphraseError('');
+    };
+
     return (
         <div className="h-full overflow-y-auto theme-bg-primary theme-text-primary">
             <div className="max-w-2xl mx-auto p-6 space-y-6">
@@ -175,6 +185,9 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                                     {passphraseError && <p className="text-xs text-red-400">{passphraseError}</p>}
                                     <button onClick={handleUnlock} disabled={settingUp || !passphrase} className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50">
                                         {settingUp ? 'Unlocking...' : 'Unlock'}
+                                    </button>
+                                    <button onClick={handleResetPassphrase} className="text-xs text-left text-gray-500 hover:text-red-400 transition-colors">
+                                        Lost your passphrase? Rebuild sync from local data
                                     </button>
                                 </div>
                             )}
