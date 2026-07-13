@@ -111,10 +111,16 @@ export type EncryptedEntityType =
     | 'memory';
 
 export const ENCRYPTED_FIELDS: Record<EncryptedEntityType, string[]> = {
-    conversation: ['title', 'directory_path'],
-    message: ['content', 'reasoning_content', 'tool_calls', 'tool_results'],
-    bookmark: ['title', 'url'],
-    history: ['title', 'url'],
+    conversation: ['conversation_id', 'title', 'directory_path', 'created_at', 'updated_at'],
+    message: [
+        'message_id', 'timestamp', 'role', 'content', 'conversation_id',
+        'directory_path', 'model', 'provider', 'npc', 'team',
+        'reasoning_content', 'tool_calls', 'tool_results',
+        'parent_message_id', 'branch_id', 'device_id', 'device_name',
+        'input_tokens', 'output_tokens', 'cost'
+    ],
+    bookmark: ['id', 'title', 'url', 'folder_path', 'is_global', 'timestamp'],
+    history: ['id', 'title', 'url', 'folder_path', 'visit_count', 'last_visited'],
     memory: ['content', 'metadata']
 };
 

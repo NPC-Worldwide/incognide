@@ -295,6 +295,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             }
 
             const encryptionKey = await deriveKey(passphrase, salt);
+
+            // reject wrong passphrases / stale salts: decrypt the newest blob.
+            try {
+                const probeToken = await getClerkToken();
+                const probeResp = await fetch(`${API_BASE_URL}/api/sync/e2e/pull?order=desc&limit=1`, {
+                    headers: { Authorization: `Bearer ${probeToken}` }
+                });
+                if (probeResp.ok) {
+                    const probeData = await probeResp.json();
+                    const probeChanges = (probeData && probeData.changes) || [];
+                    if (probeChanges.length > 0) {
+                        await decryptObject(probeChanges[0].encrypted_data, probeChanges[0].iv, encryptionKey);
+                    }
+                }
+            } catch (e: any) {
+                return { success: false, error: 'Wrong passphrase, or your encryption salt is stale — re-set encryption to sync with the current key.' };
+            }
+
             setEncryptionKey(encryptionKey);
             setIsEncryptionReady(true);
             sessionStorage.setItem(SESSION_UNLOCKED_KEY, 'true');
