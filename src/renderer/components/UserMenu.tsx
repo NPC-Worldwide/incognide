@@ -18,6 +18,7 @@ const UserMenu: React.FC<UserMenuProps> = ({ onOpenSettings, compact = false }) 
         needsPassphraseSetup,
         setupPassphrase,
         unlockWithPassphrase,
+        resetPassphrase,
         signOut,
         openSignIn,
         openSignUp,
@@ -129,6 +130,18 @@ const UserMenu: React.FC<UserMenuProps> = ({ onOpenSettings, compact = false }) 
         } finally {
             setSubmitting(false);
         }
+    };
+
+    const handleResetPassphrase = () => {
+        const ok = window.confirm(
+            'Forgot your passphrase? This forgets the current passphrase and re-encrypts your local data with a new one. Your old synced data will be replaced. Continue?'
+        );
+        if (!ok) return;
+        resetPassphrase();
+        setPassphrase('');
+        setConfirmPassphrase('');
+        setFormError(null);
+        setIsSettingUpPassphrase(true);
     };
 
     const handleUpdateDeviceName = async () => {
@@ -250,6 +263,16 @@ const UserMenu: React.FC<UserMenuProps> = ({ onOpenSettings, compact = false }) 
                             </>
                         )}
                     </button>
+
+                    {!isSettingUpPassphrase && (
+                        <button
+                            type="button"
+                            onClick={handleResetPassphrase}
+                            className="w-full text-xs text-center text-gray-500 hover:text-red-400 transition-colors"
+                        >
+                            Lost your passphrase? Rebuild sync from local data
+                        </button>
+                    )}
 
                     {!isEncryptionReady && (
                         <p className="text-xs text-center text-gray-500">

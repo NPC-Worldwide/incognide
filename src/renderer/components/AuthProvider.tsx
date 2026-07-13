@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useUser, useAuth as useClerkAuth, useClerk } from '@clerk/clerk-react';
-import { deriveKey, setEncryptionKey, clearEncryptionKey, hasEncryptionKey } from '../utils/encryption';
+import { deriveKey, setEncryptionKey, clearEncryptionKey, hasEncryptionKey, encryptObject, decryptObject } from '../utils/encryption';
 import { API_BASE_URL } from '../config';
 
 
@@ -34,6 +34,7 @@ interface AuthContextType {
     needsPassphraseSetup: boolean;
     setupPassphrase: (passphrase: string) => Promise<{ success: boolean; error?: string }>;
     unlockWithPassphrase: (passphrase: string) => Promise<{ success: boolean; error?: string }>;
+    resetPassphrase: () => void;
     signOut: () => Promise<void>;
     refreshUser: () => Promise<void>;
     getToken: () => Promise<string | null>;
@@ -53,6 +54,7 @@ const AuthContext = createContext<AuthContextType>({
     needsPassphraseSetup: false,
     setupPassphrase: async () => ({ success: false }),
     unlockWithPassphrase: async () => ({ success: false }),
+    resetPassphrase: () => {},
     signOut: async () => {},
     refreshUser: async () => {},
     getToken: async () => null,
@@ -255,6 +257,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                     },
                     body: JSON.stringify({ encryption_salt: salt })
                 });
+                const { ciphertext, iv } = await encryptObject({ v: 'incognide-verifier-v1' }, encryptionKey);
+                await fetch(`${API_BASE_URL}/api/auth/set-passphrase-verifier`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ verifier: ciphertext, iv })
+                });
             }
 
             console.log('[AUTH] Passphrase set up successfully');
@@ -296,21 +307,40 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
             const encryptionKey = await deriveKey(passphrase, salt);
 
-            // reject wrong passphrases / stale salts: decrypt the newest blob.
+            // validate the passphrase: prefer the stored verifier (works on empty
+            // accounts); fall back to decrypting the newest sync blob if no
+            // verifier exists yet. Reject wrong passphrases / stale salts.
             try {
-                const probeToken = await getClerkToken();
-                const probeResp = await fetch(`${API_BASE_URL}/api/sync/e2e/pull?order=desc&limit=1`, {
-                    headers: { Authorization: `Bearer ${probeToken}` }
+                const vToken = await getClerkToken();
+                const meResp = await fetch(`${API_BASE_URL}/api/auth/me`, {
+                    headers: { Authorization: `Bearer ${vToken}` }
                 });
-                if (probeResp.ok) {
-                    const probeData = await probeResp.json();
-                    const probeChanges = (probeData && probeData.changes) || [];
-                    if (probeChanges.length > 0) {
-                        await decryptObject(probeChanges[0].encrypted_data, probeChanges[0].iv, encryptionKey);
+                let verifier: string | null = null;
+                let verifierIv: string | null = null;
+                if (meResp.ok) {
+                    const meData = await meResp.json();
+                    verifier = meData.passphraseVerifier || null;
+                    verifierIv = meData.passphraseVerifierIv || null;
+                }
+                if (verifier && verifierIv) {
+                    const v = await decryptObject<{ v?: string }>(verifier, verifierIv, encryptionKey);
+                    if (v?.v !== 'incognide-verifier-v1') {
+                        throw new Error('verifier mismatch');
+                    }
+                } else {
+                    const probeResp = await fetch(`${API_BASE_URL}/api/sync/e2e/pull?order=desc&limit=1`, {
+                        headers: { Authorization: `Bearer ${vToken}` }
+                    });
+                    if (probeResp.ok) {
+                        const probeData = await probeResp.json();
+                        const probeChanges = (probeData && probeData.changes) || [];
+                        if (probeChanges.length > 0) {
+                            await decryptObject(probeChanges[0].encrypted_data, probeChanges[0].iv, encryptionKey);
+                        }
                     }
                 }
             } catch (e: any) {
-                return { success: false, error: 'Wrong passphrase, or your encryption salt is stale — re-set encryption to sync with the current key.' };
+                return { success: false, error: 'Wrong passphrase. Re-set encryption if your salt is stale.' };
             }
 
             setEncryptionKey(encryptionKey);
@@ -324,6 +354,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             return { success: false, error: 'Invalid passphrase' };
         }
     }, [effectiveUser, getClerkToken]);
+
+    const resetPassphrase = useCallback(() => {
+        clearEncryptionKey();
+        localStorage.removeItem(ENCRYPTION_SALT_KEY);
+        localStorage.removeItem(HAS_PASSPHRASE_KEY);
+        localStorage.removeItem('incognide-initial-sync-done');
+        localStorage.removeItem('incognide-last-sync');
+        sessionStorage.removeItem(SESSION_UNLOCKED_KEY);
+        setHasPassphrase(false);
+        setIsEncryptionReady(false);
+    }, []);
 
     const signOut = useCallback(async () => {
         setIsLoading(true);
@@ -386,6 +427,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 needsPassphraseSetup,
                 setupPassphrase,
                 unlockWithPassphrase,
+                resetPassphrase,
                 signOut,
                 refreshUser,
                 getToken,
@@ -430,6 +472,7 @@ export const NoClerkAuthProvider: React.FC<{ children: ReactNode }> = ({ childre
                 needsPassphraseSetup: false,
                 setupPassphrase: async () => ({ success: false, error: configError }),
                 unlockWithPassphrase: async () => ({ success: false, error: configError }),
+                resetPassphrase: () => {},
                 signOut: async () => {},
                 refreshUser: async () => {},
                 getToken: async () => null,
