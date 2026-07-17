@@ -691,6 +691,7 @@ onTerminalClosed: (callback) => {
     passwordEncryptionStatus: () => ipcRenderer.invoke('password-encryption-status'),
 
     pythonEnvGet: (workspacePath) => ipcRenderer.invoke('python-env-get', { workspacePath }),
+    pythonEnvSetLastKernel: (workspacePath, kernelName) => ipcRenderer.invoke('python-env-setLastKernel', { workspacePath, kernelName }),
     pythonEnvSave: (workspacePath, envConfig) => ipcRenderer.invoke('python-env-save', { workspacePath, envConfig }),
     pythonEnvDelete: (workspacePath) => ipcRenderer.invoke('python-env-delete', { workspacePath }),
     pythonEnvList: () => ipcRenderer.invoke('python-env-list'),
