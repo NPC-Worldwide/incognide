@@ -4,6 +4,24 @@ const fs = require('fs');
 const fsPromises = require('fs/promises');
 const os = require('os');
 
+const existsExecutable = async (p) => {
+    try {
+        await fsPromises.access(p, fs.constants.X_OK);
+        return true;
+    } catch {
+        return false;
+    }
+};
+
+// Normalize auto-generated incognide kernel names so the UI shows
+// "pyenv: npc" instead of "incognide pyenv npc".
+const normalizeKernelDisplayName = (name, displayName) => {
+    if (!name) return displayName || 'python';
+    const match = name.match(/^incognide_(pyenv|uv|conda|local)_(.+)$/);
+    if (match) return `${match[1]}: ${match[2].replace(/_/g, ' ')}`;
+    return displayName || name;
+};
+
 function register(ctx) {
   const { ipcMain, log, getMainWindow, readPythonEnvConfig } = ctx;
 
@@ -41,19 +59,30 @@ function register(ctx) {
       const binDir = isWindows ? 'Scripts' : 'bin';
       const home = os.homedir();
 
+      // Canonical python path: follow symlinks and prefer python3 over python within
+      // the same bin directory so each env appears once.
+      const realPythonPath = (p) => {
+          try { return fs.realpathSync(p); } catch { return p; }
+      };
       const tryPython = async (pythonPath, label, source) => {
           try {
               await fsPromises.access(pythonPath, fs.constants.X_OK);
-              if (!discovered.find(e => e.pythonPath === pythonPath)) {
-                  discovered.push({ pythonPath, label, source });
+              const canonical = realPythonPath(pythonPath);
+              if (!discovered.find(e => e.canonical === canonical)) {
+                  discovered.push({ pythonPath, canonical, label, source });
               }
           } catch {}
       };
 
       if (workspacePath) {
           for (const venvDir of ['.venv', 'venv', '.env', 'env']) {
-              for (const bin of ['python3', 'python']) {
-                  await tryPython(path.join(workspacePath, venvDir, binDir, bin), `${venvDir} (local)`, 'local');
+              const venvBin = path.join(workspacePath, venvDir, binDir);
+              const p3 = path.join(venvBin, 'python3');
+              const p = path.join(venvBin, 'python');
+              if (await existsExecutable(p3)) {
+                  await tryPython(p3, `${venvDir} (local)`, 'local');
+              } else if (await existsExecutable(p)) {
+                  await tryPython(p, `${venvDir} (local)`, 'local');
               }
           }
       }
@@ -89,8 +118,13 @@ function register(ctx) {
           if (condaResult?.envs) {
               for (const envPath of condaResult.envs) {
                   const name = path.basename(envPath);
-                  for (const bin of ['python3', 'python']) {
-                      await tryPython(path.join(envPath, binDir, bin), `conda: ${name}`, 'conda');
+                  const envBin = path.join(envPath, binDir);
+                  const p3 = path.join(envBin, 'python3');
+                  const p = path.join(envBin, 'python');
+                  if (await existsExecutable(p3)) {
+                      await tryPython(p3, `conda: ${name}`, 'conda');
+                  } else if (await existsExecutable(p)) {
+                      await tryPython(p, `conda: ${name}`, 'conda');
                   }
               }
           }
@@ -116,7 +150,7 @@ function register(ctx) {
                           const result = JSON.parse(stdout);
                           resolve(Object.entries(result.kernelspecs || {}).map(([name, spec]) => ({
                               name,
-                              displayName: spec.spec?.display_name || name,
+                              displayName: normalizeKernelDisplayName(name, spec.spec?.display_name),
                               language: spec.spec?.language || 'unknown',
                               resourceDir: spec.resource_dir,
                           })));
@@ -128,32 +162,50 @@ function register(ctx) {
 
           const discovered = await discoverPythonEnvironments(workspacePath);
 
+          // Build canonical identities for registered kernels so discovered envs
+          // don't duplicate them. Resolve relative argv[0] against the kernel dir
+          // and also record the bin directory, so python/python3 aliases and pyenv
+          // shims still match.
           const registeredPythons = new Set();
+          const registeredBinDirs = new Set();
           for (const k of registeredKernels) {
-              if (k.resourceDir) {
-                  try {
-                      const kernelJson = JSON.parse(await fsPromises.readFile(path.join(k.resourceDir, 'kernel.json'), 'utf8'));
-                      const argv0 = kernelJson.argv?.[0];
-                      if (argv0) registeredPythons.add(fs.realpathSync(argv0));
-                  } catch {}
-              }
+              if (!k.resourceDir) continue;
+              try {
+                  const kernelJson = JSON.parse(await fsPromises.readFile(path.join(k.resourceDir, 'kernel.json'), 'utf8'));
+                  let argv0 = kernelJson.argv?.[0];
+                  if (!argv0) continue;
+                  if (!path.isAbsolute(argv0)) {
+                      argv0 = path.resolve(k.resourceDir, argv0);
+                  }
+                  const realArgv0 = fs.realpathSync(argv0);
+                  registeredPythons.add(realArgv0);
+                  registeredBinDirs.add(path.dirname(realArgv0));
+                  // Some kernelspecs use bin/python while discovery uses bin/python3.
+                  const binDir = path.dirname(realArgv0);
+                  registeredPythons.add(fs.realpathSync(path.join(binDir, 'python')));
+                  registeredPythons.add(fs.realpathSync(path.join(binDir, 'python3')));
+              } catch {}
           }
 
           const extraKernels = [];
           for (const env of discovered) {
               try {
-                  const realPath = fs.realpathSync(env.pythonPath);
-                  if (registeredPythons.has(realPath)) continue;
+                  if (registeredPythons.has(env.canonical)) continue;
+                  const binDir = path.dirname(env.canonical);
+                  if (registeredBinDirs.has(binDir)) continue;
               } catch {}
               const hasIpykernel = await new Promise((resolve) => {
                   const proc = spawn(env.pythonPath, ['-c', 'import ipykernel'], { env: { ...process.env } });
                   proc.on('close', code => resolve(code === 0));
                   proc.on('error', () => resolve(false));
               });
-              const safeName = `incognide_${env.source}_${path.basename(path.dirname(path.dirname(env.pythonPath)))}`.replace(/[^a-z0-9_]/gi, '_');
+              const baseName = path.basename(path.dirname(path.dirname(env.pythonPath)));
+              const safeName = `incognide_${env.source}_${baseName}`.replace(/[^a-z0-9_]/gi, '_');
+              // Label like "pyenv: npc (register)" — clear and not ugly.
+              const displayName = `${env.label} (register)`;
               extraKernels.push({
                   name: safeName,
-                  displayName: env.label,
+                  displayName,
                   language: 'python',
                   pythonPath: env.pythonPath,
                   needsRegistration: true,
@@ -177,7 +229,11 @@ function register(ctx) {
 
           if (needsRegistration && pythonOverridePath) {
               log(`[Jupyter] Auto-registering kernel: ${kernelName} with ${pythonOverridePath}`);
-              const displayName = kernelName.replace(/_/g, ' ');
+              // Transform ugly internal names like "incognide_pyenv_npc" into readable labels.
+              const match = kernelName.match(/^incognide_(pyenv|uv|conda|local)_(.+)$/);
+              const displayName = match
+                  ? `${match[1]}: ${match[2]}`.replace(/_/g, ' ')
+                  : kernelName.replace(/_/g, ' ');
               const isUvManaged = pythonOverridePath.includes(`${path.sep}uv${path.sep}python${path.sep}`);
               const regResult = await new Promise((resolve) => {
                   const cmd = isUvManaged ? 'uv' : pythonOverridePath;

@@ -1575,7 +1575,7 @@ except Exception as e:
                                 {kernelStatus === 'starting' && <Loader size={10} className="animate-spin" />}
                                 {kernelStatus === 'busy' && <Loader size={10} className="animate-spin" />}
                                 {kernelStatus === 'disconnected' && <Circle size={8} className="text-gray-500" />}
-                                <span>{selectedKernel}</span>
+                                <span>{availableKernels.find(k => k.name === selectedKernel)?.displayName || selectedKernel}</span>
                                 <ChevronDown size={10} />
                             </button>
 
