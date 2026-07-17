@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
     User, LogIn, LogOut, Crown, Cloud, CloudOff, RefreshCw,
-    CreditCard, Shield, CheckCircle, Key, Lock, Unlock
+    CreditCard, Shield, CheckCircle, Key, Lock, Unlock, Eye, EyeOff
 } from 'lucide-react';
 import { useAuth } from './AuthProvider';
 import { useSync } from '../hooks/useSync';
@@ -14,15 +14,25 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
     const auth = useAuth();
     const { syncStatus, lastSyncTime, pendingChanges, triggerSync, syncFrequency, setSyncFrequency, lastSyncStats, syncProgress, forceFullResync } = useSync();
     const [passphrase, setPassphrase] = useState('');
+    const [confirmPassphrase, setConfirmPassphrase] = useState('');
+    const [showPassphrase, setShowPassphrase] = useState(false);
     const [passphraseError, setPassphraseError] = useState('');
     const [settingUp, setSettingUp] = useState(false);
 
     const handleSetupPassphrase = async () => {
         setSettingUp(true);
         setPassphraseError('');
+        if (passphrase !== confirmPassphrase) {
+            setPassphraseError('Passphrases do not match');
+            setSettingUp(false);
+            return;
+        }
         const result = await auth.setupPassphrase(passphrase);
         if (!result.success) setPassphraseError(result.error || 'Failed');
-        else setPassphrase('');
+        else {
+            setPassphrase('');
+            setConfirmPassphrase('');
+        }
         setSettingUp(false);
     };
 
@@ -155,16 +165,35 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                                         <Key size={16} />
                                         <span className="text-sm">Set up your encryption passphrase</span>
                                     </div>
-                                    <input
-                                        type="password"
-                                        value={passphrase}
-                                        onChange={e => setPassphrase(e.target.value)}
-                                        placeholder="Choose a strong passphrase (8+ chars)"
-                                        className="w-full px-3 py-2 text-sm theme-bg-tertiary border theme-border rounded-lg theme-text-primary"
-                                        onKeyDown={e => e.key === 'Enter' && handleSetupPassphrase()}
-                                    />
+                                    <div className="relative">
+                                        <input
+                                            type={showPassphrase ? 'text' : 'password'}
+                                            value={passphrase}
+                                            onChange={e => setPassphrase(e.target.value)}
+                                            placeholder="Choose a strong passphrase (8+ chars)"
+                                            className="w-full px-3 py-2 pr-10 text-sm theme-bg-tertiary border theme-border rounded-lg theme-text-primary"
+                                            onKeyDown={e => e.key === 'Enter' && handleSetupPassphrase()}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowPassphrase(!showPassphrase)}
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-white"
+                                        >
+                                            {showPassphrase ? <EyeOff size={16} /> : <Eye size={16} />}
+                                        </button>
+                                    </div>
+                                    <div className="relative">
+                                        <input
+                                            type={showPassphrase ? 'text' : 'password'}
+                                            value={confirmPassphrase}
+                                            onChange={e => setConfirmPassphrase(e.target.value)}
+                                            placeholder="Confirm passphrase"
+                                            className="w-full px-3 py-2 pr-10 text-sm theme-bg-tertiary border theme-border rounded-lg theme-text-primary"
+                                            onKeyDown={e => e.key === 'Enter' && handleSetupPassphrase()}
+                                        />
+                                    </div>
                                     {passphraseError && <p className="text-xs text-red-400">{passphraseError}</p>}
-                                    <button onClick={handleSetupPassphrase} disabled={settingUp || passphrase.length < 8} className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50">
+                                    <button onClick={handleSetupPassphrase} disabled={settingUp || passphrase.length < 8 || passphrase !== confirmPassphrase} className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50">
                                         {settingUp ? 'Setting up...' : 'Set Passphrase'}
                                     </button>
                                 </div>
@@ -174,14 +203,23 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                                         <Lock size={16} />
                                         <span className="text-sm">Enter your passphrase to unlock</span>
                                     </div>
-                                    <input
-                                        type="password"
-                                        value={passphrase}
-                                        onChange={e => setPassphrase(e.target.value)}
-                                        placeholder="Your encryption passphrase"
-                                        className="w-full px-3 py-2 text-sm theme-bg-tertiary border theme-border rounded-lg theme-text-primary"
-                                        onKeyDown={e => e.key === 'Enter' && handleUnlock()}
-                                    />
+                                    <div className="relative">
+                                        <input
+                                            type={showPassphrase ? 'text' : 'password'}
+                                            value={passphrase}
+                                            onChange={e => setPassphrase(e.target.value)}
+                                            placeholder="Your encryption passphrase"
+                                            className="w-full px-3 py-2 pr-10 text-sm theme-bg-tertiary border theme-border rounded-lg theme-text-primary"
+                                            onKeyDown={e => e.key === 'Enter' && handleUnlock()}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowPassphrase(!showPassphrase)}
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-white"
+                                        >
+                                            {showPassphrase ? <EyeOff size={16} /> : <Eye size={16} />}
+                                        </button>
+                                    </div>
                                     {passphraseError && <p className="text-xs text-red-400">{passphraseError}</p>}
                                     <button onClick={handleUnlock} disabled={settingUp || !passphrase} className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50">
                                         {settingUp ? 'Unlocking...' : 'Unlock'}

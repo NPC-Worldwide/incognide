@@ -907,6 +907,7 @@ function register(ctx) {
       const db = new sqlite3.Database(dbPath);
 
       const result = { conversations: [], messages: [], bookmarks: [], history: [] };
+      console.log(`[SYNC EXPORT] dbPath=${dbPath} since=${sinceTs} fullDump=${fullDump}`);
 
       db.all(
         `SELECT DISTINCT conversation_id, directory_path,
@@ -917,7 +918,8 @@ function register(ctx) {
          ORDER BY updated_at DESC`,
         [sinceTs],
         (err, rows) => {
-          if (!err && rows) result.conversations = rows;
+          if (err) console.error('[SYNC EXPORT] conversations query error:', err.message);
+          else if (rows) result.conversations = rows;
 
           db.all(
             `SELECT message_id, timestamp, role, content, conversation_id,
@@ -930,14 +932,16 @@ function register(ctx) {
              ORDER BY timestamp ASC`,
             [sinceTs],
             (err2, msgRows) => {
-              if (!err2 && msgRows) result.messages = msgRows;
+              if (err2) console.error('[SYNC EXPORT] messages query error:', err2.message);
+              else if (msgRows) result.messages = msgRows;
 
               db.all(
                 `SELECT id, title, url, folder_path, is_global, timestamp
                  FROM bookmarks WHERE timestamp > ? ORDER BY timestamp DESC`,
                 [sinceTs],
                 (err3, bmRows) => {
-                  if (!err3 && bmRows) result.bookmarks = bmRows;
+                  if (err3) console.error('[SYNC EXPORT] bookmarks query error:', err3.message);
+                  else if (bmRows) result.bookmarks = bmRows;
 
                   db.all(
                     `SELECT id, title, url, folder_path, visit_count, last_visited
@@ -947,7 +951,9 @@ function register(ctx) {
                     [sinceTs],
                     (err4, histRows) => {
                       db.close();
-                      if (!err4 && histRows) result.history = histRows;
+                      if (err4) console.error('[SYNC EXPORT] history query error:', err4.message);
+                      else if (histRows) result.history = histRows;
+                      console.log(`[SYNC EXPORT] counts: conversations=${result.conversations.length} messages=${result.messages.length} bookmarks=${result.bookmarks.length} history=${result.history.length}`);
                       resolve(result);
                     }
                   );
