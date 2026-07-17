@@ -1396,6 +1396,22 @@ function register(ctx) {
     }
   });
 
+  // Persist the notebook's last-selected kernel name per workspace, without
+  // touching the rest of the env config (type/venvPath/etc). Lets the notebook
+  // restore the same interpreter across crashes and reopens without a reselect.
+  ipcMain.handle('python-env-setLastKernel', async (event, { workspacePath, kernelName }) => {
+    try {
+      const config = await _readPythonEnvConfig();
+      const existing = config.workspaces[workspacePath] || {};
+      config.workspaces[workspacePath] = { ...existing, lastKernelName: kernelName, updatedAt: Date.now() };
+      await writePythonEnvConfig(config);
+      return { success: true };
+    } catch (err) {
+      console.error('Error saving last kernel name:', err);
+      return { success: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('python-env-save', async (event, { workspacePath, envConfig }) => {
     try {
       const config = await _readPythonEnvConfig();

@@ -218,14 +218,26 @@ function register(ctx) {
 
           proc.on('error', (err) => {
               console.error('[Jupyter Kernel] Process error:', err);
+              const wasStopping = jupyterKernels.get(kernelId)?.stopping;
               jupyterKernels.delete(kernelId);
-              getMainWindow()?.webContents.send('jupyter:kernelStopped', { kernelId, error: err.message });
+              if (wasStopping) {
+                  getMainWindow()?.webContents.send('jupyter:kernelStopped', { kernelId, intentional: true });
+              } else {
+                  getMainWindow()?.webContents.send('jupyter:kernelStopped', { kernelId, crashed: true, errorType: 'dead', error: err.message });
+              }
           });
 
           proc.on('exit', (code) => {
               log(`[Jupyter Kernel] Exited with code ${code}`);
+              const wasStopping = jupyterKernels.get(kernelId)?.stopping;
               jupyterKernels.delete(kernelId);
-              getMainWindow()?.webContents.send('jupyter:kernelStopped', { kernelId, exitCode: code, error: kernelStderr || undefined });
+              if (wasStopping) {
+                  getMainWindow()?.webContents.send('jupyter:kernelStopped', { kernelId, intentional: true });
+              } else {
+                  // Trim stderr to a single calm summary line — never dump raw startup logs at the user.
+                  const summary = (kernelStderr || '').split('\n').map(s => s.trim()).filter(Boolean).slice(-1)[0] || `Kernel exited (code ${code})`;
+                  getMainWindow()?.webContents.send('jupyter:kernelStopped', { kernelId, crashed: true, errorType: 'dead', error: summary });
+              }
           });
 
           jupyterKernels.set(kernelId, {
@@ -234,7 +246,8 @@ function register(ctx) {
               kernelName,
               executionCount: 0,
               pythonPath,
-              workspacePath
+              workspacePath,
+              stopping: false
           });
 
           let connectionReady = false;
@@ -296,7 +309,7 @@ print(json.dumps({"ready": True}))
       try {
           const kernel = jupyterKernels.get(kernelId);
           if (!kernel) {
-              return { success: false, error: 'Kernel not found. Start a kernel first.', outputs: [] };
+              return { success: false, errorType: 'kernel_not_found', error: 'Kernel not found. Start a kernel first.', outputs: [] };
           }
 
           kernel.executionCount++;
@@ -684,9 +697,11 @@ except Exception as e:
       try {
           const kernel = jupyterKernels.get(kernelId);
           if (!kernel) return { success: true };
+          // Flag first so the process exit handler emits an intentional-stop event
+          // (not a crash). The exit handler removes the kernel from the map.
+          kernel.stopping = true;
           kernel.process.kill('SIGTERM');
           try { await fsPromises.unlink(kernel.connectionFile); } catch {}
-          jupyterKernels.delete(kernelId);
           return { success: true };
       } catch (err) {
           return { success: false, error: err.message };

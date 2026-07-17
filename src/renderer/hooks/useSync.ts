@@ -40,6 +40,7 @@ interface UseSyncReturn {
     lastSyncStats: SyncStats | null;
     syncProgress: number;
     triggerSync: () => Promise<void>;
+    forceFullResync: () => Promise<void>;
     setSyncFrequency: (frequency: SyncFrequency) => void;
 }
 
@@ -279,6 +280,16 @@ export const useSync = (): UseSyncReturn => {
         };
     }, [isAuthenticated, isOnline, isEncryptionReady, syncFrequency]);
 
+    const forceFullResync = useCallback(async () => {
+        const ok = window.confirm('This clears the sync cursor and re-uploads all local data. Continue?');
+        if (!ok) return;
+        localStorage.removeItem('incognide-initial-sync-done');
+        localStorage.removeItem(LAST_SYNC_KEY);
+        setLastSyncTime(null);
+        lastSyncRef.current = null;
+        await triggerSync();
+    }, [triggerSync]);
+
     return {
         syncStatus,
         isOnline,
@@ -289,6 +300,7 @@ export const useSync = (): UseSyncReturn => {
         lastSyncStats,
         syncProgress,
         triggerSync,
+        forceFullResync,
         setSyncFrequency
     };
 };

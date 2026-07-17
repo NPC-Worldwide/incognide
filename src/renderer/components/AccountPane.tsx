@@ -12,7 +12,7 @@ interface AccountPaneProps {
 
 const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
     const auth = useAuth();
-    const { syncStatus, lastSyncTime, pendingChanges, triggerSync, syncFrequency, setSyncFrequency, lastSyncStats, syncProgress } = useSync();
+    const { syncStatus, lastSyncTime, pendingChanges, triggerSync, syncFrequency, setSyncFrequency, lastSyncStats, syncProgress, forceFullResync } = useSync();
     const [passphrase, setPassphrase] = useState('');
     const [passphraseError, setPassphraseError] = useState('');
     const [settingUp, setSettingUp] = useState(false);
@@ -285,6 +285,13 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                                         <option value="24h">Every 24h</option>
                                         <option value="manual">Manual only</option>
                                     </select>
+                                    <button
+                                        onClick={() => forceFullResync()}
+                                        disabled={syncStatus === 'syncing'}
+                                        className={`flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 ${syncStatus === 'syncing' ? 'opacity-50' : ''}`}
+                                    >
+                                        <RefreshCw size={12} /> Full Re-sync
+                                    </button>
                                 </div>
                             )}
                         </div>

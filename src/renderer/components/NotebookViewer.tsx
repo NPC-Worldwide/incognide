@@ -2,7 +2,7 @@ import { getFileName } from './utils';
 import React, { useEffect, useState, useCallback, useMemo, memo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { BACKEND_URL } from '../config';
-import { Save, Play, Plus, Trash2, ChevronDown, ChevronRight, X, Loader, Code2, FileText, Edit3, Circle, Zap, Square, Power, MessageSquare, Bot, BookOpen, Paperclip, Eye, EyeOff, Archive, Sparkles, RefreshCw, Table, Variable, ChevronLeft, SortAsc, SortDesc, Filter, Hash, Type, Database, ArrowUp, ArrowDown, PanelRightClose, PanelRight, Palette, Settings, Download, FileCode, FileType, PlayCircle, SkipBack, SkipForward } from 'lucide-react';
+import { Save, Play, Plus, Trash2, ChevronDown, ChevronRight, X, Loader, Code2, FileText, Edit3, Circle, Zap, Square, Power, MessageSquare, Bot, BookOpen, Paperclip, Eye, EyeOff, Archive, Sparkles, RefreshCw, Table, Variable, ChevronLeft, SortAsc, SortDesc, Filter, Hash, Type, Database, ArrowUp, ArrowDown, PanelRightClose, PanelRight, Palette, Settings, Download, FileCode, FileType, PlayCircle, SkipBack, SkipForward, AlertCircle } from 'lucide-react';
 import CodeMirror from '@uiw/react-codemirror';
 import { python } from '@codemirror/lang-python';
 import { markdown } from '@codemirror/lang-markdown';
@@ -122,6 +122,7 @@ const NotebookViewer = ({
     const [selectedKernel, setSelectedKernel] = useState<string>('python3');
     const [kernelId, setKernelId] = useState<string | null>(null);
     const [kernelStatus, setKernelStatus] = useState<'disconnected' | 'starting' | 'connected' | 'busy'>('disconnected');
+    const [kernelCrashed, setKernelCrashed] = useState<string | null>(null);
     const [showKernelMenu, setShowKernelMenu] = useState(false);
     const [jupyterInstalled, setJupyterInstalled] = useState<boolean | null>(null);
     const [isInstalling, setIsInstalling] = useState(false);
@@ -245,9 +246,14 @@ const NotebookViewer = ({
                 const result = await (window as any).api.jupyterListKernels({ workspacePath });
                 if (result?.success && result.kernels) {
                     setAvailableKernels(result.kernels);
-                    if (result.kernels.length > 0 && !selectedKernel) {
+                    if (result.kernels.length > 0) {
+                        // Restore the user's last-selected kernel for this workspace if it still
+                        // exists and is usable; only fall back to "first ready" with no saved choice.
+                        const savedName = (await (window as any).api.pythonEnvGet?.(workspacePath))?.lastKernelName;
+                        const savedMatch = savedName && result.kernels.find((k: any) => k.name === savedName && !k.needsIpykernel);
                         const firstReady = result.kernels.find((k: any) => !k.needsIpykernel);
-                        setSelectedKernel((firstReady || result.kernels[0]).name);
+                        const target = savedMatch || firstReady || result.kernels[0];
+                        setSelectedKernel(target.name);
                     }
                 }
                 if (result?.pythonPath) {
@@ -313,15 +319,16 @@ const NotebookViewer = ({
         }
     }, [workspacePath]);
 
-    const startKernel = useCallback(async () => {
-        if (kernelStatus === 'connected' || kernelStatus === 'starting') return;
+    const startKernel = useCallback(async (): Promise<string | null> => {
+        if (kernelStatus === 'connected' || kernelStatus === 'starting') return kernelIdRef.current;
         if (!jupyterInstalled) {
             setError('Jupyter is not installed. Click "Install Jupyter" first.');
-            return;
+            return null;
         }
 
         setKernelStatus('starting');
         setError(null);
+        setKernelCrashed(null);
         const newKernelId = `kernel_${nodeId}_${Date.now()}`;
 
         try {
@@ -335,18 +342,26 @@ const NotebookViewer = ({
             });
 
             if (result?.success) {
+                // Set the ref synchronously so ensureKernel / restart callers don't race the
+                // kernelId state effect, and return the kid for the same reason.
+                kernelIdRef.current = newKernelId;
                 setKernelId(newKernelId);
                 setKernelStatus('connected');
                 if (result?.pythonPath) {
                     setPythonPath(result.pythonPath);
                 }
+                // Remember this kernel so crashes/reopens reuse the same interpreter.
+                (window as any).api.pythonEnvSetLastKernel?.(workspacePath, selectedKernel).catch(() => {});
+                return newKernelId;
             } else {
                 setError(result?.error || 'Failed to start kernel');
                 setKernelStatus('disconnected');
+                return null;
             }
         } catch (e: any) {
             setError(e.message || 'Failed to start kernel');
             setKernelStatus('disconnected');
+            return null;
         }
     }, [selectedKernel, kernelStatus, nodeId, workspacePath, jupyterInstalled]);
 
@@ -377,7 +392,15 @@ const NotebookViewer = ({
                 setKernelId(null);
                 kernelIdRef.current = null;
                 setKernelStatus('disconnected');
-                if (data.error) setError(`Kernel stopped: ${data.error}`);
+                if (data.intentional) {
+                    // User-initiated stop — no scary banner.
+                    setError(null);
+                    setKernelCrashed(null);
+                } else if (data.crashed) {
+                    // Kernel died unexpectedly — tell the user plainly and keep the notebook editable.
+                    setError(null);
+                    setKernelCrashed(data.error || 'Kernel crashed unexpectedly.');
+                }
             }
         });
         return () => unsubscribe?.();
@@ -761,10 +784,11 @@ const NotebookViewer = ({
             });
             setHasChanges(true);
 
-            if (!result.success && result.error?.includes('Kernel not found')) {
+            if (!result.success && (result.errorType === 'kernel_not_found' || result.error?.includes('Kernel not found'))) {
                 setKernelStatus('disconnected');
                 setKernelId(null);
                 kernelIdRef.current = null;
+                setKernelCrashed('Kernel is not running. Run a cell to restart it, or click Restart.');
             }
         } catch (e: any) {
             setNotebook(prev => {
@@ -784,9 +808,8 @@ const NotebookViewer = ({
         if (kid && kernelStatus === 'connected') return kid;
 
         setError(null);
-        await startKernel();
-        kid = kernelIdRef.current;
-        if (kid) return kid;
+        const startedKid = await startKernel();
+        if (startedKid) return startedKid;
         setError('Kernel failed to start.');
         return null;
     };
@@ -1583,7 +1606,7 @@ except Exception as e:
                                             {availableKernels.map(k => (
                                                 <div key={k.name} className="group flex items-center hover:bg-gray-700/60 mx-1 rounded">
                                                     <button
-                                                        onClick={() => { if (!k.needsIpykernel) { setSelectedKernel(k.name); setShowKernelMenu(false); } }}
+                                                        onClick={() => { if (!k.needsIpykernel) { setSelectedKernel(k.name); (window as any).api.pythonEnvSetLastKernel?.(workspacePath, k.name).catch(() => {}); setShowKernelMenu(false); } }}
                                                         className={`flex-1 text-left px-2 py-1.5 text-sm flex items-center gap-2 min-w-0 ${selectedKernel === k.name ? 'text-green-400' : k.needsIpykernel ? 'text-gray-600' : 'text-gray-300'}`}
                                                     >
                                                         <span className="truncate flex-1">{k.displayName}</span>
@@ -1781,6 +1804,27 @@ except Exception as e:
                                     className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-gray-300 transition-colors"
                                 >
                                     Keep local
+                                </button>
+                            </div>
+                        )}
+
+                        {kernelCrashed && (
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-red-900/40 border-b border-red-700/50 text-red-200 text-xs shrink-0">
+                                <AlertCircle size={12} className="text-red-400 shrink-0" />
+                                <span className="flex-1">Kernel crashed — click Restart to resume. Your notebook is unchanged and still editable.</span>
+                                <button
+                                    onClick={() => { startKernel(); }}
+                                    disabled={kernelStatus === 'starting'}
+                                    className="px-2 py-0.5 rounded bg-red-600/60 hover:bg-red-600/90 text-red-50 font-medium transition-colors disabled:opacity-50"
+                                >
+                                    {kernelStatus === 'starting' ? 'Restarting…' : 'Restart'}
+                                </button>
+                                <button
+                                    onClick={() => setKernelCrashed(null)}
+                                    className="p-0.5 rounded hover:bg-white/10 text-red-300/70 transition-colors"
+                                    title="Dismiss"
+                                >
+                                    <X size={12} />
                                 </button>
                             </div>
                         )}
