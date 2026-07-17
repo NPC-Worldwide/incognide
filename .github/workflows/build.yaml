@@ -438,7 +438,11 @@ jobs:
       - name: Build MAS package
         run: |
           rm -rf dist-electron
-          sed -i '' 's/findIdentity)(certType, masOptions.identity,/findIdentity)(certType, null,/' node_modules/app-builder-lib/out/macPackager.js
+          # app-builder-lib moved the MAS installer identity lookup from macPackager.js
+          # to mac/MacTargetHelper.js. Null out the explicit identity qualifier so the
+          # installer cert is found by type ("3rd Party Mac Developer Installer") rather
+          # than requiring its CN to also contain the app-signing identity name.
+          sed -i '' 's/findIdentity)(certType, masOptions.identity,/findIdentity)(certType, null,/' node_modules/app-builder-lib/out/mac/MacTargetHelper.js
           npx electron-builder --mac mas --arm64
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
