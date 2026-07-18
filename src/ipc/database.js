@@ -922,11 +922,7 @@ function register(ctx) {
           else if (rows) result.conversations = rows;
 
           db.all(
-            `SELECT message_id, timestamp, role, content, conversation_id,
-                    directory_path, model, provider, npc, team,
-                    reasoning_content, tool_calls, tool_results,
-                    parent_message_id, branch_id, device_id, device_name,
-                    input_tokens, output_tokens, cost
+            `SELECT *
              FROM conversation_history
              WHERE timestamp > ?
              ORDER BY timestamp ASC`,
@@ -971,60 +967,81 @@ function register(ctx) {
       const db = new sqlite3.Database(dbPath);
       let imported = { conversations: 0, messages: 0, bookmarks: 0, history: 0 };
 
-      db.serialize(() => {
+      const getColumns = () => new Promise((res, rej) => {
+        db.all("PRAGMA table_info(conversation_history)", [], (err, rows) => {
+          if (err) rej(err);
+          else res(rows.map(r => r.name).filter(n => n !== 'id'));
+        });
+      });
+
+      const messageValue = (m, col) => {
+        if (col === 'branch_id') return m.branch_id || 'main';
+        return m[col] ?? null;
+      };
+
+      const bookmarkValue = (b, col) => {
+        if (col === 'is_global') return b[col] || 0;
+        if (col === 'timestamp') return b[col] || Date.now();
+        return b[col] ?? null;
+      };
+
+      const historyValue = (h, col) => {
+        if (col === 'visit_count') return h[col] || 1;
+        return h[col] ?? null;
+      };
+
+      db.serialize(async () => {
         if (messages && messages.length) {
+          const cols = await getColumns();
+          const placeholders = cols.map(() => '?').join(',');
           const stmt = db.prepare(
-            `INSERT OR IGNORE INTO conversation_history
-             (message_id, timestamp, role, content, conversation_id,
-              directory_path, model, provider, npc, team,
-              reasoning_content, tool_calls, tool_results,
-              parent_message_id, branch_id, device_id, device_name,
-              input_tokens, output_tokens, cost)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT OR IGNORE INTO conversation_history (${cols.join(',')}) VALUES (${placeholders})`
           );
           for (const m of messages) {
-            stmt.run(
-              m.message_id, m.timestamp, m.role, m.content, m.conversation_id,
-              m.directory_path, m.model, m.provider, m.npc, m.team,
-              m.reasoning_content, m.tool_calls, m.tool_results,
-              m.parent_message_id, m.branch_id || 'main',
-              m.device_id || null, m.device_name || null,
-              m.input_tokens, m.output_tokens, m.cost
-            );
+            stmt.run(cols.map(c => messageValue(m, c)));
             imported.messages++;
           }
           stmt.finalize();
         }
 
         if (bookmarks && bookmarks.length) {
+          const bmCols = (await getColumns()).filter(c => c !== 'id').map(c => c === 'folder_path' ? 'folder_path' : c);
+          const bmColsFromTable = await new Promise((res, rej) => {
+            db.all("PRAGMA table_info(bookmarks)", [], (err, rows) => {
+              if (err) rej(err);
+              else res(rows.map(r => r.name).filter(n => n !== 'id'));
+            });
+          });
           const urls = [...new Set(bookmarks.map(b => b.url).filter(Boolean))];
           if (urls.length > 0) {
             const placeholders = urls.map(() => '?').join(',');
             db.run(`DELETE FROM bookmarks WHERE url IN (${placeholders})`, urls);
           }
-          const stmt = db.prepare(
-            `INSERT INTO bookmarks (title, url, folder_path, is_global, timestamp)
-             VALUES (?, ?, ?, ?, ?)`
-          );
+          const placeholders = bmColsFromTable.map(() => '?').join(',');
+          const stmt = db.prepare(`INSERT INTO bookmarks (${bmColsFromTable.join(',')}) VALUES (${placeholders})`);
           for (const b of bookmarks) {
-            stmt.run(b.title, b.url, b.folder_path, b.is_global || 0, b.timestamp);
+            stmt.run(bmColsFromTable.map(c => bookmarkValue(b, c)));
             imported.bookmarks++;
           }
           stmt.finalize();
         }
 
         if (history && history.length) {
+          const histCols = await new Promise((res, rej) => {
+            db.all("PRAGMA table_info(browser_history)", [], (err, rows) => {
+              if (err) rej(err);
+              else res(rows.map(r => r.name).filter(n => n !== 'id'));
+            });
+          });
           for (const h of history) {
             if (h.url && h.last_visited) {
               db.run('DELETE FROM browser_history WHERE url = ? AND last_visited = ?', [h.url, h.last_visited]);
             }
           }
-          const stmt = db.prepare(
-            `INSERT INTO browser_history (title, url, folder_path, visit_count, last_visited)
-             VALUES (?, ?, ?, ?, ?)`
-          );
+          const placeholders = histCols.map(() => '?').join(',');
+          const stmt = db.prepare(`INSERT INTO browser_history (${histCols.join(',')}) VALUES (${placeholders})`);
           for (const h of history) {
-            stmt.run(h.title, h.url, h.folder_path, h.visit_count || 1, h.last_visited);
+            stmt.run(histCols.map(c => historyValue(h, c)));
             imported.history++;
           }
           stmt.finalize();
