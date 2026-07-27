@@ -1,8 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 
 export function useModelSelection() {
-    const [currentModel, setCurrentModel] = useState(null);
-    const [currentProvider, setCurrentProvider] = useState(null);
+    const [currentModel, setCurrentModel] = useState<string | null>(() => {
+        try { return JSON.parse(localStorage.getItem('incognideLastModel') || 'null'); } catch { return null; }
+    });
+    const [currentProvider, setCurrentProvider] = useState<string | null>(() => {
+        try { return JSON.parse(localStorage.getItem('incognideLastProvider') || 'null'); } catch { return null; }
+    });
     const [currentNPC, setCurrentNPC] = useState(() => {
         const saved = localStorage.getItem('incognideCurrentNPC');
         return saved ? JSON.parse(saved) : null;
@@ -133,25 +137,61 @@ export function useModelSelection() {
     }, [effectiveAvailableModels]);
 
     useEffect(() => {
-        if (effectiveAvailableModels.length > 0) {
-            const first = effectiveAvailableModels[0];
-            setCurrentModel(first.value);
-            setCurrentProvider(first.provider);
-            setModelWarning(null);
-        } else if (!currentNPC || availableNPCs.length === 0) {
-            setCurrentModel(null);
-            setCurrentProvider(null);
-            setModelWarning(null);
-        } else {
-            setCurrentModel(null);
-            setCurrentProvider(null);
-            setModelWarning(
-                currentNpcObject
-                    ? `NPC "${currentNpcObject.name}" has no model configured. Set a model on the NPC or a team-wide default in the .ctx file.`
-                    : `NPC "${currentNPC}" not found in loaded teams.`
-            );
+        if (effectiveAvailableModels.length === 0) {
+            if (!currentNPC || availableNPCs.length === 0) {
+                setCurrentModel(null);
+                setCurrentProvider(null);
+                setModelWarning(null);
+            } else {
+                setCurrentModel(null);
+                setCurrentProvider(null);
+                setModelWarning(
+                    currentNpcObject
+                        ? `NPC "${currentNpcObject.name}" has no model configured. Set a model on the NPC or a team-wide default in the .ctx file.`
+                        : `NPC "${currentNPC}" not found in loaded teams.`
+                );
+            }
+            return;
         }
-    }, [effectiveAvailableModels, currentNPC, availableNPCs, currentNpcObject]);
+
+        const isValid = (m: string | null) => !!m && effectiveAvailableModels.some((model: any) => model.value === m);
+        const providerFor = (m: string) => effectiveAvailableModels.find((model: any) => model.value === m)?.provider || null;
+
+        let desiredModel: string | null = null;
+        let desiredProvider: string | null = null;
+
+        if (isValid(currentModel)) {
+            desiredModel = currentModel;
+            desiredProvider = providerFor(currentModel) || currentProvider;
+        } else {
+            try {
+                const globalLast = JSON.parse(localStorage.getItem('incognideLastModel') || 'null');
+                if (isValid(globalLast)) {
+                    desiredModel = globalLast;
+                    desiredProvider = providerFor(globalLast);
+                }
+            } catch {}
+        }
+
+        if (!desiredModel) {
+            const first = effectiveAvailableModels[0];
+            desiredModel = first.value;
+            desiredProvider = first.provider;
+        }
+
+        if (desiredModel !== currentModel || desiredProvider !== currentProvider) {
+            setCurrentModel(desiredModel);
+            setCurrentProvider(desiredProvider);
+            setModelWarning(null);
+        }
+    }, [effectiveAvailableModels, currentNPC, availableNPCs, currentNpcObject, currentModel, currentProvider]);
+
+    useEffect(() => {
+        try {
+            if (currentModel) localStorage.setItem('incognideLastModel', JSON.stringify(currentModel));
+            if (currentProvider) localStorage.setItem('incognideLastProvider', JSON.stringify(currentProvider));
+        } catch {}
+    }, [currentModel, currentProvider]);
 
     useEffect(() => {
         if (effectiveAvailableModels.length === 0) {

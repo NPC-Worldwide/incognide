@@ -699,16 +699,15 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     };
 
     return (
-        <div className="inline-block">
+        <div className="w-full">
             <button
                 ref={buttonRef}
                 type="button"
                 onClick={() => setDropdownOpen(!dropdownOpen)}
                 disabled={disabled || loading || !!error}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm theme-bg-secondary theme-text-primary theme-border border hover:bg-white/5 disabled:opacity-40 min-w-[200px] w-auto max-w-[25vw] ${className}`}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm theme-bg-secondary theme-text-primary theme-border border hover:bg-white/5 disabled:opacity-40 w-full ${className}`}
             >
-                <Cpu size={14} className="text-purple-400" />
-                <span className="flex-1 truncate text-left">{buttonLabel}</span>
+                <span className="flex-1 truncate text-center">{buttonLabel}</span>
                 <ChevronRight
                     size={12}
                     className={`transition-transform flex-shrink-0 ${dropdownOpen ? 'rotate-90' : ''}`}
