@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 
 export function useModelSelection() {
     const [currentModel, setCurrentModel] = useState<string | null>(() => {
@@ -36,6 +36,11 @@ export function useModelSelection() {
     const [showAllModels, setShowAllModels] = useState(true);
     const [teamConfigs, setTeamConfigs] = useState<Record<string, any>>({});
     const [modelWarning, setModelWarning] = useState<string | null>(null);
+    const [pendingAddedModels, setPendingAddedModels] = useState<string[]>([]);
+    const pendingAddedModelsRef = useRef(pendingAddedModels);
+    useEffect(() => {
+        pendingAddedModelsRef.current = pendingAddedModels;
+    }, [pendingAddedModels]);
     const [fetchedProviderModels, setFetchedProviderModels] = useState<Record<string, string[]>>({});
     const [providerFetchLoading, setProviderFetchLoading] = useState<Record<string, boolean>>({});
 
@@ -61,8 +66,12 @@ export function useModelSelection() {
         return [{ value: m, display_name: `${m} | ${p}`, provider: p }];
     }, [currentNpcObject, teamConfigs]);
 
+    const providerKey = (prov: any) => prov?.provider_type || prov?.name || prov?.provider || '';
+
     const ctxProviders = useMemo(() => {
-        const tConf = currentNpcObject?._teamConfig || (currentNpcObject?.team ? teamConfigs[currentNpcObject.team] : null);
+        // Prefer the live teamConfigs state (updated when the .ctx file changes) over the
+        // static _teamConfig embedded on the NPC object.
+        const tConf = (currentNpcObject?.team ? teamConfigs[currentNpcObject.team] : null) || currentNpcObject?._teamConfig;
         return Array.isArray(tConf?.providers) ? tConf.providers : [];
     }, [currentNpcObject, teamConfigs]);
 
@@ -72,21 +81,22 @@ export function useModelSelection() {
             const nextLoading: Record<string, boolean> = {};
             const fetches: Promise<void>[] = [];
             for (const prov of ctxProviders) {
-                const providerName = prov.name;
+                const pKey = providerKey(prov);
+                if (!pKey) continue;
                 const allowedModels = Array.isArray(prov.models) ? prov.models : [];
                 if (allowedModels.length > 0) continue;
-                if (fetchedProviderModels[providerName] !== undefined) continue;
-                nextLoading[providerName] = true;
+                if (fetchedProviderModels[pKey] !== undefined) continue;
+                nextLoading[pKey] = true;
                 fetches.push((async () => {
                     try {
-                        const res = await (window as any).api?.getProviderModels?.({ provider: providerName });
+                        const res = await (window as any).api?.getProviderModels?.({ provider: pKey });
                         const list = (res?.models || []).map((m: any) => m.id || m.name || m.value).filter(Boolean);
                         if (!cancelled) {
-                            setFetchedProviderModels(prev => ({ ...prev, [providerName]: list }));
+                            setFetchedProviderModels(prev => ({ ...prev, [pKey]: list }));
                         }
                     } catch {
                         if (!cancelled) {
-                            setFetchedProviderModels(prev => ({ ...prev, [providerName]: [] }));
+                            setFetchedProviderModels(prev => ({ ...prev, [pKey]: [] }));
                         }
                     }
                 })());
@@ -99,6 +109,16 @@ export function useModelSelection() {
                     for (const k of Object.keys(nextLoading)) delete cleaned[k];
                     return cleaned;
                 });
+                // Re-evaluate pending models now that fetched models may be available.
+                const pending = pendingAddedModelsRef.current;
+                if (pending.length > 0) {
+                    const pendingSet = new Set(pending);
+                    const found = availableModelsFromTeamCtx.some((m: any) => pendingSet.has(m.value));
+                    if (found) {
+                        // Models are now present — rerun the selection effect by bumping state.
+                        setPendingAddedModels([...pending]);
+                    }
+                }
             }
         };
         fetchMissing();
@@ -108,19 +128,21 @@ export function useModelSelection() {
     const availableModelsFromTeamCtx = useMemo(() => {
         const models: any[] = [];
         for (const prov of ctxProviders) {
-            const providerName = prov.name;
+            const pKey = providerKey(prov);
+            if (!pKey) continue;
             const baseModel = prov.model;
             const allowedModels = Array.isArray(prov.models) ? prov.models : [];
             const seen = new Set<string>();
             if (baseModel && !seen.has(baseModel)) {
                 seen.add(baseModel);
-                models.push({ value: baseModel, display_name: `${baseModel} | ${providerName}`, provider: providerName });
+                models.push({ value: baseModel, display_name: `${baseModel} | ${pKey}`, provider: pKey });
             }
-            const effectiveModels = allowedModels.length > 0 ? allowedModels : (fetchedProviderModels[providerName] || []);
+            const fetched = fetchedProviderModels[pKey] || [];
+            const effectiveModels = allowedModels.length > 0 ? allowedModels : fetched;
             for (const m of effectiveModels) {
                 if (!seen.has(m)) {
                     seen.add(m);
-                    models.push({ value: m, display_name: `${m} | ${providerName}`, provider: providerName });
+                    models.push({ value: m, display_name: `${m} | ${pKey}`, provider: pKey });
                 }
             }
         }
@@ -138,18 +160,33 @@ export function useModelSelection() {
 
     useEffect(() => {
         if (effectiveAvailableModels.length === 0) {
-            if (!currentNPC || availableNPCs.length === 0) {
-                setCurrentModel(null);
-                setCurrentProvider(null);
-                setModelWarning(null);
-            } else {
-                setCurrentModel(null);
-                setCurrentProvider(null);
-                setModelWarning(
-                    currentNpcObject
-                        ? `NPC "${currentNpcObject.name}" has no model configured. Set a model on the NPC or a team-wide default in the .ctx file.`
+            // If team providers are configured but their models are still being fetched,
+            // keep the pending selection alive and don't wipe the current model yet.
+            const stillFetching = ctxProviders.length > 0 && ctxProviders.some((prov: any) => {
+                const pKey = providerKey(prov);
+                const allowedModels = Array.isArray(prov.models) ? prov.models : [];
+                if (allowedModels.length > 0) return false;
+                return fetchedProviderModels[pKey] === undefined || providerFetchLoading[pKey];
+            });
+            if (ctxProviders.length === 0 && pendingAddedModels.length > 0) {
+                setPendingAddedModels([]);
+            }
+            if (ctxProviders.length === 0 && !stillFetching) {
+                if (!currentNPC || availableNPCs.length === 0) {
+                    setCurrentModel(null);
+                    setCurrentProvider(null);
+                    setModelWarning(null);
+                } else {
+                    setCurrentModel(null);
+                    setCurrentProvider(null);
+                    setModelWarning(
+                        currentNpcObject
+                            ? `NPC "${currentNpcObject.name}" has no model configured. Set a model on the NPC or a team-wide default in the .ctx file.`
                         : `NPC "${currentNPC}" not found in loaded teams.`
-                );
+                    );
+                }
+            } else if (pendingAddedModels.length > 0 && stillFetching) {
+                // Don't return early; a subsequent run will match pending against fetched models.
             }
             return;
         }
@@ -159,18 +196,43 @@ export function useModelSelection() {
 
         let desiredModel: string | null = null;
         let desiredProvider: string | null = null;
+        let desiredSelectedModels: string[] | null = null;
 
-        if (isValid(currentModel)) {
-            desiredModel = currentModel;
-            desiredProvider = providerFor(currentModel) || currentProvider;
-        } else {
-            try {
-                const globalLast = JSON.parse(localStorage.getItem('incognideLastModel') || 'null');
-                if (isValid(globalLast)) {
-                    desiredModel = globalLast;
-                    desiredProvider = providerFor(globalLast);
+        if (pendingAddedModels.length > 0) {
+            const validPending = pendingAddedModels.filter(isValid);
+            if (validPending.length > 0) {
+                desiredModel = validPending[0];
+                desiredProvider = providerFor(desiredModel);
+                desiredSelectedModels = [desiredModel];
+            } else if (effectiveAvailableModels.length > 0) {
+                // Pending models don't match; fall back to first newly available model if
+                // the current model isn't valid either, to avoid getting stuck on a stale
+                // selection.
+                if (!isValid(currentModel)) {
+                    const first = effectiveAvailableModels[0];
+                    desiredModel = first.value;
+                    desiredProvider = first.provider;
                 }
-            } catch {}
+            }
+            // Defer clearing pending until we are actually matching or have given up.
+            if (desiredModel || effectiveAvailableModels.length > 0) {
+                setPendingAddedModels([]);
+            }
+        }
+
+        if (!desiredModel) {
+            if (isValid(currentModel)) {
+                desiredModel = currentModel;
+                desiredProvider = providerFor(currentModel) || currentProvider;
+            } else {
+                try {
+                    const globalLast = JSON.parse(localStorage.getItem('incognideLastModel') || 'null');
+                    if (isValid(globalLast)) {
+                        desiredModel = globalLast;
+                        desiredProvider = providerFor(globalLast);
+                    }
+                } catch {}
+            }
         }
 
         if (!desiredModel) {
@@ -184,7 +246,10 @@ export function useModelSelection() {
             setCurrentProvider(desiredProvider);
             setModelWarning(null);
         }
-    }, [effectiveAvailableModels, currentNPC, availableNPCs, currentNpcObject, currentModel, currentProvider]);
+        if (desiredSelectedModels) {
+            setSelectedModels(desiredSelectedModels);
+        }
+    }, [effectiveAvailableModels, currentNPC, availableNPCs, currentNpcObject, currentModel, currentProvider, pendingAddedModels, ctxProviders, fetchedProviderModels, providerFetchLoading, availableModels]);
 
     useEffect(() => {
         try {
@@ -199,6 +264,9 @@ export function useModelSelection() {
             return;
         }
         setSelectedModels(prev => {
+            if (prev.length === 0) {
+                return currentModel ? [currentModel] : [];
+            }
             const valid = prev.filter((v: string) => effectiveAvailableModels.some((m: any) => m.value === v));
             if (valid.length === 0) {
                 return currentModel ? [currentModel] : [];
@@ -217,14 +285,18 @@ export function useModelSelection() {
     useEffect(() => {
         if (!broadcastMode) {
             setSelectedModels(prev => {
-                const next = currentModel ? [currentModel] : [];
-                if (prev.length === next.length && prev.every((v, i) => v === next[i])) {
-                    return prev;
+                if (prev.length === 0) {
+                    return currentModel ? [currentModel] : [];
                 }
-                return next;
+                const valid = prev.filter((v: string) => effectiveAvailableModels.some((m: any) => m.value === v));
+                if (valid.length === 0) {
+                    return currentModel ? [currentModel] : [];
+                }
+                if (valid.length === prev.length) return prev;
+                return valid;
             });
         }
-    }, [currentModel, broadcastMode]);
+    }, [currentModel, broadcastMode, effectiveAvailableModels]);
 
     useEffect(() => {
         if (!broadcastMode) {
@@ -301,5 +373,7 @@ export function useModelSelection() {
         setTeamConfigs,
         modelWarning,
         setModelWarning,
+        pendingAddedModels,
+        setPendingAddedModels,
     };
 }

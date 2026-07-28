@@ -406,6 +406,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         favoriteModels, setFavoriteModels, showAllModels, setShowAllModels,
         toggleFavoriteModel, modelsToDisplay,
         teamConfigs, setTeamConfigs, modelWarning, setModelWarning,
+        pendingAddedModels, setPendingAddedModels,
     } = useModelSelection();
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(true);
@@ -7194,6 +7195,7 @@ const getChatInputProps = useCallback((paneId: string) => {
     showAllModels, setShowAllModels, modelsToDisplay, ollamaToolModels, setError,
     modelWarning,
     availableNPCs, setAvailableNPCs, npcsLoading, setNpcsLoading, npcsError, setNpcsError, setTeamConfigs,
+    setPendingAddedModels,
     currentNPC, setCurrentNPC: (v: any) => { setCurrentNPC(v); notifyUpdate(); },
 
     selectedModels,
@@ -7394,7 +7396,7 @@ const getChatInputProps = useCallback((paneId: string) => {
     availableModels, modelsLoading, modelsError, currentModel, currentProvider,
     favoriteModels, showAllModels, modelsToDisplay, ollamaToolModels,
     modelWarning,
-    availableNPCs, setAvailableNPCs, npcsLoading, setNpcsLoading, npcsError, setNpcsError, setTeamConfigs, currentNPC,
+    availableNPCs, setAvailableNPCs, npcsLoading, setNpcsLoading, npcsError, setNpcsError, setTeamConfigs, setPendingAddedModels, currentNPC,
     selectedModels, setSelectedModels, selectedNPCs, setSelectedNPCs,
     broadcastMode, setBroadcastMode,
     availableMcpServers, enabledMcpServers, selectedMcpTools, availableMcpTools,

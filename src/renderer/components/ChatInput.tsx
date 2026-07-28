@@ -1,4 +1,4 @@
-import { getFileName, loadAvailableNPCs } from './utils';
+import { getFileName, loadAvailableNPCs, loadTeamCtxFromPath, findProviderForModelFromCtx } from './utils';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { BACKEND_URL } from '../config';
 import {
@@ -104,6 +104,7 @@ interface ChatInputProps {
     npcsError: any;
     setNpcsError?: (error: string | null) => void;
     setTeamConfigs?: (configs: Record<string, any>) => void;
+    setPendingAddedModels?: (models: string[]) => void;
     currentNPC: string;
     setCurrentNPC: (val: string) => void;
 
@@ -143,7 +144,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         showAllModels, setShowAllModels, modelsToDisplay, ollamaToolModels, setError,
         modelWarning,
         currentNPC, setCurrentNPC,
-        availableNPCs, setAvailableNPCs, npcsLoading, setNpcsLoading, npcsError, setNpcsError, setTeamConfigs,
+        availableNPCs, setAvailableNPCs, npcsLoading, setNpcsLoading, npcsError, setNpcsError, setTeamConfigs, setPendingAddedModels,
         selectedModels, setSelectedModels, selectedNPCs, setSelectedNPCs,
         broadcastMode, setBroadcastMode,
         availableMcpServers,
@@ -1326,36 +1327,34 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                 loading={modelsLoading}
                                 error={modelsError}
                                 teamPathForCtx={currentNpcTeamPath}
-                                onModelsChanged={(addedModelValue) => {
+                                onModelsChanged={async (addedModelValue) => {
                                     if (!currentPath) return;
-                                    (async () => {
-                                        try {
-                                            const result = await loadAvailableNPCs(
+                                    try {
+                                        const modelValues = (addedModelValue || '').split('\n').filter(Boolean);
+                                        const [npcsResult, freshCtx] = await Promise.all([
+                                            loadAvailableNPCs(
                                                 currentPath,
                                                 setNpcsLoading || (() => {}),
                                                 setNpcsError || (() => {}),
                                                 setAvailableNPCs || (() => {})
-                                            );
-                                            if (result?.teamConfigs && setTeamConfigs) {
-                                                setTeamConfigs(result.teamConfigs);
-                                            }
-                                            if (addedModelValue) {
-                                                const entries = addedModelValue.split('\n').filter(Boolean);
-                                                const parsed = entries.map((entry) => {
-                                                    const slashIdx = entry.indexOf('/');
-                                                    return {
-                                                        providerName: slashIdx > 0 ? entry.slice(0, slashIdx) : null,
-                                                        modelName: slashIdx >= 0 ? entry.slice(slashIdx + 1) : entry,
-                                                    };
-                                                });
-                                                const modelValues = parsed.map((p) => p.modelName);
-                                                const first = parsed[0];
-                                                setCurrentModel(first.modelName);
-                                                setCurrentProvider(first.providerName || currentProvider);
-                                                setSelectedModels(modelValues);
-                                            }
-                                        } catch {}
-                                    })();
+                                            ),
+                                            currentNpcTeamPath ? loadTeamCtxFromPath(currentNpcTeamPath) : Promise.resolve(null),
+                                        ]);
+                                        if (npcsResult?.teamConfigs && setTeamConfigs) {
+                                            setTeamConfigs(npcsResult.teamConfigs);
+                                        }
+                                        if (freshCtx && currentNpcTeamKey && setTeamConfigs) {
+                                            setTeamConfigs(prev => ({ ...prev, [currentNpcTeamKey]: freshCtx }));
+                                        }
+                                        if (modelValues.length > 0) {
+                                            const first = modelValues[0];
+                                            const provider = freshCtx ? findProviderForModelFromCtx(freshCtx, first) : (currentProvider || null);
+                                            setCurrentModel?.(first);
+                                            if (provider) setCurrentProvider?.(provider);
+                                            setSelectedModels?.([first]);
+                                            setPendingAddedModels?.(modelValues);
+                                        }
+                                    } catch {}
                                 }}
                                 placement="top"
                                 className="w-full h-7 justify-center text-xs px-2 max-w-none"
