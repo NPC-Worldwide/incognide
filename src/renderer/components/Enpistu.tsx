@@ -406,6 +406,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         favoriteModels, setFavoriteModels, showAllModels, setShowAllModels,
         toggleFavoriteModel, modelsToDisplay,
         teamConfigs, setTeamConfigs, modelWarning, setModelWarning,
+        pendingAddedModels, setPendingAddedModels,
     } = useModelSelection();
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(true);
@@ -6200,6 +6201,11 @@ const handleBrowserDialogNavigate = (url) => {
                         const validNpc = fetchedNPCs.find((n: any) => n.value === lastUsedInConvo.npc);
                         if (validNpc) npcToSet = validNpc.value;
                     }
+                    if (lastUsedInConvo?.model) {
+                        setCurrentModel(lastUsedInConvo.model);
+                        if (lastUsedInConvo?.provider) setCurrentProvider(lastUsedInConvo.provider);
+                        setSelectedModels([lastUsedInConvo.model]);
+                    }
                 } else {
                     localStorage.removeItem(LAST_ACTIVE_CONVO_ID_KEY);
                 }
@@ -6210,6 +6216,11 @@ const handleBrowserDialogNavigate = (url) => {
                 if (lastUsedInDir?.npc) {
                     const validNpc = fetchedNPCs.find((n: any) => n.value === lastUsedInDir.npc);
                     if (validNpc) npcToSet = validNpc.value;
+                }
+                if (lastUsedInDir?.model) {
+                    setCurrentModel(lastUsedInDir.model);
+                    if (lastUsedInDir?.provider) setCurrentProvider(lastUsedInDir.provider);
+                    setSelectedModels([lastUsedInDir.model]);
                 }
             }
 
@@ -7183,7 +7194,8 @@ const getChatInputProps = useCallback((paneId: string) => {
     favoriteModels, toggleFavoriteModel,
     showAllModels, setShowAllModels, modelsToDisplay, ollamaToolModels, setError,
     modelWarning,
-    availableNPCs, npcsLoading, npcsError,
+    availableNPCs, setAvailableNPCs, npcsLoading, setNpcsLoading, npcsError, setNpcsError, setTeamConfigs,
+    setPendingAddedModels,
     currentNPC, setCurrentNPC: (v: any) => { setCurrentNPC(v); notifyUpdate(); },
 
     selectedModels,
@@ -7384,7 +7396,7 @@ const getChatInputProps = useCallback((paneId: string) => {
     availableModels, modelsLoading, modelsError, currentModel, currentProvider,
     favoriteModels, showAllModels, modelsToDisplay, ollamaToolModels,
     modelWarning,
-    availableNPCs, npcsLoading, npcsError, currentNPC,
+    availableNPCs, setAvailableNPCs, npcsLoading, setNpcsLoading, npcsError, setNpcsError, setTeamConfigs, setPendingAddedModels, currentNPC,
     selectedModels, setSelectedModels, selectedNPCs, setSelectedNPCs,
     broadcastMode, setBroadcastMode,
     availableMcpServers, enabledMcpServers, selectedMcpTools, availableMcpTools,
@@ -7596,8 +7608,8 @@ const handleConversationSelect = async (conversationId: string, skipMessageLoad 
     if (paneIdToUpdate && !skipMessageLoad) {
         const paneData = contentDataRef.current[paneIdToUpdate];
         const allMsgs = paneData?.chatMessages?.allMessages;
+        let modelSetFromMessages = false;
         if (allMsgs && allMsgs.length > 0) {
-
             for (let i = allMsgs.length - 1; i >= 0; i--) {
                 const msg = allMsgs[i];
                 if (msg.role === 'assistant') {
@@ -7609,10 +7621,21 @@ const handleConversationSelect = async (conversationId: string, skipMessageLoad 
                         setCurrentModel(msg.model);
                         setSelectedModels([msg.model]);
                         if (msg.provider) setCurrentProvider(msg.provider);
+                        modelSetFromMessages = true;
                     }
                     break;
                 }
             }
+        }
+        if (!modelSetFromMessages) {
+            try {
+                const lastUsedInConvo = await window.api.getLastUsedInConversation(conversationId);
+                if (lastUsedInConvo?.model) {
+                    setCurrentModel(lastUsedInConvo.model);
+                    setSelectedModels([lastUsedInConvo.model]);
+                    if (lastUsedInConvo?.provider) setCurrentProvider(lastUsedInConvo.provider);
+                }
+            } catch {}
         }
     }
 

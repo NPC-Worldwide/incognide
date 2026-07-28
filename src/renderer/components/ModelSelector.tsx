@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronRight, Cpu, Plus, X, RefreshCw, Star, ListFilter } from 'lucide-react';
+import { ChevronRight, Cpu, Plus, X, RefreshCw, Star, ListFilter, Trash2 } from 'lucide-react';
 import yaml from 'js-yaml';
 import { API_PROVIDER_META } from './ModelManager';
 
@@ -22,6 +22,14 @@ const modelLabel = (m?: ModelItem, fallback?: string) => {
     return withoutProvider;
 };
 
+const providerKey = (prov?: any) => prov?.provider || prov?.provider_type || prov?.name || '';
+
+const providerLabel = (prov?: any) => {
+    const key = providerKey(prov);
+    const meta = key ? API_PROVIDER_META[key as keyof typeof API_PROVIDER_META] : undefined;
+    return (meta as any)?.name || prov?.displayName || prov?.name || key || 'Provider';
+};
+
 interface ModelSelectorProps {
     availableModels: ModelItem[];
     selectedModel?: string | null;
@@ -37,7 +45,7 @@ interface ModelSelectorProps {
     teamCtxProviders?: any[];
     placement?: 'bottom' | 'top';
     className?: string;
-    onModelsChanged?: () => void;
+    onModelsChanged?: (addedModelValue?: string) => void;
     allowAdd?: boolean;
     toolbar?: React.ReactNode;
     favoriteModels?: Set<string>;
@@ -56,6 +64,42 @@ const findCtxFile = async (dirPath: string) => {
         if (ctxFiles.length > 0) return ctxFiles[0].name;
     } catch {}
     return null;
+};
+
+export const removeProviderFromTeamCtx = async (teamPath: string, providerName: string) => {
+    if (!teamPath) throw new Error('No team path available.');
+    const ctxFile = await findCtxFile(teamPath);
+    const targetFile = ctxFile || 'team.ctx';
+    const filePath = `${teamPath}/${targetFile}`;
+
+    let rawCtx: string | null = null;
+    try {
+        const result = await (window as any).api.readFileContent(filePath);
+        rawCtx = typeof result === 'string' ? result : result?.content;
+    } catch {}
+
+    let ctx: any = {};
+    if (rawCtx) {
+        try {
+            ctx = yaml.load(preprocessJinja(rawCtx)) || {};
+        } catch {
+            ctx = {};
+        }
+    }
+
+    const providers: any[] = Array.isArray(ctx.providers) ? [...ctx.providers] : [];
+    const filtered = providers.filter((p: any) => p.name !== providerName && p.provider_type !== providerName);
+    if (filtered.length === providers.length) {
+        throw new Error(`Provider "${providerName}" not found in team .ctx.`);
+    }
+
+    const cleanCtx = { ...ctx, providers: filtered };
+    delete cleanCtx.external_jinx_teams;
+    delete cleanCtx.EXTERNAL_JINX_TEAMS;
+
+    const result = await (window as any).api.writeFileContent(filePath, yaml.dump(cleanCtx, { lineWidth: -1 }));
+    if (result?.error) throw new Error(result.error);
+    return { filePath, targetFile };
 };
 
 export const saveProviderToTeamCtx = async (
@@ -85,17 +129,27 @@ export const saveProviderToTeamCtx = async (
     }
 
     const providers: any[] = Array.isArray(ctx.providers) ? [...ctx.providers] : [];
-    const existing = providers.find((p: any) => p.name === providerName);
+    const existing = providers.find((p: any) => {
+        const pType = options?.providerType || providerName;
+        return p.name === providerName || p.provider_type === pType;
+    });
     const newEntry: any = {
         name: providerName,
         provider_type: options?.providerType || providerName,
         ...(options?.apiUrl ? { api_url: options.apiUrl } : {}),
         ...(options?.apiKey ? { api_key: options.apiKey } : {}),
     };
-    if (Array.isArray(models) && models.length > 0) {
+    if (models === null) {
+        // null means "all discovered models" — store an empty explicit list so the team
+        // falls back to live provider fetching instead of a fixed subset.
+        newEntry.models = [];
+    } else if (Array.isArray(models) && models.length > 0) {
         const existingModels = new Set(existing?.models || []);
         models.forEach((m) => existingModels.add(m));
         newEntry.models = Array.from(existingModels);
+    }
+    if (!newEntry.models && existing?.models) {
+        newEntry.models = existing.models;
     }
 
     if (!existing) {
@@ -131,6 +185,8 @@ export const ModelSelectorDropdown = ({
     toolbar,
     favoriteModels,
     onToggleFavorite,
+    teamPathForCtx,
+    onRemoveProvider,
     children,
 }: any) => {
     const [pos, setPos] = useState<{ top?: number; left?: number; bottom?: number } | null>(null);
@@ -209,22 +265,38 @@ export const ModelSelectorDropdown = ({
                             const meta = API_PROVIDER_META[provider];
                             const isExpanded = expandedModelProviders.has(provider) || !!modelDropdownSearch;
                             items.push(
-                                <button
+                                <div
                                     key={`provider-${provider}`}
-                                    onClick={() => setExpandedModelProviders((prev: Set<string>) => {
-                                        const next = new Set(prev);
-                                        if (next.has(provider)) next.delete(provider); else next.add(provider);
-                                        return next;
-                                    })}
-                                    className="flex items-center gap-1 w-full px-2 py-1 text-xs font-semibold text-gray-400 hover:bg-white/5 text-left"
+                                    className="group flex items-center justify-between w-full px-2 py-1 text-xs font-semibold text-gray-400 hover:bg-white/5"
                                 >
-                                    <ChevronRight size={10} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                                    {meta ? (
-                                        <span className={`${meta.color}`}>{meta.name}</span>
-                                    ) : (
-                                        <span>{provider}</span>
+                                    <button
+                                        onClick={() => setExpandedModelProviders((prev: Set<string>) => {
+                                            const next = new Set(prev);
+                                            if (next.has(provider)) next.delete(provider); else next.add(provider);
+                                            return next;
+                                        })}
+                                        className="flex items-center gap-1 text-left"
+                                    >
+                                        <ChevronRight size={10} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                        {meta ? (
+                                            <span className={`${meta.color}`}>{meta.name}</span>
+                                        ) : (
+                                            <span>{provider}</span>
+                                        )}
+                                    </button>
+                                    {teamPathForCtx && onRemoveProvider && (
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onRemoveProvider(provider);
+                                            }}
+                                            className="p-0.5 rounded text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors"
+                                            title={`Remove ${meta?.name || provider} provider from team .ctx`}
+                                        >
+                                            <Trash2 size={12} />
+                                        </button>
                                     )}
-                                </button>
+                                </div>
                             );
                             if (isExpanded) {
                                 for (const m of byProvider[provider]) {
@@ -344,7 +416,7 @@ export const AddProviderPanel = ({
     }, []);
 
     const ctxProviderNames = useMemo(() => {
-        return new Set(teamCtxProviders.map((p: any) => p.name || p.provider));
+        return new Set(teamCtxProviders.map((p: any) => providerKey(p)).filter(Boolean));
     }, [teamCtxProviders]);
 
     const extraDetectedProviders = useMemo(() => {
@@ -355,8 +427,8 @@ export const AddProviderPanel = ({
     }, [detectedProviders, ctxProviderNames]);
 
     const openProviderModelSelector = async (prov: any) => {
-        const providerName = prov.name || prov.displayName || prov.provider;
-        const providerTypeVal = prov.provider || providerName;
+        const pName = providerKey(prov);
+        const providerTypeVal = pName;
         const existingModels = Array.isArray(prov.models) ? prov.models : [];
         setProviderModelSelector({ provider: prov, models: [], selected: new Set(), loading: true, error: null });
         try {
@@ -393,17 +465,17 @@ export const AddProviderPanel = ({
     const handleSaveSelectedProviderModels = async () => {
         if (!providerModelSelector || providerModelSelector.selected.size === 0) return;
         const prov = providerModelSelector.provider;
-        const providerName = prov.name || prov.displayName || prov.provider;
-        const providerTypeVal = prov.provider || providerName;
+        const pName = providerKey(prov);
+        const providerTypeVal = pName;
         setSaving(true);
         setError(null);
         try {
-            const allSelected = providerModelSelector.selected.size === providerModelSelector.models.length && providerModelSelector.models.length > 0;
-            await saveProviderToTeamCtx(teamPath, providerName, allSelected ? null : Array.from(providerModelSelector.selected), {
+            const selectedModels = Array.from(providerModelSelector.selected);
+            const allSelected = selectedModels.length === providerModelSelector.models.length && providerModelSelector.models.length > 0;
+            await saveProviderToTeamCtx(teamPath, pName, allSelected ? null : selectedModels, {
                 providerType: providerTypeVal,
             });
-            const first = allSelected ? providerModelSelector.models[0] : Array.from(providerModelSelector.selected)[0];
-            onAdded(`${providerName}/${first}`);
+            onAdded(selectedModels.join('\n'));
         } catch (err: any) {
             setError(err.message || 'Failed to save models.');
         } finally {
@@ -420,18 +492,26 @@ export const AddProviderPanel = ({
         }
         setSaving(true);
         setError(null);
+        const detectedMatch = detectedProviders.find(
+            (d: any) =>
+                d.provider?.toLowerCase() === pName.toLowerCase() ||
+                d.displayName?.toLowerCase() === pName.toLowerCase() ||
+                d.name?.toLowerCase() === pName.toLowerCase()
+        );
+        const saveName = (detectedMatch?.provider || pName).replace(/\s+/g, '').toLowerCase();
+        const resolvedType = (detectedMatch?.provider || providerType.trim() || pName).replace(/\s+/g, '').toLowerCase();
         try {
-            await saveProviderToTeamCtx(teamPath, pName, [mName], {
+            await saveProviderToTeamCtx(teamPath, saveName, [mName], {
                 apiUrl: apiUrl.trim() || undefined,
                 apiKey: apiKey.trim() || undefined,
-                providerType: providerType.trim() || pName,
+                providerType: resolvedType,
             });
             setModelName('');
             setProviderName('');
             setProviderType('');
             setApiUrl('');
             setApiKey('');
-            onAdded(`${pName}/${mName}`);
+            onAdded(mName);
         } catch (err: any) {
             setError(err.message || 'Failed to save model.');
         } finally {
@@ -494,7 +574,7 @@ export const AddProviderPanel = ({
                 <div className="space-y-2">
                     <div className="flex items-center justify-between">
                         <span className="text-[10px] font-medium text-blue-300">
-                            {providerModelSelector.loading ? 'Loading models...' : `Select models for ${providerModelSelector.provider?.name || providerModelSelector.provider?.displayName || providerModelSelector.provider?.provider}`}
+                            {providerModelSelector.loading ? 'Loading models...' : `Select models for ${providerLabel(providerModelSelector.provider)}`}
                         </span>
                         <button onClick={() => setProviderModelSelector(null)} className="text-gray-500 hover:text-gray-300"><X size={12} /></button>
                     </div>
@@ -549,16 +629,39 @@ export const AddProviderPanel = ({
                     {teamCtxProviders.length > 0 && (
                         <div className="flex flex-wrap gap-1">
                             {teamCtxProviders.map((prov: any, idx: number) => {
-                                const providerName = prov.name || prov.displayName || prov.provider || `Provider ${idx + 1}`;
+                                const pKey = providerKey(prov);
+                                const pLabel = providerLabel(prov);
                                 return (
-                                    <button
-                                        key={`ctx-${providerName}-${idx}`}
-                                        onClick={() => openProviderModelSelector(prov)}
-                                        disabled={saving}
-                                        className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-blue-300 hover:bg-blue-500/20 transition-colors disabled:opacity-50"
-                                    >
-                                        + {providerName}
-                                    </button>
+                                    <div key={`ctx-${pKey || idx}-${idx}`} className="flex items-center gap-1">
+                                        <button
+                                            onClick={() => openProviderModelSelector(prov)}
+                                            disabled={saving}
+                                            className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-blue-300 hover:bg-blue-500/20 transition-colors disabled:opacity-50"
+                                        >
+                                            + {pLabel}
+                                        </button>
+                                        <button
+                                            onClick={async () => {
+                                                if (!teamPath || !pKey) return;
+                                                setSaving(true);
+                                                setError(null);
+                                                try {
+                                                    await removeProviderFromTeamCtx(teamPath, pKey);
+                                                    onAdded();
+                                                } catch (err: any) {
+                                                    setError(err.message || 'Failed to remove provider.');
+                                                } finally {
+                                                    setSaving(false);
+                                                }
+                                            }}
+                                            disabled={saving}
+                                            className="flex items-center gap-0.5 text-[9px] px-1 py-0.5 rounded bg-red-500/15 text-red-300 hover:text-white hover:bg-red-500/40 transition-colors disabled:opacity-50"
+                                            title={`Remove ${pLabel} provider from team .ctx`}
+                                        >
+                                            <Trash2 size={12} />
+                                            <span>Remove</span>
+                                        </button>
+                                    </div>
                                 );
                             })}
                         </div>
@@ -568,15 +671,16 @@ export const AddProviderPanel = ({
                             <div className="text-[10px] text-gray-400">Detected API keys in env — click to add to .ctx:</div>
                             <div className="flex flex-wrap gap-1">
                                 {extraDetectedProviders.map((prov: any, idx: number) => {
-                                    const providerName = prov.displayName || prov.name || prov.provider || `Provider ${idx + 1}`;
+                                    const pKey = providerKey(prov);
+                                    const pLabel = providerLabel(prov);
                                     return (
                                         <button
-                                            key={`env-${providerName}-${idx}`}
+                                            key={`env-${pKey || idx}-${idx}`}
                                             onClick={() => openProviderModelSelector(prov)}
                                             disabled={saving}
                                             className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-emerald-300 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
                                         >
-                                            + {providerName}
+                                            + {pLabel}
                                         </button>
                                     );
                                 })}
@@ -682,33 +786,32 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
     const handleAdded = async (modelValue?: string) => {
         setShowAddPanel(false);
-        onModelsChanged?.();
-        if (!modelValue || !teamPathForCtx) return;
+        setDropdownOpen(false);
+        setSearch('');
+        onModelsChanged?.(modelValue);
+    };
+
+    const handleRemoveProvider = async (providerName: string) => {
+        if (!teamPathForCtx || !providerName) return;
         try {
-            const response = await (window as any).api.getAvailableModels(teamPathForCtx);
-            const models = Array.isArray(response) ? response : response?.models || [];
-            const found = models.find((m: ModelItem) => m.value === modelValue);
-            if (found) {
-                if (multiSelect) {
-                    handleSelectModels([...(selectedModels || []), found.value]);
-                } else {
-                    handleSelect(found);
-                }
-            }
-        } catch {}
+            await removeProviderFromTeamCtx(teamPathForCtx, providerName);
+            onModelsChanged?.();
+        } catch (err: any) {
+            // eslint-disable-next-line no-console
+            console.error('Failed to remove provider:', err);
+        }
     };
 
     return (
-        <div className="inline-block">
+        <div className="w-full">
             <button
                 ref={buttonRef}
                 type="button"
                 onClick={() => setDropdownOpen(!dropdownOpen)}
                 disabled={disabled || loading || !!error}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm theme-bg-secondary theme-text-primary theme-border border hover:bg-white/5 disabled:opacity-40 min-w-[200px] w-auto max-w-[25vw] ${className}`}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm theme-bg-secondary theme-text-primary theme-border border hover:bg-white/5 disabled:opacity-40 w-full ${className}`}
             >
-                <Cpu size={14} className="text-purple-400" />
-                <span className="flex-1 truncate text-left">{buttonLabel}</span>
+                <span className="flex-1 truncate text-center">{buttonLabel}</span>
                 <ChevronRight
                     size={12}
                     className={`transition-transform flex-shrink-0 ${dropdownOpen ? 'rotate-90' : ''}`}
@@ -732,6 +835,8 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                     toolbar={toolbar}
                     favoriteModels={favoriteModels}
                     onToggleFavorite={onToggleFavorite}
+                    teamPathForCtx={teamPathForCtx}
+                    onRemoveProvider={handleRemoveProvider}
                 >
                     {allowAdd && teamPathForCtx ? (
                         <div className="border-t theme-border p-1.5">

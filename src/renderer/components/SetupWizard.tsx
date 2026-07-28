@@ -182,6 +182,14 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                         await (window as any).api?.saveGlobalSetting?.(key, value.trim());
                     }
                 }
+                // Restart the backend so the Python process inherits the new API keys
+                // from process.env. Model discovery and chat completions need the keys
+                // inside the backend's environment.
+                try {
+                    await (window as any).api?.setupRestartBackend?.();
+                } catch (err) {
+                    console.error('Backend restart after saving API keys failed:', err);
+                }
             }
 
             try {

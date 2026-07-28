@@ -2619,6 +2619,80 @@ function register(ctx) {
     backend_python_path: '',
   };
 
+
+  ipcMain.handle('getGlobalSetting', async (event, key) => {
+    try {
+      const rcPath = path.join(os.homedir(), '.incogniderc');
+      try {
+        const content = await fsPromises.readFile(rcPath, 'utf8');
+        for (const line of content.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          const stripped = trimmed.replace(/^export\s+/, '');
+          const eqIdx = stripped.indexOf('=');
+          if (eqIdx === -1) continue;
+          const envKey = stripped.slice(0, eqIdx).trim();
+          if (envKey !== key) continue;
+          let value = stripped.slice(eqIdx + 1).trim();
+          if ((value.startsWith('"') && value.endsWith('"')) ||
+              (value.startsWith("'") && value.endsWith("'"))) {
+            value = value.slice(1, -1);
+          }
+          return value;
+        }
+      } catch {}
+      return null;
+    } catch (err) {
+      console.error('Error getting global setting:', err);
+      return null;
+    }
+  });
+
+  ipcMain.handle('saveGlobalSetting', async (event, key, value) => {
+    try {
+      const rcPath = path.join(os.homedir(), '.incogniderc');
+      let existing = {};
+      try {
+        const content = await fsPromises.readFile(rcPath, 'utf8');
+        for (const line of content.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          const stripped = trimmed.replace(/^export\s+/, '');
+          const eqIdx = stripped.indexOf('=');
+          if (eqIdx === -1) continue;
+          const envKey = stripped.slice(0, eqIdx).trim();
+          let val = stripped.slice(eqIdx + 1).trim();
+          if ((val.startsWith('"') && val.endsWith('"')) ||
+              (val.startsWith("'") && val.endsWith("'"))) {
+            val = val.slice(1, -1);
+          }
+          existing[envKey] = val;
+        }
+      } catch {}
+
+      if (value === '' || value === null || value === undefined) {
+        delete existing[key];
+      } else {
+        existing[key] = String(value);
+      }
+
+      const lines = Object.entries(existing).map(([k, v]) => `export ${k}=${JSON.stringify(v)}`);
+      await fsPromises.writeFile(rcPath, lines.join('\n') + '\n');
+
+      // Also set in process.env so backend Python process can see it
+      if (value !== '' && value !== null && value !== undefined) {
+        process.env[key] = String(value);
+      } else {
+        delete process.env[key];
+      }
+
+      return { success: true };
+    } catch (err) {
+      console.error('Error saving global setting:', err);
+      return { success: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('saveGlobalSettings', async (event, { global_settings, global_vars }) => {
     try {
         const rcPath = path.join(os.homedir(), '.incogniderc');
@@ -2680,8 +2754,17 @@ function register(ctx) {
             await fsPromises.mkdir(INCOGNIDE_HOME, { recursive: true });
         }
 
-        const lines = Object.entries(existing).map(([k, v]) => `export ${k}=${v}`);
+        const lines = Object.entries(existing).map(([k, v]) => `export ${k}=${JSON.stringify(v)}`);
         await fsPromises.writeFile(rcPath, lines.join('\n') + '\n');
+
+        // Propagate API keys to process.env so the backend Python process can see them
+        const API_KEY_RE = /^(OPENROUTER|OPENAI|ANTHROPIC|DEEPSEEK|GROQ|MISTRAL|XAI|GEMINI|PERPLEXITY|TOGETHER|FIREWORKS|CEREBRAS|AI21|AZURE|COHERE|NEBIUS|SAMBANOVA|NOVITA|HYPERBOLIC|MOONSHOT|MINIMAX|CLOUDFLARE|NVIDIA_NIM|WATSONX|VERTEX_AI|BEDROCK|REPLICATE)_API_KEY$/i;
+        for (const [k, v] of Object.entries(existing)) {
+            if (API_KEY_RE.test(k)) {
+                if (v) process.env[k] = v;
+                else delete process.env[k];
+            }
+        }
 
         const newActivityEnabled = global_settings?.is_activity_intelligence_enabled === true;
         const newBaseRepo = global_settings?.activity_base_repo_id || '';

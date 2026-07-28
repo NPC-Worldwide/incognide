@@ -799,6 +799,8 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
 
     loadGlobalSettings: () => ipcRenderer.invoke('loadGlobalSettings'),
     saveGlobalSettings: (args) => ipcRenderer.invoke('saveGlobalSettings', args),
+    getGlobalSetting: (key) => ipcRenderer.invoke('getGlobalSetting', key),
+    saveGlobalSetting: (key, value) => ipcRenderer.invoke('saveGlobalSetting', key, value),
     loadProjectSettings: (path) => ipcRenderer.invoke('loadProjectSettings', path),
     saveProjectSettings: (args) => ipcRenderer.invoke('saveProjectSettings', args),
 

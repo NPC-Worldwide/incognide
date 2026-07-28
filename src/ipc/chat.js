@@ -411,12 +411,41 @@ function register(ctx) {
     return registeredTeams;
   }
 
-  ipcMain.handle('get-provider-models', async (event, { provider }) => {
+  ipcMain.handle('get-provider-models', async (event, { provider, baseUrl, apiKeyVar }) => {
+    const normalizedProvider = (provider || '').toLowerCase();
+
+    // For OpenRouter, fetch directly from their API for freshest model list
+    if (normalizedProvider === 'openrouter') {
+      try {
+        const apiKey = apiKeyVar ? (process.env[apiKeyVar] || '') : (process.env.OPENROUTER_API_KEY || '');
+        const headers = {};
+        if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+        const res = await fetch('https://openrouter.ai/api/v1/models', {
+          headers,
+          signal: AbortSignal.timeout(10000),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const models = (data.data || []).map((m) => ({
+            id: m.id,
+            name: m.name || m.id,
+            provider: 'openrouter',
+            description: m.description,
+            pricing: m.pricing,
+            context_length: m.context_length,
+          }));
+          return { models };
+        }
+      } catch (err) {
+        console.log('[get-provider-models] OpenRouter direct fetch failed:', err.message);
+      }
+    }
+
+    // Fallback: ask backend
     try {
       const response = await fetch(`${BACKEND_URL}/api/available_models?currentPath=~`);
       if (response.ok) {
         const data = await response.json();
-        const normalizedProvider = (provider || '').toLowerCase();
         const filtered = (data.models || []).filter((m) => {
           const mp = (m.provider || '').toLowerCase();
           return mp === normalizedProvider || mp.startsWith(`${normalizedProvider}_`) || mp.endsWith(`_${normalizedProvider}`);

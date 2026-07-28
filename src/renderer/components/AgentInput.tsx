@@ -1,4 +1,4 @@
-import { getFileName } from './utils';
+import { getFileName, loadAvailableNPCs, loadTeamCtxFromPath, findProviderForModelFromCtx } from './utils';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { BACKEND_URL } from '../config';
 import {
@@ -6,8 +6,6 @@ import {
     FileCode, Globe, FileText, Terminal as TerminalIcon, Eye, EyeOff, ToggleLeft, ToggleRight,
     Database, BrainCircuit, Image, Bot, Users, Music, Search, BookOpen, Folder, HardDrive, HelpCircle, Clock, Settings, MessageSquare, Tag
 } from 'lucide-react';
-import MemoryIcon from './icons/MemoryIcon';
-import KgIcon from './icons/KgIcon';
 import ContextFilesPanel from './ContextFilesPanel';
 import ModelSelector from './ModelSelector';
 
@@ -61,7 +59,7 @@ interface AgentInputProps {
     setIsResizingInput: (val: boolean) => void;
 
     isStreaming: boolean;
-    handleInputSubmit: (e: any, options?: { voiceInput?: boolean; useKgSearch?: boolean; useMemorySearch?: boolean; disableThinking?: boolean; genParams?: { temperature: number; top_p: number; top_k: number; max_tokens: number }; inputText?: string; uploadedFiles?: any[]; mcpServerPaths?: string[]; selectedMcpTools?: string[]; contextFiles?: any[]; paneId?: string }) => void;
+    handleInputSubmit: (e: any, options?: { voiceInput?: boolean; disableThinking?: boolean; genParams?: { temperature: number; top_p: number; top_k: number; max_tokens: number }; inputText?: string; uploadedFiles?: any[]; mcpServerPaths?: string[]; selectedMcpTools?: string[]; contextFiles?: any[]; paneId?: string }) => void;
     handleInterruptStream: () => void;
     currentPath: string;
 
@@ -99,8 +97,13 @@ interface AgentInputProps {
     setError: (val: string) => void;
 
     availableNPCs: any[];
+    setAvailableNPCs?: (npcs: any[]) => void;
     npcsLoading: boolean;
+    setNpcsLoading?: (loading: boolean) => void;
     npcsError: any;
+    setNpcsError?: (error: string | null) => void;
+    setTeamConfigs?: (configs: Record<string, any>) => void;
+    setPendingAddedModels?: (models: string[]) => void;
     currentNPC: string;
     setCurrentNPC: (val: string) => void;
 
@@ -140,7 +143,7 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         currentProvider, setCurrentProvider, favoriteModels, toggleFavoriteModel,
         showAllModels, setShowAllModels, modelsToDisplay, ollamaToolModels, setError,
         currentNPC, setCurrentNPC,
-        availableNPCs, npcsLoading, npcsError,
+        availableNPCs, setAvailableNPCs, npcsLoading, setNpcsLoading, npcsError, setNpcsError, setTeamConfigs, setPendingAddedModels,
         selectedModels, setSelectedModels, selectedNPCs, setSelectedNPCs,
         broadcastMode, setBroadcastMode,
         availableMcpServers, enabledMcpServers,
@@ -395,28 +398,12 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         try { localStorage.setItem('incognide-disable-thinking', String(disableThinking)); } catch {}
     }, [disableThinking]);
 
-    const [useKgSearch, setUseKgSearch] = useState(() => {
-        try { const v = localStorage.getItem('incognide-use-kg-search'); return v === null ? true : v === 'true'; } catch { return true; }
-    });
-    const [useMemorySearch, setUseMemorySearch] = useState(() => {
-        try { const v = localStorage.getItem('incognide-use-memory-search'); return v === null ? true : v === 'true'; } catch { return true; }
-    });
-
-    useEffect(() => {
-        try { localStorage.setItem('incognide-use-kg-search', String(useKgSearch)); } catch {}
-    }, [useKgSearch]);
-    useEffect(() => {
-        try { localStorage.setItem('incognide-use-memory-search', String(useMemorySearch)); } catch {}
-    }, [useMemorySearch]);
-
-    const [genParams, setGenParams] = useState({
+    const [genParams] = useState({
         temperature: 0.7,
         top_p: 0.9,
         top_k: 40,
         max_tokens: 4096
     });
-    const [showParamsDropdown, setShowParamsDropdown] = useState(false);
-    const paramsDropdownRef = useRef<HTMLDivElement>(null);
     const [showJinxConfigDropdown, setShowJinxConfigDropdown] = useState(false);
     const jinxConfigDropdownRef = useRef<HTMLDivElement>(null);
     const npcsDropdownRef = useRef<HTMLDivElement>(null);
@@ -490,13 +477,12 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
     }, [showMcpServersDropdown, setShowMcpServersDropdown]);
 
     useEffect(() => {
-        if (!showNpcsDropdown && !showJinxConfigDropdown && !showParamsDropdown) return;
+        if (!showNpcsDropdown && !showJinxConfigDropdown) return;
 
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
                 setShowNpcsDropdown(false);
                 setShowJinxConfigDropdown(false);
-                setShowParamsDropdown(false);
             }
         };
 
@@ -507,9 +493,6 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
             if (showJinxConfigDropdown && jinxConfigDropdownRef.current && !jinxConfigDropdownRef.current.contains(e.target as Node)) {
                 setShowJinxConfigDropdown(false);
             }
-            if (showParamsDropdown && paramsDropdownRef.current && !paramsDropdownRef.current.contains(e.target as Node)) {
-                setShowParamsDropdown(false);
-            }
         };
 
         document.addEventListener('keydown', handleKeyDown);
@@ -518,7 +501,7 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
             document.removeEventListener('keydown', handleKeyDown);
             document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, [showNpcsDropdown, showJinxConfigDropdown, showParamsDropdown]);
+    }, [showNpcsDropdown, showJinxConfigDropdown]);
 
     const isJinxMode = false;
     const hasJinxContent = false;
@@ -1079,7 +1062,7 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                                     if (shouldBroadcast) {
                                         onBroadcast(selectedModels, selectedNPCs, localInput, uploadedFiles); setLocalInput(''); setUploadedFiles([]);
                                     } else {
-                                        handleInputSubmit(e, { voiceInput: usedVoiceInput, useKgSearch, useMemorySearch, disableThinking, genParams, inputText: localInput, uploadedFiles, mcpServerPaths: Array.from(enabledServers), selectedMcpTools, contextFiles, paneId });
+                                        handleInputSubmit(e, { voiceInput: usedVoiceInput, disableThinking, genParams, inputText: localInput, uploadedFiles, mcpServerPaths: Array.from(enabledServers), selectedMcpTools, contextFiles, paneId });
                                         setLocalInput('');
                                         setUploadedFiles([]);
                                         setUsedVoiceInput(false);
@@ -1105,7 +1088,7 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                                 if (shouldBroadcast) {
                                     onBroadcast(selectedModels, selectedNPCs, localInput, uploadedFiles); setLocalInput(''); setUploadedFiles([]);
                                 } else {
-                                    handleInputSubmit(e, { voiceInput: usedVoiceInput, useKgSearch, useMemorySearch, disableThinking, genParams, inputText: localInput, uploadedFiles, mcpServerPaths: Array.from(enabledServers), selectedMcpTools, contextFiles, paneId });
+                                    handleInputSubmit(e, { voiceInput: usedVoiceInput, disableThinking, genParams, inputText: localInput, uploadedFiles, mcpServerPaths: Array.from(enabledServers), selectedMcpTools, contextFiles, paneId });
                                     setLocalInput('');
                                     setUploadedFiles([]);
                                     setUsedVoiceInput(false);
@@ -1161,84 +1144,8 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
 
                     <div className="flex-1 flex items-stretch p-2 gap-2">
                         <div className="flex-grow relative h-full">
-                            <div className="absolute left-0 bottom-0 w-[15%] min-w-[70px] max-w-[130px] z-10 px-1 pointer-events-none" ref={npcsDropdownRef}>
-                                <button
-                                    className={`pointer-events-auto w-full h-9 flex items-center justify-center gap-2 rounded-lg text-xs font-medium transition-all duration-200 ${
-                                        selectedNPCs.length > 1
-                                            ? 'bg-gradient-to-br from-green-500/30 to-emerald-600/30 text-green-200 border border-green-400/40'
-                                            : 'theme-bg-secondary theme-text-secondary theme-border border theme-hover'
-                                    }`}
-                                    disabled={npcsLoading || !!npcsError}
-                                    onClick={() => { setShowNpcsDropdown(!showNpcsDropdown); setShowJinxDropdown(false); }}
-                                >
-                                    {selectedNPCs.length > 1 && (
-                                        <span className="w-5 h-5 rounded bg-green-500 text-white text-[10px] flex items-center justify-center font-bold flex-shrink-0">{selectedNPCs.length}</span>
-                                    )}
-                                    <span className="truncate">
-                                        {npcsLoading ? '...' : npcsError ? 'Error' :
-                                            selectedNPCs.length === 1 ? ((availableNPCs.find((n: any) => n.value === selectedNPCs[0])?.display_name || selectedNPCs[0]).split(' | ')[0]) : selectedNPCs.length === 0 ? 'Agent' : 'Agents'
-                                        }
-                                    </span>
-                                    <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${showNpcsDropdown ? 'rotate-180' : ''}`} />
-                                </button>
-                                {showNpcsDropdown && !npcsLoading && !npcsError && (
-                                    <div className="pointer-events-auto absolute left-0 bottom-full mb-1 theme-bg-primary backdrop-blur-xl theme-border border rounded-lg shadow-2xl overflow-hidden w-64">
-                                        <div className="px-2 py-1.5 border-b theme-border">
-                                            <input
-                                                ref={npcSearchRef}
-                                                type="text"
-                                                value={npcSearch}
-                                                onChange={(e) => setNpcSearch(e.target.value)}
-                                                placeholder="Search Agents..."
-                                                className="w-full theme-input border theme-border rounded px-2 py-1 text-xs theme-text-primary placeholder-gray-500 focus:outline-none focus:border-green-500/50"
-                                                onKeyDown={(e) => e.stopPropagation()}
-                                            />
-                                        </div>
-                                        <div className="px-2 py-1 border-b theme-border flex items-center justify-between">
-                                            <button
-                                                onClick={() => setBroadcastMode(!broadcastMode)}
-                                                className={`text-[9px] px-1.5 py-0.5 rounded ${broadcastMode ? 'bg-purple-500/30 text-purple-300' : 'bg-white/5 text-gray-500 hover:text-gray-300'}`}
-                                            >
-                                                {broadcastMode ? '● Multi' : '○ Single'}
-                                            </button>
-                                            <div className="flex gap-2">
-                                                {broadcastMode && <button onClick={() => setSelectedNPCs(filteredNPCs.map((n: any) => n.value))} className="text-[9px] text-green-400 hover:text-green-300">All</button>}
-                                                <button onClick={() => setSelectedNPCs([])} className="text-[9px] text-gray-400 hover:text-gray-300">Reset</button>
-                                            </div>
-                                        </div>
-                                        <div className="max-h-64 overflow-y-auto p-1">
-                                            {filteredNPCs.map((npc: any) => {
-                                                const npcKey = npc.value;
-                                                const checked = selectedNPCs.includes(npcKey);
-                                                const teamPath = npc.source === 'project' ? '📁' : npc.source === 'global' ? '🌐' : '';
-                                                return (
-                                                    <div key={`${npc.source}-${npc.value}`} className={`px-2 py-1.5 text-xs rounded cursor-pointer flex items-center gap-2 transition-all ${checked ? 'bg-green-500/20 text-green-200' : 'hover:bg-white/5'}`}
-                                                        onClick={() => {
-                                                            if (broadcastMode) {
-                                                                setSelectedNPCs(prev => prev.includes(npcKey) ? (prev.length === 1 ? prev : prev.filter(x => x !== npcKey)) : [...prev, npcKey]);
-                                                            } else {
-                                                                setSelectedNPCs([npcKey]);
-                                                            }
-                                                            if (!checked) setCurrentNPC(npc.value);
-                                                        }}>
-                                                        <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0 ${checked ? 'bg-green-500 border-green-500' : 'border-gray-600'}`}>
-                                                            {checked && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                                                        </div>
-                                                        <span className="truncate flex-1">{npc.display_name}</span>
-                                                        <span className="text-[9px] text-gray-600 flex-shrink-0">{teamPath}</span>
-                                                    </div>
-                                                );
-                                            })}
-                                            {filteredNPCs.length === 0 && (
-                                                <div className="px-2 py-3 text-xs text-gray-500 text-center">No NPCs found</div>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                            <div className="relative h-full">
-                                    <textarea
-                                        value={localInput}
+                            <textarea
+                                value={localInput}
                                         onChange={(e) => setLocalInput(e.target.value)}
                                         onKeyDown={(e) => {
 
@@ -1259,7 +1166,7 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                                                 if (shouldBroadcast) {
                                                     onBroadcast(selectedModels, selectedNPCs, localInput, uploadedFiles); setLocalInput(''); setUploadedFiles([]);
                                                 } else {
-                                                    handleInputSubmit(e, { voiceInput: usedVoiceInput, useKgSearch, useMemorySearch, disableThinking, genParams, inputText: localInput, uploadedFiles, mcpServerPaths: Array.from(enabledServers), selectedMcpTools, contextFiles, paneId });
+                                                    handleInputSubmit(e, { voiceInput: usedVoiceInput, disableThinking, genParams, inputText: localInput, uploadedFiles, mcpServerPaths: Array.from(enabledServers), selectedMcpTools, contextFiles, paneId });
                                                     setLocalInput('');
                                                     setUploadedFiles([]);
                                                     setUsedVoiceInput(false);
@@ -1307,7 +1214,6 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                                             ))}
                                         </div>
                                     )}
-                                </div>
 
                             <div className="absolute top-1 right-1 flex gap-1">
                                 <button onClick={() => setIsInputMinimized(true)} className="p-1 theme-text-muted hover:theme-text-primary rounded theme-hover opacity-50 group-hover:opacity-100" title="Minimize">
@@ -1364,164 +1270,192 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                             )}
                         </div>
 
-                        {isStreaming ? (
-                            <button onClick={handleInterruptStream} className="theme-button-danger text-white rounded-lg px-3 py-2 text-sm flex items-center gap-1 flex-shrink-0 self-end">
-                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5z"/></svg>
-                            </button>
-                        ) : (
+                        <div className="flex flex-col items-center gap-1 flex-shrink-0 self-end">
                             <button
-                                onClick={(e) => {
-
-                                    const shouldBroadcast = broadcastMode && onBroadcast && selectedModels.length > 0 && selectedNPCs.length > 0 && (selectedModels.length > 1 || selectedNPCs.length > 1);
-                                    if (shouldBroadcast && canSend) {
-                                        onBroadcast(selectedModels, selectedNPCs, localInput, uploadedFiles); setLocalInput(''); setUploadedFiles([]);
-                                    } else {
-                                        handleInputSubmit(e, { voiceInput: usedVoiceInput, useKgSearch, useMemorySearch, disableThinking, genParams, inputText: localInput, uploadedFiles, mcpServerPaths: Array.from(enabledServers), selectedMcpTools, contextFiles, paneId });
-                                        setLocalInput('');
-                                        setUploadedFiles([]);
-                                        setUsedVoiceInput(false);
-                                    }
-                                }}
-                                disabled={!canSend}
-                                className={`text-white rounded-lg px-3 py-2 text-sm flex items-center gap-1 flex-shrink-0 self-end disabled:opacity-50 ${
-                                    selectedModels.length > 1 || selectedNPCs.length > 1
-                                        ? 'bg-purple-600 hover:bg-purple-500'
-                                        : 'theme-button-success'
+                                onClick={() => setDisableThinking(!disableThinking)}
+                                className={`h-7 w-7 rounded-lg flex items-center justify-center transition-all ${
+                                    !disableThinking
+                                        ? 'bg-gradient-to-br from-violet-500/30 to-purple-600/30 text-violet-300 border border-violet-500/40'
+                                        : 'bg-white/5 text-gray-500 border border-white/10 hover:text-gray-300 hover:bg-white/10'
                                 }`}
-                                title={selectedModels.length > 1 || selectedNPCs.length > 1
-                                    ? `Send to ${selectedModels.length * selectedNPCs.length} combinations`
-                                    : 'Send message'}
+                                title={disableThinking ? "Thinking disabled — click to enable" : "Thinking enabled — click to disable"}
                             >
-                                {selectedModels.length > 1 || selectedNPCs.length > 1 ? (
-                                    <>
-                                        <GitBranch size={14} />
-                                        <span className="text-xs">{selectedModels.length * selectedNPCs.length}</span>
-                                    </>
-                                ) : (
-                                    <Send size={16}/>
-                                )}
+                                <BrainCircuit size={12} />
                             </button>
-                        )}
+                            {isStreaming ? (
+                                <button onClick={handleInterruptStream} className="theme-button-danger text-white rounded-lg px-3 py-2 text-sm flex items-center gap-1 flex-shrink-0">
+                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5z"/></svg>
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={(e) => {
+
+                                        const shouldBroadcast = broadcastMode && onBroadcast && selectedModels.length > 0 && selectedNPCs.length > 0 && (selectedModels.length > 1 || selectedNPCs.length > 1);
+                                        if (shouldBroadcast && canSend) {
+                                            onBroadcast(selectedModels, selectedNPCs, localInput, uploadedFiles); setLocalInput(''); setUploadedFiles([]);
+                                        } else {
+                                            handleInputSubmit(e, { voiceInput: usedVoiceInput, disableThinking, genParams, inputText: localInput, uploadedFiles, mcpServerPaths: Array.from(enabledServers), selectedMcpTools, contextFiles, paneId });
+                                            setLocalInput('');
+                                            setUploadedFiles([]);
+                                            setUsedVoiceInput(false);
+                                        }
+                                    }}
+                                    disabled={!canSend}
+                                    className={`text-white rounded-lg px-3 py-2 text-sm flex items-center gap-1 flex-shrink-0 disabled:opacity-50 ${
+                                        selectedModels.length > 1 || selectedNPCs.length > 1
+                                            ? 'bg-purple-600 hover:bg-purple-500'
+                                            : 'theme-button-success'
+                                    }`}
+                                    title={selectedModels.length > 1 || selectedNPCs.length > 1
+                                        ? `Send to ${selectedModels.length * selectedNPCs.length} combinations`
+                                        : 'Send message'}
+                                >
+                                    {selectedModels.length > 1 || selectedNPCs.length > 1 ? (
+                                        <>
+                                            <GitBranch size={14} />
+                                            <span className="text-xs">{selectedModels.length * selectedNPCs.length}</span>
+                                        </>
+                                    ) : (
+                                        <Send size={16}/>
+                                    )}
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
 
 
                 <div className={`px-1.5 py-1 relative z-50 ${isStreaming ? 'opacity-50 pointer-events-none' : ''}`}>
                 <div className="flex items-center gap-1">
-                    <ModelSelector
-                        availableModels={modelsToDisplay}
-                        multiSelect
-                        selectedModels={selectedModels}
-                        onSelectModels={(next) => {
-                            setSelectedModels(next);
-                            if (next.length === 1) {
-                                setCurrentModel(next[0]);
-                                const m = modelsToDisplay.find((x: any) => x.value === next[0]);
-                                if (m?.provider) setCurrentProvider(m.provider);
-                            }
-                        }}
-                        loading={modelsLoading}
-                        error={modelsError}
-                        teamPathForCtx={currentNpcTeamPath}
-                        onModelsChanged={() => {}}
-                        placement="top"
-                        className="w-full h-9 justify-center text-xs px-2"
-                        toolbar={(
-                            <div className="flex items-center justify-between">
-                                <button
-                                    onClick={() => setBroadcastMode(!broadcastMode)}
-                                    className={`text-[9px] px-1.5 py-0.5 rounded ${broadcastMode ? 'bg-purple-500/30 text-purple-300' : 'bg-white/5 text-gray-500 hover:text-gray-300'}`}
-                                >
-                                    {broadcastMode ? '● Multi' : '○ Single'}
-                                </button>
-                                <div className="flex gap-2">
-                                    {broadcastMode && <button onClick={() => setSelectedModels(modelsToDisplay.map((m: any) => m.value))} className="text-[9px] text-blue-400 hover:text-blue-300">All</button>}
+                    <div className="relative flex-1 min-w-0 w-1/2" ref={npcsDropdownRef}>
+                        <button
+                            className={`w-full h-7 flex items-center justify-center gap-1 rounded-lg text-xs font-medium transition-all duration-200 border px-2 ${
+                                selectedNPCs.length > 1
+                                    ? 'bg-gradient-to-br from-green-500/30 to-emerald-600/30 text-green-200 border-green-400/40'
+                                    : 'theme-bg-secondary theme-text-secondary theme-border theme-hover'
+                            }`}
+                            disabled={npcsLoading || !!npcsError}
+                            onClick={() => { setShowNpcsDropdown(!showNpcsDropdown); setShowJinxDropdown(false); }}
+                        >
+                            {selectedNPCs.length > 1 && (
+                                <span className="w-4 h-4 rounded bg-green-500 text-white text-[9px] flex items-center justify-center font-bold flex-shrink-0">{selectedNPCs.length}</span>
+                            )}
+                            <span className="truncate">
+                                {npcsLoading ? '...' : npcsError ? 'Error' :
+                                    selectedNPCs.length === 1 ? ((availableNPCs.find((n: any) => n.value === selectedNPCs[0])?.display_name || selectedNPCs[0]).split(' | ')[0]) : selectedNPCs.length === 0 ? 'Agent' : 'Agents'
+                                }
+                            </span>
+                            <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${showNpcsDropdown ? 'rotate-180' : ''}`} />
+                        </button>
+                        {showNpcsDropdown && !npcsLoading && !npcsError && (
+                            <div className="pointer-events-auto absolute left-0 bottom-full mb-1 theme-bg-primary backdrop-blur-xl theme-border border rounded-lg shadow-2xl overflow-hidden w-64">
+                                <div className="px-2 py-1.5 border-b theme-border">
+                                    <input
+                                        ref={npcSearchRef}
+                                        type="text"
+                                        value={npcSearch}
+                                        onChange={(e) => setNpcSearch(e.target.value)}
+                                        placeholder="Search Agents..."
+                                        className="w-full theme-input border theme-border rounded px-2 py-1 text-xs theme-text-primary placeholder-gray-500 focus:outline-none focus:border-green-500/50"
+                                        onKeyDown={(e) => e.stopPropagation()}
+                                    />
+                                </div>
+                                <div className="px-2 py-1 border-b theme-border flex items-center justify-between">
+                                    <button
+                                        onClick={() => setBroadcastMode(!broadcastMode)}
+                                        className={`text-[9px] px-1.5 py-0.5 rounded ${broadcastMode ? 'bg-purple-500/30 text-purple-300' : 'bg-white/5 text-gray-500 hover:text-gray-300'}`}
+                                    >
+                                        {broadcastMode ? '● Multi' : '○ Single'}
+                                    </button>
+                                    <div className="flex gap-2">
+                                        {broadcastMode && <button onClick={() => setSelectedNPCs(filteredNPCs.map((n: any) => n.value))} className="text-[9px] text-green-400 hover:text-green-300">All</button>}
+                                        <button onClick={() => setSelectedNPCs([])} className="text-[9px] text-gray-400 hover:text-gray-300">Reset</button>
+                                    </div>
+                                </div>
+                                <div className="max-h-64 overflow-y-auto p-1">
+                                    {filteredNPCs.map((npc: any) => {
+                                        const npcKey = npc.value;
+                                        const checked = selectedNPCs.includes(npcKey);
+                                        const teamPath = npc.source === 'project' ? '📁' : npc.source === 'global' ? '🌐' : '';
+                                        return (
+                                            <div key={`${npc.source}-${npc.value}`} className={`px-2 py-1.5 text-xs rounded cursor-pointer flex items-center gap-2 transition-all ${checked ? 'bg-green-500/20 text-green-200' : 'hover:bg-white/5'}`}
+                                                onClick={() => {
+                                                    if (broadcastMode) {
+                                                        setSelectedNPCs(prev => prev.includes(npcKey) ? (prev.length === 1 ? prev : prev.filter(x => x !== npcKey)) : [...prev, npcKey]);
+                                                    } else {
+                                                        setSelectedNPCs([npcKey]);
+                                                    }
+                                                    if (!checked) setCurrentNPC(npc.value);
+                                                }}>
+                                                <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0 ${checked ? 'bg-green-500 border-green-500' : 'border-gray-600'}`}>
+                                                    {checked && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                                                </div>
+                                                <span className="truncate flex-1">{npc.display_name}</span>
+                                                <span className="text-[9px] text-gray-600 flex-shrink-0">{teamPath}</span>
+                                            </div>
+                                        );
+                                    })}
+                                    {filteredNPCs.length === 0 && (
+                                        <div className="px-2 py-3 text-xs text-gray-500 text-center">No NPCs found</div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="relative flex-1 min-w-0 w-1/2">
+                        <ModelSelector
+                            availableModels={modelsToDisplay}
+                            selectedModel={currentModel}
+                            onSelect={(m) => {
+                                setCurrentModel(m.value);
+                                setSelectedModels([m.value]);
+                                if (m.provider) setCurrentProvider(m.provider);
+                            }}
+                            loading={modelsLoading}
+                            error={modelsError}
+                            teamPathForCtx={currentNpcTeamPath}
+                            onModelsChanged={async (addedModelValue) => {
+                                if (!currentPath) return;
+                                try {
+                                    const modelValues = (addedModelValue || '').split('\n').filter(Boolean);
+                                    const [npcsResult, freshCtx] = await Promise.all([
+                                        loadAvailableNPCs(
+                                            currentPath,
+                                            setNpcsLoading || (() => {}),
+                                            setNpcsError || (() => {}),
+                                            setAvailableNPCs || (() => {})
+                                        ),
+                                        currentNpcTeamPath ? loadTeamCtxFromPath(currentNpcTeamPath) : Promise.resolve(null),
+                                    ]);
+                                    if (npcsResult?.teamConfigs && setTeamConfigs) {
+                                        setTeamConfigs(npcsResult.teamConfigs);
+                                    }
+                                    if (freshCtx && currentNpcTeamKey && setTeamConfigs) {
+                                        setTeamConfigs(prev => ({ ...prev, [currentNpcTeamKey]: freshCtx }));
+                                    }
+                                    if (modelValues.length > 0) {
+                                        const first = modelValues[0];
+                                        const provider = freshCtx ? findProviderForModelFromCtx(freshCtx, first) : (currentProvider || null);
+                                        setCurrentModel?.(first);
+                                        if (provider) setCurrentProvider?.(provider);
+                                        setSelectedModels?.([first]);
+                                        setPendingAddedModels?.(modelValues);
+                                    }
+                                } catch {}
+                            }}
+                            placement="top"
+                            className="w-full h-7 justify-center text-xs px-2 max-w-none"
+                            toolbar={(
+                                <div className="flex items-center justify-end gap-2">
                                     <button onClick={() => setSelectedModels(currentModel ? [currentModel] : [])} className="text-[9px] text-gray-400 hover:text-gray-300">Reset</button>
-                                    <button onClick={() => toggleFavoriteModel(currentModel)} className={`${favoriteModels.has(currentModel) ? 'text-yellow-400' : 'text-gray-500 hover:text-yellow-400'}`}><Star size={10} /></button>
+                                    <button onClick={() => currentModel && toggleFavoriteModel(currentModel)} className={`${currentModel && favoriteModels.has(currentModel) ? 'text-yellow-400' : 'text-gray-500 hover:text-yellow-400'}`}><Star size={10} /></button>
                                     <button onClick={() => setShowAllModels(!showAllModels)} className={`${!showAllModels && favoriteModels.size > 0 ? 'text-blue-400' : 'text-gray-500'}`}><ListFilter size={10} /></button>
                                 </div>
-                            </div>
-                        )}
-                    />
-
-                    <div className="relative flex-1 min-w-0" ref={paramsDropdownRef}>
-                        <button
-                            className="w-full h-8 flex items-center justify-center gap-1 rounded-lg text-xs font-medium transition-all duration-200 theme-bg-tertiary theme-text-secondary border theme-border hover:opacity-80 px-2"
-                            onClick={() => { setShowParamsDropdown(!showParamsDropdown); }}
-                        >
-                            <span className="theme-text-secondary">Params</span>
-                            <ChevronDown size={8} className={`theme-text-muted transition-transform ${showParamsDropdown ? 'rotate-180' : ''}`} />
-                        </button>
-                        {showParamsDropdown && (
-                            <div className="absolute z-[100] right-0 bottom-full mb-1 theme-bg-secondary backdrop-blur-xl border theme-border rounded-lg shadow-2xl overflow-hidden w-56 p-2 space-y-2">
-                                <div>
-                                    <div className="flex items-center justify-between mb-1">
-                                        <label className="text-[10px] theme-text-muted">Temperature</label>
-                                        <input type="number" value={genParams.temperature} onChange={(e) => setGenParams(p => ({ ...p, temperature: Math.max(0, Math.min(2, parseFloat(e.target.value) || 0)) }))} className="w-14 text-xs theme-bg-tertiary border theme-border rounded px-1.5 py-0.5 text-right theme-text-primary" step="0.1" min="0" max="2" />
-                                    </div>
-                                    <input type="range" value={genParams.temperature} onChange={(e) => setGenParams(p => ({ ...p, temperature: parseFloat(e.target.value) }))} className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-orange-500" min="0" max="2" step="0.1" />
-                                    <div className="flex justify-between text-[9px] theme-text-muted mt-0.5"><span>Precise</span><span>Creative</span></div>
-                                </div>
-                                <div>
-                                    <div className="flex items-center justify-between mb-1">
-                                        <label className="text-[10px] theme-text-muted">Top P</label>
-                                        <input type="number" value={genParams.top_p} onChange={(e) => setGenParams(p => ({ ...p, top_p: Math.max(0, Math.min(1, parseFloat(e.target.value) || 0)) }))} className="w-14 text-xs theme-bg-tertiary border theme-border rounded px-1.5 py-0.5 text-right theme-text-primary" step="0.05" min="0" max="1" />
-                                    </div>
-                                    <input type="range" value={genParams.top_p} onChange={(e) => setGenParams(p => ({ ...p, top_p: parseFloat(e.target.value) }))} className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-blue-500" min="0" max="1" step="0.05" />
-                                </div>
-                                <div>
-                                    <div className="flex items-center justify-between mb-1">
-                                        <label className="text-[10px] theme-text-muted">Top K</label>
-                                        <input type="number" value={genParams.top_k} onChange={(e) => setGenParams(p => ({ ...p, top_k: Math.max(1, Math.min(100, parseInt(e.target.value) || 1)) }))} className="w-14 text-xs theme-bg-tertiary border theme-border rounded px-1.5 py-0.5 text-right theme-text-primary" step="1" min="1" max="100" />
-                                    </div>
-                                    <input type="range" value={genParams.top_k} onChange={(e) => setGenParams(p => ({ ...p, top_k: parseInt(e.target.value) }))} className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-green-500" min="1" max="100" step="1" />
-                                </div>
-                                <div>
-                                    <div className="flex items-center justify-between mb-1">
-                                        <label className="text-[10px] theme-text-muted">Max Tokens</label>
-                                        <input type="number" value={genParams.max_tokens} onChange={(e) => setGenParams(p => ({ ...p, max_tokens: Math.max(1, Math.min(32000, parseInt(e.target.value) || 1)) }))} className="w-16 text-xs theme-bg-tertiary border theme-border rounded px-1.5 py-0.5 text-right theme-text-primary" step="256" min="1" max="32000" />
-                                    </div>
-                                    <input type="range" value={genParams.max_tokens} onChange={(e) => setGenParams(p => ({ ...p, max_tokens: parseInt(e.target.value) }))} className="w-full h-1.5 theme-bg-tertiary rounded-lg appearance-none cursor-pointer accent-purple-500" min="256" max="32000" step="256" />
-                                </div>
-                            </div>
-                        )}
+                            )}
+                        />
                     </div>
 
-                    <div className="flex items-center gap-0.5 pl-1 border-l theme-border ml-1">
-                        <button
-                            onClick={() => setDisableThinking(!disableThinking)}
-                            className={`h-9 w-9 rounded-lg flex items-center justify-center transition-all ${
-                                !disableThinking
-                                    ? 'bg-gradient-to-br from-violet-500/30 to-purple-600/30 text-violet-300 border border-violet-500/40'
-                                    : 'bg-white/5 text-gray-500 border border-white/10 hover:text-gray-300 hover:bg-white/10'
-                            }`}
-                            title={disableThinking ? "Thinking disabled — click to enable" : "Thinking enabled — click to disable"}
-                        >
-                            <BrainCircuit size={14} />
-                        </button>
-                        <button
-                            onClick={() => setUseKgSearch(!useKgSearch)}
-                            className={`h-9 w-9 rounded-lg flex items-center justify-center transition-all ${
-                                useKgSearch
-                                    ? 'bg-gradient-to-br from-green-500/30 to-emerald-600/30 text-emerald-300 border border-green-500/40'
-                                    : 'bg-white/5 text-gray-500 border border-white/10 hover:text-gray-300 hover:bg-white/10'
-                            }`}
-                            title={useKgSearch ? "KG Search enabled" : "Enable Knowledge Graph search"}
-                        >
-                            <KgIcon size={14} />
-                        </button>
-                        <button
-                            onClick={() => setUseMemorySearch(!useMemorySearch)}
-                            className={`h-9 w-9 rounded-lg flex items-center justify-center transition-all ${
-                                useMemorySearch
-                                    ? 'bg-gradient-to-br from-amber-500/30 to-orange-600/30 text-amber-300 border border-amber-500/40'
-                                    : 'bg-white/5 text-gray-500 border border-white/10 hover:text-gray-300 hover:bg-white/10'
-                            }`}
-                            title={useMemorySearch ? "Memory Search enabled" : "Enable Memory search"}
-                        >
-                            <MemoryIcon size={14} />
-                        </button>
-                    </div>
                 </div>
                 </div>
 

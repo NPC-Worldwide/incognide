@@ -4,6 +4,36 @@ import { goUpDirectory as goUpDirectoryApi, readDirectoryStructure, renameFile }
 import { Code2, FileText, FileJson, BarChart3, File } from 'lucide-react';
 import { executeStudioAction, StudioContext } from '../studioActions';
 import { getPaneTitle } from '../studioActions/paneActions';
+import yaml from 'js-yaml';
+
+const preprocessJinja = (content: string) =>
+    content.replace(/(?<!["'])\{\{[^{}]*\}\}(?!["'])/g, (match) => `"${match}"`);
+
+export const loadTeamCtxFromPath = async (teamPath: string): Promise<any> => {
+    try {
+        const items = await (window as any).api.readDirectory(teamPath);
+        const ctxFile = (items || []).find((item: any) => item.name && item.name.endsWith('.ctx'))?.name;
+        if (!ctxFile) return null;
+        const result = await (window as any).api.readFileContent(`${teamPath}/${ctxFile}`);
+        const raw = typeof result === 'string' ? result : result?.content;
+        if (!raw) return null;
+        const ctx = yaml.load(preprocessJinja(raw)) || {};
+        return ctx;
+    } catch {
+        return null;
+    }
+};
+
+export const findProviderForModelFromCtx = (ctx: any, modelValue: string): string | null => {
+    if (!ctx || !Array.isArray(ctx.providers)) return null;
+    for (const prov of ctx.providers) {
+        const pKey = prov?.provider_type || prov?.name || prov?.provider || '';
+        if (!pKey) continue;
+        if (prov.model === modelValue) return pKey;
+        if (Array.isArray(prov.models) && prov.models.includes(modelValue)) return pKey;
+    }
+    return null;
+};
 
 export const triggerAutoTTS = async (text: string) => {
     if (!text?.trim()) return;
@@ -317,7 +347,7 @@ export const loadAvailableNPCs = async (
             const teamsData = await window.api.teamsRead();
             if (teamsData?.teams) {
                 for (const [key, teamPath] of Object.entries(teamsData.teams)) {
-                    const resolvedPath = normalizePath(String(teamPath || '').replace(/^~(?=\/|$)/, (window as any).api?.getHomeDir?.() || os.homedir()));
+                    const resolvedPath = normalizePath(String(teamPath || '').replace(/^~(?=\/|$)/, (window as any).api?.getHomeDir?.() || '/home/user'));
                     // Skip registered teams that point to the same directory as the current project team
                     if (resolvedPath === projectTeamPath) continue;
                     teamKeys.push(key);
