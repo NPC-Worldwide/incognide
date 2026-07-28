@@ -7193,7 +7193,7 @@ const getChatInputProps = useCallback((paneId: string) => {
     favoriteModels, toggleFavoriteModel,
     showAllModels, setShowAllModels, modelsToDisplay, ollamaToolModels, setError,
     modelWarning,
-    availableNPCs, npcsLoading, npcsError,
+    availableNPCs, setAvailableNPCs, npcsLoading, setNpcsLoading, npcsError, setNpcsError, setTeamConfigs,
     currentNPC, setCurrentNPC: (v: any) => { setCurrentNPC(v); notifyUpdate(); },
 
     selectedModels,
@@ -7394,7 +7394,7 @@ const getChatInputProps = useCallback((paneId: string) => {
     availableModels, modelsLoading, modelsError, currentModel, currentProvider,
     favoriteModels, showAllModels, modelsToDisplay, ollamaToolModels,
     modelWarning,
-    availableNPCs, npcsLoading, npcsError, currentNPC,
+    availableNPCs, setAvailableNPCs, npcsLoading, setNpcsLoading, npcsError, setNpcsError, setTeamConfigs, currentNPC,
     selectedModels, setSelectedModels, selectedNPCs, setSelectedNPCs,
     broadcastMode, setBroadcastMode,
     availableMcpServers, enabledMcpServers, selectedMcpTools, availableMcpTools,

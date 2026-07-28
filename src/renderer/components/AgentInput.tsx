@@ -1,4 +1,4 @@
-import { getFileName } from './utils';
+import { getFileName, loadAvailableNPCs } from './utils';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { BACKEND_URL } from '../config';
 import {
@@ -97,8 +97,12 @@ interface AgentInputProps {
     setError: (val: string) => void;
 
     availableNPCs: any[];
+    setAvailableNPCs?: (npcs: any[]) => void;
     npcsLoading: boolean;
+    setNpcsLoading?: (loading: boolean) => void;
     npcsError: any;
+    setNpcsError?: (error: string | null) => void;
+    setTeamConfigs?: (configs: Record<string, any>) => void;
     currentNPC: string;
     setCurrentNPC: (val: string) => void;
 
@@ -138,7 +142,7 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         currentProvider, setCurrentProvider, favoriteModels, toggleFavoriteModel,
         showAllModels, setShowAllModels, modelsToDisplay, ollamaToolModels, setError,
         currentNPC, setCurrentNPC,
-        availableNPCs, npcsLoading, npcsError,
+        availableNPCs, setAvailableNPCs, npcsLoading, setNpcsLoading, npcsError, setNpcsError, setTeamConfigs,
         selectedModels, setSelectedModels, selectedNPCs, setSelectedNPCs,
         broadcastMode, setBroadcastMode,
         availableMcpServers, enabledMcpServers,
@@ -1410,7 +1414,37 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                             loading={modelsLoading}
                             error={modelsError}
                             teamPathForCtx={currentNpcTeamPath}
-                            onModelsChanged={() => {}}
+                            onModelsChanged={(addedModelValue) => {
+                                if (!currentPath) return;
+                                (async () => {
+                                    try {
+                                        const result = await loadAvailableNPCs(
+                                            currentPath,
+                                            setNpcsLoading || (() => {}),
+                                            setNpcsError || (() => {}),
+                                            setAvailableNPCs || (() => {})
+                                        );
+                                        if (result?.teamConfigs && setTeamConfigs) {
+                                            setTeamConfigs(result.teamConfigs);
+                                        }
+                                        if (addedModelValue) {
+                                            const entries = addedModelValue.split('\n').filter(Boolean);
+                                            const parsed = entries.map((entry) => {
+                                                const slashIdx = entry.indexOf('/');
+                                                return {
+                                                    providerName: slashIdx > 0 ? entry.slice(0, slashIdx) : null,
+                                                    modelName: slashIdx >= 0 ? entry.slice(slashIdx + 1) : entry,
+                                                };
+                                            });
+                                            const modelValues = parsed.map((p) => p.modelName);
+                                            const first = parsed[0];
+                                            setCurrentModel(first.modelName);
+                                            setCurrentProvider(first.providerName || currentProvider);
+                                            setSelectedModels(modelValues);
+                                        }
+                                    } catch {}
+                                })();
+                            }}
                             placement="top"
                             className="w-full h-7 justify-center text-xs px-2 max-w-none"
                             toolbar={(

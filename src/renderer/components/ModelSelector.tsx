@@ -37,7 +37,7 @@ interface ModelSelectorProps {
     teamCtxProviders?: any[];
     placement?: 'bottom' | 'top';
     className?: string;
-    onModelsChanged?: () => void;
+    onModelsChanged?: (addedModelValue?: string) => void;
     allowAdd?: boolean;
     toolbar?: React.ReactNode;
     favoriteModels?: Set<string>;
@@ -398,12 +398,12 @@ export const AddProviderPanel = ({
         setSaving(true);
         setError(null);
         try {
-            const allSelected = providerModelSelector.selected.size === providerModelSelector.models.length && providerModelSelector.models.length > 0;
-            await saveProviderToTeamCtx(teamPath, providerName, allSelected ? null : Array.from(providerModelSelector.selected), {
+            const selectedModels = Array.from(providerModelSelector.selected);
+            const allSelected = selectedModels.length === providerModelSelector.models.length && providerModelSelector.models.length > 0;
+            await saveProviderToTeamCtx(teamPath, providerName, allSelected ? null : selectedModels, {
                 providerType: providerTypeVal,
             });
-            const first = allSelected ? providerModelSelector.models[0] : Array.from(providerModelSelector.selected)[0];
-            onAdded(`${providerName}/${first}`);
+            onAdded(selectedModels.map((m) => `${providerName}/${m}`).join('\n'));
         } catch (err: any) {
             setError(err.message || 'Failed to save models.');
         } finally {
@@ -682,20 +682,9 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
     const handleAdded = async (modelValue?: string) => {
         setShowAddPanel(false);
-        onModelsChanged?.();
-        if (!modelValue || !teamPathForCtx) return;
-        try {
-            const response = await (window as any).api.getAvailableModels(teamPathForCtx);
-            const models = Array.isArray(response) ? response : response?.models || [];
-            const found = models.find((m: ModelItem) => m.value === modelValue);
-            if (found) {
-                if (multiSelect) {
-                    handleSelectModels([...(selectedModels || []), found.value]);
-                } else {
-                    handleSelect(found);
-                }
-            }
-        } catch {}
+        setDropdownOpen(false);
+        setSearch('');
+        onModelsChanged?.(modelValue);
     };
 
     return (
