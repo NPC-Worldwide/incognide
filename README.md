@@ -141,7 +141,7 @@ Create and edit Office documents directly in Incognide without needing external 
 
 **Word Documents (DOCX)** - Full rich text editing with formatting, tables, and images:
 
-![DOCX and XLSX Editing](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/docx_xlsx.png)
+![DOCX and XLSX Editing](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/docx.png)
 
 **Spreadsheets (XLSX & CSV)** - Edit data with formula support and cell formatting:
 
@@ -159,9 +159,6 @@ Read, annotate, and analyze PDF documents with AI assistance.
 
 ![PDF Highlighting](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/pdf_highlight.png)
 
-**PDF Library** - Browse and organize your PDF collection:
-
-![PDF Library](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/library.png)
 
 ### File Management
 
@@ -171,7 +168,8 @@ Read, annotate, and analyze PDF documents with AI assistance.
 
 **Disk Usage Analyzer** - Visualize what's taking up space on your drives:
 
-![Disk usage](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/disk_usage_analyzer.png)
+![Disk usage open by clicking on the folder option drop down](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/disk_usage_1.png)
+![Disk usage pane showing usage breakdown](https://raw.githubusercontent.com/npc-worldwide/incognide/main/gh_images/disk_usage_2.png)
 
 ### Web Browsing
 
