@@ -4536,11 +4536,30 @@ const handleNewBrowserTab = useCallback((url: string, paneId?: string) => {
 useEffect(() => {
     const cleanup = (window as any).api?.onBrowserOpenInNewTab?.(({ url }: { url: string }) => {
         if (url && url !== 'about:blank') {
-            createNewBrowser(url);
+            const paneId = contentDataRef.current[activeContentPaneId]?.contentType === 'browser'
+                ? activeContentPaneId
+                : Object.keys(contentDataRef.current).find(id => contentDataRef.current[id]?.contentType === 'browser');
+            handleNewBrowserTab(url, paneId);
         }
     });
     return () => cleanup?.();
-}, [createNewBrowser]);
+}, [activeContentPaneId, handleNewBrowserTab]);
+
+
+useEffect(() => {
+    const cleanup = (window as any).api?.onBrowserContextAction?.(({ action, url }: { action: string; url: string }) => {
+        if (action === 'openLink' && url && url !== 'about:blank') {
+            const paneId = contentDataRef.current[activeContentPaneId]?.contentType === 'browser'
+                ? activeContentPaneId
+                : Object.keys(contentDataRef.current).find(id => contentDataRef.current[id]?.contentType === 'browser');
+            handleNewBrowserTab(url, paneId);
+        }
+        if (action === 'saveImage' && url) {
+            (window as any).api?.browserSaveImage?.(url, currentPath);
+        }
+    });
+    return () => cleanup?.();
+}, [activeContentPaneId, handleNewBrowserTab, currentPath]);
 
 
 useEffect(() => {
