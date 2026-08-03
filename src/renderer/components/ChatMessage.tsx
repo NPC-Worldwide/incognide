@@ -377,6 +377,7 @@ export const ChatMessage = memo(({
                 {message.contentParts && message.contentParts.length > 0 ? (
                     <>
                         {message.contentParts.map((part, partIdx) => {
+                            if (!part) return null;
                             if (part.type === 'text') {
                                 return (
                                     <div key={partIdx} className={`prose prose-sm prose-invert max-w-none theme-text-primary`}>
@@ -389,7 +390,7 @@ export const ChatMessage = memo(({
                                 );
                             } else if (part.type === 'tool_call') {
                                 return (
-                                    <ToolCallDisplay key={partIdx} tool={part.call} />
+                                    <ToolCallDisplay key={partIdx} tool={part.call || part} />
                                 );
                             } else if (part.type === 'reasoning') {
                                 const isReasoningExpanded = expandedReasoning.has(partIdx);

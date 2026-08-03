@@ -582,10 +582,14 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
             savedScrollTop: number;
             lastHeight: number;
             pendingRestore: boolean;
+            restoring: boolean;
+            restoreRAF: number | null;
             constructor(view: any) {
                 this.savedScrollTop = posRef.current;
                 this.lastHeight = 0;
                 this.pendingRestore = posRef.current > 0;
+                this.restoring = false;
+                this.restoreRAF = null;
             }
             update(update: any) {
                 const scrollDOM = update.view.scrollDOM;
@@ -597,7 +601,7 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
                 if (wasHidden && this.savedScrollTop > 0) this.pendingRestore = true;
 
                 // Detect external document reload (full replacement)
-                if (update.docChanged && !this.pendingRestore) {
+                if (update.docChanged && !this.pendingRestore && !this.restoring) {
                     let isFullReplace = false;
                     const oldLen = update.startState.doc.length;
                     update.changes.iterChanges((fromA: number, toA: number) => {
@@ -608,17 +612,28 @@ const CodeMirrorEditor = memo(({ value, onChange, filePath, onSave, onContextMen
 
                 if (this.pendingRestore) {
                     this.pendingRestore = false;
+                    this.restoring = true;
                     const st = this.savedScrollTop;
-
-                    scrollDOM.scrollTop = st;
+                    if (this.restoreRAF) cancelAnimationFrame(this.restoreRAF);
+                    this.restoreRAF = requestAnimationFrame(() => {
+                        this.restoreRAF = null;
+                        scrollDOM.scrollTop = st;
+                        // Wait for CodeMirror to settle before resuming scroll tracking
+                        setTimeout(() => { this.restoring = false; }, 50);
+                    });
                     return;
                 }
+
+                if (this.restoring) return;
 
                 const currentTop = scrollDOM.scrollTop;
                 if (currentTop !== this.savedScrollTop) {
                     this.savedScrollTop = currentTop;
                     stateChangeRef.current?.({ scrollTopPos: currentTop });
                 }
+            }
+            destroy() {
+                if (this.restoreRAF) cancelAnimationFrame(this.restoreRAF);
             }
         });
     }, []);

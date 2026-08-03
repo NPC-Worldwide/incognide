@@ -1343,6 +1343,66 @@ function register(ctx) {
                 } catch (e) {}
             }
 
+            // Normalize reloaded tool calls so the UI always has a valid shape.
+            if (Array.isArray(toolCalls)) {
+                const resultById = new Map();
+                if (Array.isArray(toolResults)) {
+                    for (const tr of toolResults) {
+                        if (tr?.tool_call_id) {
+                            resultById.set(tr.tool_call_id, tr.content || tr.result || '');
+                        }
+                    }
+                }
+                toolCalls = toolCalls.map((tc) => {
+                    if (!tc || typeof tc !== 'object') {
+                        return { id: '', type: 'function', function: { name: 'unknown', arguments: '{}' }, status: 'complete', result_preview: '' };
+                    }
+                    const name = tc.function?.name || tc.function_name || tc.name || 'unknown';
+                    let args = tc.function?.arguments;
+                    if (args === undefined || args === null) {
+                        args = tc.arguments || tc.args || '{}';
+                    }
+                    if (typeof args === 'object') {
+                        args = JSON.stringify(args);
+                    }
+                    const id = tc.id || '';
+                    let status = tc.status;
+                    let result_preview = tc.result_preview || tc.result || tc.error || resultById.get(id) || '';
+                    // A reloaded conversation is no longer streaming, so any call
+                    // still marked running was orphaned. Mark it errored unless we
+                    // have explicit evidence it completed.
+                    if (status === 'running') {
+                        status = 'error';
+                        if (!result_preview) result_preview = 'Stream ended before tool reported a result';
+                    } else if (!status || (status !== 'complete' && status !== 'error')) {
+                        status = resultById.has(id) ? 'complete' : 'complete';
+                    }
+                    return {
+                        id,
+                        type: tc.type || 'function',
+                        function: { name, arguments: args },
+                        status,
+                        result_preview
+                    };
+                });
+            }
+
+            // Rebuild contentParts when missing so ChatMessage renders text,
+            // reasoning, and tool calls correctly after reload.
+            let contentParts = null;
+            if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+                contentParts = [];
+                if (content && typeof content === 'string' && content.trim()) {
+                    contentParts.push({ type: 'text', content });
+                }
+                if (row.reasoning_content && typeof row.reasoning_content === 'string' && row.reasoning_content.trim()) {
+                    contentParts.push({ type: 'reasoning', content: row.reasoning_content });
+                }
+                for (const tc of toolCalls) {
+                    contentParts.push({ type: 'tool_call', call: tc });
+                }
+            }
+
             const newRow = {
                 ...row,
                 attachments,
@@ -1354,6 +1414,7 @@ function register(ctx) {
                 input_tokens: row.input_tokens || 0,
                 output_tokens: row.output_tokens || 0,
                 cost: row.cost ? parseFloat(row.cost) : null,
+                contentParts,
             };
             delete newRow.attachments_json;
             delete newRow.reasoning_content;

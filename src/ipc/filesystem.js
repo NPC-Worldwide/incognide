@@ -856,7 +856,7 @@ function register(ctx) {
 
   ipcMain.handle('read-file-content', async (_, filePath) => {
     try {
-      const content = await fsPromises.readFile(filePath, 'utf8');
+      const content = await fsPromises.readFile(expandHomeDir(filePath), 'utf8');
       return { content, error: null };
     } catch (err) {
       console.error('Error reading file:', err);
