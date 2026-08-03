@@ -390,6 +390,11 @@ readPdfText: (filePath) =>
         ipcRenderer.on('browser-open-in-new-tab', handler);
         return () => ipcRenderer.removeListener('browser-open-in-new-tab', handler);
     },
+    onBrowserNavigateInSameView: (callback) => {
+        const handler = (_, data) => callback(data);
+        ipcRenderer.on('browser-navigate-in-same-view', handler);
+        return () => ipcRenderer.removeListener('browser-navigate-in-same-view', handler);
+    },
 
     onBrowserNewTab: (callback) => {
         const handler = () => callback();

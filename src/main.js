@@ -27,6 +27,7 @@ const dbPath = process.env.INCOGNIDE_DB_PATH || path.join(os.homedir(), '.incogn
 const fetch = require('node-fetch');
 const crypto = require('crypto');
 const http = require('http');
+const yaml = require('js-yaml');
 
 const IS_DEV_MODE = process.env.NODE_ENV === 'development' || process.argv.includes('--dev');
 const FRONTEND_PORT = IS_DEV_MODE ? 7337 : 6337;
@@ -1497,91 +1498,90 @@ app.on('web-contents-created', (event, contents) => {
   }
 
   if (contents.getType() === 'webview') {
-    contents.setWindowOpenHandler(({ url }) => {
-      if (url.includes('accounts.google.com') || url.includes('login') || url.includes('auth') || url.includes('oauth') || url.includes('callback')) {
-        return { action: 'allow' };
+    const AUTH_HOST_PATTERNS = [
+      'accounts.google.com', 'accounts.youtube.com', 'myaccount.google.com',
+      'login.microsoftonline.com', 'login.live.com', 'login.windows.net',
+      'github.com/login', 'github.com/sessions',
+      'auth0.com', 'okta.com', 'onelogin.com',
+      'appleid.apple.com', 'idmsa.apple.com',
+      'api.twitter.com/oauth', 'x.com/i/oauth',
+      'facebook.com/v', 'facebook.com/dialog',
+      'linkedin.com/oauth',
+      'contacts.google.com/widget', 'apis.google.com',
+      'plus.google.com', 'drive.google.com',
+      'cloud.google.com', 'console.cloud.google.com',
+      'reddit.com/login', 'reddit.com/account/login', 'auth.reddit.com', 'accounts.reddit.com',
+      'www.reddit.com/login',
+    ];
+    const AUTH_PATH_PATTERNS = ['/oauth', '/auth/', '/login', '/signin', '/saml', '/sso'];
+
+    const isAuthUrl = (url) => {
+      if (!url || url === 'about:blank') return false;
+      try {
+        const u = new URL(url);
+        const host = u.hostname.toLowerCase();
+        if (AUTH_HOST_PATTERNS.some(h => host === h || host.endsWith('.' + h))) return true;
+        const path = u.pathname.toLowerCase();
+        if (AUTH_PATH_PATTERNS.some(p => path.includes(p))) return true;
+        return false;
+      } catch {
+        return AUTH_HOST_PATTERNS.some(h => url.includes(h)) || AUTH_PATH_PATTERNS.some(p => url.includes(p));
       }
-      return { action: 'deny' };
-    });
-  }
+    };
 
+    const sendToParent = (channel, payload) => {
+      const parentWin = BrowserWindow.fromWebContents(contents.hostWebContents || contents)
+        || BrowserWindow.getFocusedWindow()
+        || BrowserWindow.getAllWindows()[0];
+      if (parentWin && !parentWin.isDestroyed()) {
+        parentWin.webContents.send(channel, payload);
+      }
+    };
 
-  if (contents.getType() === 'webview') {
     contents.setWindowOpenHandler(({ url, disposition }) => {
-
       if (!url || url === 'about:blank') {
         log(`[WebView] Allowing about:blank popup (disposition: ${disposition}) - will capture navigation`);
         return { action: 'allow' };
       }
 
-      const AUTH_PATTERNS = [
-        'accounts.google.com', 'accounts.youtube.com', 'myaccount.google.com',
-        'login.microsoftonline.com', 'login.live.com', 'login.windows.net',
-        'github.com/login', 'github.com/sessions',
-        'auth0.com', 'okta.com', 'onelogin.com',
-        'sso.', '/oauth', '/auth/', '/login', '/signin', '/saml',
-        'appleid.apple.com', 'idmsa.apple.com',
-        'api.twitter.com/oauth', 'x.com/i/oauth',
-        'facebook.com/v', 'facebook.com/dialog',
-        'linkedin.com/oauth',
-        'contacts.google.com/widget', 'apis.google.com',
-        'plus.google.com', 'drive.google.com',
-      ];
-      if (AUTH_PATTERNS.some(p => url.includes(p))) {
-        log(`[WebView] Allowing auth/SSO popup: ${url}`);
-        return { action: 'allow' };
+      if (isAuthUrl(url)) {
+        log(`[WebView] Auth popup intercepted, navigating in same view: ${url}`);
+        sendToParent('browser-navigate-in-same-view', { webContentsId: contents.id, url });
+        return { action: 'deny' };
       }
 
       log(`[WebView] Intercepting window.open: ${url} (disposition: ${disposition})`);
-      const parentWin = BrowserWindow.fromWebContents(contents.hostWebContents || contents)
-        || BrowserWindow.getFocusedWindow()
-        || BrowserWindow.getAllWindows()[0];
-      if (parentWin && !parentWin.isDestroyed()) {
-        parentWin.webContents.send('browser-open-in-new-tab', {
-          url,
-          disposition
-        });
-      }
+      sendToParent('browser-open-in-new-tab', { url, disposition });
       return { action: 'deny' };
     });
 
     contents.on('did-create-window', (newWindow) => {
-      const checkAndRedirect = (realUrl) => {
-        if (realUrl && realUrl !== 'about:blank') {
-          if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(realUrl)) {
-            log(`[WebView] Popup navigated to localhost (OAuth callback), skipping redirect: ${realUrl}`);
-            return;
-          }
-          log(`[WebView] Popup navigated to: ${realUrl} - redirecting to app tab`);
-          const parentWin = BrowserWindow.fromWebContents(contents.hostWebContents || contents)
-            || BrowserWindow.getFocusedWindow()
-            || BrowserWindow.getAllWindows()[0];
-          if (parentWin && !parentWin.isDestroyed()) {
-            parentWin.webContents.send('browser-open-in-new-tab', {
-              url: realUrl,
-              disposition: 'new-window'
-            });
-          }
-          try { newWindow.close(); } catch (e) {}
+      const redirectPopup = (realUrl) => {
+        if (!realUrl || realUrl === 'about:blank') return;
+        if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(realUrl)) {
+          log(`[WebView] Popup navigated to localhost (OAuth callback), skipping redirect: ${realUrl}`);
+          return;
         }
+        log(`[WebView] Popup navigated to: ${realUrl} - redirecting`);
+        if (isAuthUrl(realUrl)) {
+          sendToParent('browser-navigate-in-same-view', { webContentsId: contents.id, url: realUrl });
+        } else {
+          sendToParent('browser-open-in-new-tab', { url: realUrl, disposition: 'new-window' });
+        }
+        try { newWindow.close(); } catch (e) {}
       };
 
       try {
         const currentUrl = newWindow.webContents.getURL();
         if (currentUrl && currentUrl !== 'about:blank') {
-          checkAndRedirect(currentUrl);
+          redirectPopup(currentUrl);
           return;
         }
       } catch (e) {}
 
-      newWindow.webContents.on('did-navigate', (event, url) => {
-        checkAndRedirect(url);
-      });
+      newWindow.webContents.on('did-navigate', (event, url) => redirectPopup(url));
       newWindow.webContents.on('will-navigate', (event, url) => {
-        if (url && url !== 'about:blank') {
-
-          checkAndRedirect(url);
-        }
+        if (url && url !== 'about:blank') redirectPopup(url);
       });
 
       setTimeout(() => {
@@ -1655,12 +1655,11 @@ async function deployIncognideTeamOnStartup() {
           await copyAndTrack(path.join(src, item), path.join(dest, item), relBase ? `${relBase}/${item}` : item);
         }
       } else {
-        if (relBase.endsWith('.npc') && fs.existsSync(dest)) {
-          newManifest[relBase] = crypto.createHash('sha256').update(await fsPromises.readFile(dest)).digest('hex');
-        } else {
+        const shouldCopy = !relBase.endsWith('.npc') || !fs.existsSync(dest) || process.env.INCOGNIDE_FORCE_UPDATE_NPCS === '1';
+        if (shouldCopy) {
           await fsPromises.copyFile(src, dest);
-          newManifest[relBase] = crypto.createHash('sha256').update(await fsPromises.readFile(dest)).digest('hex');
         }
+        newManifest[relBase] = crypto.createHash('sha256').update(await fsPromises.readFile(dest)).digest('hex');
       }
     };
     await copyAndTrack(npcTeamSrc, destBase);
@@ -1670,6 +1669,49 @@ async function deployIncognideTeamOnStartup() {
   } catch (e) {
     log(`[Deploy] Error deploying team: ${e.message}`);
     return { success: false, error: e.message };
+  }
+}
+
+async function ensureIncognideTeamRegistered() {
+  const teamsPath = path.join(INCOGNIDE_HOME, 'teams.yaml');
+  const teamDir = path.join(INCOGNIDE_HOME, 'npc_team');
+  try {
+    await fsPromises.mkdir(path.dirname(teamsPath), { recursive: true });
+    await fsPromises.mkdir(teamDir, { recursive: true });
+
+    let teams = {};
+    try {
+      const content = await fsPromises.readFile(teamsPath, 'utf8');
+      const parsed = yaml.load(content);
+      if (parsed && typeof parsed === 'object') {
+        teams = parsed.teams || parsed;
+      }
+    } catch (err) {
+      if (err.code !== 'ENOENT') {
+        log(`[TeamRegistry] Could not read ${teamsPath}: ${err.message}`);
+      }
+    }
+
+    const normalize = (v) => {
+      if (typeof v !== 'string') return '';
+      return path.resolve(v.replace(/^~(?=\/|$)/, os.homedir()).replace(/\//g, path.sep));
+    };
+    const targetResolved = path.resolve(teamDir);
+    const alreadyRegistered = Object.entries(teams).some(([name, p]) => {
+      if (name !== 'incognide') return false;
+      return normalize(p) === targetResolved;
+    });
+
+    if (alreadyRegistered) {
+      log('[TeamRegistry] incognide team already registered');
+      return;
+    }
+
+    teams.incognide = teamDir.replace(/\\/g, '/');
+    await fsPromises.writeFile(teamsPath, yaml.dump({ teams: teams }, { lineWidth: -1 }), 'utf8');
+    log(`[TeamRegistry] Registered incognide team at ${teamDir}`);
+  } catch (e) {
+    log(`[TeamRegistry] Error registering incognide team: ${e.message}`);
   }
 }
 
@@ -1740,6 +1782,8 @@ window.__addLog = function(msg) {
       log(`[Deploy] Startup deploy error: ${e.message}`);
     }
   }
+
+  await ensureIncognideTeamRegistered();
 
   try {
     const daemonStatus = await getDaemonStatus();

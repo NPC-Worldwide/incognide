@@ -1052,8 +1052,18 @@ export const usePaneAwareStreamListeners = (
                     const existing = message.toolCalls || [];
                     const merged = [...existing];
                     normalizedCalls.forEach((tc: any) => {
+                        // Never merge calls with missing/empty ids — they are distinct.
+                        // Generate a stable local id if needed so contentParts line up.
+                        if (!tc.id) {
+                            tc.id = `tc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                        }
                         const idx = tc.id ? merged.findIndex((mtc: any) => mtc.id && mtc.id === tc.id) : -1;
-                        if (idx >= 0) {
+                        // If the id matches a completed/errored call, treat this as a new call
+                        // rather than overwriting. Provider ids can be reused across turns.
+                        if (idx >= 0 && (merged[idx].status === 'complete' || merged[idx].status === 'error')) {
+                            tc.id = `${tc.id}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+                        }
+                        if (idx >= 0 && merged[idx].status !== 'complete' && merged[idx].status !== 'error') {
                             const existingTc = merged[idx];
                             const newArgs = tc.function?.arguments;
                             const shouldReplaceArgs = newArgs && String(newArgs).trim().length > 0;
@@ -1163,6 +1173,25 @@ export const usePaneAwareStreamListeners = (
                         msg.isStreaming = false;
                         msg.streamId = null;
 
+                        if (Array.isArray(msg.toolCalls)) {
+                            let fixedAny = false;
+                            for (const tc of msg.toolCalls) {
+                                if (tc.status !== 'complete' && tc.status !== 'error') {
+                                    tc.status = 'error';
+                                    tc.result_preview = tc.result_preview || 'Stream ended before tool reported a result';
+                                    fixedAny = true;
+                                }
+                            }
+                            if (fixedAny && Array.isArray(msg.contentParts)) {
+                                for (const part of msg.contentParts) {
+                                    if (part.type === 'tool_call' && part.call?.status !== 'complete' && part.call?.status !== 'error') {
+                                        part.call.status = 'error';
+                                        part.call.result_preview = part.call.result_preview || 'Stream ended before tool reported a result';
+                                    }
+                                }
+                            }
+                        }
+
                         const recentUserMsgs = paneData.chatMessages.allMessages.filter((m: any) => m.role === 'user').slice(-3);
                         const wasAgentMode = recentUserMsgs.some((m: any) => m.executionMode === 'tool_agent');
 
@@ -1218,6 +1247,22 @@ export const usePaneAwareStreamListeners = (
                         message.content += `\n\n[STREAM ERROR: ${error}]`;
                         message.type = 'error';
                         message.isStreaming = false;
+                        if (Array.isArray(message.toolCalls)) {
+                            for (const tc of message.toolCalls) {
+                                if (tc.status !== 'complete' && tc.status !== 'error') {
+                                    tc.status = 'error';
+                                    tc.result_preview = tc.result_preview || `Stream error: ${error}`;
+                                }
+                            }
+                            if (Array.isArray(message.contentParts)) {
+                                for (const part of message.contentParts) {
+                                    if (part.type === 'tool_call' && part.call?.status !== 'complete' && part.call?.status !== 'error') {
+                                        part.call.status = 'error';
+                                        part.call.result_preview = part.call.result_preview || `Stream error: ${error}`;
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 delete streamToPaneRef.current[errorStreamId];

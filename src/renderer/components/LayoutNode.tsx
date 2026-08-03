@@ -1287,6 +1287,9 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
         } else if (contentType === 'zip') {
             headerIcon = <FileIcon size={14} className="text-yellow-500" />;
             headerTitle = getFileName(contentId) || 'Archive';
+        } else if (contentType === 'notebook') {
+            headerIcon = <FileText size={14} className="text-orange-400" />;
+            headerTitle = getFileName(contentId) || 'Notebook';
         } else if (contentType === 'exp') {
             headerIcon = <FlaskConical size={14} className="text-purple-400" />;
             headerTitle = getFileName(contentId) || 'Experiment';

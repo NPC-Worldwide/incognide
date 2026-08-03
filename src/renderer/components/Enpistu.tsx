@@ -3518,9 +3518,10 @@ const renderNotebookViewer = useCallback(({ nodeId }) => {
             setPaneContextMenu={setPaneContextMenu}
             closeContentPane={closeContentPane}
             performSplit={performSplit}
+            setCurrentFile={setCurrentFile}
         />
     );
-}, [rootLayoutNode, closeContentPane, performSplit]);
+}, [rootLayoutNode, closeContentPane, performSplit, setCurrentFile]);
 
 const renderExpViewer = useCallback(({ nodeId }) => {
     const paneData = contentDataRef.current[nodeId];

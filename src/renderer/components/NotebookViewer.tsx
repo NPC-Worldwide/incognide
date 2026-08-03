@@ -99,7 +99,8 @@ const NotebookViewer = ({
     setDraggedItem,
     setPaneContextMenu,
     closeContentPane,
-    performSplit
+    performSplit,
+    setCurrentFile
 }: any) => {
     const [notebook, setNotebook] = useState<Notebook | null>(null);
     const notebookRef = useRef<Notebook | null>(null);
@@ -1556,9 +1557,17 @@ except Exception as e:
                     className="p-2 border-b theme-border text-xs theme-text-muted flex-shrink-0 theme-bg-secondary cursor-move"
                 >
                     <div className="flex justify-between items-center">
-                    <span className="truncate font-semibold text-orange-400">
+                    <button
+                        onClick={() => {
+                            if (filePath && setCurrentFile) {
+                                setCurrentFile(filePath);
+                            }
+                        }}
+                        className="truncate font-semibold text-orange-400 hover:underline text-left"
+                        title={filePath || ''}
+                    >
                         {filePath ? getFileName(filePath) : 'Untitled.ipynb'}{hasChanges ? ' *' : ''}
-                    </span>
+                    </button>
                     <div className="flex items-center gap-2">
                         <div className="relative flex items-center gap-1">
                             <button

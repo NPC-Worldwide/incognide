@@ -374,25 +374,33 @@ print(json.dumps({"ready": True}))
           const pythonPath = kernel.pythonPath || 'python3';
 
           const pythonScript = `
-import sys, json
+import sys, json, uuid, time
 try:
     from jupyter_client import BlockingKernelClient
     client = BlockingKernelClient(connection_file=sys.argv[1])
     client.load_connection_file()
     client.start_channels()
     client.wait_for_ready(timeout=10)
-    client.execute(sys.argv[2])
+    msg_id = client.execute(sys.argv[2])
     outputs = []
-    while True:
+    idle_seen = False
+    started = time.time()
+    while not idle_seen and time.time() - started < 60:
         try:
-            msg = client.get_iopub_msg(timeout=None)
+            msg = client.get_iopub_msg(timeout=1)
             t, c = msg['msg_type'], msg['content']
+            parent = msg.get('parent_header', {})
+            if parent.get('msg_id') != msg_id:
+                continue
             if t == 'stream': outputs.append({'output_type': 'stream', 'name': c.get('name','stdout'), 'text': [c.get('text','')]})
             elif t == 'execute_result': outputs.append({'output_type': 'execute_result', 'data': c.get('data',{}), 'metadata': c.get('metadata',{}), 'execution_count': c.get('execution_count')})
             elif t == 'display_data': outputs.append({'output_type': 'display_data', 'data': c.get('data',{}), 'metadata': c.get('metadata',{})})
             elif t == 'error': outputs.append({'output_type': 'error', 'ename': c.get('ename','Error'), 'evalue': c.get('evalue',''), 'traceback': c.get('traceback',[])})
-            elif t == 'status' and c.get('execution_state') == 'idle': break
-        except: break
+            elif t == 'status' and c.get('execution_state') == 'idle':
+                idle_seen = True
+                break
+        except Exception:
+            break
     client.stop_channels()
     print(json.dumps({'success': True, 'outputs': outputs}))
 except Exception as e:

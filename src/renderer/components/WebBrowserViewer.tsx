@@ -1115,6 +1115,28 @@ const WebBrowserViewer = memo(({
         };
     }, [currentPath]);
 
+    useEffect(() => {
+        const handleNavigateInSameView = (data: any) => {
+            const { webContentsId, url } = data || {};
+            if (!webContentsId || !url || url === 'about:blank') return;
+            const webview = webviewRef.current as any;
+            if (!webview || typeof webview.getWebContentsId !== 'function') return;
+            try {
+                if (webview.getWebContentsId() === webContentsId) {
+                    console.log('[WebBrowser] Navigating auth popup in same view:', url);
+                    webview.src = url;
+                }
+            } catch (err) {
+                console.error('[WebBrowser] Error navigating in same view:', err);
+            }
+        };
+
+        const unsubscribe = (window as any).api?.onBrowserNavigateInSameView?.(handleNavigateInSameView);
+        return () => {
+            if (unsubscribe) unsubscribe();
+        };
+    }, [nodeId]);
+
     const handleHardRefresh = useCallback(() => {
         const webview = webviewRef.current;
         if (!webview) return;

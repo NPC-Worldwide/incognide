@@ -115,12 +115,13 @@ const getTabTitle = (tab: Tab, contentDataRef?: any, nodeId?: string): string =>
         return shortId || (tab.contentType === 'agent' ? 'Agent' : 'Chat');
     }
 
-    const fileTypes = new Set(['editor', 'image', 'pdf', 'csv', 'latex', 'docx', 'pptx', 'zip', 'folder', 'markdown-preview']);
+    const fileTypes = new Set(['editor', 'image', 'pdf', 'csv', 'latex', 'docx', 'pptx', 'zip', 'folder', 'markdown-preview', 'notebook', 'exp']);
     const isFileBased = fileTypes.has(tab.contentType);
     if (tab.title && !isFileBased) return tab.title;
     if (tab.title && isFileBased && tab.title !== tab.contentType) return tab.title;
 
     const filePath = tab.contentId ? String(tab.contentId).replace(/\\/g, '/') : '';
+    const fileName = getFileName(filePath);
 
     switch (tab.contentType) {
         case 'chat':
@@ -159,27 +160,31 @@ const getTabTitle = (tab: Tab, contentDataRef?: any, nodeId?: string): string =>
         case 'browsergraph':
             return 'Browser Graph';
         case 'markdown-preview':
-            return `Preview: ${filePath || 'Markdown'}`;
+            return `Preview: ${fileName || 'Markdown'}`;
         case 'pdf':
-            return filePath || 'PDF';
+            return fileName || 'PDF';
         case 'csv':
-            return filePath || 'CSV';
+            return fileName || 'CSV';
         case 'latex':
-            return filePath || 'LaTeX';
+            return fileName || 'LaTeX';
         case 'docx':
-            return filePath || 'Document';
+            return fileName || 'Document';
         case 'pptx':
-            return filePath || 'Presentation';
+            return fileName || 'Presentation';
         case 'zip':
-            return filePath || 'Archive';
+            return fileName || 'Archive';
         case 'image':
-            return filePath || 'Image';
+            return fileName || 'Image';
         case 'folder':
-            return filePath || 'Folder';
+            return fileName || 'Folder';
         case 'editor':
-            return filePath || 'Editor';
+            return fileName || 'Editor';
+        case 'notebook':
+            return fileName || 'Notebook';
+        case 'exp':
+            return fileName || 'Experiment';
         default:
-            return filePath || 'Tab';
+            return fileName || 'Tab';
     }
 };
 

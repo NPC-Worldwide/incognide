@@ -6,6 +6,14 @@ description: >
   projectenv, browsergraph, data-labeler, git. File panes (content_id = file path):
   editor, pdf, csv, docx, pptx, latex, notebook, exp, mindmap, zip, image, folder.
   URL panes (content_id = URL): browser. Position: right, left, top, bottom.
+
+  For editor and notebook panes, if the requested path looks like a new file path
+  (has a file extension such as .py, .js, .ts, .txt, .md, .ipynb, .json, .yaml,
+  .yml, .toml, .html, .css, .c, .cpp, .h, .hpp, .rs, .go, .java, .kt, .rb, .sh,
+  .sql, .csv, .incognb or contains a directory and basename), create it first
+  with empty content before opening the pane. Do this by writing an empty file
+  to the path using the shell jinx ("touch" on macOS/Linux or "echo.>file" on
+  Windows), then proceed to open the pane.
 permissions:
   default: allow
 inputs:
@@ -14,6 +22,17 @@ inputs:
   - { position: "right" }
   - { shell_type: "" }
 steps:
+  - name: ensure_file_exists
+    condition: "{{ pane_type in ['editor', 'notebook'] and content_id and ('/' in content_id or '\\' in content_id or content_id | regex_match('\\.(py|js|ts|txt|md|ipynb|json|yaml|yml|toml|html|css|c|cpp|h|hpp|rs|go|java|kt|rb|sh|sql|csv|incognb)$')) }}"
+    engine: python
+    code: |
+      import os
+      file_path = {{ content_id | tojson }}
+      dir_path = os.path.dirname(file_path) or '.'
+      os.makedirs(dir_path, exist_ok=True)
+      if not os.path.exists(file_path):
+          open(file_path, 'w').close()
+      {"ensured": file_path, "existed": os.path.exists(file_path)}
   - name: open_pane
     engine: incognide
     action: open_pane
