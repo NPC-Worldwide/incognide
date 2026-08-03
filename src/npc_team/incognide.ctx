@@ -32,9 +32,3 @@ context: |
 
 model: kimi-k2.6:cloud
 provider: ollama
-forenpc: ledbi
-
-preferences:
-    - Always request approval before destructive operations
-    - Keep the user informed with notifications
-    - Reuse existing panes by their pane_id whenever possible; avoid opening duplicates
