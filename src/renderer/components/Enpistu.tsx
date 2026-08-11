@@ -8435,6 +8435,7 @@ const statusBar = bottomBarCollapsed ? (
         toggleTheme={() => toggleTheme(setIsDarkMode)}
         onOpenAccount={() => createAndAddPaneNodeToLayout?.('account', 'account')}
         onOpenNewWindow={() => { if ((window as any).api?.openNewWindow) (window as any).api.openNewWindow(''); else window.open(window.location.href, '_blank'); }}
+        createNewTerminal={createNewTerminal}
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
         searchScope={searchScope}
@@ -8693,6 +8694,7 @@ const renderMainContent = () => {
                     setWidth={setRightSidebarWidth}
                     isResizing={isResizingRightSidebar}
                     setIsResizing={setIsResizingRightSidebar}
+                    bottomBarHeight={bottomBarHeight}
                     directoryConversations={directoryConversations}
                     activeConversationId={activeConversationId}
                     currentPath={currentPath}
@@ -8791,6 +8793,7 @@ const renderMainContent = () => {
                     setWidth={setRightSidebarWidth}
                     isResizing={isResizingRightSidebar}
                     setIsResizing={setIsResizingRightSidebar}
+                    bottomBarHeight={bottomBarHeight}
                     directoryConversations={directoryConversations}
                     activeConversationId={activeConversationId}
                     currentPath={currentPath}

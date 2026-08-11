@@ -293,23 +293,6 @@ const Sidebar = (props: any) => {
 
     const [docDropdownOpen, setDocDropdownOpen] = useState(false);
 
-    const [terminalDropdownOpen, setTerminalDropdownOpen] = useState(false);
-    const [installedAgents, setInstalledAgents] = useState<Record<string, boolean>>({});
-    const [showAddAgentPrompt, setShowAddAgentPrompt] = useState(false);
-    const [newAgentName, setNewAgentName] = useState('');
-    const [newAgentCommand, setNewAgentCommand] = useState('');
-    const KNOWN_AGENTS = ['npcsh', 'opencode', 'nanocoder', 'gemini', 'claude', 'codex', 'qwen', 'hermes', 'pi'];
-    useEffect(() => {
-        (async () => {
-            try {
-                const customAgents = JSON.parse(localStorage.getItem('incognide_terminalAgents') || '[]');
-                const allCmds = [...KNOWN_AGENTS, ...customAgents.map((a: any) => a.command)];
-                const r = await (window as any).api?.checkBinaries?.(allCmds);
-                setInstalledAgents(r || {});
-            } catch {}
-        })();
-    }, [terminalDropdownOpen]);
-
     const [chatPlusDropdownOpen, setChatPlusDropdownOpen] = useState(false);
 
     const [mcpPanelOpen, setMcpPanelOpen] = useState(false);
@@ -428,7 +411,6 @@ const Sidebar = (props: any) => {
     }, [currentPath, baseDir]);
 
     const closeAllDropdowns = () => {
-        setTerminalDropdownOpen(false);
         setChatPlusDropdownOpen(false);
         setCodeFileDropdownOpen(false);
         setDocDropdownOpen(false);
@@ -447,17 +429,13 @@ const Sidebar = (props: any) => {
                 setDocDropdownOpen(false);
             }
 
-            if (terminalDropdownOpen && !target.closest('[data-dropdown="terminal"]')) {
-                setTerminalDropdownOpen(false);
-            }
-
             if (folderDropdownOpen && !target.closest('[data-dropdown="folder"]')) {
                 setFolderDropdownOpen(false);
             }
         };
         document.addEventListener('click', handleClickOutside);
         return () => document.removeEventListener('click', handleClickOutside);
-    }, [codeFileDropdownOpen, docDropdownOpen, terminalDropdownOpen, folderDropdownOpen]);
+    }, [codeFileDropdownOpen, docDropdownOpen, folderDropdownOpen]);
 
     const [websiteContextMenu, setWebsiteContextMenu] = useState<{ x: number; y: number; url: string; title: string } | null>(null);
 
@@ -469,9 +447,6 @@ const Sidebar = (props: any) => {
 
     const [defaultNewPaneType, setDefaultNewPaneType] = useState<string>('chat');
 
-    const [defaultNewTerminalType, setDefaultNewTerminalType] = useState<string>(() =>
-        localStorage.getItem('incognide_defaultNewTerminalType') || 'system'
-    );
     const [defaultNewNotebookType, setDefaultNewNotebookType] = useState<string>(() =>
         localStorage.getItem('incognide_defaultNewNotebookType') || 'notebook'
     );
@@ -484,10 +459,6 @@ const Sidebar = (props: any) => {
         const loadDefaults = async () => {
             try {
                 const data = await (window as any).api.loadGlobalSettings();
-                if (data?.global_settings?.default_new_terminal_type) {
-                    setDefaultNewTerminalType(data.global_settings.default_new_terminal_type);
-                    localStorage.setItem('incognide_defaultNewTerminalType', data.global_settings.default_new_terminal_type);
-                }
                 if (data?.global_settings?.default_new_document_type) {
                     setDefaultNewDocumentType(data.global_settings.default_new_document_type);
                     localStorage.setItem('incognide_defaultNewDocumentType', data.global_settings.default_new_document_type);
@@ -498,16 +469,11 @@ const Sidebar = (props: any) => {
         };
         loadDefaults();
 
-        const handleTerminalTypeChanged = (e: CustomEvent) => {
-            if (e.detail) setDefaultNewTerminalType(e.detail);
-        };
         const handleDocumentTypeChanged = (e: CustomEvent) => {
             if (e.detail) setDefaultNewDocumentType(e.detail);
         };
-        window.addEventListener('defaultTerminalTypeChanged', handleTerminalTypeChanged as EventListener);
         window.addEventListener('defaultDocumentTypeChanged', handleDocumentTypeChanged as EventListener);
         return () => {
-            window.removeEventListener('defaultTerminalTypeChanged', handleTerminalTypeChanged as EventListener);
             window.removeEventListener('defaultDocumentTypeChanged', handleDocumentTypeChanged as EventListener);
         };
     }, []);
@@ -635,7 +601,6 @@ const Sidebar = (props: any) => {
         ],
         customTiles: []
     });
-    const [tileEditMode, setTileEditMode] = useState(false);
     const [bottomGridEditMode, setBottomGridEditMode] = useState(false);
     const [tileJinxes, setTileJinxes] = useState<Array<{
         filename: string;
@@ -3776,66 +3741,134 @@ const renderFolderList = (structure) => {
                     </div>
                 </div>
             )}
-            {!filesCollapsed && (
-                <div className="theme-bg-secondary border-b theme-border">
-                    <div className="flex items-center gap-0.5 px-1 py-0.5 border-t theme-border">
-                        <span className="text-[9px] text-gray-500 mr-1">Sort:</span>
-                        {([['name', 'A-Z'], ['modified', 'Date'], ['type', 'Type']] as const).map(([val, label]) => (
+        </div>
+    );
+
+    const createBar = (
+        <div className="flex border-b theme-border theme-bg-tertiary" data-tutorial="creation-bar">
+            <div className="relative flex items-stretch w-1/2 hover:bg-cyan-500/20 transition-all" data-dropdown="code-file" data-tutorial="code-file-button">
+                <button
+                    onClick={() => createFileWithExtension(defaultCodeFileType)}
+                    className="flex-1 flex items-center justify-center py-2"
+                    title={`New .${defaultCodeFileType} file`}
+                >
+                    <Code2 size={16} className="text-cyan-400" />
+                </button>
+                <button
+                    onClick={(e) => { e.stopPropagation(); closeAllDropdowns(); setCodeFileDropdownOpen(!codeFileDropdownOpen); }}
+                    className="flex items-center justify-center px-2.5 border-l theme-border"
+                    title="More file types"
+                >
+                    <ChevronDown size={14} className="text-gray-500" />
+                </button>
+                {codeFileDropdownOpen && (
+                    <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[9999] py-1 min-w-[150px] max-h-60 overflow-y-auto">
+                        <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Right-click to set default</div>
+                        {sortedFileTypes.map(type => (
                             <button
-                                key={val}
-                                onClick={() => setFileSort(val)}
-                                className={`px-1.5 py-0.5 text-[9px] rounded transition-colors ${fileSort === val ? 'bg-yellow-500/30 text-yellow-300' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-700/50'}`}
+                                key={type.ext}
+                                onClick={() => { createFileWithExtension(type.ext); setCodeFileDropdownOpen(false); }}
+                                onContextMenu={(e) => { e.preventDefault(); setDefaultCodeFileType(type.ext); setCodeFileDropdownOpen(false); }}
+                                className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultCodeFileType === type.ext ? 'bg-cyan-900/30 text-cyan-300' : 'theme-text-primary'}`}
                             >
-                                {label}
+                                <span className="w-3 text-center text-[10px]">{type.icon}</span>
+                                <span className="flex-1">{type.label}</span>
+                                <span className="text-[9px] text-gray-500">.{type.ext}</span>
+                                {defaultCodeFileType === type.ext && <Star size={8} className="text-yellow-400" />}
                             </button>
                         ))}
+                        <div className="border-t theme-border my-0.5" />
+                        <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Compute</div>
+                        <button onClick={() => { createNewNotebook?.(); setCodeFileDropdownOpen(false); }} className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs theme-text-primary"><FileText size={11} className="text-orange-400" /><span>Notebook (.ipynb)</span></button>
+                        <button onClick={() => { createNewExperiment?.(); setCodeFileDropdownOpen(false); }} className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs theme-text-primary"><FlaskConical size={11} className="text-purple-400" /><span>Experiment (.exp)</span></button>
                     </div>
-                    {showFileTypeFilter && (
-                        <div className="px-1 py-1 border-t theme-border">
-                            <div className="relative">
-                                <Filter size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
-                                <input
-                                    type="text"
-                                    value={fileTypeFilter}
-                                    onChange={(e) => setFileTypeFilter(e.target.value)}
-                                    placeholder=".py .js .tsx (comma or space separated)"
-                                    className="w-full theme-bg-tertiary theme-border border rounded pl-7 pr-6 py-1 text-[11px] theme-text-primary placeholder:opacity-50 focus:outline-none focus:border-yellow-500/50"
-                                />
-                                {fileTypeFilter && (
-                                    <button onClick={() => setFileTypeFilter('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:theme-text-primary">
-                                        <X size={10} />
-                                    </button>
-                                )}
-                            </div>
-                            <div className="flex flex-wrap gap-1 mt-1.5 px-1">
-                                {[
-                                    { label: 'Python', ext: '.py' },
-                                    { label: 'JS/TS', ext: '.js .ts .jsx .tsx' },
-                                    { label: 'Docs', ext: '.md .txt .docx .pdf' },
-                                    { label: 'Data', ext: '.json .csv .xlsx' },
-                                    { label: 'Images', ext: '.png .jpg .jpeg .gif .svg' },
-                                ].map(preset => (
-                                    <button
-                                        key={preset.label}
-                                        onClick={() => setFileTypeFilter(fileTypeFilter ? `${fileTypeFilter} ${preset.ext}` : preset.ext)}
-                                        className="text-[9px] px-1.5 py-0.5 bg-white/5 theme-hover rounded text-gray-400 hover:text-yellow-400 transition-colors"
-                                        title={`Add ${preset.ext}`}
-                                    >
-                                        {preset.label}
-                                    </button>
-                                ))}
-                                {fileTypeFilter && (
-                                    <button
-                                        onClick={() => setFileTypeFilter('')}
-                                        className="text-[9px] px-1.5 py-0.5 bg-red-500/10 hover:bg-red-500/20 rounded text-red-400 hover:text-red-300 transition-colors"
-                                        title="Clear all filters"
-                                    >
-                                        Clear
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    )}
+                )}
+            </div>
+            <div className="relative flex items-stretch w-1/2 hover:bg-rose-500/20 transition-all border-l theme-border" data-dropdown="doc" data-tutorial="document-button">
+                <button
+                    onClick={() => createNewDocument?.(defaultNewDocumentType)}
+                    className="flex-1 flex items-center justify-center py-2"
+                    title={`New ${defaultNewDocumentType.toUpperCase()} document`}
+                >
+                    <FileStack size={16} className="text-rose-400" />
+                </button>
+                <button
+                    onClick={(e) => { e.stopPropagation(); closeAllDropdowns(); setDocDropdownOpen(!docDropdownOpen); }}
+                    className="flex items-center justify-center px-2.5 border-l theme-border"
+                    title="More document types"
+                >
+                    <ChevronDown size={14} className="text-gray-500" />
+                </button>
+                {docDropdownOpen && (
+                    <div className="absolute right-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[9999] py-1 min-w-[140px]">
+                        <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Documents</div>
+                        <button onClick={() => { createNewDocument?.('docx'); setDocDropdownOpen(false); }} className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs theme-text-primary"><FileText size={11} className="text-blue-300" /><span>Word</span></button>
+                        <button onClick={() => { createNewDocument?.('xlsx'); setDocDropdownOpen(false); }} className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs theme-text-primary"><FileJson size={11} className="text-green-300" /><span>Excel</span></button>
+                        <button onClick={() => { createNewDocument?.('pptx'); setDocDropdownOpen(false); }} className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs theme-text-primary"><BarChart3 size={11} className="text-orange-300" /><span>PowerPoint</span></button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+
+    const sortBar = (
+        <div className="theme-bg-secondary border-b theme-border">
+            <div className="flex items-center gap-0.5 px-1 py-0.5 border-t theme-border">
+                <span className="text-[9px] text-gray-500 mr-1">Sort:</span>
+                {([['name', 'A-Z'], ['modified', 'Date'], ['type', 'Type']] as const).map(([val, label]) => (
+                    <button
+                        key={val}
+                        onClick={() => setFileSort(val)}
+                        className={`px-1.5 py-0.5 text-[9px] rounded transition-colors ${fileSort === val ? 'bg-yellow-500/30 text-yellow-300' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-700/50'}`}
+                    >
+                        {label}
+                    </button>
+                ))}
+            </div>
+            {showFileTypeFilter && (
+                <div className="px-1 py-1 border-t theme-border">
+                    <div className="relative">
+                        <Filter size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
+                        <input
+                            type="text"
+                            value={fileTypeFilter}
+                            onChange={(e) => setFileTypeFilter(e.target.value)}
+                            placeholder=".py .js .tsx (comma or space separated)"
+                            className="w-full theme-bg-tertiary theme-border border rounded pl-7 pr-6 py-1 text-[11px] theme-text-primary placeholder:opacity-50 focus:outline-none focus:border-yellow-500/50"
+                        />
+                        {fileTypeFilter && (
+                            <button onClick={() => setFileTypeFilter('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:theme-text-primary">
+                                <X size={10} />
+                            </button>
+                        )}
+                    </div>
+                    <div className="flex flex-wrap gap-1 mt-1.5 px-1">
+                        {[
+                            { label: 'Python', ext: '.py' },
+                            { label: 'JS/TS', ext: '.js .ts .jsx .tsx' },
+                            { label: 'Docs', ext: '.md .txt .docx .pdf' },
+                            { label: 'Data', ext: '.json .csv .xlsx' },
+                            { label: 'Images', ext: '.png .jpg .jpeg .gif .svg' },
+                        ].map(preset => (
+                            <button
+                                key={preset.label}
+                                onClick={() => setFileTypeFilter(fileTypeFilter ? `${fileTypeFilter} ${preset.ext}` : preset.ext)}
+                                className="text-[9px] px-1.5 py-0.5 bg-white/5 theme-hover rounded text-gray-400 hover:text-yellow-400 transition-colors"
+                                title={`Add ${preset.ext}`}
+                            >
+                                {preset.label}
+                            </button>
+                        ))}
+                        {fileTypeFilter && (
+                            <button
+                                onClick={() => setFileTypeFilter('')}
+                                className="text-[9px] px-1.5 py-0.5 bg-red-500/10 hover:bg-red-500/20 rounded text-red-400 hover:text-red-300 transition-colors"
+                                title="Clear all filters"
+                            >
+                                Clear
+                            </button>
+                        )}
+                    </div>
                 </div>
             )}
         </div>
@@ -4104,6 +4137,8 @@ onDragStart={(e) => {
     return (
         <div className="flex flex-col h-full">
             {header}
+            {!filesCollapsed && createBar}
+            {!filesCollapsed && sortBar}
             {!filesCollapsed && (
                 <div
                     className="theme-bg-secondary flex-1 min-h-0 overflow-y-auto"
@@ -5337,201 +5372,6 @@ return (
                 }}
             />
         )}
-
-        {topBarCollapsed && !sidebarCollapsed && (
-            <div
-                className="group h-6 flex items-center justify-center border-b theme-border hover:bg-blue-500/20 cursor-pointer transition-all"
-                onClick={onExpandTopBar}
-                title="Show top bar"
-            >
-                <ChevronDown size={14} className="text-gray-600 group-hover:text-blue-400 transition-colors" />
-            </div>
-        )}
-
-        <div className={`border-b theme-border flex-shrink-0 relative group/header ${sidebarCollapsed || topBarCollapsed ? 'hidden' : ''}`} style={{ height: topBarHeight }}>
-            <div className="grid grid-cols-3 divide-x theme-border h-full" data-tutorial="creation-tiles">
-                <div className="relative" data-dropdown="terminal" data-tutorial="terminal-button">
-                    <button
-                        onClick={() => createNewTerminal?.(defaultNewTerminalType)}
-                        className="w-full h-full flex items-center justify-center hover:bg-teal-500/20 active:bg-teal-500/30 relative transition-colors"
-                        title={`New ${defaultNewTerminalType === 'system' ? 'Bash' : defaultNewTerminalType} Terminal`}
-                    >
-                        {defaultNewTerminalType === 'system' && <Terminal size={18} className="text-green-400" />}
-                        {defaultNewTerminalType === 'npcsh' && <Sparkles size={18} className="text-purple-400" />}
-                        {defaultNewTerminalType !== 'system' && defaultNewTerminalType !== 'npcsh' && <Bot size={18} className="text-cyan-400" />}
-                    </button>
-                    <button
-                        onClick={(e) => { e.stopPropagation(); closeAllDropdowns(); setTerminalDropdownOpen(!terminalDropdownOpen); }}
-                        className="absolute top-0 right-0 w-1/2 h-1/2 flex items-center justify-center theme-hover rounded-bl transition-colors"
-                        title="More terminal options"
-                    >
-                        <ChevronDown size={7} className="text-gray-500" />
-                    </button>
-                    {terminalDropdownOpen && (
-                        <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[9999] py-1 min-w-[160px]">
-                            <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Right-click to set default</div>
-                            {(() => {
-                                const bash = { name: 'Bash', command: 'system' };
-                                let customAgents: any[] = [];
-                                try { customAgents = JSON.parse(localStorage.getItem('incognide_terminalAgents') || '[]'); } catch {}
-                                const known = KNOWN_AGENTS.map(cmd => ({ name: cmd, command: cmd }));
-                                const allKnown = [bash, ...known.filter(a => installedAgents[a.command])];
-                                const customFiltered = customAgents.filter(a => installedAgents[a.command] && !KNOWN_AGENTS.includes(a.command) && a.command !== 'system');
-                                return [...allKnown, ...customFiltered].map((item: any, idx: number) => (
-                                    <button
-                                        key={idx}
-                                        onClick={() => { createNewTerminal?.(item.command); setTerminalDropdownOpen(false); }}
-                                        onContextMenu={(e) => { e.preventDefault(); setDefaultNewTerminalType(item.command); setTerminalDropdownOpen(false); }}
-                                        className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultNewTerminalType === item.command ? 'bg-green-900/30 text-green-300' : 'theme-text-primary'}`}
-                                    >
-                                        <Terminal size={11} /><span>{item.name}</span>
-                                        {defaultNewTerminalType === item.command && <Star size={8} className="text-yellow-400 ml-auto" />}
-                                    </button>
-                                ));
-                            })()}
-                            <div className="border-t theme-border my-0.5" />
-                            {!showAddAgentPrompt ? (
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); setShowAddAgentPrompt(true); }}
-                                    className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs text-blue-400"
-                                >
-                                    <Plus size={11} /><span>Add custom agent...</span>
-                                </button>
-                            ) : (
-                                <div className="p-2 space-y-1" onClick={(e) => e.stopPropagation()}>
-                                    <input type="text" placeholder="Name" value={newAgentName} onChange={e => setNewAgentName(e.target.value)} className="w-full px-1.5 py-0.5 text-xs theme-bg-primary border theme-border rounded" />
-                                    <input type="text" placeholder="Command (binary name)" value={newAgentCommand} onChange={e => setNewAgentCommand(e.target.value)} className="w-full px-1.5 py-0.5 text-xs theme-bg-primary border theme-border rounded" />
-                                    <div className="flex gap-1">
-                                        <button
-                                            onClick={async () => {
-                                                if (!newAgentName || !newAgentCommand) return;
-                                                try {
-                                                    const existing = JSON.parse(localStorage.getItem('incognide_terminalAgents') || '[]');
-                                                    const updated = [...existing.filter((a: any) => a.command !== newAgentCommand), { name: newAgentName, command: newAgentCommand }];
-                                                    localStorage.setItem('incognide_terminalAgents', JSON.stringify(updated));
-                                                    const r = await (window as any).api?.checkBinaries?.([newAgentCommand]);
-                                                    setInstalledAgents(prev => ({ ...prev, ...(r || {}) }));
-                                                } catch {}
-                                                setNewAgentName(''); setNewAgentCommand(''); setShowAddAgentPrompt(false);
-                                            }}
-                                            className="flex-1 px-2 py-0.5 text-[10px] bg-blue-600 hover:bg-blue-500 text-white rounded"
-                                        >Add</button>
-                                        <button onClick={() => { setNewAgentName(''); setNewAgentCommand(''); setShowAddAgentPrompt(false); }} className="px-2 py-0.5 text-[10px] theme-bg-tertiary rounded">Cancel</button>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
-                <div className="relative" data-dropdown="code-file" data-tutorial="code-file-button">
-                    <button
-                        onClick={() => createFileWithExtension(defaultCodeFileType)}
-                        className="w-full h-full flex items-center justify-center hover:bg-teal-500/20 relative transition-colors"
-                        title={`New .${defaultCodeFileType} file`}
-                    >
-                        <Code2 size={18} className="text-cyan-400" />
-                    </button>
-                    <button
-                        onClick={(e) => { e.stopPropagation(); closeAllDropdowns(); setCodeFileDropdownOpen(!codeFileDropdownOpen); }}
-                        className="absolute top-0 right-0 w-1/2 h-1/2 flex items-center justify-center theme-hover rounded-bl transition-colors"
-                        title="More file types"
-                    >
-                        <ChevronDown size={7} className="text-gray-500" />
-                    </button>
-                    {codeFileDropdownOpen && (
-                        <div className="absolute left-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[9999] py-1 min-w-[150px] max-h-60 overflow-y-auto">
-                            <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Right-click to set default</div>
-                            {sortedFileTypes.map(type => (
-                                <button
-                                    key={type.ext}
-                                    onClick={() => { createFileWithExtension(type.ext); setCodeFileDropdownOpen(false); }}
-                                    onContextMenu={(e) => { e.preventDefault(); setDefaultCodeFileType(type.ext); setCodeFileDropdownOpen(false); }}
-                                    className={`flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs ${defaultCodeFileType === type.ext ? 'bg-cyan-900/30 text-cyan-300' : 'theme-text-primary'}`}
-                                >
-                                    <span className="w-3 text-center text-[10px]">{type.icon}</span>
-                                    <span className="flex-1">{type.label}</span>
-                                    <span className="text-[9px] text-gray-500">.{type.ext}</span>
-                                    {defaultCodeFileType === type.ext && <Star size={8} className="text-yellow-400" />}
-                                </button>
-                            ))}
-                            <div className="border-t theme-border my-0.5" />
-                            <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Compute</div>
-                            <button onClick={() => { createNewNotebook?.(); setCodeFileDropdownOpen(false); }} className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs theme-text-primary"><FileText size={11} className="text-orange-400" /><span>Notebook (.ipynb)</span></button>
-                            <button onClick={() => { createNewExperiment?.(); setCodeFileDropdownOpen(false); }} className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs theme-text-primary"><FlaskConical size={11} className="text-purple-400" /><span>Experiment (.exp)</span></button>
-                        </div>
-                    )}
-                </div>
-                <div className="relative" data-dropdown="doc" data-tutorial="document-button">
-                    <button
-                        onClick={() => createNewDocument?.(defaultNewDocumentType)}
-                        className="w-full h-full flex items-center justify-center hover:bg-teal-500/20 relative transition-colors"
-                        title={`New ${defaultNewDocumentType.toUpperCase()} document`}
-                    >
-                        <FileStack size={18} className="text-rose-400" />
-                    </button>
-                    <button
-                        onClick={(e) => { e.stopPropagation(); closeAllDropdowns(); setDocDropdownOpen(!docDropdownOpen); }}
-                        className="absolute top-0 right-0 w-1/2 h-1/2 flex items-center justify-center theme-hover rounded-bl transition-colors"
-                        title="More document types"
-                    >
-                        <ChevronDown size={7} className="text-gray-500" />
-                    </button>
-                    {docDropdownOpen && (
-                        <div className="absolute right-0 top-full mt-1 theme-bg-secondary border theme-border rounded shadow-xl z-[9999] py-1 min-w-[140px]">
-                            <div className="px-2 py-0.5 text-[8px] text-gray-500 uppercase">Documents</div>
-                            <button onClick={() => { createNewDocument?.('docx'); setDocDropdownOpen(false); }} className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs theme-text-primary"><FileText size={11} className="text-blue-300" /><span>Word</span></button>
-                            <button onClick={() => { createNewDocument?.('xlsx'); setDocDropdownOpen(false); }} className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs theme-text-primary"><FileJson size={11} className="text-green-300" /><span>Excel</span></button>
-                            <button onClick={() => { createNewDocument?.('pptx'); setDocDropdownOpen(false); }} className="flex items-center gap-2 px-2 py-1 w-full text-left theme-hover text-xs theme-text-primary"><BarChart3 size={11} className="text-orange-300" /><span>PowerPoint</span></button>
-                        </div>
-                    )}
-                </div>
-            </div>
-            {tileEditMode && (
-                <div className="mt-2 p-2 bg-gray-800/50 rounded-lg border border-gray-700">
-                    <div className="text-[10px] text-gray-400 mb-2">Drag to reorder • Click eye to toggle</div>
-                    <div className="space-y-1">
-                        {[...tilesConfig.tiles].sort((a, b) => a.order - b.order).map((tile) => (
-                            <div
-                                key={tile.id}
-                                draggable
-                                onDragStart={(e) => handleTileDragStart(e, tile.id)}
-                                onDragOver={handleTileDragOver}
-                                onDrop={(e) => handleTileDrop(e, tile.id)}
-                                className={`flex items-center gap-2 px-2 py-1 rounded text-xs cursor-move ${
-                                    draggedTileId === tile.id ? 'bg-blue-600/30 border border-teal-500' : 'bg-gray-700/50 theme-hover'
-                                }`}
-                            >
-                                <span className="text-gray-500">⋮⋮</span>
-                                <span className="flex-1">{tile.label}</span>
-                                <button
-                                    onClick={() => toggleTileEnabled(tile.id)}
-                                    className={`p-0.5 rounded ${tile.enabled ? 'text-green-400' : 'text-gray-600'}`}
-                                    title={tile.enabled ? 'Visible' : 'Hidden'}
-                                >
-                                    {tile.enabled ? '👁' : '👁‍🗨'}
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                    <button
-                        onClick={async () => {
-                            const result = await (window as any).api?.tilesConfigReset?.();
-                            if (result?.config) setTilesConfig(result.config);
-                        }}
-                        className="w-full mt-2 py-1 text-[10px] text-gray-500 hover:text-red-400"
-                    >
-                        Reset to defaults
-                    </button>
-                </div>
-            )}
-            <div
-                className="absolute bottom-0 left-0 right-0 h-3 flex items-center justify-center opacity-0 group-hover/header:opacity-100 hover:bg-blue-500/30 cursor-pointer transition-all z-10"
-                onClick={onCollapseTopBar}
-                title="Hide top bar"
-            >
-                <ChevronUp size={10} className="text-gray-500 hover:text-blue-400" />
-            </div>
-        </div>
 
         <div className={`flex-1 flex flex-col overflow-hidden ${sidebarCollapsed ? 'hidden' : ''}`}>
             {loading ? (
