@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { MessageSquare, Bot, Search, X, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Users, Zap, FileCode, Server, CircleDot, Circle, Settings2 } from 'lucide-react';
+import { MessageSquare, Bot, Search, X, ChevronLeft, ChevronRight, ChevronDown, Users, Zap, FileCode, Server, CircleDot, Circle, Settings2 } from 'lucide-react';
 
 interface RightSidebarProps {
     collapsed: boolean;
@@ -122,19 +122,19 @@ const SectionHeader: React.FC<{
             onClick={onToggle}
             className={`flex items-center w-full py-2 bg-gradient-to-r ${grad} cursor-pointer theme-hover ${isDragging ? 'opacity-50' : ''} ${isDropTarget ? 'ring-2 ring-white/40' : ''}`}
         >
-            <div className="flex items-center pl-1 gap-1 min-w-0">
-                <ChevronRight size={12} className={`transform transition-transform theme-text-muted ${collapsed ? '' : 'rotate-90'}`} />
-                <span className="text-[11px] font-semibold theme-text-primary truncate">{label}</span>
-                {typeof count === 'number' && (
-                    <span className="text-[9px] theme-text-muted">{count}</span>
-                )}
-            </div>
             {leftActions && (
-                <div className="flex items-center gap-0.5 ml-1" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
                     {leftActions}
                 </div>
             )}
             <div className="flex-1" />
+            <div className="flex items-center gap-1 min-w-0 justify-end">
+                {typeof count === 'number' && (
+                    <span className="text-[9px] theme-text-muted">{count}</span>
+                )}
+                <span className="text-[11px] font-semibold theme-text-primary truncate">{label}</span>
+                <ChevronRight size={12} className={`transform transition-transform theme-text-muted ${collapsed ? '' : 'rotate-90'}`} />
+            </div>
             {actions && (
                 <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
                     {actions}
@@ -410,49 +410,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 style={{ backgroundColor: isResizing ? '#3b82f6' : 'transparent' }}
             />
 
-            <div className="border-b theme-border">
-                <div className="flex items-center justify-between px-2 py-1 hover:bg-white/5">
-                    <div
-                        className="flex items-center gap-1.5 cursor-pointer"
-                        onClick={() => onTogglePredictiveText?.()}
-                    >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="12" cy="12" r="9" />
-                            <circle cx="12" cy="12" r="3" />
-                            <line x1="12" y1="3" x2="12" y2="6" />
-                            <line x1="12" y1="18" x2="12" y2="21" />
-                            <line x1="3" y1="12" x2="6" y2="12" />
-                            <line x1="18" y1="12" x2="21" y2="12" />
-                        </svg>
-                        <span className="text-[11px] theme-text-muted">Predictive Text</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                        <button
-                            onClick={() => setCopilotSettingsOpen(!copilotSettingsOpen)}
-                            className="p-0.5 hover:bg-white/10 rounded theme-text-muted hover:theme-text-primary"
-                            title="Copilot settings"
-                        >
-                            <Settings2 size={11} />
-                        </button>
-                        <input
-                            type="checkbox"
-                            checked={!!predictiveTextEnabled}
-                            onChange={() => onTogglePredictiveText?.()}
-                            className="w-3.5 h-3.5 accent-violet-500 cursor-pointer"
-                        />
-                    </div>
-                </div>
-                {copilotSettingsOpen && (
-                    <CopilotSettingsPanel
-                        model={predictiveTextModel}
-                        provider={predictiveTextProvider}
-                        delay={predictiveTextDelay ?? 250}
-                        availableModels={availableModels}
-                        onSave={(m, p, d) => onPredictiveTextSettingsChange?.({ model: m, provider: p, delay: d })}
-                    />
-                )}
-            </div>
-
             <div
                 className="flex-1 flex flex-col min-h-0"
                 onDragOver={handleRightSectionsDragOver}
@@ -479,15 +436,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                         title="New Chat"
                     >
                         <MessageSquare size={14} />
-                    </button>
-                }
-                actions={
-                    <button
-                        onClick={() => refreshConversations?.()}
-                        className="p-1 mr-1 hover:bg-white/10 rounded theme-text-muted hover:theme-text-primary"
-                        title="Refresh conversations"
-                    >
-                        <RefreshCw size={12} />
                     </button>
                 }
             />
@@ -847,6 +795,49 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             )}
             </div>
 
+            </div>
+
+            <div className="border-t theme-border">
+                <div className="flex items-center justify-between px-2 py-1 hover:bg-white/5">
+                    <div
+                        className="flex items-center gap-1.5 cursor-pointer"
+                        onClick={() => onTogglePredictiveText?.()}
+                    >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="9" />
+                            <circle cx="12" cy="12" r="3" />
+                            <line x1="12" y1="3" x2="12" y2="6" />
+                            <line x1="12" y1="18" x2="12" y2="21" />
+                            <line x1="3" y1="12" x2="6" y2="12" />
+                            <line x1="18" y1="12" x2="21" y2="12" />
+                        </svg>
+                        <span className="text-[11px] theme-text-muted">Predictive Text</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <button
+                            onClick={() => setCopilotSettingsOpen(!copilotSettingsOpen)}
+                            className="p-0.5 hover:bg-white/10 rounded theme-text-muted hover:theme-text-primary"
+                            title="Copilot settings"
+                        >
+                            <Settings2 size={11} />
+                        </button>
+                        <input
+                            type="checkbox"
+                            checked={!!predictiveTextEnabled}
+                            onChange={() => onTogglePredictiveText?.()}
+                            className="w-3.5 h-3.5 accent-violet-500 cursor-pointer"
+                        />
+                    </div>
+                </div>
+                {copilotSettingsOpen && (
+                    <CopilotSettingsPanel
+                        model={predictiveTextModel}
+                        provider={predictiveTextProvider}
+                        delay={predictiveTextDelay ?? 250}
+                        availableModels={availableModels}
+                        onSave={(m, p, d) => onPredictiveTextSettingsChange?.({ model: m, provider: p, delay: d })}
+                    />
+                )}
             </div>
 
             <div className="border-t theme-border">
