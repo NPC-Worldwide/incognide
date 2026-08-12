@@ -9,6 +9,7 @@ import npcPythonLogo from '../../assets/npc-python.png';
 import npcLogo from '../../assets/icon.png';
 import { useAiEnabled } from './AiFeatureContext';
 import { SshConnection } from '../hooks/useRemoteConnections';
+import TerminalCreateButton from './TerminalCreateButton';
 
 interface PaneItem {
     id: string;
@@ -54,6 +55,7 @@ interface StatusBarProps {
     toggleTheme?: () => void;
     onOpenAccount?: () => void;
     onOpenNewWindow?: () => void;
+    createNewTerminal?: (shellType: string) => void;
 }
 
 type BackendStatus = 'ok' | 'unhealthy' | 'unreachable' | 'restarting' | 'unknown';
@@ -93,6 +95,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
     toggleTheme,
     onOpenAccount,
     onOpenNewWindow,
+    createNewTerminal,
 }) => {
     const buttonGroupWidth = sidebarCollapsed ? 192 : (sidebarWidth || 192);
     const aiEnabled = useAiEnabled();
@@ -265,6 +268,9 @@ const StatusBar: React.FC<StatusBarProps> = ({
 
             {onCollapse && (
                 <button onClick={onCollapse} className={`${btnClass} text-gray-400 dark:text-gray-500`} title="Hide status bar"><ChevronDown size={16} /></button>
+            )}
+            {createNewTerminal && (
+                <TerminalCreateButton createNewTerminal={createNewTerminal} />
             )}
             <div data-tutorial="pane-indicators" className="flex items-center gap-1">
                 {paneItems.map((pane) => (

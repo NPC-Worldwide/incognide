@@ -2450,7 +2450,7 @@ const handleBroadcast = useCallback(async (messageToResend: any, models: string[
                 assistantMessageId: newStreamId,
 
                 temperature: targetMessage.temperature ?? 0.7,
-                top_p: targetMessage.top_p ?? 0.9,
+                top_p: targetMessage.top_p,
                 top_k: targetMessage.top_k ?? 40,
                 max_tokens: targetMessage.max_tokens ?? 4096,
             });
@@ -2633,7 +2633,7 @@ const handleBranchOptionsConfirm = useCallback(async (options: BranchOptions) =>
                 parentMessageId: userMessage?.id,
                 assistantMessageId: newStreamId,
                 temperature: userMessage?.temperature ?? 0.7,
-                top_p: userMessage?.top_p ?? 0.9,
+                top_p: userMessage?.top_p,
                 top_k: userMessage?.top_k ?? 40,
                 max_tokens: userMessage?.max_tokens ?? 4096,
             });
@@ -4803,11 +4803,11 @@ const handleBrowserDialogNavigate = (url) => {
     };
 
 
-    const handleInputSubmit = async (e: React.FormEvent, options?: { voiceInput?: boolean; useKgSearch?: boolean; useMemorySearch?: boolean; disableThinking?: boolean; genParams?: { temperature: number; top_p: number; top_k: number; max_tokens: number }; inputText?: string; uploadedFiles?: any[]; contextFiles?: any[]; paneId?: string }) => {
+    const handleInputSubmit = async (e: React.FormEvent, options?: { voiceInput?: boolean; useKgSearch?: boolean; useMemorySearch?: boolean; disableThinking?: boolean; genParams?: { temperature: number; top_p?: number; top_k: number; max_tokens: number }; inputText?: string; uploadedFiles?: any[]; contextFiles?: any[]; paneId?: string }) => {
         e.preventDefault();
         const wasVoiceInput = options?.voiceInput || false;
         const disableThinking = options?.disableThinking || false;
-        const genParams = options?.genParams || { temperature: 0.7, top_p: 0.9, top_k: 40, max_tokens: 4096 };
+        const genParams = options?.genParams || { temperature: 0.7, top_k: 40, max_tokens: 4096 };
         const submittedInput = options?.inputText ?? input;
         const targetPaneId = options?.paneId ?? activeContentPaneId;
 
@@ -5419,7 +5419,7 @@ const handleBrowserDialogNavigate = (url) => {
                 assistantMessageId: newStreamId,
 
                 temperature: messageToResend.temperature ?? 0.7,
-                top_p: messageToResend.top_p ?? 0.9,
+                top_p: messageToResend.top_p,
                 top_k: messageToResend.top_k ?? 40,
                 max_tokens: messageToResend.max_tokens ?? 4096,
             });
@@ -6914,7 +6914,6 @@ const handleBrowserDialogNavigate = (url) => {
                                 parentMessageId: userMsg.id,
 
                                 temperature: 0.7,
-                                top_p: 0.9,
                                 top_k: 40,
                                 max_tokens: 4096,
                             });
@@ -7389,7 +7388,6 @@ const getChatInputProps = useCallback((paneId: string) => {
                     assistantMessageId: exec.streamId,
 
                     temperature: 0.7,
-                    top_p: 0.9,
                     top_k: 40,
                     max_tokens: 4096,
                 });
@@ -8435,6 +8433,7 @@ const statusBar = bottomBarCollapsed ? (
         toggleTheme={() => toggleTheme(setIsDarkMode)}
         onOpenAccount={() => createAndAddPaneNodeToLayout?.('account', 'account')}
         onOpenNewWindow={() => { if ((window as any).api?.openNewWindow) (window as any).api.openNewWindow(''); else window.open(window.location.href, '_blank'); }}
+        createNewTerminal={createNewTerminal}
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
         searchScope={searchScope}
@@ -8693,6 +8692,7 @@ const renderMainContent = () => {
                     setWidth={setRightSidebarWidth}
                     isResizing={isResizingRightSidebar}
                     setIsResizing={setIsResizingRightSidebar}
+                    bottomBarHeight={bottomBarHeight}
                     directoryConversations={directoryConversations}
                     activeConversationId={activeConversationId}
                     currentPath={currentPath}
@@ -8791,6 +8791,7 @@ const renderMainContent = () => {
                     setWidth={setRightSidebarWidth}
                     isResizing={isResizingRightSidebar}
                     setIsResizing={setIsResizingRightSidebar}
+                    bottomBarHeight={bottomBarHeight}
                     directoryConversations={directoryConversations}
                     activeConversationId={activeConversationId}
                     currentPath={currentPath}

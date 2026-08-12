@@ -59,7 +59,7 @@ interface ChatInputProps {
     setIsResizingInput: (val: boolean) => void;
 
     isStreaming: boolean;
-    handleInputSubmit: (e: any, options?: { voiceInput?: boolean; disableThinking?: boolean; genParams?: { temperature: number; top_p: number; top_k: number; max_tokens: number }; inputText?: string; uploadedFiles?: any[]; mcpServerPaths?: string[]; selectedMcpTools?: string[]; contextFiles?: any[]; paneId?: string }) => void;
+    handleInputSubmit: (e: any, options?: { voiceInput?: boolean; disableThinking?: boolean; genParams?: { temperature: number; top_p?: number; top_k: number; max_tokens: number }; inputText?: string; uploadedFiles?: any[]; mcpServerPaths?: string[]; selectedMcpTools?: string[]; contextFiles?: any[]; paneId?: string }) => void;
     handleInterruptStream: () => void;
     currentPath: string;
 
@@ -391,7 +391,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
 
     const [genParams] = useState({
         temperature: 0.7,
-        top_p: 0.9,
         top_k: 40,
         max_tokens: 4096
     });

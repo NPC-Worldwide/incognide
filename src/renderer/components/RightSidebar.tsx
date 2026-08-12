@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { MessageSquare, Bot, Search, X, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Users, Zap, FileCode, Server, CircleDot, Circle, Settings2 } from 'lucide-react';
+import { MessageSquare, Bot, Search, X, ChevronLeft, ChevronRight, ChevronDown, Users, Zap, FileCode, Server, CircleDot, Circle, Settings2 } from 'lucide-react';
 
 interface RightSidebarProps {
     collapsed: boolean;
@@ -29,6 +29,7 @@ interface RightSidebarProps {
     predictiveTextProvider?: string | null;
     predictiveTextDelay?: number;
     onPredictiveTextSettingsChange?: (settings: { model?: string | null; provider?: string | null; delay?: number }) => void;
+    bottomBarHeight?: number;
 }
 
 const CopilotSettingsPanel: React.FC<{
@@ -99,7 +100,13 @@ const SectionHeader: React.FC<{
     collapsed: boolean;
     onToggle: () => void;
     actions?: React.ReactNode;
-}> = ({ label, color, count, collapsed, onToggle, actions }) => {
+    leftActions?: React.ReactNode;
+    draggable?: boolean;
+    onDragStart?: (e: React.DragEvent) => void;
+    onDragEnd?: (e: React.DragEvent) => void;
+    isDragging?: boolean;
+    isDropTarget?: boolean;
+}> = ({ label, color, count, collapsed, onToggle, actions, leftActions, draggable, onDragStart, onDragEnd, isDragging, isDropTarget }) => {
     const grad = color === 'green'
         ? 'from-green-800/40 to-emerald-700/35'
         : color === 'indigo'
@@ -109,19 +116,30 @@ const SectionHeader: React.FC<{
                 : 'from-amber-800/40 to-orange-700/35';
     return (
         <div
+            draggable={draggable}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
             onClick={onToggle}
-            className={`flex items-center w-full py-2 bg-gradient-to-r ${grad} cursor-pointer theme-hover`}
+            className={`flex items-center w-full py-2 bg-gradient-to-r ${grad} cursor-pointer theme-hover ${isDragging ? 'opacity-50' : ''} ${isDropTarget ? 'ring-2 ring-white/40' : ''}`}
         >
-            <div className="flex items-center pl-1 gap-1 flex-1 min-w-0">
-                <ChevronRight size={12} className={`transform transition-transform theme-text-muted ${collapsed ? '' : 'rotate-90'}`} />
-                <span className="text-[11px] font-semibold theme-text-primary truncate">{label}</span>
+            {leftActions && (
+                <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
+                    {leftActions}
+                </div>
+            )}
+            <div className="flex-1" />
+            <div className="flex items-center gap-1 min-w-0 justify-end">
                 {typeof count === 'number' && (
                     <span className="text-[9px] theme-text-muted">{count}</span>
                 )}
+                <span className="text-[11px] font-semibold theme-text-primary truncate">{label}</span>
+                <ChevronRight size={12} className={`transform transition-transform theme-text-muted ${collapsed ? '' : 'rotate-90'}`} />
             </div>
-            <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
-                {actions}
-            </div>
+            {actions && (
+                <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
+                    {actions}
+                </div>
+            )}
         </div>
     );
 };
@@ -154,6 +172,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     predictiveTextProvider,
     predictiveTextDelay,
     onPredictiveTextSettingsChange,
+    bottomBarHeight = 48,
 }) => {
     const [expandedNpcs, setExpandedNpcs] = useState<Set<string>>(new Set());
     const [copilotSettingsOpen, setCopilotSettingsOpen] = useState(false);
@@ -176,6 +195,73 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     React.useEffect(() => { try { localStorage.setItem('incognide_rs_convosCollapsed', String(convosCollapsed)); } catch {} }, [convosCollapsed]);
     React.useEffect(() => { try { localStorage.setItem('incognide_rs_agentRunsCollapsed', String(agentRunsCollapsed)); } catch {} }, [agentRunsCollapsed]);
     React.useEffect(() => { try { localStorage.setItem('incognide_rs_npcsCollapsed', String(npcsCollapsed)); } catch {} }, [npcsCollapsed]);
+
+    const [rightSectionOrder, setRightSectionOrder] = useState<string[]>(() => {
+        try {
+            const stored = localStorage.getItem('incognide_rightSectionOrder');
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                const required = ['conversations', 'agent-runs', 'personas'];
+                const filtered = parsed.filter((s: string) => required.includes(s));
+                for (const s of required) { if (!filtered.includes(s)) filtered.push(s); }
+                return filtered;
+            }
+        } catch {}
+        return ['conversations', 'agent-runs', 'personas'];
+    });
+    React.useEffect(() => { try { localStorage.setItem('incognide_rightSectionOrder', JSON.stringify(rightSectionOrder)); } catch {} }, [rightSectionOrder]);
+    const [draggedRightSection, setDraggedRightSection] = useState<string | null>(null);
+    const [dropTargetRightSection, setDropTargetRightSection] = useState<string | null>(null);
+    const handleRightSectionDragStart = (id: string) => (e: React.DragEvent) => {
+        setDraggedRightSection(id);
+        e.dataTransfer.effectAllowed = 'move';
+    };
+    const handleRightSectionDragEnd = () => {
+        setDraggedRightSection(null);
+        setDropTargetRightSection(null);
+    };
+    const handleRightSectionsDragOver = (e: React.DragEvent) => {
+        if (!draggedRightSection) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const container = e.currentTarget as HTMLElement;
+        const sections = container.querySelectorAll('[data-section-id]');
+        const y = e.clientY;
+        let targetSection: string | null = null;
+        sections.forEach((section) => {
+            const rect = section.getBoundingClientRect();
+            if (y >= rect.top && y <= rect.bottom) {
+                targetSection = section.getAttribute('data-section-id');
+            }
+        });
+        if (!targetSection && sections.length > 0) {
+            const lastRect = sections[sections.length - 1].getBoundingClientRect();
+            if (y > lastRect.bottom) targetSection = sections[sections.length - 1].getAttribute('data-section-id');
+            else if (y < sections[0].getBoundingClientRect().top) targetSection = sections[0].getAttribute('data-section-id');
+        }
+        if (targetSection && targetSection !== draggedRightSection) {
+            setDropTargetRightSection(targetSection);
+        }
+    };
+    const handleRightSectionsDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        if (!draggedRightSection || !dropTargetRightSection || draggedRightSection === dropTargetRightSection) {
+            setDraggedRightSection(null);
+            setDropTargetRightSection(null);
+            return;
+        }
+        setRightSectionOrder(prev => {
+            const next = [...prev];
+            const draggedIndex = next.indexOf(draggedRightSection);
+            const targetIndex = next.indexOf(dropTargetRightSection);
+            if (draggedIndex === -1 || targetIndex === -1) return prev;
+            next.splice(draggedIndex, 1);
+            next.splice(targetIndex, 0, draggedRightSection);
+            return next;
+        });
+        setDraggedRightSection(null);
+        setDropTargetRightSection(null);
+    };
 
     const [convoSearch, setConvoSearch] = useState('');
     const [agentSearch, setAgentSearch] = useState('');
@@ -304,30 +390,11 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     if (collapsed) {
         return (
             <div
-                className="flex-shrink-0 theme-bg-primary border-l theme-border flex flex-col items-center py-2"
-                style={{ width: 28 }}
+                className="w-1 hover:w-4 flex items-center justify-center cursor-pointer theme-bg-primary border-l theme-border transition-all group flex-shrink-0"
+                onClick={() => setCollapsed(false)}
+                title="Show right sidebar"
             >
-                <button
-                    onClick={() => setCollapsed(false)}
-                    className="p-1 hover:bg-white/10 rounded theme-text-muted hover:theme-text-primary"
-                    title="Expand right sidebar"
-                >
-                    <ChevronLeft size={14} />
-                </button>
-                <button
-                    onClick={() => createNewConversation?.()}
-                    className="mt-2 p-1 hover:bg-green-500/20 rounded text-green-400"
-                    title="New Chat"
-                >
-                    <MessageSquare size={14} />
-                </button>
-                <button
-                    onClick={() => createNewConversation?.({ contentType: 'agent' })}
-                    className="mt-1 p-1 hover:bg-amber-500/20 rounded text-amber-400"
-                    title="New Agent"
-                >
-                    <Bot size={14} />
-                </button>
+                <ChevronLeft size={10} className="opacity-0 group-hover:opacity-60" />
             </div>
         );
     }
@@ -343,97 +410,33 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 style={{ backgroundColor: isResizing ? '#3b82f6' : 'transparent' }}
             />
 
-            <div className="flex items-center border-b theme-border">
-                <button
-                    data-tutorial="new-chat-button"
-                    onClick={() => createNewConversation?.()}
-                    className="flex-1 flex items-center justify-center py-2 hover:bg-green-500/20 text-green-300 border-l theme-border"
-                    title="New Chat"
-                >
-                    <MessageSquare size={14} />
-                </button>
-                <button
-                    data-tutorial="new-agent-button"
-                    onClick={() => createNewConversation?.({ contentType: 'agent' })}
-                    className="flex-1 flex items-center justify-center py-2 hover:bg-amber-500/20 text-amber-300 border-l theme-border"
-                    title="New Agent"
-                >
-                    <Bot size={14} />
-                </button>
-                <button
-                    onClick={() => createTeamManagementPane?.()}
-                    className="flex-1 flex items-center justify-center py-2 hover:bg-indigo-500/20 text-indigo-300 border-r theme-border"
-                    title="Team Management"
-                >
-                    <span data-tutorial="team-management-button" className="flex items-center justify-center">
-                        <Users size={14} />
-                    </span>
-                </button>
-                <button
-                    onClick={() => refreshConversations?.()}
-                    className="px-2 py-2 hover:bg-white/10 theme-text-muted hover:theme-text-primary"
-                    title="Refresh"
-                >
-                    <RefreshCw size={12} />
-                </button>
-                <button
-                    onClick={() => setCollapsed(true)}
-                    className="px-2 py-2 hover:bg-white/10 theme-text-muted hover:theme-text-primary"
-                    title="Collapse right sidebar"
-                >
-                    <ChevronRight size={12} />
-                </button>
-            </div>
-            <div className="border-b theme-border">
-                <div className="flex items-center justify-between px-2 py-1 hover:bg-white/5">
-                    <div
-                        className="flex items-center gap-1.5 cursor-pointer"
-                        onClick={() => onTogglePredictiveText?.()}
-                    >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="12" cy="12" r="9" />
-                            <circle cx="12" cy="12" r="3" />
-                            <line x1="12" y1="3" x2="12" y2="6" />
-                            <line x1="12" y1="18" x2="12" y2="21" />
-                            <line x1="3" y1="12" x2="6" y2="12" />
-                            <line x1="18" y1="12" x2="21" y2="12" />
-                        </svg>
-                        <span className="text-[11px] theme-text-muted">Predictive Text</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                        <button
-                            onClick={() => setCopilotSettingsOpen(!copilotSettingsOpen)}
-                            className="p-0.5 hover:bg-white/10 rounded theme-text-muted hover:theme-text-primary"
-                            title="Copilot settings"
-                        >
-                            <Settings2 size={11} />
-                        </button>
-                        <input
-                            type="checkbox"
-                            checked={!!predictiveTextEnabled}
-                            onChange={() => onTogglePredictiveText?.()}
-                            className="w-3.5 h-3.5 accent-violet-500 cursor-pointer"
-                        />
-                    </div>
-                </div>
-                {copilotSettingsOpen && (
-                    <CopilotSettingsPanel
-                        model={predictiveTextModel}
-                        provider={predictiveTextProvider}
-                        delay={predictiveTextDelay ?? 250}
-                        availableModels={availableModels}
-                        onSave={(m, p, d) => onPredictiveTextSettingsChange?.({ model: m, provider: p, delay: d })}
-                    />
-                )}
-            </div>
-
-            <div data-tutorial="conversations" className="flex flex-col min-h-0" style={{ flex: convosCollapsed ? '0 0 auto' : 2, overflow: 'hidden' }}>
+            <div
+                className="flex-1 flex flex-col min-h-0"
+                onDragOver={handleRightSectionsDragOver}
+                onDragLeave={(e) => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) setDropTargetRightSection(null); }}
+                onDrop={handleRightSectionsDrop}
+            >
+            <div data-section-id="conversations" data-tutorial="conversations" className="flex flex-col min-h-0 transition-all duration-150" style={{ order: rightSectionOrder.indexOf('conversations'), flex: convosCollapsed ? '0 0 auto' : 2, overflow: 'hidden' }}>
             <SectionHeader
                 label="Conversations"
                 color="green"
-                count={chatConvos.length}
                 collapsed={convosCollapsed}
                 onToggle={() => setConvosCollapsed(!convosCollapsed)}
+                draggable
+                onDragStart={handleRightSectionDragStart('conversations')}
+                onDragEnd={handleRightSectionDragEnd}
+                isDragging={draggedRightSection === 'conversations'}
+                isDropTarget={dropTargetRightSection === 'conversations' && draggedRightSection !== 'conversations'}
+                leftActions={
+                    <button
+                        data-tutorial="new-chat-button"
+                        onClick={() => createNewConversation?.()}
+                        className="flex items-center justify-center w-8 py-4 -my-4 hover:bg-green-500/30 text-green-300"
+                        title="New Chat"
+                    >
+                        <MessageSquare size={14} />
+                    </button>
+                }
             />
             {!convosCollapsed && (
                 <div className="flex flex-col min-h-0 border-b theme-border" style={{ flex: 1, overflow: 'hidden' }}>
@@ -503,13 +506,27 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             )}
             </div>
 
-            <div data-tutorial="agent-runs" className="flex flex-col min-h-0" style={{ flex: agentRunsCollapsed ? '0 0 auto' : 2, overflow: 'hidden' }}>
+            <div data-section-id="agent-runs" data-tutorial="agent-runs" className="flex flex-col min-h-0 transition-all duration-150" style={{ order: rightSectionOrder.indexOf('agent-runs'), flex: agentRunsCollapsed ? '0 0 auto' : 2, overflow: 'hidden' }}>
             <SectionHeader
                 label="Agent Runs"
                 color="amber"
-                count={agentConvos.length}
                 collapsed={agentRunsCollapsed}
                 onToggle={() => setAgentRunsCollapsed(!agentRunsCollapsed)}
+                draggable
+                onDragStart={handleRightSectionDragStart('agent-runs')}
+                onDragEnd={handleRightSectionDragEnd}
+                isDragging={draggedRightSection === 'agent-runs'}
+                isDropTarget={dropTargetRightSection === 'agent-runs' && draggedRightSection !== 'agent-runs'}
+                leftActions={
+                    <button
+                        data-tutorial="new-agent-button"
+                        onClick={() => createNewConversation?.({ contentType: 'agent' })}
+                        className="flex items-center justify-center w-8 py-4 -my-4 hover:bg-amber-500/30 text-amber-300"
+                        title="New Agent"
+                    >
+                        <Bot size={14} />
+                    </button>
+                }
             />
             {!agentRunsCollapsed && (
                 <div className="flex flex-col min-h-0 border-b theme-border" style={{ flex: 1, overflow: 'hidden' }}>
@@ -579,21 +596,26 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             )}
             </div>
 
-            <div data-tutorial="npcs-section" className="flex flex-col min-h-0" style={{ flex: npcsCollapsed ? '0 0 auto' : 1, overflow: 'hidden' }}>
+            <div data-section-id="personas" data-tutorial="npcs-section" className="flex flex-col min-h-0 transition-all duration-150" style={{ order: rightSectionOrder.indexOf('personas'), flex: npcsCollapsed ? '0 0 auto' : 1, overflow: 'hidden' }}>
             <SectionHeader
                 label="Personas"
                 color="indigo"
                 count={filteredNpcs.length}
                 collapsed={npcsCollapsed}
                 onToggle={() => setNpcsCollapsed(!npcsCollapsed)}
-                actions={
+                draggable
+                onDragStart={handleRightSectionDragStart('personas')}
+                onDragEnd={handleRightSectionDragEnd}
+                isDragging={draggedRightSection === 'personas'}
+                isDropTarget={dropTargetRightSection === 'personas' && draggedRightSection !== 'personas'}
+                leftActions={
                     createTeamManagementPane ? (
                         <button
                             onClick={() => createTeamManagementPane()}
-                            className="p-1 mr-1 hover:bg-white/10 rounded text-indigo-400"
+                            className="flex items-center justify-center w-8 py-4 -my-4 hover:bg-indigo-500/30 text-indigo-300"
                             title="Team Management"
                         >
-                            <Users size={11} />
+                            <Users size={14} />
                         </button>
                     ) : null
                 }
@@ -769,6 +791,63 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     </div>
                 </div>
             )}
+            </div>
+
+            </div>
+
+            <div className="border-t theme-border">
+                <div className="flex items-center justify-between px-2 py-1 hover:bg-white/5">
+                    <div
+                        className="flex items-center gap-1.5 cursor-pointer"
+                        onClick={() => onTogglePredictiveText?.()}
+                    >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="9" />
+                            <circle cx="12" cy="12" r="3" />
+                            <line x1="12" y1="3" x2="12" y2="6" />
+                            <line x1="12" y1="18" x2="12" y2="21" />
+                            <line x1="3" y1="12" x2="6" y2="12" />
+                            <line x1="18" y1="12" x2="21" y2="12" />
+                        </svg>
+                        <span className="text-[11px] theme-text-muted">Predictive Text</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <button
+                            onClick={() => setCopilotSettingsOpen(!copilotSettingsOpen)}
+                            className="p-0.5 hover:bg-white/10 rounded theme-text-muted hover:theme-text-primary"
+                            title="Copilot settings"
+                        >
+                            <Settings2 size={11} />
+                        </button>
+                        <input
+                            type="checkbox"
+                            checked={!!predictiveTextEnabled}
+                            onChange={() => onTogglePredictiveText?.()}
+                            className="w-3.5 h-3.5 accent-violet-500 cursor-pointer"
+                        />
+                    </div>
+                </div>
+                {copilotSettingsOpen && (
+                    <CopilotSettingsPanel
+                        model={predictiveTextModel}
+                        provider={predictiveTextProvider}
+                        delay={predictiveTextDelay ?? 250}
+                        availableModels={availableModels}
+                        onSave={(m, p, d) => onPredictiveTextSettingsChange?.({ model: m, provider: p, delay: d })}
+                    />
+                )}
+            </div>
+
+            <div className="border-t theme-border">
+                <div className="grid grid-cols-1 divide-x theme-border" style={{ height: bottomBarHeight }}>
+                    <button
+                        onClick={() => setCollapsed(true)}
+                        className="flex items-center justify-center hover:bg-teal-500/20 transition-all p-3"
+                        title="Collapse right sidebar"
+                    >
+                        <ChevronRight size={18} className="text-gray-600 dark:text-gray-400" />
+                    </button>
+                </div>
             </div>
 
         </div>
