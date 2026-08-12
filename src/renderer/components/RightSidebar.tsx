@@ -420,7 +420,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             <SectionHeader
                 label="Conversations"
                 color="green"
-                count={chatConvos.length}
                 collapsed={convosCollapsed}
                 onToggle={() => setConvosCollapsed(!convosCollapsed)}
                 draggable
@@ -432,7 +431,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     <button
                         data-tutorial="new-chat-button"
                         onClick={() => createNewConversation?.()}
-                        className="p-1 hover:bg-green-500/30 rounded text-green-300"
+                        className="flex items-center justify-center w-8 py-4 -my-4 hover:bg-green-500/30 text-green-300"
                         title="New Chat"
                     >
                         <MessageSquare size={14} />
@@ -511,7 +510,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             <SectionHeader
                 label="Agent Runs"
                 color="amber"
-                count={agentConvos.length}
                 collapsed={agentRunsCollapsed}
                 onToggle={() => setAgentRunsCollapsed(!agentRunsCollapsed)}
                 draggable
@@ -523,7 +521,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     <button
                         data-tutorial="new-agent-button"
                         onClick={() => createNewConversation?.({ contentType: 'agent' })}
-                        className="p-1 hover:bg-amber-500/30 rounded text-amber-300"
+                        className="flex items-center justify-center w-8 py-4 -my-4 hover:bg-amber-500/30 text-amber-300"
                         title="New Agent"
                     >
                         <Bot size={14} />
@@ -614,7 +612,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     createTeamManagementPane ? (
                         <button
                             onClick={() => createTeamManagementPane()}
-                            className="p-1.5 hover:bg-indigo-500/30 rounded text-indigo-300"
+                            className="flex items-center justify-center w-8 py-4 -my-4 hover:bg-indigo-500/30 text-indigo-300"
                             title="Team Management"
                         >
                             <Users size={14} />
