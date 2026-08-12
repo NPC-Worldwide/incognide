@@ -9,8 +9,6 @@ steps:
   - name: context
     engine: python
     code: |
-      import sys
-      sys.path.insert(0, '/home/caug/npcww/npc-core/npcpy')
       from npcpy.memory.knowledge_store import KnowledgeStore
 
       _dir = context.get('directory', '')

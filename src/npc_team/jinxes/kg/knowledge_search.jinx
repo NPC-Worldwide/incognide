@@ -11,8 +11,6 @@ steps:
     engine: python
     code: |
       import json as _json
-      import sys
-      sys.path.insert(0, '/home/caug/npcww/npc-core/npcpy')
       from npcpy.memory.knowledge_store import KnowledgeStore
 
       _dir = context.get('directory', '')

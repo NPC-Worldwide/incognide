@@ -584,6 +584,8 @@ onTerminalClosed: (callback) => {
             throw error;
         }
     },
+    attachActiveStream: (conversationId) => ipcRenderer.invoke('attachActiveStream', conversationId),
+    resumeStreamDrain: (streamId) => ipcRenderer.invoke('resumeStreamDrain', streamId),
 
     onStreamData: (callback) => {
         const handler = (_, data) => callback(_, data);
