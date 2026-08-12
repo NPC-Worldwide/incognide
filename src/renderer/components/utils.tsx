@@ -977,6 +977,9 @@ export const usePaneAwareStreamListeners = (
                 if (!message.contentParts) {
                     message.contentParts = [];
                 }
+                // Track last-activity time so the stale-stream sweep measures time-since-last-chunk
+                // rather than time-since-creation (which would kill long runs and re-attached streams).
+                message.lastStreamAt = Date.now();
 
                 const appendText = (text: string) => {
                     if (!text) return;
@@ -1057,11 +1060,26 @@ export const usePaneAwareStreamListeners = (
                         if (!tc.id) {
                             tc.id = `tc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
                         }
-                        const idx = tc.id ? merged.findIndex((mtc: any) => mtc.id && mtc.id === tc.id) : -1;
-                        // If the id matches a completed/errored call, treat this as a new call
-                        // rather than overwriting. Provider ids can be reused across turns.
-                        if (idx >= 0 && (merged[idx].status === 'complete' || merged[idx].status === 'error')) {
-                            tc.id = `${tc.id}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+                        // Match by id among INCOMPLETE entries only. A completed/errored
+                        // entry with the same id must not be overwritten — but some providers
+                        // (e.g. Kimi via ollama) reuse the same id ("call_0") for every tool
+                        // call across iterations, so an id collision with a finished call
+                        // is expected and does NOT mean this is a duplicate of that call.
+                        let idx = tc.id ? merged.findIndex((mtc: any) => mtc.id && mtc.id === tc.id && mtc.status !== 'complete' && mtc.status !== 'error') : -1;
+                        // If the only id matches are completed/errored (id reused by provider),
+                        // fall back to the most recent INCOMPLETE entry with the same function
+                        // name — that's the streamed tool_calls entry waiting for its result.
+                        if (idx < 0) {
+                            const funcName = tc.function?.name || '';
+                            const idMatchesFinished = tc.id && merged.some((mtc: any) => mtc.id && mtc.id === tc.id && (mtc.status === 'complete' || mtc.status === 'error'));
+                            if (idMatchesFinished && funcName) {
+                                for (let i = merged.length - 1; i >= 0; i--) {
+                                    if (merged[i].function?.name === funcName && merged[i].status !== 'complete' && merged[i].status !== 'error') {
+                                        idx = i;
+                                        break;
+                                    }
+                                }
+                            }
                         }
                         if (idx >= 0 && merged[idx].status !== 'complete' && merged[idx].status !== 'error') {
                             const existingTc = merged[idx];
@@ -1077,12 +1095,17 @@ export const usePaneAwareStreamListeners = (
                             };
 
                             const partIdx = message.contentParts.findIndex((p: any) =>
-                                p.type === 'tool_call' && p.call.id && p.call.id === tc.id
+                                p.type === 'tool_call' && p.call.id && (p.call.id === tc.id || p.call.id === existingTc.id)
                             );
                             if (partIdx >= 0) {
                                 message.contentParts[partIdx].call = merged[idx];
                             }
                         } else {
+                            // Pushing a brand-new entry. If the (provider-reused) id collides
+                            // with a finished entry, mint a fresh id so they stay distinct.
+                            if (tc.id && merged.some((mtc: any) => mtc.id && mtc.id === tc.id)) {
+                                tc.id = `${tc.id}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+                            }
                             merged.push(tc);
                             message.contentParts.push({ type: 'tool_call', call: tc });
                         }
@@ -1294,7 +1317,7 @@ export const usePaneAwareStreamListeners = (
                     continue;
                 }
 
-                const msgTime = new Date(msg.timestamp).getTime();
+                const msgTime = msg.lastStreamAt || new Date(msg.timestamp).getTime();
                 const elapsed = Date.now() - msgTime;
 
                 if (elapsed > 300000 && msg.content && msg.content.length > 0) {

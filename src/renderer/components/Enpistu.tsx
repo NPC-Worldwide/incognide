@@ -2055,6 +2055,7 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
                             activePane.chatMessages.messages = formatted.slice(-activePane.chatMessages.displayedMessageCount);
                             notifyAllPanes();
                             console.log('[REFRESH] Reloaded', formatted.length, 'messages for conversation', activePane.contentId);
+                            if (activeContentPaneId) attachActiveStreamForPane(activeContentPaneId);
                         } catch (err) {
                             console.error('[REFRESH] Failed to reload messages:', err);
                         }
@@ -6178,6 +6179,15 @@ const handleBrowserDialogNavigate = (url) => {
                         getConversationStats
                     );
 
+                    // Re-attach any chat/agent panes whose backend stream may still be
+                    // running from before the reload (renderer reloaded while main stayed alive).
+                    for (const pid of Object.keys(contentDataRef.current)) {
+                        const pd = contentDataRef.current[pid];
+                        if ((pd?.contentType === 'chat' || pd?.contentType === 'agent') && pd?.contentId) {
+                            attachActiveStreamForPane(pid);
+                        }
+                    }
+
                     if (savedWorkspace.openMode) {
                         setOpenMode(savedWorkspace.openMode);
                         localStorage.setItem('incognide_openMode', savedWorkspace.openMode);
@@ -7554,6 +7564,51 @@ const layoutComponentRef = useRef(layoutComponentApi);
 layoutComponentRef.current = layoutComponentApi;
 
 
+// Re-attach to a backend generation stream that is still running for this conversation
+// after the renderer reloaded or the pane was closed/reopened. The assistant message is
+// persisted chunk-by-chunk keyed by message_id = streamId, so the reloaded pane already
+// holds the partial content; we just re-register the streamId->pane mapping, re-mark the
+// message streaming, and tell main to drain its disconnect buffer to us.
+const attachActiveStreamForPane = async (paneId: string) => {
+    try {
+        const paneData = contentDataRef.current[paneId];
+        const conversationId = paneData?.contentId;
+        if (!conversationId || (paneData.contentType !== 'chat' && paneData.contentType !== 'agent')) return;
+        const attached = await (window as any).api.attachActiveStream(conversationId);
+        if (!attached?.active) return;
+        streamToPaneRef.current[attached.streamId] = paneId;
+        if (paneData.chatMessages) {
+            let msg = paneData.chatMessages.allMessages.find((m: any) => m.id === attached.streamId);
+            if (!msg) {
+                // Disconnect happened before the first chunk was ever saved: create a
+                // placeholder so resumed stream-data chunks have a message to append to.
+                msg = {
+                    id: attached.streamId,
+                    role: 'assistant',
+                    content: '',
+                    isStreaming: true,
+                    timestamp: new Date().toISOString(),
+                    streamId: attached.streamId,
+                    contentParts: [],
+                };
+                paneData.chatMessages.allMessages.push(msg);
+                paneData.chatMessages.messages = paneData.chatMessages.allMessages.slice(
+                    -(paneData.chatMessages.displayedMessageCount || 20)
+                );
+            }
+            msg.isStreaming = true;
+            msg.streamId = attached.streamId;
+            msg.lastStreamAt = Date.now();
+        }
+        setIsStreaming(true);
+        paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
+        await (window as any).api.resumeStreamDrain(attached.streamId);
+    } catch (err) {
+        console.error('[RE-ATTACH] Failed to re-attach stream:', err);
+    }
+};
+
+
 const handleConversationSelect = async (conversationId: string, skipMessageLoad = false) => {
     setActiveConversationId(conversationId);
     setCurrentFile(null);
@@ -7571,6 +7626,7 @@ const handleConversationSelect = async (conversationId: string, skipMessageLoad 
 
     if (existingPaneId) {
         setActiveContentPaneId(existingPaneId);
+        attachActiveStreamForPane(existingPaneId);
         return existingPaneId;
     }
 
@@ -7624,6 +7680,7 @@ const handleConversationSelect = async (conversationId: string, skipMessageLoad 
 
 
     if (paneIdToUpdate && !skipMessageLoad) {
+        attachActiveStreamForPane(paneIdToUpdate);
         const paneData = contentDataRef.current[paneIdToUpdate];
         const allMsgs = paneData?.chatMessages?.allMessages;
         let modelSetFromMessages = false;

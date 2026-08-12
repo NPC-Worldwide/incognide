@@ -353,9 +353,24 @@ const WebBrowserViewer = memo(({
                 if (!webview) return { success: false, error: 'Webview not available' };
 
                 try {
-                    const wrapped = `(async () => {\n${code}\n})()`;
-                    const result = await webview.executeJavaScript(wrapped);
-                    return { success: true, result };
+                    // eval() returns the code's completion value (the last expression),
+                    // so bare-expression code like `document.body.innerText` returns its
+                    // value instead of undefined (a block-body IIFE drops it). Wrap in an
+                    // async IIFE so top-level `await` in the fallback path still works.
+                    const evalWrapped = `(async () => { return eval(${JSON.stringify(code)}); })()`;
+                    try {
+                        const result = await webview.executeJavaScript(evalWrapped);
+                        return { success: true, result };
+                    } catch (evalErr) {
+                        // eval can be blocked by a strict page CSP, or choke on
+                        // top-level `return`/statements. Fall back to a plain
+                        // block-body IIFE (the original behavior) so the code at
+                        // least runs.
+                        const blockWrapped = `(async () => {\n${code}\n})()`;
+                        const result = await webview.executeJavaScript(blockWrapped);
+                        console.warn('[WebBrowser] eval wrap failed, used block body:', evalErr);
+                        return { success: true, result };
+                    }
                 } catch (err) {
                     console.error('[WebBrowser] Eval failed:', err);
                     return { success: false, error: err.message };

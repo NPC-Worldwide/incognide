@@ -203,6 +203,34 @@ function register(ctx) {
 
   const INCOGNIDE_HOME = ctxIncognideHome || path.join(os.homedir(), '.incognide');
 
+  // conversationId -> streamId index, so a reloaded renderer can re-attach to an
+  // in-progress backend stream by conversationId (see attachActiveStream / resumeStreamDrain).
+  const activeConversations = new Map();
+  const STREAM_DISCONNECT_TTL_MS = 10 * 60 * 1000; // orphan a disconnected stream's tail after 10 min
+  const STREAM_BUFFER_CAP = 20000; // cap buffered chunks while no live sender is attached
+
+  // Reclaim orphaned streams: ones whose renderer died and were never re-attached.
+  // Pre-disconnect content is already in the DB; the post-disconnect tail is lost here.
+  setInterval(() => {
+    const now = Date.now();
+    for (const [streamId, entry] of activeStreams.entries()) {
+      if (!entry) continue;
+      const sender = entry.sender || entry.eventSender;
+      const senderLive = sender && !sender.isDestroyed();
+      if (senderLive) {
+        entry.disconnectedAt = null;
+        continue;
+      }
+      if (!entry.disconnectedAt) entry.disconnectedAt = now;
+      if (now - entry.disconnectedAt > STREAM_DISCONNECT_TTL_MS) {
+        try { entry.stream && typeof entry.stream.destroy === 'function' && entry.stream.destroy(); } catch {}
+        activeStreams.delete(streamId);
+        if (entry.conversationId) activeConversations.delete(entry.conversationId);
+        log(`[Main Process] Reclaimed orphaned disconnected stream ${streamId} (conversation ${entry.conversationId}).`);
+      }
+    }
+  }, 60000).unref();
+
   async function getCustomProviders() {
     try {
       const cpPath = path.join(INCOGNIDE_HOME, 'custom_providers.yaml');
@@ -684,11 +712,12 @@ function register(ctx) {
       log(`[Main Process] Backend response to interruption:`, result.message);
 
       if (activeStreams.has(streamIdToInterrupt)) {
-          const { stream } = activeStreams.get(streamIdToInterrupt);
-          if (stream && typeof stream.destroy === 'function') {
-              stream.destroy();
+          const entry = activeStreams.get(streamIdToInterrupt);
+          if (entry && entry.stream && typeof entry.stream.destroy === 'function') {
+              entry.stream.destroy();
           }
-
+          if (entry && entry.conversationId) activeConversations.delete(entry.conversationId);
+          activeStreams.delete(streamIdToInterrupt);
       }
 
       return { success: true };
@@ -903,16 +932,46 @@ function register(ctx) {
         return { error: 'Backend returned no stream data.', streamId: currentStreamId };
       }
 
-      activeStreams.set(currentStreamId, { stream, eventSender: event.sender });
+      activeStreams.set(currentStreamId, {
+        stream,
+        sender: event.sender,
+        conversationId: data.conversationId || null,
+        assistantMessageId: data.assistantMessageId || null,
+        buffer: [],
+        pendingCompletion: null,
+        disconnectedAt: null,
+      });
+      if (data.conversationId) activeConversations.set(data.conversationId, currentStreamId);
 
       (function(capturedStreamId) {
+        const removeEntry = () => {
+          const e = activeStreams.get(capturedStreamId);
+          if (e && e.conversationId) activeConversations.delete(e.conversationId);
+          activeStreams.delete(capturedStreamId);
+        };
+
+        const liveSender = () => {
+          const e = activeStreams.get(capturedStreamId);
+          return e && e.sender && !e.sender.isDestroyed() ? e.sender : null;
+        };
+
         stream.on('data', (chunk) => {
-          if (event.sender.isDestroyed()) {
-            stream.destroy();
-            activeStreams.delete(capturedStreamId);
+          const e = activeStreams.get(capturedStreamId);
+          if (!e) return;
+          const sender = e.sender && !e.sender.isDestroyed() ? e.sender : null;
+          if (!sender) {
+            // Renderer gone (reload / pane closed) but backend still generating.
+            // Buffer for re-attach instead of killing the backend pipe.
+            if (!e.disconnectedAt) e.disconnectedAt = Date.now();
+            e.buffer.push(chunk.toString());
+            if (e.buffer.length > STREAM_BUFFER_CAP) {
+              e.buffer.shift();
+              log(`[Main Process] Stream ${capturedStreamId} buffer capped at ${STREAM_BUFFER_CAP} (overflow dropping oldest).`);
+            }
             return;
           }
-          event.sender.send('stream-data', {
+          e.disconnectedAt = null;
+          sender.send('stream-data', {
             streamId: capturedStreamId,
             chunk: chunk.toString()
           });
@@ -922,10 +981,16 @@ function register(ctx) {
         const sendStreamComplete = () => {
           if (streamCompleteSent) return;
           streamCompleteSent = true;
-          if (!event.sender.isDestroyed()) {
-            event.sender.send('stream-complete', { streamId: capturedStreamId });
+          const sender = liveSender();
+          if (sender) {
+            sender.send('stream-complete', { streamId: capturedStreamId });
+            removeEntry();
+          } else {
+            // No live renderer: keep the entry so a later re-attach can deliver completion.
+            const e = activeStreams.get(capturedStreamId);
+            if (e) e.pendingCompletion = { type: 'complete' };
+            log(`[Main Process] Stream ${capturedStreamId} ended while renderer disconnected; holding for re-attach.`);
           }
-          activeStreams.delete(capturedStreamId);
         };
 
         stream.on('end', () => {
@@ -942,17 +1007,31 @@ function register(ctx) {
 
         stream.on('error', (err) => {
           log(`[Main Process] Stream ${capturedStreamId} error:`, err.message);
-          if (!event.sender.isDestroyed()) {
+          const sender = liveSender();
+          if (sender) {
+            const categorized = categorizeBackendError(err);
+            sender.send('stream-error', {
+              streamId: capturedStreamId,
+              error: categorized.userMessage,
+              category: categorized.category,
+              suggestion: categorized.suggestion,
+              original: categorized.original,
+            });
+            removeEntry();
+          } else {
+            const e = activeStreams.get(capturedStreamId);
+            if (e) {
               const categorized = categorizeBackendError(err);
-              event.sender.send('stream-error', {
-                streamId: capturedStreamId,
+              e.pendingCompletion = {
+                type: 'error',
                 error: categorized.userMessage,
                 category: categorized.category,
                 suggestion: categorized.suggestion,
                 original: categorized.original,
-              });
+              };
+            }
+            log(`[Main Process] Stream ${capturedStreamId} errored while renderer disconnected; holding for re-attach.`);
           }
-          activeStreams.delete(capturedStreamId);
         });
       })(currentStreamId);
 
@@ -972,6 +1051,69 @@ function register(ctx) {
       }
       return { error: categorized.userMessage, streamId: currentStreamId };
     }
+  });
+
+  // Re-attach step 1: a reloaded renderer asks "is a stream still running for this
+  // conversation?" Returns the streamId + assistantMessageId so the renderer can
+  // re-register its streamId->pane mapping and re-mark the rehydrated message streaming.
+  // Does NOT swap the sender yet — keeps buffering so live chunks don't race the mapping.
+  ipcMain.handle('attachActiveStream', async (event, conversationId) => {
+    if (!conversationId) return { active: false };
+    const streamId = activeConversations.get(conversationId);
+    if (!streamId) return { active: false };
+    const entry = activeStreams.get(streamId);
+    if (!entry) {
+      activeConversations.delete(conversationId);
+      return { active: false };
+    }
+    return {
+      active: true,
+      streamId,
+      assistantMessageId: entry.assistantMessageId || null,
+    };
+  });
+
+  // Re-attach step 2: the renderer has registered the streamId->pane mapping and marked
+  // the message streaming, so it is now safe to deliver. Swap the sender to the new
+  // renderer, drain the disconnect buffer as stream-data events, then forward any
+  // pending completion/error.
+  ipcMain.handle('resumeStreamDrain', async (event, streamId) => {
+    const entry = activeStreams.get(streamId);
+    if (!entry) return { ok: false };
+    if (event.sender.isDestroyed()) return { ok: false };
+    entry.sender = event.sender;
+    entry.disconnectedAt = null;
+
+    // Drain buffered chunks (post-disconnect output) through the normal stream-data path.
+    if (entry.buffer && entry.buffer.length) {
+      for (const chunk of entry.buffer) {
+        if (entry.sender.isDestroyed()) break;
+        entry.sender.send('stream-data', { streamId, chunk });
+      }
+      entry.buffer = [];
+    }
+
+    // If the backend already finished/errored while we were disconnected, deliver it now.
+    if (entry.pendingCompletion) {
+      const pc = entry.pendingCompletion;
+      entry.pendingCompletion = null;
+      if (!entry.sender.isDestroyed()) {
+        if (pc.type === 'complete') {
+          entry.sender.send('stream-complete', { streamId });
+        } else if (pc.type === 'error') {
+          entry.sender.send('stream-error', {
+            streamId,
+            error: pc.error,
+            category: pc.category,
+            suggestion: pc.suggestion,
+            original: pc.original,
+          });
+        }
+      }
+      if (entry.conversationId) activeConversations.delete(entry.conversationId);
+      activeStreams.delete(streamId);
+    }
+    return { ok: true };
   });
 
   ipcMain.handle('executeCommand', async (event, data) => {
