@@ -338,32 +338,27 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase
         }
     };
 
-    interface DatabaseEntry {
-        name?: string;
-        path: string;
-    }
-
-    const getDatabases = (): DatabaseEntry[] => {
+    const getDatabases = (): string[] => {
         const val = ctx.databases;
         if (!val) return [];
         if (Array.isArray(val)) {
             return val.map((d: any) => {
-                if (typeof d === 'string') return { path: d };
-                return { name: d.name, path: d.path || d.value || '' };
+                if (typeof d === 'string') return d;
+                return d.path || d.value || '';
             });
         }
         return [];
     };
 
     const addDatabase = (template: 'sqlite' | 'postgres' | 'snowflake' | 'mysql') => {
-        const templates: Record<string, DatabaseEntry> = {
-            sqlite: { name: 'SQLite', path: '~/history.db' },
-            postgres: { name: 'PostgreSQL', path: 'postgresql://user:pass@localhost:5432/db' },
-            snowflake: { name: 'Snowflake', path: 'snowflake://account/warehouse/database/schema' },
-            mysql: { name: 'MySQL', path: 'mysql://user:pass@localhost:3306/db' },
+        const templates: Record<string, string> = {
+            sqlite: '~/.incognide/history.db',
+            postgres: 'postgresql://user:pass@localhost:5432/db',
+            snowflake: 'snowflake://account/warehouse/database/schema',
+            mysql: 'mysql://user:pass@localhost:3306/db',
         };
         const current = getDatabases();
-        const entry = templates[template] || { path: '' };
+        const entry = templates[template] || '';
         setCtx(prev => ({ ...prev, databases: [...current, entry] }));
     };
 
@@ -380,10 +375,10 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase
         }
     };
 
-    const updateDatabase = (index: number, field: keyof DatabaseEntry, value: string) => {
+    const updateDatabase = (index: number, value: string) => {
         const current = getDatabases();
         const next = [...current];
-        next[index] = { ...next[index], [field]: value };
+        next[index] = value;
         setCtx(prev => ({ ...prev, databases: next }));
     };
 
@@ -665,21 +660,14 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase
                         <div key={idx} className="flex gap-2 items-center theme-bg-tertiary p-2 rounded-lg group">
                             <input
                                 type="text"
-                                value={db.name || ''}
-                                onChange={(e) => updateDatabase(idx, 'name', e.target.value)}
-                                placeholder="DB name"
-                                className="w-32 theme-input text-xs"
-                            />
-                            <input
-                                type="text"
-                                value={db.path || ''}
-                                onChange={(e) => updateDatabase(idx, 'path', e.target.value)}
+                                value={db}
+                                onChange={(e) => updateDatabase(idx, e.target.value)}
                                 placeholder="~/path/to/db or connection string"
                                 className="flex-1 theme-input text-xs font-mono"
                             />
-                            {onOpenDatabase && db.path && (
+                            {onOpenDatabase && db && (
                                 <button
-                                    onClick={() => onOpenDatabase(db.path)}
+                                    onClick={() => onOpenDatabase(db)}
                                     className="p-1.5 text-blue-400 hover:bg-blue-900/30 rounded"
                                     title="Open database"
                                 >
