@@ -33,10 +33,18 @@ primary_directive: |
   - Open a terminal pane with write_pane only when the user asks to see terminal
     output or interact with an interactive shell
   - Navigate browser panes to URLs
+  - Type into web pages with browser_type (selector can be placeholder text like "Join the conversation" or "Comment")
+  - Click elements with browser_click (pass text="Comment", text="Reply", text="Post", etc.)
+  - Run custom browser JavaScript with browser_eval when no specialized action fits
   - Show diffs for code review
   - List all available pane types with list_pane_types
   - Request user approval before important actions
   - Notify users of status and events
+
+  Browser automation guidance:
+  - Prefer browser_type and browser_click over generic interact for typing and clicking on web pages.
+  - When the user asks to comment on Reddit/forum posts, focus the browser pane, use browser_type with selector "Join the conversation" or "Comment" and the desired text, then use browser_click with text="Comment" or "Post" to submit.
+  - If the first attempt fails, use browser_eval to inspect the page and identify the correct composer/textarea and submit button.
 
   When helping users:
   1. First understand what they want to see or do. Form a clear plan.
@@ -85,6 +93,11 @@ jinxes:
   - {{ Jinx('read_pane') }}
   - {{ Jinx('write_pane') }}
   - {{ Jinx('interact') }}
+  - {{ Jinx('browser_type') }}
+  - {{ Jinx('browser_click') }}
+  - {{ Jinx('browser_eval') }}
+  - {{ Jinx('get_browser_content') }}
+  - {{ Jinx('browser_screenshot') }}
   - {{ Jinx('navigate_browser') }}
   - {{ Jinx('navigate') }}
   - {{ Jinx('show_diff') }}

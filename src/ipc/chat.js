@@ -442,34 +442,13 @@ function register(ctx) {
   ipcMain.handle('get-provider-models', async (event, { provider, baseUrl, apiKeyVar }) => {
     const normalizedProvider = (provider || '').toLowerCase();
 
-    // For OpenRouter, fetch directly from their API for freshest model list
-    if (normalizedProvider === 'openrouter') {
-      try {
-        const apiKey = apiKeyVar ? (process.env[apiKeyVar] || '') : (process.env.OPENROUTER_API_KEY || '');
-        const headers = {};
-        if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
-        const res = await fetch('https://openrouter.ai/api/v1/models', {
-          headers,
-          signal: AbortSignal.timeout(10000),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const models = (data.data || []).map((m) => ({
-            id: m.id,
-            name: m.name || m.id,
-            provider: 'openrouter',
-            description: m.description,
-            pricing: m.pricing,
-            context_length: m.context_length,
-          }));
-          return { models };
-        }
-      } catch (err) {
-        console.log('[get-provider-models] OpenRouter direct fetch failed:', err.message);
-      }
+    // Try the provider's own OpenAI-compatible /models endpoint first.
+    const direct = await fetchProviderModels({ provider, baseUrl, apiKeyVar });
+    if (direct.models && direct.models.length > 0) {
+      return direct;
     }
 
-    // Fallback: ask backend
+    // Fallback: ask backend for built-in providers.
     try {
       const response = await fetch(`${BACKEND_URL}/api/available_models?currentPath=~`);
       if (response.ok) {
@@ -481,7 +460,7 @@ function register(ctx) {
         return { models: filtered.map((m) => ({ id: m.value || m.id || m.name, name: m.display_name || m.value || m.id || m.name, provider: m.provider })) };
       }
     } catch {}
-    return { models: [], error: 'No models found' };
+    return { models: [], error: direct.error || 'No models found' };
   });
 
   ipcMain.handle('getAvailableImageModels', async (event, currentPath) => {
@@ -908,6 +887,15 @@ function register(ctx) {
         customProviders,
         extractMemories: data.extractMemories !== false,
       };
+
+      try {
+        const shouldExtract = await ctx.getEffectiveExtractMemories?.(data.currentPath);
+        if (shouldExtract !== undefined) {
+          payload.extractMemories = data.extractMemories === false ? false : shouldExtract;
+        }
+      } catch (err) {
+        log('[Chat] Could not read index location extract setting:', err.message);
+      }
 
       if (apiUrlOverride) {
         payload.api_url = apiUrlOverride;
@@ -1944,4 +1932,69 @@ function register(ctx) {
   // ---- End sync handlers ----
 }
 
-module.exports = { register };
+/**
+ * Fetch available models from a provider's OpenAI-compatible /models endpoint.
+ * Handles OpenRouter specially, and supports custom base URLs without requiring
+ * an API key (common for local LLM endpoints).
+ */
+async function fetchProviderModels({ provider, baseUrl, apiKeyVar }) {
+  const normalizedProvider = (provider || '').toLowerCase();
+
+  if (normalizedProvider === 'openrouter') {
+    try {
+      const apiKey = apiKeyVar ? (process.env[apiKeyVar] || '') : (process.env.OPENROUTER_API_KEY || '');
+      const headers = {};
+      if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+      const res = await fetch('https://openrouter.ai/api/v1/models', {
+        headers,
+        signal: AbortSignal.timeout(10000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const models = (data.data || []).map((m) => ({
+          id: m.id,
+          name: m.name || m.id,
+          provider: 'openrouter',
+          description: m.description,
+          pricing: m.pricing,
+          context_length: m.context_length,
+        }));
+        return { models };
+      }
+    } catch (err) {
+      console.log('[fetchProviderModels] OpenRouter direct fetch failed:', err.message);
+    }
+  }
+
+  if (baseUrl) {
+    try {
+      const cleanUrl = String(baseUrl).replace(/\/+$/, '');
+      const modelsUrl = cleanUrl.endsWith('/models') ? cleanUrl : `${cleanUrl}/models`;
+      const apiKey = apiKeyVar ? (process.env[apiKeyVar] || '') : '';
+      const headers = { 'Content-Type': 'application/json' };
+      if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+      const res = await fetch(modelsUrl, {
+        headers,
+        signal: AbortSignal.timeout(10000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const sourceList = data.data || data.models || [];
+        const models = sourceList.map((m) => ({
+          id: m.id || m.name || m,
+          name: m.name || m.id || m,
+          provider: normalizedProvider,
+        }));
+        return { models };
+      }
+      const errText = await res.text();
+      return { models: [], error: `HTTP ${res.status}: ${errText.slice(0, 200)}` };
+    } catch (err) {
+      console.log('[fetchProviderModels] Direct fetch failed:', err.message);
+    }
+  }
+
+  return { models: [] };
+}
+
+module.exports = { register, fetchProviderModels };

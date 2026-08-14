@@ -1,6 +1,33 @@
 
 
 import { registerAction, StudioContext, StudioActionResult } from './index';
+import { resolveBrowserPaneId } from './paneActions';
+
+function getBrowserPane(
+  paneIdArg: string | undefined,
+  ctx: StudioContext
+): { paneId: string; data: any } | { error: string } {
+  const paneId = resolveBrowserPaneId(paneIdArg, ctx);
+  if (!paneId) {
+    return { error: 'No browser pane found' };
+  }
+
+  const data = ctx.contentDataRef.current[paneId];
+  if (!data) {
+    return { error: `Pane not found: ${paneId}` };
+  }
+
+  if (data.contentType !== 'browser') {
+    return { error: `Pane is not a browser: ${data.contentType}` };
+  }
+
+  ctx.contentDataRef.current[paneId] = {
+    ...data,
+    lastActiveAt: Date.now()
+  };
+
+  return { paneId, data: ctx.contentDataRef.current[paneId] };
+}
 
 async function navigate(
   args: { paneId?: string; url: string },
@@ -12,19 +39,12 @@ async function navigate(
     return { success: false, error: 'url is required' };
   }
 
-  const paneId = args.paneId === 'active' || !args.paneId
-    ? ctx.activeContentPaneId
-    : args.paneId;
-
-  const data = ctx.contentDataRef.current[paneId];
-
-  if (!data) {
-    return { success: false, error: `Pane not found: ${paneId}` };
+  const resolved = getBrowserPane(args.paneId, ctx);
+  if ('error' in resolved) {
+    return { success: false, error: resolved.error };
   }
 
-  if (data.contentType !== 'browser') {
-    return { success: false, error: `Pane is not a browser: ${data.contentType}` };
-  }
+  const { paneId, data } = resolved;
 
   if (data.navigateTo) {
     const result = await data.navigateTo(url);
@@ -50,19 +70,12 @@ async function browser_back(
   args: { paneId?: string },
   ctx: StudioContext
 ): Promise<StudioActionResult> {
-  const paneId = args.paneId === 'active' || !args.paneId
-    ? ctx.activeContentPaneId
-    : args.paneId;
-
-  const data = ctx.contentDataRef.current[paneId];
-
-  if (!data) {
-    return { success: false, error: `Pane not found: ${paneId}` };
+  const resolved = getBrowserPane(args.paneId, ctx);
+  if ('error' in resolved) {
+    return { success: false, error: resolved.error };
   }
 
-  if (data.contentType !== 'browser') {
-    return { success: false, error: `Pane is not a browser: ${data.contentType}` };
-  }
+  const { paneId, data } = resolved;
 
   if (data.browserBack) {
     const result = await data.browserBack();
@@ -80,19 +93,12 @@ async function browser_forward(
   args: { paneId?: string },
   ctx: StudioContext
 ): Promise<StudioActionResult> {
-  const paneId = args.paneId === 'active' || !args.paneId
-    ? ctx.activeContentPaneId
-    : args.paneId;
-
-  const data = ctx.contentDataRef.current[paneId];
-
-  if (!data) {
-    return { success: false, error: `Pane not found: ${paneId}` };
+  const resolved = getBrowserPane(args.paneId, ctx);
+  if ('error' in resolved) {
+    return { success: false, error: resolved.error };
   }
 
-  if (data.contentType !== 'browser') {
-    return { success: false, error: `Pane is not a browser: ${data.contentType}` };
-  }
+  const { paneId, data } = resolved;
 
   if (data.browserForward) {
     const result = await data.browserForward();
@@ -110,19 +116,12 @@ async function get_browser_info(
   args: { paneId?: string },
   ctx: StudioContext
 ): Promise<StudioActionResult> {
-  const paneId = args.paneId === 'active' || !args.paneId
-    ? ctx.activeContentPaneId
-    : args.paneId;
-
-  const data = ctx.contentDataRef.current[paneId];
-
-  if (!data) {
-    return { success: false, error: `Pane not found: ${paneId}` };
+  const resolved = getBrowserPane(args.paneId, ctx);
+  if ('error' in resolved) {
+    return { success: false, error: resolved.error };
   }
 
-  if (data.contentType !== 'browser') {
-    return { success: false, error: `Pane is not a browser: ${data.contentType}` };
-  }
+  const { paneId, data } = resolved;
 
   return {
     success: true,
@@ -142,19 +141,12 @@ async function browser_click(
     return { success: false, error: 'Either selector or text is required' };
   }
 
-  const paneId = args.paneId === 'active' || !args.paneId
-    ? ctx.activeContentPaneId
-    : args.paneId;
-
-  const data = ctx.contentDataRef.current[paneId];
-
-  if (!data) {
-    return { success: false, error: `Pane not found: ${paneId}` };
+  const resolved = getBrowserPane(args.paneId, ctx);
+  if ('error' in resolved) {
+    return { success: false, error: resolved.error };
   }
 
-  if (data.contentType !== 'browser') {
-    return { success: false, error: `Pane is not a browser: ${data.contentType}` };
-  }
+  const { paneId, data } = resolved;
 
   if (!data.browserClick) {
     return { success: false, error: 'Browser automation not available for this pane' };
@@ -178,19 +170,12 @@ async function browser_type(
     return { success: false, error: 'text is required' };
   }
 
-  const paneId = args.paneId === 'active' || !args.paneId
-    ? ctx.activeContentPaneId
-    : args.paneId;
-
-  const data = ctx.contentDataRef.current[paneId];
-
-  if (!data) {
-    return { success: false, error: `Pane not found: ${paneId}` };
+  const resolved = getBrowserPane(args.paneId, ctx);
+  if ('error' in resolved) {
+    return { success: false, error: resolved.error };
   }
 
-  if (data.contentType !== 'browser') {
-    return { success: false, error: `Pane is not a browser: ${data.contentType}` };
-  }
+  const { paneId, data } = resolved;
 
   if (!data.browserType) {
     return { success: false, error: 'Browser automation not available for this pane' };
@@ -204,19 +189,12 @@ async function get_browser_content(
   args: { paneId?: string },
   ctx: StudioContext
 ): Promise<StudioActionResult> {
-  const paneId = args.paneId === 'active' || !args.paneId
-    ? ctx.activeContentPaneId
-    : args.paneId;
-
-  const data = ctx.contentDataRef.current[paneId];
-
-  if (!data) {
-    return { success: false, error: `Pane not found: ${paneId}` };
+  const resolved = getBrowserPane(args.paneId, ctx);
+  if ('error' in resolved) {
+    return { success: false, error: resolved.error };
   }
 
-  if (data.contentType !== 'browser') {
-    return { success: false, error: `Pane is not a browser: ${data.contentType}` };
-  }
+  const { paneId, data } = resolved;
 
   if (!data.getPageContent) {
     return { success: false, error: 'Page content method not available for this pane' };
@@ -230,19 +208,12 @@ async function browser_screenshot(
   args: { paneId?: string },
   ctx: StudioContext
 ): Promise<StudioActionResult> {
-  const paneId = args.paneId === 'active' || !args.paneId
-    ? ctx.activeContentPaneId
-    : args.paneId;
-
-  const data = ctx.contentDataRef.current[paneId];
-
-  if (!data) {
-    return { success: false, error: `Pane not found: ${paneId}` };
+  const resolved = getBrowserPane(args.paneId, ctx);
+  if ('error' in resolved) {
+    return { success: false, error: resolved.error };
   }
 
-  if (data.contentType !== 'browser') {
-    return { success: false, error: `Pane is not a browser: ${data.contentType}` };
-  }
+  const { paneId, data } = resolved;
 
   if (!data.browserScreenshot) {
     return { success: false, error: 'Screenshot not available for this pane' };
@@ -262,19 +233,12 @@ async function browser_eval(
     return { success: false, error: 'code is required' };
   }
 
-  const paneId = args.paneId === 'active' || !args.paneId
-    ? ctx.activeContentPaneId
-    : args.paneId;
-
-  const data = ctx.contentDataRef.current[paneId];
-
-  if (!data) {
-    return { success: false, error: `Pane not found: ${paneId}` };
+  const resolved = getBrowserPane(args.paneId, ctx);
+  if ('error' in resolved) {
+    return { success: false, error: resolved.error };
   }
 
-  if (data.contentType !== 'browser') {
-    return { success: false, error: `Pane is not a browser: ${data.contentType}` };
-  }
+  const { paneId, data } = resolved;
 
   if (!data.browserEval) {
     return { success: false, error: 'Browser eval not available for this pane' };

@@ -806,7 +806,6 @@ function splashLog(message) {
   flushSplashLogs();
 }
 
-const DEFAULT_SHORTCUT = process.platform === 'darwin' ? 'Alt+Space' : 'CommandOrControl+Space';
 const ptySessions = new Map();
 const ptyKillTimers = new Map();
 
@@ -2156,24 +2155,6 @@ function registerGlobalShortcut(win) {
   globalShortcut.unregisterAll();
 
   try {
-    const rcPath = path.join(os.homedir(), '.incogniderc');
-    let shortcut = DEFAULT_SHORTCUT;
-
-    if (fs.existsSync(rcPath)) {
-      const rcContent = fs.readFileSync(rcPath, 'utf8');
-      const shortcutMatch = rcContent.match(/CHAT_SHORTCUT=["']?([^"'\n]+)["']?/);
-      if (shortcutMatch) {
-        shortcut = shortcutMatch[1];
-      }
-    }
-
-    const macroSuccess = globalShortcut.register(shortcut, () => {
-      if (win.isMinimized()) win.restore();
-      win.focus();
-      win.webContents.send('show-macro-input');
-    });
-    console.log('Macro shortcut registered:', macroSuccess);
-
     const screenshotSuccess = globalShortcut.register('Ctrl+Alt+4', async () => {
       const now = Date.now();
       if (isCapturingScreenshot || (now - lastScreenshotTime) < SCREENSHOT_COOLDOWN) {
@@ -2659,8 +2640,6 @@ if (!gotTheLock) {
 
     mainWindow.show();
     mainWindow.focus();
-
-    mainWindow.webContents.send('show-macro-input');
   }
 
 function createWindow(cliArgs = {}) {

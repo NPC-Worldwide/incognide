@@ -30,7 +30,6 @@ import RightSidebar from './RightSidebar';
 import StatusBar from './StatusBar';
 import CsvViewer from './CsvViewer';
 import DocxViewer from './DocxViewer';
-import MacroInput from './MacroInput';
 import SettingsMenu from './SettingsMenu';
 import NPCTeamMenu from './NPCTeamMenu';
 
@@ -49,6 +48,7 @@ import BrowserUrlDialog from './BrowserUrlDialog';
 import PptxViewer from './PptxViewer';
 import LatexViewer from './LatexViewer';
 import NotebookViewer from './NotebookViewer';
+import { StudioContentContext } from './StudioContext';
 import ExpViewer from './ExpViewer';
 import PicViewer from './PicViewer';
 import VideoViewer from './VideoViewer';
@@ -255,6 +255,13 @@ const WEB_SEARCH_PROVIDERS: Record<WebSearchProvider, { name: string; url: strin
     sibiji: { name: 'Sibiji', url: 'https://sibiji.com/search?q=' },
 };
 
+const DEFAULT_QUICK_SHORTCUTS: Record<string, string> = {
+    quickAction1: 'Ctrl+Alt+Q',
+    quickAction2: 'Ctrl+Alt+W',
+    quickAction3: 'Ctrl+Alt+E',
+    quickAction4: 'Ctrl+Alt+R',
+};
+
 const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const aiEnabled = useAiEnabled();
     const [gitPanelCollapsed, setGitPanelCollapsed] = useState(true);
@@ -423,8 +430,6 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [fileChanged, setFileChanged] = useState(false);
     const [isDarkMode, setIsDarkMode] = useState(() => !document.body.classList.contains('light-mode'));
-    const [isMacroInputOpen, setIsMacroInputOpen] = useState(false);
-    const [macroText, setMacroText] = useState('');
     const [promptModal, setPromptModal] = useState<{ isOpen: boolean; title: string; message: string; defaultValue: string; onConfirm: ((value: string) => void) | null }>({ isOpen: false, title: '', message: '', defaultValue: '', onConfirm: null });
     const [promptModalValue, setPromptModalValue] = useState('');
     const [initModal, setInitModal] = useState<{ isOpen: boolean; loading: boolean; npcs: any[]; jinxes: any[]; tab: 'npcs' | 'jinxes'; initializing: boolean }>({
@@ -718,6 +723,50 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
             paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
         }
     }, [paneUpdateEmitter]);
+
+    // Re-attach to a backend generation stream that is still running for this conversation
+    // after the renderer reloaded or the pane was closed/reopened. The assistant message is
+    // persisted chunk-by-chunk keyed by message_id = streamId, so the reloaded pane already
+    // holds the partial content; we just re-register the streamId->pane mapping, re-mark the
+    // message streaming, and tell main to drain its disconnect buffer to us.
+    const attachActiveStreamForPane = useCallback(async (paneId: string) => {
+        try {
+            const paneData = contentDataRef.current[paneId];
+            const conversationId = paneData?.contentId;
+            if (!conversationId || (paneData.contentType !== 'chat' && paneData.contentType !== 'agent')) return;
+            const attached = await (window as any).api.attachActiveStream(conversationId);
+            if (!attached?.active) return;
+            streamToPaneRef.current[attached.streamId] = paneId;
+            if (paneData.chatMessages) {
+                let msg = paneData.chatMessages.allMessages.find((m: any) => m.id === attached.streamId);
+                if (!msg) {
+                    // Disconnect happened before the first chunk was ever saved: create a
+                    // placeholder so resumed stream-data chunks have a message to append to.
+                    msg = {
+                        id: attached.streamId,
+                        role: 'assistant',
+                        content: '',
+                        isStreaming: true,
+                        timestamp: new Date().toISOString(),
+                        streamId: attached.streamId,
+                        contentParts: [],
+                    };
+                    paneData.chatMessages.allMessages.push(msg);
+                    paneData.chatMessages.messages = paneData.chatMessages.allMessages.slice(
+                        -(paneData.chatMessages.displayedMessageCount || 20)
+                    );
+                }
+                msg.isStreaming = true;
+                msg.streamId = attached.streamId;
+                msg.lastStreamAt = Date.now();
+            }
+            setIsStreaming(true);
+            paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
+            await (window as any).api.resumeStreamDrain(attached.streamId);
+        } catch (err) {
+            console.error('[RE-ATTACH] Failed to re-attach stream:', err);
+        }
+    }, [contentDataRef, streamToPaneRef, setIsStreaming, paneUpdateEmitter]);
 
     const [selectedMessages, setSelectedMessages] = useState(new Set());
     const [messageSelectionMode, setMessageSelectionMode] = useState(false);
@@ -1834,7 +1883,7 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
 
 
     const handleFileClickRef = useRef<((filePath: string) => void) | null>(null);
-    const createNewTerminalRef = useRef<(() => void) | null>(null);
+    const createNewTerminalRef = useRef<((type?: string) => void) | null>(null);
     const createNewConversationRef = useRef<((opts?: any) => void) | null>(null);
     const createNewBrowserRef = useRef<(() => void) | null>(null);
     const handleCreateNewFolderRef = useRef<(() => void) | null>(null);
@@ -4620,10 +4669,10 @@ const renderSearchPane = useCallback(({ nodeId, initialQuery }: { nodeId: string
             initialQuery={initialQuery || ''}
             currentPath={currentPathRef.current}
             onOpenFile={(path: string) => handleFileClickRef.current?.(path)}
-            onOpenConversation={(id: string) => createAndAddPaneNodeToLayout('chat', id)}
+            onOpenConversation={(id: string) => handleConversationSelectRef.current?.(id)}
         />
     );
-}, [createAndAddPaneNodeToLayout]);
+}, []);
 
 const renderBrowserViewer = useCallback(({ nodeId, hasTabBar, onToggleZen, isZenMode }) => {
     return (
@@ -5509,6 +5558,64 @@ const handleBrowserDialogNavigate = (url) => {
         handleCreateNewFolderRef.current = handleCreateNewFolder;
     }, [createNewTerminal, createNewConversation, createNewBrowser, handleCreateNewFolder]);
 
+    useEffect(() => {
+        const parseShortcut = (shortcut: string) => {
+            const parts = shortcut.toLowerCase().split('+').map((p) => p.trim());
+            return {
+                ctrl: parts.includes('ctrl') || parts.includes('control'),
+                meta: parts.includes('cmd') || parts.includes('command') || parts.includes('meta') || parts.includes('win') || parts.includes('super'),
+                alt: parts.includes('alt') || parts.includes('option'),
+                shift: parts.includes('shift'),
+            };
+        };
+
+        const loadKeyboardShortcuts = () => {
+            try {
+                const raw = localStorage.getItem('incognide_keyboardShortcuts');
+                const saved = raw ? JSON.parse(raw) : {};
+                return { ...DEFAULT_QUICK_SHORTCUTS, ...(saved || {}) };
+            } catch {
+                return { ...DEFAULT_QUICK_SHORTCUTS };
+            }
+        };
+
+        const openQuickActionId = (id?: string) => {
+            if (!id) return;
+            if (id === 'chat' || id === 'agent') {
+                createNewConversationRef.current?.({ contentType: id });
+            } else if (id === 'browser') {
+                createNewBrowserRef.current?.();
+            } else {
+                createNewTerminalRef.current?.(id);
+            }
+        };
+
+        const handler = (e: KeyboardEvent) => {
+            const target = e.target as HTMLElement | null;
+            if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+            if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) return;
+
+            const slots = ['q', 'w', 'e', 'r'];
+            const slot = slots.indexOf(e.key.toLowerCase());
+            if (slot === -1) return;
+
+            const shortcuts = loadKeyboardShortcuts();
+            const shortcut = shortcuts[`quickAction${slot + 1}`];
+            if (!shortcut) return;
+
+            const mods = parseShortcut(shortcut);
+            if (e.ctrlKey === mods.ctrl && e.metaKey === mods.meta && e.altKey === mods.alt && e.shiftKey === mods.shift) {
+                e.preventDefault();
+                e.stopPropagation();
+                const quickActions: string[] = JSON.parse(localStorage.getItem('incognide_quickActions') || '[]');
+                openQuickActionId(quickActions[slot]);
+            }
+        };
+
+        window.addEventListener('keydown', handler, true);
+        return () => window.removeEventListener('keydown', handler, true);
+    }, []);
+
 
     const createTeamManagementPane = useCallback(async (opts?: { npcName?: string; tab?: string; initialJinxName?: string }) => {
         const newPaneId = generateId();
@@ -5950,14 +6057,6 @@ const handleBrowserDialogNavigate = (url) => {
     }, [activeConversationId]);    
 
     useEffect(() => {
-        window.api.onShowMacroInput(() => {
-            setIsMacroInputOpen(true);
-            setMacroText('');
-        });
-    }, []);
-
-
-    useEffect(() => {
         const cleanup = window.api.onScreenshotCaptured(async (screenshotPath: string) => {
             console.log('[Screenshot] Captured:', screenshotPath);
 
@@ -6279,6 +6378,21 @@ const handleBrowserDialogNavigate = (url) => {
 
     }, [currentPath, config]);
 
+
+    // Safety-net re-attachment: whenever the active pane changes to a chat/agent
+    // pane that still has a streaming message, try to re-attach to the backend
+    // stream. This catches cases where the pane was closed/reopened through a
+    // path that didn't explicitly re-attach (e.g. search results).
+    useEffect(() => {
+        if (!activeContentPaneId) return;
+        const paneData = contentDataRef.current[activeContentPaneId];
+        if (!paneData?.contentId) return;
+        if (paneData.contentType !== 'chat' && paneData.contentType !== 'agent') return;
+        const hasStreamingMsg = paneData.chatMessages?.allMessages?.some((m: any) => m.isStreaming && m.streamId);
+        if (hasStreamingMsg) {
+            attachActiveStreamForPane(activeContentPaneId);
+        }
+    }, [activeContentPaneId, attachActiveStreamForPane]);
 
 
 
@@ -6847,108 +6961,6 @@ const handleBrowserDialogNavigate = (url) => {
 
         {renderMessageContextMenu()}
 
-
-            {isMacroInputOpen && (
-                <MacroInput
-                    isOpen={isMacroInputOpen}
-                    currentPath={currentPath}
-                    onClose={() => {
-                        setIsMacroInputOpen(false);
-                        window.api?.hideMacro?.();
-                    }}
-                    onSubmit={async ({ macro, conversationId, model, provider }) => {
-
-                        const paneId = await handleConversationSelect(conversationId);
-                        console.log('[MacroInput onSubmit] Got paneId:', paneId);
-
-                        if (!paneId || !contentDataRef.current[paneId]) {
-                            console.error('[MacroInput onSubmit] No paneData found for paneId:', paneId);
-                            return;
-                        }
-
-                        const paneData = contentDataRef.current[paneId];
-                        const newStreamId = generateId();
-
-
-                        streamToPaneRef.current[newStreamId] = paneId;
-                        setIsStreaming(true);
-
-
-                        const userMsg = {
-                            id: generateId(),
-                            role: 'user',
-                            content: macro,
-                            timestamp: new Date().toISOString(),
-                            type: 'message'
-                        };
-
-
-                        const assistantMsg = {
-                            id: newStreamId,
-                            role: 'assistant',
-                            content: '',
-                            timestamp: new Date().toISOString(),
-                            type: 'message',
-                            isStreaming: true,
-                            parentMessageId: userMsg.id,
-                        };
-
-                        if (paneData.chatMessages) {
-                            paneData.chatMessages.allMessages = [
-                                ...(paneData.chatMessages.allMessages || []),
-                                userMsg,
-                                assistantMsg
-                            ];
-                            paneData.chatMessages.messages = paneData.chatMessages.allMessages.slice(
-                                -(paneData.chatMessages.displayedMessageCount || 20)
-                            );
-                        }
-
-                        notifyAllPanes();
-
-                        try {
-
-                            await window.api.executeCommandStream({
-                                commandstr: macro,
-                                currentPath,
-                                conversationId,
-                                model,
-                                provider,
-                                npc: currentNPC,
-                                npcSource: 'global',
-                                attachments: [],
-                                streamId: newStreamId,
-
-                                userMessageId: userMsg.id,
-                                assistantMessageId: newStreamId,
-                                parentMessageId: userMsg.id,
-
-                                temperature: 0.7,
-                                top_k: 40,
-                                max_tokens: 4096,
-                            });
-                        } catch (err: any) {
-                            console.error('[MacroInput onSubmit] Error:', err);
-
-                            if (paneData.chatMessages) {
-                                const msgIndex = paneData.chatMessages.allMessages.findIndex((m: any) => m.id === newStreamId);
-                                if (msgIndex !== -1) {
-                                    paneData.chatMessages.allMessages[msgIndex].content = `Error: ${err.message}`;
-                                    paneData.chatMessages.allMessages[msgIndex].isStreaming = false;
-                                    paneData.chatMessages.allMessages[msgIndex].type = 'error';
-                                }
-                            }
-                            delete streamToPaneRef.current[newStreamId];
-                            if (Object.keys(streamToPaneRef.current).length === 0) {
-                                setIsStreaming(false);
-                            }
-                            notifyAllPanes();
-                        }
-
-                        refreshConversations();
-                    }}
-                />
-            )}
 
             <CtxEditor
                 isOpen={ctxEditorOpen}
@@ -7564,51 +7576,6 @@ const layoutComponentRef = useRef(layoutComponentApi);
 layoutComponentRef.current = layoutComponentApi;
 
 
-// Re-attach to a backend generation stream that is still running for this conversation
-// after the renderer reloaded or the pane was closed/reopened. The assistant message is
-// persisted chunk-by-chunk keyed by message_id = streamId, so the reloaded pane already
-// holds the partial content; we just re-register the streamId->pane mapping, re-mark the
-// message streaming, and tell main to drain its disconnect buffer to us.
-const attachActiveStreamForPane = async (paneId: string) => {
-    try {
-        const paneData = contentDataRef.current[paneId];
-        const conversationId = paneData?.contentId;
-        if (!conversationId || (paneData.contentType !== 'chat' && paneData.contentType !== 'agent')) return;
-        const attached = await (window as any).api.attachActiveStream(conversationId);
-        if (!attached?.active) return;
-        streamToPaneRef.current[attached.streamId] = paneId;
-        if (paneData.chatMessages) {
-            let msg = paneData.chatMessages.allMessages.find((m: any) => m.id === attached.streamId);
-            if (!msg) {
-                // Disconnect happened before the first chunk was ever saved: create a
-                // placeholder so resumed stream-data chunks have a message to append to.
-                msg = {
-                    id: attached.streamId,
-                    role: 'assistant',
-                    content: '',
-                    isStreaming: true,
-                    timestamp: new Date().toISOString(),
-                    streamId: attached.streamId,
-                    contentParts: [],
-                };
-                paneData.chatMessages.allMessages.push(msg);
-                paneData.chatMessages.messages = paneData.chatMessages.allMessages.slice(
-                    -(paneData.chatMessages.displayedMessageCount || 20)
-                );
-            }
-            msg.isStreaming = true;
-            msg.streamId = attached.streamId;
-            msg.lastStreamAt = Date.now();
-        }
-        setIsStreaming(true);
-        paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
-        await (window as any).api.resumeStreamDrain(attached.streamId);
-    } catch (err) {
-        console.error('[RE-ATTACH] Failed to re-attach stream:', err);
-    }
-};
-
-
 const handleConversationSelect = async (conversationId: string, skipMessageLoad = false) => {
     setActiveConversationId(conversationId);
     setCurrentFile(null);
@@ -7625,6 +7592,21 @@ const handleConversationSelect = async (conversationId: string, skipMessageLoad 
     });
 
     if (existingPaneId) {
+        const inLayout = rootLayoutNode ? !!findNodePath(rootLayoutNode, existingPaneId) : false;
+        if (!inLayout) {
+            // Pane was closed while its stream was still running; restore it to the layout.
+            const restoredPaneId = existingPaneId;
+            const restoredData = contentDataRef.current[restoredPaneId];
+            const restoredType = restoredData?.contentType || 'chat';
+            const restoredContentId = restoredData?.contentId || conversationId;
+            if (!rootLayoutNode) {
+                setRootLayoutNode({ id: restoredPaneId, type: 'content' });
+            } else {
+                const activePath = findNodePath(rootLayoutNode, activeContentPaneId) || [];
+                performSplit(activePath, 'right', restoredType, restoredContentId, restoredPaneId);
+            }
+            delete restoredData?._closedWithActiveStream;
+        }
         setActiveContentPaneId(existingPaneId);
         attachActiveStreamForPane(existingPaneId);
         return existingPaneId;
@@ -7716,6 +7698,11 @@ const handleConversationSelect = async (conversationId: string, skipMessageLoad 
 
     return paneIdToUpdate;
 };
+
+const handleConversationSelectRef = useRef(handleConversationSelect);
+useEffect(() => {
+    handleConversationSelectRef.current = handleConversationSelect;
+}, [handleConversationSelect]);
 
 
 const handleFileClick = useCallback(async (filePath: string) => {
@@ -8343,6 +8330,7 @@ const topBar = topBarCollapsed ? (
                     )}
                 </div>
                 <button
+                    data-tutorial="command-palette"
                     onClick={() => setCommandPaletteOpen(true)}
                     className="p-1.5 theme-hover rounded theme-text-muted"
                     title={`Command palette (${navigator.platform?.toLowerCase().includes('mac') ? '⌘P' : 'Ctrl+Shift+P'})`}
@@ -8491,6 +8479,8 @@ const statusBar = bottomBarCollapsed ? (
         onOpenAccount={() => createAndAddPaneNodeToLayout?.('account', 'account')}
         onOpenNewWindow={() => { if ((window as any).api?.openNewWindow) (window as any).api.openNewWindow(''); else window.open(window.location.href, '_blank'); }}
         createNewTerminal={createNewTerminal}
+        createNewConversation={createNewConversation}
+        createNewBrowser={createNewBrowser}
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
         searchScope={searchScope}
@@ -8813,6 +8803,7 @@ const renderMainContent = () => {
 
 
     return (
+        <StudioContentContext.Provider value={contentDataRef}>
         <main className={`flex-1 flex flex-col theme-bg-primary ${isDarkMode ? 'dark-mode' : 'light-mode'} overflow-hidden`}>
             <div
                 className="flex-1 flex overflow-hidden"
@@ -8907,11 +8898,13 @@ const renderMainContent = () => {
                 )}
             </div>
         </main>
+        </StudioContentContext.Provider>
     );
 };
 
 
     return (
+        <StudioContentContext.Provider value={contentDataRef}>
         <div className={`chat-container ${isDarkMode ? 'dark-mode' : 'light-mode'} h-screen flex flex-col theme-bg-primary theme-text-primary font-mono`}>
 
 {pomodoroOnBreak && (
@@ -9133,11 +9126,11 @@ const renderMainContent = () => {
             onFileSelect={handleFileClick}
             onCommand={(cmdId: string) => {
                 const paneMap: Record<string, string> = {
-                    chat: 'chat', terminal: 'terminal', browser: 'browser',
-                    radio: 'radio', editor: 'editor', word: 'word', ppt: 'ppt',
-                    excel: 'spreadsheet', git: 'git', teammanagement: 'teammanagement',
-                    logs: 'logs', settings: 'settings', help: 'help',
-                    'disk-usage': 'disk-usage',
+                    chat: 'chat', agent: 'agent', terminal: 'terminal', browser: 'browser',
+                    folder: 'folder', search: 'search', radio: 'radio', editor: 'editor',
+                    word: 'word', ppt: 'ppt', excel: 'spreadsheet', notebook: 'notebook',
+                    git: 'git', teammanagement: 'teammanagement', logs: 'logs',
+                    settings: 'settings', help: 'help', 'disk-usage': 'disk-usage',
                 };
                 if (cmdId.startsWith('team:')) {
                     const tab = cmdId.split(':')[1];
@@ -9330,6 +9323,7 @@ const renderMainContent = () => {
         />
 
         </div>
+        </StudioContentContext.Provider>
     );
 };
 

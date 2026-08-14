@@ -6,6 +6,15 @@ const browserStateCache = new Map<string, {
     lastUrl: string;
 }>();
 
+// Exported for tests: produce the two CSP-safe wrappers used by browserEval.
+export function wrapBrowserEvalCode(code: string): { expression: string; fallback: string } {
+    const expression = code.trim().replace(/;\s*$/, '');
+    return {
+        expression: `(async () => { return ( ${expression} ); })()`,
+        fallback: `(async () => {\n${code}\n})()`
+    };
+}
+
 const WebBrowserViewer = memo(({
     nodeId,
     contentDataRef,
@@ -201,31 +210,94 @@ const WebBrowserViewer = memo(({
                             const text = ${JSON.stringify(options?.text || null)};
                             const index = ${JSON.stringify(options?.index ?? 0)};
 
+                            function findDeep(root, predicate, depth = 0) {
+                                if (depth > 6 || !root || root.nodeType !== 1) return null;
+                                if (predicate(root)) return root;
+                                let found = null;
+                                if (root.shadowRoot) {
+                                    for (const child of root.shadowRoot.querySelectorAll('*')) {
+                                        found = findDeep(child, predicate, depth + 1);
+                                        if (found) return found;
+                                    }
+                                }
+                                for (const child of root.children) {
+                                    found = findDeep(child, predicate, depth + 1);
+                                    if (found) return found;
+                                }
+                                return null;
+                            }
+
+                            function findAllDeep(root, predicate, depth = 0, results = []) {
+                                if (depth > 6 || !root || root.nodeType !== 1) return results;
+                                if (predicate(root)) results.push(root);
+                                if (root.shadowRoot) {
+                                    for (const child of root.shadowRoot.querySelectorAll('*')) {
+                                        findAllDeep(child, predicate, depth + 1, results);
+                                    }
+                                }
+                                for (const child of root.children) {
+                                    findAllDeep(child, predicate, depth + 1, results);
+                                }
+                                return results;
+                            }
+
+                            function getClickableText(el) {
+                                const directText = Array.from(el.childNodes)
+                                    .filter(n => n.nodeType === 3)
+                                    .map(n => n.textContent)
+                                    .join('')
+                                    .trim();
+                                return directText || el.textContent?.trim() || '';
+                            }
+
+                            function isClickable(el) {
+                                if (!el) return false;
+                                const tag = el.tagName;
+                                const role = el.getAttribute('role');
+                                return tag === 'A' || tag === 'BUTTON' || tag === 'INPUT' &&
+                                    (el.type === 'submit' || el.type === 'button' || el.type === 'image') ||
+                                    role === 'button' || role === 'link' || role === 'menuitem' ||
+                                    el.onclick || el.getAttribute('onclick') ||
+                                    el.className?.toString().toLowerCase().includes('button') ||
+                                    el.getAttribute('tabindex') === '0';
+                            }
+
+                            function textMatches(el, query) {
+                                const q = query.toLowerCase();
+                                const candidates = [
+                                    getClickableText(el),
+                                    el.getAttribute('aria-label'),
+                                    el.getAttribute('title'),
+                                    el.getAttribute('value'),
+                                    el.getAttribute('placeholder'),
+                                    el.getAttribute('data-testid')
+                                ];
+                                return candidates.some(c => c && c.toLowerCase().includes(q));
+                            }
+
                             let elements = [];
 
                             if (selector) {
                                 try {
-                                    elements = Array.from(document.querySelectorAll(selector));
-                                } catch (e) {
-
-                                }
+                                    elements = findAllDeep(document.body, isClickable).filter(el => {
+                                        let matchesSelector = false;
+                                        try { matchesSelector = el.matches(selector); } catch {}
+                                        return matchesSelector || textMatches(el, selector);
+                                    });
+                                } catch (e) {}
                             }
 
                             if (text) {
-                                const textLower = text.toLowerCase();
                                 if (elements.length === 0) {
-
-                                    const clickables = document.querySelectorAll('a, button, [role="button"], input[type="submit"], input[type="button"], [onclick]');
-                                    elements = Array.from(clickables).filter(el =>
-                                        el.textContent?.toLowerCase().includes(textLower) ||
-                                        el.getAttribute('aria-label')?.toLowerCase().includes(textLower) ||
-                                        el.getAttribute('title')?.toLowerCase().includes(textLower)
-                                    );
+                                    elements = findAllDeep(document.body, el => isClickable(el) && textMatches(el, text));
                                 } else {
-                                    elements = elements.filter(el =>
-                                        el.textContent?.toLowerCase().includes(textLower)
-                                    );
+                                    elements = elements.filter(el => textMatches(el, text));
                                 }
+                            }
+
+                            if (elements.length === 0 && text) {
+                                // Last resort: any element whose text matches (covers custom elements).
+                                elements = findAllDeep(document.body, el => textMatches(el, text));
                             }
 
                             if (elements.length === 0) {
@@ -234,12 +306,13 @@ const WebBrowserViewer = memo(({
 
                             const element = elements[Math.min(index, elements.length - 1)];
                             element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            element.focus();
                             element.click();
 
                             return {
                                 success: true,
                                 clicked: element.tagName + (element.id ? '#' + element.id : ''),
-                                text: element.textContent?.substring(0, 100).trim()
+                                text: getClickableText(element).substring(0, 100)
                             };
                         })();
                     `);
@@ -256,27 +329,108 @@ const WebBrowserViewer = memo(({
 
                 try {
                     const result = await webview.executeJavaScript(`
-                        (function() {
+                        (async function() {
                             const selector = ${JSON.stringify(selector)};
                             const text = ${JSON.stringify(text)};
                             const clear = ${JSON.stringify(options?.clear ?? true)};
                             const submit = ${JSON.stringify(options?.submit ?? false)};
 
+                            function findDeep(root, predicate, depth = 0) {
+                                if (depth > 6 || !root || root.nodeType !== 1) return null;
+                                if (predicate(root)) return root;
+                                let found = null;
+                                if (root.shadowRoot) {
+                                    for (const child of root.shadowRoot.querySelectorAll('*')) {
+                                        found = findDeep(child, predicate, depth + 1);
+                                        if (found) return found;
+                                    }
+                                }
+                                for (const child of root.children) {
+                                    found = findDeep(child, predicate, depth + 1);
+                                    if (found) return found;
+                                }
+                                return null;
+                            }
+
+                            function findAllDeep(root, predicate, depth = 0, results = []) {
+                                if (depth > 6 || !root || root.nodeType !== 1) return results;
+                                if (predicate(root)) results.push(root);
+                                if (root.shadowRoot) {
+                                    for (const child of root.shadowRoot.querySelectorAll('*')) {
+                                        findAllDeep(child, predicate, depth + 1, results);
+                                    }
+                                }
+                                for (const child of root.children) {
+                                    findAllDeep(child, predicate, depth + 1, results);
+                                }
+                                return results;
+                            }
+
+                            function isEditable(el) {
+                                if (!el) return false;
+                                return el.tagName === 'TEXTAREA' ||
+                                    el.tagName === 'INPUT' ||
+                                    el.isContentEditable ||
+                                    el.getAttribute('contenteditable') === 'true' ||
+                                    el.getAttribute('role') === 'textbox';
+                            }
+
+                            function editableMatches(el, query) {
+                                const q = query.toLowerCase();
+                                const candidates = [
+                                    el.placeholder,
+                                    el.getAttribute('placeholder'),
+                                    el.getAttribute('aria-label'),
+                                    el.getAttribute('aria-placeholder'),
+                                    el.name,
+                                    el.id,
+                                    el.getAttribute('data-testid'),
+                                    el.className?.toString(),
+                                    el.getAttribute('data-placeholder')
+                                ];
+                                return candidates.some(c => c && c.toLowerCase().includes(q));
+                            }
+
+                            function isCollapsedComposer(el) {
+                                const tag = el.tagName.toLowerCase();
+                                return tag.includes('composer') || tag.includes('textarea-input') ||
+                                    el.getAttribute('data-testid') === 'trigger-button' ||
+                                    el.className?.toString().toLowerCase().includes('composer');
+                            }
+
+                            // 1. Direct CSS selector, including shadow DOM search.
                             let element = null;
+                            if (selector) {
+                                try { element = document.querySelector(selector); } catch (e) {}
+                                if (!element || !isEditable(element)) {
+                                    element = findDeep(document.body, (el) => {
+                                        try { return el.matches(selector); } catch { return false; }
+                                    });
+                                }
+                            }
 
-                            try {
-                                element = document.querySelector(selector);
-                            } catch (e) {}
-
-                            if (!element) {
-                                const inputs = document.querySelectorAll('input, textarea, [contenteditable="true"]');
+                            // 2. Match by label text / placeholder / aria-label / name / id / class.
+                            if (!element || !isEditable(element)) {
                                 const selectorLower = selector.toLowerCase();
-                                element = Array.from(inputs).find(el =>
-                                    el.placeholder?.toLowerCase().includes(selectorLower) ||
-                                    el.name?.toLowerCase().includes(selectorLower) ||
-                                    el.getAttribute('aria-label')?.toLowerCase().includes(selectorLower) ||
-                                    el.id?.toLowerCase().includes(selectorLower)
-                                );
+                                element = findDeep(document.body, (el) => isEditable(el) && editableMatches(el, selectorLower));
+                            }
+
+                            // 3. Expand collapsed custom composers (Reddit, etc.) and find the real input.
+                            if (!element) {
+                                const queryLower = selector.toLowerCase();
+                                const composerTriggers = ['comment', 'reply', 'post', 'message', 'search', 'join the conversation'];
+                                if (composerTriggers.some(t => queryLower.includes(t))) {
+                                    const composers = findAllDeep(document.body, isCollapsedComposer);
+                                    for (const composer of composers) {
+                                        composer.scrollIntoView({ block: 'center' });
+                                        composer.click();
+                                    }
+                                    if (composers.length > 0) {
+                                        await new Promise(r => setTimeout(r, 800));
+                                        element = findDeep(document.body, (el) => isEditable(el) && editableMatches(el, queryLower));
+                                        if (!element) element = findDeep(document.body, isEditable);
+                                    }
+                                }
                             }
 
                             if (!element) {
@@ -285,33 +439,60 @@ const WebBrowserViewer = memo(({
 
                             element.scrollIntoView({ behavior: 'smooth', block: 'center' });
                             element.focus();
+                            element.click();
+                            await new Promise(r => setTimeout(r, 300));
 
                             if (clear) {
-                                element.value = '';
+                                if (element.isContentEditable) {
+                                    element.innerHTML = '';
+                                    element.textContent = '';
+                                } else {
+                                    element.value = '';
+                                }
                                 element.dispatchEvent(new Event('input', { bubbles: true }));
                             }
 
+                            // Type the text character-by-character so the page sees realistic events.
                             if (element.isContentEditable) {
                                 element.textContent = text;
                             } else {
                                 element.value = text;
                             }
-                            element.dispatchEvent(new Event('input', { bubbles: true }));
+
+                            element.dispatchEvent(new Event('focus', { bubbles: true }));
+                            for (let i = 0; i < text.length; i++) {
+                                const ch = text[i];
+                                const code = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+                                    ? 'Key' + ch.toUpperCase()
+                                    : (ch >= '0' && ch <= '9')
+                                        ? 'Digit' + ch
+                                        : ch === ' '
+                                            ? 'Space'
+                                            : '';
+                                const opts = { key: ch, bubbles: true };
+                                if (code) opts.code = code;
+                                element.dispatchEvent(new KeyboardEvent('keydown', opts));
+                                element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ch }));
+                                element.dispatchEvent(new KeyboardEvent('keyup', opts));
+                            }
+                            element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
                             element.dispatchEvent(new Event('change', { bubbles: true }));
 
                             if (submit) {
                                 const form = element.closest('form');
                                 if (form) {
-                                    form.submit();
+                                    form.requestSubmit?.() || form.submit();
                                 } else {
                                     element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+                                    element.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', keyCode: 13, bubbles: true }));
                                 }
                             }
 
                             return {
                                 success: true,
                                 element: element.tagName + (element.id ? '#' + element.id : ''),
-                                typed: text.length + ' characters'
+                                typed: text.length + ' characters',
+                                value: element.value || element.textContent || element.innerText || ''
                             };
                         })();
                     `);
@@ -353,22 +534,18 @@ const WebBrowserViewer = memo(({
                 if (!webview) return { success: false, error: 'Webview not available' };
 
                 try {
-                    // eval() returns the code's completion value (the last expression),
-                    // so bare-expression code like `document.body.innerText` returns its
-                    // value instead of undefined (a block-body IIFE drops it). Wrap in an
-                    // async IIFE so top-level `await` in the fallback path still works.
-                    const evalWrapped = `(async () => { return eval(${JSON.stringify(code)}); })()`;
+                    // Avoid eval(...) because strict CSPs (Reddit, etc.) block it.
+                    // For a bare expression like `document.body.innerText`, wrap it in
+                    // a grouping operator so the IIFE returns the completion value.
+                    // For statements/declarations this will syntax-error and we fall
+                    // back to a plain async block-body IIFE.
+                    const { expression, fallback } = wrapBrowserEvalCode(code);
                     try {
-                        const result = await webview.executeJavaScript(evalWrapped);
+                        const result = await webview.executeJavaScript(expression);
                         return { success: true, result };
-                    } catch (evalErr) {
-                        // eval can be blocked by a strict page CSP, or choke on
-                        // top-level `return`/statements. Fall back to a plain
-                        // block-body IIFE (the original behavior) so the code at
-                        // least runs.
-                        const blockWrapped = `(async () => {\n${code}\n})()`;
-                        const result = await webview.executeJavaScript(blockWrapped);
-                        console.warn('[WebBrowser] eval wrap failed, used block body:', evalErr);
+                    } catch (exprErr) {
+                        const result = await webview.executeJavaScript(fallback);
+                        console.warn('[WebBrowser] expression wrap failed, used block body:', exprErr);
                         return { success: true, result };
                     }
                 } catch (err) {

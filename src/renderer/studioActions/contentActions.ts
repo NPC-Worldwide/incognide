@@ -1,7 +1,7 @@
 
 
 import { registerAction, StudioContext, StudioActionResult } from './index';
-import { getPaneTitle, collectPaneInfo } from './paneActions';
+import { getPaneTitle, collectPaneInfo, resolveBrowserPaneId } from './paneActions';
 
 async function read_pane(
   args: { paneId?: string },
@@ -43,12 +43,18 @@ async function read_pane(
     }
   } else {
     switch (contentType) {
-      case 'chat': {
-        const messages = chatMessages?.messages || chatMessages?.allMessages || [];
+      case 'chat':
+      case 'agent': {
+        const messages = chatMessages?.allMessages || chatMessages?.messages || [];
         content = messages.slice(-50).map((m: any) => ({
           role: m.role,
           content: m.content?.substring(0, 1000),
-          timestamp: m.timestamp
+          timestamp: m.timestamp,
+          toolCalls: m.toolCalls?.map((tc: any) => ({
+            id: tc.id,
+            name: tc.function?.name,
+            arguments: tc.function?.arguments?.substring?.(0, 500) || tc.function?.arguments,
+          })) || undefined,
         }));
         break;
       }
@@ -335,11 +341,26 @@ async function interact(
   args: { paneId?: string; code: string },
   ctx: StudioContext
 ): Promise<StudioActionResult> {
-  const paneId = args.paneId === 'active' || !args.paneId
+  let paneId = args.paneId === 'active' || !args.paneId
     ? ctx.activeContentPaneId
     : args.paneId;
 
-  const data = ctx.contentDataRef.current[paneId];
+  let data = ctx.contentDataRef.current[paneId];
+
+  // If the active/focused pane doesn't support code interaction (e.g. an agent
+  // chat pane), fall back to the most recently active browser pane so the agent
+  // can still click/type on web pages.
+  if ((!args.paneId || args.paneId === 'active') && data) {
+    const supportedTypes = new Set(['terminal', 'browser', 'csv', 'docx', 'pptx']);
+    if (!supportedTypes.has(data.contentType)) {
+      const fallbackId = resolveBrowserPaneId(args.paneId, ctx);
+      if (fallbackId && fallbackId !== paneId) {
+        paneId = fallbackId;
+        data = ctx.contentDataRef.current[paneId];
+      }
+    }
+  }
+
   if (!data) return { success: false, error: `Pane not found: ${paneId}` };
   if (!args.code) return { success: false, error: 'code is required' };
 

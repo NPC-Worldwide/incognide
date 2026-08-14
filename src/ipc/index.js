@@ -12,10 +12,28 @@ const filesystem = require('./filesystem');
 const settings = require('./settings');
 const ssh = require('./ssh');
 
+function getIndexLocationFunctions() {
+  return {
+    readIndexLocations: settings.readIndexLocations,
+    getIndexLocationSettings: settings.getIndexLocationSettings,
+    getEffectiveIndexLocationSettings: settings.getEffectiveIndexLocationSettings,
+    getEffectiveExtractMemories: settings.getEffectiveExtractMemories,
+    setIndexLocationSettings: settings.setIndexLocationSettings,
+    enableKnowledgeLocation: settings.enableKnowledgeLocation,
+    resetKnowledgeStore: settings.resetKnowledgeStore,
+    discoverIndexLocationSources: settings.discoverIndexLocationSources,
+    listIndexLocations: settings.listIndexLocations,
+    getIndexLocationExtractMemories: settings.getIndexLocationExtractMemories,
+    readKnowledgeDefaults: settings.readKnowledgeDefaults,
+    writeKnowledgeDefaults: settings.writeKnowledgeDefaults,
+  };
+}
+
 function registerAll(ctx) {
 
   const fullCtx = {
     ...ctx,
+    ...getIndexLocationFunctions(),
     readPythonEnvConfig: settings.readPythonEnvConfig,
     resolvePythonPath: settings.resolvePythonPath,
     INCOGNIDE_HOME: ctx.INCOGNIDE_HOME,

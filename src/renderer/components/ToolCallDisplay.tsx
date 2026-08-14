@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, Globe, Terminal as TerminalIcon, FileText, Layout, Bell, Calendar, Compass, Edit3, Eye, Play, X } from 'lucide-react';
+import { useStudioContentData } from './StudioContext';
 
 interface ToolCallProps {
   tool: {
@@ -10,6 +11,32 @@ interface ToolCallProps {
     status?: string;
     result_preview?: string;
   };
+}
+
+function getPaneLabel(args: any, contentDataRef?: React.MutableRefObject<Record<string, any>>): string {
+  const paneId = args?.pane_id;
+  if (!paneId || paneId === 'active') return 'active pane';
+  if (contentDataRef?.current?.[paneId]) {
+    const data = contentDataRef.current[paneId];
+    const contentId = data?.contentId;
+    const contentType = data?.contentType;
+    const title = data?.browserTitle || data?.title || data?.fileContent?.title || data?.browserUrl || contentId;
+    if (title && typeof title === 'string') {
+      if (contentType === 'editor' || contentId?.includes?.('/')) {
+        return title.split('/').pop() || title;
+      }
+      if (contentType === 'browser') {
+        try {
+          return new URL(title).hostname.replace(/^www\./, '');
+        } catch {}
+      }
+      return title;
+    }
+    if (contentType === 'chat' || contentType === 'agent') {
+      return `${contentType === 'agent' ? 'Agent' : 'Chat'}${data?.npc ? `: ${data.npc}` : ' pane'}`;
+    }
+  }
+  return `pane ${paneId}`;
 }
 
 const ACTION_ICONS: Record<string, React.ReactNode> = {
@@ -25,7 +52,7 @@ const ACTION_ICONS: Record<string, React.ReactNode> = {
   prompt: <Bell size={13} />,
 };
 
-function describeAction(name: string, args: any): string {
+function describeAction(name: string, args: any, contentDataRef?: React.MutableRefObject<Record<string, any>>): string {
   try {
     switch (name) {
       case 'list_panes':
@@ -35,11 +62,11 @@ function describeAction(name: string, args: any): string {
       case 'close_pane':
         return `Closing pane ${args?.pane_id || ''}`;
       case 'read_pane':
-        return `Reading ${args?.pane_id === 'active' || !args?.pane_id ? 'active pane' : `pane ${args.pane_id}`}`;
+        return `Reading ${getPaneLabel(args, contentDataRef)}`;
       case 'write_pane':
-        return `Writing to ${args?.pane_id === 'active' || !args?.pane_id ? 'active pane' : `pane ${args.pane_id}`}`;
+        return `Writing to ${getPaneLabel(args, contentDataRef)}`;
       case 'interact':
-        return `Running code in ${args?.pane_id === 'active' || !args?.pane_id ? 'active pane' : `pane ${args.pane_id}`}`;
+        return `Running code in ${getPaneLabel(args, contentDataRef)}`;
       case 'navigate':
         return `Navigating to ${args?.target || '...'}`;
       case 'notify':
@@ -96,6 +123,7 @@ function summarizeResult(name: string, result: any): string | null {
 }
 
 export function ToolCallDisplay({ tool }: ToolCallProps) {
+  const contentDataRef = useStudioContentData();
   const [expanded, setExpanded] = useState(false);
 
   const funcName = tool.function?.name || tool.function_name || 'unknown';
@@ -121,7 +149,7 @@ export function ToolCallDisplay({ tool }: ToolCallProps) {
     null;
 
   const icon = ACTION_ICONS[displayName] || <Play size={13} />;
-  const description = isStudioAction ? describeAction(displayName, parsedArgs) : displayName;
+  const description = isStudioAction ? describeAction(displayName, parsedArgs, contentDataRef) : displayName;
   const summary = isStudioAction && resultVal ? summarizeResult(displayName, resultVal) : null;
 
   if (isStudioAction) {
