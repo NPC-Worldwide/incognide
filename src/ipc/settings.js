@@ -680,8 +680,8 @@ function register(ctx) {
     if (!existing.knowledge_enabled) {
       existing.knowledge_enabled = true;
       existing.index_files = true;
-      existing.link_knowledge = true;
-      existing.extract_memories = true;
+      existing.link_knowledge = false;
+      existing.extract_memories = false;
       existing.auto_index = defaults.default_auto_index;
       locations[normalized] = existing;
       await writeIndexLocations(locations);
@@ -708,6 +708,256 @@ function register(ctx) {
     await fsPromises.writeFile(tmp, yaml.dump(template, { lineWidth: -1 }));
     await fsPromises.rename(tmp, storePath);
     return { success: true };
+  }
+
+  const INDEXABLE_EXTS = new Set([
+    '.py', '.js', '.ts', '.jsx', '.tsx', '.java', '.c', '.cpp', '.h',
+    '.cs', '.go', '.rs', '.rb', '.php', '.swift', '.kt', '.scala',
+    '.sh', '.bash', '.zsh', '.ps1', '.bat',
+    '.txt', '.md', '.rst', '.log',
+    '.csv', '.json', '.xml', '.yaml', '.yml',
+    '.html', '.htm',
+  ]);
+
+  const INDEX_EXCLUDE_DIRS = new Set([
+    '.git', '.hg', '.svn', 'node_modules', '__pycache__',
+    '.pytest_cache', '.mypy_cache', 'dist', 'build',
+    'venv', '.venv', 'env', '.env', '.tox', '.egg-info',
+    '.local', '.cache', '.config', '.claude',
+    '.github', '.vscode', '.idea', 'vendor',
+    'site-packages', 'pip', 'setuptools',
+    'target', 'out', '.gradle', '.terraform',
+    'coverage', 'htmlcov', '.nyc_output',
+    'tmp', 'temp', 'logs', 'uploads', 'media',
+    '.DS_Store', '.Trash', '__MACOSX',
+    'third_party', 'third-party', '3rdparty',
+  ]);
+
+  const MAX_FILE_INDEX_BYTES = 5 * 1024 * 1024;
+  const PREVIEW_CHARS = 3000;
+
+  async function _extractTextPreview(filePath) {
+    const ext = path.extname(filePath).toLowerCase();
+    if (!INDEXABLE_EXTS.has(ext)) return '';
+    try {
+      const stat = await fsPromises.stat(filePath);
+      if (!stat.isFile() || stat.size > MAX_FILE_INDEX_BYTES) return '';
+      const text = await fsPromises.readFile(filePath, 'utf8');
+      return text.replace(/\s+/g, ' ').trim();
+    } catch {
+      return '';
+    }
+  }
+
+  async function _hashFile(filePath) {
+    try {
+      const crypto = require('crypto');
+      const hash = crypto.createHash('sha256');
+      const stream = fs.createReadStream(filePath);
+      return new Promise((resolve, reject) => {
+        stream.on('data', d => hash.update(d));
+        stream.on('end', () => resolve(hash.digest('hex')));
+        stream.on('error', reject);
+      });
+    } catch {
+      return '';
+    }
+  }
+
+  async function scanIndexLocation(dirPath, opts = {}) {
+    const normalized = normalizePath(dirPath);
+    const excludeDirs = new Set([...INDEX_EXCLUDE_DIRS, ...(opts.excludedDirs || [])]);
+    const includeExts = opts.includedExts?.length ? new Set(opts.includedExts.map(e => e.toLowerCase())) : INDEXABLE_EXTS;
+    const log = opts.log || (() => {});
+
+    const seen = new Set();
+    let scanned = 0;
+    let added = 0;
+    let updated = 0;
+    let unchanged = 0;
+    let errors = 0;
+
+    async function walk(dir) {
+      let entries;
+      try {
+        entries = await fsPromises.readdir(dir, { withFileTypes: true });
+      } catch (e) {
+        return;
+      }
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (excludeDirs.has(entry.name) || entry.name.startsWith('.')) continue;
+          await walk(fullPath);
+        } else if (entry.isFile()) {
+          const ext = path.extname(entry.name).toLowerCase();
+          if (!includeExts.has(ext)) continue;
+          seen.add(fullPath);
+          try {
+            const stat = await fsPromises.stat(fullPath);
+            const existing = await dbQuery(`SELECT id, mtime, content_hash FROM file_index WHERE path = ?`, [fullPath]);
+            const mtimeMs = stat.mtimeMs;
+            if (existing.length && existing[0].mtime === mtimeMs) {
+              unchanged++;
+              continue;
+            }
+            const hash = await _hashFile(fullPath);
+            if (existing.length && existing[0].content_hash === hash) {
+              await dbQuery(`UPDATE file_index SET mtime = ?, indexed_at = datetime('now') WHERE id = ?`, [mtimeMs, existing[0].id]);
+              unchanged++;
+              continue;
+            }
+            const preview = (await _extractTextPreview(fullPath)).slice(0, PREVIEW_CHARS);
+            if (existing.length) {
+              await dbQuery(
+                `UPDATE file_index SET folder_path = ?, filename = ?, extension = ?, size = ?, mtime = ?, content_hash = ?, content_preview = ?, indexed_at = datetime('now') WHERE id = ?`,
+                [normalized, entry.name, ext, stat.size, mtimeMs, hash, preview, existing[0].id]
+              );
+              updated++;
+            } else {
+              await dbQuery(
+                `INSERT INTO file_index (path, folder_path, filename, extension, size, mtime, content_hash, content_preview, indexed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+                [fullPath, normalized, entry.name, ext, stat.size, mtimeMs, hash, preview]
+              );
+              added++;
+            }
+            scanned++;
+            log(`  INDEX ${path.relative(normalized, fullPath)}`);
+          } catch (e) {
+            errors++;
+            log(`  ERROR ${path.relative(normalized, fullPath)}: ${e.message}`);
+          }
+        }
+      }
+    }
+
+    await walk(normalized);
+
+    // Remove files no longer present
+    const rows = await dbQuery(`SELECT path FROM file_index WHERE folder_path = ?`, [normalized]);
+    let removed = 0;
+    for (const row of rows) {
+      if (!seen.has(row.path)) {
+        await dbQuery(`DELETE FROM file_index WHERE path = ?`, [row.path]);
+        removed++;
+      }
+    }
+
+    return { scanned, added, updated, unchanged, removed, errors };
+  }
+
+  async function searchIndexedFiles(query, folderPath, limit = 50) {
+    const pattern = query.trim();
+    if (!pattern) return { files: [] };
+    let sql;
+    let params;
+    if (folderPath) {
+      sql = `
+        SELECT fi.path, fi.filename, fi.extension, fi.size, fi.mtime, fi.content_preview,
+               snippet(file_index_fts, 2, '', '', '', 120) as snippet
+        FROM file_index_fts
+        JOIN file_index fi ON fi.rowid = file_index_fts.rowid
+        WHERE file_index_fts MATCH ? AND fi.folder_path = ?
+        ORDER BY rank
+        LIMIT ?
+      `;
+      params = [`${pattern}*`, normalizePath(folderPath), limit];
+    } else {
+      sql = `
+        SELECT fi.path, fi.filename, fi.extension, fi.size, fi.mtime, fi.content_preview,
+               snippet(file_index_fts, 2, '', '', '', 120) as snippet
+        FROM file_index_fts
+        JOIN file_index fi ON fi.rowid = file_index_fts.rowid
+        WHERE file_index_fts MATCH ?
+        ORDER BY rank
+        LIMIT ?
+      `;
+      params = [`${pattern}*`, limit];
+    }
+    const rows = await dbQuery(sql, params);
+    return {
+      files: rows.map(r => ({
+        path: r.path,
+        name: r.filename,
+        extension: r.extension,
+        size: r.size,
+        mtime: r.mtime,
+        snippet: r.snippet || r.content_preview?.slice(0, 200),
+      }))
+    };
+  }
+
+  async function findKnowledgeStores(rootDir) {
+    const stores = [];
+    const excludeDirs = new Set(INDEX_EXCLUDE_DIRS);
+    async function walk(dir) {
+      let entries;
+      try {
+        entries = await fsPromises.readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        const full = path.join(dir, entry.name);
+        if (entry.isFile() && entry.name === '.knowledge.yaml') {
+          stores.push(dir);
+          continue;
+        }
+        if (entry.name.startsWith('.') || excludeDirs.has(entry.name)) continue;
+        if (entry.isDirectory()) {
+          await walk(full);
+        }
+      }
+    }
+    await walk(rootDir);
+    return stores;
+  }
+
+  async function aggregateStoreData(rootDir) {
+    const stores = await findKnowledgeStores(rootDir);
+    const allMemories = [];
+    const allKnowledge = [];
+    for (const dir of stores) {
+      const file = path.join(dir, '.knowledge.yaml');
+      try {
+        const raw = await fsPromises.readFile(file, 'utf8');
+        const data = yaml.load(raw) || {};
+        for (const m of data.memories || []) {
+          allMemories.push({ ...m, _directory: dir });
+        }
+        for (const k of data.links || []) {
+          allKnowledge.push({ ...k, directory: dir });
+        }
+      } catch {}
+    }
+    return { memories: allMemories, knowledge: allKnowledge };
+  }
+
+  async function aggregateKnowledgeCounts(rootDir) {
+    const stores = await findKnowledgeStores(rootDir);
+    let memoryCount = 0;
+    let knowledgeCount = 0;
+    let conceptCount = 0;
+    let linkCount = 0;
+    let lastExtractedAt = null;
+    for (const dir of stores) {
+      const file = path.join(dir, '.knowledge.yaml');
+      try {
+        const raw = await fsPromises.readFile(file, 'utf8');
+        const data = yaml.load(raw) || {};
+        memoryCount += (data.memories || []).length;
+        knowledgeCount += (data.knowledge || []).length;
+        conceptCount += (data.concepts || []).length;
+        linkCount += (data.links || []).length;
+        if (data.last_extracted_at) {
+          const t = new Date(data.last_extracted_at).getTime();
+          if (!lastExtractedAt || t > new Date(lastExtractedAt).getTime()) {
+            lastExtractedAt = data.last_extracted_at;
+          }
+        }
+      } catch {}
+    }
+    return { memoryCount, knowledgeCount, conceptCount, linkCount, lastExtractedAt, hasStoreFile: stores.length > 0 };
   }
 
   async function loadRecentPathsFromDisk() {
@@ -756,10 +1006,11 @@ function register(ctx) {
     return Array.from(discovered.values());
   }
 
-  async function computeStaleReasons(dirPath, storeData) {
+  async function computeStaleReasons(dirPath, storeData, aggregateCounts = null) {
     const reasons = [];
-    const storePath = path.join(dirPath, '.knowledge.yaml');
-    if (!fs.existsSync(storePath)) {
+    const counts = aggregateCounts || (await aggregateKnowledgeCounts(dirPath));
+    const hasAnyStores = counts.hasStoreFile || fs.existsSync(path.join(dirPath, '.knowledge.yaml'));
+    if (!hasAnyStores) {
       if ((storeData.memories || []).length > 0) {
         reasons.push('knowledge file missing');
       }
@@ -770,11 +1021,13 @@ function register(ctx) {
       const stat = await fsPromises.stat(dirPath);
       folderMtime = stat.mtimeMs;
     } catch {}
-    const lastExtracted = storeData.last_extracted_at ? new Date(storeData.last_extracted_at).getTime() : 0;
+    const lastExtracted = counts.lastExtractedAt ? new Date(counts.lastExtractedAt).getTime() : 0;
     if (folderMtime > 0 && lastExtracted > 0 && folderMtime > lastExtracted) {
       reasons.push('folder modified since last index');
     }
-    if ((storeData.memories || []).length > 0 && Object.keys(storeData.scanned_files || {}).length === 0) {
+    const totalMemories = counts.memoryCount + (storeData.memories || []).length;
+    const hasScannedFiles = Object.keys(storeData.scanned_files || {}).length > 0;
+    if (totalMemories > 0 && !hasScannedFiles) {
       reasons.push('old store format');
     }
     return reasons;
@@ -791,6 +1044,11 @@ function register(ctx) {
       const existing = merged.get(source.path) || { ...DEFAULT_INDEX_LOCATION, path: source.path };
       merged.set(source.path, { ...existing, discovered_from: source.source, last_seen_at: source.last_seen_at });
     }
+    const fileCounts = {};
+    try {
+      const countRows = await dbQuery(`SELECT folder_path, COUNT(*) as c FROM file_index GROUP BY folder_path`);
+      for (const r of countRows) fileCounts[r.folder_path] = r.c;
+    } catch {}
     const results = [];
     for (const loc of merged.values()) {
       const dirPath = normalizePath(loc.path);
@@ -801,16 +1059,18 @@ function register(ctx) {
           storeData = yaml.load(await fsPromises.readFile(storePath, 'utf8')) || {};
         } catch {}
       }
-      const staleReasons = await computeStaleReasons(dirPath, storeData);
+      const counts = await aggregateKnowledgeCounts(dirPath);
+      const staleReasons = await computeStaleReasons(dirPath, storeData, counts);
       results.push({
         ...loc,
         directory: dirPath,
-        memoryCount: (storeData.memories || []).length,
-        knowledgeCount: (storeData.knowledge || []).length,
-        conceptCount: (storeData.concepts || []).length,
-        linkCount: (storeData.links || []).length,
-        lastExtractedAt: storeData.last_extracted_at || null,
-        hasStoreFile: fs.existsSync(storePath),
+        memoryCount: counts.memoryCount,
+        knowledgeCount: counts.knowledgeCount,
+        conceptCount: counts.conceptCount,
+        linkCount: counts.linkCount,
+        fileCount: fileCounts[dirPath] || 0,
+        lastExtractedAt: counts.lastExtractedAt || storeData.last_extracted_at || null,
+        hasStoreFile: counts.hasStoreFile || fs.existsSync(storePath),
         staleReasons,
       });
     }
@@ -862,6 +1122,29 @@ function register(ctx) {
     }
   });
 
+  ipcMain.handle('indexLocations:scan', async (event, { dirPath, includedExts, excludedDirs }) => {
+    try {
+      const logs = [];
+      const stats = await scanIndexLocation(dirPath, {
+        includedExts,
+        excludedDirs,
+        log: (msg) => logs.push({ kind: 'stdout', message: msg, timestamp: Date.now() }),
+      });
+      return { success: true, stats, logs };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('indexLocations:search', async (event, { query, folderPath, limit }) => {
+    try {
+      const result = await searchIndexedFiles(query, folderPath, limit);
+      return { ...result, error: null };
+    } catch (err) {
+      return { files: [], error: err.message };
+    }
+  });
+
   ipcMain.handle('indexLocations:shouldExtract', async (event, dirPath) => {
     try {
       const shouldExtract = await getEffectiveExtractMemories(dirPath);
@@ -897,6 +1180,8 @@ function register(ctx) {
   settingsExports.setIndexLocationSettings = setIndexLocationSettings;
   settingsExports.enableKnowledgeLocation = enableKnowledgeLocation;
   settingsExports.resetKnowledgeStore = resetKnowledgeStore;
+  settingsExports.scanIndexLocation = scanIndexLocation;
+  settingsExports.searchIndexedFiles = searchIndexedFiles;
   settingsExports.discoverIndexLocationSources = discoverIndexLocationSources;
   settingsExports.listIndexLocations = listIndexLocations;
   settingsExports.getIndexLocationExtractMemories = getIndexLocationExtractMemories;
@@ -958,23 +1243,20 @@ function register(ctx) {
       const registry = await readKgRegistry();
       const results = [];
       for (const dir of registry.stores) {
-        const file = path.join(dir, '.knowledge.yaml');
-        if (!fs.existsSync(file)) continue;
         try {
-          const raw = await fsPromises.readFile(file, 'utf8');
-          const data = yaml.load(raw) || {};
+          const counts = await aggregateKnowledgeCounts(dir);
           results.push({
-            path: file,
+            path: path.join(dir, '.knowledge.yaml'),
             directory: dir,
-            memoryCount: (data.memories || []).length,
-            knowledgeCount: (data.knowledge || []).length,
-            conceptCount: (data.concepts || []).length,
-            linkCount: (data.links || []).length,
-            lastExtractedAt: data.last_extracted_at || null,
-            lastEvolvedAt: data.last_evolved_at || null,
+            memoryCount: counts.memoryCount,
+            knowledgeCount: counts.knowledgeCount,
+            conceptCount: counts.conceptCount,
+            linkCount: counts.linkCount,
+            lastExtractedAt: counts.lastExtractedAt || null,
+            lastEvolvedAt: null,
           });
         } catch {
-          results.push({ path: file, directory: dir, memoryCount: 0, knowledgeCount: 0, conceptCount: 0, linkCount: 0 });
+          results.push({ path: path.join(dir, '.knowledge.yaml'), directory: dir, memoryCount: 0, knowledgeCount: 0, conceptCount: 0, linkCount: 0 });
         }
       }
       return { stores: results };
@@ -988,22 +1270,26 @@ function register(ctx) {
       let paths = Array.isArray(storePaths) ? storePaths : [];
       if (paths.length === 0) {
         const reg = await readKgRegistry();
-        paths = reg.stores.filter((s) => typeof s === 'string' && s);
+        const regPaths = reg.stores.filter((s) => typeof s === 'string' && s);
+        const locs = await readIndexLocations();
+        const indexPaths = Object.keys(locs).filter((p) => locs[p]?.knowledge_enabled);
+        const seen = new Set();
+        paths = [];
+        for (const p of [...indexPaths, ...regPaths]) {
+          const np = normalizePath(p);
+          if (!seen.has(np)) {
+            seen.add(np);
+            paths.push(np);
+          }
+        }
       }
       const allMemories = [];
       const allKnowledge = [];
       for (const dir of paths) {
-        const file = path.join(dir, '.knowledge.yaml');
-        if (!fs.existsSync(file)) continue;
         try {
-          const raw = await fsPromises.readFile(file, 'utf8');
-          const data = yaml.load(raw) || {};
-          for (const m of data.memories || []) {
-            allMemories.push({ ...m, _directory: dir });
-          }
-          for (const k of data.knowledge || []) {
-            allKnowledge.push({ ...k, directory: dir });
-          }
+          const agg = await aggregateStoreData(dir);
+          allMemories.push(...agg.memories);
+          allKnowledge.push(...agg.knowledge);
         } catch {}
       }
       return { memories: allMemories, knowledge: allKnowledge };
@@ -1077,6 +1363,20 @@ function register(ctx) {
         }
       } finally {
         kgPipelineProcs.delete(jobId);
+        try {
+          const defaults = await readKnowledgeDefaults();
+          for (const dir of storePaths) {
+            try {
+              await scanIndexLocation(dir, {
+                includedExts: defaults.included_exts,
+                excludedDirs: defaults.excluded_dirs,
+                log: (msg) => push('stdout', msg),
+              });
+            } catch (scanErr) {
+              push('error', `File index failed for ${dir}: ${scanErr.message}`);
+            }
+          }
+        } catch {}
         push('done', 'All stores processed');
       }
     })();

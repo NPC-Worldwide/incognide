@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Save, BrainCircuit, RefreshCw } from 'lucide-react';
+import { Save } from 'lucide-react';
 import { Modal, Card, Button, Input, Select } from 'npcts';
+import { useAiFeature } from './AiFeatureContext';
 
 
 const HOME_DIR = '~/.incognide';
@@ -52,12 +53,7 @@ const defaultSettings = {
     theme_brightness: 100,
     app_font_family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
     app_font_size: 14,
-};
-
-const defaultKnowledgeDefaults = {
-    included_exts: [] as string[],
-    excluded_dirs: ['node_modules', '.git', '__pycache__', '.incognide', 'dist', 'build'] as string[],
-    default_auto_index: false,
+    max_agent_iterations: '',
 };
 
 const APP_FONT_OPTIONS: { value: string; label: string }[] = [
@@ -269,212 +265,11 @@ const PermissionsManager = () => {
     );
 };
 
-interface KnowledgeLocation {
-    directory: string;
-    knowledge_enabled: boolean;
-    index_files: boolean;
-    link_knowledge: boolean;
-    extract_memories: boolean;
-    auto_index: boolean;
-    discovered_from: string;
-    staleReasons?: string[];
-}
-
-const KnowledgeSettingsPanel: React.FC<{
-    defaults: typeof defaultKnowledgeDefaults;
-    setDefaults: (updates: Partial<typeof defaultKnowledgeDefaults>) => void;
-    locations: KnowledgeLocation[];
-    loading: boolean;
-    onRefresh: () => void;
-}> = ({ defaults, setDefaults, locations, loading, onRefresh }) => {
-    const api = (window as any).api;
-
-    const toggleLocation = async (dir: string, field: keyof KnowledgeLocation, value: boolean) => {
-        try {
-            await api.indexLocationsUpdate(dir, { [field]: value });
-            onRefresh();
-        } catch (err) {
-            console.error('Failed to update knowledge location:', err);
-        }
-    };
-
-    const enableLocation = async (dir: string) => {
-        try {
-            await api.indexLocationsEnable(dir);
-            onRefresh();
-        } catch (err) {
-            console.error('Failed to enable knowledge location:', err);
-        }
-    };
-
-    const resetLocation = async (dir: string) => {
-        if (!confirm(`Reset knowledge store for ${dir}? This deletes its .knowledge.yaml and starts fresh.`)) return;
-        try {
-            await api.indexLocationsReset(dir);
-            onRefresh();
-        } catch (err) {
-            console.error('Failed to reset knowledge store:', err);
-        }
-    };
-
-    const sourceLabel = (source?: string) => {
-        if (!source) return 'unknown';
-        const labels: Record<string, string> = {
-            recent: 'recent',
-            workspace: 'workspace',
-            conversation: 'chat',
-            terminal: 'terminal',
-            registry: 'registry',
-            bookmark: 'bookmark',
-            browser: 'browser',
-            manual: 'manual',
-        };
-        return labels[source] || source;
-    };
-
-    return (
-        <div className="space-y-4">
-            <div>
-                <h3 className="text-lg font-medium text-white mb-1 flex items-center gap-2">
-                    <BrainCircuit size={18} className="text-green-400" />
-                    Knowledge
-                </h3>
-                <p className="text-sm text-gray-400">
-                    Manage how Incognide indexes folders, links concepts, and extracts memories.
-                    Discovered folders stay inactive until you choose to build knowledge for them.
-                </p>
-            </div>
-
-            <div className="space-y-3 p-3 bg-gray-800/30 rounded-lg border border-gray-700/50">
-                <h4 className="text-xs font-semibold text-gray-300 uppercase tracking-wide">Global defaults</h4>
-                <div className="grid grid-cols-2 gap-3">
-                    <div>
-                        <label className="block text-xs font-medium text-gray-400 mb-1">Included file extensions</label>
-                        <Input
-                            value={(defaults.included_exts || []).join(', ')}
-                            onChange={(e) => setDefaults({ included_exts: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
-                            placeholder="e.g., .md, .txt, .py (empty = all)"
-                        />
-                        <p className="text-[10px] text-gray-500 mt-1">Comma separated. Leave empty to include all files.</p>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-gray-400 mb-1">Excluded directories</label>
-                        <Input
-                            value={(defaults.excluded_dirs || []).join(', ')}
-                            onChange={(e) => setDefaults({ excluded_dirs: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
-                            placeholder="node_modules, .git, ..."
-                        />
-                        <p className="text-[10px] text-gray-500 mt-1">Comma separated directory names to skip during indexing.</p>
-                    </div>
-                </div>
-                <div className="flex items-center justify-between p-2 theme-bg-tertiary rounded">
-                    <span className="text-sm">Default auto-index for new locations</span>
-                    <button
-                        onClick={() => setDefaults({ default_auto_index: !defaults.default_auto_index })}
-                        className={`w-10 h-5 rounded-full transition-colors ${defaults.default_auto_index ? 'bg-blue-500' : 'bg-gray-400'}`}
-                    >
-                        <div className={`w-4 h-4 bg-white rounded-full shadow transform transition-transform ${defaults.default_auto_index ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                    </button>
-                </div>
-            </div>
-
-            <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-semibold text-gray-300 uppercase tracking-wide">
-                        Discovered locations ({locations.filter((l) => l.knowledge_enabled).length}/{locations.length} active)
-                    </h4>
-                    <button
-                        onClick={onRefresh}
-                        disabled={loading}
-                        className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50 flex items-center gap-1"
-                    >
-                        <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Refresh
-                    </button>
-                </div>
-                <div className="border border-gray-700/50 rounded overflow-hidden max-h-64 overflow-y-auto">
-                    {locations.length === 0 && !loading && (
-                        <div className="px-3 py-3 text-xs text-gray-500 italic">No locations discovered yet.</div>
-                    )}
-                    {locations.map((loc) => (
-                        <div key={loc.directory} className="px-3 py-2 border-b border-gray-700/30 last:border-0">
-                            <div className="flex items-center justify-between gap-2">
-                                <div className="flex flex-col min-w-0">
-                                    <span className="text-xs font-mono text-gray-300 truncate" title={loc.directory}>{loc.directory}</span>
-                                    <span className="text-[10px] text-gray-500">
-                                        {sourceLabel(loc.discovered_from)} · {loc.knowledge_enabled ? 'active' : 'inactive'}
-                                        {loc.staleReasons?.length ? ` · stale: ${loc.staleReasons.join(', ')}` : ''}
-                                    </span>
-                                </div>
-                                {!loc.knowledge_enabled ? (
-                                    <button
-                                        onClick={() => enableLocation(loc.directory)}
-                                        className="px-2 py-0.5 text-[10px] bg-green-700 hover:bg-green-600 text-white rounded shrink-0"
-                                    >
-                                        Start building knowledge
-                                    </button>
-                                ) : null}
-                            </div>
-                            {loc.knowledge_enabled && (
-                                <div className="flex flex-wrap items-center gap-3 mt-1.5 pl-0">
-                                    <label className="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={loc.index_files}
-                                            onChange={(e) => toggleLocation(loc.directory, 'index_files', e.target.checked)}
-                                            className="accent-green-500"
-                                        />
-                                        Index
-                                    </label>
-                                    <label className="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={loc.link_knowledge}
-                                            onChange={(e) => toggleLocation(loc.directory, 'link_knowledge', e.target.checked)}
-                                            className="accent-green-500"
-                                        />
-                                        Link
-                                    </label>
-                                    <label className="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={loc.extract_memories}
-                                            onChange={(e) => toggleLocation(loc.directory, 'extract_memories', e.target.checked)}
-                                            className="accent-green-500"
-                                        />
-                                        Extract
-                                    </label>
-                                    <label className="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={loc.auto_index}
-                                            onChange={(e) => toggleLocation(loc.directory, 'auto_index', e.target.checked)}
-                                            className="accent-green-500"
-                                        />
-                                        Auto
-                                    </label>
-                                    <button
-                                        onClick={() => resetLocation(loc.directory)}
-                                        className="text-[10px] text-red-400 hover:text-red-300 ml-auto"
-                                    >
-                                        Reinitialize
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                    ))}
-                </div>
-            </div>
-        </div>
-    );
-};
-
 const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableModels = [], embedded = false, initialTab = 'global', onRerunSetup = undefined, onTabChange = undefined }) => {
     const [activeTab, setActiveTab] = useState(initialTab);
     const changeTab = (tab: string) => { setActiveTab(tab); onTabChange?.(tab); };
     const [globalSettings, setGlobalSettings] = useState(defaultSettings);
-    const [knowledgeDefaults, setKnowledgeDefaults] = useState(defaultKnowledgeDefaults);
-    const [knowledgeLocations, setKnowledgeLocations] = useState<KnowledgeLocation[]>([]);
-    const [knowledgeLoading, setKnowledgeLoading] = useState(false);
+    const { aiEnabled, setAiEnabled } = useAiFeature();
 
 
     useEffect(() => {
@@ -502,6 +297,7 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
             default_new_pane_type: 'incognide_defaultNewPaneType',
             default_new_terminal_type: 'incognide_defaultNewTerminalType',
             default_new_document_type: 'incognide_defaultNewDocumentType',
+            max_agent_iterations: 'incognide_maxAgentIterations',
         };
         const numericKeys = new Set(['theme_hue_shift', 'theme_saturation', 'theme_brightness', 'app_font_size']);
         for (const [settingKey, lsKey] of Object.entries(lsKeys)) {
@@ -515,32 +311,9 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
         setGlobalSettings({ ...defaultSettings, ...(data.global_settings || {}), ...fromLocalStorage });
     };
 
-    const loadKnowledgeDefaults = async () => {
-        try {
-            const r = await (window as any).api.indexLocationsDefaults?.();
-            if (r?.defaults) setKnowledgeDefaults({ ...defaultKnowledgeDefaults, ...r.defaults });
-        } catch (err) {
-            console.error('Failed to load knowledge defaults:', err);
-        }
-    };
-
-    const loadKnowledgeLocations = async () => {
-        setKnowledgeLoading(true);
-        try {
-            const r = await (window as any).api.indexLocationsList?.();
-            setKnowledgeLocations(r?.locations || []);
-        } catch (err) {
-            console.error('Failed to load knowledge locations:', err);
-        } finally {
-            setKnowledgeLoading(false);
-        }
-    };
-
     useEffect(() => {
         if (isOpen) {
             loadGlobalSettings();
-            loadKnowledgeDefaults();
-            loadKnowledgeLocations();
         }
     }, [isOpen]);
 
@@ -561,6 +334,7 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
             'app_font_family',
             'app_font_size',
             'keyboard_shortcuts',
+            'max_agent_iterations',
         ]);
         const backendSettings: Record<string, any> = {};
         for (const [k, v] of Object.entries(globalSettings)) {
@@ -626,11 +400,8 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
         if (globalSettings.keyboard_shortcuts) {
             localStorage.setItem('incognide_keyboardShortcuts', JSON.stringify(globalSettings.keyboard_shortcuts));
         }
-
-        try {
-            await (window as any).api.indexLocationsUpdateDefaults?.(knowledgeDefaults);
-        } catch (err) {
-            console.error('Failed to save knowledge defaults:', err);
+        if (globalSettings.max_agent_iterations !== undefined) {
+            localStorage.setItem('incognide_maxAgentIterations', String(globalSettings.max_agent_iterations));
         }
 
         onClose();
@@ -640,8 +411,7 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
         { id: 'global', name: 'Global Settings' },
         { id: 'theme', name: 'Theme' },
         { id: 'shortcuts', name: 'Keyboard Shortcuts' },
-        { id: 'permissions', name: 'Permissions' },
-        { id: 'knowledge', name: 'Knowledge' }
+        { id: 'permissions', name: 'Permissions' }
     ];
 
     const content = (
@@ -686,6 +456,16 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                                 Re-run Setup Wizard
                             </button>
                         )}
+
+                        <div className="flex items-center justify-between p-2 theme-bg-tertiary rounded">
+                            <span className="text-sm font-medium text-white">AI Features</span>
+                            <button
+                                onClick={() => setAiEnabled(!aiEnabled)}
+                                className={`w-10 h-5 rounded-full transition-colors ${aiEnabled ? 'bg-blue-500' : 'bg-gray-400'}`}
+                            >
+                                <div className={`w-4 h-4 bg-white rounded-full shadow transform transition-transform ${aiEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                            </button>
+                        </div>
 
                         <Input
                             label="Default Directory"
@@ -748,6 +528,24 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                                 { value: 'mapx', label: 'Mind Map (.mapx)' },
                             ]}
                         />
+
+                        <div>
+                            <label className="block text-xs font-medium text-gray-400 mb-1">Max Agent Iterations</label>
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="number"
+                                    min="1"
+                                    value={globalSettings.max_agent_iterations || ''}
+                                    onChange={(e) => setGlobalSettings({...globalSettings, max_agent_iterations: e.target.value})}
+                                    placeholder="Empty = endless"
+                                    className="flex-1 px-3 py-1.5 text-sm rounded border border-gray-700 bg-gray-800 text-gray-200"
+                                />
+                                <span className="text-xs text-gray-500 whitespace-nowrap">Leave empty for endless loop</span>
+                            </div>
+                            <p className="text-[10px] text-gray-500 mt-1">
+                                Hard cap on how many tool/agent loops a single run may perform. Empty means no practical limit.
+                            </p>
+                        </div>
 
                     </>
                 )}
@@ -930,16 +728,6 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                 )}
 
                 {activeTab === 'permissions' && <PermissionsManager />}
-
-                {activeTab === 'knowledge' && (
-                    <KnowledgeSettingsPanel
-                        defaults={knowledgeDefaults}
-                        setDefaults={(updates) => setKnowledgeDefaults((prev) => ({ ...prev, ...updates }))}
-                        locations={knowledgeLocations}
-                        loading={knowledgeLoading}
-                        onRefresh={loadKnowledgeLocations}
-                    />
-                )}
                 </div>
             </div>
 

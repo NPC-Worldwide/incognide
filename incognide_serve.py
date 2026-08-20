@@ -98,9 +98,12 @@ if __name__ == "__main__":
     except Exception:
         pass
 
+    kg_registry = os.environ.get('INCOGNIDE_KG_REGISTRY', os.path.join(incognide_home, 'kg_registry.yaml'))
+
     start_flask_server(
         port=port,
         cors_origins=f"localhost:{frontend_port}",
         db_path=db_path,
         teams=teams,
+        kg_registry=kg_registry,
         debug=False)

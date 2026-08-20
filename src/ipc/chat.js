@@ -884,6 +884,7 @@ function register(ctx) {
         max_tokens: data.max_tokens,
 
         disableThinking: data.disableThinking || false,
+        maxAgentIterations: data.maxAgentIterations,
         customProviders,
         extractMemories: data.extractMemories !== false,
       };

@@ -67,9 +67,24 @@ async function read_pane(
         }
         break;
 
-      case 'browser':
-        content = { url: data.browserUrl, title: data.browserTitle };
+      case 'browser': {
+        let pageContent: any = { url: data.browserUrl, title: data.browserTitle };
+        if (data.getPageContent) {
+          try {
+            const pageResult = await data.getPageContent({ maxChars: 30000, includeInteractive: true });
+            pageContent = {
+              ...pageContent,
+              html: pageResult.content,
+              htmlTruncated: pageResult.htmlTruncated,
+              interactiveElements: pageResult.interactiveElements?.slice(0, 100)
+            };
+          } catch (e) {
+            // If the page is not ready, fall back to url/title.
+          }
+        }
+        content = pageContent;
         break;
+      }
 
       case 'csv':
         if (data.readSpreadsheetData) {

@@ -1432,7 +1432,7 @@ export const usePaneAwareStreamListeners = (
                 const msgTime = msg.lastStreamAt || new Date(msg.timestamp).getTime();
                 const elapsed = Date.now() - msgTime;
 
-                if (elapsed > 300000 && msg.content && msg.content.length > 0) {
+                if (elapsed > 300000 && msg.content && msg.content.length > 0 && msg.executionMode !== 'tool_agent') {
                     console.warn(`[STREAM] Stale stream detected: ${streamId} (${Math.round(elapsed/1000)}s). Marking as complete.`);
                     msg.isStreaming = false;
                     msg.streamId = null;

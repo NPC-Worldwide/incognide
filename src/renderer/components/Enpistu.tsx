@@ -5165,6 +5165,7 @@ const handleBrowserDialogNavigate = (url) => {
                         top_k: genParams.top_k,
                         max_tokens: genParams.max_tokens,
                         disableThinking,
+                        maxAgentIterations: paneExecMode === 'tool_agent' ? parseInt(localStorage.getItem('incognide_maxAgentIterations') || '0', 10) || undefined : undefined,
                     };
                     await window.api.executeCommandStream(commandData);
                 }
@@ -5698,9 +5699,12 @@ const handleBrowserDialogNavigate = (url) => {
                 initialJinxName={paneData.initialJinxName}
                 onOpenJinxPane={(name) => createTeamManagementPane({ tab: 'jinxes', initialJinxName: name })}
                 onOpenDatabase={(path) => createDBToolPane(path)}
+                currentModel={currentModel}
+                currentProvider={currentProvider}
+                availableModels={availableModels}
             />
         );
-    }, [currentPath, createNewConversation, availableNPCs, availableJinxes, currentNPC, createTeamManagementPane, createDBToolPane]);
+    }, [currentPath, createNewConversation, availableNPCs, availableJinxes, currentNPC, createTeamManagementPane, createDBToolPane, availableModels]);
 
 
     const renderSettingsPane = useCallback(({ nodeId }: { nodeId: string }) => {
@@ -6981,6 +6985,9 @@ const handleBrowserDialogNavigate = (url) => {
                 npcList={availableNPCs.map(npc => ({ name: npc.name, display_name: npc.display_name }))}
                 jinxList={availableJinxes.map(jinx => ({ jinx_name: jinx.name, description: jinx.description }))}
                 onOpenJinxPane={(name) => createTeamManagementPane({ tab: 'jinxes', initialJinxName: name })}
+                currentModel={currentModel}
+                currentProvider={currentProvider}
+                availableModels={availableModels}
             />
 
 
