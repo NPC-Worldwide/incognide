@@ -32,4 +32,4 @@ context: |
 
 model: kimi-k2.6:cloud
 provider: ollama
-forenpc: ledbi
+forenpc: levi
