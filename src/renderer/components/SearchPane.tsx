@@ -47,17 +47,35 @@ const SearchPane: React.FC<SearchPaneProps> = ({
 
             if (category === 'all' || category === 'files') {
                 try {
-                    const fileResults = await (window as any).api?.searchFiles?.({
-                        query: query,
-                        path: currentPath,
-                        limit: 50
-                    });
-                    if (fileResults?.files) {
-                        allResults.push(...fileResults.files.map((f: any) => ({
+                    let files = null;
+                    if (currentPath) {
+                        const indexedResults = await (window as any).api?.searchIndexedFiles?.({
+                            query: query,
+                            folderPath: currentPath,
+                            limit: 50
+                        });
+                        files = indexedResults?.files?.length ? indexedResults.files : null;
+                    }
+                    if (!files) {
+                        const liveResults = await (window as any).api?.searchFiles?.({
+                            query: query,
+                            path: currentPath,
+                            limit: 50
+                        });
+                        if (liveResults?.files) {
+                            allResults.push(...liveResults.files.map((f: any) => ({
+                                type: 'file' as const,
+                                title: f.name || getFileName(f.path) || 'Unknown',
+                                path: f.path,
+                                snippet: f.match || f.snippet,
+                            })));
+                        }
+                    } else {
+                        allResults.push(...files.map((f: any) => ({
                             type: 'file' as const,
                             title: f.name || getFileName(f.path) || 'Unknown',
                             path: f.path,
-                            snippet: f.match || f.snippet,
+                            snippet: f.snippet || f.content_preview?.slice(0, 160),
                         })));
                     }
                 } catch (e) {
@@ -115,7 +133,8 @@ const SearchPane: React.FC<SearchPaneProps> = ({
                     const kgResults = await searchFn?.({
                         q: query,
                         limit: 20,
-                        type: 'both'
+                        type: 'both',
+                        storePaths: currentPath ? [currentPath] : undefined,
                     });
 
                     if (kgResults?.facts) {

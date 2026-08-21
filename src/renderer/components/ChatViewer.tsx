@@ -191,6 +191,7 @@ const handleSummarizeAndStart = async () => {
                 executionMode,
                 mcpServerPath: executionMode === 'tool_agent' ? mcpServerPath : undefined,
                 selectedMcpTools: executionMode === 'tool_agent' ? selectedMcpTools : undefined,
+                maxAgentIterations: executionMode === 'tool_agent' ? parseInt(localStorage.getItem('incognide_maxAgentIterations') || '0', 10) || undefined : undefined,
             });
 
         } catch (err) {
@@ -289,6 +290,7 @@ const handleSummarizeAndPrompt = async () => {
                     executionMode,
                     mcpServerPath: executionMode === 'tool_agent' ? mcpServerPath : undefined,
                     selectedMcpTools: executionMode === 'tool_agent' ? selectedMcpTools : undefined,
+                    maxAgentIterations: executionMode === 'tool_agent' ? parseInt(localStorage.getItem('incognide_maxAgentIterations') || '0', 10) || undefined : undefined,
                 });
 
             } catch (err) {

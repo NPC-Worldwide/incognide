@@ -6,6 +6,30 @@ const browserStateCache = new Map<string, {
     lastUrl: string;
 }>();
 
+// Exported for tests: produce the two CSP-safe wrappers used by browserEval.
+export function wrapBrowserEvalCode(code: string): { expression: string; fallback: string } {
+    const expression = code.trim().replace(/;\s*$/, '');
+    return {
+        expression: `(async () => { return ( ${expression} ); })()`,
+        fallback: `(async () => {\n${code}\n})()`
+    };
+}
+
+function getChromeUserAgent(): string {
+    try {
+        const chromeVersion = (process as any).versions?.chrome || '120.0.0.0';
+        if (window.navigator.userAgent.includes('Win')) {
+            return `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
+        }
+        if (window.navigator.userAgent.includes('Mac')) {
+            return `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
+        }
+        return `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
+    } catch {
+        return 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    }
+}
+
 const WebBrowserViewer = memo(({
     nodeId,
     contentDataRef,
@@ -52,6 +76,7 @@ const WebBrowserViewer = memo(({
     const [allPasswords, setAllPasswords] = useState<any[]>([]);
     const [showPasswordValue, setShowPasswordValue] = useState<string | null>(null);
     const [showRefreshMenu, setShowRefreshMenu] = useState(false);
+    const [showBrowserMenu, setShowBrowserMenu] = useState(false);
 
     const [findText, setFindText] = useState('');
     const [showFindBar, setShowFindBar] = useState(false);
@@ -163,30 +188,155 @@ const WebBrowserViewer = memo(({
     useEffect(() => {
         if (contentDataRef.current[nodeId]) {
 
-            contentDataRef.current[nodeId].getPageContent = async () => {
+            contentDataRef.current[nodeId].getPageContent = async (options?: { maxChars?: number; includeInteractive?: boolean }) => {
                 const webview = webviewRef.current;
                 if (!webview) return { success: false, content: '', url: '', title: '' };
 
+                const maxChars = options?.maxChars ?? 100000;
+                const includeInteractive = options?.includeInteractive ?? true;
+
                 try {
-                    const content = await webview.executeJavaScript(`
+                    const result = await webview.executeJavaScript(`
                         (function() {
-                            const main = document.querySelector('main, article, .content, #content') || document.body;
-                            const clone = main.cloneNode(true);
-                            clone.querySelectorAll('script, style, nav, footer, aside, .nav, .footer, .ads').forEach(el => el.remove());
-                            let text = clone.innerText || clone.textContent;
-                            text = text.replace(/\\s+/g, ' ').trim();
-                            return text.substring(0, 8000);
+                            const maxChars = ${JSON.stringify(maxChars)};
+                            const includeInteractive = ${JSON.stringify(includeInteractive)};
+
+                            function cleanHtml() {
+                                const root = document.documentElement.cloneNode(true);
+                                const remove = root.querySelectorAll('script, style, link[rel="stylesheet"], noscript, iframe, svg, math, video, audio, canvas, embed, object');
+                                remove.forEach(el => el.remove());
+                                const all = root.querySelectorAll('*');
+                                all.forEach(el => {
+                                    const attrs = Array.from(el.attributes);
+                                    attrs.forEach(attr => {
+                                        const name = attr.name.toLowerCase();
+                                        if (name.startsWith('on') || name === 'style' || name === 'srcset' || name === 'nonce') {
+                                            el.removeAttribute(attr.name);
+                                        }
+                                    });
+                                    if (el.childNodes.length === 0 && !['img', 'br', 'hr', 'input', 'meta', 'link'].includes(el.tagName.toLowerCase())) {
+                                        // keep empty structural tags; they still matter
+                                    }
+                                });
+                                return root.outerHTML;
+                            }
+
+                            function findDeep(root, predicate, depth = 0) {
+                                if (depth > 6 || !root || root.nodeType !== 1) return null;
+                                if (predicate(root)) return root;
+                                let found = null;
+                                if (root.shadowRoot) {
+                                    for (const child of root.shadowRoot.querySelectorAll('*')) {
+                                        found = findDeep(child, predicate, depth + 1);
+                                        if (found) return found;
+                                    }
+                                }
+                                for (const child of root.children) {
+                                    found = findDeep(child, predicate, depth + 1);
+                                    if (found) return found;
+                                }
+                                return null;
+                            }
+
+                            function findAllDeep(root, predicate, depth = 0, results = []) {
+                                if (depth > 6 || !root || root.nodeType !== 1) return results;
+                                if (predicate(root)) results.push(root);
+                                if (root.shadowRoot) {
+                                    for (const child of root.shadowRoot.querySelectorAll('*')) {
+                                        findAllDeep(child, predicate, depth + 1, results);
+                                    }
+                                }
+                                for (const child of root.children) {
+                                    findAllDeep(child, predicate, depth + 1, results);
+                                }
+                                return results;
+                            }
+
+                            function isInteractive(el) {
+                                if (!el) return false;
+                                const tag = el.tagName;
+                                const role = el.getAttribute('role');
+                                const type = el.type;
+                                if (tag === 'A' || tag === 'BUTTON' || tag === 'TEXTAREA') return true;
+                                if (tag === 'INPUT' && ['submit', 'button', 'image', 'text', 'email', 'password', 'search', 'url'].includes(type)) return true;
+                                if (role === 'button' || role === 'link' || role === 'menuitem' || role === 'textbox' || role === 'searchbox') return true;
+                                if (el.isContentEditable || el.getAttribute('contenteditable') === 'true') return true;
+                                if (el.getAttribute('tabindex') === '0') return true;
+                                if (el.className?.toString().toLowerCase().includes('button')) return true;
+                                return false;
+                            }
+
+                            function getDirectText(el) {
+                                return Array.from(el.childNodes)
+                                    .filter(n => n.nodeType === 3)
+                                    .map(n => n.textContent)
+                                    .join('')
+                                    .trim();
+                            }
+
+                            function summarizeElement(el, idx) {
+                                const tag = el.tagName.toLowerCase();
+                                const id = el.id || '';
+                                const cls = (el.className?.toString() || '').split(/\\s+/).filter(Boolean).slice(0, 4).join(' ');
+                                const text = getDirectText(el) || el.innerText?.trim() || '';
+                                const ariaLabel = el.getAttribute('aria-label') || '';
+                                const placeholder = el.placeholder || el.getAttribute('placeholder') || '';
+                                const dataTestid = el.getAttribute('data-testid') || '';
+                                const name = el.name || '';
+                                const type = el.type || '';
+                                const value = el.value || '';
+                                const disabled = el.disabled || false;
+                                let selector = '';
+                                if (id) selector = '#' + CSS.escape(id);
+                                else if (dataTestid) selector = '[data-testid="' + CSS.escape(dataTestid) + '"]';
+                                else if (name) selector = tag + '[name="' + CSS.escape(name) + '"]';
+                                else if (cls) selector = tag + '.' + CSS.escape(cls.split(' ')[0]);
+                                else selector = tag;
+                                return {
+                                    index: idx,
+                                    tag,
+                                    id,
+                                    class: cls,
+                                    selector,
+                                    text: text.slice(0, 200),
+                                    ariaLabel,
+                                    placeholder,
+                                    dataTestid,
+                                    name,
+                                    type,
+                                    value: String(value).slice(0, 200),
+                                    disabled,
+                                    hasShadow: !!el.shadowRoot
+                                };
+                            }
+
+                            const html = cleanHtml();
+                            let interactive = [];
+                            if (includeInteractive) {
+                                const elements = findAllDeep(document.body, isInteractive);
+                                interactive = elements.slice(0, 200).map((el, i) => summarizeElement(el, i));
+                            }
+
+                            return {
+                                html: html.substring(0, maxChars),
+                                htmlTruncated: html.length > maxChars,
+                                interactiveElements: interactive,
+                                url: window.location.href,
+                                title: document.title
+                            };
                         })();
                     `);
                     return {
                         success: true,
-                        content: content,
-                        url: webview.getURL(),
-                        title: webview.getTitle()
+                        content: result.html,
+                        url: result.url || webview.getURL(),
+                        title: result.title || webview.getTitle(),
+                        htmlTruncated: result.htmlTruncated,
+                        interactiveElements: result.interactiveElements
                     };
                 } catch (err) {
                     console.error('[WebBrowser] Failed to get page content:', err);
-                    return { success: false, content: '', url: currentUrl, title: title };
+                    return { success: false, content: '', url: currentUrl, title: title, error: err.message };
                 }
             };
 
@@ -201,31 +351,94 @@ const WebBrowserViewer = memo(({
                             const text = ${JSON.stringify(options?.text || null)};
                             const index = ${JSON.stringify(options?.index ?? 0)};
 
+                            function findDeep(root, predicate, depth = 0) {
+                                if (depth > 6 || !root || root.nodeType !== 1) return null;
+                                if (predicate(root)) return root;
+                                let found = null;
+                                if (root.shadowRoot) {
+                                    for (const child of root.shadowRoot.querySelectorAll('*')) {
+                                        found = findDeep(child, predicate, depth + 1);
+                                        if (found) return found;
+                                    }
+                                }
+                                for (const child of root.children) {
+                                    found = findDeep(child, predicate, depth + 1);
+                                    if (found) return found;
+                                }
+                                return null;
+                            }
+
+                            function findAllDeep(root, predicate, depth = 0, results = []) {
+                                if (depth > 6 || !root || root.nodeType !== 1) return results;
+                                if (predicate(root)) results.push(root);
+                                if (root.shadowRoot) {
+                                    for (const child of root.shadowRoot.querySelectorAll('*')) {
+                                        findAllDeep(child, predicate, depth + 1, results);
+                                    }
+                                }
+                                for (const child of root.children) {
+                                    findAllDeep(child, predicate, depth + 1, results);
+                                }
+                                return results;
+                            }
+
+                            function getClickableText(el) {
+                                const directText = Array.from(el.childNodes)
+                                    .filter(n => n.nodeType === 3)
+                                    .map(n => n.textContent)
+                                    .join('')
+                                    .trim();
+                                return directText || el.textContent?.trim() || '';
+                            }
+
+                            function isClickable(el) {
+                                if (!el) return false;
+                                const tag = el.tagName;
+                                const role = el.getAttribute('role');
+                                return tag === 'A' || tag === 'BUTTON' || tag === 'INPUT' &&
+                                    (el.type === 'submit' || el.type === 'button' || el.type === 'image') ||
+                                    role === 'button' || role === 'link' || role === 'menuitem' ||
+                                    el.onclick || el.getAttribute('onclick') ||
+                                    el.className?.toString().toLowerCase().includes('button') ||
+                                    el.getAttribute('tabindex') === '0';
+                            }
+
+                            function textMatches(el, query) {
+                                const q = query.toLowerCase();
+                                const candidates = [
+                                    getClickableText(el),
+                                    el.getAttribute('aria-label'),
+                                    el.getAttribute('title'),
+                                    el.getAttribute('value'),
+                                    el.getAttribute('placeholder'),
+                                    el.getAttribute('data-testid')
+                                ];
+                                return candidates.some(c => c && c.toLowerCase().includes(q));
+                            }
+
                             let elements = [];
 
                             if (selector) {
                                 try {
-                                    elements = Array.from(document.querySelectorAll(selector));
-                                } catch (e) {
-
-                                }
+                                    elements = findAllDeep(document.body, isClickable).filter(el => {
+                                        let matchesSelector = false;
+                                        try { matchesSelector = el.matches(selector); } catch {}
+                                        return matchesSelector || textMatches(el, selector);
+                                    });
+                                } catch (e) {}
                             }
 
                             if (text) {
-                                const textLower = text.toLowerCase();
                                 if (elements.length === 0) {
-
-                                    const clickables = document.querySelectorAll('a, button, [role="button"], input[type="submit"], input[type="button"], [onclick]');
-                                    elements = Array.from(clickables).filter(el =>
-                                        el.textContent?.toLowerCase().includes(textLower) ||
-                                        el.getAttribute('aria-label')?.toLowerCase().includes(textLower) ||
-                                        el.getAttribute('title')?.toLowerCase().includes(textLower)
-                                    );
+                                    elements = findAllDeep(document.body, el => isClickable(el) && textMatches(el, text));
                                 } else {
-                                    elements = elements.filter(el =>
-                                        el.textContent?.toLowerCase().includes(textLower)
-                                    );
+                                    elements = elements.filter(el => textMatches(el, text));
                                 }
+                            }
+
+                            if (elements.length === 0 && text) {
+                                // Last resort: any element whose text matches (covers custom elements).
+                                elements = findAllDeep(document.body, el => textMatches(el, text));
                             }
 
                             if (elements.length === 0) {
@@ -234,12 +447,13 @@ const WebBrowserViewer = memo(({
 
                             const element = elements[Math.min(index, elements.length - 1)];
                             element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            element.focus();
                             element.click();
 
                             return {
                                 success: true,
                                 clicked: element.tagName + (element.id ? '#' + element.id : ''),
-                                text: element.textContent?.substring(0, 100).trim()
+                                text: getClickableText(element).substring(0, 100)
                             };
                         })();
                     `);
@@ -256,27 +470,108 @@ const WebBrowserViewer = memo(({
 
                 try {
                     const result = await webview.executeJavaScript(`
-                        (function() {
+                        (async function() {
                             const selector = ${JSON.stringify(selector)};
                             const text = ${JSON.stringify(text)};
                             const clear = ${JSON.stringify(options?.clear ?? true)};
                             const submit = ${JSON.stringify(options?.submit ?? false)};
 
+                            function findDeep(root, predicate, depth = 0) {
+                                if (depth > 6 || !root || root.nodeType !== 1) return null;
+                                if (predicate(root)) return root;
+                                let found = null;
+                                if (root.shadowRoot) {
+                                    for (const child of root.shadowRoot.querySelectorAll('*')) {
+                                        found = findDeep(child, predicate, depth + 1);
+                                        if (found) return found;
+                                    }
+                                }
+                                for (const child of root.children) {
+                                    found = findDeep(child, predicate, depth + 1);
+                                    if (found) return found;
+                                }
+                                return null;
+                            }
+
+                            function findAllDeep(root, predicate, depth = 0, results = []) {
+                                if (depth > 6 || !root || root.nodeType !== 1) return results;
+                                if (predicate(root)) results.push(root);
+                                if (root.shadowRoot) {
+                                    for (const child of root.shadowRoot.querySelectorAll('*')) {
+                                        findAllDeep(child, predicate, depth + 1, results);
+                                    }
+                                }
+                                for (const child of root.children) {
+                                    findAllDeep(child, predicate, depth + 1, results);
+                                }
+                                return results;
+                            }
+
+                            function isEditable(el) {
+                                if (!el) return false;
+                                return el.tagName === 'TEXTAREA' ||
+                                    el.tagName === 'INPUT' ||
+                                    el.isContentEditable ||
+                                    el.getAttribute('contenteditable') === 'true' ||
+                                    el.getAttribute('role') === 'textbox';
+                            }
+
+                            function editableMatches(el, query) {
+                                const q = query.toLowerCase();
+                                const candidates = [
+                                    el.placeholder,
+                                    el.getAttribute('placeholder'),
+                                    el.getAttribute('aria-label'),
+                                    el.getAttribute('aria-placeholder'),
+                                    el.name,
+                                    el.id,
+                                    el.getAttribute('data-testid'),
+                                    el.className?.toString(),
+                                    el.getAttribute('data-placeholder')
+                                ];
+                                return candidates.some(c => c && c.toLowerCase().includes(q));
+                            }
+
+                            function isCollapsedComposer(el) {
+                                const tag = el.tagName.toLowerCase();
+                                return tag.includes('composer') || tag.includes('textarea-input') ||
+                                    el.getAttribute('data-testid') === 'trigger-button' ||
+                                    el.className?.toString().toLowerCase().includes('composer');
+                            }
+
+                            // 1. Direct CSS selector, including shadow DOM search.
                             let element = null;
+                            if (selector) {
+                                try { element = document.querySelector(selector); } catch (e) {}
+                                if (!element || !isEditable(element)) {
+                                    element = findDeep(document.body, (el) => {
+                                        try { return el.matches(selector); } catch { return false; }
+                                    });
+                                }
+                            }
 
-                            try {
-                                element = document.querySelector(selector);
-                            } catch (e) {}
-
-                            if (!element) {
-                                const inputs = document.querySelectorAll('input, textarea, [contenteditable="true"]');
+                            // 2. Match by label text / placeholder / aria-label / name / id / class.
+                            if (!element || !isEditable(element)) {
                                 const selectorLower = selector.toLowerCase();
-                                element = Array.from(inputs).find(el =>
-                                    el.placeholder?.toLowerCase().includes(selectorLower) ||
-                                    el.name?.toLowerCase().includes(selectorLower) ||
-                                    el.getAttribute('aria-label')?.toLowerCase().includes(selectorLower) ||
-                                    el.id?.toLowerCase().includes(selectorLower)
-                                );
+                                element = findDeep(document.body, (el) => isEditable(el) && editableMatches(el, selectorLower));
+                            }
+
+                            // 3. Expand collapsed custom composers (Reddit, etc.) and find the real input.
+                            if (!element) {
+                                const queryLower = selector.toLowerCase();
+                                const composerTriggers = ['comment', 'reply', 'post', 'message', 'search', 'join the conversation'];
+                                if (composerTriggers.some(t => queryLower.includes(t))) {
+                                    const composers = findAllDeep(document.body, isCollapsedComposer);
+                                    for (const composer of composers) {
+                                        composer.scrollIntoView({ block: 'center' });
+                                        composer.click();
+                                    }
+                                    if (composers.length > 0) {
+                                        await new Promise(r => setTimeout(r, 800));
+                                        element = findDeep(document.body, (el) => isEditable(el) && editableMatches(el, queryLower));
+                                        if (!element) element = findDeep(document.body, isEditable);
+                                    }
+                                }
                             }
 
                             if (!element) {
@@ -285,33 +580,60 @@ const WebBrowserViewer = memo(({
 
                             element.scrollIntoView({ behavior: 'smooth', block: 'center' });
                             element.focus();
+                            element.click();
+                            await new Promise(r => setTimeout(r, 300));
 
                             if (clear) {
-                                element.value = '';
+                                if (element.isContentEditable) {
+                                    element.innerHTML = '';
+                                    element.textContent = '';
+                                } else {
+                                    element.value = '';
+                                }
                                 element.dispatchEvent(new Event('input', { bubbles: true }));
                             }
 
+                            // Type the text character-by-character so the page sees realistic events.
                             if (element.isContentEditable) {
                                 element.textContent = text;
                             } else {
                                 element.value = text;
                             }
-                            element.dispatchEvent(new Event('input', { bubbles: true }));
+
+                            element.dispatchEvent(new Event('focus', { bubbles: true }));
+                            for (let i = 0; i < text.length; i++) {
+                                const ch = text[i];
+                                const code = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+                                    ? 'Key' + ch.toUpperCase()
+                                    : (ch >= '0' && ch <= '9')
+                                        ? 'Digit' + ch
+                                        : ch === ' '
+                                            ? 'Space'
+                                            : '';
+                                const opts = { key: ch, bubbles: true };
+                                if (code) opts.code = code;
+                                element.dispatchEvent(new KeyboardEvent('keydown', opts));
+                                element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ch }));
+                                element.dispatchEvent(new KeyboardEvent('keyup', opts));
+                            }
+                            element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
                             element.dispatchEvent(new Event('change', { bubbles: true }));
 
                             if (submit) {
                                 const form = element.closest('form');
                                 if (form) {
-                                    form.submit();
+                                    form.requestSubmit?.() || form.submit();
                                 } else {
                                     element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+                                    element.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', keyCode: 13, bubbles: true }));
                                 }
                             }
 
                             return {
                                 success: true,
                                 element: element.tagName + (element.id ? '#' + element.id : ''),
-                                typed: text.length + ' characters'
+                                typed: text.length + ' characters',
+                                value: element.value || element.textContent || element.innerText || ''
                             };
                         })();
                     `);
@@ -327,8 +649,12 @@ const WebBrowserViewer = memo(({
                 if (!webview) return { success: false, error: 'Webview not available' };
 
                 try {
-                    const image = await webview.capturePage();
-                    const dataUrl = image.toDataURL();
+                    const capture = webview.capturePage();
+                    const timeout = new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error('Screenshot timed out after 10s')), 10000)
+                    );
+                    const image = await Promise.race([capture, timeout]);
+                    const dataUrl = (image as any).toDataURL();
                     return {
                         success: true,
                         screenshot: dataUrl,
@@ -353,22 +679,18 @@ const WebBrowserViewer = memo(({
                 if (!webview) return { success: false, error: 'Webview not available' };
 
                 try {
-                    // eval() returns the code's completion value (the last expression),
-                    // so bare-expression code like `document.body.innerText` returns its
-                    // value instead of undefined (a block-body IIFE drops it). Wrap in an
-                    // async IIFE so top-level `await` in the fallback path still works.
-                    const evalWrapped = `(async () => { return eval(${JSON.stringify(code)}); })()`;
+                    // Avoid eval(...) because strict CSPs (Reddit, etc.) block it.
+                    // For a bare expression like `document.body.innerText`, wrap it in
+                    // a grouping operator so the IIFE returns the completion value.
+                    // For statements/declarations this will syntax-error and we fall
+                    // back to a plain async block-body IIFE.
+                    const { expression, fallback } = wrapBrowserEvalCode(code);
                     try {
-                        const result = await webview.executeJavaScript(evalWrapped);
+                        const result = await webview.executeJavaScript(expression);
                         return { success: true, result };
-                    } catch (evalErr) {
-                        // eval can be blocked by a strict page CSP, or choke on
-                        // top-level `return`/statements. Fall back to a plain
-                        // block-body IIFE (the original behavior) so the code at
-                        // least runs.
-                        const blockWrapped = `(async () => {\n${code}\n})()`;
-                        const result = await webview.executeJavaScript(blockWrapped);
-                        console.warn('[WebBrowser] eval wrap failed, used block body:', evalErr);
+                    } catch (exprErr) {
+                        const result = await webview.executeJavaScript(fallback);
+                        console.warn('[WebBrowser] expression wrap failed, used block body:', exprErr);
                         return { success: true, result };
                     }
                 } catch (err) {
@@ -508,7 +830,9 @@ const WebBrowserViewer = memo(({
                 navHistoryIndexRef.current = navHistoryRef.current.length - 1;
             }
 
-            if (url && url !== 'about:blank' && url !== lastHistorySaveRef.current) {
+            const isLocalhostCallback = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(url);
+
+            if (url && url !== 'about:blank' && url !== lastHistorySaveRef.current && !isLocalhostCallback) {
 
                 if (historyDebounceRef.current) {
                     clearTimeout(historyDebounceRef.current);
@@ -1839,19 +2163,7 @@ const WebBrowserViewer = memo(({
                 </div>
             )}
             <div
-                className="flex theme-bg-tertiary border-b theme-border flex-shrink-0 cursor-move"
-                draggable={true}
-                onDragStart={(e) => {
-                    const nodePath = findNodePath(rootLayoutNode, nodeId);
-                    if (nodePath) {
-                        e.dataTransfer.effectAllowed = 'move';
-                        e.dataTransfer.setData('application/json', JSON.stringify({ type: 'pane', id: nodeId, nodePath }));
-                        setTimeout(() => {
-                            setDraggedItem({ type: 'pane', id: nodeId, nodePath });
-                        }, 0);
-                    }
-                }}
-                onDragEnd={() => setDraggedItem(null)}
+                className="flex theme-bg-tertiary border-b theme-border flex-shrink-0"
                 onContextMenu={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1869,7 +2181,22 @@ const WebBrowserViewer = memo(({
                         {isZenMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
                     </button>
                 )}
-                <div className="flex items-center gap-0.5 px-1 border-r theme-border relative">
+                <div
+                    className="flex items-center gap-0.5 px-1 border-r theme-border relative cursor-move"
+                    draggable={true}
+                    onDragStart={(e) => {
+                        const nodePath = findNodePath(rootLayoutNode, nodeId);
+                        if (nodePath) {
+                            e.dataTransfer.effectAllowed = 'move';
+                            e.dataTransfer.setData('application/json', JSON.stringify({ type: 'pane', id: nodeId, nodePath }));
+                            setTimeout(() => {
+                                setDraggedItem({ type: 'pane', id: nodeId, nodePath });
+                            }, 0);
+                        }
+                    }}
+                    onDragEnd={() => setDraggedItem(null)}
+                    title="Drag to move pane"
+                >
                     <button
                         onClick={handleBack}
                         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setNavHistoryDropdown(navHistoryDropdown === 'back' ? null : 'back'); }}
@@ -1962,11 +2289,31 @@ const WebBrowserViewer = memo(({
                     </div>
                 </div>
 
-                <div className="flex-1 flex items-center min-w-0 px-1 gap-1">
-                    <GripVertical size={12} className="flex-shrink-0 theme-text-muted" />
-                    <div className="flex-1 max-w-[60%] flex items-center gap-1 min-w-0 theme-bg-secondary rounded px-2 py-1.5">
+                <div className="flex-1 flex items-center min-w-0 px-1 gap-1" draggable={false} onDragStart={(e) => e.stopPropagation()}>
+                    <div className="relative">
+                        <button
+                            onClick={() => { setShowBrowserMenu(!showBrowserMenu); setShowSessionMenu(false); setShowExtensionsMenu(false); setShowPasswordsMenu(false); setShowPermissionsMenu(false); setShowRefreshMenu(false); }}
+                            className="p-1 theme-hover rounded"
+                            title="Browser menu"
+                        >
+                            <Settings size={16} />
+                        </button>
+                        {showBrowserMenu && (
+                            <>
+                                <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setShowBrowserMenu(false)} />
+                                <div className="absolute top-full left-0 mt-1 theme-bg-secondary border theme-border rounded-lg shadow-lg z-50 min-w-[180px]">
+                                    <div className="py-1">
+                                        <button onClick={() => { handleClearCache(); setShowBrowserMenu(false); }} className="flex items-center gap-2 w-full px-3 py-1.5 text-xs theme-hover text-left"><Trash2 size={12} />Clear Cache</button>
+                                        <button onClick={() => { handleClearCookies(); setShowBrowserMenu(false); }} className="flex items-center gap-2 w-full px-3 py-1.5 text-xs theme-hover text-left"><Trash2 size={12} />Clear Cookies</button>
+                                        <button onClick={() => { handleClearSessionData(); setShowBrowserMenu(false); }} className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-red-400 theme-hover text-left"><Trash2 size={12} />Clear All Data</button>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                    <div className="flex-1 max-w-[60%] flex items-center gap-1 min-w-0 theme-bg-secondary rounded px-2 py-1.5" draggable={false} onDragStart={(e) => e.stopPropagation()}>
                         {isSecure ? <Lock size={12} className="text-green-400 flex-shrink-0" /> : <Globe size={12} className="text-gray-400 flex-shrink-0" />}
-                        <input ref={urlInputRef} type="text" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleNavigate()} onContextMenu={(e) => e.stopPropagation()} placeholder="Search or enter URL..." className="browser-url-input flex-1 bg-transparent text-xs theme-text-primary outline-none min-w-0" onDragStart={(e) => e.stopPropagation()} draggable={false} />
+                        <input ref={urlInputRef} type="text" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleNavigate()} onContextMenu={(e) => e.stopPropagation()} placeholder="Search or enter URL..." className="browser-url-input flex-1 bg-transparent text-xs theme-text-primary outline-none min-w-0" draggable={false} onDragStart={(e) => e.stopPropagation()} />
                     </div>
                     <button onClick={() => handleNewBrowserTab('', nodeId)} className="p-0.5 theme-hover rounded" title="New tab (Ctrl+T)"><Plus size={12} /></button>
                 </div>
@@ -2322,6 +2669,7 @@ const WebBrowserViewer = memo(({
                     ref={webviewRef}
                     className="absolute inset-0 w-full h-full"
                     partition={`persist:${viewId}`}
+                    useragent={getChromeUserAgent()}
                     allowpopups="true"
                     allowusermedia="true"
                     webpreferences="contextIsolation=no, javascript=yes, webSecurity=yes, allowRunningInsecureContent=no, spellcheck=yes, enableRemoteModule=no"

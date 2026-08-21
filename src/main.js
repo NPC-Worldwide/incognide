@@ -657,6 +657,21 @@ const ensureTablesExist = async () => {
       );
   `;
 
+  const createFileIndexTable = `
+      CREATE TABLE IF NOT EXISTS file_index (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          path TEXT UNIQUE NOT NULL,
+          folder_path TEXT NOT NULL,
+          filename TEXT NOT NULL,
+          extension TEXT,
+          size INTEGER DEFAULT 0,
+          mtime INTEGER DEFAULT 0,
+          content_hash TEXT,
+          content_preview TEXT,
+          indexed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+  `;
+
   const createIndexes = `
       CREATE INDEX IF NOT EXISTS idx_file_path ON pdf_highlights(file_path);
       CREATE INDEX IF NOT EXISTS idx_pdf_drawings_file ON pdf_drawings(file_path);
@@ -688,6 +703,10 @@ const ensureTablesExist = async () => {
       CREATE INDEX IF NOT EXISTS idx_conv_history_timestamp ON conversation_history(timestamp);
       CREATE INDEX IF NOT EXISTS idx_conv_history_directory ON conversation_history(directory_path);
       CREATE INDEX IF NOT EXISTS idx_attachments_message ON message_attachments(message_id);
+      CREATE INDEX IF NOT EXISTS idx_file_index_folder ON file_index(folder_path);
+      CREATE INDEX IF NOT EXISTS idx_file_index_path ON file_index(path);
+      CREATE INDEX IF NOT EXISTS idx_file_index_extension ON file_index(extension);
+      CREATE INDEX IF NOT EXISTS idx_file_index_mtime ON file_index(mtime);
   `;
 
   try {
@@ -710,7 +729,18 @@ const ensureTablesExist = async () => {
       await dbQuery(createKnowledgeGraphEvolutionsTable);
       await dbQuery(createConversationHistoryTable);
       await dbQuery(createMessageAttachmentsTable);
+      await dbQuery(createFileIndexTable);
       await dbQuery(createIndexes);
+
+      try {
+          await dbQuery(`CREATE VIRTUAL TABLE IF NOT EXISTS file_index_fts USING fts5(path, filename, content_preview, content='file_index', content_rowid=rowid)`);
+          await dbQuery(`CREATE TRIGGER IF NOT EXISTS file_index_fts_insert AFTER INSERT ON file_index BEGIN INSERT INTO file_index_fts(rowid, path, filename, content_preview) VALUES (new.rowid, new.path, new.filename, new.content_preview); END`);
+          await dbQuery(`CREATE TRIGGER IF NOT EXISTS file_index_fts_delete AFTER DELETE ON file_index BEGIN DELETE FROM file_index_fts WHERE rowid=old.rowid; END`);
+          await dbQuery(`CREATE TRIGGER IF NOT EXISTS file_index_fts_update AFTER UPDATE OF content_preview ON file_index BEGIN UPDATE file_index_fts SET content_preview=new.content_preview WHERE rowid=old.rowid; END`);
+          console.log('[DB] FTS5 index ready on file_index');
+      } catch (ftsErr) {
+          console.error('[DB] FTS5 setup error for file_index:', ftsErr.message);
+      }
 
       try {
           await dbQuery(`CREATE VIRTUAL TABLE IF NOT EXISTS conversation_history_fts USING fts5(content, content='conversation_history', content_rowid=rowid)`);
@@ -806,7 +836,6 @@ function splashLog(message) {
   flushSplashLogs();
 }
 
-const DEFAULT_SHORTCUT = process.platform === 'darwin' ? 'Alt+Space' : 'CommandOrControl+Space';
 const ptySessions = new Map();
 const ptyKillTimers = new Map();
 
@@ -1902,6 +1931,7 @@ window.__addLog = function(msg) {
         INCOGNIDE_PORT: String(BACKEND_PORT),
         INCOGNIDE_FRONTEND_PORT: String(FRONTEND_PORT),
         INCOGNIDE_DB_PATH: dbPath,
+        INCOGNIDE_KG_REGISTRY: path.join(INCOGNIDE_HOME, 'kg_registry.yaml'),
         FLASK_DEBUG: '1',
         PYTHONUNBUFFERED: '1',
         PYTHONIOENCODING: 'utf-8',
@@ -2156,24 +2186,6 @@ function registerGlobalShortcut(win) {
   globalShortcut.unregisterAll();
 
   try {
-    const rcPath = path.join(os.homedir(), '.incogniderc');
-    let shortcut = DEFAULT_SHORTCUT;
-
-    if (fs.existsSync(rcPath)) {
-      const rcContent = fs.readFileSync(rcPath, 'utf8');
-      const shortcutMatch = rcContent.match(/CHAT_SHORTCUT=["']?([^"'\n]+)["']?/);
-      if (shortcutMatch) {
-        shortcut = shortcutMatch[1];
-      }
-    }
-
-    const macroSuccess = globalShortcut.register(shortcut, () => {
-      if (win.isMinimized()) win.restore();
-      win.focus();
-      win.webContents.send('show-macro-input');
-    });
-    console.log('Macro shortcut registered:', macroSuccess);
-
     const screenshotSuccess = globalShortcut.register('Ctrl+Alt+4', async () => {
       const now = Date.now();
       if (isCapturingScreenshot || (now - lastScreenshotTime) < SCREENSHOT_COOLDOWN) {
@@ -2659,8 +2671,6 @@ if (!gotTheLock) {
 
     mainWindow.show();
     mainWindow.focus();
-
-    mainWindow.webContents.send('show-macro-input');
   }
 
 function createWindow(cliArgs = {}) {
@@ -3480,6 +3490,7 @@ ipcMain.handle('backend:installAndStart', async (event, { pythonPath, npcpyExtra
       ...process.env,
       INCOGNIDE_PORT: String(BACKEND_PORT),
       INCOGNIDE_FRONTEND_PORT: String(FRONTEND_PORT),
+      INCOGNIDE_KG_REGISTRY: path.join(INCOGNIDE_HOME, 'kg_registry.yaml'),
       FLASK_DEBUG: '1',
       PYTHONUNBUFFERED: '1',
       PYTHONIOENCODING: 'utf-8',

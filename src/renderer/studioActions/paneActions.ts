@@ -80,6 +80,27 @@ export function collectPaneInfo(
   return [];
 }
 
+export function resolveBrowserPaneId(
+  paneIdArg: string | undefined,
+  ctx: StudioContext
+): string | null {
+  if (paneIdArg && paneIdArg !== 'active') return paneIdArg;
+
+  const activeData = ctx.contentDataRef.current[ctx.activeContentPaneId];
+  if (activeData?.contentType === 'browser') return ctx.activeContentPaneId;
+
+  const allPanes = collectPaneInfo(ctx.rootLayoutNode, ctx.contentDataRef.current, ctx.activeContentPaneId);
+  const browserPanes = allPanes
+    .filter(pane => pane.type === 'browser')
+    .map(pane => ({
+      id: pane.id,
+      lastActiveAt: ctx.contentDataRef.current[pane.id]?.lastActiveAt || 0
+    }));
+
+  browserPanes.sort((a, b) => b.lastActiveAt - a.lastActiveAt);
+  return browserPanes[0]?.id || null;
+}
+
 export function getPaneTitle(data: any): string {
   if (!data) return 'Untitled';
 

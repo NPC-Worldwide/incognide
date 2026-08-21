@@ -75,6 +75,17 @@ readPdfText: (filePath) =>
     kgUnregisterStore: (dirPath) => ipcRenderer.invoke('kg:unregisterStore', dirPath),
     kgScanAndRegister: (rootPath) => ipcRenderer.invoke('kg:scanAndRegister', rootPath),
     kgLoadStoreData: (params) => ipcRenderer.invoke('kg:loadStoreData', params),
+
+    indexLocationsList: () => ipcRenderer.invoke('indexLocations:list'),
+    indexLocationsDiscover: () => ipcRenderer.invoke('indexLocations:discover'),
+    indexLocationsUpdate: (dirPath, updates) => ipcRenderer.invoke('indexLocations:update', { dirPath, updates }),
+    indexLocationsEnable: (dirPath) => ipcRenderer.invoke('indexLocations:enable', dirPath),
+    indexLocationsReset: (dirPath) => ipcRenderer.invoke('indexLocations:reset', dirPath),
+    indexLocationsScan: (params) => ipcRenderer.invoke('indexLocations:scan', params),
+    indexLocationsSearch: (params) => ipcRenderer.invoke('indexLocations:search', params),
+    indexLocationsShouldExtract: (dirPath) => ipcRenderer.invoke('indexLocations:shouldExtract', dirPath),
+    indexLocationsDefaults: () => ipcRenderer.invoke('indexLocations:defaults'),
+    indexLocationsUpdateDefaults: (updates) => ipcRenderer.invoke('indexLocations:updateDefaults', updates),
     kgPipelineRun: (params) => ipcRenderer.invoke('kgPipeline:run', params),
     kgPipelineAbort: (jobId) => ipcRenderer.invoke('kgPipeline:abort', jobId),
     onKgPipelineLog: (callback) => {
@@ -185,6 +196,7 @@ readPdfText: (filePath) =>
     deleteDirectory: (path) => ipcRenderer.invoke('delete-directory', path),
     getDirectoryContentsRecursive: (path) => ipcRenderer.invoke('get-directory-contents-recursive', path),
     searchFiles: (data) => ipcRenderer.invoke('search-files', data),
+    searchIndexedFiles: (data) => ipcRenderer.invoke('indexLocations:search', data),
     searchConversations: (data) => ipcRenderer.invoke('search-conversations', data),
     syncExportData: (data) => ipcRenderer.invoke('sync:export-data', data),
     syncImportData: (data) => ipcRenderer.invoke('sync:import-data', data),
@@ -827,7 +839,6 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
     readLogFile: (logType) => ipcRenderer.invoke('readLogFile', logType),
 
     getAvailableModels: (currentPath) => ipcRenderer.invoke('getAvailableModels', currentPath),
-    updateShortcut: (shortcut) => ipcRenderer.invoke('update-shortcut', shortcut),
 
         detectLocalModels: () => ipcRenderer.invoke('detect-local-models'),
         checkOllamaStatus: () => ipcRenderer.invoke('ollama:checkStatus'),
@@ -851,11 +862,6 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
         return () => ipcRenderer.removeListener('ollama-pull-error', handler);
     },
 
-    onShowMacroInput: (callback) => {
-      ipcRenderer.on('show-macro-input', callback);
-      return () => ipcRenderer.removeListener('show-macro-input', callback);
-    },
-    submitMacro: (macro) => ipcRenderer.invoke('submit-macro', macro),
     onScreenshotCaptured: (callback) => {
         const wrappedCallback = (_, data) => callback(data);
         ipcRenderer.on('screenshot-captured', wrappedCallback);

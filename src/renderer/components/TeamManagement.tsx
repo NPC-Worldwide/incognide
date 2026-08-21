@@ -1,8 +1,9 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import {
     X, FileJson, Search, Users, Wrench, Clock, Database, Plus, Trash2, Play, Pause, Server, Mail, Save,
-    Brain, GitBranch, Cpu, Box, Code, Mic, Globe, Eye, EyeOff, Check, ChevronRight, Zap
+    Brain, GitBranch, Cpu, Box, Code, Mic, Globe, Eye, EyeOff, Check, ChevronRight, Zap, RefreshCw, BrainCircuit
 } from 'lucide-react';
+import { Input } from 'npcts';
 import yaml from 'js-yaml';
 import SmokestackIcon from './icons/SmokestackIcon';
 import MemoryIcon from './icons/MemoryIcon';
@@ -33,6 +34,9 @@ interface TeamManagementProps {
     initialJinxName?: string;
     onOpenJinxPane?: (name: string) => void;
     onOpenDatabase?: (path: string) => void;
+    currentModel?: string;
+    currentProvider?: string;
+    availableModels?: any[];
 }
 
 type TabId = 'context' | 'npcs' | 'jinxes' | 'knowledge' | 'cron' | 'models' | 'llm-models';
@@ -577,19 +581,224 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
     onTabChange,
     initialJinxName,
     onOpenJinxPane,
-    onOpenDatabase
+    onOpenDatabase,
+    currentModel,
+    currentProvider,
+    availableModels = [],
 }) => {
     const [activeTab, setActiveTab] = useState<TabId>(initialTab || 'context');
     useEffect(() => { if (forceTab) setActiveTab(forceTab); }, [forceTab]);
     const changeTab = (tab: TabId) => { setActiveTab(tab); onTabChange?.(tab); };
 
+    const [knowledgeSubTab, setKnowledgeSubTab] = useState('indexing');
+    type KnowledgeSubTab = 'indexing' | 'stores' | 'memory' | 'graph';
+
     const [sharedMemories, setSharedMemories] = useState<any[]>([]);
     const [sharedKnowledge, setSharedKnowledge] = useState<any[]>([]);
     const [sharedLoading, setSharedLoading] = useState(false);
 
-    const [registryCollapsed, setRegistryCollapsed] = useState(false);
-    const [memoryCollapsed, setMemoryCollapsed] = useState(false);
-    const [kgCollapsed, setKgCollapsed] = useState(false);
+
+    const defaultKnowledgeDefaults = {
+        included_exts: [] as string[],
+        excluded_dirs: ['node_modules', '.git', '__pycache__', '.incognide', 'dist', 'build'] as string[],
+        default_auto_index: false,
+    };
+
+    interface KnowledgeLocation {
+        directory: string;
+        knowledge_enabled: boolean;
+        index_files: boolean;
+        link_knowledge: boolean;
+        extract_memories: boolean;
+        auto_index: boolean;
+        discovered_from: string;
+        staleReasons?: string[];
+        fileCount?: number;
+    }
+
+    const [knowledgeDefaults, setKnowledgeDefaults] = useState(defaultKnowledgeDefaults);
+    const [knowledgeLocations, setKnowledgeLocations] = useState<KnowledgeLocation[]>([]);
+    const [knowledgeLoading, setKnowledgeLoading] = useState(false);
+    const [knowledgeModel, setKnowledgeModel] = useState<string>('');
+    const [knowledgeProvider, setKnowledgeProvider] = useState<string>('');
+    const [knowledgeContext, setKnowledgeContext] = useState('');
+    const [knowledgeBuildJob, setKnowledgeBuildJob] = useState<{
+        directory: string;
+        jobId: string | null;
+        status: 'running' | 'done' | 'error';
+        message: string;
+    } | null>(null);
+    const [knowledgeLogs, setKnowledgeLogs] = useState<{ kind: string; message: string; timestamp: number }[]>([]);
+    const knowledgeLogsRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const el = knowledgeLogsRef.current;
+        if (el) {
+            el.scrollTop = el.scrollHeight;
+        }
+    }, [knowledgeLogs]);
+
+    const resolveKnowledgeModel = async () => {
+        if (knowledgeModel && knowledgeProvider) {
+            return { model: knowledgeModel, provider: knowledgeProvider };
+        }
+        if (currentModel && currentProvider) {
+            return { model: currentModel, provider: currentProvider };
+        }
+        try {
+            const ctx = await (window as any).api?.getProjectCtx?.(currentPath);
+            if (ctx?.model && ctx?.provider) {
+                return { model: ctx.model, provider: ctx.provider };
+            }
+        } catch {}
+        try {
+            const lastModel = JSON.parse(localStorage.getItem('incognideLastModel') || 'null');
+            const lastProvider = JSON.parse(localStorage.getItem('incognideLastProvider') || 'null');
+            if (lastModel && lastProvider) {
+                return { model: lastModel, provider: lastProvider };
+            }
+        } catch {}
+        return { model: null, provider: null };
+    };
+
+    const loadKnowledgeDefaults = async () => {
+        try {
+            const r = await (window as any).api?.indexLocationsDefaults?.();
+            if (r?.defaults) setKnowledgeDefaults({ ...defaultKnowledgeDefaults, ...r.defaults });
+        } catch (err: any) {
+            console.error('[TeamManagement] loadKnowledgeDefaults error:', err);
+        }
+    };
+
+    const loadKnowledgeLocations = async () => {
+        setKnowledgeLoading(true);
+        try {
+            const r = await (window as any).api?.indexLocationsList?.();
+            setKnowledgeLocations(r?.locations || []);
+        } catch (err: any) {
+            console.error('[TeamManagement] loadKnowledgeLocations error:', err);
+        } finally {
+            setKnowledgeLoading(false);
+        }
+    };
+
+    const saveKnowledgeDefaults = async (updates: Partial<typeof defaultKnowledgeDefaults>) => {
+        const next = { ...knowledgeDefaults, ...updates };
+        setKnowledgeDefaults(next);
+        try {
+            await (window as any).api?.indexLocationsUpdateDefaults?.(next);
+        } catch (err: any) {
+            console.error('[TeamManagement] saveKnowledgeDefaults error:', err);
+        }
+    };
+
+    const toggleLocation = async (dir: string, field: keyof KnowledgeLocation, value: boolean) => {
+        try {
+            await (window as any).api?.indexLocationsUpdate?.(dir, { [field]: value });
+            loadKnowledgeLocations();
+        } catch (err: any) {
+            console.error('[TeamManagement] toggleLocation error:', err);
+        }
+    };
+
+    const indexLocation = async (dir: string) => {
+        setKnowledgeLogs([]);
+        setKnowledgeBuildJob({ directory: dir, jobId: null, status: 'running', message: 'Scanning files...' });
+        try {
+            await (window as any).api?.indexLocationsEnable?.(dir);
+            const res = await (window as any).api?.indexLocationsScan?.({
+                dirPath: dir,
+                includedExts: knowledgeDefaults.included_exts,
+                excludedDirs: knowledgeDefaults.excluded_dirs,
+            });
+            if (res?.error || !res?.success) {
+                setKnowledgeBuildJob({ directory: dir, jobId: null, status: 'error', message: res?.error || 'Scan failed' });
+            } else {
+                const { added, updated, removed, unchanged } = res.stats || {};
+                setKnowledgeBuildJob({
+                    directory: dir,
+                    jobId: null,
+                    status: 'done',
+                    message: `Indexed ${dir}: ${added || 0} added, ${updated || 0} updated, ${removed || 0} removed, ${unchanged || 0} unchanged.`,
+                });
+                if (res.logs?.length) {
+                    setKnowledgeLogs(res.logs.map((l: any) => ({ kind: l.kind || 'stdout', message: l.message || '', timestamp: l.timestamp || Date.now() })));
+                }
+            }
+            loadKnowledgeLocations();
+        } catch (err: any) {
+            console.error('[TeamManagement] indexLocation error:', err);
+            setKnowledgeBuildJob({ directory: dir, jobId: null, status: 'error', message: err?.message || String(err) });
+        }
+    };
+
+    const extractLocation = async (dir: string) => {
+        setKnowledgeLogs([]);
+        setKnowledgeBuildJob({ directory: dir, jobId: null, status: 'running', message: 'Resolving AI model...' });
+        const { model, provider } = await resolveKnowledgeModel();
+        if (!model || !provider) {
+            setKnowledgeBuildJob({
+                directory: dir,
+                jobId: null,
+                status: 'error',
+                message: 'No AI model/provider selected. Choose a model below before extracting knowledge.',
+            });
+            return;
+        }
+        setKnowledgeBuildJob({ directory: dir, jobId: null, status: 'running', message: 'Starting knowledge extraction...' });
+        try {
+            const res = await (window as any).api?.kgPipelineRun?.({
+                step: 'assimilate',
+                storePaths: [dir],
+                model,
+                provider,
+                context: knowledgeContext,
+            });
+            if (res?.error) {
+                setKnowledgeBuildJob({ directory: dir, jobId: res?.jobId || null, status: 'error', message: res.error });
+            } else {
+                setKnowledgeBuildJob({
+                    directory: dir,
+                    jobId: res?.jobId || null,
+                    status: 'running',
+                    message: `Extracting knowledge with ${model} (${provider}).`,
+                });
+            }
+            loadKnowledgeLocations();
+        } catch (err: any) {
+            console.error('[TeamManagement] extractLocation error:', err);
+            setKnowledgeBuildJob({ directory: dir, jobId: null, status: 'error', message: err?.message || String(err) });
+        }
+    };
+
+    const resetLocation = async (dir: string) => {
+        if (!confirm(`Reset knowledge store for ${dir}? This deletes its .knowledge.yaml and starts fresh.`)) return;
+        try {
+            await (window as any).api?.indexLocationsReset?.(dir);
+            await loadKnowledgeLocations();
+            await indexLocation(dir);
+            if ((await (window as any).api?.indexLocationsShouldExtract?.(dir))?.shouldExtract) {
+                await extractLocation(dir);
+            }
+        } catch (err: any) {
+            console.error('[TeamManagement] resetLocation error:', err);
+        }
+    };
+
+    const sourceLabel = (source?: string) => {
+        if (!source) return 'unknown';
+        const labels: Record<string, string> = {
+            recent: 'recent',
+            workspace: 'workspace',
+            conversation: 'chat',
+            terminal: 'terminal',
+            registry: 'registry',
+            bookmark: 'bookmark',
+            browser: 'browser',
+            manual: 'manual',
+        };
+        return labels[source] || source;
+    };
 
     const loadSharedKnowledge = async () => {
         setSharedLoading(true);
@@ -605,10 +814,47 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
     };
 
     useEffect(() => {
+        const unsub = (window as any).api?.onKgPipelineLog?.((entry: any) => {
+            setKnowledgeLogs(prev => [...prev, {
+                kind: entry.kind || 'stdout',
+                message: entry.message || '',
+                timestamp: entry.timestamp || Date.now(),
+            }]);
+            setKnowledgeBuildJob((prev) => {
+                if (!prev || !prev.jobId || entry.jobId !== prev.jobId) return prev;
+                if (entry.kind === 'error') {
+                    return { ...prev, status: 'error', message: entry.message || 'Knowledge build failed' };
+                }
+                if (entry.kind === 'finish') {
+                    return { ...prev, status: 'done', message: entry.message || 'Knowledge build finished' };
+                }
+                if (entry.kind === 'done') {
+                    return { ...prev, status: 'done', message: entry.message || 'Knowledge build complete' };
+                }
+                return prev;
+            });
+            if (entry.kind === 'done' || entry.kind === 'finish') {
+                loadSharedKnowledge();
+                loadKnowledgeLocations();
+            }
+        });
+        return unsub || (() => {});
+    }, []);
+
+    useEffect(() => {
         if (activeTab === 'knowledge') {
             loadSharedKnowledge();
+            loadKnowledgeDefaults();
+            loadKnowledgeLocations();
         }
     }, [activeTab, currentPath]);
+
+    useEffect(() => {
+        if (currentModel && currentProvider && !knowledgeModel) {
+            setKnowledgeModel(currentModel);
+            setKnowledgeProvider(currentProvider);
+        }
+    }, [currentModel, currentProvider]);
 
     const [registeredTeams, setRegisteredTeams] = useState<Record<string, string>>({});
     const [selectedTeam, setSelectedTeam] = useState<string>('');
@@ -910,42 +1156,256 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
                     )}
                     {activeTab === 'knowledge' && (
                         <div className="flex-1 flex flex-col overflow-hidden">
-                            <div className="flex flex-col min-h-0 border-b theme-border" style={{ flex: registryCollapsed ? '0 0 auto' : 1, overflow: 'hidden' }}>
-                                <div
-                                    onClick={() => setRegistryCollapsed(!registryCollapsed)}
-                                    className="flex items-center gap-1.5 px-3 py-2 cursor-pointer theme-bg-tertiary border-b theme-border hover:bg-white/5"
-                                >
-                                    <ChevronRight size={12} className={`transform transition-transform theme-text-muted ${registryCollapsed ? '' : 'rotate-90'}`} />
-                                    <span className="text-[11px] font-semibold theme-text-primary">Knowledge Stores</span>
-                                </div>
-                                {!registryCollapsed && <StoreRegistryPanel onSaved={loadSharedKnowledge} />}
+                            <div className="flex-shrink-0 flex items-center gap-1 px-2 py-2 border-b theme-border overflow-x-auto">
+                                {[
+                                    { id: 'indexing', label: 'Indexing', count: `${knowledgeLocations.filter((l) => l.knowledge_enabled).length}/${knowledgeLocations.length}` },
+                                    { id: 'stores', label: 'Knowledge Stores' },
+                                    { id: 'memory', label: 'Memory', count: String(sharedMemories.length) },
+                                    { id: 'graph', label: 'Knowledge Graph', count: String(sharedKnowledge.length) },
+                                ].map((sub) => (
+                                    <button
+                                        key={sub.id}
+                                        onClick={() => setKnowledgeSubTab(sub.id as KnowledgeSubTab)}
+                                        className={`px-3 py-1.5 text-xs font-medium rounded transition-colors whitespace-nowrap ${
+                                            knowledgeSubTab === sub.id
+                                                ? 'bg-blue-600/50 text-white'
+                                                : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
+                                        }`}
+                                    >
+                                        {sub.label}
+                                        {sub.count && <span className="ml-1.5 text-[10px] opacity-70">{sub.count}</span>}
+                                    </button>
+                                ))}
                             </div>
 
-                            <div className="flex flex-col min-h-0 border-b theme-border" style={{ flex: memoryCollapsed ? '0 0 auto' : 2, overflow: 'hidden' }}>
-                                <div
-                                    onClick={() => setMemoryCollapsed(!memoryCollapsed)}
-                                    className="flex items-center gap-1.5 px-3 py-2 cursor-pointer theme-bg-tertiary border-b theme-border hover:bg-white/5"
-                                >
-                                    <ChevronRight size={12} className={`transform transition-transform theme-text-muted ${memoryCollapsed ? '' : 'rotate-90'}`} />
-                                    <span className="text-[11px] font-semibold theme-text-primary">Memory</span>
-                                    <span className="text-[9px] theme-text-muted">{sharedMemories.length}</span>
-                                </div>
-                                {!memoryCollapsed && <MemoryManagement isModal={false} currentPath={currentPath} allMemories={sharedMemories} />}
-                            </div>
+                            <div className="flex-1 overflow-hidden relative">
+                                {knowledgeSubTab === 'indexing' && (
+                                    <div className="absolute inset-0 overflow-y-auto p-4 space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <h3 className="text-sm font-semibold text-white">Knowledge Indexing</h3>
+                                            {knowledgeLoading && <span className="text-xs text-gray-400">Loading...</span>}
+                                        </div>
+                                        <div className="space-y-3 p-3 bg-gray-800/30 rounded-lg border border-gray-700/50">
+                                            <h4 className="text-xs font-semibold text-gray-300 uppercase tracking-wide">Global defaults</h4>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <Input
+                                                        label="Included file extensions"
+                                                        value={(knowledgeDefaults.included_exts || []).join(', ')}
+                                                        onChange={(e) => saveKnowledgeDefaults({ included_exts: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean) })}
+                                                        placeholder="e.g., .md, .txt, .py (empty = all)"
+                                                    />
+                                                    <p className="text-[10px] text-gray-500 mt-1">Comma separated. Leave empty to include all files.</p>
+                                                </div>
+                                                <div>
+                                                    <Input
+                                                        label="Excluded directories"
+                                                        value={(knowledgeDefaults.excluded_dirs || []).join(', ')}
+                                                        onChange={(e) => saveKnowledgeDefaults({ excluded_dirs: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean) })}
+                                                        placeholder="node_modules, .git, ..."
+                                                    />
+                                                    <p className="text-[10px] text-gray-500 mt-1">Comma separated directory names to skip during indexing.</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center justify-between p-2 theme-bg-tertiary rounded">
+                                                <span className="text-sm">Default auto-index for new locations</span>
+                                                <button
+                                                    onClick={() => saveKnowledgeDefaults({ default_auto_index: !knowledgeDefaults.default_auto_index })}
+                                                    className={`w-10 h-5 rounded-full transition-colors ${knowledgeDefaults.default_auto_index ? 'bg-blue-500' : 'bg-gray-400'}`}
+                                                >
+                                                    <div className={`w-4 h-4 bg-white rounded-full shadow transform transition-transform ${knowledgeDefaults.default_auto_index ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                                                </button>
+                                            </div>
+                                        </div>
 
-                            <div className="flex flex-col min-h-0" style={{ flex: kgCollapsed ? '0 0 auto' : 2, overflow: 'hidden' }}>
-                                <div
-                                    onClick={() => setKgCollapsed(!kgCollapsed)}
-                                    className="flex items-center gap-1.5 px-3 py-2 cursor-pointer theme-bg-tertiary border-b theme-border hover:bg-white/5"
-                                >
-                                    <ChevronRight size={12} className={`transform transition-transform theme-text-muted ${kgCollapsed ? '' : 'rotate-90'}`} />
-                                    <span className="text-[11px] font-semibold theme-text-primary">Knowledge Graph</span>
-                                    <span className="text-[9px] theme-text-muted">{sharedKnowledge.length}</span>
-                                </div>
-                                {!kgCollapsed && (
-                                    <Suspense fallback={<div className="flex items-center justify-center py-12 theme-text-muted">Loading...</div>}>
-                                        <KnowledgeGraphEditor isModal={false} currentPath={currentPath} memories={sharedMemories} knowledge={sharedKnowledge} />
-                                    </Suspense>
+                                        <div className="space-y-2">
+                                            <div className="flex items-center justify-between">
+                                                <h4 className="text-xs font-semibold text-gray-300 uppercase tracking-wide">
+                                                    Discovered locations ({knowledgeLocations.filter((l) => l.knowledge_enabled).length}/{knowledgeLocations.length} active)
+                                                </h4>
+                                                <button
+                                                    onClick={loadKnowledgeLocations}
+                                                    disabled={knowledgeLoading}
+                                                    className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50 flex items-center gap-1"
+                                                >
+                                                    <RefreshCw size={12} className={knowledgeLoading ? 'animate-spin' : ''} /> Refresh
+                                                </button>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label className="text-[10px] theme-text-muted block mb-1">Knowledge model</label>
+                                                        <select
+                                                            value={`${knowledgeModel}|${knowledgeProvider}`}
+                                                            onChange={(e) => {
+                                                                const [m, p] = e.target.value.split('|');
+                                                                setKnowledgeModel(m || '');
+                                                                setKnowledgeProvider(p || '');
+                                                            }}
+                                                            className="w-full theme-input text-xs py-1 px-2 rounded"
+                                                        >
+                                                            <option value="|">Use chat model</option>
+                                                            {availableModels.map((m: any) => (
+                                                                <option key={`${m.value}|${m.provider}`} value={`${m.value}|${m.provider}`}>
+                                                                    {m.display_name || `${m.value} | ${m.provider}`}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[10px] theme-text-muted block mb-1">Extraction instructions</label>
+                                                        <input
+                                                            type="text"
+                                                            value={knowledgeContext}
+                                                            onChange={(e) => setKnowledgeContext(e.target.value)}
+                                                            placeholder="Optional context for extraction"
+                                                            className="w-full theme-input text-xs py-1 px-2 rounded"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                {knowledgeBuildJob && (
+                                                    <div className={`text-[11px] px-2 py-1.5 rounded border ${
+                                                        knowledgeBuildJob.status === 'error'
+                                                            ? 'bg-red-900/30 border-red-700/50 text-red-200'
+                                                            : knowledgeBuildJob.status === 'done'
+                                                            ? 'bg-green-900/30 border-green-700/50 text-green-200'
+                                                            : 'bg-blue-900/30 border-blue-700/50 text-blue-200'
+                                                    }`}>
+                                                        {knowledgeBuildJob.status === 'running' && <RefreshCw size={10} className="inline mr-1.5 animate-spin" />}
+                                                        {knowledgeBuildJob.message}
+                                                    </div>
+                                                )}
+                                                {knowledgeLogs.length > 0 && (
+                                                    <div ref={knowledgeLogsRef} className="border border-gray-700/50 rounded bg-black/30 p-2 max-h-48 overflow-y-auto font-mono text-[10px] space-y-0.5">
+                                                        {knowledgeLogs.map((log, i) => (
+                                                            <div key={i} className={`${
+                                                                log.kind === 'error' ? 'text-red-300' :
+                                                                log.kind === 'finish' ? 'text-green-300' :
+                                                                log.kind === 'start' ? 'text-blue-300' :
+                                                                'text-gray-400'
+                                                            }`}>
+                                                                <span className="text-gray-600 mr-1">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                                                                {log.message}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="border border-gray-700/50 rounded overflow-hidden max-h-64 overflow-y-auto">
+                                                {knowledgeLocations.length === 0 && !knowledgeLoading && (
+                                                    <div className="px-3 py-3 text-xs text-gray-500 italic">No locations discovered yet.</div>
+                                                )}
+                                                {knowledgeLocations.map((loc) => (
+                                                    <div key={loc.directory} className="px-3 py-2 border-b border-gray-700/30 last:border-0">
+                                                        <div className="flex items-center justify-between gap-2">
+                                                            <div className="flex flex-col min-w-0">
+                                                                <span className="text-xs font-mono text-gray-300 truncate" title={loc.directory}>{loc.directory}</span>
+                                                                <span className="text-[10px] text-gray-500">
+                                                                    {sourceLabel(loc.discovered_from)} · {loc.knowledge_enabled ? `active · ${loc.fileCount || 0} files indexed` : 'inactive'}
+                                                                    {loc.staleReasons?.length ? ` · stale: ${loc.staleReasons.join(', ')}` : ''}
+                                                                </span>
+                                                            </div>
+                                                            {!loc.knowledge_enabled ? (
+                                                                <button
+                                                                    onClick={() => indexLocation(loc.directory)}
+                                                                    disabled={knowledgeBuildJob?.directory === loc.directory && knowledgeBuildJob?.status === 'running'}
+                                                                    className="px-2 py-0.5 text-[10px] bg-green-700 hover:bg-green-600 disabled:bg-green-900/50 disabled:text-green-200/50 text-white rounded shrink-0"
+                                                                >
+                                                                    {knowledgeBuildJob?.directory === loc.directory && knowledgeBuildJob?.status === 'running'
+                                                                        ? 'Indexing...'
+                                                                        : 'Enable indexing'}
+                                                                </button>
+                                                            ) : null}
+                                                        </div>
+                                                        {loc.knowledge_enabled && (
+                                                            <div className="flex flex-col gap-1.5 mt-1.5 pl-0">
+                                                                <div className="flex flex-wrap items-center gap-3">
+                                                                    <label className="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={loc.index_files}
+                                                                            onChange={(e) => toggleLocation(loc.directory, 'index_files', e.target.checked)}
+                                                                            className="accent-green-500"
+                                                                        />
+                                                                        Index
+                                                                    </label>
+                                                                    <label className="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={loc.link_knowledge}
+                                                                            onChange={(e) => toggleLocation(loc.directory, 'link_knowledge', e.target.checked)}
+                                                                            className="accent-green-500"
+                                                                        />
+                                                                        Link
+                                                                    </label>
+                                                                    <label className="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={loc.extract_memories}
+                                                                            onChange={(e) => toggleLocation(loc.directory, 'extract_memories', e.target.checked)}
+                                                                            className="accent-green-500"
+                                                                        />
+                                                                        Extract
+                                                                    </label>
+                                                                    <label className="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={loc.auto_index}
+                                                                            onChange={(e) => toggleLocation(loc.directory, 'auto_index', e.target.checked)}
+                                                                            className="accent-green-500"
+                                                                        />
+                                                                        Auto
+                                                                    </label>
+                                                                </div>
+                                                                <div className="flex flex-wrap items-center gap-2">
+                                                                    <button
+                                                                        onClick={() => indexLocation(loc.directory)}
+                                                                        disabled={knowledgeBuildJob?.directory === loc.directory && knowledgeBuildJob?.status === 'running'}
+                                                                        className="px-2 py-0.5 text-[10px] bg-blue-700 hover:bg-blue-600 disabled:bg-blue-900/50 disabled:text-blue-200/50 text-white rounded"
+                                                                    >
+                                                                        Reindex files
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => extractLocation(loc.directory)}
+                                                                        disabled={knowledgeBuildJob?.directory === loc.directory && knowledgeBuildJob?.status === 'running'}
+                                                                        className="px-2 py-0.5 text-[10px] bg-purple-700 hover:bg-purple-600 disabled:bg-purple-900/50 disabled:text-purple-200/50 text-white rounded"
+                                                                    >
+                                                                        Extract knowledge
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => resetLocation(loc.directory)}
+                                                                        className="px-2 py-0.5 text-[10px] text-red-400 hover:text-red-300 border border-red-700/50 rounded ml-auto"
+                                                                    >
+                                                                        Reinitialize
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {knowledgeSubTab === 'stores' && (
+                                    <div className="absolute inset-0 overflow-y-auto p-4">
+                                        <StoreRegistryPanel onSaved={loadSharedKnowledge} />
+                                    </div>
+                                )}
+
+                                {knowledgeSubTab === 'memory' && (
+                                    <div className="absolute inset-0 overflow-hidden">
+                                        <MemoryManagement isModal={false} currentPath={currentPath} allMemories={sharedMemories} />
+                                    </div>
+                                )}
+
+                                {knowledgeSubTab === 'graph' && (
+                                    <div className="absolute inset-0 overflow-hidden">
+                                        <Suspense fallback={<div className="flex items-center justify-center py-12 theme-text-muted">Loading...</div>}>
+                                            <KnowledgeGraphEditor isModal={false} currentPath={currentPath} memories={sharedMemories} knowledge={sharedKnowledge} />
+                                        </Suspense>
+                                    </div>
                                 )}
                             </div>
                         </div>

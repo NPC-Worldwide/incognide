@@ -9,6 +9,139 @@ import yaml from 'js-yaml';
 const preprocessJinja = (content: string) =>
     content.replace(/(?<!["'])\{\{[^{}]*\}\}(?!["'])/g, (match) => `"${match}"`);
 
+export interface StreamingToolCall {
+    id?: string;
+    internalId?: string;
+    index?: number;
+    type?: string;
+    function?: { name?: string; arguments?: string };
+    name?: string;
+    args?: any;
+    status?: string;
+    result_preview?: string;
+}
+
+function normalizeStreamingToolCall(tc: any): StreamingToolCall {
+    const args = tc.args ?? tc.function?.arguments;
+    return {
+        id: tc.id,
+        internalId: tc.internalId,
+        index: typeof tc.index === 'number' ? tc.index : undefined,
+        type: tc.type || 'function',
+        function: {
+            name: tc.function?.name || tc.name || '',
+            arguments: (() => {
+                if (args) {
+                    return typeof args === 'object' ? JSON.stringify(args, null, 2) : String(args);
+                }
+                return tc.function?.arguments || '';
+            })()
+        },
+        status: tc.status,
+        result_preview: tc.result_preview || tc.result || tc.error || ''
+    };
+}
+
+export function mergeToolCalls(existing: StreamingToolCall[], incoming: StreamingToolCall[]): StreamingToolCall[] {
+    const merged: StreamingToolCall[] = existing.map((tc) => ({ ...tc }));
+
+    for (const raw of incoming) {
+        const tc = normalizeStreamingToolCall(raw);
+        const index = tc.index;
+        const id = tc.id || '';
+        const funcName = tc.function?.name || '';
+
+        let idx = -1;
+
+        // 1. Match by index when provided (OpenAI-style deltas).
+        if (typeof index === 'number' && index >= 0) {
+            while (merged.length <= index) {
+                merged.push({
+                    id: '',
+                    internalId: generateId(),
+                    type: 'function',
+                    function: { name: '', arguments: '' },
+                    status: undefined
+                });
+            }
+            idx = index;
+        }
+
+        // 2. If no index match, match by id. Prefer incomplete entries, but if
+        //    the only id match is a completed/errored call, this is likely the
+        //    provider reusing the same id for a new call. In that case fall back
+        //    to the most recent incomplete entry with the same function name.
+        if (idx < 0 && id) {
+            idx = merged.findIndex((mtc) => mtc.id === id && mtc.status !== 'complete' && mtc.status !== 'error');
+            if (idx < 0) {
+                const idMatchesFinished = merged.some((mtc) => mtc.id === id && (mtc.status === 'complete' || mtc.status === 'error'));
+                if (idMatchesFinished && funcName) {
+                    for (let i = merged.length - 1; i >= 0; i--) {
+                        if (merged[i].function?.name === funcName && merged[i].status !== 'complete' && merged[i].status !== 'error') {
+                            idx = i;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. No id and no index: try to attach to a recent id-less incomplete
+        //    call with the same function name (for providers that omit ids on
+        //    argument deltas).
+        if (idx < 0 && !id && funcName) {
+            for (let i = merged.length - 1; i >= 0; i--) {
+                if (
+                    merged[i].function?.name === funcName &&
+                    merged[i].status !== 'complete' &&
+                    merged[i].status !== 'error' &&
+                    !merged[i].id
+                ) {
+                    idx = i;
+                    break;
+                }
+            }
+        }
+
+        if (idx >= 0) {
+            const existingTc = merged[idx];
+            const newArgs = tc.function?.arguments || '';
+            const existingArgs = existingTc.function?.arguments || '';
+            // OpenAI-style deltas use index to identify a call and arrive in pieces.
+            // When matched by index, always accumulate argument chunks. For id/name
+            // matches, replace if the new args look like a complete resend (new starts
+            // with existing); otherwise accumulate as an incremental chunk.
+            const matchedByIndex = typeof tc.index === 'number' && tc.index >= 0;
+            const isCompleteResend = !matchedByIndex && existingArgs && newArgs.startsWith(existingArgs);
+            const argumentsValue = matchedByIndex
+                ? existingArgs + newArgs
+                : isCompleteResend
+                    ? newArgs
+                    : existingArgs + newArgs;
+            merged[idx] = {
+                ...existingTc,
+                ...tc,
+                id: id || existingTc.id || `tc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                internalId: existingTc.internalId || generateId(),
+                function: {
+                    name: tc.function?.name || existingTc.function?.name || '',
+                    arguments: argumentsValue
+                }
+            };
+        } else {
+            let finalId = id;
+            if (finalId && merged.some((mtc) => mtc.id === finalId)) {
+                finalId = `${finalId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+            } else if (!finalId) {
+                finalId = `tc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            }
+            merged.push({ ...tc, id: finalId, internalId: tc.internalId || generateId() });
+        }
+    }
+
+    return merged;
+}
+
 export const loadTeamCtxFromPath = async (teamPath: string): Promise<any> => {
     try {
         const items = await (window as any).api.readDirectory(teamPath);
@@ -885,7 +1018,11 @@ export const usePaneAwareStreamListeners = (
     const currentPathRef = useRef(currentPath);
     currentPathRef.current = currentPath;
 
+    const studioContextRef = useRef(studioContext);
+    studioContextRef.current = studioContext;
+
     return useEffect(() => {
+        console.log('[STREAM_LISTENER] Effect run. config?.stream:', !!config?.stream, 'listenersAttached:', listenersAttached.current);
         if (!config?.stream || listenersAttached.current) {
             return;
         }
@@ -922,13 +1059,18 @@ export const usePaneAwareStreamListeners = (
 
 
         const handleStreamData = (_: any, { streamId: incomingStreamId, chunk }: any) => {
+            console.log('[STREAM_LISTENER] handleStreamData:', incomingStreamId, 'chunk type:', typeof chunk, 'targetPaneId:', streamToPaneRef.current[incomingStreamId]);
             const targetPaneId = streamToPaneRef.current[incomingStreamId];
             if (!targetPaneId) {
+                console.log('[STREAM_LISTENER] No targetPaneId for stream', incomingStreamId);
                 return;
             }
 
             const paneData = contentDataRef.current[targetPaneId];
-            if (!paneData || !paneData.chatMessages) return;
+            if (!paneData || !paneData.chatMessages) {
+                console.log('[STREAM_LISTENER] No paneData/chatMessages for', targetPaneId, 'paneData:', !!paneData);
+                return;
+            }
 
             const processEvent = (parsed: any, isDecisionFlag: boolean) => {
                 let content = '', reasoningContent = '', toolCalls = null, isDecision = isDecisionFlag;
@@ -938,6 +1080,10 @@ export const usePaneAwareStreamListeners = (
                     isDecision = parsed.choices[0].delta.role === 'decision';
                     content = parsed.choices[0].delta.content || '';
                     reasoningContent = parsed.choices[0].delta.reasoning_content || '';
+                    const deltaToolCalls = parsed.choices[0].delta.tool_calls;
+                    if (Array.isArray(deltaToolCalls) && deltaToolCalls.length > 0) {
+                        toolCalls = deltaToolCalls;
+                    }
                 }
 
                 if (parsed.type) {
@@ -971,7 +1117,10 @@ export const usePaneAwareStreamListeners = (
 
             try {
                 const msgIndex = paneData.chatMessages.allMessages.findIndex((m: any) => m.id === incomingStreamId);
-                if (msgIndex === -1) return;
+                if (msgIndex === -1) {
+                    console.log('[STREAM_LISTENER] Message not found for stream', incomingStreamId, 'in pane', targetPaneId, 'allMessages count:', paneData.chatMessages.allMessages.length);
+                    return;
+                }
 
                 const message = paneData.chatMessages.allMessages[msgIndex];
                 if (!message.contentParts) {
@@ -1005,25 +1154,10 @@ export const usePaneAwareStreamListeners = (
 
                 const appendToolCalls = (calls: any[]) => {
                     if (!calls || calls.length === 0) return;
-                    const normalizedCalls = calls.map((tc: any) => ({
-                        id: tc.id || '',
-                        type: tc.type || 'function',
-                        function: {
-                            name: tc.function?.name || (tc.name || ''),
-                            arguments: (() => {
-                                if (tc.args) {
-                                    return typeof tc.args === 'object' ? JSON.stringify(tc.args, null, 2) : String(tc.args);
-                                }
-                                const argVal = tc.function?.arguments;
-                                if (typeof argVal === 'object') return JSON.stringify(argVal, null, 2);
-                                return argVal || '';
-                            })()
-                        },
-                        status: tc.status,
-                        result_preview: tc.result_preview || ''
-                    }));
+                    const normalizedCalls = calls.map(normalizeStreamingToolCall);
 
-                    if (studioContext) {
+                    const currentStudioContext = studioContextRef.current;
+                    if (currentStudioContext) {
                         for (const tc of normalizedCalls) {
                             const funcName = tc.function?.name || '';
                             if (funcName.startsWith('studio.')) {
@@ -1037,7 +1171,7 @@ export const usePaneAwareStreamListeners = (
 
                                 (async () => {
                                     try {
-                                        const result = await executeStudioAction(actionName, args, studioContext);
+                                        const result = await executeStudioAction(actionName, args, currentStudioContext);
                                         tc.status = result.success ? 'complete' : 'error';
                                         tc.result_preview = JSON.stringify(result, null, 2);
                                         notifyPaneUpdate(targetPaneId);
@@ -1052,64 +1186,31 @@ export const usePaneAwareStreamListeners = (
                         }
                     }
 
-                    const existing = message.toolCalls || [];
-                    const merged = [...existing];
-                    normalizedCalls.forEach((tc: any) => {
-                        // Never merge calls with missing/empty ids — they are distinct.
-                        // Generate a stable local id if needed so contentParts line up.
-                        if (!tc.id) {
-                            tc.id = `tc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-                        }
-                        // Match by id among INCOMPLETE entries only. A completed/errored
-                        // entry with the same id must not be overwritten — but some providers
-                        // (e.g. Kimi via ollama) reuse the same id ("call_0") for every tool
-                        // call across iterations, so an id collision with a finished call
-                        // is expected and does NOT mean this is a duplicate of that call.
-                        let idx = tc.id ? merged.findIndex((mtc: any) => mtc.id && mtc.id === tc.id && mtc.status !== 'complete' && mtc.status !== 'error') : -1;
-                        // If the only id matches are completed/errored (id reused by provider),
-                        // fall back to the most recent INCOMPLETE entry with the same function
-                        // name — that's the streamed tool_calls entry waiting for its result.
-                        if (idx < 0) {
-                            const funcName = tc.function?.name || '';
-                            const idMatchesFinished = tc.id && merged.some((mtc: any) => mtc.id && mtc.id === tc.id && (mtc.status === 'complete' || mtc.status === 'error'));
-                            if (idMatchesFinished && funcName) {
-                                for (let i = merged.length - 1; i >= 0; i--) {
-                                    if (merged[i].function?.name === funcName && merged[i].status !== 'complete' && merged[i].status !== 'error') {
-                                        idx = i;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        if (idx >= 0 && merged[idx].status !== 'complete' && merged[idx].status !== 'error') {
-                            const existingTc = merged[idx];
-                            const newArgs = tc.function?.arguments;
-                            const shouldReplaceArgs = newArgs && String(newArgs).trim().length > 0;
-                            merged[idx] = {
-                                ...existingTc,
-                                ...tc,
-                                function: {
-                                    name: tc.function?.name || existingTc.function?.name || '',
-                                    arguments: shouldReplaceArgs ? newArgs : (existingTc.function?.arguments || '')
-                                }
-                            };
+                    const merged = mergeToolCalls(message.toolCalls || [], normalizedCalls);
 
-                            const partIdx = message.contentParts.findIndex((p: any) =>
-                                p.type === 'tool_call' && p.call.id && (p.call.id === tc.id || p.call.id === existingTc.id)
+                    // Update existing tool-call parts in place and append brand-new calls
+                    // at the end. Do NOT remove tool-call parts that no longer match: during
+                    // a live stream calls are only added/updated, never deleted, and the
+                    // previous aggressive "stale" filter was dropping valid calls when
+                    // later deltas changed ids or indices.
+                    const usedPartIndices = new Set<number>();
+                    for (const tc of merged) {
+                        const partIdx = message.contentParts.findIndex((p: any, idx: number) => {
+                            if (p.type !== 'tool_call' || usedPartIndices.has(idx)) return false;
+                            return (
+                                (tc.internalId && p.call?.internalId === tc.internalId) ||
+                                (tc.id && p.call?.id === tc.id) ||
+                                (!tc.internalId && !tc.id && !p.call?.internalId && !p.call?.id && p.call?.function?.name === tc.function?.name)
                             );
-                            if (partIdx >= 0) {
-                                message.contentParts[partIdx].call = merged[idx];
-                            }
+                        });
+                        if (partIdx >= 0) {
+                            usedPartIndices.add(partIdx);
+                            message.contentParts[partIdx].call = tc;
                         } else {
-                            // Pushing a brand-new entry. If the (provider-reused) id collides
-                            // with a finished entry, mint a fresh id so they stay distinct.
-                            if (tc.id && merged.some((mtc: any) => mtc.id && mtc.id === tc.id)) {
-                                tc.id = `${tc.id}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-                            }
-                            merged.push(tc);
                             message.contentParts.push({ type: 'tool_call', call: tc });
                         }
-                    });
+                    }
+
                     message.toolCalls = merged;
                 };
 
@@ -1135,7 +1236,10 @@ export const usePaneAwareStreamListeners = (
                                     const result = processEvent(parsed, message.role === 'decision');
                                     if (result.content) appendText(result.content);
                                     if (result.reasoningContent) appendReasoning(result.reasoningContent);
-                                    if (result.toolCalls) appendToolCalls(result.toolCalls);
+                                    if (result.toolCalls) {
+                                        console.log('[STREAM_LISTENER] Appending tool calls:', result.toolCalls.length);
+                                        appendToolCalls(result.toolCalls);
+                                    }
                                     if (result.isDecision) message.role = 'decision';
                                     if (result.usage) applyUsage(result.usage);
                                 } catch (parseErr) {
@@ -1151,7 +1255,7 @@ export const usePaneAwareStreamListeners = (
                     if (isDecision) message.role = 'decision';
                     const content = chunk.choices[0]?.delta?.content || '';
                     const reasoningContent = chunk.choices[0]?.delta?.reasoning_content || '';
-                    const toolCalls = chunk.tool_calls || null;
+                    const toolCalls = chunk.choices[0]?.delta?.tool_calls || chunk.tool_calls || null;
                     if (content) appendText(content);
                     if (reasoningContent) appendReasoning(reasoningContent);
                     if (toolCalls) appendToolCalls(Array.isArray(toolCalls) ? toolCalls : []);
@@ -1247,6 +1351,11 @@ export const usePaneAwareStreamListeners = (
                         saveAssistantMessage(paneData, msg);
                     }
                     paneData.chatStats = getConversationStats(paneData.chatMessages.allMessages);
+                    // If this pane was closed while streaming and never reopened, clean up
+                    // its ghost data now that the stream is done and saved.
+                    if (paneData?._closedWithActiveStream) {
+                        delete contentDataRef.current[targetPaneId];
+                    }
                 }
                 delete streamToPaneRef.current[completedStreamId];
             }
@@ -1288,6 +1397,9 @@ export const usePaneAwareStreamListeners = (
                         }
                     }
                 }
+                if (paneData?._closedWithActiveStream) {
+                    delete contentDataRef.current[targetPaneId];
+                }
                 delete streamToPaneRef.current[errorStreamId];
             }
 
@@ -1320,7 +1432,7 @@ export const usePaneAwareStreamListeners = (
                 const msgTime = msg.lastStreamAt || new Date(msg.timestamp).getTime();
                 const elapsed = Date.now() - msgTime;
 
-                if (elapsed > 300000 && msg.content && msg.content.length > 0) {
+                if (elapsed > 300000 && msg.content && msg.content.length > 0 && msg.executionMode !== 'tool_agent') {
                     console.warn(`[STREAM] Stale stream detected: ${streamId} (${Math.round(elapsed/1000)}s). Marking as complete.`);
                     msg.isStreaming = false;
                     msg.streamId = null;
@@ -1334,6 +1446,7 @@ export const usePaneAwareStreamListeners = (
         }, 30000);
 
         listenersAttached.current = true;
+        console.log('[STREAM_LISTENER] Listeners attached');
 
         return () => {
             cleanupStreamData();
@@ -1342,7 +1455,7 @@ export const usePaneAwareStreamListeners = (
             clearInterval(staleStreamInterval);
             listenersAttached.current = false;
         };
-    }, [config, listenersAttached, streamToPaneRef, contentDataRef, paneUpdateEmitter, setIsStreaming, setAiEditModal, parseAgenticResponse, getConversationStats, refreshConversations, studioContext]);
+    }, [config, streamToPaneRef, contentDataRef, paneUpdateEmitter, setIsStreaming, setAiEditModal, parseAgenticResponse, getConversationStats, refreshConversations]);
 };
 
 export const useTrackLastActiveChatPane = (

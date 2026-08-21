@@ -56,6 +56,8 @@ interface StatusBarProps {
     onOpenAccount?: () => void;
     onOpenNewWindow?: () => void;
     createNewTerminal?: (shellType: string) => void;
+    createNewConversation?: (opts?: { contentType?: 'chat' | 'agent'; npc?: string; model?: string }) => void;
+    createNewBrowser?: (url?: string) => void;
 }
 
 type BackendStatus = 'ok' | 'unhealthy' | 'unreachable' | 'restarting' | 'unknown';
@@ -96,6 +98,8 @@ const StatusBar: React.FC<StatusBarProps> = ({
     onOpenAccount,
     onOpenNewWindow,
     createNewTerminal,
+    createNewConversation,
+    createNewBrowser,
 }) => {
     const buttonGroupWidth = sidebarCollapsed ? 192 : (sidebarWidth || 192);
     const aiEnabled = useAiEnabled();
@@ -266,16 +270,17 @@ const StatusBar: React.FC<StatusBarProps> = ({
 
             <div className="flex-1" />
 
+            {createNewTerminal && (
+                <TerminalCreateButton createNewTerminal={createNewTerminal} createNewConversation={createNewConversation} createNewBrowser={createNewBrowser} />
+            )}
             {onCollapse && (
                 <button onClick={onCollapse} className={`${btnClass} text-gray-400 dark:text-gray-500`} title="Hide status bar"><ChevronDown size={16} /></button>
-            )}
-            {createNewTerminal && (
-                <TerminalCreateButton createNewTerminal={createNewTerminal} />
             )}
             <div data-tutorial="pane-indicators" className="flex items-center gap-1">
                 {paneItems.map((pane) => (
                     <button key={pane.id} onClick={() => setActiveContentPaneId(pane.id)} className={`p-2 rounded transition-colors ${pane.isActive ? 'bg-blue-600 text-white' : 'bg-transparent theme-text-muted hover:opacity-80'}`} title={pane.title}>
                         {pane.type === 'chat' && <MessageSquare size={20} />}
+                        {pane.type === 'agent' && <Bot size={20} />}
                         {pane.type === 'editor' && <FileIcon size={20} />}
                         {pane.type === 'terminal' && <Terminal size={20} />}
                         {pane.type === 'browser' && <Globe size={20} />}
@@ -289,7 +294,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
                         {pane.type === 'teammanagement' && <Users size={20} />}
                         {pane.type === 'diff' && <GitBranch size={20} />}
                         {pane.type === 'browsergraph' && <Globe size={20} />}
-                        {!['chat', 'editor', 'terminal', 'browser', 'pdf', 'graph-viewer', 'dbtool', 'memory-manager', 'photoviewer', 'npcteam', 'jinx', 'teammanagement', 'diff', 'browsergraph'].includes(pane.type) && <FileIcon size={20} />}
+                        {!['chat', 'agent', 'editor', 'terminal', 'browser', 'pdf', 'graph-viewer', 'dbtool', 'memory-manager', 'photoviewer', 'npcteam', 'jinx', 'teammanagement', 'diff', 'browsergraph'].includes(pane.type) && <FileIcon size={20} />}
                     </button>
                 ))}
             </div>

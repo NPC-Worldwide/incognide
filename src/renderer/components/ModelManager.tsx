@@ -240,17 +240,14 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
             });
         }
 
-        const detectedEnvVars = new Set(detectedProviders.map(d => d.envVar));
         for (const [name, config] of Object.entries(customProviders)) {
             if (seen.has(name)) continue;
-            const apiKeyVar = (config as any).api_key_var || `${name.toUpperCase()}_API_KEY`;
-            if (!detectedEnvVars.has(apiKeyVar)) continue;
             seen.add(name);
             list.push({
                 key: name,
                 name: name.charAt(0).toUpperCase() + name.slice(1),
                 baseUrl: (config as any).base_url || '',
-                apiKeyVar,
+                apiKeyVar: (config as any).api_key_var || '',
                 local: false,
                 custom: true,
                 color: 'text-cyan-400',

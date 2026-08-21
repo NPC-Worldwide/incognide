@@ -14,9 +14,16 @@ interface TutorialStep {
 
 const TUTORIAL_STEPS: TutorialStep[] = [
     {
+        selector: '[data-tutorial="command-palette"]',
+        title: 'Command Palette',
+        description: 'The universal opener. Launch anything — chat, agent, browser, terminal, editor, folder, documents, or search — and open files by name. Shortcut: Ctrl/Cmd+Shift+P.',
+        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        position: 'bottom',
+    },
+    {
         selector: '[data-tutorial="sidebar"]',
         title: 'Sidebar',
-        description: 'Your command center. Files, websites, and git all live here. Sections are draggable — reorder them how you like.',
+        description: 'Your command center. Files, websites, git, and tools all live here. Sections are draggable — reorder them how you like.',
         paths: ['no-ai', 'cloud-ai', 'local-ai'],
         position: 'right',
     },
@@ -29,8 +36,8 @@ const TUTORIAL_STEPS: TutorialStep[] = [
     },
     {
         selector: '[data-tutorial="terminal-button"]',
-        title: 'Terminal',
-        description: 'Open a system terminal. Terminals run in panes alongside your other work.',
+        title: 'Quick Actions',
+        description: 'Your pinned shortcuts. Click the main icon for the default action, or the dropdown to pin/unpin chat, agent, browser, terminal, and more. Right-click an item to pin it; drag pinned items to reorder. The first four slots get QWER keyboard shortcuts (Ctrl+Alt+Q/W/E/R by default).',
         paths: ['no-ai', 'cloud-ai', 'local-ai'],
         position: 'top',
     },
@@ -44,7 +51,7 @@ const TUTORIAL_STEPS: TutorialStep[] = [
     {
         selector: '[data-tutorial="document-button"]',
         title: 'Documents',
-        description: 'Create Word, Excel, and PowerPoint documents. Edit them directly in the app with full formatting support.',
+        description: 'Create Word, Excel, PowerPoint, and mind-map documents. Edit them directly in the app with full formatting support.',
         paths: ['no-ai', 'cloud-ai', 'local-ai'],
         position: 'right',
     },
@@ -73,7 +80,7 @@ const TUTORIAL_STEPS: TutorialStep[] = [
         selector: '[data-tutorial="search-bar"]',
         title: 'Local Search',
         description: 'Search your files, conversations, memories, and knowledge graph.',
-        paths: ['no-ai', 'cloud-ai', 'local-ai'],
+        paths: ['cloud-ai', 'local-ai'],
         position: 'bottom',
     },
     {
@@ -86,7 +93,7 @@ const TUTORIAL_STEPS: TutorialStep[] = [
     {
         selector: '[data-tutorial="settings-button"]',
         title: 'Settings',
-        description: 'Global preferences, theme, keyboard shortcuts, and permissions. Also where you re-run this tutorial or the setup wizard.',
+        description: 'Global preferences, theme, keyboard shortcuts, permissions, and knowledge indexing. Also where you re-run this tutorial or the setup wizard.',
         paths: ['no-ai', 'cloud-ai', 'local-ai'],
         position: 'right',
     },
@@ -96,20 +103,6 @@ const TUTORIAL_STEPS: TutorialStep[] = [
         description: 'Built-in documentation and guides. Learn about keyboard shortcuts, features, jinx authoring, agent configuration, and more.',
         paths: ['no-ai', 'cloud-ai', 'local-ai'],
         position: 'right',
-    },
-    {
-        selector: '[data-tutorial="new-chat-button"]',
-        title: 'New Chat',
-        description: 'Start a plain conversation with a model — no tools, just back-and-forth messages.',
-        paths: ['cloud-ai', 'local-ai'],
-        position: 'left',
-    },
-    {
-        selector: '[data-tutorial="new-agent-button"]',
-        title: 'New Agent',
-        description: 'Start an agent run with MCP tools connected. Agents can open panes, browse the web, and control the workspace.',
-        paths: ['cloud-ai', 'local-ai'],
-        position: 'left',
     },
     {
         selector: '[data-tutorial="conversations"]',
@@ -177,7 +170,7 @@ const TUTORIAL_STEPS: TutorialStep[] = [
     {
         selector: '[data-tutorial="pane-tab-toggle"]',
         title: 'Panes vs Tabs',
-        description: 'Switch between pane mode (everything is a split) and tab mode (new content opens as tabs in the active pane).',
+        description: 'Switch between pane mode (everything is a split) and tab mode (new content opens as tabs in the open pane).',
         paths: ['no-ai', 'cloud-ai', 'local-ai'],
         position: 'top',
     },

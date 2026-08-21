@@ -192,10 +192,12 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 }
             }
 
-            try {
-                await (window as any).api?.deployNpcTeam?.();
-            } catch (err) {
-                console.error('NPC team deploy failed:', err);
+            if (aiEnabled) {
+                try {
+                    await (window as any).api?.deployNpcTeam?.();
+                } catch (err) {
+                    console.error('NPC team deploy failed:', err);
+                }
             }
 
             setStep('complete');
@@ -220,7 +222,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     const handleAIChoiceNext = () => {
         if (aiEnabled === null) return;
         if (!aiEnabled) {
-            handleSkip();
+            finishSetup();
         } else {
             setStep('ai-config');
         }
@@ -764,10 +766,12 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                         <span>AI features enabled</span>
                     </div>
                 )}
-                <div className="flex items-center gap-2 text-green-400">
-                    <Check size={14} />
-                    <span>NPC team deployed</span>
-                </div>
+                {aiEnabled && (
+                    <div className="flex items-center gap-2 text-green-400">
+                        <Check size={14} />
+                        <span>NPC team deployed</span>
+                    </div>
+                )}
             </div>
 
             <button

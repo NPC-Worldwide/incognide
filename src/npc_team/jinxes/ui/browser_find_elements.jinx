@@ -1,0 +1,25 @@
+jinx_name: browser_find_elements
+description: Find interactive elements in a browser pane and return selector/text summaries. Prefer this over browser_screenshot when inspecting a page.
+permissions:
+  default: allow
+inputs:
+  - paneId:
+      type: string
+      description: The ID of the browser pane (omit for active)
+      required: false
+  - selector:
+      type: string
+      description: CSS selector to filter elements (e.g., 'button', 'textarea', '[data-testid="comment-submit-button"]')
+      required: false
+  - maxResults:
+      type: integer
+      description: Maximum number of elements to return (default 50)
+      required: false
+steps:
+  - name: browser_find_elements
+    engine: incognide
+    action: browser_find_elements
+    args:
+      paneId: "{{ paneId | default('active') }}"
+      selector: "{{ selector | default('') }}"
+      maxResults: "{{ maxResults | default(50) }}"

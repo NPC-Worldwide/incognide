@@ -39,10 +39,27 @@ const mockApi: Record<string, any> = {
   getFileStats: vi.fn().mockResolvedValue({ mtimeMs: Date.now() }),
 };
 
-Object.defineProperty(window, 'api', {
-  value: mockApi,
-  writable: true,
-});
+if (typeof window !== 'undefined') {
+  Object.defineProperty(window, 'api', {
+    value: mockApi,
+    writable: true,
+  });
+
+  // Mock matchMedia
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+}
 
 // Mock ResizeObserver
 global.ResizeObserver = vi.fn().mockImplementation(() => ({
@@ -57,21 +74,6 @@ global.IntersectionObserver = vi.fn().mockImplementation(() => ({
   unobserve: vi.fn(),
   disconnect: vi.fn(),
 }));
-
-// Mock matchMedia
-Object.defineProperty(window, 'matchMedia', {
-  writable: true,
-  value: vi.fn().mockImplementation((query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    dispatchEvent: vi.fn(),
-  })),
-});
 
 // Mock URL.createObjectURL and revokeObjectURL
 global.URL.createObjectURL = vi.fn(() => 'blob:mock-url');

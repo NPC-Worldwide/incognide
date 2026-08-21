@@ -1,5 +1,5 @@
 jinx_name: browser_screenshot
-description: Take a screenshot of a browser pane and return it as a data URL
+description: Take a screenshot of a browser pane and return it as a data URL. Use only as a last resort when get_browser_content and browser_find_elements are not enough.
 permissions:
   default: allow
 inputs:

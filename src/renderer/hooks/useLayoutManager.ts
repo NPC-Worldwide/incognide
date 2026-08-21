@@ -304,10 +304,20 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
         if (!targetNodePath) return;
         const newPaneId = targetPaneId || generateId();
 
-        contentDataRef.current[newPaneId] = {
-            contentType: newContentType,
-            contentId: newContentId
-        };
+        // If an existing pane is being restored (e.g., reopened after close while streaming),
+        // keep its data instead of wiping it.
+        if (targetPaneId && contentDataRef.current[targetPaneId]) {
+            contentDataRef.current[targetPaneId] = {
+                ...contentDataRef.current[targetPaneId],
+                contentType: newContentType,
+                contentId: newContentId
+            };
+        } else {
+            contentDataRef.current[newPaneId] = {
+                contentType: newContentType,
+                contentId: newContentId
+            };
+        }
 
         setRootLayoutNode((oldRoot: any) => {
             if (!oldRoot) return oldRoot;
@@ -346,7 +356,10 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
 
         setActiveContentPaneId(newPaneId);
 
-        if (newContentType === 'editor' || newContentType === 'chat' || newContentType === 'agent') {
+        // If we restored an existing pane that already has data (e.g., reopened after
+        // closing while streaming), do not reload it from scratch via updateContentPane.
+        const isRestoring = targetPaneId && contentDataRef.current[targetPaneId];
+        if (!isRestoring && (newContentType === 'editor' || newContentType === 'chat' || newContentType === 'agent')) {
             updateContentPane(newPaneId, newContentType, newContentId);
         }
     }, [updateContentPane]);
@@ -400,8 +413,15 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
         setRootLayoutNode((oldRoot: any) => {
             if (!oldRoot) return oldRoot;
 
+            const hasActiveStream = paneData?.chatMessages?.allMessages?.some((m: any) => m.isStreaming && m.streamId);
+            const preserveData = !!hasActiveStream;
+
             if (oldRoot.type === 'content' && oldRoot.id === paneId) {
-                delete contentDataRef.current[paneId];
+                if (!preserveData) {
+                    delete contentDataRef.current[paneId];
+                } else if (paneData) {
+                    contentDataRef.current[paneId]._closedWithActiveStream = true;
+                }
                 return null;
             }
 
@@ -411,7 +431,11 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
             }
 
             const newRoot = removePaneFromTree(oldRoot, paneId, nodePath);
-            delete contentDataRef.current[paneId];
+            if (!preserveData) {
+                delete contentDataRef.current[paneId];
+            } else if (paneData) {
+                contentDataRef.current[paneId]._closedWithActiveStream = true;
+            }
 
             setActiveContentPaneId((currentActive: string | null) => {
                 if (currentActive === paneId) {

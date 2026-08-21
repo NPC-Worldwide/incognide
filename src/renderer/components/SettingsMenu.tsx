@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Save } from 'lucide-react';
 import { Modal, Card, Button, Input, Select } from 'npcts';
+import { useAiFeature } from './AiFeatureContext';
 
 
 const HOME_DIR = '~/.incognide';
@@ -18,6 +19,10 @@ const defaultKeyboardShortcuts = {
     globalSearch: 'Ctrl+Shift+S',
     save: 'Ctrl+S',
     closePane: 'Ctrl+W',
+    quickAction1: 'Ctrl+Alt+Q',
+    quickAction2: 'Ctrl+Alt+W',
+    quickAction3: 'Ctrl+Alt+E',
+    quickAction4: 'Ctrl+Alt+R',
 };
 
 const defaultSettings = {
@@ -48,6 +53,7 @@ const defaultSettings = {
     theme_brightness: 100,
     app_font_family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
     app_font_size: 14,
+    max_agent_iterations: '',
 };
 
 const APP_FONT_OPTIONS: { value: string; label: string }[] = [
@@ -263,6 +269,7 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
     const [activeTab, setActiveTab] = useState(initialTab);
     const changeTab = (tab: string) => { setActiveTab(tab); onTabChange?.(tab); };
     const [globalSettings, setGlobalSettings] = useState(defaultSettings);
+    const { aiEnabled, setAiEnabled } = useAiFeature();
 
 
     useEffect(() => {
@@ -290,6 +297,7 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
             default_new_pane_type: 'incognide_defaultNewPaneType',
             default_new_terminal_type: 'incognide_defaultNewTerminalType',
             default_new_document_type: 'incognide_defaultNewDocumentType',
+            max_agent_iterations: 'incognide_maxAgentIterations',
         };
         const numericKeys = new Set(['theme_hue_shift', 'theme_saturation', 'theme_brightness', 'app_font_size']);
         for (const [settingKey, lsKey] of Object.entries(lsKeys)) {
@@ -326,6 +334,7 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
             'app_font_family',
             'app_font_size',
             'keyboard_shortcuts',
+            'max_agent_iterations',
         ]);
         const backendSettings: Record<string, any> = {};
         for (const [k, v] of Object.entries(globalSettings)) {
@@ -391,6 +400,9 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
         if (globalSettings.keyboard_shortcuts) {
             localStorage.setItem('incognide_keyboardShortcuts', JSON.stringify(globalSettings.keyboard_shortcuts));
         }
+        if (globalSettings.max_agent_iterations !== undefined) {
+            localStorage.setItem('incognide_maxAgentIterations', String(globalSettings.max_agent_iterations));
+        }
 
         onClose();
     };
@@ -445,6 +457,16 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                             </button>
                         )}
 
+                        <div className="flex items-center justify-between p-2 theme-bg-tertiary rounded">
+                            <span className="text-sm font-medium text-white">AI Features</span>
+                            <button
+                                onClick={() => setAiEnabled(!aiEnabled)}
+                                className={`w-10 h-5 rounded-full transition-colors ${aiEnabled ? 'bg-blue-500' : 'bg-gray-400'}`}
+                            >
+                                <div className={`w-4 h-4 bg-white rounded-full shadow transform transition-transform ${aiEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                            </button>
+                        </div>
+
                         <Input
                             label="Default Directory"
                             value={globalSettings.default_folder}
@@ -482,12 +504,16 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                             </p>
                         </div>
                         <Select
-                            label="Default New Terminal Type"
+                            label="Default Quick Action"
                             value={globalSettings.default_new_terminal_type || 'system'}
                             onChange={(e) => setGlobalSettings({...globalSettings, default_new_terminal_type: e.target.value})}
                             options={[
                                 { value: 'system', label: 'Bash' },
+                                { value: 'npcsh', label: 'npcsh' },
                                 { value: 'guac', label: 'guac' },
+                                { value: 'agent', label: 'Agent' },
+                                { value: 'chat', label: 'Chat' },
+                                { value: 'browser', label: 'Browser' },
                             ]}
                         />
 
@@ -502,6 +528,24 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                                 { value: 'mapx', label: 'Mind Map (.mapx)' },
                             ]}
                         />
+
+                        <div>
+                            <label className="block text-xs font-medium text-gray-400 mb-1">Max Agent Iterations</label>
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="number"
+                                    min="1"
+                                    value={globalSettings.max_agent_iterations || ''}
+                                    onChange={(e) => setGlobalSettings({...globalSettings, max_agent_iterations: e.target.value})}
+                                    placeholder="Empty = endless"
+                                    className="flex-1 px-3 py-1.5 text-sm rounded border border-gray-700 bg-gray-800 text-gray-200"
+                                />
+                                <span className="text-xs text-gray-500 whitespace-nowrap">Leave empty for endless loop</span>
+                            </div>
+                            <p className="text-[10px] text-gray-500 mt-1">
+                                Hard cap on how many tool/agent loops a single run may perform. Empty means no practical limit.
+                            </p>
+                        </div>
 
                     </>
                 )}
@@ -643,6 +687,10 @@ const SettingsMenu = ({ isOpen, onClose, currentPath, onPathChange, availableMod
                                     globalSearch: 'Global Search',
                                     save: 'Save',
                                     closePane: 'Close Pane',
+                                    quickAction1: 'Quick Action Q',
+                                    quickAction2: 'Quick Action W',
+                                    quickAction3: 'Quick Action E',
+                                    quickAction4: 'Quick Action R',
                                 };
                                 return (
                                     <div key={key} className="flex items-center justify-between gap-4">

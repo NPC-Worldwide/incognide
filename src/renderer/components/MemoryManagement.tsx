@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Loader, CheckCircle, XCircle, Edit, Trash2, RefreshCw, Search, Globe, Folder } from 'lucide-react';
+import { Loader, CheckCircle, XCircle, Edit, Trash2, RefreshCw, Search, Globe, Folder, FileText } from 'lucide-react';
 import MemoryIcon from './icons/MemoryIcon';
 
 interface Memory {
@@ -10,6 +10,9 @@ interface Memory {
     npc: string;
     timestamp: string;
     _directory?: string;
+    source_type?: string;
+    source_id?: string;
+    directory_path?: string;
 }
 
 interface MemoryManagementProps {
@@ -258,6 +261,20 @@ const MemoryManagement: React.FC<MemoryManagementProps> = ({ isModal = false, on
                                                 <>
                                                     <div className="truncate font-medium">
                                                         {memory.final_memory || memory.initial_memory}
+                                                    </div>
+                                                    <div className="text-[10px] theme-text-muted mt-1.5 flex items-center gap-2 flex-wrap">
+                                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded theme-bg-tertiary theme-text-secondary">
+                                                            <FileText size={10} />
+                                                            source: {memory.source_type || 'unknown'}
+                                                        </span>
+                                                        {memory.source_id ? (
+                                                            <span className="font-mono truncate max-w-[260px] text-orange-300" title={memory.source_id}>{memory.source_id}</span>
+                                                        ) : memory.source_hash ? (
+                                                            <span className="font-mono truncate max-w-[260px]" title={memory.source_hash}>{memory.source_hash}</span>
+                                                        ) : null}
+                                                        {memory.directory_path && memory.directory_path !== memory._directory && (
+                                                            <span className="font-mono truncate max-w-[260px]" title={memory.directory_path}>{memory.directory_path}</span>
+                                                        )}
                                                     </div>
                                                     {memory.final_memory && memory.final_memory !== memory.initial_memory && (
                                                         <div className="text-xs theme-text-muted mt-1">
