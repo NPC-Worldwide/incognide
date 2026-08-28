@@ -93,6 +93,7 @@ jinxes:
   - {{ Jinx('list_panes') }}
   - {{ Jinx('list_pane_types') }}
   - {{ Jinx('list_actions') }}
+  - {{ Jinx('list_windows') }}
   - {{ Jinx('read_pane') }}
   - {{ Jinx('write_pane') }}
   - {{ Jinx('interact') }}

@@ -1,0 +1,14 @@
+jinx_name: list_windows
+description: >
+  List all open Incognide windows with their IDs, titles, workspace paths, and
+  which one is active. Panes and studio actions apply to a single window, so
+  call this first to find the window you need before listing or focusing panes
+  in it.
+permissions:
+  default: allow
+inputs: []
+steps:
+  - name: list_windows
+    engine: incognide
+    action: list_windows
+    args: {}
