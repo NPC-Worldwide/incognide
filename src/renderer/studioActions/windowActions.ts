@@ -7,6 +7,33 @@ async function list_windows(
   _args: Record<string, any>,
   ctx: StudioContext
 ): Promise<StudioActionResult> {
+  // Real enumeration goes through the main process (it sees every
+  // BrowserWindow). Fall back to reporting just this window when the IPC
+  // bridge is unavailable (e.g. very old builds).
+  const api = (window as any).api;
+  if (api?.getAllWindowsInfo) {
+    try {
+      const infos = await api.getAllWindowsInfo();
+      const currentId = String(ctx.windowId ?? '');
+      const windows = (infos || []).map((w: any) => ({
+        id: w.windowId,
+        title: w.title || 'Untitled',
+        currentPath: w.folderPath || null,
+        bounds: w.bounds,
+        display: w.display,
+        isActive: String(w.windowId) === currentId,
+      }));
+      return {
+        success: true,
+        windows,
+        count: windows.length,
+        activeWindowId: ctx.windowId || '',
+      };
+    } catch (e) {
+      console.warn('[STUDIO] getAllWindowsInfo failed, falling back to current window:', e);
+    }
+  }
+
   return {
     success: true,
     windows: [{
