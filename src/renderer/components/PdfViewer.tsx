@@ -4,12 +4,14 @@ import { createPortal } from 'react-dom';
 import { Viewer, Worker, SpecialZoomLevel, ScrollMode, ViewMode } from '@react-pdf-viewer/core';
 import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
 import { zoomPlugin } from '@react-pdf-viewer/zoom';
+import { searchPlugin } from '@react-pdf-viewer/search';
 import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.js?url';
 import {
     Highlighter, MessageSquare, Trash2,
     Eye, EyeOff, Edit2, Save, X, PanelRightClose, PanelRightOpen,
     Clipboard, FileText, BookOpen,
-    Pen, Eraser, Download, Printer, PenTool, Type, Undo2, Trash
+    Pen, Eraser, Download, Printer, PenTool, Type, Undo2, Trash,
+    ChevronUp, ChevronDown, Search
 } from 'lucide-react';
 import PdfDrawingCanvas from './PdfDrawingCanvas';
 import SignatureModal from './SignatureModal';
@@ -19,6 +21,7 @@ import { useLayoutEffect } from 'react';
 import '@react-pdf-viewer/core/lib/styles/index.css';
 import '@react-pdf-viewer/default-layout/lib/styles/index.css';
 import '@react-pdf-viewer/zoom/lib/styles/index.css';
+import '@react-pdf-viewer/search/lib/styles/index.css';
 import './PdfViewer.css';
 
 const HIGHLIGHT_COLORS = {
@@ -580,6 +583,63 @@ const PdfViewer = ({
     const workerUrl = pdfjsWorkerUrl;
 
     const zoomPluginInstance = zoomPlugin();
+    const searchPluginInstance = searchPlugin({ enableShortcuts: true });
+
+    const [showSearchBox, setShowSearchBox] = useState(false);
+    const [searchKeyword, setSearchKeyword] = useState('');
+    const [searchMatchCount, setSearchMatchCount] = useState(0);
+    const [searchCurrentMatch, setSearchCurrentMatch] = useState(0);
+    const searchInputRef = useRef<HTMLInputElement>(null);
+    const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const performSearch = useCallback(async (keyword: string) => {
+        const trimmed = keyword.trim();
+        if (!trimmed) {
+            searchPluginInstance.clearHighlights();
+            setSearchMatchCount(0);
+            setSearchCurrentMatch(0);
+            return;
+        }
+        const matches = await searchPluginInstance.highlight(trimmed);
+        setSearchMatchCount(matches.length);
+        // searchFor auto-jumps to the first match when any are found
+        setSearchCurrentMatch(matches.length > 0 ? 1 : 0);
+    }, [searchPluginInstance]);
+
+    const jumpToSearchMatch = useCallback((index: number) => {
+        if (searchMatchCount === 0) return;
+        // jumpToMatch is 1-based; wrap around both ends
+        const normalized = ((index - 1 + searchMatchCount) % searchMatchCount) + 1;
+        const match = searchPluginInstance.jumpToMatch(normalized);
+        if (match) setSearchCurrentMatch(normalized);
+    }, [searchPluginInstance, searchMatchCount]);
+
+    const handleSearchInputChange = useCallback((value: string) => {
+        setSearchKeyword(value);
+        if (searchDebounceRef.current) {
+            clearTimeout(searchDebounceRef.current);
+            searchDebounceRef.current = null;
+        }
+        if (!value.trim()) {
+            searchPluginInstance.clearHighlights();
+            setSearchMatchCount(0);
+            setSearchCurrentMatch(0);
+            return;
+        }
+        searchDebounceRef.current = setTimeout(() => {
+            searchDebounceRef.current = null;
+            performSearch(value);
+        }, 300);
+    }, [searchPluginInstance, performSearch]);
+
+    useEffect(() => {
+        if (showSearchBox) {
+            setTimeout(() => {
+                searchInputRef.current?.focus();
+                searchInputRef.current?.select();
+            }, 50);
+        }
+    }, [showSearchBox]);
 
     useEffect(() => {
         const linkId = 'pdf-signature-fonts';
@@ -1652,6 +1712,7 @@ const PdfViewer = ({
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
+                if (showSearchBox) { setShowSearchBox(false); return; }
                 if (localContextMenuPos) { setLocalContextMenuPos(null); return; }
                 if (inlineComment) { setInlineComment(null); return; }
                 if (textInput) { setTextInput(null); return; }
@@ -1678,6 +1739,12 @@ const PdfViewer = ({
 
             const isPaneActive = activeContentPaneId === nodeId;
 
+            if (isPaneActive && (e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+                e.preventDefault();
+                setShowSearchBox(true);
+                return;
+            }
+
             if (e.key === 'z' && (e.ctrlKey || e.metaKey) && drawingMode) {
                 e.preventDefault();
                 handleUndoLastDrawing();
@@ -1697,7 +1764,7 @@ const PdfViewer = ({
         };
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [localContextMenuPos, inlineComment, textInput, signaturePlacementMode, textPlacementMode, drawingMode, handleUndoLastDrawing, activeContentPaneId, nodeId]);
+    }, [localContextMenuPos, inlineComment, textInput, signaturePlacementMode, textPlacementMode, drawingMode, handleUndoLastDrawing, activeContentPaneId, nodeId, showSearchBox]);
 
     useEffect(() => {
         const wrapper = viewerWrapperRef.current;
@@ -1983,7 +2050,7 @@ const PdfViewer = ({
                     <Worker workerUrl={workerUrl}>
                         <Viewer
                             fileUrl={pdfData}
-                            plugins={[defaultLayoutPluginInstance]}
+                            plugins={[defaultLayoutPluginInstance, searchPluginInstance]}
                             defaultScale={SpecialZoomLevel.PageWidth}
                             scrollMode={ScrollMode.Vertical}
                             viewMode={ViewMode.SinglePage}
@@ -2002,6 +2069,69 @@ const PdfViewer = ({
                             }}
                         />
                     </Worker>
+
+                    {showSearchBox && (
+                        <div className="absolute top-2 right-2 z-50 flex items-center gap-1 bg-gray-800 border border-gray-600 rounded shadow-lg px-2 py-1.5">
+                            <Search size={14} className="text-gray-400 flex-shrink-0" />
+                            <input
+                                ref={searchInputRef}
+                                type="text"
+                                value={searchKeyword}
+                                onChange={(e) => handleSearchInputChange(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        if (searchDebounceRef.current) {
+                                            clearTimeout(searchDebounceRef.current);
+                                            searchDebounceRef.current = null;
+                                            performSearch(searchKeyword);
+                                        } else if (e.shiftKey) {
+                                            jumpToSearchMatch(searchCurrentMatch - 1);
+                                        } else {
+                                            jumpToSearchMatch(searchCurrentMatch + 1);
+                                        }
+                                    } else if (e.key === 'Escape') {
+                                        e.preventDefault();
+                                        setShowSearchBox(false);
+                                    }
+                                }}
+                                placeholder="Find in PDF"
+                                className="bg-gray-900 text-gray-200 text-sm px-2 py-1 rounded outline-none border border-gray-700 focus:border-blue-500 w-44"
+                            />
+                            <span className="text-xs text-gray-400 min-w-[2.75rem] text-center select-none">
+                                {searchKeyword.trim() ? `${searchCurrentMatch} / ${searchMatchCount}` : ''}
+                            </span>
+                            <button
+                                onClick={() => jumpToSearchMatch(searchCurrentMatch - 1)}
+                                disabled={searchMatchCount === 0}
+                                className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-400"
+                                title="Previous match (Shift+Enter)"
+                            >
+                                <ChevronUp size={14} />
+                            </button>
+                            <button
+                                onClick={() => jumpToSearchMatch(searchCurrentMatch + 1)}
+                                disabled={searchMatchCount === 0}
+                                className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-400"
+                                title="Next match (Enter)"
+                            >
+                                <ChevronDown size={14} />
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowSearchBox(false);
+                                    searchPluginInstance.clearHighlights();
+                                    setSearchKeyword('');
+                                    setSearchMatchCount(0);
+                                    setSearchCurrentMatch(0);
+                                }}
+                                className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
+                                title="Close (Esc)"
+                            >
+                                <X size={14} />
+                            </button>
+                        </div>
+                    )}
 
                     <DrawingCanvasManager
                         wrapperRef={viewerWrapperRef}

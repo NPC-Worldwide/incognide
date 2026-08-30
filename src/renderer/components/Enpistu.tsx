@@ -1959,21 +1959,11 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
                     return;
                 }
                 if (activePane?.contentType === 'pdf') {
-
+                    // Block the browser find bar; PdfViewer's own keydown listener
+                    // (same document target, unaffected by stopPropagation) opens
+                    // its search overlay via the search plugin's imperative API.
                     e.preventDefault();
                     e.stopPropagation();
-                    const paneEl = document.querySelector(`[data-pane-id="${activeContentPaneId}"]`);
-
-                    const searchBtn = paneEl?.querySelector('.rpv-search__popover-target button, [aria-label="Search"], .rpv-toolbar button[data-testid*="search"]') as HTMLElement;
-                    if (searchBtn) {
-                        searchBtn.click();
-                    } else {
-
-                        const buttons = paneEl?.querySelectorAll('.rpv-default-layout__toolbar button');
-                        buttons?.forEach((btn: any) => {
-                            if (btn.getAttribute('aria-label')?.toLowerCase()?.includes('search')) btn.click();
-                        });
-                    }
                     return;
                 }
 
