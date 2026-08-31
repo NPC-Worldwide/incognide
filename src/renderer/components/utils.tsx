@@ -1544,6 +1544,16 @@ export const handleInterruptStream = async (
     currentPath?: string
 ) => {
     const paneData = contentDataRef.current[targetPaneId || ''];
+    const clearPaneStreamingState = () => {
+        if (!paneData?.chatMessages?.allMessages) return;
+        for (const msg of paneData.chatMessages.allMessages) {
+            if (msg.isStreaming) {
+                msg.isStreaming = false;
+                msg.streamId = null;
+            }
+        }
+    };
+
     if (!paneData || !paneData.chatMessages) {
         console.warn("Interrupt clicked but no chat pane found for", targetPaneId);
 
@@ -1566,6 +1576,8 @@ export const handleInterruptStream = async (
                 setIsStreaming(false);
             }
         }
+        clearPaneStreamingState();
+        if (targetPaneId) notifyPaneUpdate(targetPaneId);
         return;
     }
 
@@ -1592,6 +1604,8 @@ export const handleInterruptStream = async (
         if (Object.keys(streamToPaneRef.current).length === 0) {
             setIsStreaming(false);
         }
+        clearPaneStreamingState();
+        if (targetPaneId) notifyPaneUpdate(targetPaneId);
         return;
     }
 
@@ -1630,6 +1644,7 @@ export const handleInterruptStream = async (
         setIsStreaming(false);
     }
 
+    clearPaneStreamingState();
     if (targetPaneId) notifyPaneUpdate(targetPaneId);
 
     try {
@@ -1640,6 +1655,8 @@ export const handleInterruptStream = async (
         streamingMessage.content += " [Interruption API call failed]";
         if (targetPaneId) notifyPaneUpdate(targetPaneId);
     }
+    clearPaneStreamingState();
+    if (targetPaneId) notifyPaneUpdate(targetPaneId);
 };
 
 export const handleRenameFile = async (

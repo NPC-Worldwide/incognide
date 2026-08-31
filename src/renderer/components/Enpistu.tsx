@@ -1298,7 +1298,24 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         if (api.api?.onMenuCloseTab) {
             cleanups.push(api.api.onMenuCloseTab(() => {
                 const activePaneId = activeContentPaneIdRef.current;
-                if (activePaneId) {
+                if (!activePaneId) return;
+                const paneData = contentDataRef.current[activePaneId];
+                const tabs = paneData?.tabs;
+                if (tabs && tabs.length > 1) {
+                    const activeTabIndex = paneData.activeTabIndex || 0;
+                    const newTabs = [...tabs];
+                    newTabs.splice(activeTabIndex, 1);
+                    paneData.tabs = newTabs;
+                    if (paneData.activeTabIndex >= newTabs.length) {
+                        paneData.activeTabIndex = newTabs.length - 1;
+                    }
+                    const newActiveTab = newTabs[paneData.activeTabIndex];
+                    if (newActiveTab) {
+                        paneData.contentType = newActiveTab.contentType;
+                        paneData.contentId = newActiveTab.contentId;
+                    }
+                    notifyAllPanes();
+                } else {
                     const nodePath = findNodePath(rootLayoutNodeRef.current, activePaneId);
                     if (nodePath) {
                         closeContentPaneRef.current?.(activePaneId, nodePath);
@@ -4896,6 +4913,21 @@ const handleBrowserDialogNavigate = (url) => {
         }
 
         const conversationId = paneData.contentId;
+
+        if (isPaneStreaming(targetPaneId)) {
+            console.log('[SUBMIT] Pane already streaming; interrupting before new message');
+            await handleInterruptStream(targetPaneId);
+        }
+
+        if (paneData?.chatMessages?.allMessages) {
+            for (const msg of paneData.chatMessages.allMessages) {
+                if (msg.isStreaming) {
+                    msg.isStreaming = false;
+                    msg.streamId = null;
+                }
+            }
+        }
+
         const newStreamId = generateId();
 
         streamToPaneRef.current[newStreamId] = targetPaneId;
@@ -5189,11 +5221,24 @@ const handleBrowserDialogNavigate = (url) => {
                         disableThinking,
                         maxAgentIterations: paneExecMode === 'tool_agent' ? parseInt(localStorage.getItem('incognide_maxAgentIterations') || '0', 10) || undefined : undefined,
                     };
-                    await window.api.executeCommandStream(commandData);
+                    const streamResult = await window.api.executeCommandStream(commandData);
+                    if (streamResult?.error) {
+                        throw new Error(streamResult.error);
+                    }
                 }
             } catch (err: any) {
                 setError(err.message);
                 delete streamToPaneRef.current[branchStreamId];
+                const placeholderMsg = paneData.chatMessages?.allMessages?.find((m: any) => m.id === branchStreamId);
+                if (placeholderMsg) {
+                    placeholderMsg.isStreaming = false;
+                    placeholderMsg.streamId = null;
+                    placeholderMsg.content += `\n\n[Failed to start stream: ${err.message}]`;
+                }
+                if (Object.keys(streamToPaneRef.current).length === 0) {
+                    setIsStreaming(false);
+                }
+                if (targetPaneId) notifyAllPanes();
             }
         }
 

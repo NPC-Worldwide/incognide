@@ -1014,6 +1014,10 @@ const WebBrowserViewer = memo(({
                 openFindBar();
                 return;
             }
+            if (key === 'w') {
+                if (e.preventDefault) e.preventDefault();
+                return;
+            }
 
             if (key === 'c' && !input.shift) {
                 webview.copy();

@@ -23,6 +23,32 @@ function register(ctx) {
 
   const INCOGNIDE_HOME = ctxIncognideHome || path.join(os.homedir(), '.incognide');
   const INCOGNIDE_TEAM_PATH = path.join(INCOGNIDE_HOME, 'npc_team');
+  const senderReloadCleanups = new WeakMap();
+
+  function cleanupStreamsForSender(sender) {
+    for (const [streamId, entry] of activeStreams.entries()) {
+      if (entry.eventSender !== sender) continue;
+      try {
+        if (entry.stream && typeof entry.stream.destroy === 'function') {
+          entry.stream.destroy();
+        }
+      } catch {}
+      activeStreams.delete(streamId);
+      log(`[Main Process] Cleaned up NPC stream ${streamId} because renderer reloaded or was destroyed.`);
+    }
+  }
+
+  function ensureSenderCleanup(sender) {
+    if (!sender) return;
+    if (senderReloadCleanups.has(sender)) {
+      sender.removeListener('did-start-loading', senderReloadCleanups.get(sender));
+      sender.removeListener('destroyed', senderReloadCleanups.get(sender));
+    }
+    const cleanup = () => cleanupStreamsForSender(sender);
+    senderReloadCleanups.set(sender, cleanup);
+    sender.on('did-start-loading', cleanup);
+    sender.on('destroyed', cleanup);
+  }
 
   (async () => {
     const destBase = INCOGNIDE_TEAM_PATH;
@@ -203,6 +229,7 @@ function register(ctx) {
         }
 
         activeStreams.set(currentStreamId, { stream, eventSender: event.sender });
+        ensureSenderCleanup(event.sender);
 
         (function(capturedStreamId) {
             stream.on('data', (chunk) => {
