@@ -295,8 +295,6 @@ function applyAppMenu() {
         { label: 'Save As...', accelerator: 'CmdOrCtrl+Shift+S', click: () => mainWindow.webContents.send('menu-save-file-as') },
         { type: 'separator' },
         { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: () => mainWindow.webContents.send('menu-close-tab') },
-        { label: 'Next Pane/Tab', accelerator: 'Ctrl+Tab', click: () => mainWindow.webContents.send('menu-cycle-pane-forward') },
-        { label: 'Previous Pane/Tab', accelerator: 'Ctrl+Shift+Tab', click: () => mainWindow.webContents.send('menu-cycle-pane-backward') },
         { type: 'separator' },
         ...(isMac ? [] : [
           { label: 'Settings', accelerator: 'CmdOrCtrl+,', click: () => mainWindow.webContents.send('menu-open-settings') },
@@ -3064,6 +3062,20 @@ applyAppMenu();
 
     mainWindow.webContents.on('before-input-event', (event, input) => {
       if (input.type === 'keyDown') {
+
+        if (input.control && !input.shift && !input.alt && input.key.toLowerCase() === 'tab') {
+          console.log('[CYCLE-MAIN] forward');
+          event.preventDefault();
+          mainWindow.webContents.send('menu-cycle-pane-forward');
+          return;
+        }
+
+        if (input.control && input.shift && !input.alt && input.key.toLowerCase() === 'tab') {
+          console.log('[CYCLE-MAIN] backward');
+          event.preventDefault();
+          mainWindow.webContents.send('menu-cycle-pane-backward');
+          return;
+        }
 
         if (input.control && !input.shift && !input.alt && input.key.toLowerCase() === 't') {
           event.preventDefault();

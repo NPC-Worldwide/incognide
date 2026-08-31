@@ -745,12 +745,12 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const [loadingMoreMessages, setLoadingMoreMessages] = useState(false);
     const streamToPaneRef = useRef({});
     const notifyAllPanes = useCallback(() => {
-        for (const paneId of Object.keys(contentDataRef.current)) {
-            paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
-        }
+        paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: 'all' } }));
     }, [paneUpdateEmitter]);
 
     const cyclePanes = useCallback((direction: number) => {
+        const start = performance.now();
+        console.log('[CYCLE] triggered', direction > 0 ? 'forward' : 'backward', start);
         const paneIds = collectPaneIds(rootLayoutNodeRef.current).filter(id => contentDataRef.current[id]);
         const slots: { paneId: string; tabIndex: number }[] = [];
         for (const paneId of paneIds) {
@@ -763,9 +763,10 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
             }
         }
         if (slots.length <= 1) return;
-        const activePane = contentDataRef.current[activeContentPaneId];
+        const currentPaneId = activeContentPaneIdRef.current;
+        const activePane = contentDataRef.current[currentPaneId];
         const currentTabIndex = activePane?.activeTabIndex || 0;
-        const currentIdx = slots.findIndex(s => s.paneId === activeContentPaneId && s.tabIndex === currentTabIndex);
+        const currentIdx = slots.findIndex(s => s.paneId === currentPaneId && s.tabIndex === currentTabIndex);
         let nextIdx: number;
         if (currentIdx >= 0) {
             nextIdx = (currentIdx + direction) % slots.length;
@@ -777,25 +778,8 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         const nextPane = contentDataRef.current[next.paneId];
         if (!nextPane) return;
 
-        const saveCurrentTabState = () => {
-            if (!activeContentPaneId || !activePane || !activePane.tabs) return;
-            const currentTab = activePane.tabs[currentTabIndex];
-            if (!currentTab) return;
-            if (activePane.contentType === 'browser') {
-                if (activePane.browserUrl) currentTab.browserUrl = activePane.browserUrl;
-                if (activePane.browserTitle) currentTab.browserTitle = activePane.browserTitle;
-            }
-            if (activePane.contentType === 'chat' || activePane.contentType === 'agent') {
-                currentTab.chatMessages = activePane.chatMessages;
-                currentTab.executionMode = activePane.executionMode;
-                currentTab.selectedJinx = activePane.selectedJinx;
-                currentTab.chatStats = activePane.chatStats;
-                currentTab.npc = activePane.npc;
-                currentTab.model = activePane.model;
-            }
-        };
-        saveCurrentTabState();
-
+        const prevPaneId = activeContentPaneIdRef.current;
+        activeContentPaneIdRef.current = next.paneId;
         setActiveContentPaneId(next.paneId);
         if (nextPane.tabs && nextPane.tabs.length > 0) {
             nextPane.activeTabIndex = next.tabIndex;
@@ -803,22 +787,17 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
             if (tab) {
                 nextPane.contentType = tab.contentType;
                 nextPane.contentId = tab.contentId;
-                if (tab.contentType === 'browser') {
-                    nextPane.browserUrl = tab.browserUrl || 'about:blank';
-                    nextPane.browserTitle = tab.browserTitle || 'Browser';
-                }
-                if (tab.contentType === 'chat' || tab.contentType === 'agent') {
-                    nextPane.chatMessages = tab.chatMessages;
-                    nextPane.executionMode = tab.executionMode;
-                    nextPane.selectedJinx = tab.selectedJinx;
-                    nextPane.chatStats = tab.chatStats;
-                    nextPane.npc = tab.npc;
-                    nextPane.model = tab.model;
-                }
             }
         }
-        notifyAllPanes();
-    }, [activeContentPaneId, setActiveContentPaneId, notifyAllPanes]);
+
+        const prevEl = document.querySelector('[data-pane-id].pane-active');
+        if (prevEl) prevEl.classList.remove('pane-active');
+        const nextEl = document.querySelector(`[data-pane-id="${next.paneId}"]`);
+        if (nextEl) nextEl.classList.add('pane-active');
+
+        paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: prevPaneId || 'all' } }));
+        paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: next.paneId } }));
+    }, [paneUpdateEmitter, setActiveContentPaneId]);
 
     // Re-attach to a backend generation stream that is still running for this conversation
     // after the renderer reloaded or the pane was closed/reopened. The assistant message is
@@ -1541,10 +1520,16 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
         const api = window as any;
         const cleanups: (() => void)[] = [];
         if (api.api?.onCyclePaneForward) {
-            cleanups.push(api.api.onCyclePaneForward(() => cyclePanes(1)));
+            cleanups.push(api.api.onCyclePaneForward(() => {
+                console.log('[CYCLE-RX] forward', performance.now());
+                cyclePanes(1);
+            }));
         }
         if (api.api?.onCyclePaneBackward) {
-            cleanups.push(api.api.onCyclePaneBackward(() => cyclePanes(-1)));
+            cleanups.push(api.api.onCyclePaneBackward(() => {
+                console.log('[CYCLE-RX] backward', performance.now());
+                cyclePanes(-1);
+            }));
         }
         return () => cleanups.forEach(cleanup => cleanup?.());
     }, [cyclePanes]);
@@ -1727,6 +1712,7 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
     useEffect(() => {
         const saveCurrentWorkspace = () => {
             if (currentPath && rootLayoutNode) {
+                const start = performance.now();
                 const workspaceData = serializeWorkspace(
                     rootLayoutNode,
                     currentPath,
@@ -1736,7 +1722,7 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
                 );
                 if (workspaceData) {
                     saveWorkspaceToStorage(currentPath, workspaceData);
-                    console.log(`Saved workspace for ${currentPath}`);
+                    console.log(`[SAVE] Saved workspace for ${currentPath} in`, (performance.now() - start).toFixed(2), 'ms');
                 }
             }
         };
@@ -1744,10 +1730,9 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
         window.addEventListener('beforeunload', saveCurrentWorkspace);
 
         return () => {
-            saveCurrentWorkspace();
             window.removeEventListener('beforeunload', saveCurrentWorkspace);
         };
-    }, [currentPath, rootLayoutNode, activeContentPaneId, openMode]);
+    }, [currentPath, rootLayoutNode, openMode]);
     useEffect(() => {
         const syncToFile = async () => {
             try {
@@ -1884,15 +1869,13 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
                 const workspaceData = serializeWorkspace(rootLayoutNode, currentPath, contentDataRef.current, activeContentPaneId, openMode);
                 if (workspaceData) {
                     saveWorkspaceToStorage(currentPath, workspaceData);
-                    console.log(`Saved workspace for ${currentPath}`);
                 }
             }
         };
         return () => {
-            saveCurrentWorkspace();
             window.removeEventListener('beforeunload', saveCurrentWorkspace);
         };
-    }, [currentPath, rootLayoutNode, activeContentPaneId, openMode, serializeWorkspace, saveWorkspaceToStorage]);
+    }, [currentPath, rootLayoutNode, openMode, serializeWorkspace, saveWorkspaceToStorage]);
 
 
     useEffect(() => {

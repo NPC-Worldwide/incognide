@@ -338,7 +338,9 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             if (!emitter) return;
             const handler = (e: any) => {
                 if (e.detail?.paneId === node.id || e.detail?.paneId === 'all') {
+                    const start = performance.now();
                     forceRender(n => n + 1);
+                    console.log(`[RENDER] pane ${node.id} forceRender took`, (performance.now() - start).toFixed(2), 'ms');
                 }
             };
             emitter.addEventListener('pane-update', handler);
