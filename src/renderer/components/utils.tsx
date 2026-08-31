@@ -1375,6 +1375,9 @@ export const usePaneAwareStreamListeners = (
                         saveAssistantMessage(paneData, msg);
                     }
                     paneData.chatStats = getConversationStats(paneData.chatMessages.allMessages);
+                    if (paneData?.permissionRequests) {
+                        paneData.permissionRequests = paneData.permissionRequests.filter((r: any) => r.streamId !== completedStreamId);
+                    }
                     // If this pane was closed while streaming and never reopened, clean up
                     // its ghost data now that the stream is done and saved.
                     if (paneData?._closedWithActiveStream) {
@@ -1420,6 +1423,9 @@ export const usePaneAwareStreamListeners = (
                             }
                         }
                     }
+                }
+                if (paneData?.permissionRequests) {
+                    paneData.permissionRequests = paneData.permissionRequests.filter((r: any) => r.streamId !== errorStreamId);
                 }
                 if (paneData?._closedWithActiveStream) {
                     delete contentDataRef.current[targetPaneId];
@@ -1554,6 +1560,15 @@ export const handleInterruptStream = async (
         }
     };
 
+    const clearPermissionRequests = (streamId?: string) => {
+        if (!paneData?.permissionRequests) return;
+        if (streamId) {
+            paneData.permissionRequests = paneData.permissionRequests.filter((r: any) => r.streamId !== streamId);
+        } else {
+            paneData.permissionRequests = [];
+        }
+    };
+
     if (!paneData || !paneData.chatMessages) {
         console.warn("Interrupt clicked but no chat pane found for", targetPaneId);
 
@@ -1576,6 +1591,7 @@ export const handleInterruptStream = async (
                 setIsStreaming(false);
             }
         }
+        clearPermissionRequests(fallbackStreamId);
         clearPaneStreamingState();
         if (targetPaneId) notifyPaneUpdate(targetPaneId);
         return;
@@ -1604,6 +1620,7 @@ export const handleInterruptStream = async (
         if (Object.keys(streamToPaneRef.current).length === 0) {
             setIsStreaming(false);
         }
+        clearPermissionRequests(anyStreamId);
         clearPaneStreamingState();
         if (targetPaneId) notifyPaneUpdate(targetPaneId);
         return;
@@ -1644,6 +1661,7 @@ export const handleInterruptStream = async (
         setIsStreaming(false);
     }
 
+    clearPermissionRequests(streamIdToInterrupt);
     clearPaneStreamingState();
     if (targetPaneId) notifyPaneUpdate(targetPaneId);
 

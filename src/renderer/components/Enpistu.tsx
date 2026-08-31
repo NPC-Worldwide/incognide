@@ -465,22 +465,29 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         handleLabelConversation, handleSaveConversationLabel, handleCloseConversationLabelingModal,
     } = useMemoryAndLabeling({ currentPath });
 
-    // Queue of pending tool-permission requests from the npcpy server gate.
-    // The agent stream blocks server-side until each gets a decision.
-    const [permissionRequests, setPermissionRequests] = useState<any[]>([]);
+    const addPermissionRequest = useCallback((permissionPayload: any) => {
+        const paneData = contentDataRef.current[permissionPayload.paneId];
+        if (!paneData) return;
+        const list = paneData.permissionRequests || (paneData.permissionRequests = []);
+        if (list.some((r: any) => r.request_id === permissionPayload.request_id)) return;
+        list.push(permissionPayload);
+        paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: permissionPayload.paneId } }));
+    }, [paneUpdateEmitter]);
 
-    const handlePermissionDecision = async (request: any, decision: string) => {
-        setPermissionRequests((prev: any[]) => prev.filter((r: any) => r.request_id !== request.request_id));
-        try {
-            await (window as any).api.respondToPermission({
-                request_id: request.request_id,
-                decision
-            });
-        } catch (err: any) {
+    const handlePanePermissionDecision = useCallback((paneId: string, request: any, decision: string) => {
+        const paneData = contentDataRef.current[paneId];
+        if (paneData?.permissionRequests) {
+            paneData.permissionRequests = paneData.permissionRequests.filter((r: any) => r.request_id !== request.request_id);
+        }
+        paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
+        (window as any).api.respondToPermission({
+            request_id: request.request_id,
+            decision
+        }).catch((err: any) => {
             console.error('[PERMISSION] Failed to send decision:', err);
             setError(err.message);
-        }
-    };
+        });
+    }, [paneUpdateEmitter]);
 
     const [websiteHistory, setWebsiteHistory] = useState([]);
     const [commonSites, setCommonSites] = useState([]);
@@ -742,6 +749,76 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
             paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
         }
     }, [paneUpdateEmitter]);
+
+    const cyclePanes = useCallback((direction: number) => {
+        const paneIds = collectPaneIds(rootLayoutNodeRef.current).filter(id => contentDataRef.current[id]);
+        const slots: { paneId: string; tabIndex: number }[] = [];
+        for (const paneId of paneIds) {
+            const pd = contentDataRef.current[paneId];
+            const tabs = pd?.tabs;
+            if (tabs && tabs.length > 0) {
+                for (let i = 0; i < tabs.length; i++) slots.push({ paneId, tabIndex: i });
+            } else {
+                slots.push({ paneId, tabIndex: 0 });
+            }
+        }
+        if (slots.length <= 1) return;
+        const activePane = contentDataRef.current[activeContentPaneId];
+        const currentTabIndex = activePane?.activeTabIndex || 0;
+        const currentIdx = slots.findIndex(s => s.paneId === activeContentPaneId && s.tabIndex === currentTabIndex);
+        let nextIdx: number;
+        if (currentIdx >= 0) {
+            nextIdx = (currentIdx + direction) % slots.length;
+            if (nextIdx < 0) nextIdx += slots.length;
+        } else {
+            nextIdx = direction > 0 ? 0 : slots.length - 1;
+        }
+        const next = slots[nextIdx];
+        const nextPane = contentDataRef.current[next.paneId];
+        if (!nextPane) return;
+
+        const saveCurrentTabState = () => {
+            if (!activeContentPaneId || !activePane || !activePane.tabs) return;
+            const currentTab = activePane.tabs[currentTabIndex];
+            if (!currentTab) return;
+            if (activePane.contentType === 'browser') {
+                if (activePane.browserUrl) currentTab.browserUrl = activePane.browserUrl;
+                if (activePane.browserTitle) currentTab.browserTitle = activePane.browserTitle;
+            }
+            if (activePane.contentType === 'chat' || activePane.contentType === 'agent') {
+                currentTab.chatMessages = activePane.chatMessages;
+                currentTab.executionMode = activePane.executionMode;
+                currentTab.selectedJinx = activePane.selectedJinx;
+                currentTab.chatStats = activePane.chatStats;
+                currentTab.npc = activePane.npc;
+                currentTab.model = activePane.model;
+            }
+        };
+        saveCurrentTabState();
+
+        setActiveContentPaneId(next.paneId);
+        if (nextPane.tabs && nextPane.tabs.length > 0) {
+            nextPane.activeTabIndex = next.tabIndex;
+            const tab = nextPane.tabs[next.tabIndex];
+            if (tab) {
+                nextPane.contentType = tab.contentType;
+                nextPane.contentId = tab.contentId;
+                if (tab.contentType === 'browser') {
+                    nextPane.browserUrl = tab.browserUrl || 'about:blank';
+                    nextPane.browserTitle = tab.browserTitle || 'Browser';
+                }
+                if (tab.contentType === 'chat' || tab.contentType === 'agent') {
+                    nextPane.chatMessages = tab.chatMessages;
+                    nextPane.executionMode = tab.executionMode;
+                    nextPane.selectedJinx = tab.selectedJinx;
+                    nextPane.chatStats = tab.chatStats;
+                    nextPane.npc = tab.npc;
+                    nextPane.model = tab.model;
+                }
+            }
+        }
+        notifyAllPanes();
+    }, [activeContentPaneId, setActiveContentPaneId, notifyAllPanes]);
 
     // Re-attach to a backend generation stream that is still running for this conversation
     // after the renderer reloaded or the pane was closed/reopened. The assistant message is
@@ -1460,6 +1537,19 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
     }, []);
 
 
+    useEffect(() => {
+        const api = window as any;
+        const cleanups: (() => void)[] = [];
+        if (api.api?.onCyclePaneForward) {
+            cleanups.push(api.api.onCyclePaneForward(() => cyclePanes(1)));
+        }
+        if (api.api?.onCyclePaneBackward) {
+            cleanups.push(api.api.onCyclePaneBackward(() => cyclePanes(-1)));
+        }
+        return () => cleanups.forEach(cleanup => cleanup?.());
+    }, [cyclePanes]);
+
+
     const openFileDiffPane = (filePath: string, status: string) => {
         const fullPath = filePath.startsWith('/') ? filePath : `${currentPath}/${filePath}`;
         createAndAddPaneNodeToLayout({
@@ -2080,6 +2170,13 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
                     if (tabs && tabs.length > 1) {
 
                         const activeTabIndex = paneData.activeTabIndex || 0;
+                        const closingTab = tabs[activeTabIndex];
+                        if (closingTab?.contentType === 'browser') {
+                            if (paneData.browserUrl) closingTab.browserUrl = paneData.browserUrl;
+                            if (paneData.browserTitle) closingTab.browserTitle = paneData.browserTitle;
+                        }
+                        delete contentDataRef.current[`${activeContentPaneId}_${closingTab?.id}`];
+
                         const newTabs = [...tabs];
                         newTabs.splice(activeTabIndex, 1);
                         paneData.tabs = newTabs;
@@ -2090,6 +2187,10 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
                         if (newActiveTab) {
                             paneData.contentType = newActiveTab.contentType;
                             paneData.contentId = newActiveTab.contentId;
+                            if (newActiveTab.contentType === 'browser') {
+                                paneData.browserUrl = newActiveTab.browserUrl || 'about:blank';
+                                paneData.browserTitle = newActiveTab.browserTitle || 'Browser';
+                            }
                         }
 
                         notifyAllPanes();
@@ -2103,6 +2204,8 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
                 }
                 return;
             }
+
+
 
 
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'r' || e.key === 'R')) {
@@ -3107,9 +3210,16 @@ const renderChatView = useCallback(({ nodeId }) => {
                 />
                 );
             })}
+            {paneData.permissionRequests?.length > 0 && (
+                <PermissionModal
+                    request={paneData.permissionRequests[0]}
+                    pendingCount={paneData.permissionRequests.length}
+                    onDecision={(request, decision) => handlePanePermissionDecision(nodeId, request, decision)}
+                />
+            )}
         </div>
     );
-}, [selectedMessages, messageSelectionMode, searchTerm, handleLabelMessage, messageLabels, handleResendMessage, handleBroadcast, handleExpandBranches, handleSwitchRun, activeRuns, handleCreateBranch, findNodePath, performSplit, availableModels, availableNPCs, expandedBranchPath, rootLayoutNode]);
+}, [selectedMessages, messageSelectionMode, searchTerm, handleLabelMessage, messageLabels, handleResendMessage, handleBroadcast, handleExpandBranches, handleSwitchRun, activeRuns, handleCreateBranch, findNodePath, performSplit, availableModels, availableNPCs, expandedBranchPath, rootLayoutNode, handlePanePermissionDecision]);
 
 
 const renderBranchComparisonPane = useCallback(({ nodeId }) => {
@@ -5265,8 +5375,11 @@ const handleBrowserDialogNavigate = (url) => {
             (pid: string) => paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: pid } })),
             currentPath
         );
-        // If the interrupted stream was waiting on a permission decision, drop that request.
-        setPermissionRequests((prev: any[]) => prev.filter((req: any) => req.paneId !== targetPaneId));
+        const paneData = contentDataRef.current[targetPaneId];
+        if (paneData?.permissionRequests) {
+            paneData.permissionRequests = [];
+            paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: targetPaneId } }));
+        }
     };
 
     const handleMessageContextMenu = (e: React.MouseEvent, message: any) => {
@@ -6040,13 +6153,7 @@ const handleBrowserDialogNavigate = (url) => {
         refreshConversations,
         studioContext,
         currentPath,
-        (permissionPayload: any) => {
-            setPermissionRequests((prev: any[]) =>
-                prev.some((r: any) => r.request_id === permissionPayload.request_id)
-                    ? prev
-                    : [...prev, permissionPayload]
-            );
-        }
+        addPermissionRequest
     );
 
 
@@ -6728,13 +6835,6 @@ const handleBrowserDialogNavigate = (url) => {
                 </div>
 
             </div>
-        )}
-        {permissionRequests.length > 0 && (
-            <PermissionModal
-                request={permissionRequests[0]}
-                pendingCount={permissionRequests.length}
-                onDecision={handlePermissionDecision}
-            />
         )}
         {memoryApprovalModal.isOpen && (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">

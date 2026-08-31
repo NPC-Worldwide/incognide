@@ -1545,7 +1545,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                     const InputComponent = tabContentType === 'agent' ? AgentInput : ChatInput;
                     return (
                         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                            <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto">
+                            <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto relative">
                                 {paneRenderers.chat?.({ nodeId: node.id })}
                             </div>
                             {chatInputProps && (

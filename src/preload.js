@@ -309,6 +309,14 @@ readPdfText: (filePath) =>
         ipcRenderer.on('menu-close-tab', callback);
         return () => ipcRenderer.removeListener('menu-close-tab', callback);
     },
+    onCyclePaneForward: (callback) => {
+        ipcRenderer.on('menu-cycle-pane-forward', callback);
+        return () => ipcRenderer.removeListener('menu-cycle-pane-forward', callback);
+    },
+    onCyclePaneBackward: (callback) => {
+        ipcRenderer.on('menu-cycle-pane-backward', callback);
+        return () => ipcRenderer.removeListener('menu-cycle-pane-backward', callback);
+    },
     onMenuOpenSettings: (callback) => {
         ipcRenderer.on('menu-open-settings', callback);
         return () => ipcRenderer.removeListener('menu-open-settings', callback);

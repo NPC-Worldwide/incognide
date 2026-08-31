@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 
 export interface PermissionRequest {
     request_id: string;
@@ -24,8 +24,24 @@ const prettyArgs = (preview?: string): string => {
 };
 
 export function PermissionModal({ request, pendingCount, onDecision }: PermissionModalProps) {
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                onDecision(request, 'Yes');
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                onDecision(request, 'No');
+            }
+        };
+        window.addEventListener('keydown', handler, true);
+        return () => window.removeEventListener('keydown', handler, true);
+    }, [request, onDecision]);
+
     return (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[70] p-4">
+        <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
             <div className="theme-bg-secondary p-6 theme-border border rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] flex flex-col">
                 <h3 className="text-lg font-medium mb-1 theme-text-primary">Permission Request</h3>
                 <p className="text-sm theme-text-muted mb-4">
