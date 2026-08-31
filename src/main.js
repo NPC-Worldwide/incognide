@@ -980,22 +980,55 @@ let _spawnArgs = [];
 let _backendEnv = null;
 let _backendStartupError = null;
 
-function killBackendProcess() {
-  if (backendProcess) {
-    log('Killing backend process');
+function waitForProcessExit(proc, timeoutMs) {
+  return new Promise((resolve) => {
+    if (!proc || proc.exitCode !== null || proc.killed) {
+      resolve(true);
+      return;
+    }
+    const onClose = () => resolve(true);
+    proc.once('close', onClose);
+    const timer = setTimeout(() => {
+      proc.removeListener('close', onClose);
+      resolve(false);
+    }, timeoutMs);
+  });
+}
+
+async function killBackendProcess() {
+  if (!backendProcess) return;
+  const proc = backendProcess;
+  log(`Killing backend process (pid ${proc.pid})`);
+  if (process.platform === 'win32') {
+    try {
+      execSync(`taskkill /T /PID ${proc.pid}`, { stdio: 'ignore', timeout: 3000 });
+    } catch (e) {
+      try { proc.kill('SIGTERM'); } catch (e2) {}
+    }
+  } else {
+    try { process.kill(-proc.pid, 'SIGTERM'); } catch (e) {
+      try { proc.kill('SIGTERM'); } catch (e2) {}
+    }
+  }
+
+  const exited = await waitForProcessExit(proc, 3000);
+  if (!exited) {
+    log('Backend did not exit after SIGTERM, escalating to SIGKILL');
     if (process.platform === 'win32') {
       try {
-        execSync(`taskkill /F /T /PID ${backendProcess.pid}`, { stdio: 'ignore' });
+        execSync(`taskkill /F /T /PID ${proc.pid}`, { stdio: 'ignore' });
       } catch (e) {
-        try { backendProcess.kill('SIGKILL'); } catch (e2) {}
+        try { proc.kill('SIGKILL'); } catch (e2) {}
       }
     } else {
-      try { process.kill(-backendProcess.pid, 'SIGTERM'); } catch (e) {
-        try { backendProcess.kill('SIGTERM'); } catch (e2) {}
+      try { process.kill(-proc.pid, 'SIGKILL'); } catch (e) {
+        try { proc.kill('SIGKILL'); } catch (e2) {}
       }
     }
-    backendProcess = null;
+    await waitForProcessExit(proc, 2000);
   }
+
+  backendProcess = null;
 }
 
 function setBackendProcess(proc) {
@@ -1957,7 +1990,7 @@ window.__addLog = function(msg) {
         exitCode,
         timestamp: new Date().toISOString(),
       };
-      killBackendProcess();
+      await killBackendProcess();
     } else {
       _backendStartupError = null;
     }
@@ -3483,7 +3516,7 @@ ipcMain.handle('backend:installAndStart', async (event, { pythonPath, npcpyExtra
 
     sendProgress('Installation complete. Starting backend...');
 
-    killBackendProcess();
+    await killBackendProcess();
     await new Promise(resolve => setTimeout(resolve, 500));
 
     _backendEnv = {
@@ -3529,19 +3562,50 @@ ipcMain.handle('backend:installAndStart', async (event, { pythonPath, npcpyExtra
 ipcMain.handle('backend:restart', async () => {
   try {
     log('Backend restart requested by renderer');
-    killBackendProcess();
 
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Confirm the old process is gone before spawning, so the port is actually
+    // free and waitForServer can't false-positive against the dying server.
+    await killBackendProcess();
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // If spawn config is missing (e.g. dev mode using a manually-started server),
+    // re-derive it from the persisted python path + the standard env template.
     if (!_backendPath || !_backendEnv) {
-      return { success: false, error: 'Backend spawn config not available' };
+      const savedPython = getBackendPythonPath();
+      if (!savedPython) {
+        return { success: false, error: 'Backend spawn config not available and no saved python path' };
+      }
+      _backendPath = savedPython;
+      _backendEnv = {
+        ...process.env,
+        INCOGNIDE_PORT: String(BACKEND_PORT),
+        INCOGNIDE_FRONTEND_PORT: String(FRONTEND_PORT),
+        INCOGNIDE_KG_REGISTRY: path.join(INCOGNIDE_HOME, 'kg_registry.yaml'),
+        FLASK_DEBUG: '1',
+        PYTHONUNBUFFERED: '1',
+        PYTHONIOENCODING: 'utf-8',
+        HOME: os.homedir(),
+        INCOGNIDE_BASE: path.join(os.homedir(), '.incognide'),
+        INCOGNIDE_HOME: INCOGNIDE_HOME,
+        INCOGNIDE_DATA_DIR: path.join(INCOGNIDE_HOME, 'data'),
+      };
+      _spawnArgs = ['-m', 'npcpy.serve'];
     }
+
     backendProcess = spawnBackendProcess(_backendPath, _spawnArgs, 'restart', _backendEnv);
-    const ready = await waitForServer(30, 1000);
-    if (ready) {
+
+    // Pass the new process to waitForServer so it can detect an early exit.
+    const ready = await waitForServer(45, 1000, backendProcess);
+
+    // Ensure health came from the new process, not the old still-dying one.
+    if (ready && backendProcess && backendProcess.exitCode === null) {
       log('Backend restarted successfully');
       return { success: true };
     } else {
       log('Backend restart failed — server did not become ready');
+      if (backendProcess && backendProcess.exitCode !== null) {
+        log(`New backend process exited with code ${backendProcess.exitCode}`);
+      }
       return { success: false, error: 'Server did not start in time' };
     }
   } catch (err) {
@@ -3553,7 +3617,10 @@ ipcMain.handle('backend:restart', async () => {
 app.on('before-quit', () => {
   if (backendProcess) {
     log('Killing backend process (before-quit)');
-    killBackendProcess();
+    // Synchronous event: start the async kill and let the OS reap the child
+    // after the app exits. This is still better than the old fire-and-forget
+    // immediate nulling because we actually send the signal and listen for exit.
+    killBackendProcess().catch(err => log('before-quit kill error:', err));
   }
 });
 

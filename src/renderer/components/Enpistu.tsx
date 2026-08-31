@@ -121,6 +121,7 @@ import { getFileName,
     goUpDirectory,
     usePaneAwareStreamListeners,
     useTrackLastActiveChatPane,
+    handleInterruptStream as interruptStreamShared,
     handleRenameFile,
     getThumbnailIcon,
     createToggleMessageSelectionMode,
@@ -147,6 +148,7 @@ import ConversationLabeling from './ConversationLabeling';
 
 import DataLabeler from './DataLabeler';
 import ChatInput from './ChatInput';
+import { PermissionModal } from './PermissionModal';
 import { StudioContext, executeStudioAction } from '../studioActions';
 
 
@@ -462,6 +464,23 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         handleLabelMessage, handleSaveLabel, handleCloseLabelingModal,
         handleLabelConversation, handleSaveConversationLabel, handleCloseConversationLabelingModal,
     } = useMemoryAndLabeling({ currentPath });
+
+    // Queue of pending tool-permission requests from the npcpy server gate.
+    // The agent stream blocks server-side until each gets a decision.
+    const [permissionRequests, setPermissionRequests] = useState<any[]>([]);
+
+    const handlePermissionDecision = async (request: any, decision: string) => {
+        setPermissionRequests((prev: any[]) => prev.filter((r: any) => r.request_id !== request.request_id));
+        try {
+            await (window as any).api.respondToPermission({
+                request_id: request.request_id,
+                decision
+            });
+        } catch (err: any) {
+            console.error('[PERMISSION] Failed to send decision:', err);
+            setError(err.message);
+        }
+    };
 
     const [websiteHistory, setWebsiteHistory] = useState([]);
     const [commonSites, setCommonSites] = useState([]);
@@ -5110,6 +5129,19 @@ const handleBrowserDialogNavigate = (url) => {
                 };
                 window.api.saveMessage(userSavePayload).catch((err: any) => console.error('[SUBMIT] Failed to save user message:', err));
 
+                // Log this user chat message as an activity event.
+                trackActivity('chat_message', {
+                    conversationId,
+                    paneId: targetPaneId,
+                    paneType: paneData.contentType,
+                    npc: useNpc,
+                    model: useModel,
+                    provider: useProvider,
+                    length: (userMessage.content || '').length,
+                    isJinx: isJinxMode,
+                    jinxName: jinxName || undefined,
+                });
+
                 const npcName = useNpc?.replace(/^(project:|global:)/, '') || 'agent';
 
                 if (isJinxMode) {
@@ -5176,49 +5208,20 @@ const handleBrowserDialogNavigate = (url) => {
         }
     };
 
+    // Delegates to the shared implementation in utils.tsx, which resolves pending
+    // tool calls, persists the interrupted message, and interrupts the correct stream.
     const handleInterruptStream = async (paneId?: string) => {
         const targetPaneId = paneId || activeContentPaneId;
-        const targetPaneData = contentDataRef.current[targetPaneId];
-        if (!targetPaneData || !targetPaneData.chatMessages) {
-            console.warn("Interrupt clicked but no target chat pane found.");
-            return;
-        }
-
-        const streamingMessage = targetPaneData.chatMessages.allMessages.find((m: any) => m.isStreaming);
-        if (!streamingMessage || !streamingMessage.streamId) {
-            console.warn("Interrupt clicked, but no streaming message found in target pane.");
-
-            const anyStreamId = Object.keys(streamToPaneRef.current)[0];
-            if (anyStreamId) {
-                await window.api.interruptStream(anyStreamId);
-                console.log(`Fallback interrupt sent for stream: ${anyStreamId}`);
-            }
-            setIsStreaming(false);
-            return;
-        }
-
-        const streamIdToInterrupt = streamingMessage.streamId;
-        console.log(`[REACT] handleInterruptStream: Attempting to interrupt stream: ${streamIdToInterrupt}`);
-
-        streamingMessage.content = (streamingMessage.content || '') + `\n\n[Stream Interrupted by User]`;
-        streamingMessage.isStreaming = false;
-        streamingMessage.streamId = null;
-
-        delete streamToPaneRef.current[streamIdToInterrupt];
-        if (Object.keys(streamToPaneRef.current).length === 0) {
-            setIsStreaming(false);
-        }
-
-        paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: targetPaneId } }));
-
-        try {
-            await window.api.interruptStream(streamIdToInterrupt);
-            console.log(`[REACT] handleInterruptStream: API call to interrupt stream ${streamIdToInterrupt} successful.`);
-        } catch (error) {
-            console.error(`[REACT] handleInterruptStream: API call to interrupt stream ${streamIdToInterrupt} failed:`, error);
-            streamingMessage.content += " [Interruption API call failed]";
-            paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: targetPaneId } }));
-        }
+        await interruptStreamShared(
+            targetPaneId,
+            contentDataRef,
+            streamToPaneRef,
+            setIsStreaming,
+            (pid: string) => paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: pid } })),
+            currentPath
+        );
+        // If the interrupted stream was waiting on a permission decision, drop that request.
+        setPermissionRequests((prev: any[]) => prev.filter((req: any) => req.paneId !== targetPaneId));
     };
 
     const handleMessageContextMenu = (e: React.MouseEvent, message: any) => {
@@ -5991,7 +5994,14 @@ const handleBrowserDialogNavigate = (url) => {
         getConversationStats,
         refreshConversations,
         studioContext,
-        currentPath
+        currentPath,
+        (permissionPayload: any) => {
+            setPermissionRequests((prev: any[]) =>
+                prev.some((r: any) => r.request_id === permissionPayload.request_id)
+                    ? prev
+                    : [...prev, permissionPayload]
+            );
+        }
     );
 
 
@@ -6673,6 +6683,13 @@ const handleBrowserDialogNavigate = (url) => {
                 </div>
 
             </div>
+        )}
+        {permissionRequests.length > 0 && (
+            <PermissionModal
+                request={permissionRequests[0]}
+                pendingCount={permissionRequests.length}
+                onDecision={handlePermissionDecision}
+            />
         )}
         {memoryApprovalModal.isOpen && (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">

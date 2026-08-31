@@ -673,6 +673,7 @@ function register(ctx) {
   ipcMain.handle('interruptStream', async (event, streamIdToInterrupt) => {
     log(`[Main Process] Received request to interrupt stream: ${streamIdToInterrupt}`);
 
+    let backendAck = false;
     try {
       const response = await fetch(`${BACKEND_URL}/api/interrupt`, {
         method: 'POST',
@@ -684,25 +685,56 @@ function register(ctx) {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Backend failed to acknowledge interruption: ${errorText}`);
+        log(`[Main Process] Backend failed to acknowledge interruption: ${errorText}`);
+      } else {
+        const result = await response.json();
+        log(`[Main Process] Backend response to interruption:`, result.message);
+        backendAck = true;
       }
-
-      const result = await response.json();
-      log(`[Main Process] Backend response to interruption:`, result.message);
-
+    } catch (error) {
+      console.error('[Main Process] Error sending interrupt request to backend:', error);
+    } finally {
+      // Local teardown must ALWAYS happen, even if the backend never acked —
+      // otherwise the stream keeps pouring chunks into a renderer that already
+      // forgot about it, and no completion event ever arrives.
       if (activeStreams.has(streamIdToInterrupt)) {
           const entry = activeStreams.get(streamIdToInterrupt);
           if (entry && entry.stream && typeof entry.stream.destroy === 'function') {
-              entry.stream.destroy();
+              try { entry.stream.destroy(); } catch (e) {}
+          }
+          if (entry && entry.sender && !entry.sender.isDestroyed()) {
+              try {
+                  entry.sender.send('stream-error', {
+                      streamId: streamIdToInterrupt,
+                      error: 'Stream interrupted by user'
+                  });
+              } catch (e) {}
           }
           if (entry && entry.conversationId) activeConversations.delete(entry.conversationId);
           activeStreams.delete(streamIdToInterrupt);
       }
+    }
 
+    return { success: true, backendAck };
+  });
+
+  ipcMain.handle('permission:respond', async (event, { request_id, decision }) => {
+    log(`[Main Process] Permission decision for ${request_id}: ${decision}`);
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/permission_response`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ request_id, decision }),
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        return { success: false, error: errorText };
+      }
       return { success: true };
-
     } catch (error) {
-      console.error('[Main Process] Error sending interrupt request to backend:', error);
+      console.error('[Main Process] Error sending permission decision:', error);
       return { success: false, error: error.message };
     }
   });

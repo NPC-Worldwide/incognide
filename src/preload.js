@@ -596,6 +596,7 @@ onTerminalClosed: (callback) => {
             throw error;
         }
     },
+    respondToPermission: (payload) => ipcRenderer.invoke('permission:respond', payload),
     attachActiveStream: (conversationId) => ipcRenderer.invoke('attachActiveStream', conversationId),
     resumeStreamDrain: (streamId) => ipcRenderer.invoke('resumeStreamDrain', streamId),
 

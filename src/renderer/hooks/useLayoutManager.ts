@@ -249,7 +249,11 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
                     const formatted = (msgs && Array.isArray(msgs))
                         ? msgs.map((m: any) => {
                             const msg = { ...m, id: m.message_id || m.id || generateId() };
-                            if (msg.role === 'assistant' && msg.toolCalls && Array.isArray(msg.toolCalls)) {
+                            // The main process (getConversationMessages) already builds
+                            // correctly-normalized contentParts — trust them. Only rebuild
+                            // when missing, and from the nested function shape.
+                            const hasUsableParts = Array.isArray(msg.contentParts) && msg.contentParts.length > 0;
+                            if (!hasUsableParts && msg.role === 'assistant' && msg.toolCalls && Array.isArray(msg.toolCalls)) {
                                 const contentParts: any[] = [];
                                 if (msg.reasoningContent) {
                                     contentParts.push({ type: 'reasoning', content: msg.reasoningContent });
@@ -262,9 +266,12 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
                                         type: 'tool_call',
                                         call: {
                                             id: tc.id,
-                                            function_name: tc.function_name,
-                                            arguments: tc.arguments,
-                                            status: 'complete'
+                                            function: tc.function ?? {
+                                                name: tc.function_name ?? tc.name ?? 'unknown',
+                                                arguments: tc.arguments ?? '{}'
+                                            },
+                                            status: tc.status ?? 'complete',
+                                            result_preview: tc.result_preview
                                         }
                                     });
                                 });

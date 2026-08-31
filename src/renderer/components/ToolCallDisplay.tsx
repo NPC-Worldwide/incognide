@@ -7,6 +7,8 @@ interface ToolCallProps {
     id?: string;
     function?: { name?: string; arguments?: string };
     function_name?: string;
+    name?: string;
+    call?: { function?: { name?: string; arguments?: string }; status?: string; result_preview?: string };
     arguments?: string;
     status?: string;
     result_preview?: string;
@@ -126,7 +128,7 @@ export function ToolCallDisplay({ tool }: ToolCallProps) {
   const contentDataRef = useStudioContentData();
   const [expanded, setExpanded] = useState(false);
 
-  const funcName = tool.function?.name || tool.function_name || 'unknown';
+  const funcName = tool.function?.name || tool.function_name || tool.call?.function?.name || tool.name || 'unknown';
   const isStudioAction = funcName in ACTION_ICONS || funcName.startsWith('studio.');
   const displayName = funcName.replace(/^studio\./, '');
 

@@ -459,10 +459,10 @@ async function navigate_pane(
   return { success: false, error: `Navigate not supported for pane type: ${contentType}` };
 }
 
-registerAction('read_pane', read_pane);
-registerAction('write_file', write_file);
-registerAction('write_pane', write_pane);
-registerAction('get_selection', get_selection);
-registerAction('run_terminal', run_terminal);
-registerAction('interact', interact);
-registerAction('navigate_pane', navigate_pane);
+registerAction('read_pane', read_pane, { description: 'Read the content of the active pane', paneTypes: ['editor', 'csv', 'docx', 'pptx', 'latex', 'notebook', 'exp', 'diff', 'chat', 'agent'] });
+registerAction('write_file', write_file, { description: 'Write content to a file on disk', paneTypes: ['editor', 'csv', 'docx', 'pptx', 'latex', 'notebook'] });
+registerAction('write_pane', write_pane, { description: 'Write content into the active pane', paneTypes: ['editor', 'csv', 'docx', 'pptx', 'latex', 'notebook', 'exp'] });
+registerAction('get_selection', get_selection, { description: 'Get the currently selected text in the active pane', paneTypes: ['editor', 'csv', 'docx', 'pptx', 'latex', 'notebook'] });
+registerAction('run_terminal', run_terminal, { description: 'Run a command in the active terminal pane', paneTypes: ['terminal'] });
+registerAction('interact', interact, { description: 'Interact with the active pane using a generic action', paneTypes: [] });
+registerAction('navigate_pane', navigate_pane, { description: 'Navigate within the active pane', paneTypes: ['pdf', 'csv', 'docx', 'pptx'] });

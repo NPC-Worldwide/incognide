@@ -19,7 +19,8 @@ export type ActivityType =
     | 'click'
     | 'keyboard_shortcut'
     | 'text_input'
-    | 'pane_focus';
+    | 'pane_focus'
+    | 'agent_action';
 
 export interface UserActivity {
     type: ActivityType;
