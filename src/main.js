@@ -2870,7 +2870,7 @@ applyAppMenu();
           "style-src-elem 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://js.stripe.com https://fonts.googleapis.com https://www.google.com https://www.gstatic.com https://accounts.google.com https://accounts.youtube.com; " +
           "img-src 'self' data: file: media: blob: http: https:; " +
           "font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com; " +
-          `connect-src 'self' file: media: http://localhost:${FRONTEND_PORT} http://127.0.0.1:${BACKEND_PORT} ${BACKEND_URL} blob: ws: wss: https://* http://*; ` +
+          `connect-src 'self' file: media: http://localhost:${FRONTEND_PORT} http://127.0.0.1:${BACKEND_PORT} ${BACKEND_URL} ${IS_DEV_MODE ? 'http://127.0.0.1:8080 ' : ''}blob: ws: wss: https://* http://*; ` +
           "frame-src 'self' file: data: blob: media: chrome-extension: https://js.stripe.com https://m.stripe.network https://checkout.stripe.com https://*.clerk.accounts.dev https://clerk.app.incognide.com https://accounts.youtube.com https://accounts.google.com https://www.google.com https://www.gstatic.com; " +
           "object-src 'self' file: data: blob: media: chrome-extension:; " +
           "worker-src 'self' blob: data:; " +
