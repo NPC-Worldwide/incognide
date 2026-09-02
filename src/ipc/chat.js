@@ -209,6 +209,35 @@ function register(ctx) {
   const STREAM_DISCONNECT_TTL_MS = 10 * 60 * 1000; // orphan a disconnected stream's tail after 10 min
   const STREAM_BUFFER_CAP = 20000; // cap buffered chunks while no live sender is attached
 
+  const senderReloadCleanups = new WeakMap();
+
+  function cleanupStreamsForSender(sender) {
+    for (const [streamId, entry] of activeStreams.entries()) {
+      const entrySender = entry.sender || entry.eventSender;
+      if (entrySender !== sender) continue;
+      try {
+        if (entry.stream && typeof entry.stream.destroy === 'function') {
+          entry.stream.destroy();
+        }
+      } catch {}
+      activeStreams.delete(streamId);
+      if (entry.conversationId) activeConversations.delete(entry.conversationId);
+      log(`[Main Process] Cleaned up stream ${streamId} because renderer reloaded or was destroyed.`);
+    }
+  }
+
+  function ensureSenderCleanup(sender) {
+    if (!sender) return;
+    if (senderReloadCleanups.has(sender)) {
+      sender.removeListener('did-start-loading', senderReloadCleanups.get(sender));
+      sender.removeListener('destroyed', senderReloadCleanups.get(sender));
+    }
+    const cleanup = () => cleanupStreamsForSender(sender);
+    senderReloadCleanups.set(sender, cleanup);
+    sender.on('did-start-loading', cleanup);
+    sender.on('destroyed', cleanup);
+  }
+
   // Reclaim orphaned streams: ones whose renderer died and were never re-attached.
   // Pre-disconnect content is already in the DB; the post-disconnect tail is lost here.
   setInterval(() => {
@@ -670,9 +699,12 @@ function register(ctx) {
     }
   });
 
+  const streamAbortControllers = new Map();
+
   ipcMain.handle('interruptStream', async (event, streamIdToInterrupt) => {
     log(`[Main Process] Received request to interrupt stream: ${streamIdToInterrupt}`);
 
+    let backendAck = false;
     try {
       const response = await fetch(`${BACKEND_URL}/api/interrupt`, {
         method: 'POST',
@@ -684,25 +716,55 @@ function register(ctx) {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Backend failed to acknowledge interruption: ${errorText}`);
+        log(`[Main Process] Backend failed to acknowledge interruption: ${errorText}`);
+      } else {
+        const result = await response.json();
+        log(`[Main Process] Backend response to interruption:`, result.message);
+        backendAck = true;
       }
-
-      const result = await response.json();
-      log(`[Main Process] Backend response to interruption:`, result.message);
-
+    } catch (error) {
+      console.error('[Main Process] Error sending interrupt request to backend:', error);
+    } finally {
+      const controller = streamAbortControllers.get(streamIdToInterrupt);
+      if (controller) {
+        try { controller.abort(); } catch {}
+        streamAbortControllers.delete(streamIdToInterrupt);
+      }
       if (activeStreams.has(streamIdToInterrupt)) {
           const entry = activeStreams.get(streamIdToInterrupt);
           if (entry && entry.stream && typeof entry.stream.destroy === 'function') {
-              entry.stream.destroy();
+              try { entry.stream.destroy(); } catch (e) {}
+          }
+          if (entry && entry.sender && !entry.sender.isDestroyed()) {
+              try {
+                  entry.sender.send('stream-complete', { streamId: streamIdToInterrupt });
+              } catch (e) {}
           }
           if (entry && entry.conversationId) activeConversations.delete(entry.conversationId);
           activeStreams.delete(streamIdToInterrupt);
       }
+    }
 
+    return { success: true, backendAck };
+  });
+
+  ipcMain.handle('permission:respond', async (event, { request_id, decision }) => {
+    log(`[Main Process] Permission decision for ${request_id}: ${decision}`);
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/permission_response`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ request_id, decision }),
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        return { success: false, error: errorText };
+      }
       return { success: true };
-
     } catch (error) {
-      console.error('[Main Process] Error sending interrupt request to backend:', error);
+      console.error('[Main Process] Error sending permission decision:', error);
       return { success: false, error: error.message };
     }
   });
@@ -751,7 +813,6 @@ function register(ctx) {
   });
 
   ipcMain.handle('executeCommandStream', async (event, data) => {
-
     const currentStreamId = data.streamId || generateId();
     log(`[Main Process] executeCommandStream: Starting stream with ID: ${currentStreamId}`);
 
@@ -903,142 +964,152 @@ function register(ctx) {
         payload.api_key = apiKeyOverride;
       }
 
-      const response = await fetch(`${BACKEND_URL}/api/stream`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      log(`[Main Process] Backend response status for streamId ${currentStreamId}: ${response.status}`);
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP error! Status: ${response.status}. Body: ${errorText}`);
-      }
-
-      const stream = response.body;
-      if (!stream) {
-        event.sender.send('stream-error', { streamId: currentStreamId, error: 'Backend returned no stream data.' });
-        return { error: 'Backend returned no stream data.', streamId: currentStreamId };
-      }
-
-      activeStreams.set(currentStreamId, {
-        stream,
-        sender: event.sender,
-        conversationId: data.conversationId || null,
-        assistantMessageId: data.assistantMessageId || null,
-        buffer: [],
-        pendingCompletion: null,
-        disconnectedAt: null,
-      });
-      if (data.conversationId) activeConversations.set(data.conversationId, currentStreamId);
-
-      (function(capturedStreamId) {
-        const removeEntry = () => {
-          const e = activeStreams.get(capturedStreamId);
-          if (e && e.conversationId) activeConversations.delete(e.conversationId);
-          activeStreams.delete(capturedStreamId);
-        };
-
-        const liveSender = () => {
-          const e = activeStreams.get(capturedStreamId);
-          return e && e.sender && !e.sender.isDestroyed() ? e.sender : null;
-        };
-
-        stream.on('data', (chunk) => {
-          const e = activeStreams.get(capturedStreamId);
-          if (!e) return;
-          const sender = e.sender && !e.sender.isDestroyed() ? e.sender : null;
-          if (!sender) {
-            // Renderer gone (reload / pane closed) but backend still generating.
-            // Buffer for re-attach instead of killing the backend pipe.
-            if (!e.disconnectedAt) e.disconnectedAt = Date.now();
-            e.buffer.push(chunk.toString());
-            if (e.buffer.length > STREAM_BUFFER_CAP) {
-              e.buffer.shift();
-              log(`[Main Process] Stream ${capturedStreamId} buffer capped at ${STREAM_BUFFER_CAP} (overflow dropping oldest).`);
-            }
-            return;
-          }
-          e.disconnectedAt = null;
-          sender.send('stream-data', {
-            streamId: capturedStreamId,
-            chunk: chunk.toString()
-          });
+      const controller = new AbortController();
+      streamAbortControllers.set(currentStreamId, controller);
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/stream`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
         });
 
-        let streamCompleteSent = false;
-        const sendStreamComplete = () => {
-          if (streamCompleteSent) return;
-          streamCompleteSent = true;
-          const sender = liveSender();
-          if (sender) {
-            sender.send('stream-complete', { streamId: capturedStreamId });
-            removeEntry();
-          } else {
-            // No live renderer: keep the entry so a later re-attach can deliver completion.
+        log(`[Main Process] Backend response status for streamId ${currentStreamId}: ${response.status}`);
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`HTTP error! Status: ${response.status}. Body: ${errorText}`);
+        }
+
+        const stream = response.body;
+        if (!stream) {
+          streamAbortControllers.delete(currentStreamId);
+          event.sender.send('stream-error', { streamId: currentStreamId, error: 'Backend returned no stream data.' });
+          return { error: 'Backend returned no stream data.', streamId: currentStreamId };
+        }
+
+        activeStreams.set(currentStreamId, {
+          stream,
+          sender: event.sender,
+          conversationId: data.conversationId || null,
+          assistantMessageId: data.assistantMessageId || null,
+          buffer: [],
+          pendingCompletion: null,
+          disconnectedAt: null,
+        });
+        ensureSenderCleanup(event.sender);
+        if (data.conversationId) activeConversations.set(data.conversationId, currentStreamId);
+
+        (function(capturedStreamId) {
+          const removeEntry = () => {
             const e = activeStreams.get(capturedStreamId);
-            if (e) e.pendingCompletion = { type: 'complete' };
-            log(`[Main Process] Stream ${capturedStreamId} ended while renderer disconnected; holding for re-attach.`);
-          }
-        };
+            if (e && e.conversationId) activeConversations.delete(e.conversationId);
+            activeStreams.delete(capturedStreamId);
+            streamAbortControllers.delete(capturedStreamId);
+          };
 
-        stream.on('end', () => {
-          log(`[Main Process] Stream ${capturedStreamId} ended from backend.`);
-          sendStreamComplete();
-        });
+          const liveSender = () => {
+            const e = activeStreams.get(capturedStreamId);
+            return e && e.sender && !e.sender.isDestroyed() ? e.sender : null;
+          };
 
-        stream.on('close', () => {
-          if (activeStreams.has(capturedStreamId)) {
-            log(`[Main Process] Stream ${capturedStreamId} closed without end.`);
-            sendStreamComplete();
-          }
-        });
-
-        stream.on('error', (err) => {
-          log(`[Main Process] Stream ${capturedStreamId} error:`, err.message);
-          const sender = liveSender();
-          if (sender) {
-            const categorized = categorizeBackendError(err);
-            sender.send('stream-error', {
+          stream.on('data', (chunk) => {
+            const e = activeStreams.get(capturedStreamId);
+            if (!e) return;
+            const sender = e.sender && !e.sender.isDestroyed() ? e.sender : null;
+            if (!sender) {
+              // Renderer gone (reload / pane closed) but backend still generating.
+              // Buffer for re-attach instead of killing the backend pipe.
+              if (!e.disconnectedAt) e.disconnectedAt = Date.now();
+              e.buffer.push(chunk.toString());
+              if (e.buffer.length > STREAM_BUFFER_CAP) {
+                e.buffer.shift();
+                log(`[Main Process] Stream ${capturedStreamId} buffer capped at ${STREAM_BUFFER_CAP} (overflow dropping oldest).`);
+              }
+              return;
+            }
+            e.disconnectedAt = null;
+            sender.send('stream-data', {
               streamId: capturedStreamId,
+              chunk: chunk.toString()
+            });
+          });
+
+          let streamCompleteSent = false;
+          const sendStreamComplete = () => {
+            if (streamCompleteSent) return;
+            streamCompleteSent = true;
+            const sender = liveSender();
+            if (sender) {
+              sender.send('stream-complete', { streamId: capturedStreamId });
+              removeEntry();
+            } else {
+              // No live renderer: keep the entry so a later re-attach can deliver completion.
+              const e = activeStreams.get(capturedStreamId);
+              if (e) e.pendingCompletion = { type: 'complete' };
+              log(`[Main Process] Stream ${capturedStreamId} ended while renderer disconnected; holding for re-attach.`);
+            }
+          };
+
+          stream.on('end', () => {
+            log(`[Main Process] Stream ${capturedStreamId} ended from backend.`);
+            sendStreamComplete();
+          });
+
+          stream.on('close', () => {
+            if (activeStreams.has(capturedStreamId)) {
+              log(`[Main Process] Stream ${capturedStreamId} closed without end.`);
+              sendStreamComplete();
+            }
+          });
+
+          stream.on('error', (err) => {
+            log(`[Main Process] Stream ${capturedStreamId} error:`, err.message);
+            const sender = liveSender();
+            if (sender) {
+              const categorized = categorizeBackendError(err);
+              sender.send('stream-error', {
+                streamId: capturedStreamId,
+                error: categorized.userMessage,
+                category: categorized.category,
+                suggestion: categorized.suggestion,
+                original: categorized.original,
+              });
+              removeEntry();
+            } else {
+              const e = activeStreams.get(capturedStreamId);
+              if (e) {
+                const categorized = categorizeBackendError(err);
+                e.pendingCompletion = {
+                  type: 'error',
+                  error: categorized.userMessage,
+                  category: categorized.category,
+                  suggestion: categorized.suggestion,
+                  original: categorized.original,
+                };
+              }
+              log(`[Main Process] Stream ${capturedStreamId} errored while renderer disconnected; holding for re-attach.`);
+            }
+          });
+        })(currentStreamId);
+
+        return { streamId: currentStreamId };
+      } catch (err) {
+        log(`[Main Process] Error setting up stream ${currentStreamId}:`, err.message);
+        streamAbortControllers.delete(currentStreamId);
+        const categorized = categorizeBackendError(err);
+        if (event.sender && !event.sender.isDestroyed()) {
+            event.sender.send('stream-error', {
+              streamId: currentStreamId,
               error: categorized.userMessage,
               category: categorized.category,
               suggestion: categorized.suggestion,
               original: categorized.original,
             });
-            removeEntry();
-          } else {
-            const e = activeStreams.get(capturedStreamId);
-            if (e) {
-              const categorized = categorizeBackendError(err);
-              e.pendingCompletion = {
-                type: 'error',
-                error: categorized.userMessage,
-                category: categorized.category,
-                suggestion: categorized.suggestion,
-                original: categorized.original,
-              };
-            }
-            log(`[Main Process] Stream ${capturedStreamId} errored while renderer disconnected; holding for re-attach.`);
-          }
-        });
-      })(currentStreamId);
-
-      return { streamId: currentStreamId };
-
-    } catch (err) {
-      log(`[Main Process] Error setting up stream ${currentStreamId}:`, err.message);
-      const categorized = categorizeBackendError(err);
-      if (event.sender && !event.sender.isDestroyed()) {
-          event.sender.send('stream-error', {
-            streamId: currentStreamId,
-            error: categorized.userMessage,
-            category: categorized.category,
-            suggestion: categorized.suggestion,
-            original: categorized.original,
-          });
+        }
+        return { error: categorized.userMessage, streamId: currentStreamId };
       }
-      return { error: categorized.userMessage, streamId: currentStreamId };
+    } catch (outerErr) {
+      log(`[Main Process] Unhandled stream setup error:`, outerErr.message);
     }
   });
 
@@ -1137,6 +1208,7 @@ function register(ctx) {
         }
 
         activeStreams.set(currentStreamId, { stream, eventSender: event.sender });
+        ensureSenderCleanup(event.sender);
 
         stream.on('data', (chunk) => {
             if (event.sender.isDestroyed()) {
@@ -1677,6 +1749,7 @@ function register(ctx) {
       }
 
       activeStreams.set(currentStreamId, { stream, eventSender: event.sender });
+      ensureSenderCleanup(event.sender);
 
       (function(capturedStreamId) {
         let streamCompleteSent3 = false;

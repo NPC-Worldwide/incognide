@@ -121,6 +121,7 @@ import { getFileName,
     goUpDirectory,
     usePaneAwareStreamListeners,
     useTrackLastActiveChatPane,
+    handleInterruptStream as interruptStreamShared,
     handleRenameFile,
     getThumbnailIcon,
     createToggleMessageSelectionMode,
@@ -147,6 +148,7 @@ import ConversationLabeling from './ConversationLabeling';
 
 import DataLabeler from './DataLabeler';
 import ChatInput from './ChatInput';
+import { PermissionModal } from './PermissionModal';
 import { StudioContext, executeStudioAction } from '../studioActions';
 
 
@@ -463,6 +465,30 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         handleLabelConversation, handleSaveConversationLabel, handleCloseConversationLabelingModal,
     } = useMemoryAndLabeling({ currentPath });
 
+    const addPermissionRequest = useCallback((permissionPayload: any) => {
+        const paneData = contentDataRef.current[permissionPayload.paneId];
+        if (!paneData) return;
+        const list = paneData.permissionRequests || (paneData.permissionRequests = []);
+        if (list.some((r: any) => r.request_id === permissionPayload.request_id)) return;
+        list.push(permissionPayload);
+        paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: permissionPayload.paneId } }));
+    }, [paneUpdateEmitter]);
+
+    const handlePanePermissionDecision = useCallback((paneId: string, request: any, decision: string) => {
+        const paneData = contentDataRef.current[paneId];
+        if (paneData?.permissionRequests) {
+            paneData.permissionRequests = paneData.permissionRequests.filter((r: any) => r.request_id !== request.request_id);
+        }
+        paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
+        (window as any).api.respondToPermission({
+            request_id: request.request_id,
+            decision
+        }).catch((err: any) => {
+            console.error('[PERMISSION] Failed to send decision:', err);
+            setError(err.message);
+        });
+    }, [paneUpdateEmitter]);
+
     const [websiteHistory, setWebsiteHistory] = useState([]);
     const [commonSites, setCommonSites] = useState([]);
     const [openBrowsers, setOpenBrowsers] = useState([]);
@@ -719,10 +745,59 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const [loadingMoreMessages, setLoadingMoreMessages] = useState(false);
     const streamToPaneRef = useRef({});
     const notifyAllPanes = useCallback(() => {
-        for (const paneId of Object.keys(contentDataRef.current)) {
-            paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
-        }
+        paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: 'all' } }));
     }, [paneUpdateEmitter]);
+
+    const cyclePanes = useCallback((direction: number) => {
+        const start = performance.now();
+        console.log('[CYCLE] triggered', direction > 0 ? 'forward' : 'backward', start);
+        const paneIds = collectPaneIds(rootLayoutNodeRef.current).filter(id => contentDataRef.current[id]);
+        const slots: { paneId: string; tabIndex: number }[] = [];
+        for (const paneId of paneIds) {
+            const pd = contentDataRef.current[paneId];
+            const tabs = pd?.tabs;
+            if (tabs && tabs.length > 0) {
+                for (let i = 0; i < tabs.length; i++) slots.push({ paneId, tabIndex: i });
+            } else {
+                slots.push({ paneId, tabIndex: 0 });
+            }
+        }
+        if (slots.length <= 1) return;
+        const currentPaneId = activeContentPaneIdRef.current;
+        const activePane = contentDataRef.current[currentPaneId];
+        const currentTabIndex = activePane?.activeTabIndex || 0;
+        const currentIdx = slots.findIndex(s => s.paneId === currentPaneId && s.tabIndex === currentTabIndex);
+        let nextIdx: number;
+        if (currentIdx >= 0) {
+            nextIdx = (currentIdx + direction) % slots.length;
+            if (nextIdx < 0) nextIdx += slots.length;
+        } else {
+            nextIdx = direction > 0 ? 0 : slots.length - 1;
+        }
+        const next = slots[nextIdx];
+        const nextPane = contentDataRef.current[next.paneId];
+        if (!nextPane) return;
+
+        const prevPaneId = activeContentPaneIdRef.current;
+        activeContentPaneIdRef.current = next.paneId;
+        setActiveContentPaneId(next.paneId);
+        if (nextPane.tabs && nextPane.tabs.length > 0) {
+            nextPane.activeTabIndex = next.tabIndex;
+            const tab = nextPane.tabs[next.tabIndex];
+            if (tab) {
+                nextPane.contentType = tab.contentType;
+                nextPane.contentId = tab.contentId;
+            }
+        }
+
+        const prevEl = document.querySelector('[data-pane-id].pane-active');
+        if (prevEl) prevEl.classList.remove('pane-active');
+        const nextEl = document.querySelector(`[data-pane-id="${next.paneId}"]`);
+        if (nextEl) nextEl.classList.add('pane-active');
+
+        paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: prevPaneId || 'all' } }));
+        paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: next.paneId } }));
+    }, [paneUpdateEmitter, setActiveContentPaneId]);
 
     // Re-attach to a backend generation stream that is still running for this conversation
     // after the renderer reloaded or the pane was closed/reopened. The assistant message is
@@ -1279,7 +1354,24 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         if (api.api?.onMenuCloseTab) {
             cleanups.push(api.api.onMenuCloseTab(() => {
                 const activePaneId = activeContentPaneIdRef.current;
-                if (activePaneId) {
+                if (!activePaneId) return;
+                const paneData = contentDataRef.current[activePaneId];
+                const tabs = paneData?.tabs;
+                if (tabs && tabs.length > 1) {
+                    const activeTabIndex = paneData.activeTabIndex || 0;
+                    const newTabs = [...tabs];
+                    newTabs.splice(activeTabIndex, 1);
+                    paneData.tabs = newTabs;
+                    if (paneData.activeTabIndex >= newTabs.length) {
+                        paneData.activeTabIndex = newTabs.length - 1;
+                    }
+                    const newActiveTab = newTabs[paneData.activeTabIndex];
+                    if (newActiveTab) {
+                        paneData.contentType = newActiveTab.contentType;
+                        paneData.contentId = newActiveTab.contentId;
+                    }
+                    notifyAllPanes();
+                } else {
                     const nodePath = findNodePath(rootLayoutNodeRef.current, activePaneId);
                     if (nodePath) {
                         closeContentPaneRef.current?.(activePaneId, nodePath);
@@ -1422,6 +1514,25 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
             cleanups.forEach(cleanup => cleanup?.());
         };
     }, []);
+
+
+    useEffect(() => {
+        const api = window as any;
+        const cleanups: (() => void)[] = [];
+        if (api.api?.onCyclePaneForward) {
+            cleanups.push(api.api.onCyclePaneForward(() => {
+                console.log('[CYCLE-RX] forward', performance.now());
+                cyclePanes(1);
+            }));
+        }
+        if (api.api?.onCyclePaneBackward) {
+            cleanups.push(api.api.onCyclePaneBackward(() => {
+                console.log('[CYCLE-RX] backward', performance.now());
+                cyclePanes(-1);
+            }));
+        }
+        return () => cleanups.forEach(cleanup => cleanup?.());
+    }, [cyclePanes]);
 
 
     const openFileDiffPane = (filePath: string, status: string) => {
@@ -1601,6 +1712,7 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
     useEffect(() => {
         const saveCurrentWorkspace = () => {
             if (currentPath && rootLayoutNode) {
+                const start = performance.now();
                 const workspaceData = serializeWorkspace(
                     rootLayoutNode,
                     currentPath,
@@ -1610,7 +1722,7 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
                 );
                 if (workspaceData) {
                     saveWorkspaceToStorage(currentPath, workspaceData);
-                    console.log(`Saved workspace for ${currentPath}`);
+                    console.log(`[SAVE] Saved workspace for ${currentPath} in`, (performance.now() - start).toFixed(2), 'ms');
                 }
             }
         };
@@ -1618,10 +1730,9 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
         window.addEventListener('beforeunload', saveCurrentWorkspace);
 
         return () => {
-            saveCurrentWorkspace();
             window.removeEventListener('beforeunload', saveCurrentWorkspace);
         };
-    }, [currentPath, rootLayoutNode, activeContentPaneId, openMode]);
+    }, [currentPath, rootLayoutNode, openMode]);
     useEffect(() => {
         const syncToFile = async () => {
             try {
@@ -1758,15 +1869,13 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
                 const workspaceData = serializeWorkspace(rootLayoutNode, currentPath, contentDataRef.current, activeContentPaneId, openMode);
                 if (workspaceData) {
                     saveWorkspaceToStorage(currentPath, workspaceData);
-                    console.log(`Saved workspace for ${currentPath}`);
                 }
             }
         };
         return () => {
-            saveCurrentWorkspace();
             window.removeEventListener('beforeunload', saveCurrentWorkspace);
         };
-    }, [currentPath, rootLayoutNode, activeContentPaneId, openMode, serializeWorkspace, saveWorkspaceToStorage]);
+    }, [currentPath, rootLayoutNode, openMode, serializeWorkspace, saveWorkspaceToStorage]);
 
 
     useEffect(() => {
@@ -2044,6 +2153,13 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
                     if (tabs && tabs.length > 1) {
 
                         const activeTabIndex = paneData.activeTabIndex || 0;
+                        const closingTab = tabs[activeTabIndex];
+                        if (closingTab?.contentType === 'browser') {
+                            if (paneData.browserUrl) closingTab.browserUrl = paneData.browserUrl;
+                            if (paneData.browserTitle) closingTab.browserTitle = paneData.browserTitle;
+                        }
+                        delete contentDataRef.current[`${activeContentPaneId}_${closingTab?.id}`];
+
                         const newTabs = [...tabs];
                         newTabs.splice(activeTabIndex, 1);
                         paneData.tabs = newTabs;
@@ -2054,6 +2170,10 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
                         if (newActiveTab) {
                             paneData.contentType = newActiveTab.contentType;
                             paneData.contentId = newActiveTab.contentId;
+                            if (newActiveTab.contentType === 'browser') {
+                                paneData.browserUrl = newActiveTab.browserUrl || 'about:blank';
+                                paneData.browserTitle = newActiveTab.browserTitle || 'Browser';
+                            }
                         }
 
                         notifyAllPanes();
@@ -2067,6 +2187,8 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
                 }
                 return;
             }
+
+
 
 
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'r' || e.key === 'R')) {
@@ -3071,9 +3193,16 @@ const renderChatView = useCallback(({ nodeId }) => {
                 />
                 );
             })}
+            {paneData.permissionRequests?.length > 0 && (
+                <PermissionModal
+                    request={paneData.permissionRequests[0]}
+                    pendingCount={paneData.permissionRequests.length}
+                    onDecision={(request, decision) => handlePanePermissionDecision(nodeId, request, decision)}
+                />
+            )}
         </div>
     );
-}, [selectedMessages, messageSelectionMode, searchTerm, handleLabelMessage, messageLabels, handleResendMessage, handleBroadcast, handleExpandBranches, handleSwitchRun, activeRuns, handleCreateBranch, findNodePath, performSplit, availableModels, availableNPCs, expandedBranchPath, rootLayoutNode]);
+}, [selectedMessages, messageSelectionMode, searchTerm, handleLabelMessage, messageLabels, handleResendMessage, handleBroadcast, handleExpandBranches, handleSwitchRun, activeRuns, handleCreateBranch, findNodePath, performSplit, availableModels, availableNPCs, expandedBranchPath, rootLayoutNode, handlePanePermissionDecision]);
 
 
 const renderBranchComparisonPane = useCallback(({ nodeId }) => {
@@ -4877,6 +5006,21 @@ const handleBrowserDialogNavigate = (url) => {
         }
 
         const conversationId = paneData.contentId;
+
+        if (isPaneStreaming(targetPaneId)) {
+            console.log('[SUBMIT] Pane already streaming; interrupting before new message');
+            await handleInterruptStream(targetPaneId);
+        }
+
+        if (paneData?.chatMessages?.allMessages) {
+            for (const msg of paneData.chatMessages.allMessages) {
+                if (msg.isStreaming) {
+                    msg.isStreaming = false;
+                    msg.streamId = null;
+                }
+            }
+        }
+
         const newStreamId = generateId();
 
         streamToPaneRef.current[newStreamId] = targetPaneId;
@@ -5110,6 +5254,19 @@ const handleBrowserDialogNavigate = (url) => {
                 };
                 window.api.saveMessage(userSavePayload).catch((err: any) => console.error('[SUBMIT] Failed to save user message:', err));
 
+                // Log this user chat message as an activity event.
+                trackActivity('chat_message', {
+                    conversationId,
+                    paneId: targetPaneId,
+                    paneType: paneData.contentType,
+                    npc: useNpc,
+                    model: useModel,
+                    provider: useProvider,
+                    length: (userMessage.content || '').length,
+                    isJinx: isJinxMode,
+                    jinxName: jinxName || undefined,
+                });
+
                 const npcName = useNpc?.replace(/^(project:|global:)/, '') || 'agent';
 
                 if (isJinxMode) {
@@ -5157,11 +5314,24 @@ const handleBrowserDialogNavigate = (url) => {
                         disableThinking,
                         maxAgentIterations: paneExecMode === 'tool_agent' ? parseInt(localStorage.getItem('incognide_maxAgentIterations') || '0', 10) || undefined : undefined,
                     };
-                    await window.api.executeCommandStream(commandData);
+                    const streamResult = await window.api.executeCommandStream(commandData);
+                    if (streamResult?.error) {
+                        throw new Error(streamResult.error);
+                    }
                 }
             } catch (err: any) {
                 setError(err.message);
                 delete streamToPaneRef.current[branchStreamId];
+                const placeholderMsg = paneData.chatMessages?.allMessages?.find((m: any) => m.id === branchStreamId);
+                if (placeholderMsg) {
+                    placeholderMsg.isStreaming = false;
+                    placeholderMsg.streamId = null;
+                    placeholderMsg.content += `\n\n[Failed to start stream: ${err.message}]`;
+                }
+                if (Object.keys(streamToPaneRef.current).length === 0) {
+                    setIsStreaming(false);
+                }
+                if (targetPaneId) notifyAllPanes();
             }
         }
 
@@ -5176,47 +5346,21 @@ const handleBrowserDialogNavigate = (url) => {
         }
     };
 
+    // Delegates to the shared implementation in utils.tsx, which resolves pending
+    // tool calls, persists the interrupted message, and interrupts the correct stream.
     const handleInterruptStream = async (paneId?: string) => {
         const targetPaneId = paneId || activeContentPaneId;
-        const targetPaneData = contentDataRef.current[targetPaneId];
-        if (!targetPaneData || !targetPaneData.chatMessages) {
-            console.warn("Interrupt clicked but no target chat pane found.");
-            return;
-        }
-
-        const streamingMessage = targetPaneData.chatMessages.allMessages.find((m: any) => m.isStreaming);
-        if (!streamingMessage || !streamingMessage.streamId) {
-            console.warn("Interrupt clicked, but no streaming message found in target pane.");
-
-            const anyStreamId = Object.keys(streamToPaneRef.current)[0];
-            if (anyStreamId) {
-                await window.api.interruptStream(anyStreamId);
-                console.log(`Fallback interrupt sent for stream: ${anyStreamId}`);
-            }
-            setIsStreaming(false);
-            return;
-        }
-
-        const streamIdToInterrupt = streamingMessage.streamId;
-        console.log(`[REACT] handleInterruptStream: Attempting to interrupt stream: ${streamIdToInterrupt}`);
-
-        streamingMessage.content = (streamingMessage.content || '') + `\n\n[Stream Interrupted by User]`;
-        streamingMessage.isStreaming = false;
-        streamingMessage.streamId = null;
-
-        delete streamToPaneRef.current[streamIdToInterrupt];
-        if (Object.keys(streamToPaneRef.current).length === 0) {
-            setIsStreaming(false);
-        }
-
-        paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: targetPaneId } }));
-
-        try {
-            await window.api.interruptStream(streamIdToInterrupt);
-            console.log(`[REACT] handleInterruptStream: API call to interrupt stream ${streamIdToInterrupt} successful.`);
-        } catch (error) {
-            console.error(`[REACT] handleInterruptStream: API call to interrupt stream ${streamIdToInterrupt} failed:`, error);
-            streamingMessage.content += " [Interruption API call failed]";
+        await interruptStreamShared(
+            targetPaneId,
+            contentDataRef,
+            streamToPaneRef,
+            setIsStreaming,
+            (pid: string) => paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: pid } })),
+            currentPath
+        );
+        const paneData = contentDataRef.current[targetPaneId];
+        if (paneData?.permissionRequests) {
+            paneData.permissionRequests = [];
             paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: targetPaneId } }));
         }
     };
@@ -5991,7 +6135,8 @@ const handleBrowserDialogNavigate = (url) => {
         getConversationStats,
         refreshConversations,
         studioContext,
-        currentPath
+        currentPath,
+        addPermissionRequest
     );
 
 

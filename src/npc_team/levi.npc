@@ -109,10 +109,19 @@ jinxes:
   - {{ Jinx('request_approval') }}
   - {{ Jinx('notify') }}
   - {{ Jinx('prompt') }}
-  - {{ Jinx('shell') }}
-  - {{ Jinx('py') }}
+  - {{ Jinx('py', repo='NPC-Worldwide/npcsh') }}
+  - {{ Jinx('shell', repo='NPC-Worldwide/npcsh') }}
+  - {{ Jinx('read', repo='NPC-Worldwide/npcsh') }}
+  - {{ Jinx('write', repo='NPC-Worldwide/npcsh') }}
+  - {{ Jinx('load_file', repo='NPC-Worldwide/npcsh') }}
+  - {{ Jinx('edit_file', repo='NPC-Worldwide/npcsh') }}
+  - {{ Jinx('chat', repo='NPC-Worldwide/npcsh') }}
+  - {{ Jinx('stop', repo='NPC-Worldwide/npcsh') }}
+  - {{ Jinx('web_search', repo='NPC-Worldwide/npcsh') }}
   - {{ Jinx('knowledge_search') }}
   - {{ Jinx('knowledge_load') }}
   - {{ Jinx('knowledge_context') }}
   - {{ Jinx('knowledge_upsert') }}
-  - {{ Jinx('stop') }}
+  
+  
+  

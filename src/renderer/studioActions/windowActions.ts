@@ -77,5 +77,5 @@ async function get_window_info(
   };
 }
 
-registerAction('list_windows', list_windows);
-registerAction('get_window_info', get_window_info);
+registerAction('list_windows', list_windows, { description: 'List all incognide windows', paneTypes: [] });
+registerAction('get_window_info', get_window_info, { description: 'Get information about this window', paneTypes: [] });

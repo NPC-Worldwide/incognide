@@ -2,27 +2,27 @@
 
 import { registerAction, StudioContext, StudioActionResult } from './index';
 
-export const PANE_TYPE_INFO: Record<string, { title: string; description: string; needsPath?: boolean; needsUrl?: boolean }> = {
-  'chat':             { title: 'Chat',             description: 'AI chat conversation' },
-  'agent':            { title: 'Agent',            description: 'AI agent with tools' },
-  'editor':           { title: 'Code Editor',      description: 'Edit code and text files', needsPath: true },
-  'terminal':         { title: 'Terminal',          description: 'Shell terminal (system, npcsh, guac)' },
+export const PANE_TYPE_INFO: Record<string, { title: string; description: string; needsPath?: boolean; needsUrl?: boolean; actions?: string[] }> = {
+  'chat':             { title: 'Chat',             description: 'AI chat conversation', actions: ['send_message', 'switch_npc', 'list_actions'] },
+  'agent':            { title: 'Agent',            description: 'AI agent with tools', actions: ['send_message', 'switch_npc', 'list_actions'] },
+  'editor':           { title: 'Code Editor',      description: 'Edit code and text files', needsPath: true, actions: ['read_pane', 'write_pane', 'write_file', 'get_selection'] },
+  'terminal':         { title: 'Terminal',          description: 'Shell terminal (system, npcsh, guac)', actions: ['run_terminal'] },
 
   'pdf':              { title: 'PDF Viewer',        description: 'View PDF documents', needsPath: true },
-  'csv':              { title: 'Spreadsheet',       description: 'View/edit CSV and Excel files', needsPath: true },
-  'docx':             { title: 'Document',          description: 'View/edit Word documents', needsPath: true },
-  'pptx':             { title: 'Presentation',      description: 'View/edit PowerPoint files', needsPath: true },
-  'latex':            { title: 'LaTeX',             description: 'Edit LaTeX documents', needsPath: true },
-  'notebook':         { title: 'Notebook',          description: 'Jupyter notebook', needsPath: true },
-  'exp':              { title: 'Experiment',        description: 'Experiment file', needsPath: true },
+  'csv':              { title: 'Spreadsheet',       description: 'View/edit CSV and Excel files', needsPath: true, actions: ['spreadsheet_read', 'spreadsheet_update_cell', 'spreadsheet_add_row', 'spreadsheet_add_column', 'read_pane'] },
+  'docx':             { title: 'Document',          description: 'View/edit Word documents', needsPath: true, actions: ['document_read', 'document_insert_text', 'document_replace_text', 'document_delete_text', 'read_pane'] },
+  'pptx':             { title: 'Presentation',      description: 'View/edit PowerPoint files', needsPath: true, actions: ['presentation_read', 'presentation_add_slide', 'presentation_edit_slide', 'read_pane'] },
+  'latex':            { title: 'LaTeX',             description: 'Edit LaTeX documents', needsPath: true, actions: ['read_pane', 'write_pane', 'write_file', 'get_selection'] },
+  'notebook':         { title: 'Notebook',          description: 'Jupyter notebook', needsPath: true, actions: ['read_pane', 'write_pane', 'write_file'] },
+  'exp':              { title: 'Experiment',        description: 'Experiment file', needsPath: true, actions: ['read_pane', 'write_pane'] },
 
-    
+
   'zip':              { title: 'Archive',           description: 'Browse ZIP archives', needsPath: true },
   'image':            { title: 'Image',             description: 'View image files', needsPath: true },
   'graph-viewer':     { title: 'Knowledge Graph',   description: 'View and edit the knowledge graph' },
   'dbtool':           { title: 'Database Tool',     description: 'Query and manage databases' },
   'memory-manager':   { title: 'Memory Manager',    description: 'Manage AI memory and training data' },
-  'browser':          { title: 'Browser',           description: 'Web browser', needsUrl: true },
+  'browser':          { title: 'Browser',           description: 'Web browser', needsUrl: true, actions: ['navigate', 'browser_back', 'browser_forward', 'get_browser_info', 'browser_click', 'browser_type', 'get_browser_content', 'browser_screenshot'] },
   'npcteam':          { title: 'NPC Team',          description: 'View and manage NPC agents' },
   'jinx':             { title: 'Jinxes',             description: 'View and manage jinx actions' },
   'teammanagement':   { title: 'Team Management',   description: 'Manage NPCs, jinxes, databases, MCP servers, cron jobs' },
@@ -403,10 +403,10 @@ async function zen_mode(
   return { success: true, paneId };
 }
 
-registerAction('open_pane', open_pane);
-registerAction('close_pane', close_pane);
-registerAction('focus_pane', focus_pane);
-registerAction('split_pane', split_pane);
-registerAction('list_panes', list_panes);
-registerAction('list_pane_types', list_pane_types);
-registerAction('zen_mode', zen_mode);
+registerAction('open_pane', open_pane, { description: 'Open a content pane by type and id', paneTypes: [] });
+registerAction('close_pane', close_pane, { description: 'Close a pane', paneTypes: [] });
+registerAction('focus_pane', focus_pane, { description: 'Focus a pane', paneTypes: [] });
+registerAction('split_pane', split_pane, { description: 'Split a pane into two sides', paneTypes: [] });
+registerAction('list_panes', list_panes, { description: 'List current panes', paneTypes: [] });
+registerAction('list_pane_types', list_pane_types, { description: 'List all available pane types', paneTypes: [] });
+registerAction('zen_mode', zen_mode, { description: 'Toggle zen mode for a pane', paneTypes: [] });

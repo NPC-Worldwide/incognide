@@ -257,9 +257,9 @@ async function switch_npc(
   };
 }
 
-registerAction('prompt_user', prompt_user);
-registerAction('notify', notify);
-registerAction('confirm', confirm);
-registerAction('open_file_picker', open_file_picker);
-registerAction('send_message', send_message);
-registerAction('switch_npc', switch_npc);
+registerAction('prompt_user', prompt_user, { description: 'Show a prompt to the user and await their input', paneTypes: [] });
+registerAction('notify', notify, { description: 'Show a toast notification', paneTypes: [] });
+registerAction('confirm', confirm, { description: 'Show a confirmation dialog', paneTypes: [] });
+registerAction('open_file_picker', open_file_picker, { description: 'Open a file picker dialog', paneTypes: [] });
+registerAction('send_message', send_message, { description: 'Send a message in the current chat pane', paneTypes: ['chat', 'agent'] });
+registerAction('switch_npc', switch_npc, { description: 'Switch the active NPC in a chat pane', paneTypes: ['chat', 'agent'] });

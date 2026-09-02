@@ -137,7 +137,7 @@ async function list_tabs(
   };
 }
 
-registerAction('add_tab', add_tab);
-registerAction('close_tab', close_tab);
-registerAction('switch_tab', switch_tab);
-registerAction('list_tabs', list_tabs);
+registerAction('add_tab', add_tab, { description: 'Add a new tab to a pane', paneTypes: [] });
+registerAction('close_tab', close_tab, { description: 'Close a tab in a pane', paneTypes: [] });
+registerAction('switch_tab', switch_tab, { description: 'Switch to a tab by index', paneTypes: [] });
+registerAction('list_tabs', list_tabs, { description: 'List tabs in a pane', paneTypes: [] });

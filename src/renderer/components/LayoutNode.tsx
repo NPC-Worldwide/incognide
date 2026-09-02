@@ -338,7 +338,9 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             if (!emitter) return;
             const handler = (e: any) => {
                 if (e.detail?.paneId === node.id || e.detail?.paneId === 'all') {
+                    const start = performance.now();
                     forceRender(n => n + 1);
+                    console.log(`[RENDER] pane ${node.id} forceRender took`, (performance.now() - start).toFixed(2), 'ms');
                 }
             };
             emitter.addEventListener('pane-update', handler);
@@ -1545,7 +1547,7 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                     const InputComponent = tabContentType === 'agent' ? AgentInput : ChatInput;
                     return (
                         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                            <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto">
+                            <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto relative">
                                 {paneRenderers.chat?.({ nodeId: node.id })}
                             </div>
                             {chatInputProps && (
