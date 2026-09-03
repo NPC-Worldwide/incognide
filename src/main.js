@@ -2959,7 +2959,7 @@ applyAppMenu();
             if (!action) { _sendJSON(res, 400, { success: false, error: 'Missing action' }); return; }
             _studioActionCounter += 1;
             const actionId = `mcp_action_${_studioActionCounter}`;
-            const actionData = { action, args, status: 'pending' };
+            const actionData = { actionId, action, args, status: 'pending' };
             if (windowId) actionData.window_id = windowId;
             _pendingStudioActions[actionId] = actionData;
             console.log(`[Studio] Queued action ${actionId}: ${action}` + (windowId ? ` -> window ${windowId}` : ''));

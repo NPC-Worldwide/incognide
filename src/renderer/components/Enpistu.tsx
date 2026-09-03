@@ -2289,7 +2289,7 @@ useEffect(() => {
     const api = window as any;
     if (!api.api?.onExecuteStudioAction) return;
 
-    const unsubscribe = api.api.onExecuteStudioAction(async (data: { action: string, args: any }) => {
+    const unsubscribe = api.api.onExecuteStudioAction(async (data: { actionId?: string, action: string, args: any }) => {
         console.log('[EXTERNAL] Executing studio action:', data.action, data.args);
 
         const ctx: StudioContext = {
@@ -2307,6 +2307,18 @@ useEffect(() => {
 
         const result = await executeStudioAction(data.action, data.args || {}, ctx);
         console.log('[EXTERNAL] Action result:', result);
+
+        if (data.actionId) {
+            try {
+                await fetch('/api/studio/action_complete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ actionId: data.actionId, result })
+                });
+            } catch (err) {
+                console.error('[EXTERNAL] Failed to report action completion:', err);
+            }
+        }
     });
 
     return () => {
