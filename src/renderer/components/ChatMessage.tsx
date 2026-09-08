@@ -4,7 +4,7 @@ import MarkdownRenderer from './MarkdownRenderer';
 import { AgentPromptCard } from './AgentPrompt';
 import { ToolCallDisplay } from './ToolCallDisplay';
 import { MessageLabel } from './MessageLabeling';
-import { Paperclip, Tag, Star, ChevronDown, ChevronUp, Volume2, VolumeX, Loader, RotateCcw, SlidersHorizontal, Bot, Zap, Cpu } from 'lucide-react';
+import { Paperclip, Tag, Star, ChevronDown, ChevronUp, ChevronRight, Volume2, VolumeX, Loader, RotateCcw, SlidersHorizontal, Bot, Zap, Cpu } from 'lucide-react';
 
 const highlightSearchTerm = (content: string, searchTerm: string): string => {
     if (!searchTerm || !content) return content;

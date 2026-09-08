@@ -1037,7 +1037,6 @@ export const usePaneAwareStreamListeners = (
 
         const saveAssistantMessage = (paneData: any, msg: any) => {
             const path = currentPathRef.current;
-            if (typeof path !== 'string' || !paneData?.contentId) return;
             const payload = {
                 message_id: msg.id,
                 timestamp: msg.timestamp || new Date().toISOString(),
@@ -1635,25 +1634,23 @@ export const handleInterruptStream = async (
     markToolCallsInterrupted(streamingMessage, 'Interrupted by user');
 
     // Persist the interrupted state so it survives pane reloads.
-    if (typeof currentPath === 'string' && paneData.contentId) {
-        (window as any).api.saveMessage({
-            message_id: streamingMessage.id,
-            timestamp: streamingMessage.timestamp || new Date().toISOString(),
-            role: 'assistant',
-            content: streamingMessage.content,
-            conversation_id: paneData.contentId,
-            directory_path: currentPath,
-            model: streamingMessage.model,
-            provider: streamingMessage.provider,
-            npc: streamingMessage.npc,
-            execution_mode: paneData.executionMode,
-            input_tokens: streamingMessage.input_tokens,
-            output_tokens: streamingMessage.output_tokens,
-            cost: streamingMessage.cost,
-            reasoning_content: streamingMessage.reasoningContent || null,
-            tool_calls: streamingMessage.toolCalls || null,
-        }).catch((err: any) => console.error('[INTERRUPT] Failed to save interrupted message:', err));
-    }
+    (window as any).api.saveMessage({
+        message_id: streamingMessage.id,
+        timestamp: streamingMessage.timestamp || new Date().toISOString(),
+        role: 'assistant',
+        content: streamingMessage.content,
+        conversation_id: paneData.contentId,
+        directory_path: currentPath,
+        model: streamingMessage.model,
+        provider: streamingMessage.provider,
+        npc: streamingMessage.npc,
+        execution_mode: paneData.executionMode,
+        input_tokens: streamingMessage.input_tokens,
+        output_tokens: streamingMessage.output_tokens,
+        cost: streamingMessage.cost,
+        reasoning_content: streamingMessage.reasoningContent || null,
+        tool_calls: streamingMessage.toolCalls || null,
+    }).catch((err: any) => console.error('[INTERRUPT] Failed to save interrupted message:', err));
 
     delete streamToPaneRef.current[streamIdToInterrupt];
     if (Object.keys(streamToPaneRef.current).length === 0) {

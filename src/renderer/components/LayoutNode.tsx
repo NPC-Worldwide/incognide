@@ -1427,6 +1427,15 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             );
         }
 
+        const chatScrollRef = useRef<HTMLDivElement>(null);
+        const chatMessages = paneData?.chatMessages?.messages || [];
+        const lastMessage = chatMessages.length > 0 ? chatMessages[chatMessages.length - 1] : null;
+        const lastMessageContent = lastMessage?.content || '';
+        const lastMessageReasoning = lastMessage?.reasoningContent || '';
+        const lastMessageToolCalls = lastMessage?.toolCalls || [];
+        const lastMessageContentParts = lastMessage?.contentParts || [];
+        const lastMessageStreaming = !!lastMessage?.isStreaming;
+
         if (contentType === 'chat' || contentType === 'agent') {
             const chatStats = paneData?.chatStats || { messageCount: 0, inputTokens: 0, outputTokens: 0, totalCost: 0, models: new Set(), agents: new Set(), providers: new Set() };
             const shortId = paneData?.contentId ? String(paneData.contentId).slice(-6) : '';
@@ -1451,18 +1460,10 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                     setAutoScrollEnabled={setAutoScrollEnabled}
                     topBarCollapsed={topBarCollapsed}
                     onExpandTopBar={onExpandTopBar}
+                    isStreaming={lastMessageStreaming}
                 />
             );
         }
-
-        const chatScrollRef = useRef<HTMLDivElement>(null);
-        const chatMessages = paneData?.chatMessages?.messages || [];
-        const lastMessage = chatMessages.length > 0 ? chatMessages[chatMessages.length - 1] : null;
-        const lastMessageContent = lastMessage?.content || '';
-        const lastMessageReasoning = lastMessage?.reasoningContent || '';
-        const lastMessageToolCalls = lastMessage?.toolCalls || [];
-        const lastMessageContentParts = lastMessage?.contentParts || [];
-        const lastMessageStreaming = !!lastMessage?.isStreaming;
 
         useEffect(() => {
             if (autoScrollEnabled && chatScrollRef.current && (contentType === 'chat' || contentType === 'agent')) {

@@ -1119,8 +1119,9 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         let changed = false;
         if (!pd.npc && currentNPC) { pd.npc = currentNPC; changed = true; }
         if (!pd.model && currentModel) { pd.model = currentModel; changed = true; }
+        if (!pd.provider && currentProvider) { pd.provider = currentProvider; changed = true; }
         if (changed) paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: activeContentPaneId } }));
-    }, [activeContentPaneId, currentNPC, currentModel]);
+    }, [activeContentPaneId, currentNPC, currentModel, currentProvider]);
 
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
     useEffect(() => {
@@ -1164,7 +1165,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
 
                 e.preventDefault();
                 e.stopPropagation();
-                window.location.reload();
+                (window as any).api?.reloadWindow?.();
             }
 
         };
@@ -2436,13 +2437,15 @@ const handleResendMessage = useCallback((messageToResend: any) => {
         }
     }
 
+    const activePaneData = contentDataRef.current[activeContentPaneId];
+    const paneModel = activePaneData?.model || currentModel;
     setResendModal({
         isOpen: true,
         message: targetMessage,
-        selectedModel: messageToResend.model || currentModel,
+        selectedModel: messageToResend.model || paneModel,
         selectedNPC: messageToResend.npc || currentNPC
     });
-}, [isPaneStreaming, currentModel, currentNPC, activeContentPaneId]);
+}, [isPaneStreaming, currentModel, currentNPC, activeContentPaneId, contentDataRef]);
 
 
 
@@ -2705,13 +2708,17 @@ const handleAICodeAction = useCallback(async (type: string, selectedText: string
         return;
     }
 
+    const activePaneId = activeContentPaneIdRef.current;
+    const activePaneData = activePaneId ? contentDataRef.current[activePaneId] : null;
+    const aiModel = activePaneData?.model || currentModel;
+    const aiProvider = activePaneData?.provider || currentProvider;
     window.api?.executeCommandStream?.({
         streamId,
         commandstr: prompt,
         currentPath,
         conversationId: conversation.id,
-        model: currentModel,
-        provider: currentProvider,
+        model: aiModel,
+        provider: aiProvider,
         executionMode: 'tool_agent'
     });
 }, [currentModel, currentProvider, currentPath]);
@@ -3230,9 +3237,7 @@ const renderBrowserSettingsPane = useCallback(({ nodeId }: { nodeId: string }) =
 
 const renderModelManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return <ModelManager onStartChat={(model: string, provider: string) => {
-        setCurrentModel(model);
-        setCurrentProvider(provider);
-        createNewConversationRef.current?.({ contentType: 'chat', model });
+        createNewConversationRef.current?.({ contentType: 'chat', model, provider });
     }} />;
 }, []);
 
@@ -3360,8 +3365,8 @@ const renderDBToolPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return (
         <DBTool
             currentPath={currentPath}
-            currentModel={currentModel}
-            currentProvider={currentProvider}
+            currentModel={paneData?.model || currentModel}
+            currentProvider={paneData?.provider || currentProvider}
             currentNPC={currentNPC}
             initialDbPath={dbPath}
         />
@@ -4467,9 +4472,12 @@ const handleBrowserDialogNavigate = (url) => {
         setInput('');
         setUploadedFiles([]);
 
+        const paneModel = targetPaneData?.model || currentModel;
+        const paneProvider = targetPaneData?.provider || currentProvider;
         if (targetPaneId && contentDataRef.current[targetPaneId]) {
             contentDataRef.current[targetPaneId].npc = currentNPC;
-            contentDataRef.current[targetPaneId].model = currentModel;
+            contentDataRef.current[targetPaneId].model = paneModel;
+            contentDataRef.current[targetPaneId].provider = paneProvider;
         }
         if (isJinxMode) {
             setJinxInputValues(prev => ({
@@ -4478,7 +4486,7 @@ const handleBrowserDialogNavigate = (url) => {
             }));
         }
 
-        if (!currentModel || !currentProvider) {
+        if (!paneModel || !paneProvider) {
             setError('No model selected. Please select a model from the dropdown before sending a message.');
             return;
         }
@@ -4499,7 +4507,7 @@ const handleBrowserDialogNavigate = (url) => {
         const assistantPlaceholder = {
             id: newStreamId, role: 'assistant', content: '', timestamp: new Date().toISOString(),
             isStreaming: true, streamId: newStreamId,
-            npc: currentNPC, model: currentModel, provider: currentProvider,
+            npc: currentNPC, model: paneModel, provider: paneProvider,
             temperature: genParams.temperature,
             top_p: genParams.top_p,
             top_k: genParams.top_k,
@@ -4520,8 +4528,8 @@ const handleBrowserDialogNavigate = (url) => {
                 content: userMessage.content,
                 conversation_id: conversationId,
                 directory_path: currentPath,
-                model: currentModel,
-                provider: currentProvider,
+                model: paneModel,
+                provider: paneProvider,
                 npc: currentNPC,
                 execution_mode: paneExecMode,
             };
@@ -4532,8 +4540,8 @@ const handleBrowserDialogNavigate = (url) => {
                 paneId: targetPaneId,
                 paneType: paneData.contentType,
                 npc: currentNPC,
-                model: currentModel,
-                provider: currentProvider,
+                model: paneModel,
+                provider: paneProvider,
                 length: (userMessage.content || '').length,
                 isJinx: isJinxMode,
                 jinxName: jinxName || undefined,
@@ -4547,8 +4555,8 @@ const handleBrowserDialogNavigate = (url) => {
                     jinxArgs: jinxArgsForApi,
                     currentPath,
                     conversationId,
-                    model: currentModel,
-                    provider: currentProvider,
+                    model: paneModel,
+                    provider: paneProvider,
                     npc: npcName,
                     npcSource: 'global',
                     streamId: newStreamId,
@@ -4562,8 +4570,8 @@ const handleBrowserDialogNavigate = (url) => {
                     commandstr: finalPromptForUserMessage,
                     currentPath,
                     conversationId,
-                    model: currentModel,
-                    provider: currentProvider,
+                    model: paneModel,
+                    provider: paneProvider,
                     npc: npcName,
                     npcSource: 'global',
                     attachments: savedFiles.map((f: any) => {
@@ -4654,6 +4662,10 @@ const handleBrowserDialogNavigate = (url) => {
 
             const selectedNpc = availableNPCs.find((npc: any) => npc.value === selectedNPC);
 
+            const paneProvider = activePaneData?.provider || currentProvider;
+            const selectedModelObj = availableModels.find((m: any) => m.value === selectedModel);
+            const providerToUse = selectedModelObj?.provider || paneProvider;
+
             const assistantPlaceholderMessage = {
                 id: newStreamId,
                 role: 'assistant',
@@ -4662,7 +4674,7 @@ const handleBrowserDialogNavigate = (url) => {
                 timestamp: new Date().toISOString(),
                 streamId: newStreamId,
                 model: selectedModel,
-                provider: availableModels.find((m: any) => m.value === selectedModel)?.provider || currentProvider,
+                provider: providerToUse,
                 npc: selectedNPC,
             };
 
@@ -4672,9 +4684,6 @@ const handleBrowserDialogNavigate = (url) => {
             );
 
             notifyAllPanes();
-
-            const selectedModelObj = availableModels.find((m: any) => m.value === selectedModel);
-            const providerToUse = selectedModelObj ? selectedModelObj.provider : currentProvider;
 
             await window.api.executeCommandStream({
                 commandstr: messageToResend.content,
@@ -4720,7 +4729,7 @@ const handleBrowserDialogNavigate = (url) => {
         }
     };
 
-    const createNewConversation = useCallback(async (skipMessageLoad: boolean | { contentType?: 'chat' | 'agent'; npc?: string; model?: string } = false) => {
+    const createNewConversation = useCallback(async (skipMessageLoad: boolean | { contentType?: 'chat' | 'agent'; npc?: string; model?: string; provider?: string } = false) => {
         const opts = typeof skipMessageLoad === 'object' ? skipMessageLoad : {};
         const contentType: 'chat' | 'agent' = opts.contentType || 'chat';
         const npcToUse = opts.npc !== undefined ? opts.npc : currentNPC;
@@ -4745,7 +4754,7 @@ const handleBrowserDialogNavigate = (url) => {
 
 
             const newPaneId = generateId();
-
+            const providerToUse = opts.provider !== undefined ? opts.provider : currentProvider;
 
             contentDataRef.current[newPaneId] = {
                 contentType,
@@ -4753,10 +4762,9 @@ const handleBrowserDialogNavigate = (url) => {
                 chatMessages: { messages: [], allMessages: [], displayedMessageCount: 20 },
                 npc: npcToUse,
                 model: modelToUse,
+                provider: providerToUse,
+                executionMode: contentType === 'agent' ? 'tool_agent' : 'chat',
             };
-            if (contentType === 'agent') {
-                contentDataRef.current[newPaneId].executionMode = 'tool_agent';
-            }
 
 
             addPaneOrTab(newPaneId);
@@ -4907,9 +4915,7 @@ const handleBrowserDialogNavigate = (url) => {
                     createNewConversation();
                 }}
                 startNewChat={(model: string, provider: string) => {
-                    setCurrentModel(model);
-                    setCurrentProvider(provider);
-                    createNewConversation({ contentType: 'chat', model });
+                    createNewConversation({ contentType: 'chat', model, provider });
                 }}
                 embedded={true}
                 npcList={availableNPCs}
@@ -5547,6 +5553,9 @@ const handleBrowserDialogNavigate = (url) => {
             let targetConvoId = null;
             const currentConversations = directoryConversationsRef.current;
 
+            let modelToSet: string | null = null;
+            let providerToSet: string | null = null;
+
             if (storedConvoId) {
                 const convoInCurrentDir = currentConversations.find(conv => conv.id === storedConvoId);
                 if (convoInCurrentDir) {
@@ -5557,26 +5566,71 @@ const handleBrowserDialogNavigate = (url) => {
                         if (validNpc) npcToSet = validNpc.value;
                     }
                     if (lastUsedInConvo?.model) {
-                        setCurrentModel(lastUsedInConvo.model);
-                        if (lastUsedInConvo?.provider) setCurrentProvider(lastUsedInConvo.provider);
-                        setSelectedModels([lastUsedInConvo.model]);
+                        modelToSet = lastUsedInConvo.model;
+                        providerToSet = lastUsedInConvo.provider || null;
                     }
                 } else {
                     localStorage.removeItem(LAST_ACTIVE_CONVO_ID_KEY);
                 }
             }
 
-            if (!targetConvoId) {
+            const npcModelToUse = () => {
+                if (npcToSet) {
+                    const npcObj = fetchedNPCs.find((n: any) => n.value === npcToSet || n.name === npcToSet);
+                    if (npcObj?.model && npcObj?.provider) {
+                        return { model: npcObj.model, provider: npcObj.provider };
+                    }
+                    const teamName = npcObj?.team;
+                    const tConf = teamName ? fetchedTeamConfigs?.[teamName] : null;
+                    if (tConf?.model && tConf?.provider) {
+                        return { model: tConf.model, provider: tConf.provider };
+                    }
+                }
+                return null;
+            };
+
+            if (!modelToSet) {
+                const npcModel = npcModelToUse();
+                if (npcModel) {
+                    modelToSet = npcModel.model;
+                    providerToSet = npcModel.provider;
+                }
+            }
+
+            if (!modelToSet && projectCtx?.model) {
+                modelToSet = projectCtx.model;
+                providerToSet = projectCtx.provider || null;
+            }
+
+            if (!modelToSet) {
                 const lastUsedInDir = await window.api.getLastUsedInDirectory(currentPath);
                 if (lastUsedInDir?.npc) {
                     const validNpc = fetchedNPCs.find((n: any) => n.value === lastUsedInDir.npc);
                     if (validNpc) npcToSet = validNpc.value;
                 }
                 if (lastUsedInDir?.model) {
-                    setCurrentModel(lastUsedInDir.model);
-                    if (lastUsedInDir?.provider) setCurrentProvider(lastUsedInDir.provider);
-                    setSelectedModels([lastUsedInDir.model]);
+                    modelToSet = lastUsedInDir.model;
+                    providerToSet = lastUsedInDir.provider || null;
                 }
+            }
+
+            const getFolderModelPref = () => {
+                try {
+                    const raw = localStorage.getItem(`incognideFolderModel:${currentPath}`);
+                    return raw ? JSON.parse(raw) : null;
+                } catch { return null; }
+            };
+
+            const folderPref = getFolderModelPref();
+            if (!modelToSet && folderPref?.model) {
+                modelToSet = folderPref.model;
+                providerToSet = folderPref.provider || null;
+            }
+
+            if (modelToSet) {
+                setCurrentModel(modelToSet);
+                if (providerToSet) setCurrentProvider(providerToSet);
+                setSelectedModels([modelToSet]);
             }
 
             if (!npcToSet && fetchedNPCs.length > 0) {
@@ -6122,9 +6176,7 @@ const handleBrowserDialogNavigate = (url) => {
                 currentPath={currentPath}
                 startNewConversation={startNewConversationWithNpc}
                 startNewChat={(model: string, provider: string) => {
-                    setCurrentModel(model);
-                    setCurrentProvider(provider);
-                    createNewConversation({ contentType: 'chat', model });
+                    createNewConversation({ contentType: 'chat', model, provider });
                 }}
                 npcList={availableNPCs.map(npc => ({ name: npc.name, display_name: npc.display_name }))}
                 jinxList={availableJinxes.map(jinx => ({ jinx_name: jinx.name, description: jinx.description }))}
@@ -6311,6 +6363,26 @@ const getPaneExecutionMode = useCallback((paneId: string) => {
     return pd?.executionMode || def;
 }, []);
 
+const getPaneModel = useCallback((paneId: string) => {
+    return contentDataRef.current[paneId]?.model || null;
+}, []);
+
+const setPaneModel = useCallback((paneId: string, model: string | null) => {
+    if (!contentDataRef.current[paneId]) return;
+    contentDataRef.current[paneId].model = model;
+    notifyAllPanes();
+}, []);
+
+const getPaneProvider = useCallback((paneId: string) => {
+    return contentDataRef.current[paneId]?.provider || null;
+}, []);
+
+const setPaneProvider = useCallback((paneId: string, provider: string | null) => {
+    if (!contentDataRef.current[paneId]) return;
+    contentDataRef.current[paneId].provider = provider;
+    notifyAllPanes();
+}, []);
+
 const setPaneExecutionMode = useCallback(async (paneId: string, mode: string) => {
     if (!contentDataRef.current[paneId]) {
         contentDataRef.current[paneId] = { executionMode: mode, selectedJinx: null, showJinxDropdown: false };
@@ -6381,8 +6453,28 @@ const getChatInputProps = useCallback((paneId: string) => {
     showJinxDropdown: getPaneShowJinxDropdown(paneId),
     setShowJinxDropdown: (show: boolean) => setPaneShowJinxDropdown(paneId, show),
     availableModels, modelsLoading, modelsError,
-    currentModel, setCurrentModel: (v: any) => { setCurrentModel(v); notifyUpdate(); },
-    currentProvider, setCurrentProvider: (v: any) => { setCurrentProvider(v); notifyUpdate(); },
+    currentModel: getPaneModel(paneId),
+    setCurrentModel: (v: any) => {
+        setPaneModel(paneId, v);
+        if (v && currentPath) {
+            try {
+                const provider = getPaneProvider(paneId) || currentProvider;
+                localStorage.setItem(`incognideFolderModel:${currentPath}`, JSON.stringify({ model: v, provider }));
+            } catch {}
+        }
+        notifyUpdate();
+    },
+    currentProvider: getPaneProvider(paneId),
+    setCurrentProvider: (v: any) => {
+        setPaneProvider(paneId, v);
+        if (v && currentPath) {
+            try {
+                const model = getPaneModel(paneId) || currentModel;
+                if (model) localStorage.setItem(`incognideFolderModel:${currentPath}`, JSON.stringify({ model, provider: v }));
+            } catch {}
+        }
+        notifyUpdate();
+    },
     favoriteModels, toggleFavoriteModel,
     showAllModels, setShowAllModels, modelsToDisplay, ollamaToolModels, setError,
     modelWarning,
@@ -6663,9 +6755,8 @@ const handleConversationSelect = async (conversationId: string, skipMessageLoad 
                         setSelectedNPCs([msg.npc]);
                     }
                     if (msg.model) {
-                        setCurrentModel(msg.model);
-                        setSelectedModels([msg.model]);
-                        if (msg.provider) setCurrentProvider(msg.provider);
+                        setPaneModel(paneIdToUpdate, msg.model);
+                        if (msg.provider) setPaneProvider(paneIdToUpdate, msg.provider);
                         modelSetFromMessages = true;
                     }
                     break;
@@ -6676,9 +6767,11 @@ const handleConversationSelect = async (conversationId: string, skipMessageLoad 
             try {
                 const lastUsedInConvo = await window.api.getLastUsedInConversation(conversationId);
                 if (lastUsedInConvo?.model) {
-                    setCurrentModel(lastUsedInConvo.model);
-                    setSelectedModels([lastUsedInConvo.model]);
-                    if (lastUsedInConvo?.provider) setCurrentProvider(lastUsedInConvo.provider);
+                    setPaneModel(paneIdToUpdate, lastUsedInConvo.model);
+                    if (lastUsedInConvo?.provider) setPaneProvider(paneIdToUpdate, lastUsedInConvo.provider);
+                } else if (currentModel) {
+                    setPaneModel(paneIdToUpdate, currentModel);
+                    if (currentProvider) setPaneProvider(paneIdToUpdate, currentProvider);
                 }
             } catch {}
         }

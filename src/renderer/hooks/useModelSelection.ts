@@ -204,20 +204,8 @@ export function useModelSelection() {
                 desiredModel = validPending[0];
                 desiredProvider = providerFor(desiredModel);
                 desiredSelectedModels = [desiredModel];
-            } else if (effectiveAvailableModels.length > 0) {
-                // Pending models don't match; fall back to first newly available model if
-                // the current model isn't valid either, to avoid getting stuck on a stale
-                // selection.
-                if (!isValid(currentModel)) {
-                    const first = effectiveAvailableModels[0];
-                    desiredModel = first.value;
-                    desiredProvider = first.provider;
-                }
             }
-            // Defer clearing pending until we are actually matching or have given up.
-            if (desiredModel || effectiveAvailableModels.length > 0) {
-                setPendingAddedModels([]);
-            }
+            setPendingAddedModels([]);
         }
 
         if (!desiredModel) {
@@ -233,12 +221,6 @@ export function useModelSelection() {
                     }
                 } catch {}
             }
-        }
-
-        if (!desiredModel) {
-            const first = effectiveAvailableModels[0];
-            desiredModel = first.value;
-            desiredProvider = first.provider;
         }
 
         if (desiredModel !== currentModel || desiredProvider !== currentProvider) {

@@ -24,7 +24,9 @@ export const serializeWorkspace = (
             contentId: tab.contentId,
             browserUrl: tab.browserUrl,
             title: tab.title,
-            fileChanged: tab.fileChanged
+            fileChanged: tab.fileChanged,
+            model: tab.model,
+            provider: tab.provider,
 
         }));
 
@@ -35,6 +37,8 @@ export const serializeWorkspace = (
             browserUrl: paneData.browserUrl,
             fileChanged: paneData.fileChanged,
             jinxFile: paneData.jinxFile,
+            model: paneData.model,
+            provider: paneData.provider,
             tabs: serializedTabs,
             activeTabIndex: paneData.activeTabIndex
         };
@@ -133,8 +137,11 @@ export const deserializeWorkspace = async (
                 browserUrl: paneData.browserUrl,
                 fileChanged: paneData.fileChanged || false,
                 jinxFile: jinxFile,
+                model: paneData.model,
+                provider: paneData.provider,
                 tabs: paneData.tabs,
-                activeTabIndex: paneData.activeTabIndex || 0
+                activeTabIndex: paneData.activeTabIndex || 0,
+                executionMode: contentType === 'agent' ? 'tool_agent' : (contentType === 'chat' ? 'chat' : paneData.executionMode)
             };
         });
 
@@ -177,6 +184,7 @@ export const deserializeWorkspace = async (
                         const response = await window.api.readFileContent(pd.contentId);
                         paneDataRef.fileContent = response.error ? `Error: ${response.error}` : response.content;
                     } else if ((pd.contentType === 'chat' || pd.contentType === 'agent')) {
+                        paneDataRef.executionMode = pd.contentType === 'agent' ? 'tool_agent' : 'chat';
                         paneDataRef.chatMessages = {
                             messages: [],
                             allMessages: [],
@@ -191,6 +199,13 @@ export const deserializeWorkspace = async (
                         paneDataRef.chatMessages.allMessages = formatted;
                         paneDataRef.chatMessages.messages = formatted.slice(-paneDataRef.chatMessages.displayedMessageCount);
                         paneDataRef.chatStats = getConversationStats(formatted);
+                        if (!paneDataRef.model || !paneDataRef.provider) {
+                            const lastAssistant = [...formatted].reverse().find((m: any) => m.role === 'assistant' && m.model);
+                            if (lastAssistant) {
+                                if (!paneDataRef.model) paneDataRef.model = lastAssistant.model;
+                                if (!paneDataRef.provider && lastAssistant.provider) paneDataRef.provider = lastAssistant.provider;
+                            }
+                        }
                         console.log('[WORKSPACE RESTORE] Loaded', formatted.length, 'messages for chat pane', paneId);
                     } else if (pd.contentType === 'browser') {
                         paneDataRef.browserUrl = pd.browserUrl || pd.contentId;

@@ -622,6 +622,8 @@ const ensureTablesExist = async () => {
       CREATE TABLE IF NOT EXISTS conversation_history (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           message_id TEXT UNIQUE NOT NULL,
+          parent_message_id TEXT,
+          branch_id TEXT,
           timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
           role TEXT NOT NULL,
           content TEXT,
@@ -3427,6 +3429,19 @@ ipcMain.handle('backend:installAndStart', async (event, { pythonPath, npcpyExtra
   } catch (err) {
     log(`[backend:installAndStart] Error: ${err.message}`);
     sendProgress(`Error: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('reload-window', async (event) => {
+  try {
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+    if (senderWindow && !senderWindow.isDestroyed()) {
+      senderWindow.webContents.reloadIgnoringCache();
+    }
+    return { success: true };
+  } catch (err) {
+    log(`reload-window error: ${err.message}`);
     return { success: false, error: err.message };
   }
 });

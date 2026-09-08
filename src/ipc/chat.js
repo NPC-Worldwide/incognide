@@ -636,14 +636,16 @@ function register(ctx) {
       const db = new sqlite3.Database(dbPath);
       const query = `
         INSERT OR REPLACE INTO conversation_history
-        (message_id, timestamp, role, content, conversation_id, directory_path,
+        (message_id, parent_message_id, branch_id, timestamp, role, content, conversation_id, directory_path,
          model, provider, npc, team, reasoning_content, tool_calls, tool_results,
          params, input_tokens, output_tokens, cost, execution_mode,
          device_id, device_name)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       const params = [
         message.message_id,
+        message.parent_message_id || null,
+        message.branch_id || null,
         message.timestamp,
         message.role,
         message.content,
@@ -1386,7 +1388,8 @@ function register(ctx) {
             (SELECT npc FROM conversation_history AS c2 WHERE c2.conversation_id = conversation_history.conversation_id AND c2.npc IS NOT NULL AND c2.npc != '' ORDER BY timestamp DESC, id DESC LIMIT 1) as npc,
             (SELECT model FROM conversation_history AS c2 WHERE c2.conversation_id = conversation_history.conversation_id AND c2.model IS NOT NULL AND c2.model != '' ORDER BY timestamp DESC, id DESC LIMIT 1) as model,
             (SELECT provider FROM conversation_history AS c2 WHERE c2.conversation_id = conversation_history.conversation_id AND c2.provider IS NOT NULL AND c2.provider != '' ORDER BY timestamp DESC, id DESC LIMIT 1) as provider,
-            MAX(execution_mode) as execution_mode
+            MAX(execution_mode) as execution_mode,
+            MAX(CASE WHEN tool_calls IS NOT NULL AND tool_calls != '' AND tool_calls != '[]' THEN 1 ELSE 0 END) as has_tool_calls
           FROM conversation_history
           WHERE REPLACE(RTRIM(directory_path, '/\\'), '\\', '/') = ?
           GROUP BY conversation_id
@@ -1407,7 +1410,7 @@ function register(ctx) {
         npcs: (row.npcs || '').split(',').filter(Boolean),
         models: (row.models || '').split(',').filter(Boolean),
         providers: (row.providers || '').split(',').filter(Boolean),
-        execution_mode: row.execution_mode,
+        execution_mode: row.execution_mode || (row.has_tool_calls ? 'tool_agent' : 'chat'),
         npc: row.npc || (row.npcs || '').split(',')[0] || '',
         model: row.model || (row.models || '').split(',')[0] || '',
         provider: row.provider || (row.providers || '').split(',')[0] || '',
