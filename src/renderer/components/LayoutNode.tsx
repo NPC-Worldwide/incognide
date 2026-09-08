@@ -300,8 +300,6 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
             findNodePath, rootLayoutNode, setPaneContextMenu, closeContentPane,
 
             autoScrollEnabled, setAutoScrollEnabled,
-            messageSelectionMode, toggleMessageSelectionMode, selectedMessages,
-            conversationBranches, showBranchingUI, setShowBranchingUI,
 
             getChatInputProps,
 
@@ -1298,9 +1296,6 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
         } else if (contentType === 'tilejinx') {
             headerIcon = <Zap size={14} className="text-amber-400" />;
             headerTitle = contentId?.replace('.jinx', '') || 'Tile';
-        } else if (contentType === 'branches') {
-            headerIcon = <GitBranch size={14} className="text-purple-400" />;
-            headerTitle = 'Branch Comparison';
         } else if (contentType === 'diff') {
             headerIcon = <GitBranch size={14} className="text-orange-400" />;
             headerTitle = `Diff: ${getFileName(contentId) || 'File'}`;
@@ -1454,14 +1449,8 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
                     chatStats={chatStats}
                     autoScrollEnabled={autoScrollEnabled}
                     setAutoScrollEnabled={setAutoScrollEnabled}
-                    messageSelectionMode={messageSelectionMode}
-                    toggleMessageSelectionMode={toggleMessageSelectionMode}
-                    selectedMessages={selectedMessages}
-                    showBranchingUI={showBranchingUI}
-                    setShowBranchingUI={setShowBranchingUI}
                     topBarCollapsed={topBarCollapsed}
                     onExpandTopBar={onExpandTopBar}
-                    conversationBranches={conversationBranches}
                 />
             );
         }
@@ -1471,12 +1460,15 @@ export const LayoutNode = memo(({ node, path, component: componentRef }) => {
         const lastMessage = chatMessages.length > 0 ? chatMessages[chatMessages.length - 1] : null;
         const lastMessageContent = lastMessage?.content || '';
         const lastMessageReasoning = lastMessage?.reasoningContent || '';
+        const lastMessageToolCalls = lastMessage?.toolCalls || [];
+        const lastMessageContentParts = lastMessage?.contentParts || [];
+        const lastMessageStreaming = !!lastMessage?.isStreaming;
 
         useEffect(() => {
             if (autoScrollEnabled && chatScrollRef.current && (contentType === 'chat' || contentType === 'agent')) {
                 chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
             }
-        }, [chatMessages.length, lastMessageContent, lastMessageReasoning, autoScrollEnabled, contentType]);
+        }, [chatMessages.length, lastMessageContent, lastMessageReasoning, lastMessageToolCalls, lastMessageContentParts, lastMessageStreaming, lastMessage?.id, autoScrollEnabled, contentType]);
 
         if (tabs.length > 1) {
             tabs.forEach((tab, index) => {

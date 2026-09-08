@@ -67,12 +67,10 @@ const PicViewer: React.FC<PicViewerProps> = ({ nodeId, contentDataRef }) => {
     const handleDownload = useCallback(async () => {
         if (!filePath) return;
         try {
-            const link = document.createElement('a');
-            link.href = `file://${filePath}`;
-            link.download = getFileName(filePath) || 'image';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            const result = await (window as any).api?.saveLocalFile?.(filePath);
+            if (result?.error) {
+                console.error('Error downloading image:', result.error);
+            }
         } catch (err) {
             console.error('Error downloading image:', err);
         }

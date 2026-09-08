@@ -147,6 +147,19 @@ function register(ctx) {
     return result.filePath;
   });
 
+  ipcMain.handle('save-local-file', async (event, filePath) => {
+    try {
+      if (!filePath || !fs.existsSync(filePath)) return { success: false, error: 'File not found' };
+      const defaultName = path.basename(filePath);
+      const result = await dialog.showSaveDialog({ defaultPath: defaultName });
+      if (result.canceled || !result.filePath) return { success: false, canceled: true };
+      await fsPromises.copyFile(filePath, result.filePath);
+      return { success: true, path: result.filePath };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('show-open-dialog', async (event, options) => {
     const result = await dialog.showOpenDialog(options);
 

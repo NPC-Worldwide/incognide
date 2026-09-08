@@ -632,6 +632,7 @@ onTerminalClosed: (callback) => {
     addMcpIntegration: (args) => ipcRenderer.invoke('mcp:addIntegration', args),
     showOpenDialog: (options) => ipcRenderer.invoke('show-open-dialog', options),
     showSaveDialog: (options) => ipcRenderer.invoke('show-save-dialog', options),
+    saveLocalFile: (filePath) => ipcRenderer.invoke('save-local-file', filePath),
     showBrowser: (args) => ipcRenderer.invoke('show-browser', args),
     hideBrowser: (args) => ipcRenderer.invoke('hide-browser', args),
     updateBrowserBounds: (args) => ipcRenderer.invoke('update-browser-bounds', args),
@@ -950,6 +951,12 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
     teamsRead: () => ipcRenderer.invoke('teams:read'),
     teamsWrite: (teams) => ipcRenderer.invoke('teams:write', teams),
     teamsScan: (currentPath) => ipcRenderer.invoke('teams:scan', currentPath),
+    teamUpdateProvider: (args) => ipcRenderer.invoke('team:update-provider', args),
+    onTeamConfigsUpdated: (callback) => {
+        const handler = (_, data) => callback(data);
+        ipcRenderer.on('team-configs-updated', handler);
+        return () => ipcRenderer.removeListener('team-configs-updated', handler);
+    },
     mcpGetServersForSidebar: (currentPath) => ipcRenderer.invoke('mcp:getServersForSidebar', currentPath),
 
     sshConnect: (config) => ipcRenderer.invoke('ssh:connect', config),

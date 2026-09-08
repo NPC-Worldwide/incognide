@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { BarChart3, ChevronDown, ChevronRight, ListFilter, MessageSquare } from 'lucide-react';
+import { BarChart3, ChevronDown, ChevronRight } from 'lucide-react';
 
 interface ChatStats {
     messageCount: number;
@@ -17,12 +17,6 @@ interface ChatHeaderContentProps {
     chatStats?: ChatStats;
     autoScrollEnabled: boolean;
     setAutoScrollEnabled: (enabled: boolean) => void;
-    messageSelectionMode: boolean;
-    toggleMessageSelectionMode: () => void;
-    selectedMessages: Set<string>;
-    showBranchingUI: boolean;
-    setShowBranchingUI: (show: boolean) => void;
-    conversationBranches: Map<string, any>;
     topBarCollapsed?: boolean;
     onExpandTopBar?: () => void;
 }
@@ -33,12 +27,6 @@ const ChatHeaderContent: React.FC<ChatHeaderContentProps> = ({
     chatStats = { messageCount: 0, inputTokens: 0, outputTokens: 0, totalCost: 0, models: new Set(), agents: new Set(), providers: new Set() },
     autoScrollEnabled,
     setAutoScrollEnabled,
-    messageSelectionMode,
-    toggleMessageSelectionMode,
-    selectedMessages,
-    showBranchingUI,
-    setShowBranchingUI,
-    conversationBranches,
     topBarCollapsed,
     onExpandTopBar,
 }) => {
@@ -134,31 +122,6 @@ const ChatHeaderContent: React.FC<ChatHeaderContentProps> = ({
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M12 5v14M19 12l-7 7-7-7"/>
                     </svg>
-                </button>
-
-                <button
-                    onClick={(e) => { e.stopPropagation(); toggleMessageSelectionMode(); }}
-                    className={`p-1 rounded text-xs transition-all flex items-center gap-0.5 flex-shrink-0 ${messageSelectionMode ? 'theme-button-primary' : 'theme-button theme-hover'}`}
-                    title={messageSelectionMode ? `Exit selection (${selectedMessages.size} selected)` : 'Select messages'}
-                >
-                    <ListFilter size={12} />
-                    {messageSelectionMode && selectedMessages.size > 0 && <span className="text-[10px]">{selectedMessages.size}</span>}
-                </button>
-
-                <button
-                    onClick={(e) => { e.stopPropagation(); setShowBranchingUI(!showBranchingUI); }}
-                    className={`p-1 rounded text-xs transition-all flex items-center gap-0.5 flex-shrink-0 ${
-                        showBranchingUI ? 'theme-button-primary' : 'theme-button theme-hover'
-                    }`}
-                    title="Manage conversation branches"
-                >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <line x1="6" y1="3" x2="6" y2="15"></line>
-                        <circle cx="18" cy="6" r="3"></circle>
-                        <circle cx="6" cy="18" r="3"></circle>
-                        <path d="M18 9a9 9 0 0 1-9 9"></path>
-                    </svg>
-                    {conversationBranches.size > 0 && <span className="text-[10px]">{conversationBranches.size}</span>}
                 </button>
             </div>
         </div>

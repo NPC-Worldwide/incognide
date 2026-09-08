@@ -1,4 +1,4 @@
-const { BrowserView, dialog, session, shell, safeStorage, screen } = require('electron');
+const { BrowserView, BrowserWindow, dialog, session, shell, safeStorage, screen, app } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs/promises');
@@ -130,70 +130,93 @@ const writeCredentials = async (data) => {
   }
 };
 
-function setupWebContentsHandlers(contents, getMainWindow, log) {
+function createWillDownloadHandler(deps) {
+  const { app, BrowserWindow, path, fs, activeDownloads, getMainWindow, log } = deps;
 
-  contents.on('context-menu', async (e, params) => {
+  return (e, item, webContents) => {
+    const url = item.getURL();
+    let filename = item.getFilename() || 'download';
+    filename = filename.replace(/[\\/:*?"<>|]/g, '_');
 
-    if (contents.getType() === 'webview') {
-      e.preventDefault();
+    const saveDir = app.getPath('downloads');
+    let finalPath = path.join(saveDir, filename);
+    let counter = 1;
+    const ext = path.extname(filename);
+    const base = path.basename(filename, ext);
+    while (fs.existsSync(finalPath)) {
+      finalPath = path.join(saveDir, `${base} (${counter})${ext}`);
+      counter++;
+    }
 
-      const selectedText = params.selectionText || '';
-      const linkURL = params.linkURL || '';
-      const srcURL = params.srcURL || '';
-      const pageURL = params.pageURL || '';
-      const isEditable = params.isEditable || false;
-      const mediaType = params.mediaType || 'none';
+    try {
+      item.setSavePath(finalPath);
+    } catch (err) {
+      log(`[DOWNLOAD] Failed to set save path: ${err.message}`);
+      item.cancel();
+      return;
+    }
 
-      log(`[CONTEXT MENU] Webview context menu: selectedText="${selectedText.substring(0, 50)}...", linkURL="${linkURL}", mediaType="${mediaType}"`);
+    const downloadKey = path.basename(finalPath);
+    activeDownloads.set(downloadKey, { item, paused: false, path: finalPath });
 
-      const mainWindow = getMainWindow();
-      if (mainWindow && !mainWindow.isDestroyed()) {
+    log(`[DOWNLOAD] Started: ${filename} -> ${finalPath}`);
 
-        const cursorPos = screen.getCursorScreenPoint();
-        const windowBounds = mainWindow.getBounds();
+    const dlParentWin = BrowserWindow.fromWebContents(webContents.hostWebContents || webContents)
+      || getMainWindow();
+    if (dlParentWin && !dlParentWin.isDestroyed()) {
+      dlParentWin.webContents.send('browser-download-requested', {
+        url,
+        filename: downloadKey,
+        path: finalPath,
+        mimeType: item.getMimeType(),
+        totalBytes: item.getTotalBytes()
+      });
+    }
 
-        mainWindow.webContents.send('browser-show-context-menu', {
-          x: cursorPos.x - windowBounds.x,
-          y: cursorPos.y - windowBounds.y,
-          selectedText,
-          linkURL,
-          srcURL,
-          pageURL,
-          isEditable,
-          mediaType,
-          canCopy: selectedText.length > 0,
-          canPaste: isEditable,
-          canSaveImage: mediaType === 'image' && srcURL,
-          canSaveLink: !!linkURL,
+    item.on('updated', (event, state) => {
+      const entry = activeDownloads.get(downloadKey);
+      if (!entry) return;
+      if (state === 'interrupted') {
+        log(`[DOWNLOAD] Interrupted: ${downloadKey}`);
+        activeDownloads.delete(downloadKey);
+        if (!dlParentWin?.isDestroyed()) {
+          dlParentWin.webContents.send('download-complete', { filename: downloadKey, state: 'interrupted' });
+        }
+        return;
+      }
+      const received = item.getReceivedBytes();
+      const total = item.getTotalBytes();
+      if (!dlParentWin?.isDestroyed()) {
+        dlParentWin.webContents.send('download-progress', {
+          filename: downloadKey,
+          received,
+          total,
+          percent: total > 0 ? Math.round((received / total) * 100) : 0
         });
       }
-    }
-  });
+    });
 
+    item.once('done', (event, state) => {
+      activeDownloads.delete(downloadKey);
+      if (!dlParentWin?.isDestroyed()) {
+        dlParentWin.webContents.send('download-complete', {
+          filename: downloadKey,
+          path: finalPath,
+          state
+        });
+      }
+      log(`[DOWNLOAD] ${state}: ${finalPath}`);
+    });
+  };
+}
+
+function setupWebContentsHandlers(contents, getMainWindow, log) {
   if (contents.getType() === 'webview') {
     const sess = contents.session;
     if (sess && !sessionsWithDownloadHandler.has(sess)) {
       sessionsWithDownloadHandler.add(sess);
 
-      sess.on('will-download', (e, item, webContents) => {
-        const url = item.getURL();
-        const filename = item.getFilename();
-
-        log(`[DOWNLOAD] Intercepted download: ${filename} from ${url}`);
-
-        item.cancel();
-
-        const dlParentWin = BrowserWindow.fromWebContents(webContents.hostWebContents || webContents)
-          || getMainWindow();
-        if (dlParentWin && !dlParentWin.isDestroyed()) {
-          dlParentWin.webContents.send('browser-download-requested', {
-            url,
-            filename,
-            mimeType: item.getMimeType(),
-            totalBytes: item.getTotalBytes()
-          });
-        }
-      });
+      sess.on('will-download', createWillDownloadHandler({ app, BrowserWindow, path, fs, activeDownloads, getMainWindow, log }));
     }
   }
 }
@@ -569,35 +592,50 @@ function register(ctx) {
 
   ipcMain.handle('cancel-download', async (event, filename) => {
     const download = activeDownloads.get(filename);
-    if (download) {
-        download.controller.abort();
-        activeDownloads.delete(filename);
-        log(`[BROWSER] Cancelled download: ${filename}`);
-        return { success: true };
+    if (!download) return { success: false, error: 'Download not found' };
+    if (download.controller) {
+      download.controller.abort();
     }
-    return { success: false, error: 'Download not found' };
+    if (download.item) {
+      try { download.item.cancel(); } catch {}
+    }
+    activeDownloads.delete(filename);
+    log(`[BROWSER] Cancelled download: ${filename}`);
+    return { success: true };
   });
 
   ipcMain.handle('pause-download', async (event, filename) => {
-
     const download = activeDownloads.get(filename);
-    if (download) {
+    if (!download) return { success: false, error: 'Download not found' };
+    if (download.item) {
+      try {
+        download.item.pause();
         download.paused = true;
-        log(`[BROWSER] Pause requested for: ${filename} (not fully implemented)`);
+        log(`[BROWSER] Paused download: ${filename}`);
         return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
     }
-    return { success: false, error: 'Download not found' };
+    download.paused = true;
+    return { success: true };
   });
 
   ipcMain.handle('resume-download', async (event, filename) => {
-
     const download = activeDownloads.get(filename);
-    if (download) {
+    if (!download) return { success: false, error: 'Download not found' };
+    if (download.item) {
+      try {
+        download.item.resume();
         download.paused = false;
-        log(`[BROWSER] Resume requested for: ${filename} (not fully implemented)`);
+        log(`[BROWSER] Resumed download: ${filename}`);
         return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
     }
-    return { success: false, error: 'Download not found' };
+    download.paused = false;
+    return { success: true };
   });
 
   ipcMain.handle('browser-open-external', async (event, { url }) => {
@@ -1501,4 +1539,4 @@ function register(ctx) {
   });
 }
 
-module.exports = { register, browserViews, setupWebContentsHandlers, loadSavedExtensions };
+module.exports = { register, browserViews, setupWebContentsHandlers, loadSavedExtensions, createWillDownloadHandler };

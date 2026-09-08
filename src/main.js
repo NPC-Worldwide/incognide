@@ -1,4 +1,5 @@
 const { app, BrowserWindow, globalShortcut, ipcMain, protocol, shell, BrowserView, safeStorage, session, nativeImage, dialog, screen, Menu } = require('electron');
+const { setupWebContentsHandlers } = require('./ipc');
 const { desktopCapturer } = require('electron');
 const { spawn, execSync } = require('child_process');
 const path = require('path');
@@ -633,7 +634,6 @@ const ensureTablesExist = async () => {
           reasoning_content TEXT,
           tool_calls TEXT,
           tool_results TEXT,
-          parent_message_id TEXT,
           params TEXT,
           input_tokens INTEGER,
           output_tokens INTEGER,
@@ -1246,7 +1246,6 @@ async function ensureBaseDir() {
   }
 }
 
-const sessionsWithDownloadHandler = new WeakSet();
 
 ipcMain.on('trigger-new-text-file', (event) => {
   event.sender.send('menu-new-text-file');
@@ -1658,35 +1657,10 @@ app.on('web-contents-created', (event, contents) => {
         } catch (e) {}
       }, 5000);
     });
+
+    setupWebContentsHandlers(contents, () => mainWindow, log);
   }
 
-  if (contents.getType() === 'webview') {
-    const session = contents.session;
-    if (session && !sessionsWithDownloadHandler.has(session)) {
-      sessionsWithDownloadHandler.add(session);
-
-      session.on('will-download', (e, item, webContents) => {
-        const url = item.getURL();
-        const filename = item.getFilename();
-
-        log(`[DOWNLOAD] Intercepted download: ${filename} from ${url}`);
-
-        item.cancel();
-
-        const dlParentWin = BrowserWindow.fromWebContents(webContents.hostWebContents || webContents)
-          || BrowserWindow.getFocusedWindow()
-          || BrowserWindow.getAllWindows()[0];
-        if (dlParentWin && !dlParentWin.isDestroyed()) {
-          dlParentWin.webContents.send('browser-download-requested', {
-            url,
-            filename,
-            mimeType: item.getMimeType(),
-            totalBytes: item.getTotalBytes()
-          });
-        }
-      });
-    }
-  }
 });
 
 async function deployIncognideTeamOnStartup() {
@@ -2266,8 +2240,9 @@ function registerGlobalShortcut(win) {
           movable: false,
           hasShadow: false,
           webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false
+            nodeIntegration: false,
+            contextIsolation: true,
+            preload: path.join(__dirname, 'renderer/components/selection-preload.js')
           }
         });
         selectionWindow.setIgnoreMouseEvents(false);
@@ -2317,118 +2292,7 @@ function registerGlobalShortcut(win) {
           isCapturingScreenshot = false;
         });
 
-        const selectionHtml = `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <style>
-              * { margin: 0; padding: 0; box-sizing: border-box; }
-              body {
-                overflow: hidden;
-                cursor: crosshair;
-                user-select: none;
-                background: transparent;
-              }
-              #overlay {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100vw;
-                height: 100vh;
-                background: rgba(0, 0, 0, 0.15);
-              }
-              #selection {
-                position: fixed;
-                border: 2px dashed #00aaff;
-                background: rgba(0, 170, 255, 0.1);
-                display: none;
-                pointer-events: none;
-              }
-              #dimensions {
-                position: fixed;
-                background: rgba(0, 0, 0, 0.7);
-                color: white;
-                padding: 4px 8px;
-                border-radius: 4px;
-                font-family: system-ui, sans-serif;
-                font-size: 12px;
-                display: none;
-                pointer-events: none;
-              }
-            </style>
-          </head>
-          <body>
-            <div id="overlay"></div>
-            <div id="selection"></div>
-            <div id="dimensions"></div>
-            <script>
-              const { ipcRenderer } = require('electron');
-
-              let startX, startY, isSelecting = false;
-              const selection = document.getElementById('selection');
-              const dimensions = document.getElementById('dimensions');
-
-              document.addEventListener('mousedown', (e) => {
-                startX = e.clientX;
-                startY = e.clientY;
-                isSelecting = true;
-                selection.style.display = 'block';
-                dimensions.style.display = 'block';
-                selection.style.left = startX + 'px';
-                selection.style.top = startY + 'px';
-                selection.style.width = '0px';
-                selection.style.height = '0px';
-              });
-
-              document.addEventListener('mousemove', (e) => {
-                if (!isSelecting) return;
-
-                const currentX = e.clientX;
-                const currentY = e.clientY;
-
-                const left = Math.min(startX, currentX);
-                const top = Math.min(startY, currentY);
-                const width = Math.abs(currentX - startX);
-                const height = Math.abs(currentY - startY);
-
-                selection.style.left = left + 'px';
-                selection.style.top = top + 'px';
-                selection.style.width = width + 'px';
-                selection.style.height = height + 'px';
-
-                dimensions.style.left = (left + width + 5) + 'px';
-                dimensions.style.top = (top + height + 5) + 'px';
-                dimensions.textContent = width + ' x ' + height;
-              });
-
-              document.addEventListener('mouseup', (e) => {
-                if (!isSelecting) return;
-                isSelecting = false;
-
-                const rect = selection.getBoundingClientRect();
-                if (rect.width > 5 && rect.height > 5) {
-                  ipcRenderer.send('selection-complete', {
-                    x: rect.left,
-                    y: rect.top,
-                    width: rect.width,
-                    height: rect.height
-                  });
-                } else {
-                  ipcRenderer.send('selection-cancel');
-                }
-              });
-
-              document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape') {
-                  ipcRenderer.send('selection-cancel');
-                }
-              });
-            </script>
-          </body>
-          </html>
-        `;
-
-        selectionWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(selectionHtml));
+        selectionWindow.loadFile(path.join(__dirname, 'renderer/components/selection.html'));
 
       } catch (error) {
         console.error('Screenshot capture failed:', error);
@@ -2752,13 +2616,11 @@ function createWindow(cliArgs = {}) {
       icon: appIcon || iconPath,
       title: 'Incognide',
       webPreferences: {
-        nodeIntegration: true,
+        nodeIntegration: false,
         contextIsolation: true,
         webSecurity: false,
         webviewTag: true,
         plugins: true,
-        enableRemoteModule: true,
-        nodeIntegrationInSubFrames: true,
         allowRunningInsecureContent: true,
         experimentalFeatures: true,
         preload: path.join(__dirname, 'preload.js')
@@ -2809,10 +2671,6 @@ function createWindow(cliArgs = {}) {
       });
     }
 
-    mainWindow.webContents.session.protocol.registerFileProtocol('file', (request, callback) => {
-      const pathname = decodeURI(request.url.replace('file:///', ''));
-      callback(pathname);
-    });
     setTimeout(() => {
       if (appIcon && !appIcon.isEmpty()) {
         mainWindow.setIcon(appIcon);

@@ -638,9 +638,9 @@ function register(ctx) {
         INSERT OR REPLACE INTO conversation_history
         (message_id, timestamp, role, content, conversation_id, directory_path,
          model, provider, npc, team, reasoning_content, tool_calls, tool_results,
-         parent_message_id, params, input_tokens, output_tokens, cost, execution_mode,
+         params, input_tokens, output_tokens, cost, execution_mode,
          device_id, device_name)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       const params = [
         message.message_id,
@@ -656,7 +656,6 @@ function register(ctx) {
         message.reasoning_content || null,
         message.tool_calls ? JSON.stringify(message.tool_calls) : null,
         message.tool_results ? JSON.stringify(message.tool_results) : null,
-        message.parent_message_id || null,
         message.params ? JSON.stringify(message.params) : null,
         message.input_tokens || null,
         message.output_tokens || null,
@@ -926,7 +925,6 @@ function register(ctx) {
         npcSource: data.npcSource || 'global',
         attachments: data.attachments || [],
         executionMode: data.executionMode || 'chat',
-        parentMessageId: data.parentMessageId,
         isResend: data.isRerun || false,
         jinxes: data.jinxes || [],
         tools: data.tools || [],
@@ -936,8 +934,6 @@ function register(ctx) {
 
         userMessageId: data.userMessageId,
         assistantMessageId: data.assistantMessageId,
-
-        userParentMessageId: data.userParentMessageId,
 
         temperature: data.temperature,
         top_p: data.top_p,
@@ -1481,7 +1477,6 @@ function register(ctx) {
             ch.reasoning_content,
             ch.tool_calls,
             ch.tool_results,
-            ch.parent_message_id,
             ch.input_tokens,
             ch.output_tokens,
             ch.cost,
@@ -1613,7 +1608,6 @@ function register(ctx) {
                 reasoningContent: row.reasoning_content,
                 toolCalls,
                 toolResults,
-                parentMessageId: row.parent_message_id,
                 input_tokens: row.input_tokens || 0,
                 output_tokens: row.output_tokens || 0,
                 cost: row.cost ? parseFloat(row.cost) : null,
@@ -1623,7 +1617,6 @@ function register(ctx) {
             delete newRow.reasoning_content;
             delete newRow.tool_calls;
             delete newRow.tool_results;
-            delete newRow.parent_message_id;
             return newRow;
         });
 

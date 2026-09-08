@@ -4,8 +4,8 @@ import { vi } from 'vitest';
 // Store original fetch before any mocking
 const originalFetch = global.fetch;
 
-// Mock window.api (Electron IPC bridge)
-const mockApi: Record<string, any> = {
+// Explicit overrides for window.api (Electron IPC bridge)
+const apiOverrides: Record<string, any> = {
   readFile: vi.fn(),
   writeFile: vi.fn(),
   writeFileBuffer: vi.fn().mockResolvedValue({ success: true }),
@@ -24,7 +24,7 @@ const mockApi: Record<string, any> = {
   pauseDownload: vi.fn(),
   resumeDownload: vi.fn(),
   browserSaveLink: vi.fn().mockResolvedValue({ success: true }),
-  
+
   // PDF-related mocks
   addPdfHighlight: vi.fn().mockResolvedValue({ success: true, lastID: 1 }),
   getHighlightsForFile: vi.fn().mockResolvedValue({ highlights: [] }),
@@ -37,7 +37,22 @@ const mockApi: Record<string, any> = {
   clearDrawingsForPage: vi.fn().mockResolvedValue({ success: true }),
   showSaveDialog: vi.fn().mockResolvedValue({ filePath: '/test/annotated.pdf' }),
   getFileStats: vi.fn().mockResolvedValue({ mtimeMs: Date.now() }),
+  teamsRead: vi.fn().mockResolvedValue({}),
+  teamsWrite: vi.fn().mockResolvedValue({ success: true }),
+  teamsScan: vi.fn().mockResolvedValue([]),
+  getNPCTeamProject: vi.fn().mockResolvedValue({ npcs: [], teamConfig: {} }),
+  getAvailableModels: vi.fn().mockResolvedValue([]),
 };
+
+// Proxy-based api mock: explicit overrides win, everything else returns a fresh vi.fn()
+const cache: Record<string, any> = {};
+const mockApi = new Proxy(apiOverrides, {
+  get(target, prop: string) {
+    if (prop in target) return target[prop as keyof typeof target];
+    if (!cache[prop]) cache[prop] = vi.fn();
+    return cache[prop];
+  },
+});
 
 if (typeof window !== 'undefined') {
   Object.defineProperty(window, 'api', {

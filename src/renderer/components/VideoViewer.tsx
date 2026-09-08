@@ -45,16 +45,14 @@ const VideoViewer: React.FC<VideoViewerProps> = ({ nodeId, contentDataRef }) => 
     const handleDownload = useCallback(async () => {
         if (!filePath) return;
         try {
-            const link = document.createElement('a');
-            link.href = `file://${filePath}`;
-            link.download = fileName;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            const result = await (window as any).api?.saveLocalFile?.(filePath);
+            if (result?.error) {
+                console.error('Error downloading video:', result.error);
+            }
         } catch (err) {
             console.error('Error downloading video:', err);
         }
-    }, [filePath, fileName]);
+    }, [filePath]);
 
     useEffect(() => {
         const video = videoRef.current;

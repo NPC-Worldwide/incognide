@@ -1048,7 +1048,6 @@ export const usePaneAwareStreamListeners = (
                 model: msg.model,
                 provider: msg.provider,
                 npc: msg.npc,
-                parent_message_id: msg.parentMessageId,
                 execution_mode: paneData.executionMode,
                 input_tokens: msg.input_tokens,
                 output_tokens: msg.output_tokens,
@@ -1287,6 +1286,7 @@ export const usePaneAwareStreamListeners = (
                     }
                     if (type === 'usage') {
                         applyUsage({ input_tokens: chunk.input_tokens || 0, output_tokens: chunk.output_tokens || 0, cost: chunk.cost || 0 });
+                        paneData.chatStats = getConversationStats(paneData.chatMessages.allMessages);
                     } else if (type === 'tool_execution_start' && Array.isArray(chunk.tool_calls)) {
                         appendToolCalls(chunk.tool_calls);
                     } else if ((type === 'tool_start' || type === 'tool_complete' || type === 'tool_result' || type === 'tool_error') && chunk.name) {
@@ -1646,7 +1646,6 @@ export const handleInterruptStream = async (
             model: streamingMessage.model,
             provider: streamingMessage.provider,
             npc: streamingMessage.npc,
-            parent_message_id: streamingMessage.parentMessageId,
             execution_mode: paneData.executionMode,
             input_tokens: streamingMessage.input_tokens,
             output_tokens: streamingMessage.output_tokens,
@@ -1727,16 +1726,6 @@ export const getThumbnailIcon = (fileName: string, fileType?: string) => {
         case 'json': return <FileJson {...iconProps} className="text-orange-400" />;
         default: return <File {...iconProps} className="text-gray-400" />;
     }
-};
-
-export const createToggleMessageSelectionMode = (
-    setMessageSelectionMode: (fn: (prev: boolean) => boolean) => void,
-    setSelectedMessages: (set: Set<any>) => void
-) => {
-    return () => {
-        setMessageSelectionMode(prev => !prev);
-        setSelectedMessages(new Set());
-    };
 };
 
 export const findNodeByPath = (node: any, path: number[]): any => {

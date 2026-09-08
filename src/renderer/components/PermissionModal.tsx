@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 
 export interface PermissionRequest {
     request_id: string;
@@ -12,6 +12,7 @@ interface PermissionModalProps {
     request: PermissionRequest;
     pendingCount: number;
     onDecision: (request: PermissionRequest, decision: string) => void;
+    isActivePane?: boolean;
 }
 
 const prettyArgs = (preview?: string): string => {
@@ -23,9 +24,16 @@ const prettyArgs = (preview?: string): string => {
     }
 };
 
-export function PermissionModal({ request, pendingCount, onDecision }: PermissionModalProps) {
+export function PermissionModal({ request, pendingCount, onDecision, isActivePane }: PermissionModalProps) {
+    const modalRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        modalRef.current?.focus();
+    }, [request.request_id]);
+
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
+            if (!isActivePane) return;
             if (e.key === 'Enter') {
                 e.preventDefault();
                 e.stopPropagation();
@@ -38,10 +46,14 @@ export function PermissionModal({ request, pendingCount, onDecision }: Permissio
         };
         window.addEventListener('keydown', handler, true);
         return () => window.removeEventListener('keydown', handler, true);
-    }, [request, onDecision]);
+    }, [request, onDecision, isActivePane]);
 
     return (
-        <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+        <div
+            ref={modalRef}
+            tabIndex={-1}
+            className="absolute inset-0 bg-black/60 flex items-center justify-center z-50 p-4 outline-none"
+        >
             <div className="theme-bg-secondary p-6 theme-border border rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] flex flex-col">
                 <h3 className="text-lg font-medium mb-1 theme-text-primary">Permission Request</h3>
                 <p className="text-sm theme-text-muted mb-4">
@@ -79,6 +91,12 @@ export function PermissionModal({ request, pendingCount, onDecision }: Permissio
                         Deny
                     </button>
                     <button
+                        onClick={() => onDecision(request, 'Yes, allow for session')}
+                        className="px-3 py-2 theme-button rounded text-sm"
+                    >
+                        Allow for session
+                    </button>
+                    <button
                         onClick={() => onDecision(request, 'Yes, always allow')}
                         className="px-3 py-2 theme-button rounded text-sm"
                     >
@@ -86,7 +104,7 @@ export function PermissionModal({ request, pendingCount, onDecision }: Permissio
                     </button>
                     <button
                         onClick={() => onDecision(request, 'Never allow')}
-                        className="px-3 py-2 theme-button rounded text-sm"
+                        className="px-3 py-2 theme-button rounded text-sm col-span-2"
                     >
                         Never allow (remember)
                     </button>
