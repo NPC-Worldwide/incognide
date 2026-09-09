@@ -1,4 +1,5 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { BarChart3, ChevronDown, ChevronRight } from 'lucide-react';
 
 interface ChatStats {
@@ -33,13 +34,28 @@ const ChatHeaderContent: React.FC<ChatHeaderContentProps> = ({
     isStreaming,
 }) => {
     const [statsExpanded, setStatsExpanded] = useState(false);
+    const [popupPos, setPopupPos] = useState<{ top: number; right: number } | null>(null);
     const statsButtonRef = useRef<HTMLButtonElement>(null);
     const totalTokens = (chatStats.inputTokens || 0) + (chatStats.outputTokens || 0);
+
+    useLayoutEffect(() => {
+        if (statsExpanded && statsButtonRef.current) {
+            const rect = statsButtonRef.current.getBoundingClientRect();
+            setPopupPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+        }
+    }, [statsExpanded]);
 
     const formatCompact = (n: number) => {
         if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
         if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
         return String(Math.round(n));
+    };
+
+    const formatCost = (n: number | string | undefined): string => {
+        const val = typeof n === 'number' ? n : (parseFloat(n as any) || 0);
+        if (!val) return '$0.0000';
+        if (val >= 0.0001) return `$${val.toFixed(4)}`;
+        return `$${val.toFixed(6)}`;
     };
 
     return (
@@ -70,14 +86,18 @@ const ChatHeaderContent: React.FC<ChatHeaderContentProps> = ({
                 </button>
             )}
 
-            <div style={{ flex: '1 1 0', width: 0, minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end', overflow: 'hidden', flexWrap: 'nowrap' }}>
+            <div style={{ flex: '1 1 0', width: 0, minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end', overflow: 'visible', flexWrap: 'nowrap' }}>
                 <div className="flex-shrink-0 relative">
                     <button
                         ref={statsButtonRef}
-                        onClick={(e) => { e.stopPropagation(); setStatsExpanded(!statsExpanded); }}
+                        type="button"
+                        draggable={false}
+                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); setStatsExpanded(!statsExpanded); }}
                         onMouseDown={(e) => e.stopPropagation()}
-                        className="flex items-center gap-1 px-1.5 py-1 text-[10px] text-gray-400 hover:text-gray-200 rounded theme-hover"
-                        title={`${chatStats.messageCount} messages · ${formatCompact(totalTokens)} tokens · $${(chatStats.totalCost || 0).toFixed(4)}${isStreaming ? ' (live)' : ''}`}
+                        onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                        onDragStart={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                        className="flex items-center gap-1 px-1.5 py-1 text-[10px] text-gray-400 hover:text-gray-200 rounded theme-hover select-none"
+                        title={`${chatStats.messageCount} messages · ${formatCompact(totalTokens)} tokens · ${formatCost(chatStats.totalCost)}${isStreaming ? ' (live)' : ''}`}
                     >
                         <BarChart3 size={12} />
                         <span className="whitespace-nowrap flex items-center gap-1">
@@ -86,7 +106,7 @@ const ChatHeaderContent: React.FC<ChatHeaderContentProps> = ({
                                 <span className="hidden sm:inline text-gray-500">· {formatCompact(totalTokens)}tok</span>
                             )}
                             {(isStreaming || chatStats.totalCost > 0) && (
-                                <span className="hidden sm:inline text-green-400">· ${chatStats.totalCost.toFixed(4)}</span>
+                                <span className="hidden sm:inline text-green-400">· {formatCost(chatStats.totalCost)}</span>
                             )}
                             {isStreaming && (
                                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
@@ -94,18 +114,25 @@ const ChatHeaderContent: React.FC<ChatHeaderContentProps> = ({
                         </span>
                         {statsExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
                     </button>
-                    {statsExpanded && (
+                    {statsExpanded && popupPos && createPortal(
                         <>
-                            <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setStatsExpanded(false)} />
                             <div
-                                className="absolute right-0 top-full mt-1 p-2 rounded theme-bg-secondary theme-border border shadow-lg z-50 min-w-[180px] max-w-[260px]"
+                                className="fixed inset-0 z-[60]"
+                                onClick={() => setStatsExpanded(false)}
+                                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                            />
+                            <div
+                                className="fixed p-2 rounded theme-bg-secondary theme-border border shadow-lg z-[70] min-w-[180px] max-w-[260px]"
+                                style={{ top: popupPos.top, right: popupPos.right }}
+                                onClick={(e) => e.stopPropagation()}
+                                onPointerDown={(e) => e.stopPropagation()}
                             >
                                 <div className="text-[10px] space-y-1">
                                     <div className="flex justify-between"><span className="text-gray-500">Messages:</span><span>{chatStats.messageCount}</span></div>
                                     <div className="flex justify-between"><span className="text-gray-500">Input tokens:</span><span>{(chatStats.inputTokens || 0).toLocaleString()}</span></div>
                                     <div className="flex justify-between"><span className="text-gray-500">Output tokens:</span><span>{(chatStats.outputTokens || 0).toLocaleString()}</span></div>
                                     <div className="flex justify-between"><span className="text-gray-500">Total tokens:</span><span>{totalTokens.toLocaleString()}</span></div>
-                                    <div className="flex justify-between"><span className="text-gray-500">Cost:</span><span className="text-green-400">${(chatStats.totalCost || 0).toFixed(4)}</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-500">Cost:</span><span className="text-green-400">{formatCost(chatStats.totalCost)}</span></div>
                                     {chatStats.agents?.size > 0 && (
                                         <div className="flex justify-between"><span className="text-gray-500">Agents:</span><span className="text-purple-400" title={Array.from(chatStats.agents).join(', ')}>{chatStats.agents.size}</span></div>
                                     )}
@@ -117,7 +144,8 @@ const ChatHeaderContent: React.FC<ChatHeaderContentProps> = ({
                                     )}
                                 </div>
                             </div>
-                        </>
+                        </>,
+                        document.body
                     )}
                 </div>
 

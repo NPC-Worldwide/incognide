@@ -4,7 +4,7 @@ import MarkdownRenderer from './MarkdownRenderer';
 import { AgentPromptCard } from './AgentPrompt';
 import { ToolCallDisplay } from './ToolCallDisplay';
 import { MessageLabel } from './MessageLabeling';
-import { Paperclip, Tag, Star, ChevronDown, ChevronUp, ChevronRight, Volume2, VolumeX, Loader, RotateCcw, SlidersHorizontal, Bot, Zap, Cpu } from 'lucide-react';
+import { Paperclip, Tag, Star, ChevronDown, ChevronUp, ChevronRight, Volume2, VolumeX, Loader, RotateCcw, SlidersHorizontal, Bot, Zap, Cpu, BarChart3 } from 'lucide-react';
 
 const highlightSearchTerm = (content: string, searchTerm: string): string => {
     if (!searchTerm || !content) return content;
@@ -15,6 +15,13 @@ const highlightSearchTerm = (content: string, searchTerm: string): string => {
 const stripSourcePrefix = (name: string): string => {
     if (!name) return name;
     return name.replace(/^(project:|global:)/, '');
+};
+
+const formatCost = (n: number | string | undefined): string => {
+    const val = typeof n === 'number' ? n : (parseFloat(n as any) || 0);
+    if (!val) return '$0.0000';
+    if (val >= 0.0001) return `$${val.toFixed(4)}`;
+    return `$${val.toFixed(6)}`;
 };
 
 const parseMessageContent = (content: string): { body: string; contextBlocks: string[] } => {
@@ -456,6 +463,20 @@ export const ChatMessage = memo(({
                             {message.provider && (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-600/20 text-purple-300 border border-purple-600/30" title={`Provider: ${message.provider}`}>
                                     {message.provider}
+                                </span>
+                            )}
+                            {(message.input_tokens !== undefined || message.output_tokens !== undefined || message.cost !== undefined) && (
+                                <span className="relative group/tokens inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-600/20 text-gray-300 border border-gray-600/30" title="Click for token/cost details">
+                                    <BarChart3 size={10} />
+                                    {(message.input_tokens !== undefined || message.output_tokens !== undefined) && (
+                                        <span>{(message.input_tokens || 0) + (message.output_tokens || 0)} tok</span>
+                                    )}
+                                    {message.cost !== undefined && (
+                                        <span className="text-green-400">· {formatCost(message.cost)}</span>
+                                    )}
+                                    <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 px-2 py-1 rounded bg-gray-900 border border-gray-700 text-[10px] text-gray-300 whitespace-nowrap opacity-0 group-hover/tokens:opacity-100 pointer-events-none transition-opacity z-50 shadow-lg">
+                                        In: {(message.input_tokens || 0).toLocaleString()} · Out: {(message.output_tokens || 0).toLocaleString()} · Cost: {formatCost(message.cost)}
+                                    </span>
                                 </span>
                             )}
                             {message.npc && message.npc !== 'agent' && (

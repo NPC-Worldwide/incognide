@@ -25,6 +25,22 @@ const daemons = new Map();
 
 const sqlite3 = require('sqlite3');
 const dbPath = process.env.INCOGNIDE_DB_PATH || path.join(os.homedir(), '.incognide', 'history.db');
+
+let sharedDb = null;
+function getSharedDb() {
+    if (!sharedDb) {
+        sharedDb = new sqlite3.Database(dbPath);
+        sharedDb.run('PRAGMA busy_timeout = 5000');
+        sharedDb.run('PRAGMA journal_mode = WAL');
+    }
+    return sharedDb;
+}
+function closeSharedDb() {
+    if (sharedDb) {
+        sharedDb.close();
+        sharedDb = null;
+    }
+}
 const fetch = require('node-fetch');
 const crypto = require('crypto');
 const http = require('http');
@@ -790,10 +806,93 @@ const ensureTablesExist = async () => {
       }
 
       console.log('[DB] All tables are ready.');
+
+      await backfillMissingCosts();
   } catch (error) {
       console.error('[DB] FATAL: Could not create tables.', error);
   }
 };
+
+async function backfillMissingCosts() {
+    const { spawnSync } = require('child_process');
+    const pythonScript = `
+import os, sys, sqlite3
+try:
+    from npcpy.gen.response import calculate_cost
+    import litellm
+except Exception as e:
+    print('npcpy/litellm import failed:', e)
+    sys.exit(1)
+db_path = sys.argv[1]
+conn = sqlite3.connect(db_path)
+conn.row_factory = sqlite3.Row
+cur = conn.cursor()
+# Backfill rows that already have tokens but no cost
+cur.execute("""
+    SELECT id, model, provider, input_tokens, output_tokens
+    FROM conversation_history
+    WHERE (input_tokens > 0 OR output_tokens > 0)
+      AND (cost IS NULL OR cost = '' OR cost = '0' OR cost = '0.0' OR cost = '0.0000' OR CAST(cost AS REAL) = 0.0)
+""")
+updated = 0
+for r in cur.fetchall():
+    try:
+        cost = calculate_cost(r['model'] or '', r['input_tokens'] or 0, r['output_tokens'] or 0, provider=r['provider'] or '')
+        if cost:
+            cur.execute('UPDATE conversation_history SET cost = ? WHERE id = ?', (str(cost), r['id']))
+            updated += 1
+    except Exception as e:
+        print('cost error:', e)
+# Estimate tokens for rows with content but NULL/zero tokens, then backfill cost
+cur.execute("""
+    SELECT id, role, model, provider, content, input_tokens, output_tokens
+    FROM conversation_history
+    WHERE (input_tokens IS NULL OR input_tokens = 0)
+      AND (output_tokens IS NULL OR output_tokens = 0)
+      AND (cost IS NULL OR cost = '' OR cost = '0' OR cost = '0.0' OR cost = '0.0000' OR CAST(cost AS REAL) = 0.0)
+      AND content IS NOT NULL AND content != ''
+      AND role IN ('user', 'assistant')
+""")
+estimated = 0
+for r in cur.fetchall():
+    try:
+        model = r['model'] or ''
+        provider = r['provider'] or ''
+        content = r['content'] or ''
+        if isinstance(content, bytes):
+            content = content.decode('utf-8', errors='ignore')
+        if not content.strip():
+            continue
+        full_model = f"{provider}/{model}" if provider and '/' not in model else model
+        if r['role'] == 'assistant':
+            out_tokens = litellm.token_counter(model=full_model, text=content) if content else 0
+            cur.execute('UPDATE conversation_history SET output_tokens = ?, input_tokens = COALESCE(input_tokens, 0) WHERE id = ?', (out_tokens, r['id']))
+            cost = calculate_cost(model, 0, out_tokens, provider=provider)
+        else:
+            in_tokens = litellm.token_counter(model=full_model, text=content) if content else 0
+            cur.execute('UPDATE conversation_history SET input_tokens = ?, output_tokens = COALESCE(output_tokens, 0) WHERE id = ?', (in_tokens, r['id']))
+            cost = calculate_cost(model, in_tokens, 0, provider=provider)
+        if cost:
+            cur.execute('UPDATE conversation_history SET cost = ? WHERE id = ?', (str(cost), r['id']))
+        estimated += 1
+    except Exception as e:
+        print('estimate error:', e)
+conn.commit()
+conn.close()
+print(f'backfilled {updated} costs, estimated {estimated} rows')
+`;
+    const tempPath = path.join(os.tmpdir(), `incognide-cost-backfill-${Date.now()}.py`);
+    try {
+        fs.writeFileSync(tempPath, pythonScript);
+        const result = spawnSync('python3', [tempPath, dbPath], { encoding: 'utf-8', timeout: 120000 });
+        if (result.stdout) console.log('[COST_BACKFILL]', result.stdout.trim());
+        if (result.stderr) console.error('[COST_BACKFILL]', result.stderr.trim());
+    } catch (err) {
+        console.error('[COST_BACKFILL] Failed:', err.message);
+    } finally {
+        try { fs.unlinkSync(tempPath); } catch {}
+    }
+}
 
 app.setAppUserModelId('com.incognide.chat');
 app.name = 'incognide';
@@ -3045,6 +3144,8 @@ registerAll({
   electronLogPath,
   backendLogPath,
   ensureTablesExist,
+  getSharedDb,
+  closeSharedDb,
   appDir: __dirname,
   INCOGNIDE_BASE,
   INCOGNIDE_HOME,
@@ -3502,6 +3603,7 @@ ipcMain.handle('backend:restart', async () => {
 });
 
 app.on('before-quit', () => {
+  closeSharedDb();
   if (backendProcess) {
     log('Killing backend process (before-quit)');
     // Synchronous event: start the async kill and let the OS reap the child

@@ -1221,6 +1221,10 @@ export const usePaneAwareStreamListeners = (
                     message.input_tokens = u.input_tokens;
                     message.output_tokens = u.output_tokens;
                     message.cost = u.cost;
+                    paneData.chatStats = getConversationStats(paneData.chatMessages.allMessages);
+                    if (message.role === 'assistant') {
+                        saveAssistantMessage(paneData, message);
+                    }
                 };
 
                 if (typeof chunk === 'string') {
