@@ -196,13 +196,29 @@ async function get_browser_content(
 
   const { paneId, data } = resolved;
 
-  if (!data.getPageContent) {
-    return { success: false, error: 'Page content method not available for this pane' };
+  let dataWithMethod = data;
+  if (!dataWithMethod.getPageContent) {
+    const waitStart = Date.now();
+    while (!dataWithMethod.getPageContent && Date.now() - waitStart < 2000) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      dataWithMethod = ctx.contentDataRef.current[paneId];
+    }
   }
 
-  const result = await data.getPageContent({
-    maxChars: args.maxChars ?? 100000,
-    includeInteractive: args.includeInteractive ?? true
+  if (!dataWithMethod?.getPageContent) {
+    return {
+      success: false,
+      error: `Page content method not available for browser pane ${paneId}. The browser may still be initializing.`,
+      paneId
+    };
+  }
+
+  const maxChars = args.maxChars ? parseInt(String(args.maxChars), 10) : 100000;
+  const includeInteractive = String(args.includeInteractive ?? 'true').toLowerCase() !== 'false';
+
+  const result = await dataWithMethod.getPageContent({
+    maxChars: Number.isNaN(maxChars) ? 100000 : maxChars,
+    includeInteractive
   });
   return { ...result, paneId };
 }

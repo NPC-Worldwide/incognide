@@ -190,7 +190,15 @@ const WebBrowserViewer = memo(({
 
             contentDataRef.current[nodeId].getPageContent = async (options?: { maxChars?: number; includeInteractive?: boolean }) => {
                 const webview = webviewRef.current;
-                if (!webview) return { success: false, content: '', url: '', title: '' };
+                if (!webview) {
+                    return {
+                        success: false,
+                        content: '',
+                        url: currentUrl || '',
+                        title: title || 'Browser',
+                        error: 'Browser webview is not yet rendered'
+                    };
+                }
 
                 const maxChars = options?.maxChars ?? 100000;
                 const includeInteractive = options?.includeInteractive ?? true;
@@ -731,7 +739,7 @@ const WebBrowserViewer = memo(({
                 return { success: true, action: 'forward' };
             };
         }
-    }, [nodeId, currentUrl, title]);
+    });
 
     useEffect(() => {
         const paneData = contentDataRef.current[nodeId];
