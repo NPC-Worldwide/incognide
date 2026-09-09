@@ -155,16 +155,14 @@ jobs:
       - name: Rebuild native modules for Electron (Linux/macOS)
         if: runner.os != 'Windows'
         run: |
-          npx electron-rebuild --force --module-dir . --which-module sqlite3
-          npx electron-rebuild --force --module-dir . --which-module node-pty || true
+          npx electron-rebuild --force --module-dir . -o sqlite3,node-pty
         env:
           npm_config_build_from_source: true
 
       - name: Rebuild native modules for Electron (Windows)
         if: runner.os == 'Windows'
         run: |
-          npx electron-rebuild --force --module-dir . --which-module sqlite3
-          npx electron-rebuild --force --module-dir . --which-module node-pty || true
+          npx electron-rebuild --force --module-dir . -o sqlite3,node-pty
 
       - name: Import Apple Developer ID certificate and set signing environment
         if: runner.os == 'macOS'
