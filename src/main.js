@@ -1,4 +1,5 @@
 const { app, BrowserWindow, globalShortcut, ipcMain, protocol, shell, BrowserView, safeStorage, session, nativeImage, dialog, screen, Menu } = require('electron');
+const { setupWebContentsHandlers } = require('./ipc');
 const { desktopCapturer } = require('electron');
 const { spawn, execSync } = require('child_process');
 const path = require('path');
@@ -24,6 +25,22 @@ const daemons = new Map();
 
 const sqlite3 = require('sqlite3');
 const dbPath = process.env.INCOGNIDE_DB_PATH || path.join(os.homedir(), '.incognide', 'history.db');
+
+let sharedDb = null;
+function getSharedDb() {
+    if (!sharedDb) {
+        sharedDb = new sqlite3.Database(dbPath);
+        sharedDb.run('PRAGMA busy_timeout = 5000');
+        sharedDb.run('PRAGMA journal_mode = WAL');
+    }
+    return sharedDb;
+}
+function closeSharedDb() {
+    if (sharedDb) {
+        sharedDb.close();
+        sharedDb = null;
+    }
+}
 const fetch = require('node-fetch');
 const crypto = require('crypto');
 const http = require('http');
@@ -621,6 +638,8 @@ const ensureTablesExist = async () => {
       CREATE TABLE IF NOT EXISTS conversation_history (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           message_id TEXT UNIQUE NOT NULL,
+          parent_message_id TEXT,
+          branch_id TEXT,
           timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
           role TEXT NOT NULL,
           content TEXT,
@@ -633,7 +652,6 @@ const ensureTablesExist = async () => {
           reasoning_content TEXT,
           tool_calls TEXT,
           tool_results TEXT,
-          parent_message_id TEXT,
           params TEXT,
           input_tokens INTEGER,
           output_tokens INTEGER,
@@ -788,10 +806,93 @@ const ensureTablesExist = async () => {
       }
 
       console.log('[DB] All tables are ready.');
+
+      await backfillMissingCosts();
   } catch (error) {
       console.error('[DB] FATAL: Could not create tables.', error);
   }
 };
+
+async function backfillMissingCosts() {
+    const { spawnSync } = require('child_process');
+    const pythonScript = `
+import os, sys, sqlite3
+try:
+    from npcpy.gen.response import calculate_cost
+    import litellm
+except Exception as e:
+    print('npcpy/litellm import failed:', e)
+    sys.exit(1)
+db_path = sys.argv[1]
+conn = sqlite3.connect(db_path)
+conn.row_factory = sqlite3.Row
+cur = conn.cursor()
+# Backfill rows that already have tokens but no cost
+cur.execute("""
+    SELECT id, model, provider, input_tokens, output_tokens
+    FROM conversation_history
+    WHERE (input_tokens > 0 OR output_tokens > 0)
+      AND (cost IS NULL OR cost = '' OR cost = '0' OR cost = '0.0' OR cost = '0.0000' OR CAST(cost AS REAL) = 0.0)
+""")
+updated = 0
+for r in cur.fetchall():
+    try:
+        cost = calculate_cost(r['model'] or '', r['input_tokens'] or 0, r['output_tokens'] or 0, provider=r['provider'] or '')
+        if cost:
+            cur.execute('UPDATE conversation_history SET cost = ? WHERE id = ?', (str(cost), r['id']))
+            updated += 1
+    except Exception as e:
+        print('cost error:', e)
+# Estimate tokens for rows with content but NULL/zero tokens, then backfill cost
+cur.execute("""
+    SELECT id, role, model, provider, content, input_tokens, output_tokens
+    FROM conversation_history
+    WHERE (input_tokens IS NULL OR input_tokens = 0)
+      AND (output_tokens IS NULL OR output_tokens = 0)
+      AND (cost IS NULL OR cost = '' OR cost = '0' OR cost = '0.0' OR cost = '0.0000' OR CAST(cost AS REAL) = 0.0)
+      AND content IS NOT NULL AND content != ''
+      AND role IN ('user', 'assistant')
+""")
+estimated = 0
+for r in cur.fetchall():
+    try:
+        model = r['model'] or ''
+        provider = r['provider'] or ''
+        content = r['content'] or ''
+        if isinstance(content, bytes):
+            content = content.decode('utf-8', errors='ignore')
+        if not content.strip():
+            continue
+        full_model = f"{provider}/{model}" if provider and '/' not in model else model
+        if r['role'] == 'assistant':
+            out_tokens = litellm.token_counter(model=full_model, text=content) if content else 0
+            cur.execute('UPDATE conversation_history SET output_tokens = ?, input_tokens = COALESCE(input_tokens, 0) WHERE id = ?', (out_tokens, r['id']))
+            cost = calculate_cost(model, 0, out_tokens, provider=provider)
+        else:
+            in_tokens = litellm.token_counter(model=full_model, text=content) if content else 0
+            cur.execute('UPDATE conversation_history SET input_tokens = ?, output_tokens = COALESCE(output_tokens, 0) WHERE id = ?', (in_tokens, r['id']))
+            cost = calculate_cost(model, in_tokens, 0, provider=provider)
+        if cost:
+            cur.execute('UPDATE conversation_history SET cost = ? WHERE id = ?', (str(cost), r['id']))
+        estimated += 1
+    except Exception as e:
+        print('estimate error:', e)
+conn.commit()
+conn.close()
+print(f'backfilled {updated} costs, estimated {estimated} rows')
+`;
+    const tempPath = path.join(os.tmpdir(), `incognide-cost-backfill-${Date.now()}.py`);
+    try {
+        fs.writeFileSync(tempPath, pythonScript);
+        const result = spawnSync('python3', [tempPath, dbPath], { encoding: 'utf-8', timeout: 120000 });
+        if (result.stdout) console.log('[COST_BACKFILL]', result.stdout.trim());
+        if (result.stderr) console.error('[COST_BACKFILL]', result.stderr.trim());
+    } catch (err) {
+        console.error('[COST_BACKFILL] Failed:', err.message);
+    } finally {
+        try { fs.unlinkSync(tempPath); } catch {}
+    }
+}
 
 app.setAppUserModelId('com.incognide.chat');
 app.name = 'incognide';
@@ -1246,7 +1347,6 @@ async function ensureBaseDir() {
   }
 }
 
-const sessionsWithDownloadHandler = new WeakSet();
 
 ipcMain.on('trigger-new-text-file', (event) => {
   event.sender.send('menu-new-text-file');
@@ -1658,35 +1758,10 @@ app.on('web-contents-created', (event, contents) => {
         } catch (e) {}
       }, 5000);
     });
+
+    setupWebContentsHandlers(contents, () => mainWindow, log);
   }
 
-  if (contents.getType() === 'webview') {
-    const session = contents.session;
-    if (session && !sessionsWithDownloadHandler.has(session)) {
-      sessionsWithDownloadHandler.add(session);
-
-      session.on('will-download', (e, item, webContents) => {
-        const url = item.getURL();
-        const filename = item.getFilename();
-
-        log(`[DOWNLOAD] Intercepted download: ${filename} from ${url}`);
-
-        item.cancel();
-
-        const dlParentWin = BrowserWindow.fromWebContents(webContents.hostWebContents || webContents)
-          || BrowserWindow.getFocusedWindow()
-          || BrowserWindow.getAllWindows()[0];
-        if (dlParentWin && !dlParentWin.isDestroyed()) {
-          dlParentWin.webContents.send('browser-download-requested', {
-            url,
-            filename,
-            mimeType: item.getMimeType(),
-            totalBytes: item.getTotalBytes()
-          });
-        }
-      });
-    }
-  }
 });
 
 async function deployIncognideTeamOnStartup() {
@@ -2266,8 +2341,9 @@ function registerGlobalShortcut(win) {
           movable: false,
           hasShadow: false,
           webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false
+            nodeIntegration: false,
+            contextIsolation: true,
+            preload: path.join(__dirname, 'renderer/components/selection-preload.js')
           }
         });
         selectionWindow.setIgnoreMouseEvents(false);
@@ -2317,118 +2393,7 @@ function registerGlobalShortcut(win) {
           isCapturingScreenshot = false;
         });
 
-        const selectionHtml = `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <style>
-              * { margin: 0; padding: 0; box-sizing: border-box; }
-              body {
-                overflow: hidden;
-                cursor: crosshair;
-                user-select: none;
-                background: transparent;
-              }
-              #overlay {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100vw;
-                height: 100vh;
-                background: rgba(0, 0, 0, 0.15);
-              }
-              #selection {
-                position: fixed;
-                border: 2px dashed #00aaff;
-                background: rgba(0, 170, 255, 0.1);
-                display: none;
-                pointer-events: none;
-              }
-              #dimensions {
-                position: fixed;
-                background: rgba(0, 0, 0, 0.7);
-                color: white;
-                padding: 4px 8px;
-                border-radius: 4px;
-                font-family: system-ui, sans-serif;
-                font-size: 12px;
-                display: none;
-                pointer-events: none;
-              }
-            </style>
-          </head>
-          <body>
-            <div id="overlay"></div>
-            <div id="selection"></div>
-            <div id="dimensions"></div>
-            <script>
-              const { ipcRenderer } = require('electron');
-
-              let startX, startY, isSelecting = false;
-              const selection = document.getElementById('selection');
-              const dimensions = document.getElementById('dimensions');
-
-              document.addEventListener('mousedown', (e) => {
-                startX = e.clientX;
-                startY = e.clientY;
-                isSelecting = true;
-                selection.style.display = 'block';
-                dimensions.style.display = 'block';
-                selection.style.left = startX + 'px';
-                selection.style.top = startY + 'px';
-                selection.style.width = '0px';
-                selection.style.height = '0px';
-              });
-
-              document.addEventListener('mousemove', (e) => {
-                if (!isSelecting) return;
-
-                const currentX = e.clientX;
-                const currentY = e.clientY;
-
-                const left = Math.min(startX, currentX);
-                const top = Math.min(startY, currentY);
-                const width = Math.abs(currentX - startX);
-                const height = Math.abs(currentY - startY);
-
-                selection.style.left = left + 'px';
-                selection.style.top = top + 'px';
-                selection.style.width = width + 'px';
-                selection.style.height = height + 'px';
-
-                dimensions.style.left = (left + width + 5) + 'px';
-                dimensions.style.top = (top + height + 5) + 'px';
-                dimensions.textContent = width + ' x ' + height;
-              });
-
-              document.addEventListener('mouseup', (e) => {
-                if (!isSelecting) return;
-                isSelecting = false;
-
-                const rect = selection.getBoundingClientRect();
-                if (rect.width > 5 && rect.height > 5) {
-                  ipcRenderer.send('selection-complete', {
-                    x: rect.left,
-                    y: rect.top,
-                    width: rect.width,
-                    height: rect.height
-                  });
-                } else {
-                  ipcRenderer.send('selection-cancel');
-                }
-              });
-
-              document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape') {
-                  ipcRenderer.send('selection-cancel');
-                }
-              });
-            </script>
-          </body>
-          </html>
-        `;
-
-        selectionWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(selectionHtml));
+        selectionWindow.loadFile(path.join(__dirname, 'renderer/components/selection.html'));
 
       } catch (error) {
         console.error('Screenshot capture failed:', error);
@@ -2752,13 +2717,11 @@ function createWindow(cliArgs = {}) {
       icon: appIcon || iconPath,
       title: 'Incognide',
       webPreferences: {
-        nodeIntegration: true,
+        nodeIntegration: false,
         contextIsolation: true,
         webSecurity: false,
         webviewTag: true,
         plugins: true,
-        enableRemoteModule: true,
-        nodeIntegrationInSubFrames: true,
         allowRunningInsecureContent: true,
         experimentalFeatures: true,
         preload: path.join(__dirname, 'preload.js')
@@ -2809,10 +2772,6 @@ function createWindow(cliArgs = {}) {
       });
     }
 
-    mainWindow.webContents.session.protocol.registerFileProtocol('file', (request, callback) => {
-      const pathname = decodeURI(request.url.replace('file:///', ''));
-      callback(pathname);
-    });
     setTimeout(() => {
       if (appIcon && !appIcon.isEmpty()) {
         mainWindow.setIcon(appIcon);
@@ -3185,6 +3144,8 @@ registerAll({
   electronLogPath,
   backendLogPath,
   ensureTablesExist,
+  getSharedDb,
+  closeSharedDb,
   appDir: __dirname,
   INCOGNIDE_BASE,
   INCOGNIDE_HOME,
@@ -3573,6 +3534,19 @@ ipcMain.handle('backend:installAndStart', async (event, { pythonPath, npcpyExtra
   }
 });
 
+ipcMain.handle('reload-window', async (event) => {
+  try {
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+    if (senderWindow && !senderWindow.isDestroyed()) {
+      senderWindow.webContents.reloadIgnoringCache();
+    }
+    return { success: true };
+  } catch (err) {
+    log(`reload-window error: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+});
+
 ipcMain.handle('backend:restart', async () => {
   try {
     log('Backend restart requested by renderer');
@@ -3629,6 +3603,7 @@ ipcMain.handle('backend:restart', async () => {
 });
 
 app.on('before-quit', () => {
+  closeSharedDb();
   if (backendProcess) {
     log('Killing backend process (before-quit)');
     // Synchronous event: start the async kill and let the OS reap the child

@@ -85,6 +85,19 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase
         }
     }, [isOpen, teamPath]);
 
+    useEffect(() => {
+        if (!isOpen || !teamPath) return;
+        const cleanup = (window as any).api.onTeamConfigsUpdated?.((data: any) => {
+            if (data?.teamPath && data.teamPath.replace(/\\/g, '/') === teamPath.replace(/\\/g, '/')) {
+                loadContext();
+                loadModels();
+            }
+        });
+        return () => {
+            if (typeof cleanup === 'function') cleanup();
+        };
+    }, [isOpen, teamPath]);
+
     const loadModels = async () => {
         if (!teamPath) return;
         setModelsLoading(true);
@@ -724,7 +737,10 @@ const CtxEditor = ({ isOpen, onClose, teamPath, embedded = false, onOpenDatabase
                             loading={modelsLoading}
                             placeholder="Select default model"
                             teamPathForCtx={teamPath}
-                            onModelsChanged={loadModels}
+                            onModelsChanged={(addedModelValue) => {
+                                loadModels();
+                                loadContext();
+                            }}
                         />
                     </div>
                     <div>

@@ -109,63 +109,12 @@ export const saveProviderToTeamCtx = async (
     options?: { apiUrl?: string; apiKey?: string; providerType?: string }
 ) => {
     if (!teamPath) throw new Error('No team path available.');
-    const ctxFile = await findCtxFile(teamPath);
-    const targetFile = ctxFile || 'team.ctx';
-    const filePath = `${teamPath}/${targetFile}`;
-
-    let rawCtx: string | null = null;
-    try {
-        const result = await (window as any).api.readFileContent(filePath);
-        rawCtx = typeof result === 'string' ? result : result?.content;
-    } catch {}
-
-    let ctx: any = {};
-    if (rawCtx) {
-        try {
-            ctx = yaml.load(preprocessJinja(rawCtx)) || {};
-        } catch {
-            ctx = {};
-        }
-    }
-
-    const providers: any[] = Array.isArray(ctx.providers) ? [...ctx.providers] : [];
-    const existing = providers.find((p: any) => {
-        const pType = options?.providerType || providerName;
-        return p.name === providerName || p.provider_type === pType;
+    return await (window as any).api.teamUpdateProvider({
+        teamPath,
+        providerName,
+        models,
+        options,
     });
-    const newEntry: any = {
-        name: providerName,
-        provider_type: options?.providerType || providerName,
-        ...(options?.apiUrl ? { api_url: options.apiUrl } : {}),
-        ...(options?.apiKey ? { api_key: options.apiKey } : {}),
-    };
-    if (models === null) {
-        // null means "all discovered models" — store an empty explicit list so the team
-        // falls back to live provider fetching instead of a fixed subset.
-        newEntry.models = [];
-    } else if (Array.isArray(models) && models.length > 0) {
-        const existingModels = new Set(existing?.models || []);
-        models.forEach((m) => existingModels.add(m));
-        newEntry.models = Array.from(existingModels);
-    }
-    if (!newEntry.models && existing?.models) {
-        newEntry.models = existing.models;
-    }
-
-    if (!existing) {
-        providers.push(newEntry);
-    } else {
-        const idx = providers.indexOf(existing);
-        providers[idx] = { ...existing, ...newEntry };
-    }
-
-    const cleanCtx = { ...ctx, providers };
-    delete cleanCtx.external_jinx_teams;
-    delete cleanCtx.EXTERNAL_JINX_TEAMS;
-
-    const result = await (window as any).api.writeFileContent(filePath, yaml.dump(cleanCtx, { lineWidth: -1 }));
-    if (result?.error) throw new Error(result.error);
-    return { filePath, targetFile };
 };
 
 export const ModelSelectorDropdown = ({

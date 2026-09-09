@@ -4,7 +4,7 @@ import MarkdownRenderer from './MarkdownRenderer';
 import { AgentPromptCard } from './AgentPrompt';
 import { ToolCallDisplay } from './ToolCallDisplay';
 import { MessageLabel } from './MessageLabeling';
-import { Paperclip, Tag, Star, ChevronDown, ChevronUp, Volume2, VolumeX, Loader, RotateCcw, History, Cpu, Bot, Zap, Send, GitBranch, Columns, ChevronLeft, ChevronRight, SlidersHorizontal, Square, CheckSquare, Trash2 } from 'lucide-react';
+import { Paperclip, Tag, Star, ChevronDown, ChevronUp, ChevronRight, Volume2, VolumeX, Loader, RotateCcw, SlidersHorizontal, Bot, Zap, Cpu, BarChart3 } from 'lucide-react';
 
 const highlightSearchTerm = (content: string, searchTerm: string): string => {
     if (!searchTerm || !content) return content;
@@ -15,6 +15,13 @@ const highlightSearchTerm = (content: string, searchTerm: string): string => {
 const stripSourcePrefix = (name: string): string => {
     if (!name) return name;
     return name.replace(/^(project:|global:)/, '');
+};
+
+const formatCost = (n: number | string | undefined): string => {
+    const val = typeof n === 'number' ? n : (parseFloat(n as any) || 0);
+    if (!val) return '$0.0000';
+    if (val >= 0.0001) return `$${val.toFixed(4)}`;
+    return `$${val.toFixed(6)}`;
 };
 
 const parseMessageContent = (content: string): { body: string; contextBlocks: string[] } => {
@@ -63,48 +70,28 @@ const MAX_COLLAPSED_LINES = 4;
 
 export const ChatMessage = memo(({
     message,
-    isSelected,
-    messageSelectionMode,
-    toggleMessageSelection,
     handleMessageContextMenu,
     searchTerm,
     isCurrentSearchResult,
     onResendMessage,
-    onCreateBranch,
-    onBroadcast,
-    onExpandBranches,
-    onSwitchRun,
-    siblingRuns,
-    activeRunIndex,
     messageIndex,
     onLabelMessage,
     messageLabel,
     conversationId,
     onOpenFile,
-    availableModels,
-    availableNPCs,
+    isAgentMode,
 }: {
     message: any;
-    isSelected?: boolean;
-    messageSelectionMode?: boolean;
-    toggleMessageSelection?: (id: string) => void;
     handleMessageContextMenu?: (e: React.MouseEvent, msg: any, idx: number) => void;
     searchTerm?: string;
     isCurrentSearchResult?: boolean;
     onResendMessage?: (msg: any) => void;
-    onCreateBranch?: (msg: any, idx: number) => void;
-    onBroadcast?: (msg: any, models: string[], npcs: string[]) => void;
-    onExpandBranches?: (cellId: string) => void;
-    onSwitchRun?: (cellId: string, runIndex: number) => void;
-    siblingRuns?: any[];
-    activeRunIndex?: number;
     messageIndex?: number;
     onLabelMessage?: (msg: any) => void;
     messageLabel?: MessageLabel;
     conversationId?: string;
     onOpenFile?: (path: string) => void;
-    availableModels?: any[];
-    availableNPCs?: any[];
+    isAgentMode?: boolean;
 }) => {
     const showStreamingIndicators = !!message.isStreaming;
     const messageId = message.id || message.timestamp;
@@ -127,10 +114,6 @@ export const ChatMessage = memo(({
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isLoadingTTS, setIsLoadingTTS] = useState(false);
     const audioRef = useRef<HTMLAudioElement | null>(null);
-
-    const [showBroadcastPanel, setShowBroadcastPanel] = useState(false);
-    const [selectedModels, setSelectedModels] = useState<string[]>([]);
-    const [selectedNPCs, setSelectedNPCs] = useState<string[]>([]);
 
     const getTTSSettings = () => {
         try {
@@ -224,32 +207,9 @@ export const ChatMessage = memo(({
             className={`max-w-[85%] rounded-lg p-3 relative group ${
                 message.role === 'user' ? 'theme-message-user' : 'theme-message-assistant'
             } ${message.type === 'error' ? 'theme-message-error theme-border' : ''} ${
-                isSelected ? 'ring-2 ring-blue-500' : ''
-            } ${isCurrentSearchResult ? 'ring-2 ring-yellow-500' : ''} ${messageSelectionMode ? 'cursor-pointer' : ''}`}
-            onClick={() => messageSelectionMode && toggleMessageSelection(messageId)}
+                isCurrentSearchResult ? 'ring-2 ring-yellow-500' : ''}`}
             onContextMenu={(e) => handleMessageContextMenu(e, messageId)}
         >
-
-            {message.role === 'user' && !messageSelectionMode && onCreateBranch && (
-                <div className="absolute -top-2 -left-2 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onCreateBranch(messageIndex);
-                        }}
-                        className="p-1.5 bg-purple-600 hover:bg-purple-500 rounded-full transition-all shadow-lg text-white"
-                        title="Create conversation branch from here"
-                    >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <line x1="6" y1="3" x2="6" y2="15"></line>
-                            <circle cx="18" cy="6" r="3"></circle>
-                            <circle cx="6" cy="18" r="3"></circle>
-                            <path d="M18 9a9 9 0 0 1-9 9"></path>
-                        </svg>
-                    </button>
-                </div>
-            )}
-
             <div className="flex justify-between items-center text-xs theme-text-muted mb-1 opacity-80">
                 <div className="flex items-center gap-1.5">
                     <span className="font-semibold">{message.role === 'user' ? 'You' : (stripSourcePrefix(message.npc) || 'Agent')}</span>
@@ -266,7 +226,7 @@ export const ChatMessage = memo(({
                     )}
                 </div>
                 <div className="flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
-                    {message.role === 'assistant' && !messageSelectionMode && !showStreamingIndicators && message.content && (
+                    {message.role === 'assistant' && !showStreamingIndicators && message.content && (
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -285,7 +245,7 @@ export const ChatMessage = memo(({
                             )}
                         </button>
                     )}
-                    {message.role === 'user' && !messageSelectionMode && onResendMessage && (
+                    {message.role === 'user' && onResendMessage && (
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -297,7 +257,7 @@ export const ChatMessage = memo(({
                             <RotateCcw size={14} />
                         </button>
                     )}
-                    {!messageSelectionMode && onLabelMessage && (
+                    {onLabelMessage && (
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -331,16 +291,6 @@ export const ChatMessage = memo(({
                             )}
                         </span>
                     )}
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            toggleMessageSelection?.(messageId);
-                        }}
-                        className={`p-0.5 rounded transition-colors ${isSelected ? 'text-blue-400 hover:text-blue-300' : 'text-gray-500 hover:text-gray-300'}`}
-                        title={isSelected ? "Deselect message" : "Select message"}
-                    >
-                        {isSelected ? <CheckSquare size={14} /> : <Square size={14} />}
-                    </button>
                 </div>
             </div>
 
@@ -503,86 +453,6 @@ export const ChatMessage = memo(({
 
                 {message.role === 'assistant' && !showStreamingIndicators && (
                     <div className="mt-2 pt-2 border-t border-gray-700/50">
-                        {siblingRuns && siblingRuns.length > 1 && (
-                            <div className="mb-3 p-2 bg-gray-800/50 rounded-lg border border-gray-700/50">
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-2">
-                                        <GitBranch size={12} className="text-purple-400" />
-                                        <span className="text-[10px] text-gray-400 uppercase">
-                                            {siblingRuns.length} Branches
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                if (onSwitchRun && message.cellId && activeRunIndex !== undefined && activeRunIndex > 0) {
-                                                    onSwitchRun(message.cellId, activeRunIndex - 1);
-                                                }
-                                            }}
-                                            disabled={activeRunIndex === 0}
-                                            className="p-1 hover:bg-gray-700 rounded disabled:opacity-30 text-gray-400"
-                                            title="Previous branch"
-                                        >
-                                            <ChevronLeft size={14} />
-                                        </button>
-                                        <span className="text-[10px] text-gray-300 min-w-[40px] text-center">
-                                            {(activeRunIndex ?? 0) + 1} / {siblingRuns.length}
-                                        </span>
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                if (onSwitchRun && message.cellId && activeRunIndex !== undefined && activeRunIndex < siblingRuns.length - 1) {
-                                                    onSwitchRun(message.cellId, activeRunIndex + 1);
-                                                }
-                                            }}
-                                            disabled={activeRunIndex === siblingRuns.length - 1}
-                                            className="p-1 hover:bg-gray-700 rounded disabled:opacity-30 text-gray-400"
-                                            title="Next branch"
-                                        >
-                                            <ChevronRight size={14} />
-                                        </button>
-                                        {onExpandBranches && (
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    onExpandBranches(message.cellId);
-                                                }}
-                                                className="p-1 ml-1 hover:bg-purple-600/30 rounded text-purple-400"
-                                                title="Open all branches as tiles"
-                                            >
-                                                <Columns size={14} />
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-                                <div className="flex flex-wrap gap-1">
-                                    {siblingRuns.map((run, idx) => (
-                                        <button
-                                            key={run.id || idx}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                if (onSwitchRun && message.cellId) {
-                                                    onSwitchRun(message.cellId, idx);
-                                                }
-                                            }}
-                                            className={`px-2 py-1 text-[10px] rounded-md border transition-all ${
-                                                idx === activeRunIndex
-                                                    ? 'bg-purple-600/30 border-purple-500 text-purple-200'
-                                                    : 'bg-gray-700/30 border-gray-600 text-gray-400 hover:text-gray-200 hover:border-gray-500'
-                                            }`}
-                                            title={`${run.model || 'unknown'} / ${stripSourcePrefix(run.npc) || 'agent'}`}
-                                        >
-                                            <span className="font-medium">{run.model?.slice(0, 12) || '?'}</span>
-                                            {run.npc && run.npc !== 'agent' && (
-                                                <span className="ml-1 opacity-70">· {stripSourcePrefix(run.npc)}</span>
-                                            )}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
                         <div className="flex flex-wrap items-center gap-1.5 mb-2">
                             {message.model && (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-600/20 text-blue-300 border border-blue-600/30" title={`Model: ${message.model}`}>
@@ -595,6 +465,20 @@ export const ChatMessage = memo(({
                                     {message.provider}
                                 </span>
                             )}
+                            {(message.input_tokens !== undefined || message.output_tokens !== undefined || message.cost !== undefined) && (
+                                <span className="relative group/tokens inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-600/20 text-gray-300 border border-gray-600/30" title="Click for token/cost details">
+                                    <BarChart3 size={10} />
+                                    {(message.input_tokens !== undefined || message.output_tokens !== undefined) && (
+                                        <span>{(message.input_tokens || 0) + (message.output_tokens || 0)} tok</span>
+                                    )}
+                                    {message.cost !== undefined && (
+                                        <span className="text-green-400">· {formatCost(message.cost)}</span>
+                                    )}
+                                    <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 px-2 py-1 rounded bg-gray-900 border border-gray-700 text-[10px] text-gray-300 whitespace-nowrap opacity-0 group-hover/tokens:opacity-100 pointer-events-none transition-opacity z-50 shadow-lg">
+                                        In: {(message.input_tokens || 0).toLocaleString()} · Out: {(message.output_tokens || 0).toLocaleString()} · Cost: {formatCost(message.cost)}
+                                    </span>
+                                </span>
+                            )}
                             {message.npc && message.npc !== 'agent' && (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-600/20 text-green-300 border border-green-600/30" title={`NPC: ${stripSourcePrefix(message.npc)}`}>
                                     <Bot size={10} />
@@ -605,12 +489,6 @@ export const ChatMessage = memo(({
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-600/20 text-orange-300 border border-orange-600/30" title={`Jinx: ${message.jinxName}`}>
                                     <Zap size={10} />
                                     {message.jinxName}
-                                </span>
-                            )}
-                            {message.runCount && message.runCount > 1 && (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-600/20 text-gray-300 border border-gray-600/30" title={`${message.runCount} runs for this cell`}>
-                                    <History size={10} />
-                                    {message.runCount} runs
                                 </span>
                             )}
                             {(message.temperature !== undefined || message.top_k !== undefined || message.top_p !== undefined || message.max_tokens !== undefined) && (
@@ -642,106 +520,7 @@ export const ChatMessage = memo(({
                                     Re-run
                                 </button>
                             )}
-                            {onBroadcast && availableModels && availableModels.length > 0 && (
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        setShowBroadcastPanel(!showBroadcastPanel);
-                                        if (!showBroadcastPanel) {
-                                            setSelectedModels([message.model || availableModels[0]?.value]);
-                                            setSelectedNPCs([message.npc || 'agent']);
-                                        }
-                                    }}
-                                    className={`flex items-center gap-1 px-2 py-1 text-[10px] rounded transition-colors ${
-                                        showBroadcastPanel
-                                            ? 'bg-purple-600/30 text-purple-300'
-                                            : 'bg-gray-700/50 hover:bg-gray-700 text-gray-300 hover:text-white'
-                                    }`}
-                                    title="Broadcast to multiple models/NPCs"
-                                >
-                                    <GitBranch size={10} />
-                                    Branch
-                                </button>
-                            )}
                         </div>
-
-                        {showBroadcastPanel && availableModels && availableNPCs && (
-                            <div className="mt-2 p-2 bg-gray-800/80 rounded-lg border border-gray-700">
-                                <div className="text-[10px] text-gray-400 mb-2">Select models & NPCs to branch to:</div>
-
-                                <div className="mb-2">
-                                    <div className="text-[9px] text-gray-500 mb-1 uppercase">Models</div>
-                                    <div className="flex flex-wrap gap-1">
-                                        {availableModels.slice(0, 8).map((m: any) => (
-                                            <button
-                                                key={m.value}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setSelectedModels(prev =>
-                                                        prev.includes(m.value)
-                                                            ? prev.filter(x => x !== m.value)
-                                                            : [...prev, m.value]
-                                                    );
-                                                }}
-                                                className={`px-2 py-0.5 text-[10px] rounded-full border transition-colors ${
-                                                    selectedModels.includes(m.value)
-                                                        ? 'bg-blue-600/30 border-blue-500 text-blue-300'
-                                                        : 'bg-gray-700/50 border-gray-600 text-gray-400 hover:text-gray-200'
-                                                }`}
-                                            >
-                                                {m.display_name?.slice(0, 15) || m.value?.slice(0, 15)}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="mb-2">
-                                    <div className="text-[9px] text-gray-500 mb-1 uppercase">NPCs</div>
-                                    <div className="flex flex-wrap gap-1">
-                                        {availableNPCs.slice(0, 8).map((n: any) => (
-                                            <button
-                                                key={n.value}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setSelectedNPCs(prev =>
-                                                        prev.includes(n.value)
-                                                            ? prev.filter(x => x !== n.value)
-                                                            : [...prev, n.value]
-                                                    );
-                                                }}
-                                                className={`px-2 py-0.5 text-[10px] rounded-full border transition-colors ${
-                                                    selectedNPCs.includes(n.value)
-                                                        ? 'bg-green-600/30 border-green-500 text-green-300'
-                                                        : 'bg-gray-700/50 border-gray-600 text-gray-400 hover:text-gray-200'
-                                                }`}
-                                            >
-                                                {n.display_name || n.value}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="flex items-center justify-between">
-                                    <span className="text-[10px] text-gray-500">
-                                        {selectedModels.length} model{selectedModels.length !== 1 ? 's' : ''} × {selectedNPCs.length} NPC{selectedNPCs.length !== 1 ? 's' : ''} = {selectedModels.length * selectedNPCs.length} branch{selectedModels.length * selectedNPCs.length !== 1 ? 'es' : ''}
-                                    </span>
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            if (selectedModels.length > 0 && selectedNPCs.length > 0) {
-                                                onBroadcast(message, selectedModels, selectedNPCs);
-                                                setShowBroadcastPanel(false);
-                                            }
-                                        }}
-                                        disabled={selectedModels.length === 0 || selectedNPCs.length === 0}
-                                        className="flex items-center gap-1 px-3 py-1 text-[10px] bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 disabled:opacity-50 rounded text-white transition-colors"
-                                    >
-                                        <Send size={10} />
-                                        Broadcast
-                                    </button>
-                                </div>
-                            </div>
-                        )}
                     </div>
                 )}
             </div>

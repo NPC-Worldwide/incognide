@@ -11,6 +11,41 @@ const yaml = require('js-yaml');
 
 const dbPath = process.env.INCOGNIDE_DB_PATH || path.join(os.homedir(), '.incognide', 'history.db');
 
+let sharedDb = null;
+function getSharedDb() {
+    if (!sharedDb) {
+        sharedDb = new sqlite3.Database(dbPath);
+        sharedDb.run('PRAGMA busy_timeout = 5000');
+        sharedDb.run('PRAGMA journal_mode = WAL');
+    }
+    return sharedDb;
+}
+function closeSharedDb() {
+    if (sharedDb) {
+        sharedDb.close();
+        sharedDb = null;
+    }
+}
+
+function withRetry(operation, maxRetries = 5, delayMs = 50) {
+    return new Promise((resolve, reject) => {
+        const attempt = (retriesLeft) => {
+            operation()
+                .then(resolve)
+                .catch((err) => {
+                    const isBusy = err && (err.message?.includes('SQLITE_BUSY') || err.message?.includes('database is locked') || err.code === 'SQLITE_BUSY');
+                    if (isBusy && retriesLeft > 0) {
+                        setTimeout(() => attempt(retriesLeft - 1), delayMs);
+                        delayMs *= 2;
+                    } else {
+                        reject(err);
+                    }
+                });
+        };
+        attempt(maxRetries);
+    });
+}
+
 const expandTilde = (filepath) => {
   if (typeof filepath !== 'string') return filepath;
   if (filepath.startsWith('~/')) return path.join(os.homedir(), filepath.slice(2));
@@ -632,46 +667,47 @@ function register(ctx) {
   });
 
   ipcMain.handle('saveMessage', async (_, message) => {
-    try {
-      const db = new sqlite3.Database(dbPath);
-      const query = `
-        INSERT OR REPLACE INTO conversation_history
-        (message_id, timestamp, role, content, conversation_id, directory_path,
-         model, provider, npc, team, reasoning_content, tool_calls, tool_results,
-         parent_message_id, params, input_tokens, output_tokens, cost, execution_mode,
-         device_id, device_name)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `;
-      const params = [
-        message.message_id,
-        message.timestamp,
-        message.role,
-        message.content,
-        message.conversation_id,
-        message.directory_path,
-        message.model || null,
-        message.provider || null,
-        message.npc || null,
-        message.team || null,
-        message.reasoning_content || null,
-        message.tool_calls ? JSON.stringify(message.tool_calls) : null,
-        message.tool_results ? JSON.stringify(message.tool_results) : null,
-        message.parent_message_id || null,
-        message.params ? JSON.stringify(message.params) : null,
-        message.input_tokens || null,
-        message.output_tokens || null,
-        message.cost || null,
-        message.execution_mode,
-        message.device_id || null,
-        message.device_name || null,
-      ];
-      await new Promise((resolve, reject) => {
-        db.run(query, params, function(err) {
-          db.close();
-          if (err) reject(err);
-          else resolve({ lastID: this.lastID, changes: this.changes });
-        });
+    const query = `
+      INSERT OR REPLACE INTO conversation_history
+      (message_id, parent_message_id, branch_id, timestamp, role, content, conversation_id, directory_path,
+       model, provider, npc, team, reasoning_content, tool_calls, tool_results,
+       params, input_tokens, output_tokens, cost, execution_mode,
+       device_id, device_name)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+    const params = [
+      message.message_id,
+      message.parent_message_id || null,
+      message.branch_id || null,
+      message.timestamp,
+      message.role,
+      message.content,
+      message.conversation_id,
+      message.directory_path,
+      message.model || null,
+      message.provider || null,
+      message.npc || null,
+      message.team || null,
+      message.reasoning_content || null,
+      message.tool_calls ? JSON.stringify(message.tool_calls) : null,
+      message.tool_results ? JSON.stringify(message.tool_results) : null,
+      message.params ? JSON.stringify(message.params) : null,
+      message.input_tokens || null,
+      message.output_tokens || null,
+      message.cost || null,
+      message.execution_mode,
+      message.device_id || null,
+      message.device_name || null,
+    ];
+    const operation = () => new Promise((resolve, reject) => {
+      const db = getSharedDb();
+      db.run(query, params, function(err) {
+        if (err) reject(err);
+        else resolve({ lastID: this.lastID, changes: this.changes });
       });
+    });
+    try {
+      await withRetry(operation, 5, 50);
       return { success: true };
     } catch (err) {
       console.error('[saveMessage] Error saving message:', err);
@@ -857,7 +893,8 @@ function register(ctx) {
           const msgRows = await new Promise((resolve, reject) => {
             const db = new sqlite3.Database(dbPath);
             const query = `
-              SELECT role, content, timestamp, tool_calls, tool_results
+              SELECT message_id, role, content, timestamp, tool_calls, tool_results,
+                     model, provider, npc, input_tokens, output_tokens, cost, execution_mode
               FROM conversation_history
               WHERE conversation_id = ?
               ORDER BY timestamp ASC, id ASC
@@ -871,9 +908,17 @@ function register(ctx) {
 
           conversationMessages = msgRows.map(row => {
             const msg = {
+              id: row.message_id,
               role: row.role,
               content: row.content,
               timestamp: row.timestamp,
+              model: row.model,
+              provider: row.provider,
+              npc: row.npc,
+              input_tokens: row.input_tokens,
+              output_tokens: row.output_tokens,
+              cost: row.cost ? parseFloat(row.cost) : 0,
+              executionMode: row.execution_mode,
             };
 
             if (row.role === 'tool' && row.content) {
@@ -926,7 +971,6 @@ function register(ctx) {
         npcSource: data.npcSource || 'global',
         attachments: data.attachments || [],
         executionMode: data.executionMode || 'chat',
-        parentMessageId: data.parentMessageId,
         isResend: data.isRerun || false,
         jinxes: data.jinxes || [],
         tools: data.tools || [],
@@ -936,8 +980,6 @@ function register(ctx) {
 
         userMessageId: data.userMessageId,
         assistantMessageId: data.assistantMessageId,
-
-        userParentMessageId: data.userParentMessageId,
 
         temperature: data.temperature,
         top_p: data.top_p,
@@ -1390,7 +1432,8 @@ function register(ctx) {
             (SELECT npc FROM conversation_history AS c2 WHERE c2.conversation_id = conversation_history.conversation_id AND c2.npc IS NOT NULL AND c2.npc != '' ORDER BY timestamp DESC, id DESC LIMIT 1) as npc,
             (SELECT model FROM conversation_history AS c2 WHERE c2.conversation_id = conversation_history.conversation_id AND c2.model IS NOT NULL AND c2.model != '' ORDER BY timestamp DESC, id DESC LIMIT 1) as model,
             (SELECT provider FROM conversation_history AS c2 WHERE c2.conversation_id = conversation_history.conversation_id AND c2.provider IS NOT NULL AND c2.provider != '' ORDER BY timestamp DESC, id DESC LIMIT 1) as provider,
-            MAX(execution_mode) as execution_mode
+            MAX(execution_mode) as execution_mode,
+            MAX(CASE WHEN tool_calls IS NOT NULL AND tool_calls != '' AND tool_calls != '[]' THEN 1 ELSE 0 END) as has_tool_calls
           FROM conversation_history
           WHERE REPLACE(RTRIM(directory_path, '/\\'), '\\', '/') = ?
           GROUP BY conversation_id
@@ -1411,7 +1454,7 @@ function register(ctx) {
         npcs: (row.npcs || '').split(',').filter(Boolean),
         models: (row.models || '').split(',').filter(Boolean),
         providers: (row.providers || '').split(',').filter(Boolean),
-        execution_mode: row.execution_mode,
+        execution_mode: row.execution_mode || (row.has_tool_calls ? 'tool_agent' : 'chat'),
         npc: row.npc || (row.npcs || '').split(',')[0] || '',
         model: row.model || (row.models || '').split(',')[0] || '',
         provider: row.provider || (row.providers || '').split(',')[0] || '',
@@ -1481,7 +1524,6 @@ function register(ctx) {
             ch.reasoning_content,
             ch.tool_calls,
             ch.tool_results,
-            ch.parent_message_id,
             ch.input_tokens,
             ch.output_tokens,
             ch.cost,
@@ -1613,7 +1655,6 @@ function register(ctx) {
                 reasoningContent: row.reasoning_content,
                 toolCalls,
                 toolResults,
-                parentMessageId: row.parent_message_id,
                 input_tokens: row.input_tokens || 0,
                 output_tokens: row.output_tokens || 0,
                 cost: row.cost ? parseFloat(row.cost) : null,
@@ -1623,7 +1664,6 @@ function register(ctx) {
             delete newRow.reasoning_content;
             delete newRow.tool_calls;
             delete newRow.tool_results;
-            delete newRow.parent_message_id;
             return newRow;
         });
 

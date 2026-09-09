@@ -1037,7 +1037,6 @@ export const usePaneAwareStreamListeners = (
 
         const saveAssistantMessage = (paneData: any, msg: any) => {
             const path = currentPathRef.current;
-            if (typeof path !== 'string' || !paneData?.contentId) return;
             const payload = {
                 message_id: msg.id,
                 timestamp: msg.timestamp || new Date().toISOString(),
@@ -1048,7 +1047,6 @@ export const usePaneAwareStreamListeners = (
                 model: msg.model,
                 provider: msg.provider,
                 npc: msg.npc,
-                parent_message_id: msg.parentMessageId,
                 execution_mode: paneData.executionMode,
                 input_tokens: msg.input_tokens,
                 output_tokens: msg.output_tokens,
@@ -1223,6 +1221,10 @@ export const usePaneAwareStreamListeners = (
                     message.input_tokens = u.input_tokens;
                     message.output_tokens = u.output_tokens;
                     message.cost = u.cost;
+                    paneData.chatStats = getConversationStats(paneData.chatMessages.allMessages);
+                    if (message.role === 'assistant') {
+                        saveAssistantMessage(paneData, message);
+                    }
                 };
 
                 if (typeof chunk === 'string') {
@@ -1287,6 +1289,7 @@ export const usePaneAwareStreamListeners = (
                     }
                     if (type === 'usage') {
                         applyUsage({ input_tokens: chunk.input_tokens || 0, output_tokens: chunk.output_tokens || 0, cost: chunk.cost || 0 });
+                        paneData.chatStats = getConversationStats(paneData.chatMessages.allMessages);
                     } else if (type === 'tool_execution_start' && Array.isArray(chunk.tool_calls)) {
                         appendToolCalls(chunk.tool_calls);
                     } else if ((type === 'tool_start' || type === 'tool_complete' || type === 'tool_result' || type === 'tool_error') && chunk.name) {
@@ -1635,26 +1638,23 @@ export const handleInterruptStream = async (
     markToolCallsInterrupted(streamingMessage, 'Interrupted by user');
 
     // Persist the interrupted state so it survives pane reloads.
-    if (typeof currentPath === 'string' && paneData.contentId) {
-        (window as any).api.saveMessage({
-            message_id: streamingMessage.id,
-            timestamp: streamingMessage.timestamp || new Date().toISOString(),
-            role: 'assistant',
-            content: streamingMessage.content,
-            conversation_id: paneData.contentId,
-            directory_path: currentPath,
-            model: streamingMessage.model,
-            provider: streamingMessage.provider,
-            npc: streamingMessage.npc,
-            parent_message_id: streamingMessage.parentMessageId,
-            execution_mode: paneData.executionMode,
-            input_tokens: streamingMessage.input_tokens,
-            output_tokens: streamingMessage.output_tokens,
-            cost: streamingMessage.cost,
-            reasoning_content: streamingMessage.reasoningContent || null,
-            tool_calls: streamingMessage.toolCalls || null,
-        }).catch((err: any) => console.error('[INTERRUPT] Failed to save interrupted message:', err));
-    }
+    (window as any).api.saveMessage({
+        message_id: streamingMessage.id,
+        timestamp: streamingMessage.timestamp || new Date().toISOString(),
+        role: 'assistant',
+        content: streamingMessage.content,
+        conversation_id: paneData.contentId,
+        directory_path: currentPath,
+        model: streamingMessage.model,
+        provider: streamingMessage.provider,
+        npc: streamingMessage.npc,
+        execution_mode: paneData.executionMode,
+        input_tokens: streamingMessage.input_tokens,
+        output_tokens: streamingMessage.output_tokens,
+        cost: streamingMessage.cost,
+        reasoning_content: streamingMessage.reasoningContent || null,
+        tool_calls: streamingMessage.toolCalls || null,
+    }).catch((err: any) => console.error('[INTERRUPT] Failed to save interrupted message:', err));
 
     delete streamToPaneRef.current[streamIdToInterrupt];
     if (Object.keys(streamToPaneRef.current).length === 0) {
@@ -1727,16 +1727,6 @@ export const getThumbnailIcon = (fileName: string, fileType?: string) => {
         case 'json': return <FileJson {...iconProps} className="text-orange-400" />;
         default: return <File {...iconProps} className="text-gray-400" />;
     }
-};
-
-export const createToggleMessageSelectionMode = (
-    setMessageSelectionMode: (fn: (prev: boolean) => boolean) => void,
-    setSelectedMessages: (set: Set<any>) => void
-) => {
-    return () => {
-        setMessageSelectionMode(prev => !prev);
-        setSelectedMessages(new Set());
-    };
 };
 
 export const findNodeByPath = (node: any, path: number[]): any => {

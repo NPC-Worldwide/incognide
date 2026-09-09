@@ -1,5 +1,6 @@
-import React, { useState, useRef } from 'react';
-import { BarChart3, ChevronDown, ChevronRight, ListFilter, MessageSquare } from 'lucide-react';
+import React, { useState, useRef, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { BarChart3, ChevronDown, ChevronRight } from 'lucide-react';
 
 interface ChatStats {
     messageCount: number;
@@ -17,14 +18,9 @@ interface ChatHeaderContentProps {
     chatStats?: ChatStats;
     autoScrollEnabled: boolean;
     setAutoScrollEnabled: (enabled: boolean) => void;
-    messageSelectionMode: boolean;
-    toggleMessageSelectionMode: () => void;
-    selectedMessages: Set<string>;
-    showBranchingUI: boolean;
-    setShowBranchingUI: (show: boolean) => void;
-    conversationBranches: Map<string, any>;
     topBarCollapsed?: boolean;
     onExpandTopBar?: () => void;
+    isStreaming?: boolean;
 }
 
 const ChatHeaderContent: React.FC<ChatHeaderContentProps> = ({
@@ -33,18 +29,34 @@ const ChatHeaderContent: React.FC<ChatHeaderContentProps> = ({
     chatStats = { messageCount: 0, inputTokens: 0, outputTokens: 0, totalCost: 0, models: new Set(), agents: new Set(), providers: new Set() },
     autoScrollEnabled,
     setAutoScrollEnabled,
-    messageSelectionMode,
-    toggleMessageSelectionMode,
-    selectedMessages,
-    showBranchingUI,
-    setShowBranchingUI,
-    conversationBranches,
     topBarCollapsed,
     onExpandTopBar,
+    isStreaming,
 }) => {
     const [statsExpanded, setStatsExpanded] = useState(false);
+    const [popupPos, setPopupPos] = useState<{ top: number; right: number } | null>(null);
     const statsButtonRef = useRef<HTMLButtonElement>(null);
     const totalTokens = (chatStats.inputTokens || 0) + (chatStats.outputTokens || 0);
+
+    useLayoutEffect(() => {
+        if (statsExpanded && statsButtonRef.current) {
+            const rect = statsButtonRef.current.getBoundingClientRect();
+            setPopupPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+        }
+    }, [statsExpanded]);
+
+    const formatCompact = (n: number) => {
+        if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+        if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+        return String(Math.round(n));
+    };
+
+    const formatCost = (n: number | string | undefined): string => {
+        const val = typeof n === 'number' ? n : (parseFloat(n as any) || 0);
+        if (!val) return '$0.0000';
+        if (val >= 0.0001) return `$${val.toFixed(4)}`;
+        return `$${val.toFixed(6)}`;
+    };
 
     return (
         <div style={{ flex: '1 1 0', width: 0, minWidth: 0, display: 'flex', alignItems: 'center', padding: '4px 8px', gap: '8px' }}>
@@ -74,54 +86,67 @@ const ChatHeaderContent: React.FC<ChatHeaderContentProps> = ({
                 </button>
             )}
 
-            <div style={{ flex: '1 1 0', width: 0, minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end', overflow: 'hidden', flexWrap: 'nowrap' }}>
-                <div className="flex-shrink-0">
+            <div style={{ flex: '1 1 0', width: 0, minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end', overflow: 'visible', flexWrap: 'nowrap' }}>
+                <div className="flex-shrink-0 relative">
                     <button
                         ref={statsButtonRef}
-                        onClick={(e) => { e.stopPropagation(); setStatsExpanded(!statsExpanded); }}
+                        type="button"
+                        draggable={false}
+                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); setStatsExpanded(!statsExpanded); }}
                         onMouseDown={(e) => e.stopPropagation()}
-                        className="flex items-center gap-1 px-1.5 py-1 text-[10px] text-gray-400 hover:text-gray-200 rounded theme-hover"
-                        title={`${chatStats.messageCount} messages${totalTokens > 0 ? `, ${totalTokens.toLocaleString()} tokens` : ''}${chatStats.totalCost > 0 ? `, $${chatStats.totalCost.toFixed(4)}` : ''}`}
+                        onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                        onDragStart={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                        className="flex items-center gap-1 px-1.5 py-1 text-[10px] text-gray-400 hover:text-gray-200 rounded theme-hover select-none"
+                        title={`${chatStats.messageCount} messages · ${formatCompact(totalTokens)} tokens · ${formatCost(chatStats.totalCost)}${isStreaming ? ' (live)' : ''}`}
                     >
                         <BarChart3 size={12} />
-                        <span className="hidden sm:inline">{chatStats.messageCount}m</span>
+                        <span className="whitespace-nowrap flex items-center gap-1">
+                            <span>{chatStats.messageCount}m</span>
+                            {(isStreaming || totalTokens > 0) && (
+                                <span className="hidden sm:inline text-gray-500">· {formatCompact(totalTokens)}tok</span>
+                            )}
+                            {(isStreaming || chatStats.totalCost > 0) && (
+                                <span className="hidden sm:inline text-green-400">· {formatCost(chatStats.totalCost)}</span>
+                            )}
+                            {isStreaming && (
+                                <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                            )}
+                        </span>
                         {statsExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
                     </button>
-                    {statsExpanded && (() => {
-                        const rect = statsButtonRef.current?.getBoundingClientRect();
-                        return (
-                            <>
-                                <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setStatsExpanded(false)} />
-                                <div
-                                    className="fixed p-2 rounded theme-bg-secondary theme-border border shadow-lg z-50 min-w-[180px]"
-                                    style={{ top: (rect?.bottom ?? 0) + 4, left: rect?.left ?? 0 }}
-                                >
-                                    <div className="text-[10px] space-y-1">
-                                        <div className="flex justify-between"><span className="text-gray-500">Messages:</span><span>{chatStats.messageCount}</span></div>
-                                        {chatStats.inputTokens > 0 && (
-                                            <div className="flex justify-between"><span className="text-gray-500">Input tokens:</span><span>{chatStats.inputTokens.toLocaleString()}</span></div>
-                                        )}
-                                        {chatStats.outputTokens > 0 && (
-                                            <div className="flex justify-between"><span className="text-gray-500">Output tokens:</span><span>{chatStats.outputTokens.toLocaleString()}</span></div>
-                                        )}
-                                        {totalTokens > 0 && (
-                                            <div className="flex justify-between"><span className="text-gray-500">Total tokens:</span><span>{totalTokens.toLocaleString()}</span></div>
-                                        )}
-                                        {chatStats.totalCost > 0 && <div className="flex justify-between"><span className="text-gray-500">Cost:</span><span className="text-green-400">${chatStats.totalCost.toFixed(4)}</span></div>}
-                                        {chatStats.agents?.size > 0 && (
-                                            <div className="flex justify-between"><span className="text-gray-500">Agents:</span><span className="text-purple-400" title={Array.from(chatStats.agents).join(', ')}>{chatStats.agents.size}</span></div>
-                                        )}
-                                        {chatStats.models?.size > 0 && (
-                                            <div className="flex justify-between"><span className="text-gray-500">Models:</span><span className="text-blue-400" title={Array.from(chatStats.models).join(', ')}>{chatStats.models.size}</span></div>
-                                        )}
-                                        {chatStats.providers?.size > 0 && (
-                                            <div className="flex justify-between"><span className="text-gray-500">Providers:</span><span className="text-cyan-400">{chatStats.providers.size}</span></div>
-                                        )}
-                                    </div>
+                    {statsExpanded && popupPos && createPortal(
+                        <>
+                            <div
+                                className="fixed inset-0 z-[60]"
+                                onClick={() => setStatsExpanded(false)}
+                                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                            />
+                            <div
+                                className="fixed p-2 rounded theme-bg-secondary theme-border border shadow-lg z-[70] min-w-[180px] max-w-[260px]"
+                                style={{ top: popupPos.top, right: popupPos.right }}
+                                onClick={(e) => e.stopPropagation()}
+                                onPointerDown={(e) => e.stopPropagation()}
+                            >
+                                <div className="text-[10px] space-y-1">
+                                    <div className="flex justify-between"><span className="text-gray-500">Messages:</span><span>{chatStats.messageCount}</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-500">Input tokens:</span><span>{(chatStats.inputTokens || 0).toLocaleString()}</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-500">Output tokens:</span><span>{(chatStats.outputTokens || 0).toLocaleString()}</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-500">Total tokens:</span><span>{totalTokens.toLocaleString()}</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-500">Cost:</span><span className="text-green-400">{formatCost(chatStats.totalCost)}</span></div>
+                                    {chatStats.agents?.size > 0 && (
+                                        <div className="flex justify-between"><span className="text-gray-500">Agents:</span><span className="text-purple-400" title={Array.from(chatStats.agents).join(', ')}>{chatStats.agents.size}</span></div>
+                                    )}
+                                    {chatStats.models?.size > 0 && (
+                                        <div className="flex justify-between"><span className="text-gray-500">Models:</span><span className="text-blue-400" title={Array.from(chatStats.models).join(', ')}>{chatStats.models.size}</span></div>
+                                    )}
+                                    {chatStats.providers?.size > 0 && (
+                                        <div className="flex justify-between"><span className="text-gray-500">Providers:</span><span className="text-cyan-400">{chatStats.providers.size}</span></div>
+                                    )}
                                 </div>
-                            </>
-                        );
-                    })()}
+                            </div>
+                        </>,
+                        document.body
+                    )}
                 </div>
 
                 <button
@@ -134,31 +159,6 @@ const ChatHeaderContent: React.FC<ChatHeaderContentProps> = ({
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M12 5v14M19 12l-7 7-7-7"/>
                     </svg>
-                </button>
-
-                <button
-                    onClick={(e) => { e.stopPropagation(); toggleMessageSelectionMode(); }}
-                    className={`p-1 rounded text-xs transition-all flex items-center gap-0.5 flex-shrink-0 ${messageSelectionMode ? 'theme-button-primary' : 'theme-button theme-hover'}`}
-                    title={messageSelectionMode ? `Exit selection (${selectedMessages.size} selected)` : 'Select messages'}
-                >
-                    <ListFilter size={12} />
-                    {messageSelectionMode && selectedMessages.size > 0 && <span className="text-[10px]">{selectedMessages.size}</span>}
-                </button>
-
-                <button
-                    onClick={(e) => { e.stopPropagation(); setShowBranchingUI(!showBranchingUI); }}
-                    className={`p-1 rounded text-xs transition-all flex items-center gap-0.5 flex-shrink-0 ${
-                        showBranchingUI ? 'theme-button-primary' : 'theme-button theme-hover'
-                    }`}
-                    title="Manage conversation branches"
-                >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <line x1="6" y1="3" x2="6" y2="15"></line>
-                        <circle cx="18" cy="6" r="3"></circle>
-                        <circle cx="6" cy="18" r="3"></circle>
-                        <path d="M18 9a9 9 0 0 1-9 9"></path>
-                    </svg>
-                    {conversationBranches.size > 0 && <span className="text-[10px]">{conversationBranches.size}</span>}
                 </button>
             </div>
         </div>

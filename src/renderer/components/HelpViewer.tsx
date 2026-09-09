@@ -107,7 +107,7 @@ export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
                             <FeatureItem
                                 icon={<MessageSquare size={16} />}
                                 title="AI Chat"
-                                description="Multi-model conversations with file attachments, image support, conversation branching, and broadcast to multiple models."
+                                description="Multi-model conversations with file attachments and image support."
                             />
                             <FeatureItem
                                 icon={<Terminal size={16} />}
@@ -337,10 +337,6 @@ export const HelpViewer: React.FC<HelpViewerProps> = ({ appVersion }) => {
                 {matchesSearch('tip trick hint') && (
                     <CollapsibleSection title="Tips & Tricks" icon={<Zap size={18} />}>
                         <ul className="space-y-1.5 text-xs theme-text-muted">
-                            <li className="flex items-start gap-2">
-                                <span className="text-yellow-400">•</span>
-                                <span>Branch conversations to explore different approaches</span>
-                            </li>
                             <li className="flex items-start gap-2">
                                 <span className="text-yellow-400">•</span>
                                 <span>Broadcast to multiple models/NPCs for comparison</span>

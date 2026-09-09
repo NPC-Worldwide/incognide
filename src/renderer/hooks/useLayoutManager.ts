@@ -220,15 +220,7 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
             if (!paneData.chatMessages) {
                 paneData.chatMessages = { messages: [], allMessages: [], displayedMessageCount: 20 };
             }
-            if (paneData.executionMode === undefined) {
-                const savedMode = localStorage.getItem('incognideExecutionMode');
-                paneData.executionMode = savedMode ? JSON.parse(savedMode) : 'chat';
-                paneData.selectedJinx = null;
-                paneData.showJinxDropdown = false;
-            }
-            if (newContentType === 'agent' && paneData.executionMode === 'chat') {
-                paneData.executionMode = 'tool_agent';
-            }
+            paneData.executionMode = newContentType === 'agent' ? 'tool_agent' : 'chat';
             if (skipMessageLoad) {
                 paneData.chatMessages.messages = [];
                 paneData.chatMessages.allMessages = [];
@@ -237,12 +229,10 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
                 try {
                     const msgs = await (window as any).api.getConversationMessages(newContentId);
                     const assistantMsgs = msgs?.filter((m: any) => m.role === 'assistant') || [];
-                    console.log('[LOAD_MSGS] Total:', msgs?.length, 'Assistant msgs:', assistantMsgs.length,
-                        'With parentMessageId:', assistantMsgs.filter((m: any) => m.parentMessageId).length);
+                    console.log('[LOAD_MSGS] Total:', msgs?.length, 'Assistant msgs:', assistantMsgs.length);
                     if (assistantMsgs.length > 0) {
                         console.log('[LOAD_MSGS] Assistant message details:', assistantMsgs.map((m: any) => ({
                             id: String(m.message_id || '').slice(0, 8),
-                            parent: String(m.parentMessageId || 'NONE').slice(0, 8),
                             npc: m.npc
                         })));
                     }
@@ -317,12 +307,14 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
             contentDataRef.current[targetPaneId] = {
                 ...contentDataRef.current[targetPaneId],
                 contentType: newContentType,
-                contentId: newContentId
+                contentId: newContentId,
+                executionMode: newContentType === 'agent' ? 'tool_agent' : (newContentType === 'chat' ? 'chat' : contentDataRef.current[targetPaneId].executionMode)
             };
         } else {
             contentDataRef.current[newPaneId] = {
                 contentType: newContentType,
-                contentId: newContentId
+                contentId: newContentId,
+                executionMode: newContentType === 'agent' ? 'tool_agent' : (newContentType === 'chat' ? 'chat' : undefined)
             };
         }
 

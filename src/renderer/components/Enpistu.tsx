@@ -124,21 +124,16 @@ import { getFileName,
     handleInterruptStream as interruptStreamShared,
     handleRenameFile,
     getThumbnailIcon,
-    createToggleMessageSelectionMode,
     findNodeByPath,
     findNodePath,
     stripSourcePrefix
 } from './utils';
-import { BranchingUI, createBranchPoint } from './BranchingUI';
-import BranchOptionsModal, { BranchOptions } from './BranchOptionsModal';
-import BranchVisualizer from './BranchVisualizer';
 import { collectPaneIds } from './LayoutNode';
 
 import PaneHeader from './PaneHeader';
 import { LayoutNode } from './LayoutNode';
 import ConversationList from './ConversationList';
 import { ChatMessage } from './ChatMessage';
-import BroadcastResponseRow from './BroadcastResponseRow';
 import { PredictiveTextOverlay } from './PredictiveTextOverlay';
 import { usePredictiveText } from './PredictiveText';
 import { useAiEnabled } from './AiFeatureContext';
@@ -269,15 +264,6 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const [gitPanelCollapsed, setGitPanelCollapsed] = useState(true);
     const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
     const [pdfHighlightsTrigger, setPdfHighlightsTrigger] = useState(0);
-    const [conversationBranches, setConversationBranches] = useState(new Map());
-    const [currentBranchId, setCurrentBranchId] = useState('main');
-    const [showBranchingUI, setShowBranchingUI] = useState(false);
-    const [showBranchVisualizer, setShowBranchVisualizer] = useState(false);
-    const [branchOptionsModal, setBranchOptionsModal] = useState<{
-        isOpen: boolean;
-        messageIndex: number;
-        messageContent: string;
-    }>({ isOpen: false, messageIndex: -1, messageContent: '' });
     const [isPredictiveTextEnabled, setIsPredictiveTextEnabled] = useState(false);
     const [predictiveTextModel, setPredictiveTextModel] = useState<string | null>(null);
     const [predictiveTextProvider, setPredictiveTextProvider] = useState<string | null>(null);
@@ -468,6 +454,18 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const addPermissionRequest = useCallback((permissionPayload: any) => {
         const paneData = contentDataRef.current[permissionPayload.paneId];
         if (!paneData) return;
+        const sessionAllows = paneData.permissionSessionAllows || (paneData.permissionSessionAllows = new Set<string>());
+        if (permissionPayload.tool_name && sessionAllows.has(permissionPayload.tool_name)) {
+            paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: permissionPayload.paneId } }));
+            (window as any).api.respondToPermission({
+                request_id: permissionPayload.request_id,
+                decision: 'Yes'
+            }).catch((err: any) => {
+                console.error('[PERMISSION] Failed to send auto-approved decision:', err);
+                setError(err.message);
+            });
+            return;
+        }
         const list = paneData.permissionRequests || (paneData.permissionRequests = []);
         if (list.some((r: any) => r.request_id === permissionPayload.request_id)) return;
         list.push(permissionPayload);
@@ -476,13 +474,19 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
 
     const handlePanePermissionDecision = useCallback((paneId: string, request: any, decision: string) => {
         const paneData = contentDataRef.current[paneId];
+        let apiDecision = decision;
+        if (decision === 'Yes, allow for session') {
+            const sessionAllows = paneData.permissionSessionAllows || (paneData.permissionSessionAllows = new Set<string>());
+            if (request.tool_name) sessionAllows.add(request.tool_name);
+            apiDecision = 'Yes';
+        }
         if (paneData?.permissionRequests) {
             paneData.permissionRequests = paneData.permissionRequests.filter((r: any) => r.request_id !== request.request_id);
         }
         paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
         (window as any).api.respondToPermission({
             request_id: request.request_id,
-            decision
+            decision: apiDecision
         }).catch((err: any) => {
             console.error('[PERMISSION] Failed to send decision:', err);
             setError(err.message);
@@ -598,24 +602,6 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         bottomBarCollapsed, setBottomBarCollapsed,
         handleSidebarResize, handleInputResize,
     } = useSidebarResize();
-
-
-    const [activeRuns, setActiveRuns] = useState<{ [cellId: string]: number }>({});
-
-
-
-    const [expandedBranchPath, setExpandedBranchPath] = useState<{ [paneId: string]: string[] }>({});
-
-
-
-    const [selectedBranches, setSelectedBranches] = useState<{ [paneId: string]: Map<string, any> }>({});
-    const selectedBranchesRef = useRef(selectedBranches);
-    selectedBranchesRef.current = selectedBranches;
-
-
-    useEffect(() => {
-        console.log('[STATE] selectedBranches updated:', Object.keys(selectedBranches).map(k => `${k}: ${selectedBranches[k]?.size || 0} items`));
-    }, [selectedBranches]);
 
 
     const [contextFiles, setContextFiles] = useState<ContextFile[]>(() => ContextFileStorage.getAll());
@@ -843,17 +829,6 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         }
     }, [contentDataRef, streamToPaneRef, setIsStreaming, paneUpdateEmitter]);
 
-    const [selectedMessages, setSelectedMessages] = useState(new Set());
-    const [messageSelectionMode, setMessageSelectionMode] = useState(false);
-    const toggleMessageSelectionMode = createToggleMessageSelectionMode(setMessageSelectionMode, setSelectedMessages);
-    const [messageContextMenuPos, setMessageContextMenuPos] = useState(null);
-    const [messageOperationModal, setMessageOperationModal] = useState({
-        isOpen: false,
-        type: '',
-        title: '',
-        defaultPrompt: '',
-        onConfirm: null
-    });
     const [resendModal, setResendModal] = useState({
         isOpen: false,
         message: null,
@@ -1144,8 +1119,9 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         let changed = false;
         if (!pd.npc && currentNPC) { pd.npc = currentNPC; changed = true; }
         if (!pd.model && currentModel) { pd.model = currentModel; changed = true; }
+        if (!pd.provider && currentProvider) { pd.provider = currentProvider; changed = true; }
         if (changed) paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: activeContentPaneId } }));
-    }, [activeContentPaneId, currentNPC, currentModel]);
+    }, [activeContentPaneId, currentNPC, currentModel, currentProvider]);
 
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
     useEffect(() => {
@@ -1189,7 +1165,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
 
                 e.preventDefault();
                 e.stopPropagation();
-                window.location.reload();
+                (window as any).api?.reloadWindow?.();
             }
 
         };
@@ -2442,405 +2418,36 @@ const handleResendMessage = useCallback((messageToResend: any) => {
         return;
     }
 
-
     let targetMessage = messageToResend;
     if (messageToResend.role === 'assistant') {
         const activePaneData = contentDataRef.current[activeContentPaneId];
-        if (activePaneData?.chatMessages?.allMessages) {
-
-            const parentId = messageToResend.parentMessageId || messageToResend.cellId;
-            if (parentId) {
-                const userMsg = activePaneData.chatMessages.allMessages.find(
-                    (m: any) => (m.id === parentId || m.timestamp === parentId) && m.role === 'user'
-                );
-                if (userMsg) {
-                    targetMessage = userMsg;
-                }
-            }
-
-            if (targetMessage.role === 'assistant') {
-                const idx = activePaneData.chatMessages.allMessages.findIndex(
-                    (m: any) => m.id === messageToResend.id || m.timestamp === messageToResend.timestamp
-                );
-                if (idx > 0) {
-                    for (let i = idx - 1; i >= 0; i--) {
-                        if (activePaneData.chatMessages.allMessages[i].role === 'user') {
-                            targetMessage = activePaneData.chatMessages.allMessages[i];
-                            break;
-                        }
+        const allMessages = activePaneData?.chatMessages?.allMessages;
+        if (allMessages) {
+            const idx = allMessages.findIndex(
+                (m: any) => m.id === messageToResend.id || m.timestamp === messageToResend.timestamp
+            );
+            if (idx > 0) {
+                for (let i = idx - 1; i >= 0; i--) {
+                    if (allMessages[i].role === 'user') {
+                        targetMessage = allMessages[i];
+                        break;
                     }
                 }
             }
         }
     }
 
+    const activePaneData = contentDataRef.current[activeContentPaneId];
+    const paneModel = activePaneData?.model || currentModel;
     setResendModal({
         isOpen: true,
         message: targetMessage,
-        selectedModel: messageToResend.model || currentModel,
+        selectedModel: messageToResend.model || paneModel,
         selectedNPC: messageToResend.npc || currentNPC
     });
-}, [isPaneStreaming, currentModel, currentNPC, activeContentPaneId]);
+}, [isPaneStreaming, currentModel, currentNPC, activeContentPaneId, contentDataRef]);
 
 
-const handleBroadcast = useCallback(async (messageToResend: any, models: string[], npcs: string[]) => {
-    const activePaneData = contentDataRef.current[activeContentPaneId];
-    if (!activePaneData || (activePaneData.contentType !== 'chat' && activePaneData.contentType !== 'agent') || !activePaneData.contentId) {
-        setError("Cannot broadcast: The active pane is not a valid chat window.");
-        return;
-    }
-    if (isPaneStreaming(activeContentPaneId)) {
-        console.warn('Cannot broadcast while another operation is in progress.');
-        return;
-    }
-
-
-    let targetMessage = messageToResend;
-    if (messageToResend.role === 'assistant') {
-        const parentId = messageToResend.parentMessageId || messageToResend.cellId;
-        if (parentId) {
-            const userMsg = activePaneData.chatMessages.allMessages.find(
-                (m: any) => (m.id === parentId || m.timestamp === parentId) && m.role === 'user'
-            );
-            if (userMsg) targetMessage = userMsg;
-        }
-        if (targetMessage.role === 'assistant') {
-            const idx = activePaneData.chatMessages.allMessages.findIndex(
-                (m: any) => m.id === messageToResend.id || m.timestamp === messageToResend.timestamp
-            );
-            for (let i = idx - 1; i >= 0; i--) {
-                if (activePaneData.chatMessages.allMessages[i].role === 'user') {
-                    targetMessage = activePaneData.chatMessages.allMessages[i];
-                    break;
-                }
-            }
-        }
-    }
-
-    const conversationId = activePaneData.contentId;
-    const cellId = targetMessage.cellId || targetMessage.id || targetMessage.timestamp;
-    const allMessages = activePaneData.chatMessages.allMessages;
-
-
-    const userMsgIndex = allMessages.findIndex((m: any) =>
-        (m.id === targetMessage.id || m.timestamp === targetMessage.timestamp) && m.role === 'user'
-    );
-    if (userMsgIndex !== -1 && !allMessages[userMsgIndex].cellId) {
-        allMessages[userMsgIndex].cellId = cellId;
-    }
-
-
-    const combinations: Array<{model: string, npc: string}> = [];
-    for (const model of models) {
-        for (const npc of npcs) {
-            combinations.push({ model, npc });
-        }
-    }
-
-
-    const existingRuns = allMessages.filter((m: any) => m.cellId === cellId && m.role === 'assistant').length;
-
-
-    setIsStreaming(true);
-    const newStreamIds: string[] = [];
-
-    for (let i = 0; i < combinations.length; i++) {
-        const { model, npc } = combinations[i];
-        const newStreamId = generateId();
-        newStreamIds.push(newStreamId);
-        streamToPaneRef.current[newStreamId] = activeContentPaneId;
-
-        const runNumber = existingRuns + i + 1;
-        const selectedModelObj = availableModels.find((m: any) => m.value === model);
-        const selectedNpc = availableNPCs.find((n: any) => n.value === npc);
-        const providerToUse = selectedModelObj?.provider || currentProvider;
-
-
-        const assistantPlaceholder = {
-            id: newStreamId,
-            role: 'assistant',
-            content: '',
-            isStreaming: true,
-            timestamp: new Date().toISOString(),
-            streamId: newStreamId,
-            model: model,
-            provider: providerToUse,
-            npc: npc,
-            cellId: cellId,
-            parentMessageId: targetMessage.id || targetMessage.timestamp,
-            runNumber: runNumber,
-            runCount: existingRuns + combinations.length,
-        };
-
-        allMessages.push(assistantPlaceholder);
-
-
-        allMessages.forEach((m: any) => {
-            if (m.cellId === cellId) {
-                m.runCount = existingRuns + combinations.length;
-            }
-        });
-    }
-
-    activePaneData.chatMessages.messages = activePaneData.chatMessages.allMessages.slice(
-        -(activePaneData.chatMessages.displayedMessageCount || 20)
-    );
-    notifyAllPanes();
-
-
-    const executePromises = combinations.map(async ({ model, npc }, i) => {
-        const newStreamId = newStreamIds[i];
-        const selectedModelObj = availableModels.find((m: any) => m.value === model);
-        const selectedNpc = availableNPCs.find((n: any) => n.value === npc);
-        const providerToUse = selectedModelObj?.provider || currentProvider;
-
-        try {
-            await window.api.executeCommandStream({
-                commandstr: targetMessage.content,
-                currentPath,
-                conversationId,
-                model,
-                provider: providerToUse,
-                npc: selectedNpc?.name || npc,
-                npcSource: selectedNpc?.source || 'global',
-                attachments: targetMessage.attachments?.map((att: any) => ({
-                    name: att.name, path: att.path, size: att.size, type: att.type
-                })) || [],
-                streamId: newStreamId,
-                isRerun: true,
-                parentMessageId: targetMessage.id || targetMessage.timestamp,
-                assistantMessageId: newStreamId,
-
-                temperature: targetMessage.temperature ?? 0.7,
-                top_p: targetMessage.top_p,
-                top_k: targetMessage.top_k ?? 40,
-                max_tokens: targetMessage.max_tokens ?? 4096,
-            });
-        } catch (err: any) {
-            console.error('[BROADCAST] Error for', model, npc, err);
-            const msgIndex = activePaneData.chatMessages.allMessages.findIndex((m: any) => m.id === newStreamId);
-            if (msgIndex !== -1) {
-                const message = activePaneData.chatMessages.allMessages[msgIndex];
-                message.content = `[Error: ${err.message}]`;
-                message.type = 'error';
-                message.isStreaming = false;
-            }
-        }
-    });
-
-    await Promise.all(executePromises);
-}, [isPaneStreaming, activeContentPaneId, currentProvider, currentPath, availableModels, availableNPCs]);
-
-
-const handleSwitchRun = useCallback((cellId: string, runIndex: number) => {
-    setActiveRuns(prev => ({ ...prev, [cellId]: runIndex }));
-
-
-    const activePaneData = contentDataRef.current[activeContentPaneId];
-    if (!activePaneData?.chatMessages?.allMessages) return;
-
-    const allMessages = activePaneData.chatMessages.allMessages;
-    const siblingRuns = allMessages.filter((m: any) =>
-        m.role === 'assistant' && (m.cellId === cellId || m.parentMessageId === cellId)
-    );
-
-    if (runIndex === 0) {
-
-        setExpandedBranchPath(prev => {
-            const next = { ...prev };
-            delete next[activeContentPaneId];
-            return next;
-        });
-    } else if (siblingRuns[runIndex]) {
-
-        const selectedRun = siblingRuns[runIndex];
-        const msgById = new Map(allMessages.map((m: any) => [m.id, m]));
-        const path: string[] = [];
-        let cur = selectedRun;
-        while (cur) {
-            path.unshift(cur.id);
-            cur = cur.parentMessageId ? msgById.get(cur.parentMessageId) : null;
-        }
-        setExpandedBranchPath(prev => ({ ...prev, [activeContentPaneId]: path }));
-    }
-}, [activeContentPaneId]);
-
-
-const handleExpandBranches = useCallback((cellId: string) => {
-    const activePaneData = contentDataRef.current[activeContentPaneId];
-    if (!activePaneData?.chatMessages?.allMessages) return;
-
-
-    const siblingRuns = activePaneData.chatMessages.allMessages.filter(
-        (m: any) => m.cellId === cellId && m.role === 'assistant'
-    );
-
-    if (siblingRuns.length <= 1) return;
-
-
-    const firstRun = siblingRuns[0];
-    const userMessage = activePaneData.chatMessages.allMessages.find(
-        (m: any) => m.id === firstRun.parentMessageId
-    );
-
-
-    const nodePath = findNodePath(rootLayoutNodeRef.current, activeContentPaneId);
-    if (!nodePath) return;
-
-
-    const branchesContentId = `branches_${cellId}_${Date.now()}`;
-
-
-    const branchData = {
-        cellId,
-        userMessage: userMessage || { content: 'Original prompt', role: 'user' },
-        runs: siblingRuns.map((run: any) => ({
-            id: run.id,
-            model: run.model,
-            npc: run.npc,
-            provider: run.provider,
-            content: run.content,
-            runNumber: run.runNumber,
-            timestamp: run.timestamp
-        }))
-    };
-
-
-    performSplit(nodePath, 'right', 'branches', branchesContentId);
-
-
-    setTimeout(() => {
-
-        const newPaneId = Object.keys(contentDataRef.current).find(
-            id => contentDataRef.current[id]?.contentId === branchesContentId
-        );
-        if (newPaneId) {
-            contentDataRef.current[newPaneId].branchData = branchData;
-            notifyAllPanes();
-        }
-    }, 50);
-
-}, [activeContentPaneId, findNodePath, performSplit]);
-
-
-const handleCreateBranch = useCallback((messageIndex: number) => {
-
-    const activePaneData = contentDataRef.current[activeContentPaneId!];
-    if (!activePaneData || !activePaneData.chatMessages) return;
-
-    const message = activePaneData.chatMessages.allMessages[messageIndex];
-    const messageContent = typeof message?.content === 'string'
-        ? message.content
-        : message?.content?.[0]?.text || '';
-
-
-    setBranchOptionsModal({
-        isOpen: true,
-        messageIndex,
-        messageContent
-    });
-}, [activeContentPaneId, contentDataRef]);
-
-
-const handleBranchOptionsConfirm = useCallback(async (options: BranchOptions) => {
-    const { messageIndex, messageContent } = branchOptionsModal;
-    const activePaneData = contentDataRef.current[activeContentPaneId!];
-    if (!activePaneData || !activePaneData.chatMessages) return;
-
-
-    const userMessage = activePaneData.chatMessages.allMessages[messageIndex];
-
-
-    const sendToModel = async (modelToUse: string) => {
-        const conversationId = activePaneData.contentId;
-        const newStreamId = generateId();
-        streamToPaneRef.current[newStreamId] = activeContentPaneId;
-
-        const selectedModelObj = availableModels.find((m: any) => m.value === modelToUse);
-        const providerToUse = selectedModelObj ? selectedModelObj.provider : currentProvider;
-        const selectedNpc = availableNPCs.find((npc: any) => npc.value === currentNPC);
-
-
-        const assistantPlaceholderMessage = {
-            id: newStreamId,
-            role: 'assistant',
-            content: '',
-            isStreaming: true,
-            timestamp: new Date().toISOString(),
-            streamId: newStreamId,
-            model: modelToUse,
-            npc: currentNPC,
-        };
-
-        activePaneData.chatMessages.allMessages.push(assistantPlaceholderMessage);
-        activePaneData.chatMessages.messages = activePaneData.chatMessages.allMessages.slice(
-            -(activePaneData.chatMessages.displayedMessageCount || 20)
-        );
-        notifyAllPanes();
-
-        try {
-            await (window as any).api.executeCommandStream({
-                commandstr: messageContent,
-                currentPath,
-                conversationId,
-                model: modelToUse,
-                provider: providerToUse,
-                npc: selectedNpc ? selectedNpc.name : currentNPC,
-                npcSource: selectedNpc ? selectedNpc.source : 'global',
-                attachments: userMessage?.attachments?.map((att: any) => ({
-                    name: att.name, path: att.path, size: att.size, type: att.type
-                })) || [],
-                streamId: newStreamId,
-                isResend: true,
-                parentMessageId: userMessage?.id,
-                assistantMessageId: newStreamId,
-                temperature: userMessage?.temperature ?? 0.7,
-                top_p: userMessage?.top_p,
-                top_k: userMessage?.top_k ?? 40,
-                max_tokens: userMessage?.max_tokens ?? 4096,
-            });
-        } catch (err: any) {
-            console.error('[BRANCH RESEND] Error:', err);
-            setError(err.message);
-        }
-    };
-
-
-    createBranchPoint(
-        messageIndex,
-        activeContentPaneId,
-        currentBranchId,
-        conversationBranches,
-        contentDataRef,
-        setConversationBranches,
-        setCurrentBranchId,
-        setRootLayoutNode
-    );
-
-    setBranchOptionsModal({ isOpen: false, messageIndex: -1, messageContent: '' });
-
-
-    let modelToUse = currentModel;
-    if (options.mode === 'different' && options.models[0]) {
-        modelToUse = options.models[0];
-        setCurrentModel(modelToUse);
-    }
-
-    if (options.mode === 'broadcast' && options.models.length > 1) {
-
-        setIsStreaming(true);
-        await sendToModel(options.models[0]);
-    } else if (options.mode === 'jinx' && options.jinxName) {
-
-        console.log('Applying jinx:', options.jinxName);
-    } else {
-
-        setIsStreaming(true);
-        await sendToModel(modelToUse);
-    }
-}, [branchOptionsModal, activeContentPaneId, currentBranchId, conversationBranches, contentDataRef,
-    setConversationBranches, setCurrentBranchId, setRootLayoutNode, setCurrentModel, currentModel,
-    currentProvider, currentNPC, availableModels, availableNPCs, currentPath, setError, setIsStreaming]);
 
 
 const scriptTerminalMapRef = useRef<Map<string, string>>(new Map());
@@ -2959,218 +2566,21 @@ const renderChatView = useCallback(({ nodeId }) => {
         return <div className="flex-1 flex items-center justify-center theme-text-muted">No messages</div>;
     }
 
-    const allMessages = paneData.chatMessages.allMessages || [];
     const messages = paneData.chatMessages.messages || [];
-
-
-
-    const siblingRunsMap: { [key: string]: any[] } = {};
-
-    allMessages.forEach((m: any) => {
-        const groupKey = m.parentMessageId || m.cellId;
-        if (groupKey && m.role === 'assistant') {
-            if (!siblingRunsMap[groupKey]) {
-                siblingRunsMap[groupKey] = [];
-            }
-            siblingRunsMap[groupKey].push(m);
-        }
-    });
-
-
-    const broadcastGroups = Object.entries(siblingRunsMap).filter(([_, runs]) => runs.length > 1);
-    if (broadcastGroups.length > 0) {
-        console.log('[TREE DEBUG] Broadcast groups found:', broadcastGroups.length,
-            'Groups:', broadcastGroups.map(([key, runs]) => ({
-                groupKey: String(key || '').slice(0, 8),
-                count: runs.length,
-                ids: runs.map((r: any) => String(r.id || '').slice(0, 8))
-            })));
-    }
-
-
-    const renderedBroadcastKeys = new Set<string>();
-
-
-    const handleToggleBranchSelection = (message: any, selected: boolean) => {
-        console.log('[BRANCH] Toggle selection for nodeId:', nodeId, 'message:', message.id, message.npc || message.model, 'selected:', selected);
-        setSelectedBranches(prev => {
-            const paneMap = new Map(prev[nodeId] || []);
-            if (selected) {
-                paneMap.set(message.id, message);
-            } else {
-                paneMap.delete(message.id);
-            }
-            return {
-                ...prev,
-                [nodeId]: paneMap
-            };
-        });
-    };
-
-
-    const currentSelectedBranches = selectedBranchesRef.current;
-
-    const selectedBranchIds = new Set(currentSelectedBranches[nodeId]?.keys() || []);
-
-
-    const handleCopyAllBroadcast = (messages: any[]) => {
-        const content = messages.map((m, i) =>
-            `--- Response ${i + 1} (${m.npc || m.model || 'Unknown'}) ---\n${m.content || ''}`
-        ).join('\n\n');
-        navigator.clipboard.writeText(content);
-    };
-
-
-    const msgById = new Map(allMessages.map((m: any) => [m.id, m]));
-
-
-    const branchPath = expandedBranchPath[nodeId] || [];
-    const isInBranch = branchPath.length > 0;
-
-
-    const handleExpandBranch = (assistantMsgId: string) => {
-
-        const path: string[] = [];
-        let current = msgById.get(assistantMsgId);
-        while (current) {
-            path.unshift(current.id);
-            current = current.parentMessageId ? msgById.get(current.parentMessageId) : null;
-        }
-        setExpandedBranchPath(prev => ({ ...prev, [nodeId]: path }));
-    };
-
-
-    const mainChain: any[] = [];
-    const processed = new Set<string>();
-
-
-
-    const branchPathSet = new Set(branchPath);
-
-
-    const rootUserMsgs = allMessages.filter((m: any) =>
-        m.role === 'user' && (!m.parentMessageId || !msgById.has(m.parentMessageId))
-    );
-    let current: any = rootUserMsgs[0];
-
-    while (current) {
-        if (processed.has(current.id)) break;
-        processed.add(current.id);
-        mainChain.push(current);
-
-        if (current.role === 'user') {
-
-            const responses = allMessages.filter((m: any) =>
-                m.role === 'assistant' && m.parentMessageId === current.id
-            );
-            if (responses.length > 0) {
-
-                if (isInBranch) {
-                    const pathResponse = responses.find((r: any) => branchPathSet.has(r.id));
-                    current = pathResponse || responses[0];
-                } else {
-                    current = responses[0];
-                }
-            } else {
-                break;
-            }
-        } else {
-
-            const subChainUser = allMessages.find((m: any) =>
-                m.role === 'user' && m.parentMessageId === current.id
-            );
-            if (subChainUser) {
-                current = subChainUser;
-            } else if (!isInBranch) {
-
-                const nextUser = allMessages.find((m: any) =>
-                    m.role === 'user' &&
-                    !processed.has(m.id) &&
-                    (!m.parentMessageId || msgById.get(m.parentMessageId)?.role === 'user')
-                );
-                current = nextUser || null;
-            } else {
-                break;
-            }
-        }
-    }
-
 
     return (
         <div className="p-4 space-y-4">
-            {mainChain.map((msg: any, idx: number) => {
-
-                const groupKey = msg.parentMessageId || msg.cellId;
-                const siblingRuns = groupKey ? siblingRunsMap[groupKey] || [] : [];
-                const activeRunIndex = groupKey ? (activeRuns[groupKey] ?? siblingRuns.findIndex((r: any) => r.id === msg.id)) : 0;
-
-
-                if (msg.role === 'assistant' && groupKey && !isInBranch) {
-
-                    if (renderedBroadcastKeys.has(groupKey)) {
-                        return null;
-                    }
-
-
-                    const hasSubChain = allMessages.some((m: any) =>
-                        m.role === 'user' && m.parentMessageId === msg.id
-                    );
-
-
-                    if (siblingRuns.length > 1 || hasSubChain) {
-                        renderedBroadcastKeys.add(groupKey);
-
-
-                        const userMsgIdx = messages.findIndex((m: any, i: number) =>
-                            i < idx && m.role === 'user'
-                        );
-                        const userMessage = userMsgIdx >= 0 ? messages[userMsgIdx] : null;
-
-                        return (
-                            <BroadcastResponseRow
-                                key={`broadcast-${groupKey}`}
-                                siblingRuns={siblingRuns}
-                                userMessage={userMessage}
-                                allMessages={allMessages}
-                                onCopyAll={handleCopyAllBroadcast}
-                                onToggleBranchSelection={handleToggleBranchSelection}
-                                selectedBranchIds={selectedBranchIds}
-                                onExpandBranch={handleExpandBranch}
-                            />
-                        );
-                    }
-                }
-
-                return (
-                    <ChatMessage
-                        key={msg.id || msg.timestamp || idx}
-                        message={msg}
-                        isSelected={selectedMessages.has(msg.id || msg.timestamp)}
-                        messageSelectionMode={messageSelectionMode}
-                        toggleMessageSelection={(msgId) => {
-                            const newSet = new Set(selectedMessages);
-                            if (newSet.has(msgId)) {
-                                newSet.delete(msgId);
-                            } else {
-                                newSet.add(msgId);
-                            }
-                            setSelectedMessages(newSet);
-                        }}
-                        handleMessageContextMenu={(e: React.MouseEvent) => handleMessageContextMenu(e, msg)}
-                        searchTerm={searchTerm}
-                        isCurrentSearchResult={false}
-                        onResendMessage={() => handleResendMessage(msg)}
-                        onBroadcast={handleBroadcast}
-                        onExpandBranches={handleExpandBranches}
-                        onSwitchRun={handleSwitchRun}
-                        siblingRuns={siblingRuns}
-                        activeRunIndex={activeRunIndex >= 0 ? activeRunIndex : 0}
-                        onCreateBranch={handleCreateBranch}
-                        messageIndex={idx}
-                        onLabelMessage={handleLabelMessage}
-                        messageLabel={messageLabels[msg.id || msg.timestamp]}
-                        conversationId={paneData.contentId}
-                        isAgentMode={paneData.executionMode !== 'chat'}
+            {messages.map((msg: any, idx: number) => (
+                <ChatMessage
+                    key={msg.id || msg.timestamp || idx}
+                    message={msg}
+                    searchTerm={searchTerm}
+                    isCurrentSearchResult={false}
+                    onResendMessage={() => handleResendMessage(msg)}
+                    onLabelMessage={handleLabelMessage}
+                    messageLabel={messageLabels[msg.id || msg.timestamp]}
+                    conversationId={paneData.contentId}
+                    isAgentMode={paneData.executionMode !== 'chat'}
                     availableModels={availableModels}
                     availableNPCs={availableNPCs}
                     onOpenFile={(path: string) => {
@@ -3191,106 +2601,19 @@ const renderChatView = useCallback(({ nodeId }) => {
                         }
                     }}
                 />
-                );
-            })}
+            ))}
             {paneData.permissionRequests?.length > 0 && (
                 <PermissionModal
                     request={paneData.permissionRequests[0]}
                     pendingCount={paneData.permissionRequests.length}
                     onDecision={(request, decision) => handlePanePermissionDecision(nodeId, request, decision)}
+                    isActivePane={nodeId === activeContentPaneId}
                 />
             )}
         </div>
     );
-}, [selectedMessages, messageSelectionMode, searchTerm, handleLabelMessage, messageLabels, handleResendMessage, handleBroadcast, handleExpandBranches, handleSwitchRun, activeRuns, handleCreateBranch, findNodePath, performSplit, availableModels, availableNPCs, expandedBranchPath, rootLayoutNode, handlePanePermissionDecision]);
+}, [searchTerm, handleLabelMessage, messageLabels, handleResendMessage, findNodePath, performSplit, availableModels, availableNPCs, rootLayoutNode, handlePanePermissionDecision]);
 
-
-const renderBranchComparisonPane = useCallback(({ nodeId }) => {
-    const paneData = contentDataRef.current[nodeId];
-    const branchData = paneData?.branchData;
-
-    if (!branchData || !branchData.runs || branchData.runs.length === 0) {
-        return (
-            <div className="flex-1 flex items-center justify-center theme-text-muted p-4">
-                <div className="text-center">
-                    <GitBranch size={32} className="mx-auto mb-2 text-gray-500" />
-                    <p>No branch data available</p>
-                </div>
-            </div>
-        );
-    }
-
-    const { userMessage, runs } = branchData;
-    const userContent = typeof userMessage.content === 'string'
-        ? userMessage.content
-        : userMessage.content?.[0]?.text || '';
-
-    return (
-        <div className="flex-1 flex flex-col overflow-hidden theme-bg-secondary">
-            {}
-            <div className="p-3 border-b theme-border bg-gray-800/50">
-                <div className="flex items-center gap-2 mb-1">
-                    <User size={14} className="text-blue-400" />
-                    <span className="text-xs text-gray-400 uppercase">Original Prompt</span>
-                </div>
-                <div className="text-sm text-gray-200 whitespace-pre-wrap line-clamp-3">
-                    {userContent.slice(0, 300)}{userContent.length > 300 ? '...' : ''}
-                </div>
-            </div>
-
-            {}
-            <div className="px-3 py-2 border-b theme-border bg-gray-900/50 flex items-center gap-2">
-                <GitBranch size={14} className="text-purple-400" />
-                <span className="text-xs text-gray-400">
-                    {runs.length} Branches
-                </span>
-            </div>
-
-            {}
-            <div className="flex-1 overflow-auto p-2">
-                <div className={`grid gap-2 h-full ${
-                    runs.length <= 2 ? 'grid-cols-2' :
-                    runs.length <= 4 ? 'grid-cols-2 grid-rows-2' :
-                    'grid-cols-3'
-                }`}>
-                    {runs.map((run: any, idx: number) => {
-                        const content = typeof run.content === 'string'
-                            ? run.content
-                            : run.content?.[0]?.text || '';
-
-                        return (
-                            <div
-                                key={run.id || idx}
-                                className="flex flex-col border theme-border rounded-lg overflow-hidden bg-gray-900"
-                            >
-                                {}
-                                <div className="px-2 py-1.5 bg-gray-800 border-b theme-border flex items-center gap-2 flex-shrink-0">
-                                    <span className="text-xs font-semibold text-purple-400">
-                                        #{idx + 1}
-                                    </span>
-                                    <span className="text-[10px] px-1.5 py-0.5 bg-blue-600/20 text-blue-300 rounded">
-                                        {run.model?.slice(0, 20) || 'unknown'}
-                                    </span>
-                                    {run.npc && run.npc !== 'agent' && (
-                                        <span className="text-[10px] px-1.5 py-0.5 bg-green-600/20 text-green-300 rounded">
-                                            {stripSourcePrefix(run.npc)}
-                                        </span>
-                                    )}
-                                </div>
-                                {}
-                                <div className="flex-1 overflow-auto p-2">
-                                    <div className="text-xs text-gray-300 whitespace-pre-wrap">
-                                        <MarkdownRenderer content={content} />
-                                    </div>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
-        </div>
-    );
-}, []);
 
 const handleAICodeAction = useCallback(async (type: string, selectedText: string) => {
     if (!selectedText) return;
@@ -3385,13 +2708,17 @@ const handleAICodeAction = useCallback(async (type: string, selectedText: string
         return;
     }
 
+    const activePaneId = activeContentPaneIdRef.current;
+    const activePaneData = activePaneId ? contentDataRef.current[activePaneId] : null;
+    const aiModel = activePaneData?.model || currentModel;
+    const aiProvider = activePaneData?.provider || currentProvider;
     window.api?.executeCommandStream?.({
         streamId,
         commandstr: prompt,
         currentPath,
         conversationId: conversation.id,
-        model: currentModel,
-        provider: currentProvider,
+        model: aiModel,
+        provider: aiProvider,
         executionMode: 'tool_agent'
     });
 }, [currentModel, currentProvider, currentPath]);
@@ -3402,15 +2729,9 @@ const handleCopyChat = useCallback(() => {
     if (!paneData || (paneData.contentType !== 'chat' && paneData.contentType !== 'agent')) return;
 
     const messages = paneData.chatMessages?.messages || [];
-    if (messageSelectionMode && selectedMessages.size > 0) {
-        const selectedMsgs = messages.filter(m => selectedMessages.has(m.id));
-        const text = selectedMsgs.map(m => `${m.role === 'user' ? 'User' : (m.npc || m.model || 'Assistant')}: ${m.content}`).join('\n\n');
-        navigator.clipboard.writeText(text);
-    } else {
-        const text = messages.map(m => `${m.role === 'user' ? 'User' : (m.npc || m.model || 'Assistant')}: ${m.content}`).join('\n\n');
-        navigator.clipboard.writeText(text);
-    }
-}, [activeContentPaneId, messageSelectionMode, selectedMessages]);
+    const text = messages.map(m => `${m.role === 'user' ? 'User' : (m.npc || m.model || 'Assistant')}: ${m.content}`).join('\n\n');
+    navigator.clipboard.writeText(text);
+}, [activeContentPaneId]);
 
 const handleSaveChat = useCallback(async () => {
     const paneData = contentDataRef.current[activeContentPaneId];
@@ -3916,9 +3237,7 @@ const renderBrowserSettingsPane = useCallback(({ nodeId }: { nodeId: string }) =
 
 const renderModelManagerPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return <ModelManager onStartChat={(model: string, provider: string) => {
-        setCurrentModel(model);
-        setCurrentProvider(provider);
-        createNewConversationRef.current?.({ contentType: 'chat', model });
+        createNewConversationRef.current?.({ contentType: 'chat', model, provider });
     }} />;
 }, []);
 
@@ -4046,8 +3365,8 @@ const renderDBToolPane = useCallback(({ nodeId }: { nodeId: string }) => {
     return (
         <DBTool
             currentPath={currentPath}
-            currentModel={currentModel}
-            currentProvider={currentProvider}
+            currentModel={paneData?.model || currentModel}
+            currentProvider={paneData?.provider || currentProvider}
             currentNPC={currentNPC}
             initialDbPath={dbPath}
         />
@@ -5144,34 +4463,21 @@ const handleBrowserDialogNavigate = (url) => {
         }
 
 
-        const branchMap = selectedBranches[targetPaneId];
-        const branchTargets = branchMap && branchMap.size > 0 ? Array.from(branchMap.values()) : [null];
-        console.log('[BRANCH] Reading selectedBranches for targetPaneId:', targetPaneId, 'targets:', branchTargets.length, branchTargets.map((b: any) => b?.id + ' ' + (b?.npc || b?.model)));
-
-
-        if (branchMap && branchMap.size > 0) {
-            setSelectedBranches(prev => {
-                const next = { ...prev };
-                delete next[targetPaneId];
-                return next;
-            });
-        }
-
         if (!paneData.chatMessages) {
             paneData.chatMessages = { messages: [], allMessages: [], displayedMessageCount: 20 };
         }
-
 
         const savedInput = submittedInput;
         const savedFiles = [...uploadedFiles];
         setInput('');
         setUploadedFiles([]);
 
-
-
+        const paneModel = targetPaneData?.model || currentModel;
+        const paneProvider = targetPaneData?.provider || currentProvider;
         if (targetPaneId && contentDataRef.current[targetPaneId]) {
             contentDataRef.current[targetPaneId].npc = currentNPC;
-            contentDataRef.current[targetPaneId].model = currentModel;
+            contentDataRef.current[targetPaneId].model = paneModel;
+            contentDataRef.current[targetPaneId].provider = paneProvider;
         }
         if (isJinxMode) {
             setJinxInputValues(prev => ({
@@ -5180,170 +4486,134 @@ const handleBrowserDialogNavigate = (url) => {
             }));
         }
 
-
-        const firstUseModel = branchTargets[0]?.model || currentModel;
-        const firstUseProvider = branchTargets[0]?.provider || currentProvider;
-        if (!firstUseModel || !firstUseProvider) {
+        if (!paneModel || !paneProvider) {
             setError('No model selected. Please select a model from the dropdown before sending a message.');
             return;
         }
 
+        const userMessage = {
+            id: generateId(),
+            role: 'user',
+            content: finalPromptForUserMessage,
+            timestamp: new Date().toISOString(),
+            attachments: savedFiles,
+            executionMode: paneExecMode,
+            isJinxCall: isJinxMode,
+            jinxName: isJinxMode ? jinxName : null,
+            jinxInputs: isJinxMode ? jinxArgsForApi : null,
+            wasVoiceInput: wasVoiceInput,
+        };
 
-        for (const branchParent of branchTargets) {
-            const branchStreamId = branchTargets.length > 1 ? generateId() : newStreamId;
+        const assistantPlaceholder = {
+            id: newStreamId, role: 'assistant', content: '', timestamp: new Date().toISOString(),
+            isStreaming: true, streamId: newStreamId,
+            npc: currentNPC, model: paneModel, provider: paneProvider,
+            temperature: genParams.temperature,
+            top_p: genParams.top_p,
+            top_k: genParams.top_k,
+            max_tokens: genParams.max_tokens,
+        };
 
+        paneData.chatMessages.allMessages.push(userMessage, assistantPlaceholder);
+        paneData.chatMessages.messages = paneData.chatMessages.allMessages.slice(-(paneData.chatMessages.displayedMessageCount || 20));
+        streamToPaneRef.current[newStreamId] = targetPaneId;
 
-            const useNpc = branchParent?.npc || currentNPC;
-            const useModel = branchParent?.model || currentModel;
-            const useProvider = branchParent?.provider || currentProvider;
-            const useNpcSource = branchParent?.npcSource || 'global';
+        notifyAllPanes();
 
-
-            const cellId = branchParent ? branchParent.id : generateId();
-
-            const userMessage = {
-                id: generateId(),
+        try {
+            const userSavePayload = {
+                message_id: userMessage.id,
+                timestamp: userMessage.timestamp,
                 role: 'user',
-                content: finalPromptForUserMessage,
-                timestamp: new Date().toISOString(),
-                attachments: savedFiles,
-                executionMode: paneExecMode,
-                isJinxCall: isJinxMode,
-                jinxName: isJinxMode ? jinxName : null,
-                jinxInputs: isJinxMode ? jinxArgsForApi : null,
-                wasVoiceInput: wasVoiceInput,
-                parentMessageId: branchParent?.id || null,
-                cellId: cellId,
+                content: userMessage.content,
+                conversation_id: conversationId,
+                directory_path: currentPath,
+                model: paneModel,
+                provider: paneProvider,
+                npc: currentNPC,
+                execution_mode: paneExecMode,
             };
+            window.api.saveMessage(userSavePayload).catch((err: any) => console.error('[SUBMIT] Failed to save user message:', err));
 
-            const assistantPlaceholder = {
-                id: branchStreamId, role: 'assistant', content: '', timestamp: new Date().toISOString(),
-                isStreaming: true, streamId: branchStreamId,
-                npc: useNpc, model: useModel, provider: useProvider, npcSource: useNpcSource,
-                parentMessageId: userMessage.id,
-                cellId: cellId,
+            trackActivity('chat_message', {
+                conversationId,
+                paneId: targetPaneId,
+                paneType: paneData.contentType,
+                npc: currentNPC,
+                model: paneModel,
+                provider: paneProvider,
+                length: (userMessage.content || '').length,
+                isJinx: isJinxMode,
+                jinxName: jinxName || undefined,
+            });
 
-                temperature: genParams.temperature,
-                top_p: genParams.top_p,
-                top_k: genParams.top_k,
-                max_tokens: genParams.max_tokens,
-            };
+            const npcName = currentNPC?.replace(/^(project:|global:)/, '') || 'agent';
 
-            console.log('[BRANCH] Sending to branch:', branchParent?.id, 'using NPC:', useNpc, 'model:', useModel);
-
-            paneData.chatMessages.allMessages.push(userMessage, assistantPlaceholder);
-            paneData.chatMessages.messages = paneData.chatMessages.allMessages.slice(-(paneData.chatMessages.displayedMessageCount || 20));
-            streamToPaneRef.current[branchStreamId] = targetPaneId;
-
-
-            notifyAllPanes();
-
-            try {
-                const userSavePayload = {
-                    message_id: userMessage.id,
-                    timestamp: userMessage.timestamp,
-                    role: 'user',
-                    content: userMessage.content,
-                    conversation_id: conversationId,
-                    directory_path: currentPath,
-                    model: useModel,
-                    provider: useProvider,
-                    npc: useNpc,
-                    parent_message_id: userMessage.parentMessageId,
-                    execution_mode: paneExecMode,
-                };
-                window.api.saveMessage(userSavePayload).catch((err: any) => console.error('[SUBMIT] Failed to save user message:', err));
-
-                // Log this user chat message as an activity event.
-                trackActivity('chat_message', {
+            if (isJinxMode) {
+                await window.api.executeJinx({
+                    jinxName: jinxName,
+                    jinxArgs: jinxArgsForApi,
+                    currentPath,
                     conversationId,
-                    paneId: targetPaneId,
-                    paneType: paneData.contentType,
-                    npc: useNpc,
-                    model: useModel,
-                    provider: useProvider,
-                    length: (userMessage.content || '').length,
-                    isJinx: isJinxMode,
-                    jinxName: jinxName || undefined,
+                    model: paneModel,
+                    provider: paneProvider,
+                    npc: npcName,
+                    npcSource: 'global',
+                    streamId: newStreamId,
+                    temperature: genParams.temperature,
+                    top_p: genParams.top_p,
+                    top_k: genParams.top_k,
+                    max_tokens: genParams.max_tokens,
                 });
-
-                const npcName = useNpc?.replace(/^(project:|global:)/, '') || 'agent';
-
-                if (isJinxMode) {
-                    await window.api.executeJinx({
-                        jinxName: jinxName,
-                        jinxArgs: jinxArgsForApi,
-                        currentPath,
-                        conversationId,
-                        model: useModel,
-                        provider: useProvider,
-                        npc: npcName,
-                        npcSource: useNpcSource,
-                        streamId: branchStreamId,
-                        temperature: genParams.temperature,
-                        top_p: genParams.top_p,
-                        top_k: genParams.top_k,
-                        max_tokens: genParams.max_tokens,
-                    });
-                } else {
-                    const commandData = {
-                        commandstr: finalPromptForUserMessage,
-                        currentPath,
-                        conversationId,
-                        model: useModel,
-                        provider: useProvider,
-                        npc: npcName,
-                        npcSource: useNpcSource,
-                        attachments: savedFiles.map((f: any) => {
-                            if (f.path) return { name: f.name, path: f.path, size: f.size, type: f.type };
-                            else if (f.data) return { name: f.name, data: f.data, size: f.size, type: f.type };
-                            return { name: f.name, type: f.type };
-                        }),
-                        streamId: branchStreamId,
-                        executionMode: paneExecMode,
-                        userParentMessageId: userMessage.parentMessageId,
-
-                        userMessageId: userMessage.id,
-                        assistantMessageId: branchStreamId,
-                        parentMessageId: userMessage.id,
-
-                        temperature: genParams.temperature,
-                        top_p: genParams.top_p,
-                        top_k: genParams.top_k,
-                        max_tokens: genParams.max_tokens,
-                        disableThinking,
-                        maxAgentIterations: paneExecMode === 'tool_agent' ? parseInt(localStorage.getItem('incognide_maxAgentIterations') || '0', 10) || undefined : undefined,
-                    };
-                    const streamResult = await window.api.executeCommandStream(commandData);
-                    if (streamResult?.error) {
-                        throw new Error(streamResult.error);
-                    }
+            } else {
+                const commandData = {
+                    commandstr: finalPromptForUserMessage,
+                    currentPath,
+                    conversationId,
+                    model: paneModel,
+                    provider: paneProvider,
+                    npc: npcName,
+                    npcSource: 'global',
+                    attachments: savedFiles.map((f: any) => {
+                        if (f.path) return { name: f.name, path: f.path, size: f.size, type: f.type };
+                        else if (f.data) return { name: f.name, data: f.data, size: f.size, type: f.type };
+                        return { name: f.name, type: f.type };
+                    }),
+                    streamId: newStreamId,
+                    executionMode: paneExecMode,
+                    userMessageId: userMessage.id,
+                    assistantMessageId: newStreamId,
+                    temperature: genParams.temperature,
+                    top_p: genParams.top_p,
+                    top_k: genParams.top_k,
+                    max_tokens: genParams.max_tokens,
+                    disableThinking,
+                    maxAgentIterations: paneExecMode === 'tool_agent' ? parseInt(localStorage.getItem('incognide_maxAgentIterations') || '0', 10) || undefined : undefined,
+                };
+                const streamResult = await window.api.executeCommandStream(commandData);
+                if (streamResult?.error) {
+                    throw new Error(streamResult.error);
                 }
-            } catch (err: any) {
-                setError(err.message);
-                delete streamToPaneRef.current[branchStreamId];
-                const placeholderMsg = paneData.chatMessages?.allMessages?.find((m: any) => m.id === branchStreamId);
-                if (placeholderMsg) {
-                    placeholderMsg.isStreaming = false;
-                    placeholderMsg.streamId = null;
-                    placeholderMsg.content += `\n\n[Failed to start stream: ${err.message}]`;
-                }
-                if (Object.keys(streamToPaneRef.current).length === 0) {
-                    setIsStreaming(false);
-                }
-                if (targetPaneId) notifyAllPanes();
             }
+        } catch (err: any) {
+            setError(err.message);
+            delete streamToPaneRef.current[newStreamId];
+            const placeholderMsg = paneData.chatMessages?.allMessages?.find((m: any) => m.id === newStreamId);
+            if (placeholderMsg) {
+                placeholderMsg.isStreaming = false;
+                placeholderMsg.streamId = null;
+                placeholderMsg.content += `\n\n[Failed to start stream: ${err.message}]`;
+            }
+            if (Object.keys(streamToPaneRef.current).length === 0) {
+                setIsStreaming(false);
+            }
+            if (targetPaneId) notifyAllPanes();
         }
 
         paneData.chatMessages.messages = paneData.chatMessages.allMessages.slice(-(paneData.chatMessages.displayedMessageCount || 20));
         paneData.chatStats = getConversationStats(paneData.chatMessages.allMessages);
 
         if (targetPaneId) paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: targetPaneId } }));
-
-
-        if (branchTargets.length === 1 && branchTargets[0] === null) {
-
-        }
     };
 
     // Delegates to the shared implementation in utils.tsx, which resolves pending
@@ -5365,118 +4635,6 @@ const handleBrowserDialogNavigate = (url) => {
         }
     };
 
-    const handleMessageContextMenu = (e: React.MouseEvent, message: any) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const selection = window.getSelection();
-        const selectedText = selection?.toString() || '';
-
-        setMessageContextMenuPos({
-            x: e.clientX,
-            y: e.clientY,
-            selectedText,
-            messageId: message.id || message.timestamp
-        });
-    };
-
-    const handleApplyPromptToMessages = async (operationType: string, customPrompt = '') => {
-        const selectedIds = Array.from(selectedMessages);
-        if (selectedIds.length === 0) return;
-
-        const activePaneData = contentDataRef.current[activeContentPaneId];
-        if (!activePaneData || !activePaneData.chatMessages) {
-            console.error("No active chat pane data found for message operation.");
-            return;
-        }
-        const allMessagesInPane = activePaneData.chatMessages.allMessages;
-        const selectedMsgs = allMessagesInPane.filter((msg: any) => selectedIds.includes(msg.id || msg.timestamp));
-
-        if (selectedMsgs.length === 0) return;
-
-        let prompt = '';
-        switch (operationType) {
-            case 'summarize':
-                prompt = `Summarize these ${selectedMsgs.length} messages:\n\n`;
-                break;
-            case 'analyze':
-                prompt = `Analyze these ${selectedMsgs.length} messages for key insights:\n\n`;
-                break;
-            case 'extract':
-                prompt = `Extract the key information from these ${selectedMsgs.length} messages:\n\n`;
-                break;
-            case 'custom':
-                prompt = customPrompt + `\n\nApply this to these ${selectedMsgs.length} messages:\n\n`;
-                break;
-            default:
-                prompt = `Process these ${selectedMsgs.length} messages:\n\n`;
-                break;
-        }
-
-        const messagesText = selectedMsgs.map((msg: any, idx: number) =>
-            `Message ${idx + 1} (${msg.role}):\n${msg.content}`
-        ).join('\n\n');
-
-        const fullPrompt = prompt + messagesText;
-
-        try {
-            console.log('Creating new conversation for message operation:', operationType);
-            await createNewConversation();
-            setInput(fullPrompt);
-        } catch (err: any) {
-            console.error('Error processing messages:', err);
-            setError(err.message);
-            setInput(fullPrompt);
-        } finally {
-            setSelectedMessages(new Set());
-            setMessageContextMenuPos(null);
-            setMessageSelectionMode(false);
-        }
-    };
-
-    const handleDeleteMessagesByIds = async (idsToDelete: string[]) => {
-        if (idsToDelete.length === 0) return;
-
-        const activePaneData = contentDataRef.current[activeContentPaneId];
-        if (!activePaneData || !activePaneData.chatMessages) {
-            console.error("No active chat pane for deletion.");
-            return;
-        }
-
-        const conversationId = activePaneData.contentId;
-        if (!conversationId) return;
-
-        try {
-            const messagesToDelete = activePaneData.chatMessages.allMessages
-                .filter((m: any) => idsToDelete.includes(m.id || m.timestamp));
-
-            for (const msg of messagesToDelete) {
-                const msgId = msg.message_id || msg.id;
-                if (msgId) {
-                    await (window as any).api.deleteMessage({ conversationId, messageId: msgId });
-                }
-            }
-
-            activePaneData.chatMessages.allMessages = activePaneData.chatMessages.allMessages.filter(
-                (m: any) => !idsToDelete.includes(m.id || m.timestamp)
-            );
-            activePaneData.chatMessages.messages = activePaneData.chatMessages.allMessages.slice(-(activePaneData.chatMessages.displayedMessageCount || 20));
-            activePaneData.chatStats = getConversationStats(activePaneData.chatMessages.allMessages);
-
-            notifyAllPanes();
-            setSelectedMessages(new Set());
-            setMessageContextMenuPos(null);
-            setMessageSelectionMode(false);
-        } catch (err: any) {
-            console.error('Error deleting messages:', err);
-            setError(err.message);
-        }
-    };
-
-    const handleDeleteSelectedMessages = async () => {
-        const selectedIds = Array.from(selectedMessages);
-        await handleDeleteMessagesByIds(selectedIds);
-    };
-
     const handleResendWithSettings = async (messageToResend: any, selectedModel: string, selectedNPC: string) => {
         const activePaneData = contentDataRef.current[activeContentPaneId];
         if (!activePaneData || (activePaneData.contentType !== 'chat' && activePaneData.contentType !== 'agent') || !activePaneData.contentId) {
@@ -5492,40 +4650,11 @@ const handleBrowserDialogNavigate = (url) => {
         let newStreamId: string | null = null;
 
         try {
-
-            const messageIdToResend = messageToResend.id || messageToResend.timestamp;
             const allMessages = activePaneData.chatMessages.allMessages;
             const userMsgIndex = allMessages.findIndex((m: any) =>
-                (m.id || m.timestamp) === messageIdToResend
+                (m.id || m.timestamp) === (messageToResend.id || messageToResend.timestamp)
             );
-
-
-
-            const cellId = messageToResend.cellId || messageToResend.id || messageToResend.timestamp;
-
-
-            const existingRuns = allMessages.filter((m: any) =>
-                m.cellId === cellId && m.role === 'assistant'
-            ).length;
-            const newRunNumber = existingRuns + 1;
-
-
-            if (userMsgIndex !== -1 && !allMessages[userMsgIndex].cellId) {
-                allMessages[userMsgIndex].cellId = cellId;
-            }
-
-
-            if (userMsgIndex !== -1) {
-                allMessages[userMsgIndex].runCount = newRunNumber;
-            }
-
-
-            allMessages.forEach((m: any) => {
-                if (m.cellId === cellId && m.role === 'assistant') {
-                    m.runCount = newRunNumber;
-                }
-            });
-
+            const insertIndex = userMsgIndex !== -1 ? userMsgIndex + 1 : allMessages.length;
 
             newStreamId = generateId();
             streamToPaneRef.current[newStreamId] = activeContentPaneId;
@@ -5533,6 +4662,9 @@ const handleBrowserDialogNavigate = (url) => {
 
             const selectedNpc = availableNPCs.find((npc: any) => npc.value === selectedNPC);
 
+            const paneProvider = activePaneData?.provider || currentProvider;
+            const selectedModelObj = availableModels.find((m: any) => m.value === selectedModel);
+            const providerToUse = selectedModelObj?.provider || paneProvider;
 
             const assistantPlaceholderMessage = {
                 id: newStreamId,
@@ -5542,40 +4674,9 @@ const handleBrowserDialogNavigate = (url) => {
                 timestamp: new Date().toISOString(),
                 streamId: newStreamId,
                 model: selectedModel,
-                provider: availableModels.find((m: any) => m.value === selectedModel)?.provider || currentProvider,
+                provider: providerToUse,
                 npc: selectedNPC,
-
-                cellId: cellId,
-                parentMessageId: messageIdToResend,
-                runNumber: newRunNumber,
-                runCount: newRunNumber,
             };
-
-
-
-            let insertIndex = allMessages.length;
-            for (let i = allMessages.length - 1; i >= 0; i--) {
-                if (allMessages[i].cellId === cellId) {
-                    insertIndex = i + 1;
-                    break;
-                }
-            }
-
-
-            if (insertIndex === allMessages.length && userMsgIndex !== -1) {
-                insertIndex = userMsgIndex + 1;
-
-                while (insertIndex < allMessages.length && allMessages[insertIndex].role === 'assistant') {
-
-                    if (!allMessages[insertIndex].cellId) {
-                        allMessages[insertIndex].cellId = cellId;
-                        allMessages[insertIndex].runNumber = 1;
-                        allMessages[insertIndex].runCount = newRunNumber;
-                    }
-                    insertIndex++;
-                }
-            }
-
 
             allMessages.splice(insertIndex, 0, assistantPlaceholderMessage);
             activePaneData.chatMessages.messages = activePaneData.chatMessages.allMessages.slice(
@@ -5583,9 +4684,6 @@ const handleBrowserDialogNavigate = (url) => {
             );
 
             notifyAllPanes();
-
-            const selectedModelObj = availableModels.find((m: any) => m.value === selectedModel);
-            const providerToUse = selectedModelObj ? selectedModelObj.provider : currentProvider;
 
             await window.api.executeCommandStream({
                 commandstr: messageToResend.content,
@@ -5600,9 +4698,7 @@ const handleBrowserDialogNavigate = (url) => {
                 })) || [],
                 streamId: newStreamId,
                 isRerun: true,
-                parentMessageId: messageIdToResend,
                 assistantMessageId: newStreamId,
-
                 temperature: messageToResend.temperature ?? 0.7,
                 top_p: messageToResend.top_p,
                 top_k: messageToResend.top_k ?? 40,
@@ -5633,7 +4729,7 @@ const handleBrowserDialogNavigate = (url) => {
         }
     };
 
-    const createNewConversation = useCallback(async (skipMessageLoad: boolean | { contentType?: 'chat' | 'agent'; npc?: string; model?: string } = false) => {
+    const createNewConversation = useCallback(async (skipMessageLoad: boolean | { contentType?: 'chat' | 'agent'; npc?: string; model?: string; provider?: string } = false) => {
         const opts = typeof skipMessageLoad === 'object' ? skipMessageLoad : {};
         const contentType: 'chat' | 'agent' = opts.contentType || 'chat';
         const npcToUse = opts.npc !== undefined ? opts.npc : currentNPC;
@@ -5658,7 +4754,7 @@ const handleBrowserDialogNavigate = (url) => {
 
 
             const newPaneId = generateId();
-
+            const providerToUse = opts.provider !== undefined ? opts.provider : currentProvider;
 
             contentDataRef.current[newPaneId] = {
                 contentType,
@@ -5666,10 +4762,9 @@ const handleBrowserDialogNavigate = (url) => {
                 chatMessages: { messages: [], allMessages: [], displayedMessageCount: 20 },
                 npc: npcToUse,
                 model: modelToUse,
+                provider: providerToUse,
+                executionMode: contentType === 'agent' ? 'tool_agent' : 'chat',
             };
-            if (contentType === 'agent') {
-                contentDataRef.current[newPaneId].executionMode = 'tool_agent';
-            }
 
 
             addPaneOrTab(newPaneId);
@@ -5820,9 +4915,7 @@ const handleBrowserDialogNavigate = (url) => {
                     createNewConversation();
                 }}
                 startNewChat={(model: string, provider: string) => {
-                    setCurrentModel(model);
-                    setCurrentProvider(provider);
-                    createNewConversation({ contentType: 'chat', model });
+                    createNewConversation({ contentType: 'chat', model, provider });
                 }}
                 embedded={true}
                 npcList={availableNPCs}
@@ -6460,6 +5553,9 @@ const handleBrowserDialogNavigate = (url) => {
             let targetConvoId = null;
             const currentConversations = directoryConversationsRef.current;
 
+            let modelToSet: string | null = null;
+            let providerToSet: string | null = null;
+
             if (storedConvoId) {
                 const convoInCurrentDir = currentConversations.find(conv => conv.id === storedConvoId);
                 if (convoInCurrentDir) {
@@ -6470,26 +5566,71 @@ const handleBrowserDialogNavigate = (url) => {
                         if (validNpc) npcToSet = validNpc.value;
                     }
                     if (lastUsedInConvo?.model) {
-                        setCurrentModel(lastUsedInConvo.model);
-                        if (lastUsedInConvo?.provider) setCurrentProvider(lastUsedInConvo.provider);
-                        setSelectedModels([lastUsedInConvo.model]);
+                        modelToSet = lastUsedInConvo.model;
+                        providerToSet = lastUsedInConvo.provider || null;
                     }
                 } else {
                     localStorage.removeItem(LAST_ACTIVE_CONVO_ID_KEY);
                 }
             }
 
-            if (!targetConvoId) {
+            const npcModelToUse = () => {
+                if (npcToSet) {
+                    const npcObj = fetchedNPCs.find((n: any) => n.value === npcToSet || n.name === npcToSet);
+                    if (npcObj?.model && npcObj?.provider) {
+                        return { model: npcObj.model, provider: npcObj.provider };
+                    }
+                    const teamName = npcObj?.team;
+                    const tConf = teamName ? fetchedTeamConfigs?.[teamName] : null;
+                    if (tConf?.model && tConf?.provider) {
+                        return { model: tConf.model, provider: tConf.provider };
+                    }
+                }
+                return null;
+            };
+
+            if (!modelToSet) {
+                const npcModel = npcModelToUse();
+                if (npcModel) {
+                    modelToSet = npcModel.model;
+                    providerToSet = npcModel.provider;
+                }
+            }
+
+            if (!modelToSet && projectCtx?.model) {
+                modelToSet = projectCtx.model;
+                providerToSet = projectCtx.provider || null;
+            }
+
+            if (!modelToSet) {
                 const lastUsedInDir = await window.api.getLastUsedInDirectory(currentPath);
                 if (lastUsedInDir?.npc) {
                     const validNpc = fetchedNPCs.find((n: any) => n.value === lastUsedInDir.npc);
                     if (validNpc) npcToSet = validNpc.value;
                 }
                 if (lastUsedInDir?.model) {
-                    setCurrentModel(lastUsedInDir.model);
-                    if (lastUsedInDir?.provider) setCurrentProvider(lastUsedInDir.provider);
-                    setSelectedModels([lastUsedInDir.model]);
+                    modelToSet = lastUsedInDir.model;
+                    providerToSet = lastUsedInDir.provider || null;
                 }
+            }
+
+            const getFolderModelPref = () => {
+                try {
+                    const raw = localStorage.getItem(`incognideFolderModel:${currentPath}`);
+                    return raw ? JSON.parse(raw) : null;
+                } catch { return null; }
+            };
+
+            const folderPref = getFolderModelPref();
+            if (!modelToSet && folderPref?.model) {
+                modelToSet = folderPref.model;
+                providerToSet = folderPref.provider || null;
+            }
+
+            if (modelToSet) {
+                setCurrentModel(modelToSet);
+                if (providerToSet) setCurrentProvider(providerToSet);
+                setSelectedModels([modelToSet]);
             }
 
             if (!npcToSet && fetchedNPCs.length > 0) {
@@ -6663,84 +5804,6 @@ const handleBrowserDialogNavigate = (url) => {
 )}
 
 
-
-        {messageContextMenuPos && (
-            <>
-
-                <div
-                    className="fixed inset-0 z-40 bg-transparent"
-                    onMouseDown={() => setMessageContextMenuPos(null)}
-                />
-                <div
-                    className="fixed theme-bg-secondary theme-border border rounded shadow-lg py-1 z-50"
-                    style={{ top: messageContextMenuPos.y, left: messageContextMenuPos.x }}
-                >
-
-                    {messageContextMenuPos.selectedText && (
-                        <>
-                            <button
-                                onClick={() => {
-                                    navigator.clipboard.writeText(messageContextMenuPos.selectedText);
-                                    setMessageContextMenuPos(null);
-                                }}
-                                className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-xs"
-                            >
-                                <Edit size={14} />
-                                <span>Copy Selected Text</span>
-                            </button>
-                            <div className="border-t theme-border my-1"></div>
-                        </>
-                    )}
-
-
-                    <button
-                        onClick={() => {
-                            if (messageContextMenuPos.messageId) {
-                                setSelectedMessages(prev => {
-                                    const next = new Set(prev);
-                                    if (next.has(messageContextMenuPos.messageId)) {
-                                        next.delete(messageContextMenuPos.messageId);
-                                    } else {
-                                        next.add(messageContextMenuPos.messageId);
-                                    }
-                                    return next;
-                                });
-                            }
-                            setMessageContextMenuPos(null);
-                        }}
-                        className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-xs"
-                    >
-                        <Edit size={14} />
-                        <span>{selectedMessages.has(messageContextMenuPos.messageId) ? 'Deselect Message' : 'Select Message'}</span>
-                    </button>
-
-
-                    <div className="border-t theme-border my-1"></div>
-                    <button
-                        onClick={() => {
-                            if (messageContextMenuPos.messageId) {
-                                handleDeleteMessagesByIds([messageContextMenuPos.messageId]);
-                            }
-                        }}
-                        className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left text-red-400 text-xs"
-                    >
-                        <Trash size={14} />
-                        <span>Delete This Message</span>
-                    </button>
-
-
-                    {selectedMessages.size > 1 && (
-                        <button
-                            onClick={handleDeleteSelectedMessages}
-                            className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left text-red-400 text-xs"
-                        >
-                            <Trash size={14} />
-                            <span>Delete Selected ({selectedMessages.size})</span>
-                        </button>
-                    )}
-                </div>
-            </>
-        )}
 
         {resendModal.isOpen && (
             <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
@@ -7113,9 +6176,7 @@ const handleBrowserDialogNavigate = (url) => {
                 currentPath={currentPath}
                 startNewConversation={startNewConversationWithNpc}
                 startNewChat={(model: string, provider: string) => {
-                    setCurrentModel(model);
-                    setCurrentProvider(provider);
-                    createNewConversation({ contentType: 'chat', model });
+                    createNewConversation({ contentType: 'chat', model, provider });
                 }}
                 npcList={availableNPCs.map(npc => ({ name: npc.name, display_name: npc.display_name }))}
                 jinxList={availableJinxes.map(jinx => ({ jinx_name: jinx.name, description: jinx.description }))}
@@ -7302,6 +6363,26 @@ const getPaneExecutionMode = useCallback((paneId: string) => {
     return pd?.executionMode || def;
 }, []);
 
+const getPaneModel = useCallback((paneId: string) => {
+    return contentDataRef.current[paneId]?.model || null;
+}, []);
+
+const setPaneModel = useCallback((paneId: string, model: string | null) => {
+    if (!contentDataRef.current[paneId]) return;
+    contentDataRef.current[paneId].model = model;
+    notifyAllPanes();
+}, []);
+
+const getPaneProvider = useCallback((paneId: string) => {
+    return contentDataRef.current[paneId]?.provider || null;
+}, []);
+
+const setPaneProvider = useCallback((paneId: string, provider: string | null) => {
+    if (!contentDataRef.current[paneId]) return;
+    contentDataRef.current[paneId].provider = provider;
+    notifyAllPanes();
+}, []);
+
 const setPaneExecutionMode = useCallback(async (paneId: string, mode: string) => {
     if (!contentDataRef.current[paneId]) {
         contentDataRef.current[paneId] = { executionMode: mode, selectedJinx: null, showJinxDropdown: false };
@@ -7372,8 +6453,28 @@ const getChatInputProps = useCallback((paneId: string) => {
     showJinxDropdown: getPaneShowJinxDropdown(paneId),
     setShowJinxDropdown: (show: boolean) => setPaneShowJinxDropdown(paneId, show),
     availableModels, modelsLoading, modelsError,
-    currentModel, setCurrentModel: (v: any) => { setCurrentModel(v); notifyUpdate(); },
-    currentProvider, setCurrentProvider: (v: any) => { setCurrentProvider(v); notifyUpdate(); },
+    currentModel: getPaneModel(paneId),
+    setCurrentModel: (v: any) => {
+        setPaneModel(paneId, v);
+        if (v && currentPath) {
+            try {
+                const provider = getPaneProvider(paneId) || currentProvider;
+                localStorage.setItem(`incognideFolderModel:${currentPath}`, JSON.stringify({ model: v, provider }));
+            } catch {}
+        }
+        notifyUpdate();
+    },
+    currentProvider: getPaneProvider(paneId),
+    setCurrentProvider: (v: any) => {
+        setPaneProvider(paneId, v);
+        if (v && currentPath) {
+            try {
+                const model = getPaneModel(paneId) || currentModel;
+                if (model) localStorage.setItem(`incognideFolderModel:${currentPath}`, JSON.stringify({ model, provider: v }));
+            } catch {}
+        }
+        notifyUpdate();
+    },
     favoriteModels, toggleFavoriteModel,
     showAllModels, setShowAllModels, modelsToDisplay, ollamaToolModels, setError,
     modelWarning,
@@ -7409,164 +6510,6 @@ const getChatInputProps = useCallback((paneId: string) => {
         }
     },
 
-    onBroadcast: async (models: string[], npcs: string[]) => {
-        const activePaneData = contentDataRef.current[paneId];
-        if (!activePaneData || (activePaneData.contentType !== 'chat' && activePaneData.contentType !== 'agent') || !activePaneData.contentId) {
-            setError("Cannot broadcast: The active pane is not a valid chat window.");
-            return;
-        }
-        if (isPaneStreaming(paneId) || !input.trim()) return;
-
-
-        const uniqueModels = [...new Set(models)];
-        const uniqueNpcs = [...new Set(npcs)];
-
-        const conversationId = activePaneData.contentId;
-        const allMessages = activePaneData.chatMessages?.allMessages || [];
-
-
-        const branchMap = selectedBranches[paneId];
-        const branchTargets = branchMap && branchMap.size > 0 ? Array.from(branchMap.values()) : [null];
-        console.log('[BROADCAST] branchTargets:', branchTargets.length, branchTargets.map((b: any) => b?.id));
-
-
-        if (branchMap && branchMap.size > 0) {
-            setSelectedBranches(prev => {
-                const next = { ...prev };
-                delete next[paneId];
-                return next;
-            });
-        }
-
-
-        const allUserMessageIds: string[] = [];
-        for (const branchParent of branchTargets) {
-            const userMessageId = generateId();
-            const cellId = userMessageId;
-            allUserMessageIds.push(userMessageId);
-
-            const userMessage = {
-                id: userMessageId,
-                role: 'user',
-                content: input,
-                timestamp: new Date().toISOString(),
-                attachments: uploadedFiles.map(f => ({ name: f.name, path: f.path, size: f.size, type: f.type })),
-                cellId: cellId,
-                parentMessageId: branchParent?.id || null,
-            };
-            allMessages.push(userMessage);
-        }
-
-
-
-        const allExecutions: Array<{
-            branchIdx: number,
-            userMessageId: string,
-            cellId: string,
-            model: string,
-            npcKey: string,
-            npcName: string,
-            npcSource: string,
-            streamId: string
-        }> = [];
-
-        for (let branchIdx = 0; branchIdx < branchTargets.length; branchIdx++) {
-            const userMessageId = allUserMessageIds[branchIdx];
-            const cellId = userMessageId;
-
-            for (const model of uniqueModels) {
-                for (const npcName of uniqueNpcs) {
-
-                    const npcObj = availableNPCs.find((n: any) => n.value === npcName);
-                    const npcSource = npcObj?.source || 'global';
-                    const streamId = generateId();
-
-                    allExecutions.push({
-                        branchIdx,
-                        userMessageId,
-                        cellId,
-                        model,
-                        npcKey: npcName,
-                        npcName,
-                        npcSource,
-                        streamId
-                    });
-                }
-            }
-        }
-        console.log('[BROADCAST] executions:', allExecutions.length, 'branches:', branchTargets.length);
-
-        setIsStreaming(true);
-
-
-        for (const exec of allExecutions) {
-            streamToPaneRef.current[exec.streamId] = paneId;
-
-            const selectedModelObj = availableModels.find((m: any) => m.value === exec.model);
-            const providerToUse = selectedModelObj?.provider || currentProvider;
-
-            const assistantPlaceholder = {
-                id: exec.streamId,
-                role: 'assistant',
-                content: '',
-                isStreaming: true,
-                timestamp: new Date().toISOString(),
-                streamId: exec.streamId,
-                model: exec.model,
-                provider: providerToUse,
-                npc: exec.npcName,
-                npcSource: exec.npcSource,
-                cellId: exec.cellId,
-                parentMessageId: exec.userMessageId,
-            };
-            allMessages.push(assistantPlaceholder);
-        }
-
-        activePaneData.chatMessages.allMessages = allMessages;
-        activePaneData.chatMessages.messages = allMessages.slice(-(activePaneData.chatMessages.displayedMessageCount || 20));
-        setInput('');
-        setUploadedFiles([]);
-        notifyAllPanes();
-
-
-        const executePromises = allExecutions.map(async (exec) => {
-            const selectedModelObj = availableModels.find((m: any) => m.value === exec.model);
-            const providerToUse = selectedModelObj?.provider || currentProvider;
-
-            try {
-                await window.api.executeCommandStream({
-                    commandstr: input,
-                    currentPath,
-                    conversationId,
-                    model: exec.model,
-                    provider: providerToUse,
-                    npc: exec.npcName,
-                    npcSource: exec.npcSource,
-                    attachments: uploadedFiles.map(f => ({ name: f.name, path: f.path, size: f.size, type: f.type })),
-                    streamId: exec.streamId,
-                    isResend: branchTargets[exec.branchIdx] !== null,
-                    parentMessageId: exec.userMessageId,
-                    userParentMessageId: branchTargets[exec.branchIdx]?.id || null,
-
-                    userMessageId: exec.userMessageId,
-                    assistantMessageId: exec.streamId,
-
-                    temperature: 0.7,
-                    top_k: 40,
-                    max_tokens: 4096,
-                });
-            } catch (err: any) {
-                console.error('[BROADCAST] Error for', exec.model, exec.npcKey, err);
-            }
-        });
-
-        await Promise.all(executePromises);
-
-
-        setBroadcastMode(false);
-        setSelectedModels(currentModel ? [currentModel] : []);
-        setSelectedNPCs([]);
-    },
 }; }, [
     input, inputHeight, isInputMinimized, isInputExpanded, isResizingInput,
     isPaneStreaming, handleInputSubmit, handleInterruptStream,
@@ -7626,7 +6569,6 @@ const paneRenderers = useMemo(() => ({
     'html-preview': renderHtmlPreviewPane,
     tilejinx: renderTileJinxPane,
     python: renderTerminalView,
-    branches: renderBranchComparisonPane,
     account: renderAccountPane,
     activity: renderActivityPane,
     browsersettings: renderBrowserSettingsPane,
@@ -7641,7 +6583,7 @@ const paneRenderers = useMemo(() => ({
     renderJinxPane, renderTeamManagementPane, renderSkillsManagerPane, renderSettingsPane, renderHelpPane, renderGitPane,
     renderFolderViewerPane, renderProjectEnvPane, renderDiskUsagePane, renderMemoryManagerPane,
     renderCronDaemonPane, renderSearchPane, renderMarkdownPreviewPane, renderHtmlPreviewPane,
-    renderTileJinxPane, renderBranchComparisonPane,
+    renderTileJinxPane,
     renderBrowserSettingsPane, renderModelManagerPane, renderVoiceManagerPane,
 ]);
 
@@ -7662,8 +6604,6 @@ const layoutComponentApi = useMemo(() => ({
     setPaneContextMenu,
 
     autoScrollEnabled, setAutoScrollEnabled,
-    messageSelectionMode, toggleMessageSelectionMode, selectedMessages,
-    conversationBranches, showBranchingUI, setShowBranchingUI,
     getChatInputProps,
 
     zenModePaneId,
@@ -7702,8 +6642,6 @@ const layoutComponentApi = useMemo(() => ({
     setActiveContentPaneId, setDraggedItem, setDropTarget,
     setPaneContextMenu,
     autoScrollEnabled, setAutoScrollEnabled,
-    messageSelectionMode, toggleMessageSelectionMode, selectedMessages,
-    conversationBranches, showBranchingUI, setShowBranchingUI,
     getChatInputProps,
     zenModePaneId,
     renamingPaneId, editedFileName, handleConfirmRename,
@@ -7817,9 +6755,8 @@ const handleConversationSelect = async (conversationId: string, skipMessageLoad 
                         setSelectedNPCs([msg.npc]);
                     }
                     if (msg.model) {
-                        setCurrentModel(msg.model);
-                        setSelectedModels([msg.model]);
-                        if (msg.provider) setCurrentProvider(msg.provider);
+                        setPaneModel(paneIdToUpdate, msg.model);
+                        if (msg.provider) setPaneProvider(paneIdToUpdate, msg.provider);
                         modelSetFromMessages = true;
                     }
                     break;
@@ -7830,9 +6767,11 @@ const handleConversationSelect = async (conversationId: string, skipMessageLoad 
             try {
                 const lastUsedInConvo = await window.api.getLastUsedInConversation(conversationId);
                 if (lastUsedInConvo?.model) {
-                    setCurrentModel(lastUsedInConvo.model);
-                    setSelectedModels([lastUsedInConvo.model]);
-                    if (lastUsedInConvo?.provider) setCurrentProvider(lastUsedInConvo.provider);
+                    setPaneModel(paneIdToUpdate, lastUsedInConvo.model);
+                    if (lastUsedInConvo?.provider) setPaneProvider(paneIdToUpdate, lastUsedInConvo.provider);
+                } else if (currentModel) {
+                    setPaneModel(paneIdToUpdate, currentModel);
+                    if (currentProvider) setPaneProvider(paneIdToUpdate, currentProvider);
                 }
             } catch {}
         }
@@ -9398,71 +8337,6 @@ const renderMainContent = () => {
                     </div>
                 </div>
             )}
-
-        <BranchingUI
-            showBranchingUI={showBranchingUI}
-            setShowBranchingUI={setShowBranchingUI}
-            conversationBranches={conversationBranches}
-            currentBranchId={currentBranchId}
-            setCurrentBranchId={setCurrentBranchId}
-            setConversationBranches={setConversationBranches}
-            activeContentPaneId={activeContentPaneId}
-            contentDataRef={contentDataRef}
-            setRootLayoutNode={setRootLayoutNode}
-            onOpenVisualizer={() => setShowBranchVisualizer(true)}
-            expandedBranchPath={expandedBranchPath}
-            onCollapseBranch={(paneId) => {
-                setExpandedBranchPath(prev => {
-                    const next = { ...prev };
-                    delete next[paneId];
-                    return next;
-                });
-            }}
-            onExpandBranch={(paneId, path) => {
-                setExpandedBranchPath(prev => ({ ...prev, [paneId]: path }));
-            }}
-        />
-
-        <BranchOptionsModal
-            isOpen={branchOptionsModal.isOpen}
-            onClose={() => setBranchOptionsModal({ isOpen: false, messageIndex: -1, messageContent: '' })}
-            onConfirm={handleBranchOptionsConfirm}
-            messageContent={branchOptionsModal.messageContent}
-            currentModel={currentModel}
-            availableModels={availableModels}
-        />
-
-        <BranchVisualizer
-            isOpen={showBranchVisualizer}
-            onClose={() => setShowBranchVisualizer(false)}
-            conversationBranches={conversationBranches}
-            currentBranchId={currentBranchId}
-            onSwitchBranch={(branchId) => {
-                const activePaneData = contentDataRef.current[activeContentPaneId!];
-                if (!activePaneData || !activePaneData.chatMessages) return;
-                const branch = conversationBranches.get(branchId);
-                if (branch) {
-                    setCurrentBranchId(branchId);
-                    activePaneData.chatMessages.allMessages = [...branch.messages];
-                    activePaneData.chatMessages.messages = branch.messages.slice(-(activePaneData.chatMessages.displayedMessageCount || 50));
-                    notifyAllPanes();
-                } else if (branchId === 'main') {
-                    setCurrentBranchId('main');
-                    notifyAllPanes();
-                }
-            }}
-            allMessages={activeContentPaneId ? contentDataRef.current[activeContentPaneId]?.chatMessages?.allMessages || [] : []}
-            expandedBranchPath={activeContentPaneId ? expandedBranchPath[activeContentPaneId] || [] : []}
-            onExpandBranch={(path) => {
-                if (activeContentPaneId) {
-                    setExpandedBranchPath(prev => ({
-                        ...prev,
-                        [activeContentPaneId]: path
-                    }));
-                    notifyAllPanes();
-                }
-            }}
-        />
 
         </div>
         </StudioContentContext.Provider>

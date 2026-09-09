@@ -11,6 +11,7 @@ const npc = require('./npc');
 const filesystem = require('./filesystem');
 const settings = require('./settings');
 const ssh = require('./ssh');
+const team = require('./team');
 
 function getIndexLocationFunctions() {
   return {
@@ -47,6 +48,7 @@ function registerAll(ctx) {
   chat.register(fullCtx);
   music.register(fullCtx);
   npc.register(fullCtx);
+  team.register(fullCtx);
   filesystem.register(fullCtx);
   settings.register(fullCtx);
   ssh.register(fullCtx);

@@ -116,7 +116,7 @@ export const ENCRYPTED_FIELDS: Record<EncryptedEntityType, string[]> = {
         'message_id', 'timestamp', 'role', 'content', 'conversation_id',
         'directory_path', 'model', 'provider', 'npc', 'team',
         'reasoning_content', 'tool_calls', 'tool_results',
-        'parent_message_id', 'branch_id', 'device_id', 'device_name',
+        'device_id', 'device_name',
         'input_tokens', 'output_tokens', 'cost'
     ],
     bookmark: ['id', 'title', 'url', 'folder_path', 'is_global', 'timestamp'],

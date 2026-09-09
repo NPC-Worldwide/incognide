@@ -975,7 +975,6 @@ function register(ctx) {
       });
 
       const messageValue = (m, col) => {
-        if (col === 'branch_id') return m.branch_id || 'main';
         return m[col] ?? null;
       };
 
