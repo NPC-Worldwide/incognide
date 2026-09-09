@@ -95,6 +95,8 @@ steps:
           elif _action == 'get_browser_content':
               _args = {
                   'paneId': context.get('pane_id') or context.get('paneId', 'active'),
+                  'maxChars': context.get('maxChars', 100000),
+                  'includeInteractive': context.get('includeInteractive', True),
               }
           elif _action == 'browser_screenshot':
               _args = {
