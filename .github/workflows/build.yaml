@@ -176,17 +176,14 @@ jobs:
           security default-keychain -s build.keychain
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
           security set-keychain-settings -lut 21600 build.keychain
+          security list-keychains -d user -s build.keychain login.keychain-db
 
           security import build_cert.p12 -k build.keychain -P "$P12_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productsign
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" build.keychain
 
-          echo "CSC_LINK=$HOME/Library/Keychains/build.keychain-db" >> $GITHUB_ENV
-          echo "CSC_KEY_PASSWORD=$KEYCHAIN_PASSWORD" >> $GITHUB_ENV
-
       - name: Sign the backend binary (macOS)
         if: runner.os == 'macOS'
         run: |
-          # Sign the PyInstaller backend binary with hardened runtime before packaging
           if [ -f "resources/backend/incognide_serve" ]; then
             codesign --force --options runtime \
               --entitlements resources/entitlements.mac.inherit.plist \
@@ -216,7 +213,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_ARCH: ${{ matrix.arch }}
-          # Notarization credentials (macOS only — electron-builder ignores on other platforms)
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
