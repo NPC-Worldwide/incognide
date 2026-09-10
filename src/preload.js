@@ -624,6 +624,7 @@ onTerminalClosed: (callback) => {
         ipcRenderer.on('stream-error', handler);
         return () => ipcRenderer.removeListener('stream-error', handler);
     },
+    onPaneQueueDrain: null,
 
     getMcpServers: (currentPath) => ipcRenderer.invoke('mcp:getServers', { currentPath }),
     startMcpServer: (args) => ipcRenderer.invoke('mcp:startServer', args),

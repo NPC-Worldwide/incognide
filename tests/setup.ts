@@ -24,6 +24,7 @@ const apiOverrides: Record<string, any> = {
   pauseDownload: vi.fn(),
   resumeDownload: vi.fn(),
   browserSaveLink: vi.fn().mockResolvedValue({ success: true }),
+  onPaneQueueDrain: vi.fn(),
 
   // PDF-related mocks
   addPdfHighlight: vi.fn().mockResolvedValue({ success: true, lastID: 1 }),

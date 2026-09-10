@@ -1395,6 +1395,7 @@ export const usePaneAwareStreamListeners = (
             }
 
             if (targetPaneId) notifyPaneUpdate(targetPaneId);
+            if (targetPaneId) (window as any).api?.onPaneQueueDrain?.(targetPaneId);
             await refreshConversations();
         };
 
@@ -1440,6 +1441,7 @@ export const usePaneAwareStreamListeners = (
                 setIsStreaming(false);
             }
             if (targetPaneId) notifyPaneUpdate(targetPaneId);
+            if (targetPaneId) (window as any).api?.onPaneQueueDrain?.(targetPaneId);
         };
 
         const cleanupStreamData = window.api.onStreamData(handleStreamData);

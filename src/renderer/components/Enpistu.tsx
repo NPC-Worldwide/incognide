@@ -835,6 +835,9 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         selectedModel: '',
         selectedNPC: ''
     });
+
+    (window as any).api = (window as any).api || {};
+    (window as any).api.onPaneQueueDrain = processPaneQueue;
     const [enabledMcpServers, setEnabledMcpServers] = useState<string[]>([]);
     const [selectedMcpTools, setSelectedMcpTools] = useState([]);
     const [availableMcpTools, setAvailableMcpTools] = useState([]);
@@ -2567,6 +2570,7 @@ const renderChatView = useCallback(({ nodeId }) => {
     }
 
     const messages = paneData.chatMessages.messages || [];
+    const pendingMessages = paneData.pendingQueue || [];
 
     return (
         <div className="p-4 space-y-4">
@@ -2600,6 +2604,22 @@ const renderChatView = useCallback(({ nodeId }) => {
                             performSplit(nodePath, 'right', contentType, path);
                         }
                     }}
+                />
+            ))}
+            {pendingMessages.map((msg: any, idx: number) => (
+                <ChatMessage
+                    key={msg.id}
+                    message={{ ...msg, status: 'pending' }}
+                    searchTerm={searchTerm}
+                    isCurrentSearchResult={false}
+                    onCancelPending={() => cancelPendingMessage(nodeId, msg.id)}
+                    onLabelMessage={handleLabelMessage}
+                    messageLabel={messageLabels[msg.id]}
+                    conversationId={paneData.contentId}
+                    isAgentMode={paneData.executionMode !== 'chat'}
+                    availableModels={availableModels}
+                    availableNPCs={availableNPCs}
+                    onOpenFile={() => {}}
                 />
             ))}
             {paneData.permissionRequests?.length > 0 && (
@@ -4326,25 +4346,6 @@ const handleBrowserDialogNavigate = (url) => {
 
         const conversationId = paneData.contentId;
 
-        if (isPaneStreaming(targetPaneId)) {
-            console.log('[SUBMIT] Pane already streaming; interrupting before new message');
-            await handleInterruptStream(targetPaneId);
-        }
-
-        if (paneData?.chatMessages?.allMessages) {
-            for (const msg of paneData.chatMessages.allMessages) {
-                if (msg.isStreaming) {
-                    msg.isStreaming = false;
-                    msg.streamId = null;
-                }
-            }
-        }
-
-        const newStreamId = generateId();
-
-        streamToPaneRef.current[newStreamId] = targetPaneId;
-        setIsStreaming(true);
-
         let finalPromptForUserMessage = submittedInput;
         let jinxName = null;
         let jinxArgsForApi: any[] = [];
@@ -4363,9 +4364,6 @@ const handleBrowserDialogNavigate = (url) => {
                 }
             });
 
-            console.log(`[Jinx Submit] Jinx Name: ${jinxName}`);
-            console.log(`[Jinx Submit] jinxArgsForApi (ordered array before API call):`, JSON.stringify(jinxArgsForApi, null, 2));
-
             const jinxCommandParts = [`/${paneSelectedJinx.name}`];
             paneSelectedJinx.inputs.forEach((inputDef: any) => {
                 const inputName = typeof inputDef === 'string' ? inputDef : Object.keys(inputDef)[0];
@@ -4375,7 +4373,6 @@ const handleBrowserDialogNavigate = (url) => {
                 }
             });
             finalPromptForUserMessage = jinxCommandParts.join(' ');
-
         } else {
             const excludedPanes = getExcludedPaneIds(targetPaneId);
             const contexts = gatherWorkspaceContext(contentDataRef, contextFiles, excludedPanes);
@@ -4462,9 +4459,11 @@ const handleBrowserDialogNavigate = (url) => {
             }
         }
 
-
-        if (!paneData.chatMessages) {
-            paneData.chatMessages = { messages: [], allMessages: [], displayedMessageCount: 20 };
+        const paneModel = targetPaneData?.model || currentModel;
+        const paneProvider = targetPaneData?.provider || currentProvider;
+        if (!paneModel || !paneProvider) {
+            setError('No model selected. Please select a model from the dropdown before sending a message.');
+            return;
         }
 
         const savedInput = submittedInput;
@@ -4472,8 +4471,6 @@ const handleBrowserDialogNavigate = (url) => {
         setInput('');
         setUploadedFiles([]);
 
-        const paneModel = targetPaneData?.model || currentModel;
-        const paneProvider = targetPaneData?.provider || currentProvider;
         if (targetPaneId && contentDataRef.current[targetPaneId]) {
             contentDataRef.current[targetPaneId].npc = currentNPC;
             contentDataRef.current[targetPaneId].model = paneModel;
@@ -4486,12 +4483,7 @@ const handleBrowserDialogNavigate = (url) => {
             }));
         }
 
-        if (!paneModel || !paneProvider) {
-            setError('No model selected. Please select a model from the dropdown before sending a message.');
-            return;
-        }
-
-        const userMessage = {
+        const queueItem = {
             id: generateId(),
             role: 'user',
             content: finalPromptForUserMessage,
@@ -4502,21 +4494,67 @@ const handleBrowserDialogNavigate = (url) => {
             jinxName: isJinxMode ? jinxName : null,
             jinxInputs: isJinxMode ? jinxArgsForApi : null,
             wasVoiceInput: wasVoiceInput,
+            genParams,
+            disableThinking,
+            conversationId,
+            paneModel,
+            paneProvider,
+            currentNPC,
+        };
+
+        if (isPaneStreaming(targetPaneId)) {
+            if (!paneData.pendingQueue) paneData.pendingQueue = [];
+            paneData.pendingQueue.push(queueItem);
+            notifyAllPanes();
+            return;
+        }
+
+        await startQueuedMessage(targetPaneId, queueItem);
+    };
+
+    const startQueuedMessage = async (targetPaneId: string, queueItem: any) => {
+        const paneData = contentDataRef.current[targetPaneId];
+        if (!paneData) return;
+        const conversationId = paneData.contentId;
+
+        if (!paneData.chatMessages) {
+            paneData.chatMessages = { messages: [], allMessages: [], displayedMessageCount: 20 };
+        }
+
+        const newStreamId = generateId();
+        const userMessage = {
+            id: queueItem.id,
+            role: 'user',
+            content: queueItem.content,
+            timestamp: queueItem.timestamp,
+            attachments: queueItem.attachments,
+            executionMode: queueItem.executionMode,
+            isJinxCall: queueItem.isJinxCall,
+            jinxName: queueItem.jinxName,
+            jinxInputs: queueItem.jinxInputs,
+            wasVoiceInput: queueItem.wasVoiceInput,
         };
 
         const assistantPlaceholder = {
-            id: newStreamId, role: 'assistant', content: '', timestamp: new Date().toISOString(),
-            isStreaming: true, streamId: newStreamId,
-            npc: currentNPC, model: paneModel, provider: paneProvider,
-            temperature: genParams.temperature,
-            top_p: genParams.top_p,
-            top_k: genParams.top_k,
-            max_tokens: genParams.max_tokens,
+            id: newStreamId,
+            role: 'assistant',
+            content: '',
+            timestamp: new Date().toISOString(),
+            isStreaming: true,
+            streamId: newStreamId,
+            npc: queueItem.currentNPC,
+            model: queueItem.paneModel,
+            provider: queueItem.paneProvider,
+            temperature: queueItem.genParams.temperature,
+            top_p: queueItem.genParams.top_p,
+            top_k: queueItem.genParams.top_k,
+            max_tokens: queueItem.genParams.max_tokens,
         };
 
         paneData.chatMessages.allMessages.push(userMessage, assistantPlaceholder);
         paneData.chatMessages.messages = paneData.chatMessages.allMessages.slice(-(paneData.chatMessages.displayedMessageCount || 20));
         streamToPaneRef.current[newStreamId] = targetPaneId;
+        setIsStreaming(true);
 
         notifyAllPanes();
 
@@ -4528,10 +4566,10 @@ const handleBrowserDialogNavigate = (url) => {
                 content: userMessage.content,
                 conversation_id: conversationId,
                 directory_path: currentPath,
-                model: paneModel,
-                provider: paneProvider,
-                npc: currentNPC,
-                execution_mode: paneExecMode,
+                model: queueItem.paneModel,
+                provider: queueItem.paneProvider,
+                npc: queueItem.currentNPC,
+                execution_mode: queueItem.executionMode,
             };
             window.api.saveMessage(userSavePayload).catch((err: any) => console.error('[SUBMIT] Failed to save user message:', err));
 
@@ -4539,56 +4577,56 @@ const handleBrowserDialogNavigate = (url) => {
                 conversationId,
                 paneId: targetPaneId,
                 paneType: paneData.contentType,
-                npc: currentNPC,
-                model: paneModel,
-                provider: paneProvider,
+                npc: queueItem.currentNPC,
+                model: queueItem.paneModel,
+                provider: queueItem.paneProvider,
                 length: (userMessage.content || '').length,
-                isJinx: isJinxMode,
-                jinxName: jinxName || undefined,
+                isJinx: queueItem.isJinxCall,
+                jinxName: queueItem.jinxName || undefined,
             });
 
-            const npcName = currentNPC?.replace(/^(project:|global:)/, '') || 'agent';
+            const npcName = queueItem.currentNPC?.replace(/^(project:|global:)/, '') || 'agent';
 
-            if (isJinxMode) {
+            if (queueItem.isJinxCall) {
                 await window.api.executeJinx({
-                    jinxName: jinxName,
-                    jinxArgs: jinxArgsForApi,
+                    jinxName: queueItem.jinxName,
+                    jinxArgs: queueItem.jinxInputs,
                     currentPath,
                     conversationId,
-                    model: paneModel,
-                    provider: paneProvider,
+                    model: queueItem.paneModel,
+                    provider: queueItem.paneProvider,
                     npc: npcName,
                     npcSource: 'global',
                     streamId: newStreamId,
-                    temperature: genParams.temperature,
-                    top_p: genParams.top_p,
-                    top_k: genParams.top_k,
-                    max_tokens: genParams.max_tokens,
+                    temperature: queueItem.genParams.temperature,
+                    top_p: queueItem.genParams.top_p,
+                    top_k: queueItem.genParams.top_k,
+                    max_tokens: queueItem.genParams.max_tokens,
                 });
             } else {
                 const commandData = {
-                    commandstr: finalPromptForUserMessage,
+                    commandstr: queueItem.content,
                     currentPath,
                     conversationId,
-                    model: paneModel,
-                    provider: paneProvider,
+                    model: queueItem.paneModel,
+                    provider: queueItem.paneProvider,
                     npc: npcName,
                     npcSource: 'global',
-                    attachments: savedFiles.map((f: any) => {
+                    attachments: queueItem.attachments.map((f: any) => {
                         if (f.path) return { name: f.name, path: f.path, size: f.size, type: f.type };
                         else if (f.data) return { name: f.name, data: f.data, size: f.size, type: f.type };
                         return { name: f.name, type: f.type };
                     }),
                     streamId: newStreamId,
-                    executionMode: paneExecMode,
+                    executionMode: queueItem.executionMode,
                     userMessageId: userMessage.id,
                     assistantMessageId: newStreamId,
-                    temperature: genParams.temperature,
-                    top_p: genParams.top_p,
-                    top_k: genParams.top_k,
-                    max_tokens: genParams.max_tokens,
-                    disableThinking,
-                    maxAgentIterations: paneExecMode === 'tool_agent' ? parseInt(localStorage.getItem('incognide_maxAgentIterations') || '0', 10) || undefined : undefined,
+                    temperature: queueItem.genParams.temperature,
+                    top_p: queueItem.genParams.top_p,
+                    top_k: queueItem.genParams.top_k,
+                    max_tokens: queueItem.genParams.max_tokens,
+                    disableThinking: queueItem.disableThinking,
+                    maxAgentIterations: queueItem.executionMode === 'tool_agent' ? parseInt(localStorage.getItem('incognide_maxAgentIterations') || '0', 10) || undefined : undefined,
                 };
                 const streamResult = await window.api.executeCommandStream(commandData);
                 if (streamResult?.error) {
@@ -4607,7 +4645,9 @@ const handleBrowserDialogNavigate = (url) => {
             if (Object.keys(streamToPaneRef.current).length === 0) {
                 setIsStreaming(false);
             }
+            processPaneQueue(targetPaneId);
             if (targetPaneId) notifyAllPanes();
+            return;
         }
 
         paneData.chatMessages.messages = paneData.chatMessages.allMessages.slice(-(paneData.chatMessages.displayedMessageCount || 20));
@@ -4616,24 +4656,20 @@ const handleBrowserDialogNavigate = (url) => {
         if (targetPaneId) paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: targetPaneId } }));
     };
 
-    // Delegates to the shared implementation in utils.tsx, which resolves pending
-    // tool calls, persists the interrupted message, and interrupts the correct stream.
-    const handleInterruptStream = async (paneId?: string) => {
-        const targetPaneId = paneId || activeContentPaneId;
-        await interruptStreamShared(
-            targetPaneId,
-            contentDataRef,
-            streamToPaneRef,
-            setIsStreaming,
-            (pid: string) => paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: pid } })),
-            currentPath
-        );
-        const paneData = contentDataRef.current[targetPaneId];
-        if (paneData?.permissionRequests) {
-            paneData.permissionRequests = [];
-            paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: targetPaneId } }));
-        }
+    const processPaneQueue = (paneId: string) => {
+        const paneData = contentDataRef.current[paneId];
+        if (!paneData || !paneData.pendingQueue || paneData.pendingQueue.length === 0) return;
+        const next = paneData.pendingQueue.shift();
+        startQueuedMessage(paneId, next);
     };
+
+    const cancelPendingMessage = (paneId: string, messageId: string) => {
+        const paneData = contentDataRef.current[paneId];
+        if (!paneData || !paneData.pendingQueue) return;
+        paneData.pendingQueue = paneData.pendingQueue.filter((m: any) => m.id !== messageId);
+        notifyAllPanes();
+    };
+
 
     const handleResendWithSettings = async (messageToResend: any, selectedModel: string, selectedNPC: string) => {
         const activePaneData = contentDataRef.current[activeContentPaneId];
@@ -4641,90 +4677,52 @@ const handleBrowserDialogNavigate = (url) => {
             setError("Cannot resend: The active pane is not a valid chat window.");
             return;
         }
-        if (isPaneStreaming(activeContentPaneId)) {
-            console.warn('Cannot resend while another operation is in progress.');
-            return;
-        }
 
         const conversationId = activePaneData.contentId;
         let newStreamId: string | null = null;
 
-        try {
-            const allMessages = activePaneData.chatMessages.allMessages;
-            const userMsgIndex = allMessages.findIndex((m: any) =>
-                (m.id || m.timestamp) === (messageToResend.id || messageToResend.timestamp)
-            );
-            const insertIndex = userMsgIndex !== -1 ? userMsgIndex + 1 : allMessages.length;
+        const selectedNpc = availableNPCs.find((npc: any) => npc.value === selectedNPC);
+        const paneProvider = activePaneData?.provider || currentProvider;
+        const selectedModelObj = availableModels.find((m: any) => m.value === selectedModel);
+        const providerToUse = selectedModelObj?.provider || paneProvider;
 
-            newStreamId = generateId();
-            streamToPaneRef.current[newStreamId] = activeContentPaneId;
-            setIsStreaming(true);
-
-            const selectedNpc = availableNPCs.find((npc: any) => npc.value === selectedNPC);
-
-            const paneProvider = activePaneData?.provider || currentProvider;
-            const selectedModelObj = availableModels.find((m: any) => m.value === selectedModel);
-            const providerToUse = selectedModelObj?.provider || paneProvider;
-
-            const assistantPlaceholderMessage = {
-                id: newStreamId,
-                role: 'assistant',
-                content: '',
-                isStreaming: true,
-                timestamp: new Date().toISOString(),
-                streamId: newStreamId,
-                model: selectedModel,
-                provider: providerToUse,
-                npc: selectedNPC,
-            };
-
-            allMessages.splice(insertIndex, 0, assistantPlaceholderMessage);
-            activePaneData.chatMessages.messages = activePaneData.chatMessages.allMessages.slice(
-                -(activePaneData.chatMessages.displayedMessageCount || 20)
-            );
-
-            notifyAllPanes();
-
-            await window.api.executeCommandStream({
-                commandstr: messageToResend.content,
-                currentPath,
-                conversationId: conversationId,
-                model: selectedModel,
-                provider: providerToUse,
-                npc: selectedNpc ? selectedNpc.name : selectedNPC,
-                npcSource: selectedNpc ? selectedNpc.source : 'global',
-                attachments: messageToResend.attachments?.map((att: any) => ({
-                    name: att.name, path: att.path, size: att.size, type: att.type
-                })) || [],
-                streamId: newStreamId,
-                isRerun: true,
-                assistantMessageId: newStreamId,
+        const queueItem = {
+            id: messageToResend.id || generateId(),
+            role: 'user',
+            content: messageToResend.content,
+            timestamp: new Date().toISOString(),
+            attachments: messageToResend.attachments || [],
+            executionMode: activePaneData.executionMode || 'chat',
+            isJinxCall: false,
+            jinxName: null,
+            jinxInputs: null,
+            wasVoiceInput: false,
+            genParams: {
                 temperature: messageToResend.temperature ?? 0.7,
                 top_p: messageToResend.top_p,
                 top_k: messageToResend.top_k ?? 40,
                 max_tokens: messageToResend.max_tokens ?? 4096,
-            });
+            },
+            disableThinking: false,
+            conversationId,
+            paneModel: selectedModel,
+            paneProvider: providerToUse,
+            currentNPC: selectedNPC,
+        };
 
+        if (isPaneStreaming(activeContentPaneId)) {
+            if (!activePaneData.pendingQueue) activePaneData.pendingQueue = [];
+            activePaneData.pendingQueue.push(queueItem);
+            notifyAllPanes();
+            return;
+        }
+
+        try {
+            await startQueuedMessage(activeContentPaneId, queueItem);
             setResendModal({ isOpen: false, message: null, selectedModel: '', selectedNPC: '' });
         } catch (err: any) {
             console.error('[RESEND] Error resending message:', err);
             setError(err.message);
-
-            if (activePaneData.chatMessages && newStreamId) {
-                const msgIndex = activePaneData.chatMessages.allMessages.findIndex((m: any) => m.id === newStreamId);
-                if (msgIndex !== -1) {
-                    const message = activePaneData.chatMessages.allMessages[msgIndex];
-                    message.content = `[Error resending message: ${err.message}]`;
-                    message.type = 'error';
-                    message.isStreaming = false;
-                }
-            }
-
-            if (newStreamId) delete streamToPaneRef.current[newStreamId];
-            if (Object.keys(streamToPaneRef.current).length === 0) {
-                setIsStreaming(false);
-            }
-
             notifyAllPanes();
         }
     };
@@ -6432,7 +6430,14 @@ const getChatInputProps = useCallback((paneId: string) => {
     isResizingInput, setIsResizingInput,
     isStreaming: isPaneStreaming(paneId),
     handleInputSubmit,
-    handleInterruptStream: () => handleInterruptStream(paneId),
+    handleInterruptStream: () => interruptStreamShared(
+        paneId,
+        contentDataRef,
+        streamToPaneRef,
+        setIsStreaming,
+        (pid: string) => paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: pid } })),
+        currentPath
+    ),
     uploadedFiles, setUploadedFiles, contextFiles, setContextFiles,
     contextFilesCollapsed, setContextFilesCollapsed, currentPath,
 
@@ -6512,7 +6517,7 @@ const getChatInputProps = useCallback((paneId: string) => {
 
 }; }, [
     input, inputHeight, isInputMinimized, isInputExpanded, isResizingInput,
-    isPaneStreaming, handleInputSubmit, handleInterruptStream,
+    isPaneStreaming, handleInputSubmit,
     uploadedFiles, contextFiles, contextFilesCollapsed, currentPath,
     autoIncludeContext, contextPaneOverrides, contentDataRef, paneVersion,
     getPaneExecutionMode, setPaneExecutionMode, getPaneSelectedJinx, setPaneSelectedJinx,
