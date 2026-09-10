@@ -1,0 +1,332 @@
+{
+  "seed": 42,
+  "sessions": 80,
+  "session_length": 80,
+  "min_seq_len_fixed": 50,
+  "history_lengths": [
+    1,
+    5,
+    10,
+    20,
+    50
+  ],
+  "epochs": 12,
+  "model_config": {
+    "feature_dim": 25,
+    "model_dim": 32,
+    "state_dim": 64,
+    "num_layers": 1,
+    "num_classes": 16
+  },
+  "methodology": "Same generated sessions per distribution; prediction indices fixed at i >= 50; only max history L varies. Markov-1 uses last action only.",
+  "rows": [
+    {
+      "distribution": "poisson",
+      "history_length": 1,
+      "ssm_top1": 0.15555555555555556,
+      "ssm_top3": 0.5166666666666667,
+      "ssm_macro_f1": 0.10710446924725425,
+      "markov1_top1": 0.1638888888888889,
+      "improvement_vs_markov1": -0.008333333333333331,
+      "window_counts": {
+        "train": 1680,
+        "val": 360,
+        "test": 360
+      },
+      "best_val_acc": 0.18611111111111112
+    },
+    {
+      "distribution": "poisson",
+      "history_length": 5,
+      "ssm_top1": 0.17777777777777778,
+      "ssm_top3": 0.5055555555555555,
+      "ssm_macro_f1": 0.10826552157297498,
+      "markov1_top1": 0.1638888888888889,
+      "improvement_vs_markov1": 0.013888888888888895,
+      "window_counts": {
+        "train": 1680,
+        "val": 360,
+        "test": 360
+      },
+      "best_val_acc": 0.18888888888888888
+    },
+    {
+      "distribution": "poisson",
+      "history_length": 10,
+      "ssm_top1": 0.17222222222222222,
+      "ssm_top3": 0.48333333333333334,
+      "ssm_macro_f1": 0.12844474290479763,
+      "markov1_top1": 0.1638888888888889,
+      "improvement_vs_markov1": 0.008333333333333331,
+      "window_counts": {
+        "train": 1680,
+        "val": 360,
+        "test": 360
+      },
+      "best_val_acc": 0.16944444444444445
+    },
+    {
+      "distribution": "poisson",
+      "history_length": 20,
+      "ssm_top1": 0.175,
+      "ssm_top3": 0.48333333333333334,
+      "ssm_macro_f1": 0.1155984351731869,
+      "markov1_top1": 0.1638888888888889,
+      "improvement_vs_markov1": 0.0111111111111111,
+      "window_counts": {
+        "train": 1680,
+        "val": 360,
+        "test": 360
+      },
+      "best_val_acc": 0.18055555555555555
+    },
+    {
+      "distribution": "poisson",
+      "history_length": 50,
+      "ssm_top1": 0.1638888888888889,
+      "ssm_top3": 0.5111111111111111,
+      "ssm_macro_f1": 0.08847969506987535,
+      "markov1_top1": 0.1638888888888889,
+      "improvement_vs_markov1": 0.0,
+      "window_counts": {
+        "train": 1680,
+        "val": 360,
+        "test": 360
+      },
+      "best_val_acc": 0.18888888888888888
+    },
+    {
+      "distribution": "uniform",
+      "history_length": 1,
+      "ssm_top1": 0.06111111111111111,
+      "ssm_top3": 0.17222222222222222,
+      "ssm_macro_f1": 0.05118994232132593,
+      "markov1_top1": 0.07222222222222222,
+      "improvement_vs_markov1": -0.011111111111111106,
+      "window_counts": {
+        "train": 1680,
+        "val": 360,
+        "test": 360
+      },
+      "best_val_acc": 0.08055555555555556
+    },
+    {
+      "distribution": "uniform",
+      "history_length": 5,
+      "ssm_top1": 0.041666666666666664,
+      "ssm_top3": 0.16111111111111112,
+      "ssm_macro_f1": 0.0431296781605274,
+      "markov1_top1": 0.07222222222222222,
+      "improvement_vs_markov1": -0.03055555555555555,
+      "window_counts": {
+        "train": 1680,
+        "val": 360,
+        "test": 360
+      },
+      "best_val_acc": 0.08888888888888889
+    },
+    {
+      "distribution": "uniform",
+      "history_length": 10,
+      "ssm_top1": 0.044444444444444446,
+      "ssm_top3": 0.1388888888888889,
+      "ssm_macro_f1": 0.04051938363494529,
+      "markov1_top1": 0.07222222222222222,
+      "improvement_vs_markov1": -0.02777777777777777,
+      "window_counts": {
+        "train": 1680,
+        "val": 360,
+        "test": 360
+      },
+      "best_val_acc": 0.09166666666666666
+    },
+    {
+      "distribution": "uniform",
+      "history_length": 20,
+      "ssm_top1": 0.04722222222222222,
+      "ssm_top3": 0.16944444444444445,
+      "ssm_macro_f1": 0.04974654882465595,
+      "markov1_top1": 0.07222222222222222,
+      "improvement_vs_markov1": -0.024999999999999994,
+      "window_counts": {
+        "train": 1680,
+        "val": 360,
+        "test": 360
+      },
+      "best_val_acc": 0.09166666666666666
+    },
+    {
+      "distribution": "uniform",
+      "history_length": 50,
+      "ssm_top1": 0.05,
+      "ssm_top3": 0.16111111111111112,
+      "ssm_macro_f1": 0.046488283055411035,
+      "markov1_top1": 0.07222222222222222,
+      "improvement_vs_markov1": -0.022222222222222213,
+      "window_counts": {
+        "train": 1680,
+        "val": 360,
+        "test": 360
+      },
+      "best_val_acc": 0.09166666666666666
+    },
+    {
+      "distribution": "gaussian",
+      "history_length": 1,
+      "ssm_top1": 0.46111111111111114,
+      "ssm_top3": 0.6611111111111111,
+      "ssm_macro_f1": 0.45272605365584195,
+      "markov1_top1": 0.48055555555555557,
+      "improvement_vs_markov1": -0.01944444444444443,
+      "window_counts": {
+        "train": 1680,
+        "val": 360,
+        "test": 360
+      },
+      "best_val_acc": 0.425
+    },
+    {
+      "distribution": "gaussian",
+      "history_length": 5,
+      "ssm_top1": 0.4638888888888889,
+      "ssm_top3": 0.6666666666666666,
+      "ssm_macro_f1": 0.4626521344380177,
+      "markov1_top1": 0.48055555555555557,
+      "improvement_vs_markov1": -0.016666666666666663,
+      "window_counts": {
+        "train": 1680,
+        "val": 360,
+        "test": 360
+      },
+      "best_val_acc": 0.4166666666666667
+    },
+    {
+      "distribution": "gaussian",
+      "history_length": 10,
+      "ssm_top1": 0.4722222222222222,
+      "ssm_top3": 0.6694444444444444,
+      "ssm_macro_f1": 0.4701922396985232,
+      "markov1_top1": 0.48055555555555557,
+      "improvement_vs_markov1": -0.00833333333333336,
+      "window_counts": {
+        "train": 1680,
+        "val": 360,
+        "test": 360
+      },
+      "best_val_acc": 0.4166666666666667
+    },
+    {
+      "distribution": "gaussian",
+      "history_length": 20,
+      "ssm_top1": 0.4666666666666667,
+      "ssm_top3": 0.6611111111111111,
+      "ssm_macro_f1": 0.4644857117467942,
+      "markov1_top1": 0.48055555555555557,
+      "improvement_vs_markov1": -0.013888888888888895,
+      "window_counts": {
+        "train": 1680,
+        "val": 360,
+        "test": 360
+      },
+      "best_val_acc": 0.4166666666666667
+    },
+    {
+      "distribution": "gaussian",
+      "history_length": 50,
+      "ssm_top1": 0.4666666666666667,
+      "ssm_top3": 0.6527777777777778,
+      "ssm_macro_f1": 0.4623565613196797,
+      "markov1_top1": 0.48055555555555557,
+      "improvement_vs_markov1": -0.013888888888888895,
+      "window_counts": {
+        "train": 1680,
+        "val": 360,
+        "test": 360
+      },
+      "best_val_acc": 0.41944444444444445
+    }
+  ],
+  "delta_vs_L1": {
+    "poisson": [
+      {
+        "history_length": 1,
+        "ssm_top1": 0.15555555555555556,
+        "delta_vs_L1": 0.0
+      },
+      {
+        "history_length": 5,
+        "ssm_top1": 0.17777777777777778,
+        "delta_vs_L1": 0.022222222222222227
+      },
+      {
+        "history_length": 10,
+        "ssm_top1": 0.17222222222222222,
+        "delta_vs_L1": 0.016666666666666663
+      },
+      {
+        "history_length": 20,
+        "ssm_top1": 0.175,
+        "delta_vs_L1": 0.01944444444444443
+      },
+      {
+        "history_length": 50,
+        "ssm_top1": 0.1638888888888889,
+        "delta_vs_L1": 0.008333333333333331
+      }
+    ],
+    "uniform": [
+      {
+        "history_length": 1,
+        "ssm_top1": 0.06111111111111111,
+        "delta_vs_L1": 0.0
+      },
+      {
+        "history_length": 5,
+        "ssm_top1": 0.041666666666666664,
+        "delta_vs_L1": -0.019444444444444445
+      },
+      {
+        "history_length": 10,
+        "ssm_top1": 0.044444444444444446,
+        "delta_vs_L1": -0.016666666666666663
+      },
+      {
+        "history_length": 20,
+        "ssm_top1": 0.04722222222222222,
+        "delta_vs_L1": -0.013888888888888888
+      },
+      {
+        "history_length": 50,
+        "ssm_top1": 0.05,
+        "delta_vs_L1": -0.011111111111111106
+      }
+    ],
+    "gaussian": [
+      {
+        "history_length": 1,
+        "ssm_top1": 0.46111111111111114,
+        "delta_vs_L1": 0.0
+      },
+      {
+        "history_length": 5,
+        "ssm_top1": 0.4638888888888889,
+        "delta_vs_L1": 0.002777777777777768
+      },
+      {
+        "history_length": 10,
+        "ssm_top1": 0.4722222222222222,
+        "delta_vs_L1": 0.011111111111111072
+      },
+      {
+        "history_length": 20,
+        "ssm_top1": 0.4666666666666667,
+        "delta_vs_L1": 0.005555555555555536
+      },
+      {
+        "history_length": 50,
+        "ssm_top1": 0.4666666666666667,
+        "delta_vs_L1": 0.005555555555555536
+      }
+    ]
+  }
+}

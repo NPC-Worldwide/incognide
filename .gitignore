@@ -190,3 +190,30 @@ jobs/
 ~/
 ~/.incognide/
 
+# Activity next-action experiment artifacts (regenerable datasets/models)
+experiments/activity_next_action/data/
+experiments/activity_next_action/models/
+# Keep committed summary; ignore large per-condition dumps if regenerated locally
+experiments/activity_next_action/results/poisson.json
+experiments/activity_next_action/results/uniform.json
+experiments/activity_next_action/results/gaussian.json
+
+# History ablation regenerable artifacts
+experiments/activity_next_action/history_ablation/data/
+experiments/activity_next_action/history_ablation/models/
+experiments/activity_next_action/history_ablation/results/history_ablation_detail.json
+# Allow the summary + plot to be committed for the paper trail
+!experiments/activity_next_action/history_ablation/results/history_ablation_summary.json
+!experiments/activity_next_action/history_ablation/results/history_ablation_top1.png
+!experiments/**/history_ablation_top1.png
+
+# Real CSV experiment regenerable artifacts
+experiments/activity_next_action/real_csv/models/
+experiments/activity_next_action/real_csv/results/real_csv_summary.json
+experiments/activity_next_action/real_csv/results/rich_navigation_summary.json
+
+# Local activity exports (may contain private paths/content)
+activity_log.csv
+*.activity_log.csv
+
+

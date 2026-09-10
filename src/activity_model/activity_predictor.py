@@ -63,7 +63,8 @@ except ImportError:
 
 HOURS_PER_DAY = 24
 DAYS_PER_WEEK = 7
-NUM_FEATURES = 25
+# one-hot(action) + cyclic time(4) + log-delta(1) + context flags(4)
+NUM_FEATURES = len(ACTION_TO_IDX) + 4 + 1 + 4
 
 
 def _time_features(timestamp: str) -> np.ndarray:
@@ -161,30 +162,7 @@ def load_activity_sequences(db_path: str, max_seq_len: int = 50, min_seq_len: in
 
     conn.close()
     events.sort(key=lambda e: e['timestamp'] or '')
-
-    sequences = []
-    for i in range(min_seq_len, len(events)):
-        seq_events = events[max(0, i - max_seq_len):i]
-        target_event = events[i]
-
-        seq_feats = []
-        prev_ts = None
-        for e in seq_events:
-            feat = encode_activity(e['type'], e['timestamp'], e['data'], prev_ts)
-            seq_feats.append(feat)
-            prev_ts = e['timestamp']
-
-        seq_array = np.stack(seq_feats, axis=0)
-        if seq_array.shape[0] < max_seq_len:
-            pad = np.zeros((max_seq_len - seq_array.shape[0], NUM_FEATURES), dtype=np.float32)
-            seq_array = np.concatenate([pad, seq_array], axis=0)
-        else:
-            seq_array = seq_array[-max_seq_len:]
-
-        target_idx = ACTION_TO_IDX.get(target_event['type'], len(ACTION_TO_IDX) - 1)
-        sequences.append((seq_array, target_idx))
-
-    return sequences
+    return events_to_sequences(events, max_seq_len=max_seq_len, min_seq_len=min_seq_len)
 
 
 # ---------------------------------------------------------------------------
@@ -270,26 +248,70 @@ def _spsa_grad(model: Dict[str, Any], xs: np.ndarray, ys: np.ndarray, epsilon: f
 
 
 # ---------------------------------------------------------------------------
+# Sequence construction (shared by DB loader and experiments)
+# ---------------------------------------------------------------------------
+
+def events_to_sequences(
+    events: List[Dict[str, Any]],
+    max_seq_len: int = 50,
+    min_seq_len: int = 5,
+) -> List[Tuple[np.ndarray, int]]:
+    """Convert ordered activity events into (padded feature matrix, target idx) pairs.
+
+    For each index i >= min_seq_len, the input is events[i-max_seq_len:i]
+    and the target is events[i]['type']. Never includes the target event in the input.
+    """
+    sequences: List[Tuple[np.ndarray, int]] = []
+    for i in range(min_seq_len, len(events)):
+        seq_events = events[max(0, i - max_seq_len):i]
+        target_event = events[i]
+
+        seq_feats = []
+        prev_ts = None
+        for e in seq_events:
+            feat = encode_activity(e['type'], e['timestamp'], e.get('data') or {}, prev_ts)
+            seq_feats.append(feat)
+            prev_ts = e['timestamp']
+
+        seq_array = np.stack(seq_feats, axis=0)
+        if seq_array.shape[0] < max_seq_len:
+            pad = np.zeros((max_seq_len - seq_array.shape[0], NUM_FEATURES), dtype=np.float32)
+            seq_array = np.concatenate([pad, seq_array], axis=0)
+        else:
+            seq_array = seq_array[-max_seq_len:]
+
+        target_idx = ACTION_TO_IDX.get(target_event['type'], len(ACTION_TO_IDX) - 1)
+        sequences.append((seq_array, target_idx))
+    return sequences
+
+
+# ---------------------------------------------------------------------------
 # Training
 # ---------------------------------------------------------------------------
 
-def train_model(
-    db_path: str,
+def train_from_sequences(
+    train_data: List[Tuple[np.ndarray, int]],
+    val_data: List[Tuple[np.ndarray, int]],
     model_dir: str,
     epochs: int = 50,
     lr: float = 1e-3,
     batch_size: int = 32,
     shift_base: bool = False,
     base_repo_id: Optional[str] = None,
+    model_config: Optional[Dict[str, Any]] = None,
+    seed: Optional[int] = None,
 ) -> Dict[str, Any]:
-    sequences = load_activity_sequences(db_path)
-    if len(sequences) < 10:
-        return {'error': f'Need >= 10 sequences, got {len(sequences)}.'}
+    """Train on explicitly provided train/val splits (no shuffle-across-split leakage)."""
+    if len(train_data) < 10:
+        return {'error': f'Need >= 10 train sequences, got {len(train_data)}.'}
+
+    if seed is not None:
+        np.random.seed(seed)
 
     os.makedirs(model_dir, exist_ok=True)
     npz_path = os.path.join(model_dir, 'model.npz')
+    cfg = {'feature_dim': NUM_FEATURES, **(model_config or {})}
 
-    # Load or create model
     if os.path.exists(npz_path):
         model = load_model(npz_path)
     elif base_repo_id and HAS_HF:
@@ -297,42 +319,35 @@ def train_model(
         if downloaded:
             model = load_model(downloaded)
         else:
-            model = make_predictor({'feature_dim': NUM_FEATURES})
+            model = make_predictor(cfg)
     else:
-        model = make_predictor({'feature_dim': NUM_FEATURES})
+        model = make_predictor(cfg)
 
-    # Optionally shift base weights before fine-tuning
     if shift_base and os.path.exists(npz_path):
         print("Shifting base weights before fine-tuning...")
         shift_base_weights(model, shift_scale=0.01)
 
-    # Choose gradient backend
     grad_fn = forward_backward if HAS_TORCH else _spsa_grad
     backend_name = 'torch' if HAS_TORCH else 'spsa'
     print(f"Using {backend_name} gradient backend.")
 
-    # Manual Adam state
     m = {k: np.zeros_like(v) for k, v in model['params'].items()}
     v2 = {k: np.zeros_like(v) for k, v in model['params'].items()}
     beta1, beta2, eps = 0.9, 0.999, 1e-8
     t_step = 0
 
-    np.random.shuffle(sequences)
-    split = int(0.8 * len(sequences))
-    train_data = sequences[:split]
-    val_data = sequences[split:]
-
     best_val_acc = 0.0
     history = []
+    train_work = list(train_data)
 
     for epoch in range(epochs):
-        np.random.shuffle(train_data)
+        np.random.shuffle(train_work)
         total_loss = 0.0
         correct = 0
         total = 0
 
-        for i in range(0, len(train_data), batch_size):
-            batch = train_data[i:i + batch_size]
+        for i in range(0, len(train_work), batch_size):
+            batch = train_work[i:i + batch_size]
             xs = np.stack([b[0] for b in batch])
             ys = np.array([b[1] for b in batch])
 
@@ -356,7 +371,6 @@ def train_model(
         train_acc = correct / total if total > 0 else 0
         avg_loss = total_loss / total if total > 0 else 0
 
-        # Validation
         val_correct = 0
         val_total = 0
         for i in range(0, len(val_data), batch_size):
@@ -369,20 +383,63 @@ def train_model(
             val_total += len(batch)
 
         val_acc = val_correct / val_total if val_total > 0 else 0
-        history.append({'epoch': epoch + 1, 'loss': float(avg_loss), 'train_acc': float(train_acc), 'val_acc': float(val_acc)})
+        history.append({
+            'epoch': epoch + 1,
+            'loss': float(avg_loss),
+            'train_acc': float(train_acc),
+            'val_acc': float(val_acc),
+        })
 
         print(f"Epoch {epoch + 1}/{epochs}  loss={avg_loss:.4f}  train_acc={train_acc:.3f}  val_acc={val_acc:.3f}")
 
-        if val_acc > best_val_acc:
+        if val_acc >= best_val_acc:
             best_val_acc = val_acc
             save_model(model, npz_path)
 
+    if not os.path.exists(npz_path):
+        save_model(model, npz_path)
+
     return {
         'success': True,
-        'sequences': len(sequences),
+        'sequences': len(train_data) + len(val_data),
+        'train_sequences': len(train_data),
+        'val_sequences': len(val_data),
         'best_val_acc': float(best_val_acc),
         'history': history,
+        'model_path': npz_path,
     }
+
+
+def train_model(
+    db_path: str,
+    model_dir: str,
+    epochs: int = 50,
+    lr: float = 1e-3,
+    batch_size: int = 32,
+    shift_base: bool = False,
+    base_repo_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    sequences = load_activity_sequences(db_path)
+    if len(sequences) < 10:
+        return {'error': f'Need >= 10 sequences, got {len(sequences)}.'}
+
+    # Legacy split: shuffle then 80/20. Prefer train_from_sequences with
+    # session-level splits for experiments (avoids overlapping-window leakage).
+    rng = np.random.default_rng()
+    order = rng.permutation(len(sequences))
+    split = int(0.8 * len(sequences))
+    train_data = [sequences[i] for i in order[:split]]
+    val_data = [sequences[i] for i in order[split:]]
+    return train_from_sequences(
+        train_data=train_data,
+        val_data=val_data,
+        model_dir=model_dir,
+        epochs=epochs,
+        lr=lr,
+        batch_size=batch_size,
+        shift_base=shift_base,
+        base_repo_id=base_repo_id,
+    )
 
 
 # ---------------------------------------------------------------------------

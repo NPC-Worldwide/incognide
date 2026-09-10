@@ -2,8 +2,9 @@ import sqlite3
 import json
 import os
 
-NPCSH_DB = '/home/caug/npcsh_history.db'
-INCOGNIDE_DB = '/home/caug/.incognide/history.db'
+# Prefer env vars; fall back to standard user-home paths (not a machine-specific absolute path).
+NPCSH_DB = os.environ.get('NPCSH_DB', os.path.expanduser('~/npcsh_history.db'))
+INCOGNIDE_DB = os.environ.get('INCOGNIDE_DB', os.path.expanduser('~/.incognide/history.db'))
 
 def val(r, col):
     return r[col] if col in r.keys() else None

@@ -1,0 +1,32 @@
+{
+  "seed": 42,
+  "conditions": [
+    {
+      "distribution": "poisson",
+      "model_top1": 0.1976190476190476,
+      "model_top3": 0.5095238095238095,
+      "model_macro_f1": 0.14649024081780632,
+      "markov1_top1": 0.16428571428571428,
+      "most_frequent_top1": 0.10238095238095238,
+      "random_top1": 0.06666666666666667
+    },
+    {
+      "distribution": "uniform",
+      "model_top1": 0.05952380952380952,
+      "model_top3": 0.17142857142857143,
+      "model_macro_f1": 0.053808362837287696,
+      "markov1_top1": 0.06428571428571428,
+      "most_frequent_top1": 0.05238095238095238,
+      "random_top1": 0.07142857142857142
+    },
+    {
+      "distribution": "gaussian",
+      "model_top1": 0.45714285714285713,
+      "model_top3": 0.65,
+      "model_macro_f1": 0.46333902443835195,
+      "markov1_top1": 0.45714285714285713,
+      "most_frequent_top1": 0.10476190476190476,
+      "random_top1": 0.07857142857142857
+    }
+  ]
+}

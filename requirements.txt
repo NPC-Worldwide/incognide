@@ -14,5 +14,10 @@ docstring_parser
 litellm
 pyarrow<=16.1.0
 protobuf>=3.20.0,<4.0.0
+# Activity Intelligence needs qstk.cnn.ssm (ACTION_TO_IDX, make_predictor, …).
+# PyPI wheel "qstkl" may lag GitHub; prefer:
+#   pip install --no-deps "git+https://github.com/NPC-Worldwide/qstk.git"
 qstkl
 huggingface_hub
+# Optional exact gradients for activity_predictor training:
+# torch
