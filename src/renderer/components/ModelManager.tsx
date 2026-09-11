@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { DownloadCloud, Trash2, MessageSquare, Send, X, ChevronRight, RefreshCw, Plus, Globe } from "lucide-react";
 import { Card, Button, Input } from "npcts";
+import OrcaRouterConfig from './OrcaRouterConfig';
 
 const isMac = navigator.platform.toLowerCase().includes('mac') || navigator.userAgent.toLowerCase().includes('mac');
 
@@ -21,6 +22,7 @@ export const API_PROVIDER_META: Record<string, { name: string; color: string; bg
     moonshot: { name: 'Moonshot', color: 'text-pink-400', bgColor: 'bg-pink-600', docsUrl: 'https://platform.moonshot.cn/docs/intro', defaultModel: 'moonshot-v1-8k' },
     openai: { name: 'OpenAI', color: 'text-green-400', bgColor: 'bg-green-600', docsUrl: 'https://platform.openai.com/docs/models', defaultModel: 'gpt-4o' },
     openrouter: { name: 'OpenRouter', color: 'text-violet-400', bgColor: 'bg-violet-600', docsUrl: 'https://openrouter.ai/models', defaultModel: 'openai/gpt-4o' },
+    orcarouter: { name: 'OrcaRouter', color: 'text-cyan-300', bgColor: 'bg-cyan-600', docsUrl: 'https://www.orcarouter.ai', defaultModel: 'orcarouter/auto' },
     perplexity: { name: 'Perplexity', color: 'text-sky-400', bgColor: 'bg-sky-600', docsUrl: 'https://docs.perplexity.ai/', defaultModel: 'sonar-pro' },
     together: { name: 'Together', color: 'text-teal-400', bgColor: 'bg-teal-600', docsUrl: 'https://docs.together.ai/docs/models', defaultModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo' },
     xai: { name: 'xAI', color: 'text-gray-300', bgColor: 'bg-gray-600', docsUrl: 'https://docs.x.ai/', defaultModel: 'grok-3' },
@@ -454,6 +456,14 @@ const ModelManager = ({ onStartChat }: { onStartChat?: (model: string, provider:
                                             </div>
                                         )}
                                     </>
+                                )}
+
+                                {p.key === 'orcarouter' && (
+                                    <OrcaRouterConfig
+                                        capability="chat"
+                                        inputModalities={['text']}
+                                        onModelsChanged={() => fetchApiModels(p.key, p.baseUrl, p.apiKeyVar)}
+                                    />
                                 )}
 
                                 {!isLocal && (

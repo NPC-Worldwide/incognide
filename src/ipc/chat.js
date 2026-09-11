@@ -8,6 +8,9 @@ const { spawn } = require('child_process');
 const crypto = require('crypto');
 const sqlite3 = require('sqlite3');
 const yaml = require('js-yaml');
+const orcarouterIpc = require('./orcarouter');
+const { PROVIDER_ID: ORCAROUTER_PROVIDER, describe: describeOrcaRouter } = require('../services/orcarouter/provider');
+const { CAPABILITY: ORCA_CAPABILITY, resolveCatalog: orcarouterCatalogResolve } = require('../services/orcarouter/catalog');
 
 const dbPath = process.env.INCOGNIDE_DB_PATH || path.join(os.homedir(), '.incognide', 'history.db');
 
@@ -503,8 +506,43 @@ function register(ctx) {
     return registeredTeams;
   }
 
-  ipcMain.handle('get-provider-models', async (event, { provider, baseUrl, apiKeyVar }) => {
+  ipcMain.handle('get-provider-models', async (event, { provider, baseUrl, apiKeyVar, capability, inputModalities }) => {
     const normalizedProvider = (provider || '').toLowerCase();
+
+    // OrcaRouter is a first-class named provider: its catalog is discovered
+    // through the shared catalog service, with the capability filter applied
+    // here in the main process rather than in any renderer.
+    if (normalizedProvider === ORCAROUTER_PROVIDER) {
+      const store = orcarouterIpc.getCredentialStore();
+      const record = store ? await store.read() : null;
+      const apiKey = record && !record.needsReauth ? record.key : null;
+      const { apiBase } = describeOrcaRouter(process.env);
+
+      const resolved = await orcarouterCatalogResolve({
+        apiBase,
+        apiKey,
+        capability: capability || ORCA_CAPABILITY.CHAT,
+        inputModalities: Array.isArray(inputModalities) ? inputModalities : null,
+      });
+
+      return {
+        models: resolved.models.map((m) => ({
+          id: m.id,
+          value: m.id,
+          name: m.name || m.id,
+          display_name: m.name || m.id,
+          provider: ORCAROUTER_PROVIDER,
+          context_length: m.context_length,
+          architecture: m.architecture,
+          supported_endpoint_types: m.supported_endpoint_types,
+          reasoning: m.reasoning,
+          reasoning_efforts: m.reasoning_efforts,
+        })),
+        source: resolved.source,
+        degraded: resolved.degraded,
+        error: resolved.error ? resolved.message || resolved.error : null,
+      };
+    }
 
     // Try the provider's own OpenAI-compatible /models endpoint first.
     const direct = await fetchProviderModels({ provider, baseUrl, apiKeyVar });
@@ -873,6 +911,43 @@ function register(ctx) {
           }
           log(`[Main Process] Custom provider '${data.provider}' resolved to openai-like endpoint: ${apiUrlOverride}`);
         }
+      }
+
+      // OrcaRouter is a first-class provider, resolved from the single
+      // credential seam rather than from a custom-provider entry. Both the
+      // pasted-key adapter and the PKCE adapter land in the same store, so this
+      // path does not care which one was used.
+      if ((provider || '').toLowerCase() === ORCAROUTER_PROVIDER) {
+        const store = orcarouterIpc.getCredentialStore();
+        const record = store ? await store.read() : null;
+
+        if (!record || !record.key) {
+          // Not signed in: return the actionable message instead of issuing an
+          // unauthenticated request that would surface a bare 401 downstream.
+          event.sender.send('stream-error', {
+            streamId: currentStreamId,
+            error: 'OrcaRouter is not connected. Add an API key or sign in with OrcaRouter.',
+          });
+          return { error: 'OrcaRouter is not connected.', streamId: currentStreamId };
+        }
+
+        if (record.needsReauth) {
+          event.sender.send('stream-error', {
+            streamId: currentStreamId,
+            error: 'Your OrcaRouter credential was revoked or rejected. Reconnect to continue.',
+          });
+          return { error: 'OrcaRouter credential requires reauthentication.', streamId: currentStreamId };
+        }
+
+        apiKeyOverride = record.key;
+        apiUrlOverride = describeOrcaRouter(process.env).apiBase;
+        // OrcaRouter keeps the vendor/model namespace verbatim; only the
+        // `orcarouter/` provider prefix added by the selector is removed.
+        const orcaPrefix = `${data.provider}/`;
+        if (model && model.startsWith(orcaPrefix)) {
+          model = model.slice(orcaPrefix.length);
+        }
+        log(`[Main Process] OrcaRouter resolved to ${apiUrlOverride} (credential source: ${record.source})`);
       }
 
       // Load registered teams from frontend config to pass to backend
