@@ -84,6 +84,21 @@ GGUF / GGML model files can be loaded directly without a server, but only if **l
 
 Add API keys on the **Cloud keys** step of the wizard, or later in **Settings → Global Settings** or **Team Management → API keys**. Keys are stored in `~/.incogniderc` as `export <PROVIDER>_API_KEY=...`.
 
+#### OrcaRouter
+
+[OrcaRouter](https://www.orcarouter.ai) is a first-class provider, so it appears in the provider list and the model selector like any other. It offers two independent ways to connect, both shown in the OrcaRouter card in **Model Manager**:
+
+| Choice | How it works | Credential |
+|--------|--------------|------------|
+| **OrcaRouter - API** | Paste an existing `sk-orca-…` key, or set `ORCAROUTER_API_KEY` in `~/.incogniderc`. | A key you already own. No network call is made to validate it; the first request settles it. |
+| **OrcaRouter - Auth** | Click **Connect with OrcaRouter** — your browser opens the consent screen and the key comes back automatically (OAuth 2.0 + PKCE, S256, loopback redirect, no client secret). | A durable key issued to your own account. Reused until you revoke it; there is no refresh grant. |
+
+Both paths produce the same durable API key, stored encrypted with Electron `safeStorage` in `$INCOGNIDE_HOME/orcarouter_credentials` (the same mechanism used for saved browser passwords). Revoke your access at any time from the [OrcaRouter console](https://www.orcarouter.ai/console/authorized-apps).
+
+**Endpoints.** Inference and model discovery use `https://api.orcarouter.ai/v1` with the OpenAI wire format. Authentication uses a different origin, `https://www.orcarouter.ai`, at `/auth` and `/api/v1/auth/keys`. Self-hosted deployments can set `ORCA_BASE_URL` (shared origin, `/v1` is appended for inference) or the explicit `ORCA_AUTH_BASE_URL` / `ORCA_API_BASE_URL` overrides, which take precedence. Remote origins must be HTTPS; plain HTTP is accepted only for loopback.
+
+**Models.** The model dropdown is populated from `GET /v1/models` with your own key, so it reflects what your workspace can actually call. Each AI input filters that catalog by capability: text chat keeps only models advertising a text endpoint, attaching an image narrows the list to models that declare image input, and embeddings, image generation, video and rerank use their own dedicated filters. A model that does not declare a required capability is never offered, and a selection that stops being compatible is cleared rather than kept. If discovery fails, a small verified fallback list is shown and labelled as degraded.
+
 ### 4. Local setup for fine-tuning
 
 Inference with LLMs is routed through the bundled backend (including calls to locally running models with llama.cpp, omlx, etc), but users can also fine-tune models within incognide. To accomplish this, you need to specify a Python virtual environment with the heavy packages (`torch`+ `transformers` etc.). For such calls, Incognide shells out to the specified venv instead of including these dependencies in the bundled backend to keep the packaged executable small.
