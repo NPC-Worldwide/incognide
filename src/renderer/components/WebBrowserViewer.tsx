@@ -1,6 +1,6 @@
 import { getFileName } from './utils';
 import React, { useEffect, useRef, useState, memo, useCallback } from 'react';
-import { ArrowLeft, ArrowRight, RotateCcw, Globe, Home, X, Plus, Settings, Trash2, Lock, GripVertical, Puzzle, Download, FolderOpen, Key, Eye, EyeOff, Shield, Check, Maximize2, Minimize2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, RotateCcw, Globe, Home, X, Plus, Settings, Trash2, Lock, GripVertical, Puzzle, Download, FolderOpen, Key, Eye, EyeOff, Shield, Check, Maximize2, Minimize2, Star } from 'lucide-react';
 const browserStateCache = new Map<string, {
     initialized: boolean;
     lastUrl: string;
@@ -823,6 +823,7 @@ const WebBrowserViewer = memo(({
             setUrlInput(url);
             setError(null);
             setIsSecure(url.startsWith('https://'));
+            refreshBookmarkState();
 
             try {
                 window.dispatchEvent(new CustomEvent('incognide:webview-predict', { detail: { type: 'blur', paneId: nodeId, webviewElement: webviewRef.current } }));
@@ -1337,6 +1338,38 @@ const WebBrowserViewer = memo(({
     const handleBack = useCallback(() => webviewRef.current?.goBack(), []);
     const handleForward = useCallback(() => webviewRef.current?.goForward(), []);
     const handleRefresh = useCallback(() => webviewRef.current?.reload(), []);
+
+    const [isBookmarked, setIsBookmarked] = useState(false);
+
+    const refreshBookmarkState = useCallback(async () => {
+        if (!currentUrl) { setIsBookmarked(false); return; }
+        try {
+            const result = await (window as any).api?.browserGetBookmarks?.({ folderPath: currentPath });
+            if (result?.success) {
+                const matches = result.bookmarks.some((bm: any) => bm.url === currentUrl && bm.folder_path === currentPath);
+                setIsBookmarked(matches);
+            }
+        } catch (err) {
+            console.error('[Browser] Failed to refresh bookmark state:', err);
+        }
+    }, [currentUrl, currentPath]);
+
+    useEffect(() => { refreshBookmarkState(); }, [refreshBookmarkState]);
+
+    const handleBookmarkCurrent = useCallback(async () => {
+        if (!currentUrl || currentUrl === 'about:blank') return;
+        try {
+            await (window as any).api?.browserAddBookmark?.({
+                url: currentUrl,
+                title: title || currentUrl,
+                folderPath: currentPath,
+                isGlobal: false
+            });
+            setIsBookmarked(true);
+        } catch (err) {
+            console.error('[Browser] Failed to bookmark current page:', err);
+        }
+    }, [currentUrl, title, currentPath]);
 
     useEffect(() => {
         const api = (window as any).api;
@@ -2323,11 +2356,12 @@ const WebBrowserViewer = memo(({
                             </>
                         )}
                     </div>
-                    <div className="flex-1 max-w-[60%] flex items-center gap-1 min-w-0 theme-bg-secondary rounded px-2 py-1.5" draggable={false} onDragStart={(e) => e.stopPropagation()}>
-                        {isSecure ? <Lock size={12} className="text-green-400 flex-shrink-0" /> : <Globe size={12} className="text-gray-400 flex-shrink-0" />}
-                        <input ref={urlInputRef} type="text" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleNavigate()} onContextMenu={(e) => e.stopPropagation()} placeholder="Search or enter URL..." className="browser-url-input flex-1 bg-transparent text-xs theme-text-primary outline-none min-w-0" draggable={false} onDragStart={(e) => e.stopPropagation()} />
+                    <div className="flex-1 max-w-[70%] flex items-center gap-2 min-w-0 theme-bg-secondary rounded px-3 py-2" draggable={false} onDragStart={(e) => e.stopPropagation()}>
+                        {isSecure ? <Lock size={16} className="text-green-400 flex-shrink-0" /> : <Globe size={16} className="text-gray-400 flex-shrink-0" />}
+                        <input ref={urlInputRef} type="text" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleNavigate()} onFocus={(e) => e.target.select()} onContextMenu={(e) => e.stopPropagation()} placeholder="Search or enter URL..." className="browser-url-input flex-1 bg-transparent text-sm theme-text-primary outline-none min-w-0" draggable={false} onDragStart={(e) => e.stopPropagation()} />
                     </div>
-                    <button onClick={() => handleNewBrowserTab('', nodeId)} className="p-0.5 theme-hover rounded" title="New tab (Ctrl+T)"><Plus size={12} /></button>
+                    <button onClick={() => handleBookmarkCurrent()} className="p-1 theme-hover rounded text-yellow-400" title="Bookmark current page"><Star size={16} fill={isBookmarked ? 'currentColor' : 'none'} /></button>
+                    <button onClick={() => handleNewBrowserTab('', nodeId)} className="p-1 theme-hover rounded" title="New tab (Ctrl+T)"><Plus size={16} /></button>
                 </div>
 
                 <div className="flex items-center gap-0.5 px-1 border-l theme-border">
