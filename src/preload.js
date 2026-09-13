@@ -995,4 +995,22 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
         return () => ipcRenderer.removeListener('ssh:disconnected', handler);
     },
 
+    windowControls: {
+        minimize: () => ipcRenderer.send('window-minimize'),
+        maximize: () => ipcRenderer.send('window-maximize'),
+        close: () => ipcRenderer.send('window-close'),
+        openDevTools: () => ipcRenderer.send('window-open-devtools'),
+        toggleDevTools: () => ipcRenderer.send('window-toggle-devtools'),
+    },
+    windowState: {
+        isMaximized: () => ipcRenderer.invoke('window-is-maximized'),
+    },
+    onWindowStateChange: (callback) => {
+        const handler = (_, data) => callback(data);
+        ipcRenderer.on('window-state-changed', handler);
+        return () => ipcRenderer.removeListener('window-state-changed', handler);
+    },
+
+    menuAction: (action, url) => ipcRenderer.send('menu-action', { action, url }),
+
 });

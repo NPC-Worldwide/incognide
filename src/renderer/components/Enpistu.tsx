@@ -836,8 +836,6 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
         selectedNPC: ''
     });
 
-    (window as any).api = (window as any).api || {};
-    (window as any).api.onPaneQueueDrain = processPaneQueue;
     const [enabledMcpServers, setEnabledMcpServers] = useState<string[]>([]);
     const [selectedMcpTools, setSelectedMcpTools] = useState([]);
     const [availableMcpTools, setAvailableMcpTools] = useState([]);
@@ -4662,6 +4660,7 @@ const handleBrowserDialogNavigate = (url) => {
         const next = paneData.pendingQueue.shift();
         startQueuedMessage(paneId, next);
     };
+    (window as any).__incognideQueueDrain = processPaneQueue;
 
     const cancelPendingMessage = (paneId: string, messageId: string) => {
         const paneData = contentDataRef.current[paneId];
@@ -7991,7 +7990,7 @@ const renderMainContent = () => {
 
     return (
         <StudioContentContext.Provider value={contentDataRef}>
-        <div className={`chat-container ${isDarkMode ? 'dark-mode' : 'light-mode'} h-screen flex flex-col theme-bg-primary theme-text-primary font-mono`}>
+        <div className={`chat-container ${isDarkMode ? 'dark-mode' : 'light-mode'} flex-1 flex flex-col theme-bg-primary theme-text-primary font-mono min-h-0`}>
 
 {pomodoroOnBreak && (
     <div className="fixed inset-0 z-[99999] flex flex-col items-center justify-center bg-black" style={{ cursor: 'default' }}>

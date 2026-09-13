@@ -272,6 +272,52 @@ const electronLogStream = fs.createWriteStream(electronLogPath, { flags: 'a' });
 const backendLogStream = fs.createWriteStream(backendLogPath, { flags: 'a' });
 
 let mainWindow = null;
+
+ipcMain.on('window-minimize', () => {
+    mainWindow?.minimize();
+});
+ipcMain.on('window-maximize', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMaximized()) mainWindow.unmaximize();
+    else mainWindow.maximize();
+});
+ipcMain.on('window-close', () => {
+    mainWindow?.close();
+});
+ipcMain.handle('window-is-maximized', () => {
+    return mainWindow?.isMaximized() ?? false;
+});
+ipcMain.on('window-open-devtools', () => {
+    mainWindow?.webContents?.openDevTools();
+});
+ipcMain.on('window-toggle-devtools', () => {
+    mainWindow?.webContents?.toggleDevTools();
+});
+
+ipcMain.on('menu-action', (_, { action, url }) => {
+    if (!mainWindow) return;
+    switch (action) {
+        case 'reload': mainWindow.webContents.reload(); break;
+        case 'forceReload': mainWindow.webContents.reloadIgnoringCache(); break;
+        case 'toggleDevTools': mainWindow.webContents.toggleDevTools(); break;
+        case 'toggleFullScreen': mainWindow.setFullScreen(!mainWindow.isFullScreen()); break;
+        case 'minimize': mainWindow.minimize(); break;
+        case 'zoom': if (mainWindow.isMaximized()) mainWindow.unmaximize(); else mainWindow.maximize(); break;
+        case 'close': mainWindow.close(); break;
+        case 'openExternal': shell.openExternal(url || 'https://incognide.com'); break;
+        case 'about':
+            dialog.showMessageBox(mainWindow, {
+                type: 'info',
+                title: 'About Incognide',
+                message: 'Incognide',
+                detail: `Version: ${app.getVersion()}\nElectron: ${process.versions.electron}\nChrome: ${process.versions.chrome}\nNode: ${process.versions.node}`
+            });
+            break;
+        default:
+            mainWindow.webContents.send(action);
+    }
+});
+
 let pdfView = null;
 let uiHidden = false;
 let frontendServer = null;
@@ -2708,6 +2754,7 @@ function createWindow(cliArgs = {}) {
 
     const windowState = clampWindowStateToDisplays(loadWindowState());
 
+    const isMac = process.platform === 'darwin';
     mainWindow = new BrowserWindow({
       width: windowState.width,
       height: windowState.height,
@@ -2716,6 +2763,8 @@ function createWindow(cliArgs = {}) {
       show: false,
       icon: appIcon || iconPath,
       title: 'Incognide',
+      titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+      ...(isMac ? { trafficLightPosition: { x: 12, y: 8 } } : {}),
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -2736,9 +2785,15 @@ function createWindow(cliArgs = {}) {
       if (windowState.maximized) {
         mainWindow.maximize();
       }
+      if (IS_DEV_MODE) {
+        mainWindow.webContents.openDevTools({ mode: 'detach' });
+      }
     });
 
     const win = mainWindow;
+    win.on('maximize', () => win.webContents.send('window-state-changed', { isMaximized: true }));
+    win.on('unmaximize', () => win.webContents.send('window-state-changed', { isMaximized: false }));
+
     let saveStateTimeout;
     const doSaveWindowState = () => {
       try {
@@ -2763,6 +2818,14 @@ function createWindow(cliArgs = {}) {
 
     mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
       callback(true);
+    });
+
+    mainWindow.webContents.on('render-process-gone', (event, details) => {
+      console.error('[RENDERER CRASH]', details);
+    });
+    mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+      const prefix = `[CONSOLE ${['debug','info','warn','error'][level] || level}]`;
+      console.log(prefix, message, sourceId ? `(${sourceId}:${line})` : '');
     });
 
     if (process.platform === 'darwin') {

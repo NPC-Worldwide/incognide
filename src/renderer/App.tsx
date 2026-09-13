@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ClerkProvider } from '@clerk/clerk-react';
 import Enpistu from './components/Enpistu';
+import TitleBar from './components/TitleBar';
 import SetupWizard from './components/SetupWizard';
 import AppTutorial from './components/AppTutorial';
 import KnowledgeOnboarding from './components/KnowledgeOnboarding';
@@ -186,7 +187,10 @@ const App: React.FC = () => {
     <AuthWrapper>
       <AiFeatureProvider>
         <BackendErrorBanner />
-        <Enpistu onRerunSetup={handleRerunSetup} />
+        <div className="h-screen w-screen flex flex-col overflow-hidden theme-bg-primary theme-text-primary">
+          <TitleBar />
+          <Enpistu onRerunSetup={handleRerunSetup} />
+        </div>
         {showTutorial && tutorialReady && <AppTutorial onComplete={handleTutorialComplete} />}
         {showKnowledgeOnboarding && <KnowledgeOnboarding onComplete={() => setShowKnowledgeOnboarding(false)} />}
       </AiFeatureProvider>
