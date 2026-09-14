@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
     User, LogIn, LogOut, Crown, Cloud, CloudOff, RefreshCw,
     CreditCard, Shield, CheckCircle, Key, Lock, Unlock, Eye, EyeOff
 } from 'lucide-react';
 import { useAuth } from './AuthProvider';
 import { useSync } from '../hooks/useSync';
+import { getEncryptionKey } from '../utils/encryption';
+import { CLOUD_APP_URL } from '../config';
 
 interface AccountPaneProps {
     nodeId: string;
@@ -18,6 +20,49 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
     const [showPassphrase, setShowPassphrase] = useState(false);
     const [passphraseError, setPassphraseError] = useState('');
     const [settingUp, setSettingUp] = useState(false);
+    const cloudWebviewRef = useRef<any>(null);
+    const [cloudError, setCloudError] = useState<string | null>(null);
+    const [cloudKey, setCloudKey] = useState(0);
+    const [cloudSrc, setCloudSrc] = useState<string | null>(null);
+
+    useEffect(() => {
+        let alive = true;
+        const build = async () => {
+            if (!auth.isAuthenticated) { if (alive) setCloudSrc(null); return; }
+            let src = CLOUD_APP_URL;
+            const key = getEncryptionKey();
+            if (auth.isEncryptionReady && key) {
+                try {
+                    const raw = await crypto.subtle.exportKey('raw', key);
+                    const b64 = btoa(String.fromCharCode(...new Uint8Array(raw)))
+                        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+                    src = `${CLOUD_APP_URL}#desktop_key=${b64}`;
+                } catch {
+                }
+            }
+            if (alive) setCloudSrc(src);
+        };
+        build();
+        return () => { alive = false; };
+    }, [auth.isAuthenticated, auth.isEncryptionReady, cloudKey]);
+
+    useEffect(() => {
+        if (!auth.isAuthenticated) return;
+        const webview = cloudWebviewRef.current;
+        if (!webview) return;
+        const handleFail = (e: any) => {
+            if (e.isMainFrame && e.errorCode !== -3) {
+                setCloudError(`Failed to load (${e.errorCode}): ${e.errorDescription || 'Unknown error'}`);
+            }
+        };
+        const handleReady = () => setCloudError(null);
+        webview.addEventListener('did-fail-load', handleFail);
+        webview.addEventListener('dom-ready', handleReady);
+        return () => {
+            webview.removeEventListener('did-fail-load', handleFail);
+            webview.removeEventListener('dom-ready', handleReady);
+        };
+    }, [auth.isAuthenticated, cloudKey]);
 
     const handleSetupPassphrase = async () => {
         setSettingUp(true);
@@ -57,7 +102,7 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
 
     return (
         <div className="h-full overflow-y-auto theme-bg-primary theme-text-primary">
-            <div className="max-w-2xl mx-auto p-6 space-y-6">
+            <div className="max-w-4xl mx-auto p-6 space-y-6">
                 <div className="flex items-center gap-3 pb-4 border-b theme-border">
                     <User size={24} className="text-blue-400" />
                     <div>
@@ -331,6 +376,45 @@ const AccountPane: React.FC<AccountPaneProps> = ({ nodeId }) => {
                                         <RefreshCw size={12} /> Full Re-sync
                                     </button>
                                 </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {auth.isAuthenticated && (
+                    <div className="theme-bg-secondary rounded-xl border theme-border overflow-hidden">
+                        <div className="px-5 py-4 border-b theme-border flex items-center justify-between">
+                            <h2 className="text-sm font-medium theme-text-muted uppercase tracking-wide">Cloud</h2>
+                            <button
+                                onClick={() => { setCloudError(null); setCloudKey(k => k + 1); }}
+                                className="flex items-center gap-1 text-xs theme-text-muted hover:text-blue-400"
+                            >
+                                <RefreshCw size={12} /> Reload
+                            </button>
+                        </div>
+                        <div className="relative h-[70vh] min-h-[400px]">
+                            {cloudError && (
+                                <div className="absolute inset-0 flex items-center justify-center z-10 p-4 theme-bg-secondary">
+                                    <div className="text-center p-6 max-w-md theme-bg-tertiary rounded-lg border theme-border">
+                                        <p className="theme-text-muted text-sm mb-4">{cloudError}</p>
+                                        <button
+                                            onClick={() => { setCloudError(null); setCloudKey(k => k + 1); }}
+                                            className="px-4 py-2 theme-button-primary rounded"
+                                        >
+                                            Try Again
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                            {cloudSrc && (
+                                <webview
+                                    key={`cloud-${cloudKey}`}
+                                    ref={cloudWebviewRef}
+                                    className="absolute inset-0 w-full h-full"
+                                    src={cloudSrc}
+                                    // @ts-ignore
+                                    allowpopups="true"
+                                />
                             )}
                         </div>
                     </div>

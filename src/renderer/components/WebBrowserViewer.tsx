@@ -1820,7 +1820,6 @@ const WebBrowserViewer = memo(({
             const result = await (window as any).api?.passwordGetForSite?.(site);
             if (result?.success && result.credentials?.length > 0) {
                 setSavedPasswords(result.credentials);
-                setShowPasswordFill(true);
             } else {
                 setSavedPasswords([]);
                 setShowPasswordFill(false);
@@ -2019,18 +2018,33 @@ const WebBrowserViewer = memo(({
                             if (btn) {
 
                                 setTimeout(() => {
+                                    if (document.querySelectorAll('input[type="password"]').length === 0) return;
                                     const creds = scanForCredentials();
                                     if (creds && creds.password) {
                                         signalCredentials(creds.username || lastUsername, creds.password);
-                                    } else if (lastPassword) {
-                                        signalCredentials(lastUsername, lastPassword);
                                     }
                                 }, 100);
                             }
                         }, true);
 
+                        function resetStaleCredentials() {
+                            lastUsername = '';
+                            lastPassword = '';
+                        }
+                        window.addEventListener('popstate', resetStaleCredentials);
+                        const origPushState = history.pushState;
+                        history.pushState = function() {
+                            resetStaleCredentials();
+                            return origPushState.apply(this, arguments);
+                        };
+                        const origReplaceState = history.replaceState;
+                        history.replaceState = function() {
+                            resetStaleCredentials();
+                            return origReplaceState.apply(this, arguments);
+                        };
+
                         window.addEventListener('beforeunload', function() {
-                            if (lastPassword) {
+                            if (lastPassword && document.querySelectorAll('input[type="password"]').length > 0) {
                                 signalCredentials(lastUsername, lastPassword);
                             }
                         });

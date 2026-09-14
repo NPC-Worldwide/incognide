@@ -575,7 +575,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     const inputStr = typeof localInput === 'string' ? localInput : '';
     const hasContextFiles = contextFiles.length > 0;
     const hasInputContent = inputStr.trim() || uploadedFiles.length > 0 || hasJinxContent || hasContextFiles;
-    const canSend = !isStreaming && hasInputContent && (activeConversationId || isJinxMode);
+    const canSend = hasInputContent && (activeConversationId || isJinxMode);
 
     useEffect(() => {
         if (recordingError) {
@@ -1036,27 +1036,26 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                         />
                     </div>
                     <div className="p-2 border-t theme-border flex items-center justify-end gap-2">
-                        {isStreaming ? (
+                        {isStreaming && (
                             <button onClick={handleInterruptStream} className="theme-button-danger text-white rounded-lg px-4 py-2 text-sm flex items-center gap-1">
                                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5z"/></svg>
                                 Stop
                             </button>
-                        ) : (
-                            <button onClick={(e) => {
-                                const shouldBroadcast = broadcastMode && onBroadcast && selectedModels.length > 0 && selectedNPCs.length > 0 && (selectedModels.length > 1 || selectedNPCs.length > 1);
-                                if (shouldBroadcast) {
-                                    onBroadcast(selectedModels, selectedNPCs, localInput, uploadedFiles); setLocalInput(''); setUploadedFiles([]);
-                                } else {
-                                    handleInputSubmit(e, { voiceInput: usedVoiceInput, disableThinking, genParams, inputText: localInput, uploadedFiles, mcpServerPaths: Array.from(enabledServers), selectedMcpTools, contextFiles, paneId });
-                                    setLocalInput('');
-                                    setUploadedFiles([]);
-                                    setUsedVoiceInput(false);
-                                }
-                                setIsInputExpanded(false);
-                            }} disabled={!canSend} className="theme-button-success text-white rounded-lg px-4 py-2 text-sm flex items-center gap-1 disabled:opacity-50">
-                                <Send size={16}/> Send
-                            </button>
                         )}
+                        <button onClick={(e) => {
+                            const shouldBroadcast = broadcastMode && onBroadcast && selectedModels.length > 0 && selectedNPCs.length > 0 && (selectedModels.length > 1 || selectedNPCs.length > 1);
+                            if (shouldBroadcast) {
+                                onBroadcast(selectedModels, selectedNPCs, localInput, uploadedFiles); setLocalInput(''); setUploadedFiles([]);
+                            } else {
+                                handleInputSubmit(e, { voiceInput: usedVoiceInput, disableThinking, genParams, inputText: localInput, uploadedFiles, mcpServerPaths: Array.from(enabledServers), selectedMcpTools, contextFiles, paneId });
+                                setLocalInput('');
+                                setUploadedFiles([]);
+                                setUsedVoiceInput(false);
+                            }
+                            setIsInputExpanded(false);
+                        }} disabled={!canSend} className="theme-button-success text-white rounded-lg px-4 py-2 text-sm flex items-center gap-1 disabled:opacity-50">
+                            <Send size={16}/> {isStreaming ? 'Queue' : 'Send'}
+                        </button>
                     </div>
                 </div>
             </div>
@@ -1107,7 +1106,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                 value={localInput}
                                 onChange={(e) => setLocalInput(e.target.value)}
                                 onKeyDown={(e) => {
-                                    if (!isStreaming && e.key === 'Enter' && !e.shiftKey) {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
                                         e.preventDefault();
 
                                         const shouldBroadcast = broadcastMode && onBroadcast && selectedModels.length > 0 && selectedNPCs.length > 0 && (selectedModels.length > 1 || selectedNPCs.length > 1);
@@ -1193,12 +1192,12 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                             >
                                 <BrainCircuit size={12} />
                             </button>
-                            {isStreaming ? (
+                            {isStreaming && (
                                 <button onClick={handleInterruptStream} className="theme-button-danger text-white rounded-lg px-3 py-2 text-sm flex items-center gap-1 flex-shrink-0">
                                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5z"/></svg>
                                 </button>
-                            ) : (
-                                <button
+                            )}
+                            <button
                                     onClick={(e) => {
 
                                         const shouldBroadcast = broadcastMode && onBroadcast && selectedModels.length > 0 && selectedNPCs.length > 0 && (selectedModels.length > 1 || selectedNPCs.length > 1);
@@ -1219,7 +1218,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                     }`}
                                     title={selectedModels.length > 1 || selectedNPCs.length > 1
                                         ? `Send to ${selectedModels.length * selectedNPCs.length} combinations`
-                                        : 'Send message'}
+                                        : isStreaming ? 'Queue message' : 'Send message'}
                                 >
                                     {selectedModels.length > 1 || selectedNPCs.length > 1 ? (
                                         <>
@@ -1230,7 +1229,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                                         <Send size={16}/>
                                     )}
                                 </button>
-                            )}
                         </div>
                     </div>
                 </div>

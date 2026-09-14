@@ -26,7 +26,7 @@ export async function deriveKey(password: string, saltBase64: string): Promise<C
         },
         keyMaterial,
         { name: 'AES-GCM', length: 256 },
-        false,
+        true,
         ['encrypt', 'decrypt']
     );
 }
