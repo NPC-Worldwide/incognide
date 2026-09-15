@@ -642,13 +642,17 @@ function register(ctx) {
     }
   };
 
+  function preprocessJinja(content) {
+    return content.replace(/(?<!["'])\{\{[^{}]*\}\}(?!["'])/g, (match) => `"${match}"`);
+  }
+
   async function readTeamConfig(teamDir) {
     try {
       const files = await fsPromises.readdir(teamDir);
       const ctxFile = files.find(f => f.endsWith('.ctx'));
       if (!ctxFile) return null;
       const content = await fsPromises.readFile(path.join(teamDir, ctxFile), 'utf8');
-      return yaml.load(content) || null;
+      return yaml.load(preprocessJinja(content)) || null;
     } catch {
       return null;
     }

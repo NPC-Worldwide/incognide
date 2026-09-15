@@ -270,6 +270,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const [predictiveTextDelay, setPredictiveTextDelay] = useState(250);
     const [predictionSuggestion, setPredictionSuggestion] = useState('');
     const [predictionTarget, setPredictionTarget] = useState<any | null>(null);
+    const [activeDownloads, setActiveDownloads] = useState<Record<string, any>>({});
 
 
     const { trackActivity } = useActivityTracker();
@@ -4119,6 +4120,26 @@ useEffect(() => {
 }, [activeContentPaneId, createNewBrowser]);
 
 
+useEffect(() => {
+    const api = (window as any).api;
+    if (!api?.onBrowserDownloadRequested) return;
+    const unsubscribeRequested = api.onBrowserDownloadRequested((data: any) => {
+        setActiveDownloads(prev => ({ ...prev, [data.filename]: { ...data, progress: 0, state: 'progressing' } }));
+    });
+    const unsubscribeProgress = api.onDownloadProgress((data: any) => {
+        setActiveDownloads(prev => ({ ...prev, [data.filename]: { ...prev[data.filename], ...data, progress: data.percent, state: 'progressing' } }));
+    });
+    const unsubscribeComplete = api.onDownloadComplete((data: any) => {
+        setActiveDownloads(prev => ({ ...prev, [data.filename]: { ...prev[data.filename], ...data, state: data.state } }));
+    });
+    return () => {
+        unsubscribeRequested?.();
+        unsubscribeProgress?.();
+        unsubscribeComplete?.();
+    };
+}, []);
+
+
 const renderSearchPane = useCallback(({ nodeId, initialQuery }: { nodeId: string; initialQuery?: string }) => {
     return (
         <SearchPane
@@ -4458,7 +4479,11 @@ const handleBrowserDialogNavigate = (url) => {
         }
 
         const paneModel = targetPaneData?.model || currentModel;
-        const paneProvider = targetPaneData?.provider || currentProvider;
+        let paneProvider = targetPaneData?.provider || currentProvider;
+        if (!paneProvider && paneModel) {
+            const selectedModelObj = availableModels.find((m) => m.value === paneModel);
+            paneProvider = selectedModelObj?.provider || null;
+        }
         if (!paneModel || !paneProvider) {
             setError('No model selected. Please select a model from the dropdown before sending a message.');
             return;
@@ -5491,8 +5516,9 @@ const handleBrowserDialogNavigate = (url) => {
             setIsLoadingWorkspace(true);
 
             let workspaceRestored = false;
+            let savedWorkspace: any = null;
             try {
-                const savedWorkspace = loadWorkspaceFromStorage(currentPath);
+                savedWorkspace = loadWorkspaceFromStorage(currentPath);
                 if (savedWorkspace) {
 
                     await loadDirectoryStructureWithoutConversationLoad(currentPath);
@@ -5624,17 +5650,27 @@ const handleBrowserDialogNavigate = (url) => {
                 providerToSet = folderPref.provider || null;
             }
 
-            if (modelToSet) {
-                setCurrentModel(modelToSet);
-                if (providerToSet) setCurrentProvider(providerToSet);
-                setSelectedModels([modelToSet]);
-            }
-
             if (!npcToSet && fetchedNPCs.length > 0) {
                 npcToSet = fetchedNPCs[0].value;
             }
 
             setCurrentNPC(npcToSet);
+
+            const workspaceData = currentPath ? loadWorkspaceFromStorage(currentPath) : null;
+            const restoredActivePaneId = workspaceData?.activeContentPaneId || activeContentPaneId;
+            const activePaneData = restoredActivePaneId ? contentDataRef.current[restoredActivePaneId] : null;
+            const restoredModel = activePaneData?.model || null;
+            const restoredProvider = activePaneData?.provider || null;
+            if (restoredModel) {
+                modelToSet = restoredModel;
+                providerToSet = restoredProvider;
+            }
+
+            if (modelToSet) {
+                setCurrentModel(modelToSet);
+                if (providerToSet) setCurrentProvider(providerToSet);
+                setSelectedModels([modelToSet]);
+            }
 
             setSelectedNPCs(npcToSet ? [npcToSet] : []);
 
@@ -6460,6 +6496,7 @@ const getChatInputProps = useCallback((paneId: string) => {
     currentModel: getPaneModel(paneId),
     setCurrentModel: (v: any) => {
         setPaneModel(paneId, v);
+        if (v !== currentModel) setCurrentModel(v);
         if (v && currentPath) {
             try {
                 const provider = getPaneProvider(paneId) || currentProvider;
@@ -6471,6 +6508,7 @@ const getChatInputProps = useCallback((paneId: string) => {
     currentProvider: getPaneProvider(paneId),
     setCurrentProvider: (v: any) => {
         setPaneProvider(paneId, v);
+        if (v !== currentProvider) setCurrentProvider(v);
         if (v && currentPath) {
             try {
                 const model = getPaneModel(paneId) || currentModel;
@@ -7566,6 +7604,9 @@ const statusBar = bottomBarCollapsed ? (
         createNewTerminal={createNewTerminal}
         createNewConversation={createNewConversation}
         createNewBrowser={createNewBrowser}
+        activeDownloads={activeDownloads}
+        onOpenDownloadedFile={handleFileClick}
+        onDismissDownload={(filename: string) => setActiveDownloads(prev => { const next = { ...prev }; delete next[filename]; return next; })}
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
         searchScope={searchScope}

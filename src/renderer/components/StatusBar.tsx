@@ -3,7 +3,7 @@ import {
     MessageSquare, Terminal, Globe, FileText, File as FileIcon,
     BrainCircuit, Bot, Zap, Users, Database, ChevronDown,
     GitBranch, Image, AlertCircle, RefreshCw, Check, Columns, Layers,
-    Power, ScrollText, Server, Sun, Moon, User, X
+    Power, ScrollText, Server, Sun, Moon, User, X, Download, FolderOpen, ExternalLink
 } from 'lucide-react';
 import npcPythonLogo from '../../assets/npc-python.png';
 import npcLogo from '../../assets/icon.png';
@@ -58,6 +58,9 @@ interface StatusBarProps {
     createNewTerminal?: (shellType: string) => void;
     createNewConversation?: (opts?: { contentType?: 'chat' | 'agent'; npc?: string; model?: string }) => void;
     createNewBrowser?: (url?: string) => void;
+    activeDownloads?: Record<string, any>;
+    onOpenDownloadedFile?: (path: string) => void;
+    onDismissDownload?: (filename: string) => void;
 }
 
 type BackendStatus = 'ok' | 'unhealthy' | 'unreachable' | 'restarting' | 'unknown';
@@ -100,12 +103,16 @@ const StatusBar: React.FC<StatusBarProps> = ({
     createNewTerminal,
     createNewConversation,
     createNewBrowser,
+    activeDownloads = {},
+    onOpenDownloadedFile,
+    onDismissDownload,
 }) => {
     const buttonGroupWidth = sidebarCollapsed ? 192 : (sidebarWidth || 192);
     const aiEnabled = useAiEnabled();
     const [checkingUpdates, setCheckingUpdates] = useState(false);
     const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
     const [showQuitPrompt, setShowQuitPrompt] = useState(false);
+    const [downloadPopoverOpen, setDownloadPopoverOpen] = useState(false);
     const [showBackendMenu, setShowBackendMenu] = useState(false);
     const [sshMenuOpen, setSshMenuOpen] = useState(false);
     const [passwordPromptId, setPasswordPromptId] = useState<string | null>(null);
@@ -427,6 +434,79 @@ const StatusBar: React.FC<StatusBarProps> = ({
                 <button data-tutorial="pane-tab-toggle" onClick={onToggleOpenMode} className={`${btnClass} ${openMode === 'tab' ? 'text-blue-400' : 'text-gray-400 dark:text-gray-500'}`} title={openMode === 'pane' ? 'Pane mode' : 'Tab mode'}>
                     {openMode === 'pane' ? <Columns size={16} /> : <Layers size={16} />}
                 </button>
+            )}
+
+            {Object.keys(activeDownloads).length > 0 && (
+                <div className="relative">
+                    {downloadPopoverOpen && (
+                        <div className="fixed inset-0 z-40 bg-transparent" onMouseDown={() => setDownloadPopoverOpen(false)} />
+                    )}
+                    <button
+                        onClick={() => setDownloadPopoverOpen(v => !v)}
+                        className={`${btnClass} ${downloadPopoverOpen ? 'text-blue-300 bg-white/10' : 'text-blue-400'}`}
+                    >
+                        <Download size={16} />
+                    </button>
+                    {downloadPopoverOpen && (
+                        <div className="absolute bottom-full right-0 mb-1 w-64 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 p-2">
+                        {Object.entries(activeDownloads).map(([filename, dl]: [string, any]) => {
+                            const ext = filename.split('.').pop()?.toLowerCase();
+                            const openableInApp = onOpenDownloadedFile && ['pdf', 'csv', 'xlsx', 'xls', 'pptx', 'tex', 'ipynb', 'exp', 'pltx', 'docx', 'doc', 'odt', 'odp', 'ods', 'zip', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'm4v', 'flv', 'ogv', 'stl', 'db', 'sqlite', 'sqlite3'].includes(ext || '');
+                            return (
+                                <div key={filename} className="mb-2 last:mb-0">
+                                    <div className="flex items-center justify-between text-[10px] text-gray-300 mb-0.5">
+                                        <span className="truncate max-w-[120px]" title={filename}>{filename}</span>
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-[9px] text-gray-500">
+                                                {dl.state === 'completed' ? 'Done' : dl.state === 'interrupted' ? 'Failed' : dl.state === 'cancelled' ? 'Cancelled' : `${dl.progress ?? 0}%`}
+                                            </span>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); e.preventDefault(); onDismissDownload?.(filename); }}
+                                                className="p-0.5 rounded hover:bg-white/10 text-gray-500 hover:text-gray-300"
+                                                title="Dismiss"
+                                            >
+                                                <X size={10} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {dl.state !== 'completed' && dl.state !== 'interrupted' && dl.state !== 'cancelled' && (
+                                        <div className="h-1 bg-gray-700 rounded overflow-hidden mb-1">
+                                            <div className="h-full bg-blue-500 transition-all" style={{ width: `${dl.progress ?? 0}%` }} />
+                                        </div>
+                                    )}
+                                    {dl.state === 'completed' && dl.path && (
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); (window as any).api?.showItemInFolder?.(dl.path); }}
+                                                className="p-1 rounded hover:bg-white/10 text-gray-400"
+                                                title="Show in folder"
+                                            >
+                                                <FolderOpen size={12} />
+                                            </button>
+                                            {openableInApp && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); onOpenDownloadedFile?.(dl.path); }}
+                                                    className="p-1 rounded hover:bg-white/10 text-gray-400"
+                                                    title="Open in Incognide"
+                                                >
+                                                    <FileText size={12} />
+                                                </button>
+                                            )}
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); (window as any).api?.openFile?.(dl.path); }}
+                                                className="p-1 rounded hover:bg-white/10 text-gray-400"
+                                                title="Open with default app"
+                                            >
+                                                <ExternalLink size={12} />
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                        </div>
+                    )}
+                </div>
             )}
 
             <div className="relative group/update">

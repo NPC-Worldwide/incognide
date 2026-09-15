@@ -11,6 +11,7 @@ const yaml = require('js-yaml');
 const orcarouterIpc = require('./orcarouter');
 const { PROVIDER_ID: ORCAROUTER_PROVIDER, describe: describeOrcaRouter } = require('../services/orcarouter/provider');
 const { CAPABILITY: ORCA_CAPABILITY, resolveCatalog: orcarouterCatalogResolve } = require('../services/orcarouter/catalog');
+const { looksLikeOrcaKey, SOURCE_API_KEY: ORCA_SOURCE_API_KEY } = require('../services/orcarouter/credentials');
 
 const dbPath = process.env.INCOGNIDE_DB_PATH || path.join(os.homedir(), '.incognide', 'history.db');
 
@@ -200,6 +201,27 @@ function parseIncogniderc() {
     console.log('Error reading .incogniderc:', e.message);
   }
   return result;
+}
+
+async function resolveOrcaCredential() {
+  const store = orcarouterIpc.getCredentialStore();
+  const stored = store ? await store.read() : null;
+  if (stored && stored.key) return stored;
+
+  let key = process.env.ORCAROUTER_API_KEY;
+  if (!key) {
+    const rc = parseIncogniderc();
+    key = rc.ORCAROUTER_API_KEY;
+  }
+  if (key && looksLikeOrcaKey(key)) {
+    return {
+      key,
+      source: ORCA_SOURCE_API_KEY,
+      needsReauth: false,
+      generation: 1,
+    };
+  }
+  return null;
 }
 
 function getBackendPythonPath() {
@@ -513,8 +535,7 @@ function register(ctx) {
     // through the shared catalog service, with the capability filter applied
     // here in the main process rather than in any renderer.
     if (normalizedProvider === ORCAROUTER_PROVIDER) {
-      const store = orcarouterIpc.getCredentialStore();
-      const record = store ? await store.read() : null;
+      const record = await resolveOrcaCredential();
       const apiKey = record && !record.needsReauth ? record.key : null;
       const { apiBase } = describeOrcaRouter(process.env);
 
@@ -918,8 +939,7 @@ function register(ctx) {
       // pasted-key adapter and the PKCE adapter land in the same store, so this
       // path does not care which one was used.
       if ((provider || '').toLowerCase() === ORCAROUTER_PROVIDER) {
-        const store = orcarouterIpc.getCredentialStore();
-        const record = store ? await store.read() : null;
+        const record = await resolveOrcaCredential();
 
         if (!record || !record.key) {
           // Not signed in: return the actionable message instead of issuing an

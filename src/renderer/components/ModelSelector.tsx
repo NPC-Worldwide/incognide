@@ -375,6 +375,14 @@ export const AddProviderPanel = ({
         });
     }, [detectedProviders, ctxProviderNames]);
 
+    const knownCloudProviders = useMemo(() => {
+        const ctxKeys = new Set(teamCtxProviders.map((p: any) => providerKey(p)).filter(Boolean));
+        const detectedKeys = new Set(detectedProviders.map((d: any) => d.provider || d.name).filter(Boolean));
+        return Object.entries(API_PROVIDER_META)
+            .filter(([key]) => !ctxKeys.has(key) && !detectedKeys.has(key))
+            .map(([key, meta]) => ({ key, name: meta.name, defaultModel: meta.defaultModel }));
+    }, [teamCtxProviders, detectedProviders]);
+
     const openProviderModelSelector = async (prov: any) => {
         const pName = providerKey(prov);
         const providerTypeVal = pName;
@@ -392,7 +400,9 @@ export const AddProviderPanel = ({
                 const result = await (window as any).api.getProviderModels({ provider: providerTypeVal });
                 fetchedModels = (result?.models || []).map((m: any) => m.id || m.name || m.value).filter(Boolean);
             }
-            const models = fetchedModels.length > 0 ? fetchedModels : existingModels;
+            const fallbackModels = fetchedModels.length > 0 ? fetchedModels : existingModels;
+            const meta = API_PROVIDER_META[providerTypeVal as keyof typeof API_PROVIDER_META];
+            const models = fallbackModels.length > 0 ? fallbackModels : (meta?.defaultModel ? [meta.defaultModel] : []);
             setProviderModelSelector({
                 provider: prov,
                 models,
@@ -401,12 +411,14 @@ export const AddProviderPanel = ({
                 error: models.length === 0 ? 'No models found for this provider.' : null,
             });
         } catch (err: any) {
+            const meta = API_PROVIDER_META[providerTypeVal as keyof typeof API_PROVIDER_META];
+            const fallback = meta?.defaultModel ? [meta.defaultModel] : existingModels;
             setProviderModelSelector({
                 provider: prov,
-                models: existingModels,
-                selected: new Set(existingModels),
+                models: fallback,
+                selected: new Set(fallback),
                 loading: false,
-                error: err.message || 'Failed to load models.',
+                error: fallback.length === 0 ? (err.message || 'Failed to load models.') : null,
             });
         }
     };
@@ -659,7 +671,24 @@ export const AddProviderPanel = ({
                             ))}
                         </div>
                     </div>
-                    {teamCtxProviders.length === 0 && extraDetectedProviders.length === 0 && !detectedProvidersLoading && (
+                    {knownCloudProviders.length > 0 && (
+                        <div className="space-y-1 pt-1 border-t theme-border">
+                            <div className="text-[10px] text-gray-400">Known cloud providers:</div>
+                            <div className="flex flex-wrap gap-1">
+                                {knownCloudProviders.map((prov: any, idx: number) => (
+                                    <button
+                                        key={`known-${prov.key || idx}-${idx}`}
+                                        onClick={() => openProviderModelSelector({ name: prov.key, provider_type: prov.key, displayName: prov.name })}
+                                        disabled={saving}
+                                        className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-cyan-300 hover:bg-cyan-500/20 transition-colors disabled:opacity-50"
+                                    >
+                                        + {prov.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    {teamCtxProviders.length === 0 && extraDetectedProviders.length === 0 && knownCloudProviders.length === 0 && !detectedProvidersLoading && (
                         <div className="text-[10px] text-gray-400">No providers found in team .ctx or env. Add one manually below.</div>
                     )}
                 </div>

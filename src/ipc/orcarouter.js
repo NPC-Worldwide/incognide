@@ -16,7 +16,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 
 const { PROVIDER_ENTRY, PROVIDER_UI_META, describe } = require('../services/orcarouter/provider');
-const { acquireCredential, maskKey, SOURCE_API_KEY, SOURCE_PKCE, credentialLifecycle } = require('../services/orcarouter/credentials');
+const { acquireCredential, maskKey, SOURCE_API_KEY, SOURCE_PKCE, credentialLifecycle, looksLikeOrcaKey } = require('../services/orcarouter/credentials');
 const { resolveCatalog, seedCatalog, CAPABILITY, filterByCapability, isStillCompatible } = require('../services/orcarouter/catalog');
 const { createLoginManager } = require('../services/orcarouter/session');
 const { resolveOrigins } = require('../services/orcarouter/origins');
@@ -101,6 +101,33 @@ function getCredentialStore() {
   return activeStore;
 }
 
+async function readEffectiveCredential() {
+  const store = getCredentialStore();
+  const stored = store ? await store.read() : null;
+  if (stored && stored.key) return stored;
+
+  let key = process.env.ORCAROUTER_API_KEY;
+  if (!key) {
+    const rcPath = path.join(require('os').homedir(), '.incogniderc');
+    try {
+      const txt = await fsp.readFile(rcPath, 'utf8');
+      const m = txt.match(/^(?:export\s+)?ORCAROUTER_API_KEY\s*=\s*["']?([^"'\n]+)["']?$/m);
+      if (m) key = m[1].trim();
+    } catch {}
+  }
+  if (key && looksLikeOrcaKey(key)) {
+    return {
+      key,
+      source: SOURCE_API_KEY,
+      userId: null,
+      scope: null,
+      generation: 1,
+      needsReauth: false,
+    };
+  }
+  return null;
+}
+
 function register(ctx) {
   const { ipcMain, log = () => {}, INCOGNIDE_HOME, safeStorage, shell } = ctx;
   const home = INCOGNIDE_HOME || path.join(require('os').homedir(), '.incognide');
@@ -144,7 +171,7 @@ function register(ctx) {
   }));
 
   ipcMain.handle('orcarouter:credential-status', async () => {
-    const record = await store.read();
+    const record = await readEffectiveCredential();
     if (!record) {
       return { connected: false, source: null, maskedKey: null, lifecycle: 'missing', needsReauth: false };
     }
@@ -211,7 +238,7 @@ function register(ctx) {
     const capability = payload.capability || CAPABILITY.CHAT;
     const inputModalities = Array.isArray(payload.inputModalities) ? payload.inputModalities : null;
 
-    const record = await store.read();
+    const record = await readEffectiveCredential();
     const apiKey = record && !record.needsReauth ? record.key : null;
     const { apiBase } = resolveOrigins(process.env);
 
@@ -261,7 +288,7 @@ function register(ctx) {
   ipcMain.handle('orcarouter:validate-model', async (event, payload = {}) => {
     const capability = payload.capability || CAPABILITY.CHAT;
     const inputModalities = Array.isArray(payload.inputModalities) ? payload.inputModalities : null;
-    const record = await store.read();
+    const record = await readEffectiveCredential();
     const apiKey = record && !record.needsReauth ? record.key : null;
     const { apiBase } = resolveOrigins(process.env);
     const result = await resolveCatalog({ apiBase, apiKey, capability, inputModalities });
