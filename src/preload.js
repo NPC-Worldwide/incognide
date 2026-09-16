@@ -34,6 +34,24 @@ readPdfText: (filePath) =>
     checkBinaries: (names) => ipcRenderer.invoke('check-binaries', names),
     detectProviderKeys: () => ipcRenderer.invoke('detect-provider-keys'),
     getKnownProviders: () => ipcRenderer.invoke('get-known-providers'),
+
+    // OrcaRouter. Credentials never cross this bridge: these calls return model
+    // metadata and status only, and the API key stays in the main process.
+    orcaRouterInfo: () => ipcRenderer.invoke('orcarouter:provider-info'),
+    orcaRouterCredentialStatus: () => ipcRenderer.invoke('orcarouter:credential-status'),
+    orcaRouterLoginStart: (payload) => ipcRenderer.invoke('orcarouter:login-start', payload),
+    orcaRouterLoginCancel: (attemptId) => ipcRenderer.invoke('orcarouter:login-cancel', attemptId),
+    orcaRouterLoginState: () => ipcRenderer.invoke('orcarouter:login-state'),
+    orcaRouterDisconnect: () => ipcRenderer.invoke('orcarouter:disconnect'),
+    orcaRouterListModels: (payload) => ipcRenderer.invoke('orcarouter:list-models', payload),
+    orcaRouterSeedModels: (payload) => ipcRenderer.invoke('orcarouter:seed-models', payload),
+    orcaRouterValidateModel: (payload) => ipcRenderer.invoke('orcarouter:validate-model', payload),
+    orcaRouterReportAuthFailure: (payload) => ipcRenderer.invoke('orcarouter:report-auth-failure', payload),
+    onOrcaRouterLoginEvent: (callback) => {
+        const handler = (_, data) => callback(data);
+        ipcRenderer.on('orcarouter:login-event', handler);
+        return () => ipcRenderer.removeListener('orcarouter:login-event', handler);
+    },
     runInstallCommand: (cmd) => ipcRenderer.invoke('run-install-command', cmd),
     onInstallProgress: (callback) => {
         const handler = (_, data) => callback(data);
@@ -624,6 +642,7 @@ onTerminalClosed: (callback) => {
         ipcRenderer.on('stream-error', handler);
         return () => ipcRenderer.removeListener('stream-error', handler);
     },
+    onPaneQueueDrain: null,
 
     getMcpServers: (currentPath) => ipcRenderer.invoke('mcp:getServers', { currentPath }),
     startMcpServer: (args) => ipcRenderer.invoke('mcp:startServer', args),
@@ -993,5 +1012,23 @@ fileExists: (path) => ipcRenderer.invoke('file-exists', path),
         ipcRenderer.on('ssh:disconnected', handler);
         return () => ipcRenderer.removeListener('ssh:disconnected', handler);
     },
+
+    windowControls: {
+        minimize: () => ipcRenderer.send('window-minimize'),
+        maximize: () => ipcRenderer.send('window-maximize'),
+        close: () => ipcRenderer.send('window-close'),
+        openDevTools: () => ipcRenderer.send('window-open-devtools'),
+        toggleDevTools: () => ipcRenderer.send('window-toggle-devtools'),
+    },
+    windowState: {
+        isMaximized: () => ipcRenderer.invoke('window-is-maximized'),
+    },
+    onWindowStateChange: (callback) => {
+        const handler = (_, data) => callback(data);
+        ipcRenderer.on('window-state-changed', handler);
+        return () => ipcRenderer.removeListener('window-state-changed', handler);
+    },
+
+    menuAction: (action, url) => ipcRenderer.send('menu-action', { action, url }),
 
 });

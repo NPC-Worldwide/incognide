@@ -4,7 +4,7 @@ import MarkdownRenderer from './MarkdownRenderer';
 import { AgentPromptCard } from './AgentPrompt';
 import { ToolCallDisplay } from './ToolCallDisplay';
 import { MessageLabel } from './MessageLabeling';
-import { Paperclip, Tag, Star, ChevronDown, ChevronUp, ChevronRight, Volume2, VolumeX, Loader, RotateCcw, SlidersHorizontal, Bot, Zap, Cpu, BarChart3 } from 'lucide-react';
+import { Paperclip, Tag, Star, ChevronDown, ChevronUp, ChevronRight, Volume2, VolumeX, Loader, RotateCcw, SlidersHorizontal, Bot, Zap, Cpu, BarChart3, X } from 'lucide-react';
 
 const highlightSearchTerm = (content: string, searchTerm: string): string => {
     if (!searchTerm || !content) return content;
@@ -74,6 +74,7 @@ export const ChatMessage = memo(({
     searchTerm,
     isCurrentSearchResult,
     onResendMessage,
+    onCancelPending,
     messageIndex,
     onLabelMessage,
     messageLabel,
@@ -86,6 +87,7 @@ export const ChatMessage = memo(({
     searchTerm?: string;
     isCurrentSearchResult?: boolean;
     onResendMessage?: (msg: any) => void;
+    onCancelPending?: (msg: any) => void;
     messageIndex?: number;
     onLabelMessage?: (msg: any) => void;
     messageLabel?: MessageLabel;
@@ -207,12 +209,13 @@ export const ChatMessage = memo(({
             className={`max-w-[85%] rounded-lg p-3 relative group ${
                 message.role === 'user' ? 'theme-message-user' : 'theme-message-assistant'
             } ${message.type === 'error' ? 'theme-message-error theme-border' : ''} ${
-                isCurrentSearchResult ? 'ring-2 ring-yellow-500' : ''}`}
-            onContextMenu={(e) => handleMessageContextMenu(e, messageId)}
+                isCurrentSearchResult ? 'ring-2 ring-yellow-500' : ''} ${
+                message.status === 'pending' ? 'opacity-60 italic' : ''}`}
+            onContextMenu={(e) => handleMessageContextMenu?.(e, message, messageIndex ?? 0)}
         >
             <div className="flex justify-between items-center text-xs theme-text-muted mb-1 opacity-80">
                 <div className="flex items-center gap-1.5">
-                    <span className="font-semibold">{message.role === 'user' ? 'You' : (stripSourcePrefix(message.npc) || 'Agent')}</span>
+                    <span className="font-semibold">{message.status === 'pending' ? 'Pending' : message.role === 'user' ? 'You' : (stripSourcePrefix(message.npc) || 'Agent')}</span>
                     {message.role !== 'user' && (message.temperature !== undefined || message.top_p !== undefined || message.top_k !== undefined || message.max_tokens !== undefined) && (
                         <span className="relative group/params">
                             <SlidersHorizontal size={10} className="text-gray-500 hover:text-gray-300 cursor-help" />
@@ -245,7 +248,7 @@ export const ChatMessage = memo(({
                             )}
                         </button>
                     )}
-                    {message.role === 'user' && onResendMessage && (
+                    {message.role === 'user' && onResendMessage && message.status !== 'pending' && (
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -255,6 +258,18 @@ export const ChatMessage = memo(({
                             title="Resend"
                         >
                             <RotateCcw size={14} />
+                        </button>
+                    )}
+                    {message.status === 'pending' && onCancelPending && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onCancelPending(message);
+                            }}
+                            className="p-0.5 rounded transition-colors text-red-400 hover:text-red-300"
+                            title="Cancel pending message"
+                        >
+                            <X size={14} />
                         </button>
                     )}
                     {onLabelMessage && (
