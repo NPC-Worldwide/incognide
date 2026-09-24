@@ -1,0 +1,181 @@
+jinx_name: system1_decision
+description: |
+  Train or consult a fast System 1 decision model for Incognide actions.
+
+  Supports two swappable backends:
+    - system1: npcpy.ft.system1 BERT-style classifier.
+    - ssm: qstk.cnn sequence classifier reformulated as a discrete decisioner.
+
+  Actions:
+    - train: build a decision model from examples or activity events.
+    - predict: run choice/score/noul decisions against state.
+    - route: pick a model tier for the current state.
+
+  Examples are converted into npcpy System1Example records. The trained model
+  is saved under model_dir and can be loaded in later predict/route calls.
+inputs:
+  - name: action
+    description: train | predict | route
+  - name: backend
+    description: system1 | ssm
+  - name: model_dir
+    description: directory to save or load the decision model
+  - name: state
+    description: current state as dict or JSON string
+  - name: examples
+    description: JSON list of training examples for train action
+  - name: questions
+    description: JSON dict of decision questions for predict action
+  - name: instructions
+    description: prompt/instructions for the decision
+  - name: tiers
+    description: JSON list of routing tiers for route action
+  - name: criteria
+    description: JSON dict mapping tier -> description for route action
+steps:
+  - name: execute_decision
+    engine: python
+    code: |
+      import json
+      import os
+      import sys
+
+      try:
+          import npcpy
+          _npcpy_dir = os.path.dirname(os.path.abspath(npcpy.__file__))
+          _core = os.path.dirname(os.path.dirname(_npcpy_dir))
+          _incognide_src = os.path.join(_core, 'incognide', 'src')
+          for _cand in (_incognide_src, _core):
+              if os.path.isdir(_cand) and _cand not in sys.path:
+                  sys.path.insert(0, _cand)
+      except Exception:
+          pass
+
+      action = str(context.get('action', 'predict')).strip()
+      backend = str(context.get('backend', 'system1')).strip()
+      model_dir = str(context.get('model_dir', '')).strip()
+      if not model_dir:
+          model_dir = os.path.expanduser('~/.incognide/decision_models/default')
+      os.makedirs(model_dir, exist_ok=True)
+
+      raw_state = context.get('state', '')
+      if isinstance(raw_state, str):
+          try:
+              state = json.loads(raw_state)
+          except Exception:
+              state = raw_state
+      else:
+          state = raw_state
+
+      if action == 'train':
+          from activity_model.decisioners import DecisionerConfig, get_decisioner
+          from npcpy.ft.system1 import System1Example
+          raw_examples = context.get('examples', [])
+          if isinstance(raw_examples, str):
+              examples = json.loads(raw_examples)
+          else:
+              examples = raw_examples
+          if backend == 'system1':
+              converted = []
+              for ex in examples:
+                  if isinstance(ex, System1Example):
+                      converted.append(ex)
+                      continue
+                  if isinstance(ex, dict):
+                      converted.append(System1Example(
+                          state=ex.get('state'),
+                          question_type=ex.get('type') or ex.get('question_type', 'choice'),
+                          instructions=ex.get('instructions', ''),
+                          criteria=ex.get('criteria'),
+                          answer=ex.get('answer'),
+                          question_name=ex.get('name') or ex.get('question_name', 'default'),
+                      ))
+                  else:
+                      converted.append(ex)
+              config = DecisionerConfig(backend='system1', model_dir=model_dir)
+              decisioner = get_decisioner(config)
+              result = decisioner.fit(converted)
+          elif backend == 'ssm':
+              config = DecisionerConfig(backend='ssm', model_dir=model_dir, epochs=int(context.get('epochs', 8)))
+              decisioner = get_decisioner(config)
+              sequences = examples if examples else []
+              result = decisioner.fit(sequences)
+          else:
+              raise ValueError(f"Unknown backend: {backend}")
+          output = json.dumps(result, indent=2)
+
+      elif action == 'predict':
+          from activity_model.experiments.api import predict_decisioner
+          raw_questions = context.get('questions', {})
+          if isinstance(raw_questions, str):
+              questions = json.loads(raw_questions)
+          else:
+              questions = raw_questions
+          results = {}
+          for name, q in questions.items():
+              qtype = q.get('type', 'choice')
+              instructions = q.get('instructions', context.get('instructions', ''))
+              criteria = q.get('criteria')
+              results[name] = predict_decisioner(
+                  backend=backend,
+                  model_dir=model_dir,
+                  item=state,
+                  question_type=qtype,
+                  instructions=instructions,
+                  criteria=criteria,
+              )
+          output = json.dumps(results, indent=2)
+
+      elif action == 'route':
+          from npcpy.gen.decision import DecisionSystem1, DecisionRouter, decision_route
+          from npcpy.ft.system1 import System1Example
+          instructions = str(context.get('instructions', 'Which tier should handle this state?'))
+          raw_tiers = context.get('tiers', [])
+          if isinstance(raw_tiers, str):
+              tiers = json.loads(raw_tiers)
+          else:
+              tiers = raw_tiers
+          raw_criteria = context.get('criteria', {})
+          if isinstance(raw_criteria, str):
+              criteria = json.loads(raw_criteria)
+          else:
+              criteria = raw_criteria
+          if not criteria:
+              criteria = {tier: tier for tier in tiers}
+          route_model_dir = model_dir
+          use_existing = False
+          try:
+              existing = DecisionSystem1(model_dir)
+              if existing.predictor is not None:
+                  resolved = existing.predictor._resolve_question_name('default')
+                  labels = set(existing.predictor.label_maps.get(resolved, []))
+                  if set(tiers).issubset(labels):
+                      use_existing = True
+          except Exception:
+              use_existing = False
+          if not use_existing:
+              route_model_dir = os.path.join(model_dir, '_route')
+              os.makedirs(route_model_dir, exist_ok=True)
+              router = DecisionRouter(tiers=tiers, criteria=criteria)
+              examples = []
+              for tier in tiers:
+                  examples.append(System1Example(
+                      state=router.criteria.get(tier, tier),
+                      question_type='choice',
+                      instructions=instructions,
+                      criteria={t: router.criteria.get(t, t) for t in tiers},
+                      answer={'choice': tier},
+                      question_name='default',
+                  ))
+              DecisionSystem1().train(examples, output_dir=route_model_dir)
+          result = decision_route(
+              state,
+              instructions,
+              tiers,
+              criteria=criteria,
+              model_path=route_model_dir,
+          )
+          output = json.dumps(result, indent=2)
+
+      else:
+          raise ValueError(f"Unknown action: {action}")

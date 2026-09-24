@@ -1,0 +1,697 @@
+{
+  "csv": "C:\\Users\\Daksh\\Documents\\npcpy\\activity_log.csv",
+  "seed": 42,
+  "dropped_unknown_types": {
+    "agent_action": 7
+  },
+  "n_navigation_events": 11644,
+  "result": {
+    "view": "rich_navigation",
+    "n_events": 11644,
+    "vocab_size": 114,
+    "vocab": [
+      "pane_focus:terminal",
+      "click:OTHER",
+      "text_input",
+      "click:Stage file",
+      "pane_focus:agent",
+      "click:Close pane",
+      "pane_focus:browser",
+      "pane_open:terminal",
+      "click:New Bash Terminal",
+      "pane_focus:editor",
+      "text_input:Search or enter URL...",
+      "click:Sign In",
+      "pane_focus:teammanagement",
+      "click:New Window (Cmd/Ctrl+Shift+N)",
+      "click:Refresh",
+      "click:Collapse sidebar",
+      "pane_open:editor",
+      "click:Drag to open as folder viewer, Click to expan...",
+      "click:Select All & Copy",
+      "click:New Browser",
+      "pane_focus:chat",
+      "pane_focus:latex",
+      "click:New Agent",
+      "pane_focus:account",
+      "text_input:Commit message...",
+      "pane_close:browser",
+      "pane_close:terminal",
+      "click:npc-core/incognide",
+      "click:Account",
+      "click:Browse...",
+      "click:Push",
+      "click:levi",
+      "click:Commit staged changes",
+      "click:Knowledge",
+      "pane_focus:pdf",
+      "click:qstk/neuraloperator",
+      "pane_close:agent",
+      "click:Refresh git status",
+      "click:Allow once",
+      "click:Team Management",
+      "click:kimi-k2.6:cloud",
+      "text_input:Search files... (type / for c...",
+      "click:NPCs",
+      "click:Open full Git pane",
+      "click:Save",
+      "text_input:Type a message... (use /jinx ...",
+      "click:Model",
+      "pane_focus:git",
+      "click:Collapse right sidebar",
+      "click:Next",
+      "click:caug/giacomo",
+      "text_input:Your encryption passphrase",
+      "pane_focus:OTHER",
+      "click:Hide top bar",
+      "click:Refresh options",
+      "pane_close:editor",
+      "text_input:Find",
+      "click:Hide status bar",
+      "pane_close:OTHER",
+      "click:npc-core/npcpy",
+      "click:Ask AI to propose a targeted fix for these er...",
+      "click:Context",
+      "click:Hard Refresh",
+      "click:New Chat",
+      "click:New tab",
+      "click:Refresh files",
+      "click:Sync Now",
+      "text_input:OTHER",
+      "chat_message:agent",
+      "click:Back (right-click or long-press for history)",
+      "click:Expand right sidebar",
+      "pane_close:teammanagement",
+      "click:Add a model to team .ctx",
+      "click:Scheduler",
+      "click:Browse for folder",
+      "click:Google",
+      "pane_open:agent",
+      "click:Open as Workspace",
+      "click:Pull",
+      "click:sakana/fugu-ultra",
+      "click:Jinxes",
+      "click:Params",
+      "click:can you help me write a quick can you help me...",
+      "click:Close modal",
+      "click:Copy Ctrl+Shift+C",
+      "click:npc-web-apps/enpisi-web",
+      "pane_close:account",
+      "click:Build",
+      "pane_close:chat",
+      "click:/home/caug/npcww/npc-core/incognide",
+      "pane_focus:projectenv",
+      "click:New tab (Ctrl+T)",
+      "pane_open:chat",
+      "click:Branches",
+      "click:Expand Sidebar",
+      "click:Toggle Theme",
+      "text_input:Type a message...",
+      "click:OpenRouter",
+      "click:Settings",
+      "click:Steps",
+      "click:ollama",
+      "text_input:A brief description of this p...",
+      "pane_close:git",
+      "text_input:Enter your email address",
+      "text_input:https://google.com (default: ...",
+      "pane_focus:docx",
+      "pane_close:latex",
+      "pane_focus:csv",
+      "text_input:Describe what this jinx does...",
+      "text_input:Enter your password",
+      "pane_close:notebook",
+      "text_input:New branch name...",
+      "search_query",
+      "pane_open:OTHER"
+    ],
+    "label_histogram": {
+      "pane_focus:terminal": 3615,
+      "click:OTHER": 924,
+      "text_input": 479,
+      "click:Stage file": 465,
+      "pane_focus:agent": 408,
+      "click:Close pane": 315,
+      "pane_focus:browser": 292,
+      "pane_open:terminal": 259,
+      "click:New Bash Terminal": 255,
+      "pane_focus:editor": 216,
+      "text_input:Search or enter URL...": 210,
+      "click:Sign In": 178,
+      "pane_focus:teammanagement": 160,
+      "click:New Window (Cmd/Ctrl+Shift+N)": 154,
+      "click:Refresh": 138,
+      "click:Collapse sidebar": 131,
+      "pane_open:editor": 130,
+      "click:Drag to open as folder viewer, Click to expan...": 129,
+      "click:Select All & Copy": 118,
+      "click:New Browser": 117,
+      "pane_focus:chat": 115,
+      "pane_focus:latex": 102,
+      "click:New Agent": 100,
+      "pane_focus:account": 89,
+      "text_input:Commit message...": 84,
+      "pane_close:browser": 83,
+      "pane_close:terminal": 83,
+      "click:npc-core/incognide": 80,
+      "click:Account": 79,
+      "click:Browse...": 78,
+      "click:Push": 78,
+      "click:levi": 78,
+      "click:Commit staged changes": 76,
+      "click:Knowledge": 69,
+      "pane_focus:pdf": 63,
+      "click:qstk/neuraloperator": 62,
+      "pane_close:agent": 58,
+      "click:Refresh git status": 49,
+      "click:Team Management": 48,
+      "click:Allow once": 48,
+      "text_input:Search files... (type / for c...": 47,
+      "click:kimi-k2.6:cloud": 47,
+      "click:Open full Git pane": 46,
+      "click:NPCs": 46,
+      "click:Save": 44,
+      "text_input:Type a message... (use /jinx ...": 37,
+      "click:Model": 36,
+      "pane_focus:git": 33,
+      "click:Collapse right sidebar": 30,
+      "click:Next": 30,
+      "text_input:Your encryption passphrase": 30,
+      "click:caug/giacomo": 30,
+      "pane_focus:OTHER": 29,
+      "click:Hide top bar": 28,
+      "pane_close:editor": 26,
+      "text_input:Find": 26,
+      "click:Refresh options": 26,
+      "pane_close:OTHER": 24,
+      "click:Hide status bar": 24,
+      "click:npc-core/npcpy": 23,
+      "click:Hard Refresh": 22,
+      "click:New tab": 22,
+      "click:Refresh files": 22,
+      "text_input:OTHER": 22,
+      "click:Sync Now": 22,
+      "click:New Chat": 22,
+      "click:Ask AI to propose a targeted fix for these er...": 22,
+      "click:Context": 22,
+      "click:Back (right-click or long-press for history)": 21,
+      "click:Expand right sidebar": 21,
+      "pane_close:teammanagement": 21,
+      "chat_message:agent": 21,
+      "click:Scheduler": 20,
+      "click:Add a model to team .ctx": 20,
+      "click:Google": 19,
+      "click:Browse for folder": 19,
+      "pane_open:agent": 19,
+      "click:Open as Workspace": 18,
+      "click:Pull": 18,
+      "click:sakana/fugu-ultra": 18,
+      "click:Params": 17,
+      "click:Jinxes": 17,
+      "click:can you help me write a quick can you help me...": 16,
+      "click:Close modal": 15,
+      "pane_close:account": 15,
+      "click:npc-web-apps/enpisi-web": 15,
+      "click:Copy Ctrl+Shift+C": 15,
+      "click:Build": 14,
+      "pane_close:chat": 14,
+      "pane_focus:projectenv": 13,
+      "click:/home/caug/npcww/npc-core/incognide": 13,
+      "click:New tab (Ctrl+T)": 12,
+      "pane_open:chat": 12,
+      "click:Branches": 11,
+      "click:Expand Sidebar": 11,
+      "click:Toggle Theme": 11,
+      "text_input:Type a message...": 11,
+      "click:Settings": 10,
+      "text_input:A brief description of this p...": 10,
+      "click:Steps": 10,
+      "click:ollama": 10,
+      "click:OpenRouter": 10,
+      "text_input:Enter your email address": 9,
+      "text_input:https://google.com (default: ...": 9,
+      "pane_close:git": 9,
+      "pane_focus:docx": 8,
+      "text_input:Enter your password": 6,
+      "pane_close:latex": 6,
+      "text_input:Describe what this jinx does...": 6,
+      "pane_focus:csv": 6,
+      "text_input:New branch name...": 5,
+      "pane_close:notebook": 5,
+      "search_query": 3,
+      "pane_open:OTHER": 2
+    },
+    "min_click_count": 10,
+    "feature_dim": 123,
+    "split_meta": {
+      "n_sessions_total": 556,
+      "n_sessions_used": 235,
+      "n_train_sessions": 164,
+      "n_val_sessions": 35,
+      "n_test_sessions": 36,
+      "min_session_len": 10
+    },
+    "window_counts": {
+      "train": 4000,
+      "val": 1000,
+      "test": 1600
+    },
+    "train_info": {
+      "success": true,
+      "sequences": 5000,
+      "train_sequences": 4000,
+      "val_sequences": 1000,
+      "best_val_acc": 0.539,
+      "model_path": "C:\\Users\\Daksh\\Documents\\npcpy\\experiments\\activity_next_action\\real_csv\\models\\rich_navigation\\model.npz"
+    },
+    "model": {
+      "top1_accuracy": 0.448125,
+      "top3_accuracy": 0.6,
+      "macro_f1": 0.0851058993517482,
+      "n": 1600,
+      "per_class_f1": {
+        "pane_open:terminal": 0.9473684210526316,
+        "click:Commit staged changes": 0.8461538461538461,
+        "click:Stage file": 0.836272040302267,
+        "click:Push": 0.8333333333333333,
+        "click:Hard Refresh": 0.6666666666666666,
+        "pane_focus:terminal": 0.6199261992619927,
+        "text_input:Search files... (type / for c...": 0.5714285714285715,
+        "click:Save": 0.5714285714285715,
+        "text_input:Search or enter URL...": 0.5684210526315789,
+        "pane_close:terminal": 0.47619047619047616,
+        "pane_close:agent": 0.4,
+        "pane_close:browser": 0.3333333333333333,
+        "click:Drag to open as folder viewer, Click to expan...": 0.33333333333333326,
+        "click:OTHER": 0.3068783068783069,
+        "pane_focus:editor": 0.2388059701492537,
+        "pane_focus:browser": 0.21951219512195122,
+        "pane_focus:latex": 0.21052631578947364,
+        "pane_focus:agent": 0.1864406779661017,
+        "text_input:Type a message... (use /jinx ...": 0.16666666666666666,
+        "click:Close pane": 0.16,
+        "click:Refresh": 0.1,
+        "text_input": 0.06060606060606061,
+        "click:New Bash Terminal": 0.04878048780487805
+      },
+      "confusion_top_offdiag": [
+        {
+          "true": "text_input",
+          "pred": "pane_focus:terminal",
+          "count": 41
+        },
+        {
+          "true": "pane_focus:agent",
+          "pred": "click:OTHER",
+          "count": 30
+        },
+        {
+          "true": "pane_focus:browser",
+          "pred": "pane_focus:terminal",
+          "count": 29
+        },
+        {
+          "true": "click:OTHER",
+          "pred": "pane_focus:terminal",
+          "count": 26
+        },
+        {
+          "true": "text_input:Commit message...",
+          "pred": "click:Stage file",
+          "count": 21
+        },
+        {
+          "true": "click:Stage file",
+          "pred": "pane_focus:terminal",
+          "count": 20
+        },
+        {
+          "true": "click:New Bash Terminal",
+          "pred": "pane_focus:terminal",
+          "count": 20
+        },
+        {
+          "true": "pane_focus:agent",
+          "pred": "pane_focus:terminal",
+          "count": 16
+        },
+        {
+          "true": "click:Close pane",
+          "pred": "pane_focus:terminal",
+          "count": 16
+        },
+        {
+          "true": "click:Select All & Copy",
+          "pred": "pane_focus:terminal",
+          "count": 16
+        },
+        {
+          "true": "pane_focus:editor",
+          "pred": "click:OTHER",
+          "count": 15
+        },
+        {
+          "true": "click:Allow once",
+          "pred": "click:New Browser",
+          "count": 15
+        }
+      ]
+    },
+    "baselines": {
+      "random": {
+        "top1_accuracy": 0.0075,
+        "top3_accuracy": 0.0275,
+        "macro_f1": 0.004436792233713075
+      },
+      "most_frequent": {
+        "top1_accuracy": 0.239375,
+        "top3_accuracy": 0.350625,
+        "macro_f1": 0.0033884509559324438
+      },
+      "markov1": {
+        "top1_accuracy": 0.4375,
+        "top3_accuracy": 0.591875,
+        "macro_f1": 0.0917917711791967
+      }
+    },
+    "history_ablation": [
+      {
+        "history_length": 1,
+        "skipped": false,
+        "ssm_top1": 0.5088028169014085,
+        "ssm_top3": 0.6426056338028169,
+        "markov1_top1": 0.5140845070422535,
+        "improvement_vs_markov1": -0.005281690140845008,
+        "n_test": 1136,
+        "best_val_acc": 0.569
+      },
+      {
+        "history_length": 5,
+        "skipped": false,
+        "ssm_top1": 0.5123239436619719,
+        "ssm_top3": 0.6470070422535211,
+        "markov1_top1": 0.5140845070422535,
+        "improvement_vs_markov1": -0.0017605633802816323,
+        "n_test": 1136,
+        "best_val_acc": 0.586
+      },
+      {
+        "history_length": 20,
+        "skipped": false,
+        "ssm_top1": 0.5140845070422535,
+        "ssm_top3": 0.6496478873239436,
+        "markov1_top1": 0.5140845070422535,
+        "improvement_vs_markov1": 0.0,
+        "n_test": 1136,
+        "best_val_acc": 0.566
+      }
+    ],
+    "example_suggestions": [
+      {
+        "true": "pane_focus:terminal",
+        "pred": "pane_focus:terminal",
+        "confidence": 0.44859115733239424,
+        "top3": [
+          {
+            "label": "pane_focus:terminal",
+            "p": 0.44859115733239424
+          },
+          {
+            "label": "text_input:Search or enter URL...",
+            "p": 0.3575733788905341
+          },
+          {
+            "label": "text_input",
+            "p": 0.01877613216041286
+          }
+        ]
+      },
+      {
+        "true": "pane_focus:terminal",
+        "pred": "pane_focus:terminal",
+        "confidence": 0.3794656190617885,
+        "top3": [
+          {
+            "label": "pane_focus:terminal",
+            "p": 0.3794656190617885
+          },
+          {
+            "label": "text_input",
+            "p": 0.10696778831411562
+          },
+          {
+            "label": "click:Collapse sidebar",
+            "p": 0.05985478361571874
+          }
+        ]
+      },
+      {
+        "true": "pane_open:terminal",
+        "pred": "pane_open:terminal",
+        "confidence": 0.948797469634559,
+        "top3": [
+          {
+            "label": "pane_open:terminal",
+            "p": 0.948797469634559
+          },
+          {
+            "label": "pane_focus:terminal",
+            "p": 0.007794172192292074
+          },
+          {
+            "label": "click:Close pane",
+            "p": 0.005854355736369009
+          }
+        ]
+      },
+      {
+        "true": "pane_focus:terminal",
+        "pred": "pane_focus:terminal",
+        "confidence": 0.9098772369187822,
+        "top3": [
+          {
+            "label": "pane_focus:terminal",
+            "p": 0.9098772369187822
+          },
+          {
+            "label": "click:New Bash Terminal",
+            "p": 0.02083982495979533
+          },
+          {
+            "label": "pane_focus:browser",
+            "p": 0.007346139533771925
+          }
+        ]
+      },
+      {
+        "true": "pane_focus:terminal",
+        "pred": "pane_focus:terminal",
+        "confidence": 0.8571785924489643,
+        "top3": [
+          {
+            "label": "pane_focus:terminal",
+            "p": 0.8571785924489643
+          },
+          {
+            "label": "pane_close:terminal",
+            "p": 0.015225052075992002
+          },
+          {
+            "label": "text_input",
+            "p": 0.013112134193648145
+          }
+        ]
+      },
+      {
+        "true": "pane_focus:terminal",
+        "pred": "pane_focus:terminal",
+        "confidence": 0.8031301685454617,
+        "top3": [
+          {
+            "label": "pane_focus:terminal",
+            "p": 0.8031301685454617
+          },
+          {
+            "label": "text_input",
+            "p": 0.08615397796047718
+          },
+          {
+            "label": "click:Select All & Copy",
+            "p": 0.01816695288413024
+          }
+        ]
+      },
+      {
+        "true": "pane_focus:terminal",
+        "pred": "pane_focus:terminal",
+        "confidence": 0.7002047111815111,
+        "top3": [
+          {
+            "label": "pane_focus:terminal",
+            "p": 0.7002047111815111
+          },
+          {
+            "label": "text_input",
+            "p": 0.06386896375785948
+          },
+          {
+            "label": "click:Select All & Copy",
+            "p": 0.027281102831031454
+          }
+        ]
+      },
+      {
+        "true": "pane_focus:terminal",
+        "pred": "pane_focus:terminal",
+        "confidence": 0.5653812891878144,
+        "top3": [
+          {
+            "label": "pane_focus:terminal",
+            "p": 0.5653812891878144
+          },
+          {
+            "label": "text_input",
+            "p": 0.06747222407980023
+          },
+          {
+            "label": "click:New Window (Cmd/Ctrl+Shift+N)",
+            "p": 0.04721732487609809
+          }
+        ]
+      },
+      {
+        "true": "pane_focus:terminal",
+        "pred": "pane_focus:terminal",
+        "confidence": 0.6543895180065576,
+        "top3": [
+          {
+            "label": "pane_focus:terminal",
+            "p": 0.6543895180065576
+          },
+          {
+            "label": "text_input",
+            "p": 0.07488391164031281
+          },
+          {
+            "label": "click:Refresh",
+            "p": 0.026234779560189266
+          }
+        ]
+      },
+      {
+        "true": "pane_focus:terminal",
+        "pred": "pane_focus:terminal",
+        "confidence": 0.7522873481296076,
+        "top3": [
+          {
+            "label": "pane_focus:terminal",
+            "p": 0.7522873481296076
+          },
+          {
+            "label": "text_input",
+            "p": 0.08902075301892222
+          },
+          {
+            "label": "pane_focus:browser",
+            "p": 0.02205534545426167
+          }
+        ]
+      },
+      {
+        "true": "pane_focus:terminal",
+        "pred": "pane_focus:terminal",
+        "confidence": 0.4035884366913548,
+        "top3": [
+          {
+            "label": "pane_focus:terminal",
+            "p": 0.4035884366913548
+          },
+          {
+            "label": "text_input",
+            "p": 0.16548851488966113
+          },
+          {
+            "label": "click:OTHER",
+            "p": 0.06891661840618117
+          }
+        ]
+      },
+      {
+        "true": "pane_open:terminal",
+        "pred": "pane_open:terminal",
+        "confidence": 0.9835656985628538,
+        "top3": [
+          {
+            "label": "pane_open:terminal",
+            "p": 0.9835656985628538
+          },
+          {
+            "label": "click:Hard Refresh",
+            "p": 0.0018238150576263476
+          },
+          {
+            "label": "pane_focus:terminal",
+            "p": 0.0009998614926169367
+          }
+        ]
+      },
+      {
+        "true": "pane_focus:terminal",
+        "pred": "pane_focus:terminal",
+        "confidence": 0.8311771304558585,
+        "top3": [
+          {
+            "label": "pane_focus:terminal",
+            "p": 0.8311771304558585
+          },
+          {
+            "label": "click:New Bash Terminal",
+            "p": 0.0658066055549844
+          },
+          {
+            "label": "pane_focus:browser",
+            "p": 0.008880750031826935
+          }
+        ]
+      },
+      {
+        "true": "pane_focus:terminal",
+        "pred": "pane_focus:terminal",
+        "confidence": 0.6096425730939545,
+        "top3": [
+          {
+            "label": "pane_focus:terminal",
+            "p": 0.6096425730939545
+          },
+          {
+            "label": "text_input",
+            "p": 0.20615698529782261
+          },
+          {
+            "label": "click:Select All & Copy",
+            "p": 0.01881599893134102
+          }
+        ]
+      },
+      {
+        "true": "pane_focus:terminal",
+        "pred": "pane_focus:terminal",
+        "confidence": 0.7041303788645352,
+        "top3": [
+          {
+            "label": "pane_focus:terminal",
+            "p": 0.7041303788645352
+          },
+          {
+            "label": "text_input",
+            "p": 0.09745636382755062
+          },
+          {
+            "label": "click:Select All & Copy",
+            "p": 0.025942847216729775
+          }
+        ]
+      }
+    ]
+  }
+}
