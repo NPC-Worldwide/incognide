@@ -7,6 +7,8 @@ import {
     Database, BrainCircuit, Image, Bot, Users, Music, Search, BookOpen, Folder, HardDrive, HelpCircle, Clock, Settings, MessageSquare, Tag
 } from 'lucide-react';
 import ContextFilesPanel from './ContextFilesPanel';
+import ContextUsageMeter from './ContextUsageMeter';
+import { computeContextUsage, findContextWindow } from '../utils/contextUsage';
 import ModelSelector from './ModelSelector';
 
 const getMcpServerDisplayName = (serverPath: string): string => {
@@ -187,6 +189,118 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         paneUpdateEmitter.addEventListener('pane-update', handlePaneUpdate);
         return () => paneUpdateEmitter.removeEventListener('pane-update', handlePaneUpdate);
     }, [paneUpdateEmitter, paneId, localInput]);
+
+    // ---- Context usage meter -------------------------------------------------
+    // Numerator: the provider-reported `input_tokens` of the most recent prompt
+    // (system prompt + context files + history). Falls back to a chars/4 estimate
+    // only when no provider reported usage. Denominator comes from the model
+    // catalog; when unknown the meter reports tokens-used without a ratio.
+    const [ctxUsage, setCtxUsage] = useState<{ used: number | null; source: 'reported' | 'estimated' | 'none' }>({ used: null, source: 'none' });
+    const [msgCount, setMsgCount] = useState(0);
+    const ctxLimit = useMemo(
+        () => findContextWindow(currentModel, availableModels, modelsToDisplay),
+        [currentModel, availableModels, modelsToDisplay]
+    );
+    useEffect(() => {
+        const recompute = () => {
+            let messages: any[] = [];
+            try { messages = contentDataRef?.current?.[paneId]?.chatMessages?.messages || []; } catch {}
+            setCtxUsage(computeContextUsage(messages));
+            setMsgCount(messages.length);
+        };
+        recompute();
+        if (!paneUpdateEmitter) return;
+        const handler = (e: any) => {
+            if (e.detail?.paneId === paneId || e.detail?.paneId === 'all') recompute();
+        };
+        paneUpdateEmitter.addEventListener('pane-update', handler);
+        return () => paneUpdateEmitter.removeEventListener('pane-update', handler);
+    }, [paneUpdateEmitter, paneId, contentDataRef, paneVersion, isStreaming]);
+
+    // ---- Context compression -------------------------------------------------
+    // Non-destructive: the main process records a cutoff plus an LLM-written
+    // summary, and the original rows stay in the database. Both the message
+    // list and the payload sent to the model are rebuilt through that summary,
+    // so the meter above reflects the reduced context.
+    const [compressState, setCompressState] = useState<{ compressed: boolean; messagesCompressed?: number }>({ compressed: false });
+    const [isCompressing, setIsCompressing] = useState(false);
+    const [compressError, setCompressError] = useState<string | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        const load = async () => {
+            if (!activeConversationId) { setCompressState({ compressed: false }); return; }
+            try {
+                const res = await (window as any).api?.getCompressionState?.(activeConversationId);
+                if (!cancelled && res) {
+                    setCompressState({
+                        compressed: !!res.compressed,
+                        messagesCompressed: res.compression?.messagesCompressed,
+                    });
+                }
+            } catch {}
+        };
+        load();
+        return () => { cancelled = true; };
+    }, [activeConversationId, paneId, paneVersion]);
+
+    // Re-read the conversation through the compression filter so the pane and
+    // the meter above it reflect the reduced context immediately.
+    const reloadPaneMessages = async () => {
+        if (!activeConversationId) return;
+        try {
+            const msgs = await (window as any).api?.getConversationMessages?.(activeConversationId);
+            const pd = contentDataRef?.current?.[paneId];
+            if (pd && Array.isArray(msgs)) {
+                const formatted = msgs.map((m: any) => ({ ...m, id: m.message_id || m.id }));
+                if (!pd.chatMessages) pd.chatMessages = { messages: [], allMessages: [], displayedMessageCount: 20 };
+                pd.chatMessages.allMessages = formatted;
+                pd.chatMessages.messages = formatted.slice(-(pd.chatMessages.displayedMessageCount || 20));
+                paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
+            }
+        } catch (e) {
+            console.error('[Compression] Failed to reload messages:', e);
+        }
+    };
+
+    const handleCompressConversation = async () => {
+        if (!activeConversationId || isCompressing) return;
+        setIsCompressing(true);
+        setCompressError(null);
+        try {
+            const res = await (window as any).api?.compressConversation?.({
+                conversationId: activeConversationId,
+                currentPath,
+                model: currentModel,
+                provider: currentProvider,
+                npc: currentNPC,
+            });
+            if (res?.error) { setCompressError(res.error); return; }
+            setCompressState({ compressed: true, messagesCompressed: res.totalMessagesCompressed });
+            await reloadPaneMessages();
+        } catch (e: any) {
+            setCompressError(e?.message || 'Compression failed');
+        } finally {
+            setIsCompressing(false);
+        }
+    };
+
+    const handleUndoCompress = async () => {
+        if (!activeConversationId || isCompressing) return;
+        setIsCompressing(true);
+        setCompressError(null);
+        try {
+            const res = await (window as any).api?.uncompressConversation?.(activeConversationId);
+            if (res?.error) { setCompressError(res.error); return; }
+            setCompressState({ compressed: false });
+            await reloadPaneMessages();
+        } catch (e: any) {
+            setCompressError(e?.message || 'Undo failed');
+        } finally {
+            setIsCompressing(false);
+        }
+    };
+
     const [isInputMinimized, setIsInputMinimized] = useState(false);
     const [isInputExpanded, setIsInputExpanded] = useState(false);
     const [uploadedFiles, setUploadedFiles] = useState<any[]>(() => {
@@ -1089,6 +1203,19 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                 )}
 
                 <div className="flex-1 overflow-visible flex flex-col">
+                    <ContextUsageMeter
+                        used={ctxUsage.used}
+                        limit={ctxLimit}
+                        source={ctxUsage.source}
+                        modelLabel={currentModel}
+                        onCompress={handleCompressConversation}
+                        onUndoCompress={handleUndoCompress}
+                        isCompressed={compressState.compressed}
+                        compressing={isCompressing}
+                        canCompress={!!activeConversationId && msgCount > 3}
+                        compressError={compressError}
+                        compressedCount={compressState.messagesCompressed}
+                    />
                     <div className="relative">
                         <ContextFilesPanel
                             isCollapsed={contextFilesCollapsed}

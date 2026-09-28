@@ -293,7 +293,7 @@
     "mammoth": "^1.11.0",
     "node-cron": "^4.2.1",
     "node-fetch": "^2.7.0",
-    "npcts": "^0.1.24",
+    "npcts": "^0.1.28",
     "npm": "^11.3.0",
     "nunjucks": "^3.2.4",
     "os": "^0.1.2",
@@ -325,6 +325,7 @@
     "xterm": "^5.3.0"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
     "@playwright/test": "^1.58.2",
     "@tailwindcss/typography": "^0.5.16",
     "@testing-library/jest-dom": "^6.9.1",
@@ -339,7 +340,6 @@
     "electron": "^44.2.0",
     "electron-builder": "^26.15.3",
     "electron-icon-builder": "^2.0.1",
-    "@electron/rebuild": "^4.2.0",
     "eslint": "^9.18.0",
     "eslint-plugin-react": "^7.37.4",
     "jsdom": "^28.1.0",

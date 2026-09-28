@@ -31,6 +31,97 @@ function closeSharedDb() {
     }
 }
 
+// ---- Conversation compression ---------------------------------------------
+// Non-destructive: the original rows always stay in conversation_history. An
+// active row in conversation_compressions records a cutoff id; that prefix is
+// replaced by an LLM-written summary both when messages are assembled for the
+// UI and when they are sent to the model. Deleting the row fully restores the
+// original context, so this is reversible.
+function ensureCompressionTable() {
+    return new Promise((resolve, reject) => {
+        const db = new sqlite3.Database(dbPath, (err) => {
+            if (err) return reject(err);
+            db.run(
+                `CREATE TABLE IF NOT EXISTS conversation_compressions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    conversation_id TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    up_to_id INTEGER NOT NULL,
+                    messages_compressed INTEGER DEFAULT 0,
+                    tokens_before INTEGER DEFAULT 0,
+                    tokens_after INTEGER DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )`,
+                (e) => { db.close(); e ? reject(e) : resolve(); }
+            );
+        });
+    });
+}
+
+function getActiveCompression(conversationId) {
+    return new Promise((resolve) => {
+        if (!conversationId) return resolve(null);
+        const db = new sqlite3.Database(dbPath, (err) => {
+            if (err) return resolve(null);
+            db.get(
+                `SELECT * FROM conversation_compressions
+                 WHERE conversation_id = ? ORDER BY id DESC LIMIT 1`,
+                [conversationId],
+                (e, row) => { db.close(); resolve(e ? null : (row || null)); }
+            );
+        });
+    });
+}
+
+function buildCompressionMessage(comp) {
+    return {
+        id: `compression-${comp.id}`,
+        message_id: `compression-${comp.id}`,
+        role: 'system',
+        content: comp.summary,
+        timestamp: comp.created_at,
+        isCompression: true,
+        compressionId: comp.id,
+        messagesCompressed: comp.messages_compressed,
+        input_tokens: 0,
+        output_tokens: 0,
+        cost: null,
+        attachments: [],
+        contentParts: null,
+    };
+}
+
+// Drop everything at or before the cutoff, then prepend the summary. Messages
+// with no numeric row id (the synthetic summary itself, or in-flight messages
+// that were never persisted) are always kept.
+function applyCompression(messages, comp) {
+    if (!comp || !Array.isArray(messages)) return messages;
+    const cutoff = comp.up_to_id;
+    const kept = messages.filter((m) => {
+        const idNum = (typeof m?.rowId === 'number')
+            ? m.rowId
+            : (typeof m?.id === 'number' ? m.id : null);
+        return idNum === null ? true : idNum > cutoff;
+    });
+    return [buildCompressionMessage(comp), ...kept];
+}
+
+const COMPRESSION_PROMPT = `You are compressing a conversation so it can continue with far less context.
+
+Write a dense briefing that lets a reader pick up exactly where this left off. Include, when present:
+- The overall objective and any constraints or preferences the user stated.
+- Decisions made and the reasoning behind them.
+- Concrete technical facts: file paths, function/class names, commands, config values, versions, error messages.
+- What was completed, what is still in progress, and what remains.
+- Anything that was tried and failed, so it is not repeated.
+
+Rules:
+- Be specific. Preserve exact identifiers, paths, numbers and commands verbatim.
+- Drop pleasantries, redundant restatement, and raw tool output that has already been summarized.
+- Do not invent anything. If something is uncertain, say so.
+- Write prose and short bullet lists, organised under headings. No preamble like "Here is a summary".`;
+
+
 function withRetry(operation, maxRetries = 5, delayMs = 50) {
     return new Promise((resolve, reject) => {
         const attempt = (retriesLeft) => {
@@ -470,6 +561,9 @@ function register(ctx) {
               provider: cpName,
               base_url: cfg.base_url,
               api_key_var: cfg.api_key_var,
+              // OpenAI-compatible /models often advertises the window; keep it so the
+              // context meter has a denominator for custom providers too.
+              context_length: m.context_length ?? m.max_input_tokens ?? null,
             }));
             customProviderModels.push(...cpModels);
             log(`[getAvailableModels] ${cpName}: fetched ${cpModels.length} models`);
@@ -580,7 +674,7 @@ function register(ctx) {
           const mp = (m.provider || '').toLowerCase();
           return mp === normalizedProvider || mp.startsWith(`${normalizedProvider}_`) || mp.endsWith(`_${normalizedProvider}`);
         });
-        return { models: filtered.map((m) => ({ id: m.value || m.id || m.name, name: m.display_name || m.value || m.id || m.name, provider: m.provider })) };
+        return { models: filtered.map((m) => ({ id: m.value || m.id || m.name, name: m.display_name || m.value || m.id || m.name, provider: m.provider, context_window: m.context_window })) };
       }
     } catch {}
     return { models: [], error: direct.error || 'No models found' };
@@ -988,7 +1082,7 @@ function register(ctx) {
           const msgRows = await new Promise((resolve, reject) => {
             const db = new sqlite3.Database(dbPath);
             const query = `
-              SELECT message_id, role, content, timestamp, tool_calls, tool_results,
+              SELECT id, message_id, role, content, timestamp, tool_calls, tool_results,
                      model, provider, npc, input_tokens, output_tokens, cost, execution_mode
               FROM conversation_history
               WHERE conversation_id = ?
@@ -1004,6 +1098,7 @@ function register(ctx) {
           conversationMessages = msgRows.map(row => {
             const msg = {
               id: row.message_id,
+              rowId: row.id,
               role: row.role,
               content: row.content,
               timestamp: row.timestamp,
@@ -1052,6 +1147,16 @@ function register(ctx) {
           });
         } catch (loadErr) {
           console.error('[Main Process] Error loading conversation messages:', loadErr);
+        }
+        // Fold in any active compression so the model receives the summary in
+        // place of the messages it covers.
+        if (data.conversationId) {
+          try {
+            const comp = await getActiveCompression(data.conversationId);
+            conversationMessages = applyCompression(conversationMessages, comp);
+          } catch (compErr) {
+            console.error('[Compression] Failed to apply compression:', compErr);
+          }
         }
       }
 
@@ -1644,7 +1749,7 @@ function register(ctx) {
             ch.timestamp ASC, ch.id ASC;
       `;
 
-      db.all(query, [conversationId], (err, rows) => {
+      db.all(query, [conversationId], async (err, rows) => {
         db.close();
         if (err) {
             return reject(err);
@@ -1762,10 +1867,169 @@ function register(ctx) {
             return newRow;
         });
 
-        resolve(messages);
+        // If the conversation has been compressed, hand the UI the summary in
+        // place of the messages it replaces so the meter reflects reality.
+        let outMessages = messages;
+        try {
+          const comp = await getActiveCompression(conversationId);
+          outMessages = applyCompression(messages, comp);
+        } catch (compErr) {
+          console.error('[Compression] Failed to apply compression:', compErr);
+        }
+
+        resolve(outMessages);
       });
     });
   });
+  });
+
+  // -------------------------------------------------------- compression IPC
+
+  ipcMain.handle('compressConversation', async (_, opts = {}) => {
+    const { conversationId, currentPath, model, provider, npc, keepRecent = 6 } = opts;
+    if (!conversationId) return { error: 'conversationId is required' };
+
+    try {
+      await ensureCompressionTable();
+
+      const rows = await new Promise((resolve, reject) => {
+        const db = new sqlite3.Database(dbPath, (err) => {
+          if (err) return reject(err);
+          db.all(
+            `SELECT id, message_id, role, content, timestamp
+             FROM conversation_history
+             WHERE conversation_id = ?
+             ORDER BY id ASC`,
+            [conversationId],
+            (e, r) => { db.close(); e ? reject(e) : resolve(r || []); }
+          );
+        });
+      });
+
+      const prev = await getActiveCompression(conversationId);
+
+      // Anything already folded into a previous summary is skipped.
+      const candidates = rows.filter((r) => !(prev && r.id <= prev.up_to_id));
+
+      // Cut so the kept tail begins on a user turn: this never splits a
+      // tool-call from its result.
+      let cutIdx = Math.max(0, candidates.length - keepRecent);
+      while (cutIdx < candidates.length && candidates[cutIdx]?.role !== 'user') cutIdx += 1;
+      if (cutIdx >= candidates.length) cutIdx = Math.max(0, candidates.length - keepRecent);
+
+      const toCompress = candidates.slice(0, cutIdx);
+      if (toCompress.length < 2) {
+        return { error: 'Not enough new messages to compress yet.' };
+      }
+
+      const asText = (c) => (typeof c === 'string' ? c : JSON.stringify(c));
+      const transcript = toCompress
+        .map((m) => `${m.role}: ${asText(m.content)}`)
+        .join('\n\n');
+
+      let summary = '';
+      try {
+        const resp = await fetch(`${BACKEND_URL}/v1/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Current-Path': currentPath || os.homedir(),
+          },
+          body: JSON.stringify({
+            messages: [
+              { role: 'system', content: COMPRESSION_PROMPT },
+              { role: 'user', content: transcript },
+            ],
+            ...(model ? { model } : {}),
+            stream: false,
+            temperature: 0.2,
+          }),
+          signal: AbortSignal.timeout(180000),
+        });
+        if (!resp.ok) {
+          const t = await resp.text();
+          return { error: `Summarization failed: HTTP ${resp.status} ${String(t).slice(0, 200)}` };
+        }
+        const data = await resp.json();
+        summary = data?.choices?.[0]?.message?.content || '';
+      } catch (e) {
+        return { error: `Summarization failed: ${e.message}` };
+      }
+
+      if (!summary.trim()) return { error: 'Summarization returned empty output.' };
+
+      const cutoffId = toCompress[toCompress.length - 1].id;
+      const tokensBefore = toCompress.reduce(
+        (n, m) => n + Math.ceil(asText(m.content).length / 4), 0);
+      const tokensAfter = Math.ceil(summary.length / 4);
+      const totalCompressed = toCompress.length + (prev ? (prev.messages_compressed || 0) : 0);
+
+      await new Promise((resolve, reject) => {
+        const db = new sqlite3.Database(dbPath, (err) => {
+          if (err) return reject(err);
+          db.run(`DELETE FROM conversation_compressions WHERE conversation_id = ?`,
+            [conversationId], (e1) => {
+              if (e1) { db.close(); return reject(e1); }
+              db.run(
+                `INSERT INTO conversation_compressions
+                   (conversation_id, summary, up_to_id, messages_compressed, tokens_before, tokens_after)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [conversationId, summary, cutoffId, totalCompressed, tokensBefore, tokensAfter],
+                (e2) => { db.close(); e2 ? reject(e2) : resolve(); }
+              );
+            });
+        });
+      });
+
+      return {
+        success: true,
+        summary,
+        cutoffId,
+        messagesCompressed: toCompress.length,
+        totalMessagesCompressed: totalCompressed,
+        tokensBefore,
+        tokensAfter,
+      };
+    } catch (e) {
+      return { error: `Compression failed: ${e.message}` };
+    }
+  });
+
+  ipcMain.handle('uncompressConversation', async (_, conversationId) => {
+    if (!conversationId) return { error: 'conversationId is required' };
+    try {
+      await ensureCompressionTable();
+      await new Promise((resolve, reject) => {
+        const db = new sqlite3.Database(dbPath, (err) => {
+          if (err) return reject(err);
+          db.run(`DELETE FROM conversation_compressions WHERE conversation_id = ?`,
+            [conversationId], (e) => { db.close(); e ? reject(e) : resolve(); });
+        });
+      });
+      return { success: true };
+    } catch (e) {
+      return { error: `Uncompress failed: ${e.message}` };
+    }
+  });
+
+  ipcMain.handle('getCompressionState', async (_, conversationId) => {
+    try {
+      await ensureCompressionTable();
+      const comp = await getActiveCompression(conversationId);
+      return {
+        compressed: !!comp,
+        compression: comp ? {
+          id: comp.id,
+          upToId: comp.up_to_id,
+          messagesCompressed: comp.messages_compressed,
+          tokensBefore: comp.tokens_before,
+          tokensAfter: comp.tokens_after,
+          createdAt: comp.created_at,
+        } : null,
+      };
+    } catch (e) {
+      return { compressed: false, compression: null, error: e.message };
+    }
   });
 
   ipcMain.handle('getDefaultConfig', () => {

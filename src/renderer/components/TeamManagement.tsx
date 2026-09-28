@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import {
-    X, FileJson, Search, Users, Wrench, Clock, Database, Plus, Trash2, Play, Pause, Server, Mail, Save,
+    FileJson, Users, Wrench, Clock, Database, Plus, Trash2, Play, Pause, Server, Mail, Save,
     Brain, GitBranch, Cpu, Box, Code, Mic, Globe, Eye, EyeOff, Check, ChevronRight, Zap, RefreshCw, BrainCircuit
 } from 'lucide-react';
-import { Input } from 'npcts';
+import { Input, TeamManagementShell, TeamSelector, type TeamSelectorTeam } from 'npcts';
 import yaml from 'js-yaml';
 import SmokestackIcon from './icons/SmokestackIcon';
 import MemoryIcon from './icons/MemoryIcon';
@@ -982,454 +982,347 @@ const TeamManagement: React.FC<TeamManagementProps> = ({
         { id: 'cron', label: 'Scheduler', icon: <SmokestackIcon size={16} /> },
     ];
 
-    if (!isOpen && !embedded) return null;
+    const teamSelector = (
+        <TeamSelector
+            registeredTeams={registeredTeams}
+            projectTeam={projectTeamPath && projectTeamCtxName ? { key: 'project', label: projectTeamCtxName, path: projectTeamPath } : null}
+            selectedTeam={selectedTeam}
+            onSelectTeam={setSelectedTeam}
+            discoveredTeams={discoveredTeams as TeamSelectorTeam[]}
+            scanning={scanning}
+            onScan={handleScanTeams}
+            onRegisterTeam={handleRegisterTeam}
+            onRegisterProjectTeam={handleRegisterProjectTeam}
+        />
+    );
 
-    const content = (
-        <div className={embedded ? "flex flex-col h-full" : "relative w-[90vw] max-w-6xl h-[85vh] theme-bg-primary rounded-xl shadow-2xl border theme-border flex flex-col overflow-hidden"}>
-            
-            <div className="flex items-center justify-between px-4 py-3 border-b theme-border flex-shrink-0">
-                <div className="flex items-center gap-3">
-                    <Users className="text-purple-400" size={20} />
-                    <h2 className="text-lg font-semibold">Team</h2>
-                </div>
-                <div className="flex items-center gap-2">
-                    {!embedded && (
-                        <button onClick={onClose} className="p-1.5 rounded-lg theme-hover transition-colors">
-                            <X size={18} />
-                        </button>
-                    )}
-                </div>
-            </div>
-
-            
-            <div className="flex flex-1 overflow-hidden">
-                
-                <div className="w-44 flex-shrink-0 border-r theme-border overflow-y-auto py-2 space-y-2">
-                    
-                    <div>
-                        <div className="px-4 py-1 text-[10px] uppercase tracking-wider theme-text-muted font-semibold">General</div>
-                        {generalSections.map((section) => (
-                            <button
-                                key={section.id}
-                                onClick={() => changeTab(section.id)}
-                                className={`w-full flex items-center gap-2.5 px-4 py-2 text-sm transition-colors ${
-                                    activeTab === section.id
-                                        ? 'bg-purple-600/15 text-purple-400 border-l-2 border-purple-500'
-                                        : 'theme-text-secondary hover:theme-text-primary hover:bg-white/5 border-l-2 border-transparent'
-                                }`}
-                            >
-                                {section.icon}
-                                {section.label}
-                            </button>
-                        ))}
+    return (
+        <TeamManagementShell
+            title="Team"
+            activeTab={activeTab}
+            onTabChange={changeTab}
+            onClose={onClose}
+            sections={[
+                { group: 'General', items: generalSections },
+                { group: 'Team', items: teamSections },
+            ]}
+            teamSelector={teamSelector}
+            embedded={embedded}
+        >
+            <div className="flex-1 flex flex-col overflow-hidden">
+                {(activeTab === 'cron' || activeTab === 'llm-models' || activeTab === 'knowledge') ? null : (
+                    <div className="flex-1 overflow-hidden p-6 flex flex-col">
+                        {activeTab === 'context' && (
+                            <CtxEditor
+                                isOpen={true}
+                                onClose={() => {}}
+                                teamPath={effectiveTeamPath}
+                                embedded={true}
+                                onOpenDatabase={onOpenDatabase}
+                            />
+                        )}
+                        {activeTab === 'npcs' && (
+                            <NPCTeamMenu
+                                isOpen={true}
+                                onClose={() => {}}
+                                currentPath={npcMenuPath}
+                                startNewConversation={startNewConversation}
+                                embedded={true}
+                                teamKey={npcMenuKey}
+                                onOpenJinxTab={onOpenJinxPane}
+                            />
+                        )}
+                        {activeTab === 'jinxes' && (
+                            <JinxMenu
+                                isOpen={true}
+                                onClose={() => {}}
+                                currentPath={npcMenuPath}
+                                embedded={true}
+                                teamKey={npcMenuKey}
+                                initialJinxName={initialJinxName}
+                            />
+                        )}
+                        {activeTab === 'models' && (
+                            <SqlModelsContent
+                                currentPath={npcMenuPath}
+                                teamKey={npcMenuKey}
+                            />
+                        )}
                     </div>
-
-                    
-                    <div>
-                        <div className="px-4 py-1 text-[10px] uppercase tracking-wider theme-text-muted font-semibold">Team</div>
-                        <div className="px-3 py-1.5">
-                            <select
-                                value={selectedTeam}
-                                onChange={e => setSelectedTeam(e.target.value)}
-                                className="w-full theme-input text-xs py-1.5 px-2 rounded"
-                            >
-                                {Object.entries(registeredTeams).map(([key, teamPath]) => {
-                                    const parentName = typeof teamPath === 'string' && teamPath.endsWith('/npc_team')
-                                        ? teamPath.split('/').slice(-2)[0]
-                                        : key;
-                                    return (
-                                        <option key={key} value={key}>{parentName}</option>
-                                    );
-                                })}
-                                {projectTeamPath && (
-                                    <option value="project">{projectTeamCtxName || 'Project'} (unregistered)</option>
-                                )}
-                            </select>
-                            {selectedTeam === 'project' && projectTeamPath && (
+                )}
+                {activeTab === 'cron' && (
+                    <CronDaemonPanel
+                        isOpen={true}
+                        onClose={() => {}}
+                        currentPath={currentPath || effectiveTeamPath}
+                        npcList={npcList}
+                        jinxList={jinxList}
+                        isPane={true}
+                    />
+                )}
+                {activeTab === 'llm-models' && (
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                        <ModelManager onStartChat={startNewChat} />
+                    </div>
+                )}
+                {activeTab === 'knowledge' && (
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                        <div className="flex-shrink-0 flex items-center gap-1 px-2 py-2 border-b theme-border overflow-x-auto">
+                            {[
+                                { id: 'indexing', label: 'Indexing', count: `${knowledgeLocations.filter((l) => l.knowledge_enabled).length}/${knowledgeLocations.length}` },
+                                { id: 'stores', label: 'Knowledge Stores' },
+                                { id: 'memory', label: 'Memory', count: String(sharedMemories.length) },
+                                { id: 'graph', label: 'Knowledge Graph', count: String(sharedKnowledge.length) },
+                            ].map((sub) => (
                                 <button
-                                    onClick={handleRegisterProjectTeam}
-                                    className="mt-1 w-full px-2 py-1 rounded text-[10px] bg-purple-600 hover:bg-purple-500 text-white transition flex items-center justify-center gap-1"
+                                    key={sub.id}
+                                    onClick={() => setKnowledgeSubTab(sub.id as KnowledgeSubTab)}
+                                    className={`px-3 py-1.5 text-xs font-medium rounded transition-colors whitespace-nowrap ${
+                                        knowledgeSubTab === sub.id
+                                            ? 'bg-blue-600/50 text-white'
+                                            : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
+                                    }`}
                                 >
-                                    <Plus size={10} /> Register Team
+                                    {sub.label}
+                                    {sub.count && <span className="ml-1.5 text-[10px] opacity-70">{sub.count}</span>}
                                 </button>
-                            )}
-                            <button
-                                onClick={handleScanTeams}
-                                disabled={scanning}
-                                className="mt-1 w-full px-2 py-1 rounded text-[10px] theme-text-muted hover:text-white hover:bg-white/5 transition flex items-center justify-center gap-1"
-                                title="Discover team directories"
-                            >
-                                <Search size={10} /> {scanning ? 'Scanning...' : 'Discover'}
-                            </button>
-                            {discoveredTeams.length > 0 && (
-                                <div className="mt-1 theme-bg-tertiary rounded border theme-border max-h-32 overflow-y-auto">
-                                    {discoveredTeams.map((team, i) => (
-                                        <div key={i} className="flex items-center justify-between px-2 py-1 border-b theme-border last:border-b-0 hover:bg-white/5 text-[10px]">
-                                            <div className="flex-1 min-w-0">
-                                                <span className="font-medium theme-text-primary">{team.name}</span>
-                                                <span className="theme-text-muted ml-1">{team.npcCount} NPC{team.npcCount !== 1 ? 's' : ''}</span>
+                            ))}
+                        </div>
+
+                        <div className="flex-1 overflow-hidden relative">
+                            {knowledgeSubTab === 'indexing' && (
+                                <div className="absolute inset-0 overflow-y-auto p-4 space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-sm font-semibold text-white">Knowledge Indexing</h3>
+                                        {knowledgeLoading && <span className="text-xs text-gray-400">Loading...</span>}
+                                    </div>
+                                    <div className="space-y-3 p-3 bg-gray-800/30 rounded-lg border border-gray-700/50">
+                                        <h4 className="text-xs font-semibold text-gray-300 uppercase tracking-wide">Global defaults</h4>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <Input
+                                                    label="Included file extensions"
+                                                    value={(knowledgeDefaults.included_exts || []).join(', ')}
+                                                    onChange={(e) => saveKnowledgeDefaults({ included_exts: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean) })}
+                                                    placeholder="e.g., .md, .txt, .py (empty = all)"
+                                                />
+                                                <p className="text-[10px] text-gray-500 mt-1">Comma separated. Leave empty to include all files.</p>
                                             </div>
+                                            <div>
+                                                <Input
+                                                    label="Excluded directories"
+                                                    value={(knowledgeDefaults.excluded_dirs || []).join(', ')}
+                                                    onChange={(e) => saveKnowledgeDefaults({ excluded_dirs: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean) })}
+                                                    placeholder="node_modules, .git, ..."
+                                                />
+                                                <p className="text-[10px] text-gray-500 mt-1">Comma separated directory names to skip during indexing.</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center justify-between p-2 theme-bg-tertiary rounded">
+                                            <span className="text-sm">Default auto-index for new locations</span>
                                             <button
-                                                onClick={() => handleRegisterTeam(team)}
-                                                className="ml-1 px-1 py-0.5 rounded bg-purple-600 hover:bg-purple-500 text-white flex-shrink-0 text-[9px]"
+                                                onClick={() => saveKnowledgeDefaults({ default_auto_index: !knowledgeDefaults.default_auto_index })}
+                                                className={`w-10 h-5 rounded-full transition-colors ${knowledgeDefaults.default_auto_index ? 'bg-blue-500' : 'bg-gray-400'}`}
                                             >
-                                                Register
+                                                <div className={`w-4 h-4 bg-white rounded-full shadow transform transition-transform ${knowledgeDefaults.default_auto_index ? 'translate-x-5' : 'translate-x-0.5'}`} />
                                             </button>
                                         </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                        {teamSections.map((section) => (
-                            <button
-                                key={section.id}
-                                onClick={() => changeTab(section.id)}
-                                className={`w-full flex items-center gap-2.5 px-4 py-2 text-sm transition-colors ${
-                                    activeTab === section.id
-                                        ? 'bg-purple-600/15 text-purple-400 border-l-2 border-purple-500'
-                                        : 'theme-text-secondary hover:theme-text-primary hover:bg-white/5 border-l-2 border-transparent'
-                                }`}
-                            >
-                                {section.icon}
-                                {section.label}
-                            </button>
-                        ))}
-                    </div>
-                </div>
+                                    </div>
 
-                
-                <div className="flex-1 flex flex-col overflow-hidden">
-                    {(activeTab === 'cron' || activeTab === 'llm-models' || activeTab === 'knowledge') ? null : (
-                        <div className="flex-1 overflow-hidden p-6 flex flex-col">
-                            {activeTab === 'context' && (
-                                <CtxEditor
-                                    isOpen={true}
-                                    onClose={() => {}}
-                                    teamPath={effectiveTeamPath}
-                                    embedded={true}
-                                    onOpenDatabase={onOpenDatabase}
-                                />
-                            )}
-                            {activeTab === 'npcs' && (
-                                <NPCTeamMenu
-                                    isOpen={true}
-                                    onClose={() => {}}
-                                    currentPath={npcMenuPath}
-                                    startNewConversation={startNewConversation}
-                                    embedded={true}
-                                    teamKey={npcMenuKey}
-                                    onOpenJinxTab={onOpenJinxPane}
-                                />
-                            )}
-                            {activeTab === 'jinxes' && (
-                                <JinxMenu
-                                    isOpen={true}
-                                    onClose={() => {}}
-                                    currentPath={npcMenuPath}
-                                    embedded={true}
-                                    teamKey={npcMenuKey}
-                                    initialJinxName={initialJinxName}
-                                />
-                            )}
-                            {activeTab === 'models' && (
-                                <SqlModelsContent
-                                    currentPath={npcMenuPath}
-                                    teamKey={npcMenuKey}
-                                />
-                            )}
-                        </div>
-                    )}
-                    {activeTab === 'cron' && (
-                        <CronDaemonPanel
-                            isOpen={true}
-                            onClose={() => {}}
-                            currentPath={currentPath || effectiveTeamPath}
-                            npcList={npcList}
-                            jinxList={jinxList}
-                            isPane={true}
-                        />
-                    )}
-                    {activeTab === 'llm-models' && (
-                        <div className="flex-1 flex flex-col overflow-hidden">
-                            <ModelManager onStartChat={startNewChat} />
-                        </div>
-                    )}
-                    {activeTab === 'knowledge' && (
-                        <div className="flex-1 flex flex-col overflow-hidden">
-                            <div className="flex-shrink-0 flex items-center gap-1 px-2 py-2 border-b theme-border overflow-x-auto">
-                                {[
-                                    { id: 'indexing', label: 'Indexing', count: `${knowledgeLocations.filter((l) => l.knowledge_enabled).length}/${knowledgeLocations.length}` },
-                                    { id: 'stores', label: 'Knowledge Stores' },
-                                    { id: 'memory', label: 'Memory', count: String(sharedMemories.length) },
-                                    { id: 'graph', label: 'Knowledge Graph', count: String(sharedKnowledge.length) },
-                                ].map((sub) => (
-                                    <button
-                                        key={sub.id}
-                                        onClick={() => setKnowledgeSubTab(sub.id as KnowledgeSubTab)}
-                                        className={`px-3 py-1.5 text-xs font-medium rounded transition-colors whitespace-nowrap ${
-                                            knowledgeSubTab === sub.id
-                                                ? 'bg-blue-600/50 text-white'
-                                                : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
-                                        }`}
-                                    >
-                                        {sub.label}
-                                        {sub.count && <span className="ml-1.5 text-[10px] opacity-70">{sub.count}</span>}
-                                    </button>
-                                ))}
-                            </div>
-
-                            <div className="flex-1 overflow-hidden relative">
-                                {knowledgeSubTab === 'indexing' && (
-                                    <div className="absolute inset-0 overflow-y-auto p-4 space-y-4">
+                                    <div className="space-y-2">
                                         <div className="flex items-center justify-between">
-                                            <h3 className="text-sm font-semibold text-white">Knowledge Indexing</h3>
-                                            {knowledgeLoading && <span className="text-xs text-gray-400">Loading...</span>}
+                                            <h4 className="text-xs font-semibold text-gray-300 uppercase tracking-wide">
+                                                Discovered locations ({knowledgeLocations.filter((l) => l.knowledge_enabled).length}/{knowledgeLocations.length} active)
+                                            </h4>
+                                            <button
+                                                onClick={loadKnowledgeLocations}
+                                                disabled={knowledgeLoading}
+                                                className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50 flex items-center gap-1"
+                                            >
+                                                <RefreshCw size={12} className={knowledgeLoading ? 'animate-spin' : ''} /> Refresh
+                                            </button>
                                         </div>
-                                        <div className="space-y-3 p-3 bg-gray-800/30 rounded-lg border border-gray-700/50">
-                                            <h4 className="text-xs font-semibold text-gray-300 uppercase tracking-wide">Global defaults</h4>
+                                        <div className="space-y-2">
                                             <div className="grid grid-cols-2 gap-3">
                                                 <div>
-                                                    <Input
-                                                        label="Included file extensions"
-                                                        value={(knowledgeDefaults.included_exts || []).join(', ')}
-                                                        onChange={(e) => saveKnowledgeDefaults({ included_exts: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean) })}
-                                                        placeholder="e.g., .md, .txt, .py (empty = all)"
-                                                    />
-                                                    <p className="text-[10px] text-gray-500 mt-1">Comma separated. Leave empty to include all files.</p>
+                                                    <label className="text-[10px] theme-text-muted block mb-1">Knowledge model</label>
+                                                    <select
+                                                        value={`${knowledgeModel}|${knowledgeProvider}`}
+                                                        onChange={(e) => {
+                                                            const [m, p] = e.target.value.split('|');
+                                                            setKnowledgeModel(m || '');
+                                                            setKnowledgeProvider(p || '');
+                                                        }}
+                                                        className="w-full theme-input text-xs py-1 px-2 rounded"
+                                                    >
+                                                        <option value="|">Use chat model</option>
+                                                        {availableModels.map((m: any) => (
+                                                            <option key={`${m.value}|${m.provider}`} value={`${m.value}|${m.provider}`}>
+                                                                {m.display_name || `${m.value} | ${m.provider}`}
+                                                            </option>
+                                                        ))}
+                                                    </select>
                                                 </div>
                                                 <div>
-                                                    <Input
-                                                        label="Excluded directories"
-                                                        value={(knowledgeDefaults.excluded_dirs || []).join(', ')}
-                                                        onChange={(e) => saveKnowledgeDefaults({ excluded_dirs: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean) })}
-                                                        placeholder="node_modules, .git, ..."
+                                                    <label className="text-[10px] theme-text-muted block mb-1">Extraction instructions</label>
+                                                    <input
+                                                        type="text"
+                                                        value={knowledgeContext}
+                                                        onChange={(e) => setKnowledgeContext(e.target.value)}
+                                                        placeholder="Optional context for extraction"
+                                                        className="w-full theme-input text-xs py-1 px-2 rounded"
                                                     />
-                                                    <p className="text-[10px] text-gray-500 mt-1">Comma separated directory names to skip during indexing.</p>
                                                 </div>
                                             </div>
-                                            <div className="flex items-center justify-between p-2 theme-bg-tertiary rounded">
-                                                <span className="text-sm">Default auto-index for new locations</span>
-                                                <button
-                                                    onClick={() => saveKnowledgeDefaults({ default_auto_index: !knowledgeDefaults.default_auto_index })}
-                                                    className={`w-10 h-5 rounded-full transition-colors ${knowledgeDefaults.default_auto_index ? 'bg-blue-500' : 'bg-gray-400'}`}
-                                                >
-                                                    <div className={`w-4 h-4 bg-white rounded-full shadow transform transition-transform ${knowledgeDefaults.default_auto_index ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                                                </button>
-                                            </div>
+                                            {knowledgeBuildJob && (
+                                                <div className={`text-[11px] px-2 py-1.5 rounded border ${
+                                                    knowledgeBuildJob.status === 'error'
+                                                        ? 'bg-red-900/30 border-red-700/50 text-red-200'
+                                                        : knowledgeBuildJob.status === 'done'
+                                                        ? 'bg-green-900/30 border-green-700/50 text-green-200'
+                                                        : 'bg-blue-900/30 border-blue-700/50 text-blue-200'
+                                                }`}>
+                                                    {knowledgeBuildJob.status === 'running' && <RefreshCw size={10} className="inline mr-1.5 animate-spin" />}
+                                                    {knowledgeBuildJob.message}
+                                                </div>
+                                            )}
+                                            {knowledgeLogs.length > 0 && (
+                                                <div ref={knowledgeLogsRef} className="border border-gray-700/50 rounded bg-black/30 p-2 max-h-48 overflow-y-auto font-mono text-[10px] space-y-0.5">
+                                                    {knowledgeLogs.map((log, i) => (
+                                                        <div key={i} className={`${
+                                                            log.kind === 'error' ? 'text-red-300' :
+                                                            log.kind === 'finish' ? 'text-green-300' :
+                                                            log.kind === 'start' ? 'text-blue-300' :
+                                                            'text-gray-400'
+                                                        }`}>
+                                                            <span className="text-gray-600 mr-1">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                                                            {log.message}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
-
-                                        <div className="space-y-2">
-                                            <div className="flex items-center justify-between">
-                                                <h4 className="text-xs font-semibold text-gray-300 uppercase tracking-wide">
-                                                    Discovered locations ({knowledgeLocations.filter((l) => l.knowledge_enabled).length}/{knowledgeLocations.length} active)
-                                                </h4>
-                                                <button
-                                                    onClick={loadKnowledgeLocations}
-                                                    disabled={knowledgeLoading}
-                                                    className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50 flex items-center gap-1"
-                                                >
-                                                    <RefreshCw size={12} className={knowledgeLoading ? 'animate-spin' : ''} /> Refresh
-                                                </button>
-                                            </div>
-                                            <div className="space-y-2">
-                                                <div className="grid grid-cols-2 gap-3">
-                                                    <div>
-                                                        <label className="text-[10px] theme-text-muted block mb-1">Knowledge model</label>
-                                                        <select
-                                                            value={`${knowledgeModel}|${knowledgeProvider}`}
-                                                            onChange={(e) => {
-                                                                const [m, p] = e.target.value.split('|');
-                                                                setKnowledgeModel(m || '');
-                                                                setKnowledgeProvider(p || '');
-                                                            }}
-                                                            className="w-full theme-input text-xs py-1 px-2 rounded"
-                                                        >
-                                                            <option value="|">Use chat model</option>
-                                                            {availableModels.map((m: any) => (
-                                                                <option key={`${m.value}|${m.provider}`} value={`${m.value}|${m.provider}`}>
-                                                                    {m.display_name || `${m.value} | ${m.provider}`}
-                                                                </option>
-                                                            ))}
-                                                        </select>
+                                        <div className="border border-gray-700/50 rounded overflow-hidden max-h-64 overflow-y-auto">
+                                            {knowledgeLocations.length === 0 && !knowledgeLoading && (
+                                                <div className="px-3 py-3 text-xs text-gray-500 italic">No locations discovered yet.</div>
+                                            )}
+                                            {knowledgeLocations.map((loc) => (
+                                                <div key={loc.directory} className="px-3 py-2 border-b border-gray-700/30 last:border-0">
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <div className="flex flex-col min-w-0">
+                                                            <span className="text-xs font-mono text-gray-300 truncate" title={loc.directory}>{loc.directory}</span>
+                                                            <span className="text-[10px] text-gray-500">
+                                                                {sourceLabel(loc.discovered_from)} · {loc.knowledge_enabled ? `active · ${loc.fileCount || 0} files indexed` : 'inactive'}
+                                                                {loc.staleReasons?.length ? ` · stale: ${loc.staleReasons.join(', ')}` : ''}
+                                                            </span>
+                                                        </div>
+                                                        {!loc.knowledge_enabled ? (
+                                                            <button
+                                                                onClick={() => indexLocation(loc.directory)}
+                                                                disabled={knowledgeBuildJob?.directory === loc.directory && knowledgeBuildJob?.status === 'running'}
+                                                                className="px-2 py-0.5 text-[10px] bg-green-700 hover:bg-green-600 disabled:bg-green-900/50 disabled:text-green-200/50 text-white rounded shrink-0"
+                                                            >
+                                                                {knowledgeBuildJob?.directory === loc.directory && knowledgeBuildJob?.status === 'running'
+                                                                    ? 'Indexing...'
+                                                                    : 'Enable indexing'}
+                                                            </button>
+                                                        ) : null}
                                                     </div>
-                                                    <div>
-                                                        <label className="text-[10px] theme-text-muted block mb-1">Extraction instructions</label>
-                                                        <input
-                                                            type="text"
-                                                            value={knowledgeContext}
-                                                            onChange={(e) => setKnowledgeContext(e.target.value)}
-                                                            placeholder="Optional context for extraction"
-                                                            className="w-full theme-input text-xs py-1 px-2 rounded"
-                                                        />
-                                                    </div>
-                                                </div>
-                                                {knowledgeBuildJob && (
-                                                    <div className={`text-[11px] px-2 py-1.5 rounded border ${
-                                                        knowledgeBuildJob.status === 'error'
-                                                            ? 'bg-red-900/30 border-red-700/50 text-red-200'
-                                                            : knowledgeBuildJob.status === 'done'
-                                                            ? 'bg-green-900/30 border-green-700/50 text-green-200'
-                                                            : 'bg-blue-900/30 border-blue-700/50 text-blue-200'
-                                                    }`}>
-                                                        {knowledgeBuildJob.status === 'running' && <RefreshCw size={10} className="inline mr-1.5 animate-spin" />}
-                                                        {knowledgeBuildJob.message}
-                                                    </div>
-                                                )}
-                                                {knowledgeLogs.length > 0 && (
-                                                    <div ref={knowledgeLogsRef} className="border border-gray-700/50 rounded bg-black/30 p-2 max-h-48 overflow-y-auto font-mono text-[10px] space-y-0.5">
-                                                        {knowledgeLogs.map((log, i) => (
-                                                            <div key={i} className={`${
-                                                                log.kind === 'error' ? 'text-red-300' :
-                                                                log.kind === 'finish' ? 'text-green-300' :
-                                                                log.kind === 'start' ? 'text-blue-300' :
-                                                                'text-gray-400'
-                                                            }`}>
-                                                                <span className="text-gray-600 mr-1">{new Date(log.timestamp).toLocaleTimeString()}</span>
-                                                                {log.message}
+                                                    {loc.knowledge_enabled && (
+                                                        <div className="flex flex-col gap-1.5 mt-1.5 pl-0">
+                                                            <div className="flex flex-wrap items-center gap-3">
+                                                                <label className="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={loc.index_files}
+                                                                        onChange={(e) => toggleLocation(loc.directory, 'index_files', e.target.checked)}
+                                                                        className="accent-green-500"
+                                                                    />
+                                                                    Index
+                                                                </label>
+                                                                <label className="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={loc.link_knowledge}
+                                                                        onChange={(e) => toggleLocation(loc.directory, 'link_knowledge', e.target.checked)}
+                                                                        className="accent-green-500"
+                                                                    />
+                                                                    Link
+                                                                </label>
+                                                                <label className="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={loc.extract_memories}
+                                                                        onChange={(e) => toggleLocation(loc.directory, 'extract_memories', e.target.checked)}
+                                                                        className="accent-green-500"
+                                                                    />
+                                                                    Extract
+                                                                </label>
+                                                                <label className="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={loc.auto_index}
+                                                                        onChange={(e) => toggleLocation(loc.directory, 'auto_index', e.target.checked)}
+                                                                        className="accent-green-500"
+                                                                    />
+                                                                    Auto
+                                                                </label>
                                                             </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div className="border border-gray-700/50 rounded overflow-hidden max-h-64 overflow-y-auto">
-                                                {knowledgeLocations.length === 0 && !knowledgeLoading && (
-                                                    <div className="px-3 py-3 text-xs text-gray-500 italic">No locations discovered yet.</div>
-                                                )}
-                                                {knowledgeLocations.map((loc) => (
-                                                    <div key={loc.directory} className="px-3 py-2 border-b border-gray-700/30 last:border-0">
-                                                        <div className="flex items-center justify-between gap-2">
-                                                            <div className="flex flex-col min-w-0">
-                                                                <span className="text-xs font-mono text-gray-300 truncate" title={loc.directory}>{loc.directory}</span>
-                                                                <span className="text-[10px] text-gray-500">
-                                                                    {sourceLabel(loc.discovered_from)} · {loc.knowledge_enabled ? `active · ${loc.fileCount || 0} files indexed` : 'inactive'}
-                                                                    {loc.staleReasons?.length ? ` · stale: ${loc.staleReasons.join(', ')}` : ''}
-                                                                </span>
-                                                            </div>
-                                                            {!loc.knowledge_enabled ? (
+                                                            <div className="flex flex-wrap items-center gap-2">
                                                                 <button
                                                                     onClick={() => indexLocation(loc.directory)}
                                                                     disabled={knowledgeBuildJob?.directory === loc.directory && knowledgeBuildJob?.status === 'running'}
-                                                                    className="px-2 py-0.5 text-[10px] bg-green-700 hover:bg-green-600 disabled:bg-green-900/50 disabled:text-green-200/50 text-white rounded shrink-0"
+                                                                    className="px-2 py-0.5 text-[10px] bg-blue-700 hover:bg-blue-600 disabled:bg-blue-900/50 disabled:text-blue-200/50 text-white rounded"
                                                                 >
-                                                                    {knowledgeBuildJob?.directory === loc.directory && knowledgeBuildJob?.status === 'running'
-                                                                        ? 'Indexing...'
-                                                                        : 'Enable indexing'}
+                                                                    Reindex files
                                                                 </button>
-                                                            ) : null}
-                                                        </div>
-                                                        {loc.knowledge_enabled && (
-                                                            <div className="flex flex-col gap-1.5 mt-1.5 pl-0">
-                                                                <div className="flex flex-wrap items-center gap-3">
-                                                                    <label className="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer">
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={loc.index_files}
-                                                                            onChange={(e) => toggleLocation(loc.directory, 'index_files', e.target.checked)}
-                                                                            className="accent-green-500"
-                                                                        />
-                                                                        Index
-                                                                    </label>
-                                                                    <label className="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer">
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={loc.link_knowledge}
-                                                                            onChange={(e) => toggleLocation(loc.directory, 'link_knowledge', e.target.checked)}
-                                                                            className="accent-green-500"
-                                                                        />
-                                                                        Link
-                                                                    </label>
-                                                                    <label className="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer">
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={loc.extract_memories}
-                                                                            onChange={(e) => toggleLocation(loc.directory, 'extract_memories', e.target.checked)}
-                                                                            className="accent-green-500"
-                                                                        />
-                                                                        Extract
-                                                                    </label>
-                                                                    <label className="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer">
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={loc.auto_index}
-                                                                            onChange={(e) => toggleLocation(loc.directory, 'auto_index', e.target.checked)}
-                                                                            className="accent-green-500"
-                                                                        />
-                                                                        Auto
-                                                                    </label>
-                                                                </div>
-                                                                <div className="flex flex-wrap items-center gap-2">
-                                                                    <button
-                                                                        onClick={() => indexLocation(loc.directory)}
-                                                                        disabled={knowledgeBuildJob?.directory === loc.directory && knowledgeBuildJob?.status === 'running'}
-                                                                        className="px-2 py-0.5 text-[10px] bg-blue-700 hover:bg-blue-600 disabled:bg-blue-900/50 disabled:text-blue-200/50 text-white rounded"
-                                                                    >
-                                                                        Reindex files
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => extractLocation(loc.directory)}
-                                                                        disabled={knowledgeBuildJob?.directory === loc.directory && knowledgeBuildJob?.status === 'running'}
-                                                                        className="px-2 py-0.5 text-[10px] bg-purple-700 hover:bg-purple-600 disabled:bg-purple-900/50 disabled:text-purple-200/50 text-white rounded"
-                                                                    >
-                                                                        Extract knowledge
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => resetLocation(loc.directory)}
-                                                                        className="px-2 py-0.5 text-[10px] text-red-400 hover:text-red-300 border border-red-700/50 rounded ml-auto"
-                                                                    >
-                                                                        Reinitialize
-                                                                    </button>
-                                                                </div>
+                                                                <button
+                                                                    onClick={() => extractLocation(loc.directory)}
+                                                                    disabled={knowledgeBuildJob?.directory === loc.directory && knowledgeBuildJob?.status === 'running'}
+                                                                    className="px-2 py-0.5 text-[10px] bg-purple-700 hover:bg-purple-600 disabled:bg-purple-900/50 disabled:text-purple-200/50 text-white rounded"
+                                                                >
+                                                                    Extract knowledge
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => resetLocation(loc.directory)}
+                                                                    className="px-2 py-0.5 text-[10px] text-red-400 hover:text-red-300 border border-red-700/50 rounded ml-auto"
+                                                                >
+                                                                    Reinitialize
+                                                                </button>
                                                             </div>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
-                                )}
+                                </div>
+                            )}
 
-                                {knowledgeSubTab === 'stores' && (
-                                    <div className="absolute inset-0 overflow-y-auto p-4">
-                                        <StoreRegistryPanel onSaved={loadSharedKnowledge} />
-                                    </div>
-                                )}
+                            {knowledgeSubTab === 'stores' && (
+                                <div className="absolute inset-0 overflow-y-auto p-4">
+                                    <StoreRegistryPanel onSaved={loadSharedKnowledge} />
+                                </div>
+                            )}
 
-                                {knowledgeSubTab === 'memory' && (
-                                    <div className="absolute inset-0 overflow-hidden">
-                                        <MemoryManagement isModal={false} currentPath={currentPath} allMemories={sharedMemories} />
-                                    </div>
-                                )}
+                            {knowledgeSubTab === 'memory' && (
+                                <div className="absolute inset-0 overflow-hidden">
+                                    <MemoryManagement isModal={false} currentPath={currentPath} allMemories={sharedMemories} />
+                                </div>
+                            )}
 
-                                {knowledgeSubTab === 'graph' && (
-                                    <div className="absolute inset-0 overflow-hidden">
-                                        <Suspense fallback={<div className="flex items-center justify-center py-12 theme-text-muted">Loading...</div>}>
-                                            <KnowledgeGraphEditor isModal={false} currentPath={currentPath} memories={sharedMemories} knowledge={sharedKnowledge} />
-                                        </Suspense>
-                                    </div>
-                                )}
-                            </div>
+                            {knowledgeSubTab === 'graph' && (
+                                <div className="absolute inset-0 overflow-hidden">
+                                    <Suspense fallback={<div className="flex items-center justify-center py-12 theme-text-muted">Loading...</div>}>
+                                        <KnowledgeGraphEditor isModal={false} currentPath={currentPath} memories={sharedMemories} knowledge={sharedKnowledge} />
+                                    </Suspense>
+                                </div>
+                            )}
                         </div>
-                    )}
-                </div>
+                    </div>
+                )}
             </div>
-        </div>
-    );
-
-
-    if (embedded) {
-        return <>{content}</>;
-    }
-
-    return (
-        <>
-            <div className="fixed inset-0 z-50 flex items-center justify-center">
-                <div
-                    className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-                    onClick={onClose}
-                />
-                {content}
-            </div>
-        </>
+        </TeamManagementShell>
     );
 };
 

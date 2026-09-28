@@ -38,6 +38,9 @@ export function useModelSelection() {
         pendingAddedModelsRef.current = pendingAddedModels;
     }, [pendingAddedModels]);
     const [fetchedProviderModels, setFetchedProviderModels] = useState<Record<string, string[]>>({});
+    // modelId -> context window, mirroring fetchedProviderModels. Kept separate so the
+    // string[] shape other memos depend on is untouched.
+    const [providerModelContext, setProviderModelContext] = useState<Record<string, Record<string, number>>>({});
     const [providerFetchLoading, setProviderFetchLoading] = useState<Record<string, boolean>>({});
 
     const currentNpcObject = useMemo(() => {
@@ -59,8 +62,8 @@ export function useModelSelection() {
         if (!m || !p) {
             return [];
         }
-        return [{ value: m, display_name: `${m} | ${p}`, provider: p }];
-    }, [currentNpcObject, teamConfigs]);
+        return [{ value: m, display_name: `${m} | ${p}`, provider: p, context_window: providerModelContext[p]?.[m] ?? null }];
+    }, [currentNpcObject, teamConfigs, providerModelContext]);
 
     const providerKey = (prov: any) => prov?.provider_type || prov?.name || prov?.provider || '';
 
@@ -86,9 +89,19 @@ export function useModelSelection() {
                 fetches.push((async () => {
                     try {
                         const res = await (window as any).api?.getProviderModels?.({ provider: pKey });
-                        const list = (res?.models || []).map((m: any) => m.id || m.name || m.value).filter(Boolean);
+                        const rawModels: any[] = res?.models || [];
+                        const list: string[] = [];
+                        const contextById: Record<string, number> = {};
+                        for (const m of rawModels) {
+                            const id = m?.id || m?.name || m?.value;
+                            if (!id) continue;
+                            list.push(id);
+                            const ctx = m?.context_window ?? m?.context_length ?? m?.max_input_tokens;
+                            if (typeof ctx === 'number' && ctx > 0) contextById[id] = ctx;
+                        }
                         if (!cancelled) {
                             setFetchedProviderModels(prev => ({ ...prev, [pKey]: list }));
+                            setProviderModelContext(prev => ({ ...prev, [pKey]: contextById }));
                         }
                     } catch {
                         if (!cancelled) {
@@ -127,25 +140,26 @@ export function useModelSelection() {
             if (!pKey) continue;
             const allowedModels = Array.isArray(prov.models) ? prov.models : [];
             const fetched = fetchedProviderModels[pKey] || [];
+            const ctxById = providerModelContext[pKey] || {};
             const baseModel = prov.model;
             const effectiveModels = allowedModels.length > 0 ? allowedModels : fetched;
             if (baseModel) {
                 const key = `${pKey}::${baseModel}`;
                 if (!seenValues.has(key)) {
                     seenValues.add(key);
-                    models.push({ value: baseModel, display_name: `${baseModel} | ${pKey}`, provider: pKey });
+                    models.push({ value: baseModel, display_name: `${baseModel} | ${pKey}`, provider: pKey, context_window: ctxById[baseModel] ?? null });
                 }
             }
             for (const m of effectiveModels) {
                 const key = `${pKey}::${m}`;
                 if (!seenValues.has(key)) {
                     seenValues.add(key);
-                    models.push({ value: m, display_name: `${m} | ${pKey}`, provider: pKey });
+                    models.push({ value: m, display_name: `${m} | ${pKey}`, provider: pKey, context_window: ctxById[m] ?? null });
                 }
             }
         }
         return models;
-    }, [ctxProviders, fetchedProviderModels]);
+    }, [ctxProviders, fetchedProviderModels, providerModelContext]);
 
     const effectiveAvailableModels = useMemo(() => {
         return availableModelsFromTeamCtx.length > 0 ? availableModelsFromTeamCtx : npcScopedModels;

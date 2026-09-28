@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { createPortal } from 'react-dom';
-import { ChevronRight, Cpu, Plus, X, RefreshCw, Star, ListFilter, Trash2 } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { Plus, X, Trash2 } from 'lucide-react';
 import yaml from 'js-yaml';
 import { API_PROVIDER_META } from './ModelManager';
+import { ModelSelector as NpctsModelSelector, type ModelInfo } from 'npcts';
 
 export interface ModelItem {
     value: string;
@@ -13,15 +13,6 @@ export interface ModelItem {
     [key: string]: any;
 }
 
-const modelLabel = (m?: ModelItem, fallback?: string) => {
-    const raw = m?.display_name || m?.value || fallback || '';
-    const withoutProvider = raw.split(' | ')[0] || raw;
-    if (withoutProvider.includes('/') && withoutProvider.includes('.')) {
-        return withoutProvider.split('/').pop() || withoutProvider;
-    }
-    return withoutProvider;
-};
-
 const providerKey = (prov?: any) => prov?.provider || prov?.provider_type || prov?.name || '';
 
 const providerLabel = (prov?: any) => {
@@ -29,30 +20,6 @@ const providerLabel = (prov?: any) => {
     const meta = key ? API_PROVIDER_META[key as keyof typeof API_PROVIDER_META] : undefined;
     return (meta as any)?.name || prov?.displayName || prov?.name || key || 'Provider';
 };
-
-interface ModelSelectorProps {
-    availableModels: ModelItem[];
-    selectedModel?: string | null;
-    onSelect?: (model: ModelItem) => void;
-    multiSelect?: boolean;
-    selectedModels?: string[];
-    onSelectModels?: (models: string[]) => void;
-    placeholder?: string;
-    loading?: boolean;
-    error?: string | null;
-    disabled?: boolean;
-    teamPathForCtx?: string | null;
-    teamCtxProviders?: any[];
-    placement?: 'bottom' | 'top';
-    className?: string;
-    onModelsChanged?: (addedModelValue?: string) => void;
-    allowAdd?: boolean;
-    toolbar?: React.ReactNode;
-    favoriteModels?: Set<string>;
-    onToggleFavorite?: (value: string) => void;
-    showAllModels?: boolean;
-    onToggleShowAll?: () => void;
-}
 
 const preprocessJinja = (content: string) =>
     content.replace(/(?<!["'])\{\{[^{}]*\}\}(?!["'])/g, (match) => `"${match}"`);
@@ -117,186 +84,7 @@ export const saveProviderToTeamCtx = async (
     });
 };
 
-export const ModelSelectorDropdown = ({
-    buttonRef,
-    availableModels,
-    selectedModel,
-    multiSelect,
-    selectedModels,
-    onSelect,
-    onSelectModels,
-    modelDropdownSearch,
-    setModelDropdownSearch,
-    expandedModelProviders,
-    setExpandedModelProviders,
-    onClose,
-    placement,
-    toolbar,
-    favoriteModels,
-    onToggleFavorite,
-    teamPathForCtx,
-    onRemoveProvider,
-    children,
-}: any) => {
-    const [pos, setPos] = useState<{ top?: number; left?: number; bottom?: number } | null>(null);
-
-    useEffect(() => {
-        const update = () => {
-            const rect = buttonRef.current?.getBoundingClientRect();
-            if (!rect) return;
-            if (placement === 'top') {
-                setPos({ bottom: window.innerHeight - rect.top + 4, left: rect.left });
-            } else {
-                setPos({ top: rect.bottom + 4, left: rect.left });
-            }
-        };
-        update();
-        window.addEventListener('resize', update);
-        return () => window.removeEventListener('resize', update);
-    }, [buttonRef, placement]);
-
-    useEffect(() => {
-        const onClick = (e: MouseEvent) => {
-            const target = e.target as HTMLElement;
-            if (!buttonRef.current?.contains(target) && !document.getElementById('model-selector-dropdown-portal')?.contains(target)) {
-                onClose();
-            }
-        };
-        document.addEventListener('mousedown', onClick);
-        return () => document.removeEventListener('mousedown', onClick);
-    }, [buttonRef, onClose]);
-
-    if (!pos) return null;
-
-    const filtered = availableModels.filter((m: ModelItem) => {
-        if (!modelDropdownSearch) return true;
-        const text = `${m.display_name || m.value} ${m.provider || ''}`.toLowerCase();
-        return text.includes(modelDropdownSearch.toLowerCase());
-    });
-
-    const byProvider: Record<string, ModelItem[]> = {};
-    for (const m of filtered) {
-        const p = m.provider || 'Other';
-        if (!byProvider[p]) byProvider[p] = [];
-        byProvider[p].push(m);
-    }
-    for (const p of Object.keys(byProvider)) {
-        byProvider[p].sort((a: ModelItem, b: ModelItem) =>
-            (a.display_name || a.value).localeCompare(b.display_name || b.value)
-        );
-    }
-
-    return (
-        <div
-            id="model-selector-dropdown-portal"
-            className="fixed z-[100] theme-bg-primary border theme-border rounded-lg shadow-2xl overflow-hidden min-w-[260px] w-auto max-w-[25vw]"
-            style={pos}
-        >
-            <div className="px-2 py-1.5 border-b theme-border">
-                <input
-                    type="text"
-                    placeholder="Search models..."
-                    className="w-full theme-input border theme-border rounded px-2 py-1 text-xs theme-text-primary placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
-                    value={modelDropdownSearch}
-                    onChange={(e) => setModelDropdownSearch(e.target.value)}
-                    onKeyDown={(e) => e.stopPropagation()}
-                />
-            </div>
-            {toolbar && <div className="px-2 py-1 border-b theme-border">{toolbar}</div>}
-            <div className="max-h-72 overflow-y-auto p-1">
-                {filtered.length === 0 ? (
-                    <div className="px-2 py-3 text-xs text-gray-500 text-center">No models found</div>
-                ) : (
-                    (() => {
-                        const items: React.ReactNode[] = [];
-                        const providers = Object.keys(byProvider).sort();
-                        for (const provider of providers) {
-                            const meta = API_PROVIDER_META[provider];
-                            const isExpanded = expandedModelProviders.has(provider) || !!modelDropdownSearch;
-                            items.push(
-                                <div
-                                    key={`provider-${provider}`}
-                                    className="group flex items-center justify-between w-full px-2 py-1 text-xs font-semibold text-gray-400 hover:bg-white/5"
-                                >
-                                    <button
-                                        onClick={() => setExpandedModelProviders((prev: Set<string>) => {
-                                            const next = new Set(prev);
-                                            if (next.has(provider)) next.delete(provider); else next.add(provider);
-                                            return next;
-                                        })}
-                                        className="flex items-center gap-1 text-left"
-                                    >
-                                        <ChevronRight size={10} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                                        {meta ? (
-                                            <span className={`${meta.color}`}>{meta.name}</span>
-                                        ) : (
-                                            <span>{provider}</span>
-                                        )}
-                                    </button>
-                                    {teamPathForCtx && onRemoveProvider && (
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                onRemoveProvider(provider);
-                                            }}
-                                            className="p-0.5 rounded text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors"
-                                            title={`Remove ${meta?.name || provider} provider from team .ctx`}
-                                        >
-                                            <Trash2 size={12} />
-                                        </button>
-                                    )}
-                                </div>
-                            );
-                            if (isExpanded) {
-                                for (const m of byProvider[provider]) {
-                                    if (multiSelect) {
-                                        const checked = (selectedModels || []).includes(m.value);
-                                        items.push(
-                                            <div
-                                                key={m.value}
-                                                onClick={() => {
-                                                    if (!onSelectModels) return;
-                                                    const next = (selectedModels || []).includes(m.value)
-                                                        ? (selectedModels || []).filter((x: string) => x !== m.value)
-                                                        : [...(selectedModels || []), m.value];
-                                                    onSelectModels(next);
-                                                }}
-                                                className={`pl-6 pr-2 py-1 text-xs rounded cursor-pointer flex items-center gap-2 transition-all ${checked ? 'bg-blue-500/20 text-blue-200' : 'hover:bg-white/5'}`}
-                                            >
-                                                <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0 ${checked ? 'bg-blue-500 border-blue-500' : 'border-gray-600'}`}>
-                                                    {checked && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                                                </div>
-                                                <span className="truncate flex-1">{m.display_name || m.value}</span>
-                                                {favoriteModels?.has(m.value) && <Star size={9} className="text-yellow-400 flex-shrink-0" />}
-                                            </div>
-                                        );
-                                    } else {
-                                        const isSelected = selectedModel === m.value;
-                                        items.push(
-                                            <button
-                                                key={m.value}
-                                                onClick={() => onSelect?.(m)}
-                                                className={`flex items-center gap-2 w-full pl-6 pr-2 py-1 text-xs text-left ${isSelected ? 'bg-purple-600/50' : 'hover:bg-white/5'}`}
-                                            >
-                                                <Cpu size={12} className="text-purple-400" />
-                                                <span className="truncate flex-1">{m.display_name || m.value}</span>
-                                                {favoriteModels?.has(m.value) && <Star size={9} className="text-yellow-400 flex-shrink-0" />}
-                                            </button>
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                        return items;
-                    })()
-                )}
-            </div>
-            {children}
-        </div>
-    );
-};
-
-export const AddProviderPanel = ({
+const AddProviderPanel = ({
     teamPath,
     teamCtxProviders: teamCtxProvidersProp,
     onAdded,
@@ -305,30 +93,30 @@ export const AddProviderPanel = ({
     teamCtxProviders?: any[];
     onAdded: (modelValue?: string) => void;
 }) => {
-    const [providerName, setProviderName] = useState('');
-    const [providerType, setProviderType] = useState('');
-    const [modelName, setModelName] = useState('');
-    const [apiUrl, setApiUrl] = useState('');
-    const [apiKey, setApiKey] = useState('');
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [providerModelSelector, setProviderModelSelector] = useState<{
+    const [providerName, setProviderName] = React.useState('');
+    const [providerType, setProviderType] = React.useState('');
+    const [modelName, setModelName] = React.useState('');
+    const [apiUrl, setApiUrl] = React.useState('');
+    const [apiKey, setApiKey] = React.useState('');
+    const [saving, setSaving] = React.useState(false);
+    const [error, setError] = React.useState<string | null>(null);
+    const [providerModelSelector, setProviderModelSelector] = React.useState<{
         provider: any;
         models: string[];
         selected: Set<string>;
         loading: boolean;
         error: string | null;
     } | null>(null);
-    const [detectedProviders, setDetectedProviders] = useState<any[]>([]);
-    const [detectedProvidersLoading, setDetectedProvidersLoading] = useState(false);
-    const [teamCtxProviders, setTeamCtxProviders] = useState<any[]>(teamCtxProvidersProp || []);
-    const addModelNameRef = useRef<HTMLInputElement>(null);
+    const [detectedProviders, setDetectedProviders] = React.useState<any[]>([]);
+    const [detectedProvidersLoading, setDetectedProvidersLoading] = React.useState(false);
+    const [teamCtxProviders, setTeamCtxProviders] = React.useState<any[]>(teamCtxProvidersProp || []);
+    const addModelNameRef = React.useRef<HTMLInputElement>(null);
 
-    useEffect(() => {
+    React.useEffect(() => {
         setTimeout(() => addModelNameRef.current?.focus(), 50);
     }, []);
 
-    useEffect(() => {
+    React.useEffect(() => {
         if (teamCtxProvidersProp) {
             setTeamCtxProviders(teamCtxProvidersProp);
             return;
@@ -349,7 +137,7 @@ export const AddProviderPanel = ({
         return () => { cancelled = true; };
     }, [teamPath, teamCtxProvidersProp]);
 
-    useEffect(() => {
+    React.useEffect(() => {
         let cancelled = false;
         (async () => {
             setDetectedProvidersLoading(true);
@@ -364,18 +152,18 @@ export const AddProviderPanel = ({
         return () => { cancelled = true; };
     }, []);
 
-    const ctxProviderNames = useMemo(() => {
+    const ctxProviderNames = React.useMemo(() => {
         return new Set(teamCtxProviders.map((p: any) => providerKey(p)).filter(Boolean));
     }, [teamCtxProviders]);
 
-    const extraDetectedProviders = useMemo(() => {
+    const extraDetectedProviders = React.useMemo(() => {
         return detectedProviders.filter((d: any) => {
             const name = d.provider || d.name;
             return name && !ctxProviderNames.has(name);
         });
     }, [detectedProviders, ctxProviderNames]);
 
-    const knownCloudProviders = useMemo(() => {
+    const knownCloudProviders = React.useMemo(() => {
         const ctxKeys = new Set(teamCtxProviders.map((p: any) => providerKey(p)).filter(Boolean));
         const detectedKeys = new Set(detectedProviders.map((d: any) => d.provider || d.name).filter(Boolean));
         return Object.entries(API_PROVIDER_META)
@@ -707,13 +495,34 @@ export const AddProviderPanel = ({
     );
 };
 
+interface ModelSelectorProps {
+    availableModels: ModelItem[];
+    selectedModel?: string | null;
+    onSelect?: (model: ModelItem) => void;
+    multiSelect?: boolean;
+    selectedModels?: string[];
+    onSelectModels?: (models: string[]) => void;
+    placeholder?: string;
+    loading?: boolean;
+    error?: string | null;
+    disabled?: boolean;
+    teamPathForCtx?: string | null;
+    teamCtxProviders?: any[];
+    placement?: 'bottom' | 'top';
+    className?: string;
+    onModelsChanged?: (addedModelValue?: string) => void;
+    allowAdd?: boolean;
+    toolbar?: React.ReactNode;
+    favoriteModels?: Set<string>;
+    onToggleFavorite?: (value: string) => void;
+    showAllModels?: boolean;
+    onToggleShowAll?: () => void;
+}
+
 const ModelSelector: React.FC<ModelSelectorProps> = ({
     availableModels,
     selectedModel,
     onSelect,
-    multiSelect = false,
-    selectedModels = [],
-    onSelectModels,
     placeholder = 'Select a Model',
     loading = false,
     error = null,
@@ -727,50 +536,42 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     toolbar,
     favoriteModels,
     onToggleFavorite,
-    showAllModels,
-    onToggleShowAll,
 }) => {
-    const [dropdownOpen, setDropdownOpen] = useState(false);
-    const [search, setSearch] = useState('');
-    const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
-    const [showAddPanel, setShowAddPanel] = useState(false);
-    const buttonRef = useRef<HTMLButtonElement | null>(null);
+    const modelMap = React.useMemo(() => {
+        const map = new Map<string, ModelItem>();
+        for (const m of availableModels) map.set(m.value, m);
+        return map;
+    }, [availableModels]);
 
-    const selectedObj = multiSelect
-        ? availableModels.find((m) => m.value === selectedModels[0])
-        : availableModels.find((m) => m.value === selectedModel);
-    const buttonLabel = loading
-        ? 'Loading...'
-        : error
-            ? 'Error'
-            : multiSelect
-                ? selectedModels.length === 0
-                    ? placeholder
-                    : selectedModels.length === 1
-                        ? modelLabel(selectedObj, selectedModels[0])
-                        : `${selectedModels.length} models`
-                : modelLabel(selectedObj, selectedModel || placeholder);
+    const models = React.useMemo<ModelInfo[]>(() =>
+        availableModels.map(m => ({
+            id: m.value,
+            displayName: m.display_name || m.value,
+            provider: m.provider || 'Other',
+        })), [availableModels]);
 
-    const handleSelect = (model: ModelItem) => {
-        onSelect?.(model);
-        setDropdownOpen(false);
-        setSearch('');
-        setShowAddPanel(false);
-    };
+    const byProvider = React.useMemo(() => {
+        const map: Record<string, ModelInfo[]> = {};
+        for (const m of models) {
+            const p = m.provider || 'Other';
+            if (!map[p]) map[p] = [];
+            map[p].push(m);
+        }
+        for (const p of Object.keys(map)) {
+            map[p].sort((a, b) => (a.displayName || a.id).localeCompare(b.displayName || b.id));
+        }
+        return map;
+    }, [models]);
 
-    const handleSelectModels = (next: string[]) => {
-        onSelectModels?.(next);
-    };
+    const providers = React.useMemo(() => Object.keys(byProvider).sort(), [byProvider]);
 
-    const handleAdded = async (modelValue?: string) => {
-        setShowAddPanel(false);
-        setDropdownOpen(false);
-        setSearch('');
-        onModelsChanged?.(modelValue);
+    const handleSelect = (m: ModelInfo) => {
+        const original = modelMap.get(m.id);
+        onSelect?.(original || { value: m.id, display_name: m.displayName, provider: m.provider });
     };
 
     const handleRemoveProvider = async (providerName: string) => {
-        if (!teamPathForCtx || !providerName) return;
+        if (!teamPathForCtx) return;
         try {
             await removeProviderFromTeamCtx(teamPathForCtx, providerName);
             onModelsChanged?.();
@@ -781,61 +582,30 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     };
 
     return (
-        <div className="w-full">
-            <button
-                ref={buttonRef}
-                type="button"
-                onClick={() => setDropdownOpen(!dropdownOpen)}
-                disabled={disabled || loading || !!error}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm theme-bg-secondary theme-text-primary theme-border border hover:bg-white/5 disabled:opacity-40 w-full ${className}`}
-            >
-                <span className="flex-1 truncate text-center">{buttonLabel}</span>
-                <ChevronRight
-                    size={12}
-                    className={`transition-transform flex-shrink-0 ${dropdownOpen ? 'rotate-90' : ''}`}
+        <NpctsModelSelector
+            models={models}
+            byProvider={byProvider}
+            providers={providers}
+            selectedModelId={selectedModel}
+            onSelect={handleSelect}
+            loading={loading}
+            error={error}
+            disabled={disabled}
+            placeholder={placeholder}
+            favoriteModels={favoriteModels}
+            onToggleFavorite={onToggleFavorite}
+            toolbar={toolbar}
+            placement={placement}
+            className={className}
+            onRemoveProvider={teamPathForCtx ? handleRemoveProvider : undefined}
+            dropdownFooter={teamPathForCtx && allowAdd ? (close) => (
+                <AddProviderPanel
+                    teamPath={teamPathForCtx}
+                    teamCtxProviders={teamCtxProviders}
+                    onAdded={(val) => { close(); onModelsChanged?.(val); }}
                 />
-            </button>
-            {dropdownOpen && createPortal(
-                <ModelSelectorDropdown
-                    buttonRef={buttonRef}
-                    availableModels={availableModels}
-                    selectedModel={selectedModel}
-                    multiSelect={multiSelect}
-                    selectedModels={selectedModels}
-                    onSelect={handleSelect}
-                    onSelectModels={handleSelectModels}
-                    modelDropdownSearch={search}
-                    setModelDropdownSearch={setSearch}
-                    expandedModelProviders={expandedProviders}
-                    setExpandedModelProviders={setExpandedProviders}
-                    onClose={() => { setDropdownOpen(false); setShowAddPanel(false); setSearch(''); }}
-                    placement={placement}
-                    toolbar={toolbar}
-                    favoriteModels={favoriteModels}
-                    onToggleFavorite={onToggleFavorite}
-                    teamPathForCtx={teamPathForCtx}
-                    onRemoveProvider={handleRemoveProvider}
-                >
-                    {allowAdd && teamPathForCtx ? (
-                        <div className="border-t theme-border p-1.5">
-                            {showAddPanel ? (
-                                <AddProviderPanel teamPath={teamPathForCtx} teamCtxProviders={teamCtxProviders} onAdded={handleAdded} />
-                            ) : (
-                                <button
-                                    onClick={() => setShowAddPanel(true)}
-                                    disabled={!teamPathForCtx}
-                                    className="w-full flex items-center justify-center gap-1 text-[10px] px-2 py-1 rounded bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white transition-colors"
-                                    title={teamPathForCtx ? 'Add a model to team .ctx' : 'No team path available'}
-                                >
-                                    <Plus size={12} /> Add Model to Team
-                                </button>
-                            )}
-                        </div>
-                    ) : null}
-                </ModelSelectorDropdown>,
-                document.body
-            )}
-        </div>
+            ) : undefined}
+        />
     );
 };
 

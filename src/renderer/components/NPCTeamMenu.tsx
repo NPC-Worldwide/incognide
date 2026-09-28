@@ -8,10 +8,11 @@ import {
     Bot, Loader, ChevronDown, ChevronRight, X, Save, MessageSquare,
     Plus, Trash2, History, CheckCircle, XCircle, Tag,
     Brain, GitBranch, Edit, Search, Download, Filter,
-    Database, Sparkles, Zap, RefreshCw
+    Database, Zap, RefreshCw
 } from 'lucide-react';
+import { AgentEditor, JinxPatternList } from 'npcts';
 import ModelSelector from './ModelSelector';
-import AutosizeTextarea from './AutosizeTextarea';
+
 import ForceGraph2D from 'react-force-graph-2d';
 
 const NPCTeamMenu = ({
@@ -624,18 +625,32 @@ const NPCTeamMenu = ({
                         <div className="flex-1 overflow-y-auto p-6">
                         <div className="space-y-6">
                             <div className="flex justify-between items-start gap-4">
-                                <div className="flex-grow space-y-2">
-                                    <div>
-                                        <label className="block text-xs theme-text-secondary mb-1">Agent Name</label>
-                                        <input
-                                            className="w-full theme-input text-xl font-bold p-2"
-                                            value={editedNpc.name}
-                                            onChange={(e) => handleInputChange('name', e.target.value)}
-                                        />
-                                    </div>
-                                    <div className="text-xs theme-text-secondary font-mono truncate" title={editedNpc.source_path || ''}>
-                                        {editedNpc.source_path || ''}
-                                    </div>
+                                <div className="flex-grow">
+                                    <AgentEditor
+                                        name={editedNpc.name}
+                                        model={editedNpc.model}
+                                        provider={editedNpc.provider}
+                                        primaryDirective={editedNpc.primary_directive || ''}
+                                        sourcePath={editedNpc.source_path || ''}
+                                        onNameChange={(v) => handleInputChange('name', v)}
+                                        onModelChange={(v) => setEditedNpc(prev => ({ ...prev, model: v, provider: prev.provider || '' }))}
+                                        onProviderChange={(v) => setEditedNpc(prev => ({ ...prev, provider: v }))}
+                                        onDirectiveChange={(v) => handleInputChange('primary_directive', v)}
+                                        renderModelSelector={(value, onChange) => (
+                                            <ModelSelector
+                                                availableModels={availableModels}
+                                                selectedModel={value}
+                                                onSelect={(m) => {
+                                                    onChange(m.value);
+                                                    handleModelChange(m);
+                                                }}
+                                                loading={modelsLoading}
+                                                error={modelsError}
+                                                teamPathForCtx={teamPathForCtx}
+                                                onModelsChanged={loadAvailableModels}
+                                            />
+                                        )}
+                                    />
                                 </div>
                                 <div className="flex gap-2 mt-6">
                                     <button onClick={handleChatWithNpc} className="theme-button px-3 py-2 rounded text-sm flex items-center gap-2" title="Chat">
@@ -650,36 +665,7 @@ const NPCTeamMenu = ({
                             {saveSuccess && <div className="text-xs text-green-400">Saved</div>}
                             {error && <div className="text-xs text-red-400" title={error}>Error: {error}</div>}
 
-                            <div>
-                                <label className="block text-sm font-semibold theme-text-secondary mb-1">Model</label>
-                                <div className="mb-3">
-                                    <ModelSelector
-                                        availableModels={availableModels}
-                                        selectedModel={editedNpc.model}
-                                        onSelect={handleModelChange}
-                                        loading={modelsLoading}
-                                        error={modelsError}
-                                        teamPathForCtx={teamPathForCtx}
-                                        onModelsChanged={loadAvailableModels}
-                                    />
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-semibold theme-text-secondary mb-1">Primary Directive</label>
-                                <AutosizeTextarea
-                                    className="w-full theme-input p-2 rounded text-sm resize-none min-h-[60px]"
-                                    value={editedNpc.primary_directive || ''}
-                                    onChange={(e) => handleInputChange('primary_directive', e.target.value)}
-                                    placeholder="Describe this agent's role..."
-                                />
-                            </div>
-
                             <div className="space-y-2">
-                                <div className="flex justify-between items-center mb-2">
-                                    <label className="text-sm font-semibold theme-text-secondary">Jinx Patterns</label>
-                                    <span className="text-xs theme-text-secondary">{(editedNpc.jinxes || []).length}</span>
-                                </div>
                                 <div className="mb-3">
                                     <button
                                         ref={jinxDropdownButtonRef}
@@ -705,32 +691,14 @@ const NPCTeamMenu = ({
                                         document.body
                                     )}
                                 </div>
-                                <div className="space-y-1">
-                                    {editedNpc.jinxes?.length > 0 ? (
-                                        editedNpc.jinxes.slice().sort((a, b) => a.localeCompare(b)).map((pattern) => (
-                                            <div key={pattern} className="flex items-center justify-between w-full px-2 py-1 rounded text-xs theme-bg-secondary">
-                                                <button
-                                                    onClick={() => onOpenJinxTab?.(pattern)}
-                                                    className="flex items-center gap-1.5 text-left flex-1 truncate theme-hover rounded px-1"
-                                                >
-                                                    {pattern === '*' ? <Sparkles size={12} className="text-yellow-500" /> : <Zap size={12} className="text-blue-400" />}
-                                                    <span className="font-mono">{pattern}</span>
-                                                </button>
-                                                <button
-                                                    onClick={() => {
-                                                        const idx = (editedNpc.jinxes || []).indexOf(pattern);
-                                                        if (idx >= 0) removeJinxPattern(idx);
-                                                    }}
-                                                    className="p-0.5 rounded theme-hover text-gray-500"
-                                                >
-                                                    <X size={12} />
-                                                </button>
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <span className="text-xs theme-text-secondary italic">No jinx patterns set</span>
-                                    )}
-                                </div>
+                                <JinxPatternList
+                                    patterns={editedNpc.jinxes || []}
+                                    onRemove={(pattern) => {
+                                        const idx = (editedNpc.jinxes || []).indexOf(pattern);
+                                        if (idx >= 0) removeJinxPattern(idx);
+                                    }}
+                                    onOpenPattern={onOpenJinxTab}
+                                />
                             </div>
                         </div>
                     </div>
