@@ -4,10 +4,9 @@ flask_sse
 redis
 pyyaml
 pillow
-npcpy[system1]>=2.1.21
+npcpy[system1]>=2.1.22
 sentence_transformers
 scikit-learn
-npcsh>=1.2.10
 anthropic
 google-genai
 ollama
