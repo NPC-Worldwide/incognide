@@ -1,4 +1,5 @@
 import { getFileName } from './utils';
+import { visibleMessageSlice } from '../hooks/useLayoutManager';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAiEnabled } from './AiFeatureContext';
 import { readDirectoryStructure, readFileContent, renameFile, deleteFile, deleteDirectory, createDirectory, writeFileContent } from '../api/fileSystem';
@@ -1002,7 +1003,7 @@ const handleApplyPromptToFiles = async (operationType, customPrompt = '') => {
         const assistantPlaceholderMessage = { id: newStreamId, role: 'assistant', content: '', isStreaming: true, timestamp: new Date().toISOString(), streamId: newStreamId, model: currentModel, npc: currentNPC };
 
         paneData.chatMessages.allMessages.push(userMessage, assistantPlaceholderMessage);
-        paneData.chatMessages.messages = paneData.chatMessages.allMessages.slice(-paneData.chatMessages.displayedMessageCount);
+        paneData.chatMessages.messages = visibleMessageSlice(paneData.chatMessages.allMessages, paneData.chatMessages.displayedMessageCount);
 
         setRootLayoutNode(prev => ({ ...prev }));
 
@@ -1157,7 +1158,7 @@ const handleSummarizeAndStart = async () => {
         const assistantPlaceholderMessage = { id: newStreamId, role: 'assistant', content: '', isStreaming: true, timestamp: new Date().toISOString(), streamId: newStreamId, model: currentModel, npc: currentNPC };
 
         paneData.chatMessages.allMessages.push(userMessage, assistantPlaceholderMessage);
-        paneData.chatMessages.messages = paneData.chatMessages.allMessages.slice(-paneData.chatMessages.displayedMessageCount);
+        paneData.chatMessages.messages = visibleMessageSlice(paneData.chatMessages.allMessages, paneData.chatMessages.displayedMessageCount);
         setRootLayoutNode(prev => ({ ...prev }));
 
         await window.api.executeCommandStream({

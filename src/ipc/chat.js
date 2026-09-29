@@ -31,6 +31,38 @@ function closeSharedDb() {
     }
 }
 
+// ---- Conversation compression ---------------------------------------------
+// A compression summary is stored as a normal user row in conversation_history.
+// It is identified by having parent_message_id set to the message_id of the
+// last message that was compressed. Model payloads include only the latest
+// summary and messages that come after it.
+function isCompressionMessage(m) {
+    return m?.role === 'user' && !!m?.parent_message_id;
+}
+
+function findLatestCompression(messages) {
+    if (!Array.isArray(messages)) return null;
+    let latest = null;
+    for (const m of messages) {
+        if (isCompressionMessage(m)) {
+            const rowId = typeof m?.rowId === 'number' ? m.rowId : null;
+            if (latest === null || (rowId !== null && rowId > latest.rowId)) {
+                latest = m;
+            }
+        }
+    }
+    return latest;
+}
+
+function applyCompression(messages) {
+    if (!Array.isArray(messages)) return messages;
+    const summary = findLatestCompression(messages);
+    if (!summary) return messages;
+    const summaryRowId = typeof summary.rowId === 'number' ? summary.rowId : null;
+    const after = messages.filter((m) => typeof m?.rowId === 'number' && summaryRowId !== null && m.rowId > summaryRowId);
+    return [summary, ...after];
+}
+
 function withRetry(operation, maxRetries = 5, delayMs = 50) {
     return new Promise((resolve, reject) => {
         const attempt = (retriesLeft) => {
@@ -470,6 +502,9 @@ function register(ctx) {
               provider: cpName,
               base_url: cfg.base_url,
               api_key_var: cfg.api_key_var,
+              // OpenAI-compatible /models often advertises the window; keep it so the
+              // context meter has a denominator for custom providers too.
+              context_length: m.context_length ?? m.max_input_tokens ?? null,
             }));
             customProviderModels.push(...cpModels);
             log(`[getAvailableModels] ${cpName}: fetched ${cpModels.length} models`);
@@ -580,7 +615,7 @@ function register(ctx) {
           const mp = (m.provider || '').toLowerCase();
           return mp === normalizedProvider || mp.startsWith(`${normalizedProvider}_`) || mp.endsWith(`_${normalizedProvider}`);
         });
-        return { models: filtered.map((m) => ({ id: m.value || m.id || m.name, name: m.display_name || m.value || m.id || m.name, provider: m.provider })) };
+        return { models: filtered.map((m) => ({ id: m.value || m.id || m.name, name: m.display_name || m.value || m.id || m.name, provider: m.provider, context_window: m.context_window })) };
       }
     } catch {}
     return { models: [], error: direct.error || 'No models found' };
@@ -988,7 +1023,7 @@ function register(ctx) {
           const msgRows = await new Promise((resolve, reject) => {
             const db = new sqlite3.Database(dbPath);
             const query = `
-              SELECT message_id, role, content, timestamp, tool_calls, tool_results,
+              SELECT id, message_id, parent_message_id, role, content, timestamp, tool_calls, tool_results,
                      model, provider, npc, input_tokens, output_tokens, cost, execution_mode
               FROM conversation_history
               WHERE conversation_id = ?
@@ -1004,6 +1039,8 @@ function register(ctx) {
           conversationMessages = msgRows.map(row => {
             const msg = {
               id: row.message_id,
+              rowId: row.id,
+              parent_message_id: row.parent_message_id,
               role: row.role,
               content: row.content,
               timestamp: row.timestamp,
@@ -1052,6 +1089,15 @@ function register(ctx) {
           });
         } catch (loadErr) {
           console.error('[Main Process] Error loading conversation messages:', loadErr);
+        }
+        // If the conversation has been compressed, the model sees only the
+        // latest summary and messages that descend from it via parent_message_id.
+        if (data.conversationId) {
+          try {
+            conversationMessages = applyCompression(conversationMessages);
+          } catch (compErr) {
+            console.error('[Compression] Failed to apply compression:', compErr);
+          }
         }
       }
 
@@ -1597,16 +1643,12 @@ function register(ctx) {
 
   ipcMain.handle('getConversationMessages', async (_, conversationId) => {
     return new Promise((resolve, reject) => {
-      const db = new sqlite3.Database(dbPath, (dbErr) => {
-        if (dbErr) {
-          console.error('[DB] Error opening database:', dbErr);
-          return reject(dbErr);
-        }
-
-        const query = `
+      const db = getSharedDb();
+      const query = `
         SELECT
             ch.id,
             ch.message_id,
+            ch.parent_message_id,
             ch.timestamp,
             ch.role,
             ch.content,
@@ -1644,8 +1686,7 @@ function register(ctx) {
             ch.timestamp ASC, ch.id ASC;
       `;
 
-      db.all(query, [conversationId], (err, rows) => {
-        db.close();
+      db.all(query, [conversationId], async (err, rows) => {
         if (err) {
             return reject(err);
         }
@@ -1727,22 +1768,6 @@ function register(ctx) {
                 });
             }
 
-            // Rebuild contentParts when missing so ChatMessage renders text,
-            // reasoning, and tool calls correctly after reload.
-            let contentParts = null;
-            if (Array.isArray(toolCalls) && toolCalls.length > 0) {
-                contentParts = [];
-                if (content && typeof content === 'string' && content.trim()) {
-                    contentParts.push({ type: 'text', content });
-                }
-                if (row.reasoning_content && typeof row.reasoning_content === 'string' && row.reasoning_content.trim()) {
-                    contentParts.push({ type: 'reasoning', content: row.reasoning_content });
-                }
-                for (const tc of toolCalls) {
-                    contentParts.push({ type: 'tool_call', call: tc });
-                }
-            }
-
             const newRow = {
                 ...row,
                 attachments,
@@ -1753,7 +1778,7 @@ function register(ctx) {
                 input_tokens: row.input_tokens || 0,
                 output_tokens: row.output_tokens || 0,
                 cost: row.cost ? parseFloat(row.cost) : null,
-                contentParts,
+                contentParts: null,
             };
             delete newRow.attachments_json;
             delete newRow.reasoning_content;
@@ -1766,6 +1791,115 @@ function register(ctx) {
       });
     });
   });
+
+  // -------------------------------------------------------- compression IPC
+
+  ipcMain.handle('compressConversation', async (_, opts = {}) => {
+    const { conversationId, currentPath, model, provider, npc, instructions, executionMode } = opts;
+    if (!conversationId) return { error: 'conversationId is required' };
+
+    try {
+      const rows = await new Promise((resolve, reject) => {
+        const db = getSharedDb();
+        db.all(
+          `SELECT id, message_id, parent_message_id, role, content, timestamp
+           FROM conversation_history
+           WHERE conversation_id = ?
+           ORDER BY id ASC`,
+          [conversationId],
+          (e, r) => { e ? reject(e) : resolve(r || []); }
+        );
+      });
+
+      // If a compression summary already exists, only summarize messages after it.
+      let afterSummary = rows;
+      const latestSummary = rows.filter((r) => r.role === 'user' && r.parent_message_id).pop();
+      if (latestSummary) {
+        afterSummary = rows.filter((r) => r.id > latestSummary.id);
+      }
+
+      const toCompress = afterSummary.filter((r) => r.role === 'user' || r.role === 'assistant');
+      if (toCompress.length === 0) {
+        return { success: true, messagesCompressed: 0, summary: '', summaryMessageId: null };
+      }
+
+      const parentMessageId = toCompress[toCompress.length - 1].message_id;
+
+      const messagesForBreathe = toCompress.map((m) => ({
+        role: m.role,
+        content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+      }));
+
+      let summary = '';
+      try {
+        const resp = await fetch(`${BACKEND_URL}/api/conversation/compress`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Current-Path': currentPath || os.homedir(),
+          },
+          body: JSON.stringify({
+            messages: messagesForBreathe,
+            ...(model ? { model } : {}),
+            ...(provider ? { provider } : {}),
+            ...(npc ? { npc } : {}),
+            ...(currentPath ? { currentPath } : {}),
+            ...(instructions ? { context: instructions } : {}),
+          }),
+          signal: AbortSignal.timeout(180000),
+        });
+        if (!resp.ok) {
+          const t = await resp.text();
+          return { error: `Summarization failed: HTTP ${resp.status} ${String(t).slice(0, 200)}` };
+        }
+        const data = await resp.json();
+        summary = data?.output || data?.messages?.[0]?.content || '';
+      } catch (e) {
+        return { error: `Summarization failed: ${e.message}` };
+      }
+
+      if (!summary.trim()) return { error: 'Summarization returned empty output.' };
+
+      // Remove any previous compression summary rows for this conversation.
+      await new Promise((resolve, reject) => {
+        const db = getSharedDb();
+        db.run(
+          `DELETE FROM conversation_history WHERE conversation_id = ? AND role = 'user' AND parent_message_id IS NOT NULL`,
+          [conversationId],
+          (e) => { e ? reject(e) : resolve(); }
+        );
+      });
+
+      const summaryMessageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+      const asText = (c) => (typeof c === 'string' ? c : JSON.stringify(c));
+      const tokensBefore = toCompress.reduce(
+        (n, m) => n + Math.ceil(asText(m.content).length / 4), 0);
+      const tokensAfter = Math.ceil(summary.length / 4);
+
+      await new Promise((resolve, reject) => {
+        const db = getSharedDb();
+        db.run(
+          `INSERT INTO conversation_history
+             (message_id, parent_message_id, role, content, conversation_id, directory_path, model, provider, npc,
+              execution_mode, input_tokens, output_tokens, cost, timestamp)
+           VALUES (?, ?, 'user', ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, ?)`,
+          [summaryMessageId, parentMessageId, summary, conversationId, currentPath || null, model || null, provider || null, npc || null, executionMode || 'chat', new Date().toISOString()],
+          (e) => { e ? reject(e) : resolve(); }
+        );
+      });
+
+      return {
+        success: true,
+        summary,
+        summaryMessageId,
+        parentMessageId,
+        messagesCompressed: toCompress.length,
+        tokensBefore,
+        tokensAfter,
+      };
+    } catch (e) {
+      return { error: `Compression failed: ${e.message}` };
+    }
   });
 
   ipcMain.handle('getDefaultConfig', () => {

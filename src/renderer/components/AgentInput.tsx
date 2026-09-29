@@ -1,12 +1,16 @@
 import { getFileName, loadAvailableNPCs, loadTeamCtxFromPath, findProviderForModelFromCtx } from './utils';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { BACKEND_URL } from '../config';
 import {
-    Send, Paperclip, Maximize2, ChevronDown, Star, ListFilter, FolderTree, Minimize2, Mic, MicOff, Volume2, GitBranch, Save, Trash2, Zap, X, RefreshCw,
+    Send, Paperclip, Maximize2, Star, ListFilter, FolderTree, Minimize2, Mic, MicOff, Volume2, GitBranch, Save, Trash2, Zap, X, RefreshCw,
     FileCode, Globe, FileText, Terminal as TerminalIcon, Eye, EyeOff, ToggleLeft, ToggleRight,
-    Database, BrainCircuit, Image, Bot, Users, Music, Search, BookOpen, Folder, HardDrive, HelpCircle, Clock, Settings, MessageSquare, Tag
+    Database, BrainCircuit, Image, Bot, Users, Music, Search, BookOpen, Folder, HardDrive, HelpCircle, Clock, Settings, MessageSquare, Tag,
+    ChevronDown
 } from 'lucide-react';
 import ContextFilesPanel from './ContextFilesPanel';
+import ContextUsageMeter from './ContextUsageMeter';
+import { computeContextUsage, findContextWindow } from '../utils/contextUsage';
 import ModelSelector from './ModelSelector';
 
 const getMcpServerDisplayName = (serverPath: string): string => {
@@ -127,6 +131,211 @@ interface AgentInputProps {
     onBroadcast?: (models: string[], npcs: string[], inputText?: string, files?: any[]) => void;
 }
 
+interface NPCDropdownProps {
+    availableNPCs: any[];
+    selectedNPCs: string[];
+    onChangeSelected: (next: string[]) => void;
+    currentNPC: string;
+    onSelectCurrent: (npc: string) => void;
+    loading?: boolean;
+    error?: any;
+    broadcastMode?: boolean;
+    onToggleBroadcast?: () => void;
+    onOpen?: () => void;
+    placeholder?: string;
+    className?: string;
+    disabled?: boolean;
+}
+
+const NPCDropdown: React.FC<NPCDropdownProps> = ({
+    availableNPCs,
+    selectedNPCs,
+    onChangeSelected,
+    currentNPC,
+    onSelectCurrent,
+    loading = false,
+    error = null,
+    broadcastMode = false,
+    onToggleBroadcast,
+    onOpen,
+    placeholder = 'Agent',
+    className = '',
+    disabled = false,
+}) => {
+    const [open, setOpen] = useState(false);
+    const [search, setSearch] = useState('');
+    const [pos, setPos] = useState<{ bottom: number; left: number; width: number } | null>(null);
+    const buttonRef = useRef<HTMLButtonElement>(null);
+    const searchRef = useRef<HTMLInputElement>(null);
+    const wrapperRef = useRef<HTMLDivElement>(null);
+
+    const filteredNPCs = useMemo(() => {
+        if (!search.trim()) return availableNPCs;
+        const q = search.toLowerCase();
+        return availableNPCs.filter((n: any) =>
+            (n.display_name || n.value || '').toLowerCase().includes(q)
+        );
+    }, [availableNPCs, search]);
+
+    const label = loading ? '...' : error ? 'Error' :
+        selectedNPCs.length === 1
+            ? ((availableNPCs.find((n: any) => n.value === selectedNPCs[0])?.display_name || selectedNPCs[0]).split(' | ')[0])
+            : selectedNPCs.length === 0
+                ? placeholder
+                : `${selectedNPCs.length} agents`;
+
+    useEffect(() => {
+        if (!open) {
+            setPos(null);
+            return;
+        }
+        setSearch('');
+        setTimeout(() => searchRef.current?.focus(), 50);
+        const rect = wrapperRef.current?.getBoundingClientRect();
+        if (rect) {
+            setPos({
+                bottom: window.innerHeight - rect.top + 4,
+                left: rect.left,
+                width: rect.width,
+            });
+        }
+        const onResize = () => {
+            const r = wrapperRef.current?.getBoundingClientRect();
+            if (r) setPos({ bottom: window.innerHeight - r.top + 4, left: r.left, width: r.width });
+        };
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, [open]);
+
+    useEffect(() => {
+        if (!open) return;
+        const onClick = (e: MouseEvent) => {
+            if (!wrapperRef.current?.contains(e.target as Node)) {
+                setOpen(false);
+            }
+        };
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setOpen(false);
+        };
+        document.addEventListener('mousedown', onClick);
+        document.addEventListener('keydown', onKey);
+        return () => {
+            document.removeEventListener('mousedown', onClick);
+            document.removeEventListener('keydown', onKey);
+        };
+    }, [open]);
+
+    const toggleNpc = (value: string) => {
+        if (broadcastMode) {
+            const next = selectedNPCs.includes(value)
+                ? selectedNPCs.filter((v) => v !== value)
+                : [...selectedNPCs, value];
+            onChangeSelected(next.length ? next : [currentNPC || value]);
+            if (!selectedNPCs.includes(value)) onSelectCurrent(value);
+        } else {
+            onChangeSelected([value]);
+            onSelectCurrent(value);
+            setOpen(false);
+        }
+    };
+
+    const selectAll = () => {
+        onChangeSelected(filteredNPCs.map((n: any) => n.value));
+    };
+
+    const reset = () => {
+        onChangeSelected([]);
+    };
+
+    const sourceIcon = (source?: string) => {
+        if (source === 'project') return '📁';
+        if (source === 'global') return '🌐';
+        return '';
+    };
+
+    const dropdown = open && !loading && !error && pos && (
+        <div
+            className="npc-agent-selector-dropdown fixed z-[100] theme-bg-primary backdrop-blur-xl theme-border border rounded-lg shadow-2xl overflow-hidden"
+            style={{ bottom: pos.bottom, left: pos.left, width: Math.max(pos.width, 256) }}
+        >
+            <div className="px-2 py-1.5 border-b theme-border">
+                <input
+                    ref={searchRef}
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search agents..."
+                    className="w-full theme-input border theme-border rounded px-2 py-1 text-xs theme-text-primary placeholder-gray-500 focus:outline-none focus:border-green-500/50"
+                    onKeyDown={(e) => e.stopPropagation()}
+                />
+            </div>
+            <div className="px-2 py-1 border-b theme-border flex items-center justify-between">
+                {onToggleBroadcast && (
+                    <button
+                        onClick={onToggleBroadcast}
+                        className={`text-[9px] px-1.5 py-0.5 rounded ${broadcastMode ? 'bg-purple-500/30 text-purple-300' : 'bg-white/5 text-gray-500 hover:text-gray-300'}`}
+                    >
+                        {broadcastMode ? '● Multi' : '○ Single'}
+                    </button>
+                )}
+                <div className="flex gap-2 ml-auto">
+                    {broadcastMode && <button onClick={selectAll} className="text-[9px] text-green-400 hover:text-green-300">All</button>}
+                    <button onClick={reset} className="text-[9px] text-gray-400 hover:text-gray-300">Reset</button>
+                </div>
+            </div>
+            <div className="max-h-64 overflow-y-auto p-1">
+                {filteredNPCs.map((npc: any) => {
+                    const value = npc.value;
+                    const checked = selectedNPCs.includes(value);
+                    return (
+                        <div
+                            key={`${npc.source || 'npc'}-${value}`}
+                            className={`px-2 py-1.5 text-xs rounded cursor-pointer flex items-center gap-2 transition-all ${checked ? 'bg-green-500/20 text-green-200' : 'hover:bg-white/5'}`}
+                            onClick={() => toggleNpc(value)}
+                        >
+                            <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0 ${checked ? 'bg-green-500 border-green-500' : 'border-gray-600'}`}>
+                                {checked && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                            </div>
+                            <span className="truncate flex-1">{npc.display_name || value}</span>
+                            <span className="text-[9px] text-gray-600 flex-shrink-0">{sourceIcon(npc.source)}</span>
+                        </div>
+                    );
+                })}
+                {filteredNPCs.length === 0 && (
+                    <div className="px-2 py-3 text-xs text-gray-500 text-center">No agents found</div>
+                )}
+            </div>
+        </div>
+    );
+
+    return (
+        <div ref={wrapperRef} className={`relative flex-1 min-w-0 ${className}`}>
+            <button
+                ref={buttonRef}
+                type="button"
+                disabled={disabled || loading || !!error}
+                onClick={() => {
+                    if (!open) onOpen?.();
+                    setOpen((v) => !v);
+                }}
+                className={`w-full h-7 flex items-center justify-center gap-1 rounded-lg text-xs font-medium transition-all duration-200 border px-2 ${
+                    selectedNPCs.length > 1
+                        ? 'bg-gradient-to-br from-green-500/30 to-emerald-600/30 text-green-200 border-green-400/40'
+                        : 'theme-bg-secondary theme-text-secondary theme-border theme-hover'
+                }`}
+            >
+                {selectedNPCs.length > 1 && (
+                    <span className="w-4 h-4 rounded bg-green-500 text-white text-[9px] flex items-center justify-center font-bold flex-shrink-0">{selectedNPCs.length}</span>
+                )}
+                {selectedNPCs.length <= 1 && <Bot size={12} className="flex-shrink-0 opacity-70" />}
+                <span className="truncate">{label}</span>
+                <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${open ? 'rotate-180' : ''}`} />
+            </button>
+            {dropdown && createPortal(dropdown, document.body)}
+        </div>
+    );
+};
+
 const AgentInput: React.FC<AgentInputProps> = (props) => {
     const {
         paneId,
@@ -186,6 +395,236 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         paneUpdateEmitter.addEventListener('pane-update', handlePaneUpdate);
         return () => paneUpdateEmitter.removeEventListener('pane-update', handlePaneUpdate);
     }, [paneUpdateEmitter, paneId, localInput]);
+
+    // ---- Context usage meter -------------------------------------------------
+    // Numerator: the provider-reported `input_tokens` of the most recent prompt
+    // (system prompt + context files + history). Falls back to a chars/4 estimate
+    // only when no provider reported usage. Denominator comes from the model
+    // catalog; when unknown the meter reports tokens-used without a ratio.
+    const [ctxUsage, setCtxUsage] = useState<{ used: number | null; source: 'reported' | 'estimated' | 'none' }>({ used: null, source: 'none' });
+    const [msgCount, setMsgCount] = useState(0);
+    const ctxLimit = useMemo(
+        () => findContextWindow(currentModel, availableModels, modelsToDisplay),
+        [currentModel, availableModels, modelsToDisplay]
+    );
+    // ---- Context compression -------------------------------------------------
+    // Non-destructive: the main process records a cutoff plus an LLM-written
+    // summary, and the original rows stay in the database. Both the message
+    // list and the payload sent to the model are rebuilt through that summary.
+    const [isCompressing, setIsCompressing] = useState(false);
+
+    useEffect(() => {
+        const recompute = () => {
+            let messages: any[] = [];
+            try { messages = contentDataRef?.current?.[paneId]?.chatMessages?.messages || []; } catch {}
+            setCtxUsage(computeContextUsage(messages));
+            setMsgCount(messages.length);
+        };
+        recompute();
+        if (!paneUpdateEmitter) return;
+        const handler = (e: any) => {
+            if (e.detail?.paneId === paneId || e.detail?.paneId === 'all') recompute();
+        };
+        paneUpdateEmitter.addEventListener('pane-update', handler);
+        return () => paneUpdateEmitter.removeEventListener('pane-update', handler);
+    }, [paneUpdateEmitter, paneId, contentDataRef, paneVersion, isStreaming, isCompressing]);
+    const [compressError, setCompressError] = useState<string | null>(null);
+    const [compressInstructions, setCompressInstructions] = useState<string>(() => {
+        try { return localStorage.getItem(`incognide-compress-instructions-${activeConversationId}`) || ''; } catch { return ''; }
+    });
+
+    useEffect(() => {
+        if (!activeConversationId) { setCompressInstructions(''); return; }
+        try {
+            const stored = localStorage.getItem(`incognide-compress-instructions-${activeConversationId}`) || '';
+            setCompressInstructions(stored);
+        } catch {}
+    }, [activeConversationId, paneId, paneVersion]);
+
+    const handleSetCompressInstructions = (value: string) => {
+        setCompressInstructions(value);
+        try {
+            if (activeConversationId) {
+                localStorage.setItem(`incognide-compress-instructions-${activeConversationId}`, value);
+            }
+        } catch {}
+    };
+
+    const visibleMessageSlice = (allMessages: any[], count: number) => {
+        if (!Array.isArray(allMessages) || allMessages.length === 0) return [];
+        const markerIdxs: number[] = [];
+        for (let i = 0; i < allMessages.length; i++) {
+            if (allMessages[i]?.isCompression || allMessages[i]?.isCompressionIndicator || allMessages[i]?.parent_message_id) {
+                markerIdxs.push(i);
+            }
+        }
+        console.log(`[visibleMessageSlice] paneId=${paneId} total=${allMessages.length} count=${count} markerIdxs=${JSON.stringify(markerIdxs)} markerIds=${JSON.stringify(markerIdxs.map((i) => allMessages[i]?.message_id || allMessages[i]?.id))}`);
+        if (markerIdxs.length === 0) {
+            const result = allMessages.slice(-count);
+            console.log(`[visibleMessageSlice] no markers -> tail ${result.length}`);
+            return result;
+        }
+        const latestMarkerIdx = markerIdxs[markerIdxs.length - 1];
+        const naturalStart = Math.max(0, allMessages.length - count);
+        if (latestMarkerIdx >= naturalStart) {
+            const result = allMessages.slice(-count);
+            console.log(`[visibleMessageSlice] latestMarker in window -> tail ${result.length} ids=${JSON.stringify(result.map((m) => m?.message_id || m?.id))}`);
+            return result;
+        }
+        const kept = new Set<number>();
+        for (const idx of markerIdxs) {
+            if (idx < naturalStart) kept.add(idx);
+        }
+        const tailStart = Math.max(latestMarkerIdx + 1, allMessages.length - Math.max(1, count - kept.size));
+        for (let i = tailStart; i < allMessages.length; i++) kept.add(i);
+        const result = Array.from(kept).sort((a, b) => a - b).map((i) => allMessages[i]);
+        console.log(`[visibleMessageSlice] kept markers + tail -> ${result.length} ids=${JSON.stringify(result.map((m) => m?.message_id || m?.id))}`);
+        return result;
+    };
+
+    const reloadPaneMessages = async () => {
+        const conversationId = resolveConversationId();
+        console.log(`[reloadPaneMessages] paneId=${paneId} conversationId=${conversationId}`);
+        if (!conversationId) return;
+        try {
+            const msgs = await (window as any).api?.getConversationMessages?.(conversationId);
+            console.log(`[reloadPaneMessages] fetched ${msgs?.length} messages raw=${JSON.stringify(msgs?.slice(-3).map((m: any) => ({ id: m.message_id || m.id, role: m.role, parent: m.parent_message_id })))}`);
+            const pd = contentDataRef?.current?.[paneId];
+            if (pd && Array.isArray(msgs)) {
+                const formatted = msgs.map((m: any) => ({ ...m, id: m.message_id || m.id }));
+                if (!pd.chatMessages) pd.chatMessages = { messages: [], allMessages: [], displayedMessageCount: 20 };
+                pd.chatMessages.allMessages = formatted;
+                pd.chatMessages.messages = visibleMessageSlice(formatted, pd.chatMessages.displayedMessageCount || 20);
+                console.log(`[reloadPaneMessages] ${conversationId}: total=${formatted.length}, visible=${pd.chatMessages.messages.length}, visibleIds=${JSON.stringify(pd.chatMessages.messages.map((m: any) => m?.message_id || m?.id))}`);
+                paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
+                console.log(`[reloadPaneMessages] dispatched pane-update for ${paneId}`);
+            } else {
+                console.log(`[reloadPaneMessages] skipped pd=${!!pd} Array.isArray(msgs)=${Array.isArray(msgs)}`);
+            }
+        } catch (e) {
+            console.error('[Compression] Failed to reload messages:', e);
+        }
+    };
+
+    const updateCompressionIndicator = (show: boolean) => {
+        const conversationId = resolveConversationId();
+        if (!conversationId) return;
+        const pd = contentDataRef?.current?.[paneId];
+        if (!pd) return;
+        try {
+            if (!pd.chatMessages) pd.chatMessages = { messages: [], allMessages: [], displayedMessageCount: 20 };
+            const all = pd.chatMessages.allMessages || [];
+            const withoutIndicator = all.filter((m: any) => m?.message_id !== 'compressing-indicator');
+            if (show) {
+                const indicator = {
+                    id: 'compressing-indicator',
+                    message_id: 'compressing-indicator',
+                    role: 'system',
+                    content: 'Compressing conversation...',
+                    isCompressionIndicator: true,
+                    timestamp: new Date().toISOString(),
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    cost: null,
+                    attachments: [],
+                    contentParts: null,
+                };
+                withoutIndicator.push(indicator);
+                pd.chatMessages.allMessages = withoutIndicator;
+                pd.chatMessages.messages = visibleMessageSlice(withoutIndicator, pd.chatMessages.displayedMessageCount || 20);
+            } else {
+                pd.chatMessages.allMessages = withoutIndicator;
+                pd.chatMessages.messages = visibleMessageSlice(withoutIndicator, pd.chatMessages.displayedMessageCount || 20);
+            }
+            paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
+        } catch (e) {
+            console.error('[Compression] Failed to update indicator:', e);
+        }
+    };
+
+    const resolveConversationId = () => {
+        if (activeConversationId) return activeConversationId;
+        const pd = contentDataRef?.current?.[paneId];
+        if ((pd?.contentType === 'chat' || pd?.contentType === 'agent') && pd?.contentId) return pd.contentId;
+        return null;
+    };
+
+    const handleCompressConversation = async () => {
+        if (isCompressing) return;
+        const conversationId = resolveConversationId();
+        console.log(`[handleCompressConversation] start paneId=${paneId} conversationId=${conversationId}`);
+        if (!conversationId) { setCompressError('No active conversation to compress'); return; }
+        setIsCompressing(true);
+        setCompressError(null);
+        updateCompressionIndicator(true);
+        try {
+            const res = await Promise.race([
+                (window as any).api?.compressConversation?.({
+                    conversationId,
+                    currentPath,
+                    model: currentModel,
+                    provider: currentProvider,
+                    npc: currentNPC,
+                    instructions: compressInstructions,
+                }),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Compression timed out after 15s')), 15000)),
+            ]);
+            console.log(`[handleCompressConversation] compressConversation res=${JSON.stringify({ error: res?.error, summaryMessageId: res?.summaryMessageId, parentMessageId: res?.parentMessageId, summaryLen: res?.summary?.length })}`);
+            if (res?.error) { setCompressError(res.error); return; }
+            if (res?.summaryMessageId && res?.summary) {
+                const pd = contentDataRef?.current?.[paneId];
+                console.log(`[handleCompressConversation] before insert pd exists=${!!pd} allMessages len=${pd?.chatMessages?.allMessages?.length}`);
+                if (pd) {
+                    pd.compressionSummaryMessageId = res.summaryMessageId;
+                    if (!pd.chatMessages) pd.chatMessages = { messages: [], allMessages: [], displayedMessageCount: 20 };
+                    const all = [...(pd.chatMessages.allMessages || [])];
+                    const summaryMsg = {
+                        id: res.summaryMessageId,
+                        message_id: res.summaryMessageId,
+                        role: 'user',
+                        content: res.summary,
+                        parent_message_id: res.parentMessageId || null,
+                        timestamp: new Date().toISOString(),
+                        input_tokens: 0,
+                        output_tokens: 0,
+                        cost: null,
+                        attachments: [],
+                        contentParts: null,
+                    };
+                    const parentIdx = all.findIndex((m: any) => m?.message_id === res.parentMessageId || m?.id === res.parentMessageId);
+                    console.log(`[handleCompressConversation] parentIdx=${parentIdx} parentMessageId=${res.parentMessageId}`);
+                    if (parentIdx >= 0) {
+                        all.splice(parentIdx + 1, 0, summaryMsg);
+                    } else {
+                        all.push(summaryMsg);
+                    }
+                    pd.chatMessages.allMessages = all;
+                    pd.chatMessages.messages = visibleMessageSlice(all, pd.chatMessages.displayedMessageCount || 20);
+                    console.log(`[handleCompressConversation] after insert visible=${pd.chatMessages.messages.length} visibleIds=${JSON.stringify(pd.chatMessages.messages.map((m: any) => m?.message_id || m?.id))}`);
+                    paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
+                    paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: 'all' } }));
+                    console.log(`[handleCompressConversation] dispatched pane-update ${paneId} and all`);
+                }
+            }
+            console.log(`[handleCompressConversation] calling reloadPaneMessages`);
+            await reloadPaneMessages();
+            if (res?.summaryMessageId) {
+                setTimeout(() => {
+                    const marker = document.getElementById(`message-${res.summaryMessageId}`);
+                    console.log(`[handleCompressConversation] scroll marker ${res.summaryMessageId} found=${!!marker}`);
+                    if (marker) marker.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 50);
+            }
+        } catch (e: any) {
+            console.error('[handleCompressConversation] error:', e);
+            setCompressError(e?.message || 'Compression failed');
+        } finally {
+            updateCompressionIndicator(false);
+            setIsCompressing(false);
+            console.log(`[handleCompressConversation] finished`);
+        }
+    };
+
     const [isInputMinimized, setIsInputMinimized] = useState(false);
     const [isInputExpanded, setIsInputExpanded] = useState(false);
     const [uploadedFiles, setUploadedFiles] = useState<any[]>(() => {
@@ -384,11 +823,8 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         }
     }, [availableMcpServers]);
 
-    const [showNpcsDropdown, setShowNpcsDropdown] = useState(false);
 
-    const [npcSearch, setNpcSearch] = useState('');
     const [jinxSearch, setJinxSearch] = useState('');
-    const npcSearchRef = useRef<HTMLInputElement>(null);
     const jinxSearchRef = useRef<HTMLInputElement>(null);
 
     const [disableThinking, setDisableThinking] = useState(() => {
@@ -405,7 +841,6 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
     });
     const [showJinxConfigDropdown, setShowJinxConfigDropdown] = useState(false);
     const jinxConfigDropdownRef = useRef<HTMLDivElement>(null);
-    const npcsDropdownRef = useRef<HTMLDivElement>(null);
 
     const [detectedJinxes, setDetectedJinxes] = useState<any[]>([]);
     const [showJinxSuggestion, setShowJinxSuggestion] = useState(false);
@@ -476,19 +911,15 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
     }, [showMcpServersDropdown, setShowMcpServersDropdown]);
 
     useEffect(() => {
-        if (!showNpcsDropdown && !showJinxConfigDropdown) return;
+        if (!showJinxConfigDropdown) return;
 
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
-                setShowNpcsDropdown(false);
                 setShowJinxConfigDropdown(false);
             }
         };
 
         const handleClickOutside = (e: MouseEvent) => {
-            if (showNpcsDropdown && npcsDropdownRef.current && !npcsDropdownRef.current.contains(e.target as Node)) {
-                setShowNpcsDropdown(false);
-            }
             if (showJinxConfigDropdown && jinxConfigDropdownRef.current && !jinxConfigDropdownRef.current.contains(e.target as Node)) {
                 setShowJinxConfigDropdown(false);
             }
@@ -500,18 +931,11 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
             document.removeEventListener('keydown', handleKeyDown);
             document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, [showNpcsDropdown, showJinxConfigDropdown]);
+    }, [showJinxConfigDropdown]);
 
     const isJinxMode = false;
     const hasJinxContent = false;
 
-    const filteredNPCs = useMemo(() => {
-        if (!npcSearch.trim()) return availableNPCs;
-        const q = npcSearch.toLowerCase();
-        return availableNPCs.filter((n: any) =>
-            n.display_name?.toLowerCase().includes(q) || n.value?.toLowerCase().includes(q)
-        );
-    }, [availableNPCs, npcSearch]);
 
     const filteredJinxes = useMemo(() => {
         if (!jinxSearch.trim()) return jinxesToDisplay;
@@ -521,12 +945,6 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
         );
     }, [jinxesToDisplay, jinxSearch]);
 
-    useEffect(() => {
-        if (showNpcsDropdown) {
-            setNpcSearch('');
-            setTimeout(() => npcSearchRef.current?.focus(), 50);
-        }
-    }, [showNpcsDropdown]);
 
     useEffect(() => {
         if (showJinxDropdown) {
@@ -1076,8 +1494,13 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                         />
                     </div>
                     <div className="p-2 border-t theme-border flex items-center justify-end gap-2">
-                        {isStreaming && (
-                            <button onClick={handleInterruptStream} className="theme-button-danger text-white rounded-lg px-4 py-2 text-sm flex items-center gap-1">
+                        {(isStreaming || isCompressing) && (
+                            <button
+                                onClick={isStreaming ? handleInterruptStream : handleInterruptStream}
+                                disabled={!isStreaming}
+                                className={`rounded-lg px-4 py-2 text-sm flex items-center gap-1 text-white ${isStreaming ? 'theme-button-danger' : 'bg-amber-600 hover:bg-amber-500 disabled:opacity-50'}`}
+                                title={isStreaming ? 'Stop generation' : 'Stop compression'}
+                            >
                                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5z"/></svg>
                                 Stop
                             </button>
@@ -1105,7 +1528,7 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
     return (
         <div
             ref={containerRef}
-            className="border-t theme-border theme-bg-secondary flex-shrink-0 relative"
+            className="border-t theme-border theme-bg-secondary flex-shrink-0 relative flex flex-col"
             style={{ height: `${inputHeight}px`, minHeight: isJinxMode ? `${jinxMinHeight}px` : '200px', maxHeight: '600px' }}
             onFocus={onFocus}
         >
@@ -1115,8 +1538,20 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                 style={{ backgroundColor: isResizingInput ? '#3b82f6' : 'transparent' }}
             />
 
+            <ContextUsageMeter
+                used={ctxUsage.used}
+                limit={ctxLimit}
+                source={ctxUsage.source}
+                modelLabel={currentModel}
+                onCompress={handleCompressConversation}
+                compressing={isCompressing}
+                compressError={compressError}
+                compressInstructions={compressInstructions}
+                onChangeCompressInstructions={handleSetCompressInstructions}
+            />
+
             <div
-                className="relative theme-bg-primary theme-border border rounded-lg group h-full flex flex-col m-2 overflow-visible z-[10]"
+                className="relative theme-bg-primary theme-border border rounded-lg group flex-1 min-h-0 flex flex-col m-2 overflow-visible z-[10]"
                 onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsHovering(true); }}
                 onDragEnter={(e) => { e.stopPropagation(); setIsHovering(true); }}
                 onDragLeave={(e) => { e.stopPropagation(); setIsHovering(false); }}
@@ -1280,8 +1715,13 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                             >
                                 <BrainCircuit size={12} />
                             </button>
-                            {isStreaming && (
-                                <button onClick={handleInterruptStream} className="theme-button-danger text-white rounded-lg px-3 py-2 text-sm flex items-center gap-1 flex-shrink-0">
+                            {(isStreaming || isCompressing) && (
+                                <button
+                                    onClick={isStreaming ? handleInterruptStream : handleInterruptStream}
+                                    disabled={!isStreaming}
+                                    className={`rounded-lg px-3 py-2 text-sm flex items-center gap-1 flex-shrink-0 text-white ${isStreaming ? 'theme-button-danger' : 'bg-amber-600 hover:bg-amber-500 disabled:opacity-50'}`}
+                                    title={isStreaming ? 'Stop generation' : 'Stop compression'}
+                                >
                                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5z"/></svg>
                                 </button>
                             )}
@@ -1322,83 +1762,22 @@ const AgentInput: React.FC<AgentInputProps> = (props) => {
                 </div>
 
 
-                <div className={`px-1.5 py-1 relative z-50 ${isStreaming ? 'opacity-50 pointer-events-none' : ''}`}>
+                <div className={`px-1.5 py-1 pb-1.5 relative z-50 flex-shrink-0 ${isStreaming ? 'opacity-50 pointer-events-none' : ''}`}>
                 <div className="flex items-center gap-1">
-                    <div className="relative flex-1 min-w-0 w-1/2" ref={npcsDropdownRef}>
-                        <button
-                            className={`w-full h-7 flex items-center justify-center gap-1 rounded-lg text-xs font-medium transition-all duration-200 border px-2 ${
-                                selectedNPCs.length > 1
-                                    ? 'bg-gradient-to-br from-green-500/30 to-emerald-600/30 text-green-200 border-green-400/40'
-                                    : 'theme-bg-secondary theme-text-secondary theme-border theme-hover'
-                            }`}
-                            disabled={npcsLoading || !!npcsError}
-                            onClick={() => { setShowNpcsDropdown(!showNpcsDropdown); setShowJinxDropdown(false); }}
-                        >
-                            {selectedNPCs.length > 1 && (
-                                <span className="w-4 h-4 rounded bg-green-500 text-white text-[9px] flex items-center justify-center font-bold flex-shrink-0">{selectedNPCs.length}</span>
-                            )}
-                            <span className="truncate">
-                                {npcsLoading ? '...' : npcsError ? 'Error' :
-                                    selectedNPCs.length === 1 ? ((availableNPCs.find((n: any) => n.value === selectedNPCs[0])?.display_name || selectedNPCs[0]).split(' | ')[0]) : selectedNPCs.length === 0 ? 'Agent' : 'Agents'
-                                }
-                            </span>
-                            <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${showNpcsDropdown ? 'rotate-180' : ''}`} />
-                        </button>
-                        {showNpcsDropdown && !npcsLoading && !npcsError && (
-                            <div className="pointer-events-auto absolute left-0 bottom-full mb-1 theme-bg-primary backdrop-blur-xl theme-border border rounded-lg shadow-2xl overflow-hidden w-64">
-                                <div className="px-2 py-1.5 border-b theme-border">
-                                    <input
-                                        ref={npcSearchRef}
-                                        type="text"
-                                        value={npcSearch}
-                                        onChange={(e) => setNpcSearch(e.target.value)}
-                                        placeholder="Search Agents..."
-                                        className="w-full theme-input border theme-border rounded px-2 py-1 text-xs theme-text-primary placeholder-gray-500 focus:outline-none focus:border-green-500/50"
-                                        onKeyDown={(e) => e.stopPropagation()}
-                                    />
-                                </div>
-                                <div className="px-2 py-1 border-b theme-border flex items-center justify-between">
-                                    <button
-                                        onClick={() => setBroadcastMode(!broadcastMode)}
-                                        className={`text-[9px] px-1.5 py-0.5 rounded ${broadcastMode ? 'bg-purple-500/30 text-purple-300' : 'bg-white/5 text-gray-500 hover:text-gray-300'}`}
-                                    >
-                                        {broadcastMode ? '● Multi' : '○ Single'}
-                                    </button>
-                                    <div className="flex gap-2">
-                                        {broadcastMode && <button onClick={() => setSelectedNPCs(filteredNPCs.map((n: any) => n.value))} className="text-[9px] text-green-400 hover:text-green-300">All</button>}
-                                        <button onClick={() => setSelectedNPCs([])} className="text-[9px] text-gray-400 hover:text-gray-300">Reset</button>
-                                    </div>
-                                </div>
-                                <div className="max-h-64 overflow-y-auto p-1">
-                                    {filteredNPCs.map((npc: any) => {
-                                        const npcKey = npc.value;
-                                        const checked = selectedNPCs.includes(npcKey);
-                                        const teamPath = npc.source === 'project' ? '📁' : npc.source === 'global' ? '🌐' : '';
-                                        return (
-                                            <div key={`${npc.source}-${npc.value}`} className={`px-2 py-1.5 text-xs rounded cursor-pointer flex items-center gap-2 transition-all ${checked ? 'bg-green-500/20 text-green-200' : 'hover:bg-white/5'}`}
-                                                onClick={() => {
-                                                    if (broadcastMode) {
-                                                        setSelectedNPCs(prev => prev.includes(npcKey) ? (prev.length === 1 ? prev : prev.filter(x => x !== npcKey)) : [...prev, npcKey]);
-                                                    } else {
-                                                        setSelectedNPCs([npcKey]);
-                                                    }
-                                                    if (!checked) setCurrentNPC(npc.value);
-                                                }}>
-                                                <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0 ${checked ? 'bg-green-500 border-green-500' : 'border-gray-600'}`}>
-                                                    {checked && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                                                </div>
-                                                <span className="truncate flex-1">{npc.display_name}</span>
-                                                <span className="text-[9px] text-gray-600 flex-shrink-0">{teamPath}</span>
-                                            </div>
-                                        );
-                                    })}
-                                    {filteredNPCs.length === 0 && (
-                                        <div className="px-2 py-3 text-xs text-gray-500 text-center">No NPCs found</div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-                    </div>
+                    <NPCDropdown
+                        availableNPCs={availableNPCs}
+                        selectedNPCs={selectedNPCs}
+                        onChangeSelected={setSelectedNPCs}
+                        currentNPC={currentNPC}
+                        onSelectCurrent={setCurrentNPC}
+                        loading={npcsLoading}
+                        error={npcsError}
+                        broadcastMode={broadcastMode}
+                        onToggleBroadcast={() => setBroadcastMode(!broadcastMode)}
+                        onOpen={() => setShowJinxDropdown(false)}
+                        placeholder="Agent"
+                        className="w-1/2"
+                    />
 
                     <div className="relative flex-1 min-w-0 w-1/2">
                         <ModelSelector

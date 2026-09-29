@@ -1,5 +1,7 @@
 
 
+import { visibleMessageSlice } from '../hooks/useLayoutManager';
+
 const WORKSPACES_STORAGE_KEY = 'incognideWorkspaces_v2';
 
 export const serializeWorkspace = (
@@ -197,7 +199,7 @@ export const deserializeWorkspace = async (
                             : [];
 
                         paneDataRef.chatMessages.allMessages = formatted;
-                        paneDataRef.chatMessages.messages = formatted.slice(-paneDataRef.chatMessages.displayedMessageCount);
+                        paneDataRef.chatMessages.messages = visibleMessageSlice(formatted, paneDataRef.chatMessages.displayedMessageCount);
                         paneDataRef.chatStats = getConversationStats(formatted);
                         if (!paneDataRef.model || !paneDataRef.provider) {
                             const lastAssistant = [...formatted].reverse().find((m: any) => m.role === 'assistant' && m.model);

@@ -8,6 +8,27 @@ interface UseLayoutManagerParams {
     paneUpdateEmitter?: EventTarget;
 }
 
+export function visibleMessageSlice(allMessages: any[], count: number) {
+    if (!Array.isArray(allMessages) || allMessages.length === 0) return [];
+    const markerIdxs: number[] = [];
+    for (let i = 0; i < allMessages.length; i++) {
+        if (allMessages[i]?.isCompression || allMessages[i]?.isCompressionIndicator || allMessages[i]?.parent_message_id) {
+            markerIdxs.push(i);
+        }
+    }
+    if (markerIdxs.length === 0) return allMessages.slice(-count);
+    const latestMarkerIdx = markerIdxs[markerIdxs.length - 1];
+    const naturalStart = Math.max(0, allMessages.length - count);
+    if (latestMarkerIdx >= naturalStart) return allMessages.slice(-count);
+    const kept = new Set<number>();
+    for (const idx of markerIdxs) {
+        if (idx < naturalStart) kept.add(idx);
+    }
+    const tailStart = Math.max(latestMarkerIdx + 1, allMessages.length - Math.max(1, count - kept.size));
+    for (let i = tailStart; i < allMessages.length; i++) kept.add(i);
+    return Array.from(kept).sort((a, b) => a - b).map((i) => allMessages[i]);
+}
+
 export function getConversationStats(messages: any[]) {
     if (!messages || messages.length === 0) {
         return { messageCount: 0, inputTokens: 0, outputTokens: 0, totalCost: 0, models: new Set(), agents: new Set(), providers: new Set() };
@@ -71,6 +92,16 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
         setContentVersion(v => v + 1);
         rawSetRootLayoutNode(updater);
     }, []);
+
+    useEffect(() => {
+        if (!paneUpdateEmitter) return;
+        const handler = (e: any) => {
+            console.log(`[useLayoutManager] pane-update received source=${e.detail?.paneId} current contentVersion will bump`);
+            setContentVersion(v => v + 1);
+        };
+        paneUpdateEmitter.addEventListener('pane-update', handler);
+        return () => paneUpdateEmitter.removeEventListener('pane-update', handler);
+    }, [paneUpdateEmitter]);
 
     const setRootLayoutNodeQuiet = rawSetRootLayoutNode;
     const [activeContentPaneId, setActiveContentPaneId] = useState<string | null>(null);
@@ -271,7 +302,7 @@ export function useLayoutManager({ trackActivity, openModeRef, paneUpdateEmitter
                         })
                         : [];
                     paneData.chatMessages.allMessages = formatted;
-                    paneData.chatMessages.messages = formatted.slice(-paneData.chatMessages.displayedMessageCount);
+                    paneData.chatMessages.messages = visibleMessageSlice(formatted, paneData.chatMessages.displayedMessageCount);
                     paneData.chatStats = getConversationStats(formatted);
                 } catch (err) {
                     paneData.chatMessages.messages = [];

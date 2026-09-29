@@ -143,6 +143,7 @@ readPdfText: (filePath) =>
     getConversations: (path) => ipcRenderer.invoke('getConversations', path),
     getConversationsInDirectory: (path) => ipcRenderer.invoke('getConversationsInDirectory', path),
     getConversationMessages: (id) => ipcRenderer.invoke('getConversationMessages', id),
+    compressConversation: (opts) => ipcRenderer.invoke('compressConversation', opts),
     createConversation: (data) => ipcRenderer.invoke('createConversation', data),
     sendMessage: (data) => ipcRenderer.invoke('sendMessage', data),
     waitForScreenshot: (path) => ipcRenderer.invoke('wait-for-screenshot', path),

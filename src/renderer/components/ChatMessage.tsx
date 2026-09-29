@@ -3,6 +3,7 @@ import { BACKEND_URL } from '../config';
 import MarkdownRenderer from './MarkdownRenderer';
 import { AgentPromptCard } from './AgentPrompt';
 import { ToolCallDisplay } from './ToolCallDisplay';
+import { ChatMessageContent, type ChatMessageData } from 'npcts';
 import { MessageLabel } from './MessageLabeling';
 import { Paperclip, Tag, Star, ChevronDown, ChevronUp, ChevronRight, Volume2, VolumeX, Loader, RotateCcw, SlidersHorizontal, Bot, Zap, Cpu, BarChart3, X } from 'lucide-react';
 
@@ -97,21 +98,12 @@ export const ChatMessage = memo(({
 }) => {
     const showStreamingIndicators = !!message.isStreaming;
     const messageId = message.id || message.timestamp;
+    console.log(`[ChatMessage] render messageId=${messageId} role=${message.role} parent_message_id=${message.parent_message_id} contentLen=${(message.content || '').length}`);
 
     const { body: displayBody, contextBlocks } = parseMessageContent(message.content || '');
     const hasContextBlocks = contextBlocks.length > 0;
     const isLongMessage = message.role === 'user' && countLines(displayBody) > MAX_COLLAPSED_LINES;
     const [isExpanded, setIsExpanded] = useState(false);
-    const [expandedReasoning, setExpandedReasoning] = useState<Set<number>>(new Set());
-
-    const toggleReasoning = (partIdx: number) => {
-        setExpandedReasoning(prev => {
-            const next = new Set(prev);
-            if (next.has(partIdx)) next.delete(partIdx);
-            else next.add(partIdx);
-            return next;
-        });
-    };
 
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isLoadingTTS, setIsLoadingTTS] = useState(false);
@@ -199,6 +191,17 @@ export const ChatMessage = memo(({
                 className="max-w-[85%]"
             >
                 <AgentPromptCard promptData={message.promptData} />
+            </div>
+        );
+    }
+
+    if (message.isCompressionIndicator) {
+        return (
+            <div id={`message-${messageId}`} className="w-full flex justify-center my-4">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse">
+                    <Loader size={12} className="animate-spin" />
+                    <span>{message.content || 'Compressing conversation...'}</span>
+                </div>
             </div>
         );
     }
@@ -310,160 +313,83 @@ export const ChatMessage = memo(({
             </div>
 
             <div className="relative message-content-area">
-                {showStreamingIndicators && (
-                    <div className="absolute top-0 left-0 -translate-y-full flex space-x-1 mb-1">
-                        <div className="w-1.5 h-1.5 theme-text-muted rounded-full animate-bounce"></div>
-                        <div className="w-1.5 h-1.5 theme-text-muted rounded-full animate-bounce" style={{ animationDelay: '0.15s' }}></div>
-                        <div className="w-1.5 h-1.5 theme-text-muted rounded-full animate-bounce" style={{ animationDelay: '0.3s' }}></div>
-                    </div>
-                )}
-                {message.reasoningContent && !message.contentParts?.some((p: any) => p.type === 'reasoning') && (
-                    <div className="mb-3 rounded-md border-l-2 border-yellow-500 overflow-hidden">
-                        <div
-                            className="flex items-center gap-2 px-3 py-1.5 theme-bg-tertiary cursor-pointer hover:brightness-110 transition-all"
-                            onClick={() => toggleReasoning(-1)}
-                        >
-                            <span className="text-xs text-yellow-400 font-semibold">Thinking Process:</span>
-                            {expandedReasoning.has(-1)
-                                ? <ChevronDown size={14} className="theme-text-muted flex-shrink-0" />
-                                : <ChevronRight size={14} className="theme-text-muted flex-shrink-0" />
+                <div className={isLongMessage && !isExpanded ? 'max-h-24 overflow-hidden relative' : ''}>
+                    <ChatMessageContent
+                        message={(() => {
+                            const m = { ...message, content: displayBody, isStreaming: showStreamingIndicators } as ChatMessageData;
+                            const hasToolCallParts = m.contentParts?.some((p: any) => p?.type === 'tool_call');
+                            if (hasToolCallParts) {
+                                m.toolCalls = undefined;
+                            } else if (m.toolCalls?.length > 0) {
+                                m.contentParts = [
+                                    ...(m.contentParts || []),
+                                    ...m.toolCalls.map((tc: any) => ({ type: 'tool_call', call: tc }))
+                                ];
+                                m.toolCalls = undefined;
                             }
-                        </div>
-                        {expandedReasoning.has(-1) && (
-                            <div className="px-3 py-2 theme-bg-primary border-t border-[var(--border-color,#313244)]">
-                                <div className="prose prose-sm prose-invert max-w-none theme-text-secondary text-sm">
-                                    <MarkdownRenderer content={message.reasoningContent || ''} onOpenFile={onOpenFile} />
-                                </div>
-                            </div>
+                            return m;
+                        })()}
+                        renderMarkdown={(content: string) => (
+                            <MarkdownRenderer content={searchTerm ? highlightSearchTerm(content, searchTerm) : content} onOpenFile={onOpenFile} />
                         )}
-                    </div>
-                )}
-
-                {message.contentParts && message.contentParts.length > 0 ? (
-                    <>
-                        {message.contentParts.map((part, partIdx) => {
-                            if (!part) return null;
-                            if (part.type === 'text') {
-                                return (
-                                    <div key={partIdx} className={`prose prose-sm prose-invert max-w-none theme-text-primary`}>
-                                        {searchTerm ? (
-                                            <MarkdownRenderer content={highlightSearchTerm(part.content, searchTerm)} onOpenFile={onOpenFile} />
-                                        ) : (
-                                            <MarkdownRenderer content={part.content || ''} onOpenFile={onOpenFile} />
-                                        )}
-                                    </div>
-                                );
-                            } else if (part.type === 'tool_call') {
-                                return (
-                                    <ToolCallDisplay key={partIdx} tool={part.call || part} />
-                                );
-                            } else if (part.type === 'reasoning') {
-                                const isReasoningExpanded = expandedReasoning.has(partIdx);
-                                return (
-                                    <div key={partIdx} className="mb-3 rounded-md border-l-2 border-yellow-500 overflow-hidden">
+                        renderToolCall={(tool: any, idx: number) => <ToolCallDisplay key={idx} tool={tool.call || tool} />}
+                        renderAttachments={(attachments: any[]) => (
+                            <div className="mt-2 flex flex-wrap gap-2 border-t theme-border pt-2">
+                                {attachments.map((attachment, idx) => {
+                                    const isImage = attachment.name?.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+                                    const isPdf = attachment.name?.match(/\.pdf$/i);
+                                    const isClickable = !!attachment.path;
+                                    const imageSrc = attachment.preview || (attachment.path ? `media://${attachment.path}` : attachment.data);
+                                    return (
                                         <div
-                                            className="flex items-center gap-2 px-3 py-1.5 theme-bg-tertiary cursor-pointer hover:brightness-110 transition-all"
-                                            onClick={() => toggleReasoning(partIdx)}
+                                            key={idx}
+                                            className={`text-xs theme-bg-tertiary rounded px-2 py-1 flex items-center gap-1 ${isClickable ? 'cursor-pointer hover:bg-blue-500/20' : ''}`}
+                                            onDoubleClick={() => isClickable && onOpenFile?.(attachment.path)}
+                                            title={isClickable ? `Double-click to open: ${attachment.path}` : attachment.name}
                                         >
-                                            <span className="text-xs text-yellow-400 font-semibold">Thinking Process:</span>
-                                            {isReasoningExpanded
-                                                ? <ChevronDown size={14} className="theme-text-muted flex-shrink-0" />
-                                                : <ChevronRight size={14} className="theme-text-muted flex-shrink-0" />
-                                            }
+                                            <Paperclip size={12} className="flex-shrink-0" />
+                                            <span className="truncate">{attachment.name}</span>
+                                            {isImage && imageSrc && (
+                                                <img src={imageSrc} alt={attachment.name} className="mt-1 max-w-[100px] max-h-[100px] rounded-md object-cover"/>
+                                            )}
+                                            {isPdf && (
+                                                <span className="ml-1 text-red-400 text-[10px]">PDF</span>
+                                            )}
                                         </div>
-                                        {isReasoningExpanded && (
-                                            <div className="px-3 py-2 theme-bg-primary border-t border-[var(--border-color,#313244)]">
-                                                <div className="prose prose-sm prose-invert max-w-none theme-text-secondary text-sm">
-                                                    <MarkdownRenderer content={part.content || ''} onOpenFile={onOpenFile} />
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            }
-                            return null;
-                        })}
-                        {showStreamingIndicators && message.type !== 'error' && (
-                            <span className="ml-1 inline-block w-0.5 h-4 theme-text-primary animate-pulse stream-cursor"></span>
-                        )}
-                    </>
-                ) : (
-                    <>
-                        <div className={`prose prose-sm prose-invert max-w-none theme-text-primary ${isLongMessage && !isExpanded ? 'max-h-24 overflow-hidden relative' : ''}`}>
-                            {searchTerm && displayBody ? (
-                                <MarkdownRenderer content={highlightSearchTerm(displayBody, searchTerm)} onOpenFile={onOpenFile} />
-                            ) : (
-                                <MarkdownRenderer content={displayBody || ''} onOpenFile={onOpenFile} />
-                            )}
-                            {showStreamingIndicators && message.type !== 'error' && (
-                                <span className="ml-1 inline-block w-0.5 h-4 theme-text-primary animate-pulse stream-cursor"></span>
-                            )}
-                            {isLongMessage && !isExpanded && (
-                                <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-inherit to-transparent pointer-events-none" />
-                            )}
-                        </div>
-                        {hasContextBlocks && (
-                            <div className="mt-2 rounded-md border-l-2 border-blue-500 overflow-hidden">
-                                <ContextBlocks blocks={contextBlocks} />
+                                    );
+                                })}
                             </div>
                         )}
-
-                        {isLongMessage && (
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setIsExpanded(!isExpanded);
-                                }}
-                                className="mt-2 flex items-center gap-1 text-xs theme-text-muted hover:theme-text-primary transition-colors"
-                            >
-                                {isExpanded ? (
-                                    <>
-                                        <ChevronUp size={14} />
-                                        <span>Show less</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <ChevronDown size={14} />
-                                        <span>Show more ({countLines(displayBody)} lines)</span>
-                                    </>
-                                )}
-                            </button>
-                        )}
-                        {message.toolCalls && message.toolCalls.length > 0 && (
-                            <div className="mt-2">
-                                {message.toolCalls.map((tool, idx) => (
-                                    <ToolCallDisplay key={idx} tool={tool} />
-                                ))}
-                            </div>
-                        )}
-                    </>
-                )}
-                {message.attachments?.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2 border-t theme-border pt-2">
-                        {message.attachments.map((attachment, idx) => {
-                            const isImage = attachment.name?.match(/\.(jpg|jpeg|png|gif|webp)$/i);
-                            const isPdf = attachment.name?.match(/\.pdf$/i);
-                            const isClickable = !!attachment.path;
-                            const imageSrc = attachment.preview || (attachment.path ? `media://${attachment.path}` : attachment.data);
-                            return (
-                                <div
-                                    key={idx}
-                                    className={`text-xs theme-bg-tertiary rounded px-2 py-1 flex items-center gap-1 ${isClickable ? 'cursor-pointer hover:bg-blue-500/20' : ''}`}
-                                    onDoubleClick={() => isClickable && onOpenFile?.(attachment.path)}
-                                    title={isClickable ? `Double-click to open: ${attachment.path}` : attachment.name}
-                                >
-                                    <Paperclip size={12} className="flex-shrink-0" />
-                                    <span className="truncate">{attachment.name}</span>
-                                    {isImage && imageSrc && (
-                                        <img src={imageSrc} alt={attachment.name} className="mt-1 max-w-[100px] max-h-[100px] rounded-md object-cover"/>
-                                    )}
-                                    {isPdf && (
-                                        <span className="ml-1 text-red-400 text-[10px]">PDF</span>
-                                    )}
-                                </div>
-                            );
-                        })}
+                    />
+                    {isLongMessage && !isExpanded && (
+                        <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-inherit to-transparent pointer-events-none" />
+                    )}
+                </div>
+                {hasContextBlocks && (
+                    <div className="mt-2 rounded-md border-l-2 border-blue-500 overflow-hidden">
+                        <ContextBlocks blocks={contextBlocks} />
                     </div>
+                )}
+                {isLongMessage && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setIsExpanded(!isExpanded);
+                        }}
+                        className="mt-2 flex items-center gap-1 text-xs theme-text-muted hover:theme-text-primary transition-colors"
+                    >
+                        {isExpanded ? (
+                            <>
+                                <ChevronUp size={14} />
+                                <span>Show less</span>
+                            </>
+                        ) : (
+                            <>
+                                <ChevronDown size={14} />
+                                <span>Show more ({countLines(displayBody)} lines)</span>
+                            </>
+                        )}
+                    </button>
                 )}
 
                 {message.role === 'assistant' && !showStreamingIndicators && (
