@@ -2,12 +2,31 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
+const CSS_MOCK = '\0css-mock';
+
+const mockCssPlugin = () => ({
+  name: 'mock-css',
+  enforce: 'pre' as const,
+  resolveId(id: string) {
+    if (id.endsWith('.css')) {
+      console.log('[mock-css] resolveId', id);
+      return `${CSS_MOCK}:${id}`;
+    }
+  },
+  load(id: string) {
+    if (id.startsWith(`${CSS_MOCK}:`)) {
+      console.log('[mock-css] load', id);
+      return 'export default {}';
+    }
+  },
+});
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [mockCssPlugin(), react()],
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, 'src'),
-    },
+    alias: [
+      { find: '@', replacement: path.resolve(__dirname, 'src') },
+    ],
   },
   test: {
     globals: true,
@@ -20,7 +39,7 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
       include: ['src/renderer/**/*.{ts,tsx}'],
-      exclude: ['src/renderer/components/Enpistu.tsx'], // too large for coverage
+      exclude: ['src/renderer/components/Enpistu.tsx'],
     },
   },
 });
