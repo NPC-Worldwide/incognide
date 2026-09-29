@@ -201,6 +201,12 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         () => findContextWindow(currentModel, availableModels, modelsToDisplay),
         [currentModel, availableModels, modelsToDisplay]
     );
+    // ---- Context compression -------------------------------------------------
+    // Non-destructive: the main process records a cutoff plus an LLM-written
+    // summary, and the original rows stay in the database. Both the message
+    // list and the payload sent to the model are rebuilt through that summary.
+    const [isCompressing, setIsCompressing] = useState(false);
+
     useEffect(() => {
         const recompute = () => {
             let messages: any[] = [];
@@ -215,89 +221,201 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         };
         paneUpdateEmitter.addEventListener('pane-update', handler);
         return () => paneUpdateEmitter.removeEventListener('pane-update', handler);
-    }, [paneUpdateEmitter, paneId, contentDataRef, paneVersion, isStreaming]);
-
-    // ---- Context compression -------------------------------------------------
-    // Non-destructive: the main process records a cutoff plus an LLM-written
-    // summary, and the original rows stay in the database. Both the message
-    // list and the payload sent to the model are rebuilt through that summary,
-    // so the meter above reflects the reduced context.
-    const [compressState, setCompressState] = useState<{ compressed: boolean; messagesCompressed?: number }>({ compressed: false });
-    const [isCompressing, setIsCompressing] = useState(false);
+    }, [paneUpdateEmitter, paneId, contentDataRef, paneVersion, isStreaming, isCompressing]);
     const [compressError, setCompressError] = useState<string | null>(null);
+    const [compressInstructions, setCompressInstructions] = useState<string>(() => {
+        try { return localStorage.getItem(`incognide-compress-instructions-${activeConversationId}`) || ''; } catch { return ''; }
+    });
 
     useEffect(() => {
-        let cancelled = false;
-        const load = async () => {
-            if (!activeConversationId) { setCompressState({ compressed: false }); return; }
-            try {
-                const res = await (window as any).api?.getCompressionState?.(activeConversationId);
-                if (!cancelled && res) {
-                    setCompressState({
-                        compressed: !!res.compressed,
-                        messagesCompressed: res.compression?.messagesCompressed,
-                    });
-                }
-            } catch {}
-        };
-        load();
-        return () => { cancelled = true; };
+        if (!activeConversationId) { setCompressInstructions(''); return; }
+        try {
+            const stored = localStorage.getItem(`incognide-compress-instructions-${activeConversationId}`) || '';
+            setCompressInstructions(stored);
+        } catch {}
     }, [activeConversationId, paneId, paneVersion]);
 
-    // Re-read the conversation through the compression filter so the pane and
-    // the meter above it reflect the reduced context immediately.
-    const reloadPaneMessages = async () => {
-        if (!activeConversationId) return;
+    const handleSetCompressInstructions = (value: string) => {
+        setCompressInstructions(value);
         try {
-            const msgs = await (window as any).api?.getConversationMessages?.(activeConversationId);
+            if (activeConversationId) {
+                localStorage.setItem(`incognide-compress-instructions-${activeConversationId}`, value);
+            }
+        } catch {}
+    };
+
+    const visibleMessageSlice = (allMessages: any[], count: number) => {
+        if (!Array.isArray(allMessages) || allMessages.length === 0) return [];
+        const markerIdxs: number[] = [];
+        for (let i = 0; i < allMessages.length; i++) {
+            if (allMessages[i]?.isCompression || allMessages[i]?.isCompressionIndicator || allMessages[i]?.parent_message_id) {
+                markerIdxs.push(i);
+            }
+        }
+        console.log(`[visibleMessageSlice] paneId=${paneId} total=${allMessages.length} count=${count} markerIdxs=${JSON.stringify(markerIdxs)} markerIds=${JSON.stringify(markerIdxs.map((i) => allMessages[i]?.message_id || allMessages[i]?.id))}`);
+        if (markerIdxs.length === 0) {
+            const result = allMessages.slice(-count);
+            console.log(`[visibleMessageSlice] no markers -> tail ${result.length}`);
+            return result;
+        }
+        const latestMarkerIdx = markerIdxs[markerIdxs.length - 1];
+        const naturalStart = Math.max(0, allMessages.length - count);
+        if (latestMarkerIdx >= naturalStart) {
+            const result = allMessages.slice(-count);
+            console.log(`[visibleMessageSlice] latestMarker in window -> tail ${result.length} ids=${JSON.stringify(result.map((m) => m?.message_id || m?.id))}`);
+            return result;
+        }
+        const kept = new Set<number>();
+        for (const idx of markerIdxs) {
+            if (idx < naturalStart) kept.add(idx);
+        }
+        const tailStart = Math.max(latestMarkerIdx + 1, allMessages.length - Math.max(1, count - kept.size));
+        for (let i = tailStart; i < allMessages.length; i++) kept.add(i);
+        const result = Array.from(kept).sort((a, b) => a - b).map((i) => allMessages[i]);
+        console.log(`[visibleMessageSlice] kept markers + tail -> ${result.length} ids=${JSON.stringify(result.map((m) => m?.message_id || m?.id))}`);
+        return result;
+    };
+
+    const reloadPaneMessages = async () => {
+        const conversationId = resolveConversationId();
+        console.log(`[reloadPaneMessages] paneId=${paneId} conversationId=${conversationId}`);
+        if (!conversationId) return;
+        try {
+            const msgs = await (window as any).api?.getConversationMessages?.(conversationId);
+            console.log(`[reloadPaneMessages] fetched ${msgs?.length} messages raw=${JSON.stringify(msgs?.slice(-3).map((m: any) => ({ id: m.message_id || m.id, role: m.role, parent: m.parent_message_id })))}`);
             const pd = contentDataRef?.current?.[paneId];
             if (pd && Array.isArray(msgs)) {
                 const formatted = msgs.map((m: any) => ({ ...m, id: m.message_id || m.id }));
                 if (!pd.chatMessages) pd.chatMessages = { messages: [], allMessages: [], displayedMessageCount: 20 };
                 pd.chatMessages.allMessages = formatted;
-                pd.chatMessages.messages = formatted.slice(-(pd.chatMessages.displayedMessageCount || 20));
+                pd.chatMessages.messages = visibleMessageSlice(formatted, pd.chatMessages.displayedMessageCount || 20);
+                console.log(`[reloadPaneMessages] ${conversationId}: total=${formatted.length}, visible=${pd.chatMessages.messages.length}, visibleIds=${JSON.stringify(pd.chatMessages.messages.map((m: any) => m?.message_id || m?.id))}`);
                 paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
+                console.log(`[reloadPaneMessages] dispatched pane-update for ${paneId}`);
+            } else {
+                console.log(`[reloadPaneMessages] skipped pd=${!!pd} Array.isArray(msgs)=${Array.isArray(msgs)}`);
             }
         } catch (e) {
             console.error('[Compression] Failed to reload messages:', e);
         }
     };
 
-    const handleCompressConversation = async () => {
-        if (!activeConversationId || isCompressing) return;
-        setIsCompressing(true);
-        setCompressError(null);
+    const updateCompressionIndicator = (show: boolean) => {
+        const conversationId = resolveConversationId();
+        if (!conversationId) return;
+        const pd = contentDataRef?.current?.[paneId];
+        if (!pd) return;
         try {
-            const res = await (window as any).api?.compressConversation?.({
-                conversationId: activeConversationId,
-                currentPath,
-                model: currentModel,
-                provider: currentProvider,
-                npc: currentNPC,
-            });
-            if (res?.error) { setCompressError(res.error); return; }
-            setCompressState({ compressed: true, messagesCompressed: res.totalMessagesCompressed });
-            await reloadPaneMessages();
-        } catch (e: any) {
-            setCompressError(e?.message || 'Compression failed');
-        } finally {
-            setIsCompressing(false);
+            if (!pd.chatMessages) pd.chatMessages = { messages: [], allMessages: [], displayedMessageCount: 20 };
+            const all = pd.chatMessages.allMessages || [];
+            const withoutIndicator = all.filter((m: any) => m?.message_id !== 'compressing-indicator');
+            if (show) {
+                const indicator = {
+                    id: 'compressing-indicator',
+                    message_id: 'compressing-indicator',
+                    role: 'system',
+                    content: 'Compressing conversation...',
+                    isCompressionIndicator: true,
+                    timestamp: new Date().toISOString(),
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    cost: null,
+                    attachments: [],
+                    contentParts: null,
+                };
+                withoutIndicator.push(indicator);
+                pd.chatMessages.allMessages = withoutIndicator;
+                pd.chatMessages.messages = visibleMessageSlice(withoutIndicator, pd.chatMessages.displayedMessageCount || 20);
+            } else {
+                pd.chatMessages.allMessages = withoutIndicator;
+                pd.chatMessages.messages = visibleMessageSlice(withoutIndicator, pd.chatMessages.displayedMessageCount || 20);
+            }
+            paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
+        } catch (e) {
+            console.error('[Compression] Failed to update indicator:', e);
         }
     };
 
-    const handleUndoCompress = async () => {
-        if (!activeConversationId || isCompressing) return;
+    const resolveConversationId = () => {
+        if (activeConversationId) return activeConversationId;
+        const pd = contentDataRef?.current?.[paneId];
+        if ((pd?.contentType === 'chat' || pd?.contentType === 'agent') && pd?.contentId) return pd.contentId;
+        return null;
+    };
+
+    const handleCompressConversation = async () => {
+        if (isCompressing) return;
+        const conversationId = resolveConversationId();
+        console.log(`[handleCompressConversation] start paneId=${paneId} conversationId=${conversationId}`);
+        if (!conversationId) { setCompressError('No active conversation to compress'); return; }
         setIsCompressing(true);
         setCompressError(null);
+        updateCompressionIndicator(true);
         try {
-            const res = await (window as any).api?.uncompressConversation?.(activeConversationId);
+            const res = await Promise.race([
+                (window as any).api?.compressConversation?.({
+                    conversationId,
+                    currentPath,
+                    model: currentModel,
+                    provider: currentProvider,
+                    npc: currentNPC,
+                    instructions: compressInstructions,
+                }),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Compression timed out after 15s')), 15000)),
+            ]);
+            console.log(`[handleCompressConversation] compressConversation res=${JSON.stringify({ error: res?.error, summaryMessageId: res?.summaryMessageId, parentMessageId: res?.parentMessageId, summaryLen: res?.summary?.length })}`);
             if (res?.error) { setCompressError(res.error); return; }
-            setCompressState({ compressed: false });
+            if (res?.summaryMessageId && res?.summary) {
+                const pd = contentDataRef?.current?.[paneId];
+                console.log(`[handleCompressConversation] before insert pd exists=${!!pd} allMessages len=${pd?.chatMessages?.allMessages?.length}`);
+                if (pd) {
+                    pd.compressionSummaryMessageId = res.summaryMessageId;
+                    if (!pd.chatMessages) pd.chatMessages = { messages: [], allMessages: [], displayedMessageCount: 20 };
+                    const all = [...(pd.chatMessages.allMessages || [])];
+                    const summaryMsg = {
+                        id: res.summaryMessageId,
+                        message_id: res.summaryMessageId,
+                        role: 'user',
+                        content: res.summary,
+                        parent_message_id: res.parentMessageId || null,
+                        timestamp: new Date().toISOString(),
+                        input_tokens: 0,
+                        output_tokens: 0,
+                        cost: null,
+                        attachments: [],
+                        contentParts: null,
+                    };
+                    const parentIdx = all.findIndex((m: any) => m?.message_id === res.parentMessageId || m?.id === res.parentMessageId);
+                    console.log(`[handleCompressConversation] parentIdx=${parentIdx} parentMessageId=${res.parentMessageId}`);
+                    if (parentIdx >= 0) {
+                        all.splice(parentIdx + 1, 0, summaryMsg);
+                    } else {
+                        all.push(summaryMsg);
+                    }
+                    pd.chatMessages.allMessages = all;
+                    pd.chatMessages.messages = visibleMessageSlice(all, pd.chatMessages.displayedMessageCount || 20);
+                    console.log(`[handleCompressConversation] after insert visible=${pd.chatMessages.messages.length} visibleIds=${JSON.stringify(pd.chatMessages.messages.map((m: any) => m?.message_id || m?.id))}`);
+                    paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId } }));
+                    paneUpdateEmitter?.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: 'all' } }));
+                    console.log(`[handleCompressConversation] dispatched pane-update ${paneId} and all`);
+                }
+            }
+            console.log(`[handleCompressConversation] calling reloadPaneMessages`);
             await reloadPaneMessages();
+            if (res?.summaryMessageId) {
+                setTimeout(() => {
+                    const marker = document.getElementById(`message-${res.summaryMessageId}`);
+                    console.log(`[handleCompressConversation] scroll marker ${res.summaryMessageId} found=${!!marker}`);
+                    if (marker) marker.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 50);
+            }
         } catch (e: any) {
-            setCompressError(e?.message || 'Undo failed');
+            console.error('[handleCompressConversation] error:', e);
+            setCompressError(e?.message || 'Compression failed');
         } finally {
+            updateCompressionIndicator(false);
             setIsCompressing(false);
+            console.log(`[handleCompressConversation] finished`);
         }
     };
 
@@ -490,6 +608,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     }, [availableMcpServers]);
 
     const [showNpcsDropdown, setShowNpcsDropdown] = useState(false);
+    const [npcDropdownPos, setNpcDropdownPos] = useState<{ bottom: number; left: number } | null>(null);
 
     const [npcSearch, setNpcSearch] = useState('');
     const [jinxSearch, setJinxSearch] = useState('');
@@ -599,6 +718,12 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         if (showNpcsDropdown) {
             setNpcSearch('');
             setTimeout(() => npcSearchRef.current?.focus(), 50);
+            const rect = npcsDropdownRef.current?.getBoundingClientRect();
+            if (rect) {
+                setNpcDropdownPos({ bottom: window.innerHeight - rect.top + 4, left: rect.left });
+            }
+        } else {
+            setNpcDropdownPos(null);
         }
     }, [showNpcsDropdown]);
 
@@ -1150,8 +1275,13 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                         />
                     </div>
                     <div className="p-2 border-t theme-border flex items-center justify-end gap-2">
-                        {isStreaming && (
-                            <button onClick={handleInterruptStream} className="theme-button-danger text-white rounded-lg px-4 py-2 text-sm flex items-center gap-1">
+                        {(isStreaming || isCompressing) && (
+                            <button
+                                onClick={isStreaming ? handleInterruptStream : handleInterruptStream}
+                                disabled={!isStreaming}
+                                className={`rounded-lg px-4 py-2 text-sm flex items-center gap-1 text-white ${isStreaming ? 'theme-button-danger' : 'bg-amber-600 hover:bg-amber-500 disabled:opacity-50'}`}
+                                title={isStreaming ? 'Stop generation' : 'Stop compression'}
+                            >
                                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5z"/></svg>
                                 Stop
                             </button>
@@ -1179,7 +1309,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
     return (
         <div
             ref={containerRef}
-            className="border-t theme-border theme-bg-secondary flex-shrink-0 relative"
+            className="border-t theme-border theme-bg-secondary flex-shrink-0 relative flex flex-col"
             style={{ height: `${inputHeight}px`, minHeight: isJinxMode ? `${jinxMinHeight}px` : '200px', maxHeight: '600px' }}
             onFocus={onFocus}
         >
@@ -1189,8 +1319,20 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                 style={{ backgroundColor: isResizingInput ? '#3b82f6' : 'transparent' }}
             />
 
+            <ContextUsageMeter
+                used={ctxUsage.used}
+                limit={ctxLimit}
+                source={ctxUsage.source}
+                modelLabel={currentModel}
+                onCompress={handleCompressConversation}
+                compressing={isCompressing}
+                compressError={compressError}
+                compressInstructions={compressInstructions}
+                onChangeCompressInstructions={handleSetCompressInstructions}
+            />
+
             <div
-                className="relative theme-bg-primary theme-border border rounded-lg group h-full flex flex-col m-2 overflow-visible z-[10]"
+                className="relative theme-bg-primary theme-border border rounded-lg group flex-1 min-h-0 flex flex-col m-2 overflow-visible z-[10]"
                 onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsHovering(true); }}
                 onDragEnter={(e) => { e.stopPropagation(); setIsHovering(true); }}
                 onDragLeave={(e) => { e.stopPropagation(); setIsHovering(false); }}
@@ -1203,19 +1345,6 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                 )}
 
                 <div className="flex-1 overflow-visible flex flex-col">
-                    <ContextUsageMeter
-                        used={ctxUsage.used}
-                        limit={ctxLimit}
-                        source={ctxUsage.source}
-                        modelLabel={currentModel}
-                        onCompress={handleCompressConversation}
-                        onUndoCompress={handleUndoCompress}
-                        isCompressed={compressState.compressed}
-                        compressing={isCompressing}
-                        canCompress={!!activeConversationId && msgCount > 3}
-                        compressError={compressError}
-                        compressedCount={compressState.messagesCompressed}
-                    />
                     <div className="relative">
                         <ContextFilesPanel
                             isCollapsed={contextFilesCollapsed}
@@ -1319,8 +1448,13 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                             >
                                 <BrainCircuit size={12} />
                             </button>
-                            {isStreaming && (
-                                <button onClick={handleInterruptStream} className="theme-button-danger text-white rounded-lg px-3 py-2 text-sm flex items-center gap-1 flex-shrink-0">
+                            {(isStreaming || isCompressing) && (
+                                <button
+                                    onClick={isStreaming ? handleInterruptStream : handleInterruptStream}
+                                    disabled={!isStreaming}
+                                    className={`rounded-lg px-3 py-2 text-sm flex items-center gap-1 flex-shrink-0 text-white ${isStreaming ? 'theme-button-danger' : 'bg-amber-600 hover:bg-amber-500 disabled:opacity-50'}`}
+                                    title={isStreaming ? 'Stop generation' : 'Stop compression'}
+                                >
                                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 16 16"><path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5z"/></svg>
                                 </button>
                             )}
@@ -1361,7 +1495,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                 </div>
 
 
-                <div className={`px-1.5 py-1 relative z-50 ${isStreaming ? 'opacity-50 pointer-events-none' : ''}`}>
+                <div className={`px-1.5 py-1 pb-1.5 relative z-50 flex-shrink-0 ${isStreaming ? 'opacity-50 pointer-events-none' : ''}`}>
                 <div className="flex items-center gap-1">
                     <div className="relative flex-1 min-w-0 w-1/2" ref={npcsDropdownRef}>
                         <button
@@ -1383,8 +1517,8 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
                             </span>
                             <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${showNpcsDropdown ? 'rotate-180' : ''}`} />
                         </button>
-                        {showNpcsDropdown && !npcsLoading && !npcsError && (
-                            <div className="pointer-events-auto absolute left-0 bottom-full mb-1 theme-bg-primary backdrop-blur-xl theme-border border rounded-lg shadow-2xl overflow-hidden w-64">
+                        {showNpcsDropdown && !npcsLoading && !npcsError && npcDropdownPos && (
+                            <div className="npc-agent-selector-dropdown pointer-events-auto fixed z-[100] theme-bg-primary backdrop-blur-xl theme-border border rounded-lg shadow-2xl overflow-hidden w-64" style={{ bottom: npcDropdownPos.bottom, left: npcDropdownPos.left }}>
                                 <div className="px-2 py-1.5 border-b theme-border">
                                     <input
                                         ref={npcSearchRef}

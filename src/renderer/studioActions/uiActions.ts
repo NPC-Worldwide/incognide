@@ -1,4 +1,5 @@
 import { registerAction, StudioContext, StudioActionResult } from './index';
+import { visibleMessageSlice } from '../hooks/useLayoutManager';
 
 export interface PromptData {
   id: string;
@@ -64,8 +65,9 @@ async function prompt_user(
       timestamp: new Date().toISOString(),
     };
     paneData.chatMessages.allMessages.push(promptMsg);
-    paneData.chatMessages.messages = paneData.chatMessages.allMessages.slice(
-      -(paneData.chatMessages.displayedMessageCount || 20)
+    paneData.chatMessages.messages = visibleMessageSlice(
+      paneData.chatMessages.allMessages,
+      paneData.chatMessages.displayedMessageCount || 20
     );
 
     if (ctx.notifyPaneUpdate && paneId) {
@@ -84,8 +86,9 @@ async function prompt_user(
     if (msg) {
       msg.promptData = { ...promptData, response: userResponse, respondedAt: new Date().toISOString() };
     }
-    paneData.chatMessages.messages = paneData.chatMessages.allMessages.slice(
-      -(paneData.chatMessages.displayedMessageCount || 20)
+    paneData.chatMessages.messages = visibleMessageSlice(
+      paneData.chatMessages.allMessages,
+      paneData.chatMessages.displayedMessageCount || 20
     );
     if (paneData.notifyUpdate) {
       paneData.notifyUpdate();

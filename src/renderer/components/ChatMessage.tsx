@@ -98,6 +98,7 @@ export const ChatMessage = memo(({
 }) => {
     const showStreamingIndicators = !!message.isStreaming;
     const messageId = message.id || message.timestamp;
+    console.log(`[ChatMessage] render messageId=${messageId} role=${message.role} parent_message_id=${message.parent_message_id} contentLen=${(message.content || '').length}`);
 
     const { body: displayBody, contextBlocks } = parseMessageContent(message.content || '');
     const hasContextBlocks = contextBlocks.length > 0;
@@ -190,6 +191,17 @@ export const ChatMessage = memo(({
                 className="max-w-[85%]"
             >
                 <AgentPromptCard promptData={message.promptData} />
+            </div>
+        );
+    }
+
+    if (message.isCompressionIndicator) {
+        return (
+            <div id={`message-${messageId}`} className="w-full flex justify-center my-4">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse">
+                    <Loader size={12} className="animate-spin" />
+                    <span>{message.content || 'Compressing conversation...'}</span>
+                </div>
             </div>
         );
     }
@@ -303,7 +315,20 @@ export const ChatMessage = memo(({
             <div className="relative message-content-area">
                 <div className={isLongMessage && !isExpanded ? 'max-h-24 overflow-hidden relative' : ''}>
                     <ChatMessageContent
-                        message={{ ...message, content: displayBody, isStreaming: showStreamingIndicators } as ChatMessageData}
+                        message={(() => {
+                            const m = { ...message, content: displayBody, isStreaming: showStreamingIndicators } as ChatMessageData;
+                            const hasToolCallParts = m.contentParts?.some((p: any) => p?.type === 'tool_call');
+                            if (hasToolCallParts) {
+                                m.toolCalls = undefined;
+                            } else if (m.toolCalls?.length > 0) {
+                                m.contentParts = [
+                                    ...(m.contentParts || []),
+                                    ...m.toolCalls.map((tc: any) => ({ type: 'tool_call', call: tc }))
+                                ];
+                                m.toolCalls = undefined;
+                            }
+                            return m;
+                        })()}
                         renderMarkdown={(content: string) => (
                             <MarkdownRenderer content={searchTerm ? highlightSearchTerm(content, searchTerm) : content} onOpenFile={onOpenFile} />
                         )}

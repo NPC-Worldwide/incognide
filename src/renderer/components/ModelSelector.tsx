@@ -2,7 +2,8 @@ import React, { useMemo } from 'react';
 import { Plus, X, Trash2 } from 'lucide-react';
 import yaml from 'js-yaml';
 import { API_PROVIDER_META } from './ModelManager';
-import { ModelSelector as NpctsModelSelector, type ModelInfo } from 'npcts';
+import { ModelSelector as NpctsModelSelector } from 'npcts';
+import type { ModelInfo } from 'npcts/core';
 
 export interface ModelItem {
     value: string;

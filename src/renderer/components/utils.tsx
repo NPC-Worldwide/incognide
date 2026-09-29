@@ -9,6 +9,21 @@ import yaml from 'js-yaml';
 const preprocessJinja = (content: string) =>
     content.replace(/(?<!["'])\{\{[^{}]*\}\}(?!["'])/g, (match) => `"${match}"`);
 
+const visibleMessageSlice = (allMessages: any[], count: number) => {
+    if (!Array.isArray(allMessages) || allMessages.length === 0) return [];
+    let lastMarkerIdx = -1;
+    for (let i = allMessages.length - 1; i >= 0; i--) {
+        if (allMessages[i]?.isCompression || allMessages[i]?.isCompressionIndicator || allMessages[i]?.parent_message_id) {
+            lastMarkerIdx = i;
+            break;
+        }
+    }
+    if (lastMarkerIdx === -1) return allMessages.slice(-count);
+    const naturalStart = Math.max(0, allMessages.length - count);
+    if (lastMarkerIdx >= naturalStart) return allMessages.slice(-count);
+    return [allMessages[lastMarkerIdx], ...allMessages.slice(-Math.max(1, count - 1))];
+};
+
 export interface StreamingToolCall {
     id?: string;
     internalId?: string;
@@ -1306,7 +1321,7 @@ export const usePaneAwareStreamListeners = (
                     }
                 }
 
-                paneData.chatMessages.messages = paneData.chatMessages.allMessages.slice(-(paneData.chatMessages.displayedMessageCount || 20));
+                paneData.chatMessages.messages = visibleMessageSlice(paneData.chatMessages.allMessages, paneData.chatMessages.displayedMessageCount || 20);
                 notifyPaneUpdate(targetPaneId);
                 if (message.role === 'assistant' && message.isStreaming) {
                     saveAssistantMessage(paneData, message);

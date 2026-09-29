@@ -22,7 +22,7 @@ import { useMemoryAndLabeling } from '../hooks/useMemoryAndLabeling';
 import { useWorkspace } from '../hooks/useWorkspace';
 import { useRemoteConnections } from '../hooks/useRemoteConnections';
 import { RemoteConnectionDialog } from './RemoteConnectionDialog';
-import { useLayoutManager, getConversationStats } from '../hooks/useLayoutManager';
+import { useLayoutManager, getConversationStats, visibleMessageSlice } from '../hooks/useLayoutManager';
 import GitPane from './GitPane';
 import GitModal from './GitModal';
 import Sidebar from './Sidebar';
@@ -615,7 +615,7 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     const paneVersion = useMemo(() => {
         paneVersionRef.current += 1;
         return paneVersionRef.current;
-    }, [rootLayoutNode]);
+    }, [rootLayoutNode, contentVersion]);
 
 
     const [autoIncludeContext, setAutoIncludeContext] = useState<boolean>(() => {
@@ -670,9 +670,16 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
     useEffect(() => {
         if (!activeContentPaneId) return;
         const pd = contentDataRef.current[activeContentPaneId];
-        if (pd?.contentType === 'chat') setLastActiveChatPaneId(activeContentPaneId);
-        if (pd?.contentType === 'agent') setLastActiveAgentPaneId(activeContentPaneId);
-    }, [activeContentPaneId]);
+        if (!pd) return;
+        const activeTab = pd.tabs?.length > 0 ? pd.tabs[pd.activeTabIndex ?? 0] : null;
+        const effectiveContentType = activeTab?.contentType || pd.contentType;
+        const effectiveContentId = activeTab?.contentId || pd.contentId;
+        if (effectiveContentType === 'chat') setLastActiveChatPaneId(activeContentPaneId);
+        if (effectiveContentType === 'agent') setLastActiveAgentPaneId(activeContentPaneId);
+        if ((effectiveContentType === 'chat' || effectiveContentType === 'agent') && effectiveContentId) {
+            setActiveConversationId(effectiveContentId);
+        }
+    }, [activeContentPaneId, contentVersion]);
 
 
     useEffect(() => {
@@ -816,8 +823,9 @@ const ChatInterface = ({ onRerunSetup }: { onRerunSetup?: () => void }) => {
                         contentParts: [],
                     };
                     paneData.chatMessages.allMessages.push(msg);
-                    paneData.chatMessages.messages = paneData.chatMessages.allMessages.slice(
-                        -(paneData.chatMessages.displayedMessageCount || 20)
+                    paneData.chatMessages.messages = visibleMessageSlice(
+                        paneData.chatMessages.allMessages,
+                        paneData.chatMessages.displayedMessageCount || 20
                     );
                 }
                 msg.isStreaming = true;
@@ -2204,7 +2212,7 @@ const handleOpenHelpEvent = () => createHelpPaneRef.current?.();
                                 activePane.chatMessages = { messages: [], allMessages: [], displayedMessageCount: 20 };
                             }
                             activePane.chatMessages.allMessages = formatted;
-                            activePane.chatMessages.messages = formatted.slice(-activePane.chatMessages.displayedMessageCount);
+                            activePane.chatMessages.messages = visibleMessageSlice(formatted, activePane.chatMessages.displayedMessageCount);
                             notifyAllPanes();
                             console.log('[REFRESH] Reloaded', formatted.length, 'messages for conversation', activePane.contentId);
                             if (activeContentPaneId) attachActiveStreamForPane(activeContentPaneId);
@@ -2583,6 +2591,7 @@ const renderChatView = useCallback(({ nodeId }) => {
 
     const messages = paneData.chatMessages.messages || [];
     const pendingMessages = paneData.pendingQueue || [];
+    console.log(`[renderChatView] nodeId=${nodeId} messages=${messages.length} ids=${JSON.stringify(messages.map((m: any) => m?.message_id || m?.id))}`);
 
     return (
         <div className="p-4 space-y-4">
@@ -2644,7 +2653,7 @@ const renderChatView = useCallback(({ nodeId }) => {
             )}
         </div>
     );
-}, [searchTerm, handleLabelMessage, messageLabels, handleResendMessage, findNodePath, performSplit, availableModels, availableNPCs, rootLayoutNode, handlePanePermissionDecision]);
+}, [searchTerm, handleLabelMessage, messageLabels, handleResendMessage, findNodePath, performSplit, availableModels, availableNPCs, rootLayoutNode, handlePanePermissionDecision, contentVersion]);
 
 
 const handleAICodeAction = useCallback(async (type: string, selectedText: string) => {
@@ -4601,7 +4610,7 @@ const handleBrowserDialogNavigate = (url) => {
         };
 
         paneData.chatMessages.allMessages.push(userMessage, assistantPlaceholder);
-        paneData.chatMessages.messages = paneData.chatMessages.allMessages.slice(-(paneData.chatMessages.displayedMessageCount || 20));
+        paneData.chatMessages.messages = visibleMessageSlice(paneData.chatMessages.allMessages, paneData.chatMessages.displayedMessageCount || 20);
         streamToPaneRef.current[newStreamId] = targetPaneId;
         setIsStreaming(true);
 
@@ -4699,7 +4708,7 @@ const handleBrowserDialogNavigate = (url) => {
             return;
         }
 
-        paneData.chatMessages.messages = paneData.chatMessages.allMessages.slice(-(paneData.chatMessages.displayedMessageCount || 20));
+        paneData.chatMessages.messages = visibleMessageSlice(paneData.chatMessages.allMessages, paneData.chatMessages.displayedMessageCount || 20);
         paneData.chatStats = getConversationStats(paneData.chatMessages.allMessages);
 
         if (targetPaneId) paneUpdateEmitter.dispatchEvent(new CustomEvent('pane-update', { detail: { paneId: targetPaneId } }));
