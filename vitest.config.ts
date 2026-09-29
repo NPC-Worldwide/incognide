@@ -9,13 +9,11 @@ const mockCssPlugin = () => ({
   enforce: 'pre' as const,
   resolveId(id: string) {
     if (id.endsWith('.css')) {
-      console.log('[mock-css] resolveId', id);
       return `${CSS_MOCK}:${id}`;
     }
   },
   load(id: string) {
     if (id.startsWith(`${CSS_MOCK}:`)) {
-      console.log('[mock-css] load', id);
       return 'export default {}';
     }
   },
@@ -35,6 +33,11 @@ export default defineConfig({
     include: ['tests/**/*.test.{ts,tsx}', 'src/**/*.test.{ts,tsx}'],
     exclude: ['node_modules', 'dist', 'dist-electron'],
     css: false,
+    server: {
+      deps: {
+        inline: ['npcts'],
+      },
+    },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
